@@ -43,7 +43,7 @@ describe("question reply transport", () => {
     expect(accepted).toHaveBeenCalledOnce();
   });
 
-  it("holds an uncertain write without resending or claiming delivery", async () => {
+  it("reports an uncertain write as unknown, never resending on its own, including user retries", async () => {
     const events: HarnessEvent[] = [];
     const accepted = vi.fn();
     const deliver = vi.fn(async () => {
@@ -61,8 +61,7 @@ describe("question reply transport", () => {
       );
     send();
     await flush();
-    send();
-    await flush();
+    // No automatic resend: the single failed attempt is all that ran.
     expect(deliver).toHaveBeenCalledTimes(1);
     expect(accepted).not.toHaveBeenCalled();
     expect(events.at(-1)).toMatchObject({
@@ -71,6 +70,11 @@ describe("question reply transport", () => {
       delivery: "unknown",
     });
     expect(JSON.stringify(events)).not.toContain("transport dropped");
+    // Unknown delivery stays locked to prevent a second answer write.
+    expect(pending.sending).toBe(true);
+    send();
+    await flush();
+    expect(deliver).toHaveBeenCalledTimes(1);
   });
 
   it("allows correcting locally rejected form values without losing the question", async () => {

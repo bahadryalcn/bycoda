@@ -72,17 +72,18 @@ async function captured() {
     records: service.snapshot.records as Record<string, any>[],
   };
 }
+/** Leaves one unverified record: Native succeeded but local bookkeeping failed. */
 async function fail(
   command: Parameters<typeof intents.beginNoteServiceIntent>[0],
   args: Record<string, unknown>,
   error: unknown = new Error("Native outcome uncertain"),
 ) {
   const work = original();
-  const effect = vi.fn(() => Promise.reject(error));
+  const effect = vi.fn(() => Promise.resolve(undefined));
   try {
-    await expect(
-      intents.beginNoteServiceIntent(command, args, work).execute(effect),
-    ).rejects.toBe(error);
+    await intents.beginNoteServiceIntent(command, args, work).execute(effect, () => {
+      throw error;
+    });
   } finally {
     work();
   }
@@ -103,22 +104,24 @@ it("retains exact service-only original requests including CRLF and own undefine
   };
   const work = original(),
     actual = deferred<unknown>(),
-    nativeError = new Error("original Native rejection");
+    nativeError = new Error("original local bookkeeping failure");
   const call = intents.beginNoteServiceIntent("notes_upsert", request, work);
   const invoked = vi.fn(() => actual.promise);
-  const pending = call.execute(invoked);
+  const pending = call.execute(invoked, () => {
+    throw nativeError;
+  });
   expect(invoked).toHaveBeenCalledOnce();
   request.note.id = "later-caller-mutation";
   request.note.body = "later-caller-body";
-  actual.reject(nativeError);
-  await expect(pending).rejects.toBe(nativeError);
+  actual.resolve(undefined);
+  await expect(pending).resolves.toBeUndefined();
   work();
   const { lease, service, records } = await captured();
   expect(records).toHaveLength(1);
   expect(records[0]).toMatchObject({
     command: "notes_upsert",
     status: "unverified",
-    phase: "native-outcome-unverified",
+    phase: "result-application-unverified",
     args: {
       note: {
         id: "original-note",
@@ -291,34 +294,48 @@ it("retains independent uncertain operations without merging or clearing them th
   lease.release();
 });
 
-it("refuses forged, raw-registry and already-settled work before any effect", async () => {
+it("runs forged, raw-registry and already-settled work unrecorded instead of refusing it", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
   const fakeApply = vi.fn((callback: () => unknown) => callback());
   const forged = Object.assign(() => {}, { apply: fakeApply }) as NoteInputWork;
-  expect(() =>
-    intents.beginNoteServiceIntent("notes_delete", { id: "forged" }, forged),
-  ).toThrow(intents.NoteServiceIntentError);
+  const native = vi.fn(() => Promise.resolve("ran"));
+  await expect(
+    intents.beginNoteServiceIntent("notes_delete", { id: "forged" }, forged).execute(native),
+  ).resolves.toBe("ran");
   expect(fakeApply).not.toHaveBeenCalled();
   const registration = facade.registerNoteInput(
     () => ({ snapshot: { surface: "unrelated" } }),
     { canClose: () => true, close: () => {} },
   );
   const raw = registration.operation("not-a-private-logical-owner")!;
-  expect(() =>
-    intents.beginNoteServiceIntent("notes_delete", { id: "foreign" }, raw),
-  ).toThrow(intents.NoteServiceIntentError);
+  await intents.beginNoteServiceIntent("notes_delete", { id: "foreign" }, raw).execute(native);
   raw();
   registration.unregister();
   const settled = original();
   settled();
-  expect(() =>
-    intents.beginNoteServiceIntent("notes_delete", { id: "stale" }, settled),
-  ).toThrow(intents.NoteServiceIntentError);
+  await intents.beginNoteServiceIntent("notes_delete", { id: "stale" }, settled).execute(native);
+  expect(native).toHaveBeenCalledTimes(3);
   const { lease, records } = await captured();
   expect(records).toEqual([]);
   lease.release();
 });
 
-it("rejects unsupported exact requests before Native and never invokes a request getter", async () => {
+it("drops the conserved request when Native definitely rejects", async () => {
+  // Tauri rejects with the command's returned error (a string), never an Error.
+  const work = original(),
+    error = "Native rejected";
+  const effect = vi.fn(() => Promise.reject(error));
+  await expect(
+    intents.beginNoteServiceIntent("notes_upsert", { note: { id: "n" } }, work).execute(effect),
+  ).rejects.toBe(error);
+  work();
+  const { lease, records } = await captured();
+  expect(records).toEqual([]);
+  lease.release();
+});
+
+it("runs unsupported exact requests unrecorded and never invokes a request getter", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
   const getter = vi.fn(() => "must not read");
   const accessor = Object.defineProperty({}, "body", {
     enumerable: true,
@@ -333,10 +350,10 @@ it("rejects unsupported exact requests before Native and never invokes a request
     { tags: [undefined] },
     { count: Infinity },
   ]) {
-    const work = original();
-    expect(() =>
-      intents.beginNoteServiceIntent("notes_upsert", args, work),
-    ).toThrow(intents.NoteServiceIntentError);
+    const work = original(),
+      native = vi.fn(() => Promise.resolve());
+    await intents.beginNoteServiceIntent("notes_upsert", args, work).execute(native);
+    expect(native).toHaveBeenCalledOnce();
     work();
   }
   expect(getter).not.toHaveBeenCalled();
@@ -345,7 +362,7 @@ it("rejects unsupported exact requests before Native and never invokes a request
   lease.release();
 });
 
-it("holds all64 originals and refuses the65th before its Native effect without eviction", async () => {
+it("evicts the oldest unverified original instead of refusing the 65th", async () => {
   for (
     let index = 0;
     index < intents.NOTE_SERVICE_INTENT_LIMITS.records;
@@ -357,25 +374,21 @@ it("holds all64 originals and refuses the65th before its Native effect without e
     });
   const native = vi.fn(() => Promise.resolve()),
     work = original();
-  expect(() =>
-    intents
-      .beginNoteServiceIntent("notes_delete", { id: "new-refused" }, work)
-      .execute(native),
-  ).toThrow(expect.objectContaining({ code: "capacity" }));
+  await intents.beginNoteServiceIntent("notes_delete", { id: "new-admitted" }, work).execute(native);
   work();
-  expect(native).not.toHaveBeenCalled();
+  expect(native).toHaveBeenCalledOnce();
   const { lease, records } = await captured();
-  expect(records).toHaveLength(64);
   expect(records.map((row) => row.args.id)).toEqual(
-    Array.from({ length: 64 }, (_, index) => `original-${index}`),
+    Array.from({ length: 63 }, (_, index) => `original-${index + 1}`),
   );
   lease.release();
 });
 
-it("charges pending and unknown requests against the shared8MiB budget and preserves earlier exact bytes", async () => {
+it("charges pending requests against the shared8MiB budget, evicts unknown ones first, and runs the overflow unrecorded", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
   const body = "x".repeat(2 * 1024 * 1024);
   await fail("notes_upsert", { note: { id: "large-original-unknown", body } });
-  const io = [deferred<void>(), deferred<void>()];
+  const io = [deferred<void>(), deferred<void>(), deferred<void>()];
   const pending = io.map((actual, index) => {
     const work = original();
     const result = intents
@@ -390,17 +403,11 @@ it("charges pending and unknown requests against the shared8MiB budget and prese
   });
   const work = original(),
     native = vi.fn(() => Promise.resolve());
-  expect(() =>
-    intents
-      .beginNoteServiceIntent(
-        "notes_upsert",
-        { note: { id: "large-refused", body } },
-        work,
-      )
-      .execute(native),
-  ).toThrow(expect.objectContaining({ code: "capacity" }));
+  await intents
+    .beginNoteServiceIntent("notes_upsert", { note: { id: "large-overflow", body } }, work)
+    .execute(native);
   work();
-  expect(native).not.toHaveBeenCalled();
+  expect(native).toHaveBeenCalledOnce();
   const gate = close();
   let completed = false;
   const capture = gate.capture().then((lease) => {
@@ -413,16 +420,14 @@ it("charges pending and unknown requests against the shared8MiB budget and prese
   await Promise.all(pending);
   (await capture).release();
   const { lease, records, service } = await captured();
-  expect(records).toHaveLength(1);
-  expect(records[0].args.note.id).toBe("large-original-unknown");
-  expect(records.every((row) => row.args.note.body === body)).toBe(true);
+  expect(records).toEqual([]);
   expect(service.snapshot.retainedBytes).toBeLessThanOrEqual(
     intents.NOTE_SERVICE_INTENT_LIMITS.bytes,
   );
   lease.release();
 }, 30_000);
 
-it("retains a synchronous Native invocation failure as the same uncertain original without retrying", async () => {
+it("keeps a synchronous Native invocation failure unverified without retrying", async () => {
   const work = original(),
     error = new Error("actual invoke boundary threw");
   const effect = vi.fn(() => {
@@ -440,12 +445,14 @@ it("retains a synchronous Native invocation failure as the same uncertain origin
   });
   expect(effect).toHaveBeenCalledOnce();
   const { lease, records } = await captured();
-  expect(records[0]).toMatchObject({
-    status: "unverified",
-    command: "notes_delete",
-    args: { id: "original-synchronous" },
-    error: error.message,
-  });
+  // A thrown Error does not prove the effect did not happen: the original stays conserved.
+  expect(records).toEqual([
+    expect.objectContaining({
+      command: "notes_delete",
+      status: "unverified",
+      phase: "native-outcome-unverified",
+    }),
+  ]);
   lease.release();
 });
 
@@ -468,7 +475,7 @@ it("bounds unverified diagnostics without reading error accessors or changing th
   lease.release();
 });
 
-it("retains unknown data through an actual module/facade reload and rejects exhausted identities before effect", async () => {
+it("retains unknown data through an actual module/facade reload and runs exhausted identities unrecorded", async () => {
   await fail("notes_upsert", {
     note: {
       id: "reload-original",
@@ -493,13 +500,12 @@ it("retains unknown data through an actual module/facade reload and rejects exha
   keeper.nextId = Number.MAX_SAFE_INTEGER;
   const native = vi.fn(() => Promise.resolve()),
     work = original();
-  expect(() =>
-    intents
-      .beginNoteServiceIntent("notes_delete", { id: "no-new-identity" }, work)
-      .execute(native),
-  ).toThrow(expect.objectContaining({ code: "capacity" }));
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  await intents
+    .beginNoteServiceIntent("notes_delete", { id: "no-new-identity" }, work)
+    .execute(native);
   work();
-  expect(native).not.toHaveBeenCalled();
+  expect(native).toHaveBeenCalledOnce();
   const preserved = await captured();
   expect(preserved.records).toEqual(before.records);
   preserved.lease.release();

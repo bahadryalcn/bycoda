@@ -10,9 +10,11 @@ import { remoteSessionActions } from "../../../features/connections/model/remote
 import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
 import { type Session } from "../../../features/sessions/model/session";
 import {
+  pruneApprovalIntents,
   submitApprovalIntent,
   type ApprovalRequestToken,
 } from "../../../features/sessions/model/approvalIntents";
+import { liveTurnHarness } from "../../../features/sessions/model/messageQueue";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 
 export interface ApprovalActionDeps {
@@ -33,6 +35,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
       decision: ApprovalDecision,
       expected?: ApprovalRequestToken,
     ) => {
+      pruneApprovalIntents(sessionsRef.current);
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       return submitApprovalIntent(session, requestId, decision, expected, () =>
         sessionsRef.current.find((current) => current.id === sessionId),
@@ -56,7 +59,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
         actions.answer(requestId, reply);
         return;
       }
-      respondHarnessQuestion(session.harness, sessionId, requestId, reply);
+      respondHarnessQuestion(liveTurnHarness(session), sessionId, requestId, reply);
     },
     [],
   );
@@ -65,7 +68,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
     const session = sessionsRef.current.find((s) => s.id === sessionId);
     if (session && (hostSessionBinding(session) || remoteProjectFor(session.cwd))) return;
     if (session && !session.worktreeRemoved)
-      keepHarnessQuestionOpen(session.harness, sessionId, requestId);
+      keepHarnessQuestionOpen(liveTurnHarness(session), sessionId, requestId);
   }, []);
 
   const onOpenApprovalSession = useCallback(

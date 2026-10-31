@@ -5,6 +5,7 @@ import {
 import { useT } from "../i18n";
 
 export type {
+  ExpandingSearchHandle,
   ExpandingSearchItem,
   ExpandingSearchProps,
 } from "./arc/expanding-search/expanding-search";

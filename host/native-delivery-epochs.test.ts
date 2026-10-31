@@ -715,7 +715,7 @@ it("keeps retained epoch metadata bounded per principal through real typed alloc
   await f.store.transaction(async () => {
     for (let index = 0; index < 4096; index++)
       await f.journal.epochs.open(f.principal, randomUUID());
-  });
+  }, "critical");
   await expect(f.journal.epochs.open(f.principal, randomUUID())).rejects.toThrow("CAPACITY");
   expect(
     (

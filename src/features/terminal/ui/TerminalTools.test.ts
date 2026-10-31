@@ -45,9 +45,9 @@ it("shows the effective terminal size and resets only through its owner callback
       onResetFontSize: reset,
     })));
     await openTools(host);
-    expect(document.body.textContent).toContain("Terminal font size: 19px");
+    expect(document.querySelector('[role="status"][aria-label="Terminal font size"]')?.textContent?.trim()).toBe("19px");
     const button = [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((node) => node.textContent === "Reset text size")!;
+      .find((node) => node.getAttribute("aria-label") === "Reset text size")!;
     await act(async () => button.click());
     expect(reset).toHaveBeenCalledOnce();
     expect(terminal.input).not.toHaveBeenCalled();
@@ -60,7 +60,7 @@ it("shows the effective terminal size and resets only through its owner callback
 
 async function openTools(host: HTMLElement) {
   await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Terminal · More actions"]')!.click(),
+    host.querySelector<HTMLButtonElement>('[aria-label="Terminal pane actions"]')!.click(),
   );
 }
 
@@ -199,7 +199,7 @@ it("opens search directly and offers local view actions without writing shell in
     );
     expect(host.querySelector("input")).toBeNull();
     expect(host.querySelector("[data-terminal-tools]")).toBeNull();
-    expect(host.querySelector('[aria-label="Terminal · More actions"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Terminal pane actions"]')).not.toBeNull();
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[aria-label="Find in terminal"]')!.click(),
     );

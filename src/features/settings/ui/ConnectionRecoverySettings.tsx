@@ -17,17 +17,12 @@ export function RemoteReconnectGroup() {
     () => true,
   );
   return (
-    <Group
-      title={t("Connection recovery")}
-      description={t(
-        "Retry saved remote connections in the background, when this window regains focus, or when the network returns. Turning this off still allows Reconnect, sending a message, and opening a remote project to reconnect. Retrying uses the saved address and account; it does not fix missing SSH access or provider sign-in.",
-      )}
-    >
+    <Group title={t("Options")}>
       <Row
         id="remote-auto-reconnect"
         persistence={{ mode: "automatic" }}
-        label={t("Automatically reconnect to remote machines")}
-        description={t(
+        label={t("Connection recovery")}
+        info={t(
           "Reconnect saved computers when the network returns. You can still reconnect manually when this is off.",
         )}
       >

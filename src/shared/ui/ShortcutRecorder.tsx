@@ -20,7 +20,7 @@ export function ShortcutRecorder({ displayKeys, ...props }: Props) {
           <span className="inline-flex items-center gap-1">
             {displayKeys.map((key, index) => (
               <span key={index} className="inline-flex items-center gap-1">
-                {index > 0 && props.platform === "other" ? <span>+</span> : null}
+                {index > 0 && props.platform === "other" ? <span className="text-(--ui-text-muted)">+</span> : null}
                 <ShortcutKbd size="sm">{key}</ShortcutKbd>
               </span>
             ))}

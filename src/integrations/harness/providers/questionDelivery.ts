@@ -68,6 +68,7 @@ export function deliverQuestionReply(
         return;
       }
       const invalid = error instanceof QuestionReplyValidationError;
+      // Unknown delivery must remain locked against duplicate answers.
       if (invalid) pending.sending = false;
       emit({
         type: "question.updated",

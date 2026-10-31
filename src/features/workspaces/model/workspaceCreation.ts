@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
+import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
 import { gitHistory, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
 import { subscribeRemoteCapabilities } from "../../connections/model/connections";
@@ -24,18 +25,60 @@ export type WorkspaceCreationPreview = {
 };
 export const shortWorkspaceRef = (ref: string) => ref.replace(/^refs\/(heads|remotes)\//, "");
 
+/** Bound for the policy reads that gate Send; a slow Host must not block a new draft. */
+export const WORKSPACE_POLICY_READ_TIMEOUT_MS = 1500;
+const EXPLICIT_WORKTREE_READ_TIMEOUT_MS = 10_000;
+
+export type WorkspaceCreationResult = {
+  policy?: WorkspacePolicy;
+  preview?: WorkspaceCreationPreview;
+  /** Set when the policy could not be read and the current checkout is used instead. */
+  warning?: string;
+};
+
 /** Read-only observation. Creation always resolves the ref again on the owning Host. */
 export async function loadWorkspaceCreation(
   cwd: string,
   selectedBase?: string,
   choice?: WorkspaceMode,
-): Promise<{ policy?: WorkspacePolicy; preview?: WorkspaceCreationPreview }> {
+): Promise<WorkspaceCreationResult> {
+  // Only an explicit worktree choice is a hard error; anything else falls back to the
+  // current checkout with a warning so an unavailable Host never blocks Send.
+  const explicit = choice === "worktree";
+  const timeoutMs = explicit ? EXPLICIT_WORKTREE_READ_TIMEOUT_MS : WORKSPACE_POLICY_READ_TIMEOUT_MS;
+  const fallback = (error: unknown): WorkspaceCreationResult => {
+    console.warn("[workspaces] policy read unavailable; using the current checkout", error);
+    return { warning: error instanceof Error ? error.message : String(error) };
+  };
+  let read: PolicyRead;
+  try {
+    read = await withTimeout(readWorkspacePolicy(cwd, choice), timeoutMs, "Workspace policy read");
+  } catch (error) {
+    if (explicit) throw error;
+    return fallback(error);
+  }
+  if (read.done) return read.done;
+  try {
+    return await withTimeout(
+      readWorkspacePreview(cwd, selectedBase, read.policy),
+      explicit ? EXPLICIT_WORKTREE_READ_TIMEOUT_MS * 3 : timeoutMs * 4,
+      "Workspace preview",
+    );
+  } catch (error) {
+    if (explicit || !(error instanceof TimeoutError)) throw error;
+    return fallback(error);
+  }
+}
+
+/** Either a finished result (legacy Host, current mode) or the policy that needs a preview. */
+type PolicyRead = { done: WorkspaceCreationResult } | { done?: undefined; policy: WorkspacePolicy };
+
+async function readWorkspacePolicy(cwd: string, choice?: WorkspaceMode): Promise<PolicyRead> {
   // Legacy Hosts have no project policy and retain their current-checkout behavior.
-  // A failed policy read on a capable Host remains an error, never a fallback.
   const capabilities = await getWorkspaceCapabilities({ cwd });
   if (!capabilities.includes("workspaces.policy.v1")) {
     if (choice === "worktree") await requireWorkspaceCapability("workspaces.managed.v1", { cwd });
-    else return {};
+    else return { done: {} };
   }
   const context = await resolveWorkspaceContext(cwd);
   const { resolved } = await workspaceRequest(
@@ -46,9 +89,18 @@ export async function loadWorkspaceCreation(
     },
     context,
   );
-  if ((choice ?? resolved.policy.defaultMode) === "current") return { policy: resolved.policy };
+  if ((choice ?? resolved.policy.defaultMode) === "current")
+    return { done: { policy: resolved.policy } };
   await requireWorkspaceCapability("workspaces.managed.v1", context);
-  const baseRef = selectedBase || resolved.policy.integrationBranchRef;
+  return { policy: resolved.policy };
+}
+
+async function readWorkspacePreview(
+  cwd: string,
+  selectedBase: string | undefined,
+  policy: WorkspacePolicy,
+): Promise<WorkspaceCreationResult> {
+  const baseRef = selectedBase || policy.integrationBranchRef;
   const trees = await listWorktrees(cwd);
   const main = trees.worktrees.find((tree) => tree.isMain);
   const parsed = parseRemotePath(cwd);
@@ -77,7 +129,7 @@ export async function loadWorkspaceCreation(
     ...index.files.map((file) => file.relative),
     ...(index.conflicts ?? []).map((file) => file.relative),
   ]).size;
-  return { policy: resolved.policy, preview: { baseRef, baseCommit, excludedPaths } };
+  return { policy, preview: { baseRef, baseCommit, excludedPaths } };
 }
 
 export function useWorkspaceCreation(
@@ -96,6 +148,7 @@ export function useWorkspaceCreation(
     policy?: WorkspacePolicy;
     preview?: WorkspaceCreationPreview;
     error?: string;
+    warning?: string;
     updateRequired?: boolean;
   }>();
   const refresh = useCallback(() => setReload((value) => value + 1), []);
@@ -121,8 +174,12 @@ export function useWorkspaceCreation(
     };
   }, [managedActive, cwd, refresh]);
   useEffect(() => {
-    setResult(undefined);
-    if (!managedActive || !cwd || cwd === "~") return;
+    if (!managedActive || !cwd || cwd === "~") {
+      setResult(undefined);
+      return;
+    }
+    // A refresh (focus, git change, capability event) keeps the last answer for the
+    // same project/choice/base until the new one lands, so Send does not flicker disabled.
     let cancelled = false;
     void loadWorkspaceCreation(cwd, base, choice).then(
       (value) => {
@@ -148,17 +205,18 @@ export function useWorkspaceCreation(
     managedActive &&
     result?.cwd === cwd &&
     result.choice === choice &&
-    result.base === base &&
-    result.reload === reload
+    result.base === base
       ? result
       : undefined;
   return {
-    mode: choice ?? current?.policy?.defaultMode ?? "current",
+    // A warning means the policy was unreadable: behave as the current checkout.
+    mode: choice ?? (current?.warning ? undefined : current?.policy?.defaultMode) ?? "current",
     base:
       base ||
       (current?.policy ? shortWorkspaceRef(current.policy.integrationBranchRef) : undefined),
     preview: current?.preview,
     error: current?.error,
+    warning: current?.warning,
     updateRequired: current?.updateRequired ?? false,
     pending: managedActive && !current,
     refresh,

@@ -447,7 +447,7 @@ it("requires a real critical journal transaction and never overwrites an already
   await expect(
     f.store.transaction(() => f.realInstall(installedStage, decision), "checkpoint"),
   ).rejects.toThrow("critical storage transaction");
-  await expect(f.store.transaction(() => f.realInstall(installedStage, decision))).rejects.toThrow(
+  await expect(f.store.transaction(() => f.realInstall(installedStage, decision), "critical")).rejects.toThrow(
     "existing Host session cannot be overwritten",
   );
   expect(save).not.toHaveBeenCalled();

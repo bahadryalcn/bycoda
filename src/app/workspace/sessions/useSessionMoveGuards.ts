@@ -1,7 +1,10 @@
 import { useCallback, useRef, type MutableRefObject } from "react";
 import { leafIds, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
-import { sessionChildHarnesses } from "../../../features/sessions/model/handoff";
+import {
+  isPreparingHandoff,
+  sessionChildHarnesses,
+} from "../../../features/sessions/model/handoff";
 import { cancelHarnessTurn } from "../../../integrations/harness";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 import type { Session } from "../../../features/sessions/model/session";
@@ -40,9 +43,15 @@ export function useStopSessionForRemoval({
 }: StopSessionForRemovalDeps): (sessionId: string) => Promise<Session | undefined> {
   const stopSessionForRemoval = useCallback(
     async (sessionId: string): Promise<Session | undefined> => {
-      await orchestrator.stopForSession(sessionId);
+      try {
+        await orchestrator.stopForSession(sessionId);
+      } catch (error) {
+        // Removal continues; the run is released with the session.
+        console.warn("App operation failed", error);
+      }
       const open = sessionsRef.current.find((session) => session.id === sessionId);
-      if (!open?.busy) return open;
+      // A session preparing a handoff has no busy flag worth trusting: stop it too.
+      if (!open || !(open.busy || isPreparingHandoff(open))) return open;
 
       turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
       flushHarnessEvents();

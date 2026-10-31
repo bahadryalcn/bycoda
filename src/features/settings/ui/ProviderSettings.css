@@ -1,113 +1,237 @@
+/* Providers page: a sticky provider list beside a detail column of framed groups.
+   Colors come from shared semantic tokens only; rows and frames come from settingsControls. */
 .provider-cli-container {
-  container-type: inline-size;
+  /* Named so the one-column switch follows the page width, not a nested settings frame. */
+  container: provider-page / inline-size;
   min-inline-size: 0;
-}
-.provider-cli-scope {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
 }
 .provider-cli-workspace {
   display: grid;
-  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+  grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
   align-items: start;
   gap: 28px;
 }
-/* Provider list: open rows on the page ground, selection is the shared fill. */
+
+/* Provider list: open rows on the page ground, selection is the shared fill. It stays in view
+   while the detail column scrolls, and scrolls on its own only when taller than the window. */
 .provider-cli-selector {
+  position: sticky;
+  inset-block-start: 16px;
   display: grid;
   gap: 2px;
   min-inline-size: 0;
+  max-block-size: calc(100vh - 6rem);
+  overflow-y: auto;
+  align-content: start;
 }
 .provider-cli-select {
   display: none;
   min-inline-size: 0;
 }
+.provider-cli-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.provider-cli-item[data-muted] .provider-cli-option {
+  opacity: 0.72;
+}
 .provider-cli-option {
+  flex: 1 1 0;
   justify-content: flex-start;
   min-inline-size: 0;
-
   gap: 8px;
-
   text-align: start;
 }
-.provider-cli-detail {
+.provider-cli-option-copy {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 1px;
   min-inline-size: 0;
-  container-type: inline-size;
 }
-.provider-cli-panel > #setting-enabled-models {
-  margin-block-start: 28px;
-}
-.provider-cli-panel > #setting-enabled-models > h3 {
-  padding-block: 4px;
+.provider-cli-option-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
   font-size: var(--ui-font-secondary);
+  line-height: 1.35;
 }
-.provider-cli-model-list {
+.provider-cli-option-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-caption);
+  line-height: 1.35;
+  color: var(--ui-text-secondary);
+}
+.provider-cli-option-meta[data-tone="signedOut"],
+.provider-cli-option-meta[data-tone="low"] {
+  color: var(--color-warning);
+}
+.provider-cli-option-meta[data-tone="exhausted"] {
+  color: var(--color-danger);
+}
+.provider-cli-item-action {
+  flex-shrink: 0;
+}
+.provider-cli-more {
+  margin-block-start: 8px;
+  color: var(--ui-text-secondary);
+}
+.provider-cli-more svg {
+  flex-shrink: 0;
+  transition: transform var(--motion-feedback-duration) var(--motion-ease-out);
+}
+.provider-cli-more svg[data-open] {
+  transform: rotate(90deg);
+}
+.provider-cli-more-count {
+  margin-inline-start: auto;
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-muted);
+}
+.provider-cli-missing {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  column-gap: 24px;
-  max-block-size: 18rem;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  gap: 2px;
 }
+.provider-cli-missing[hidden] {
+  display: none;
+}
+.provider-cli-add {
+  margin-block-start: 8px;
+  padding-block-start: 8px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+@media (prefers-reduced-motion: reduce) {
+  .provider-cli-more svg {
+    transition: none;
+  }
+}
+
+/* Detail column: header, Status, Accounts, then the selected provider's panel. */
+.provider-cli-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-inline-size: 0;
+}
+.provider-cli-panel,
+.provider-cli-card {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-inline-size: 0;
+}
+.provider-cli-panel[hidden],
+.provider-cli-card[hidden] {
+  display: none;
+}
+/* The icon, name and meta share one row and one baseline. */
+.provider-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+}
+.provider-detail-title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--color-content);
+}
+.provider-detail-meta {
+  min-inline-size: 0;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.provider-status-actions,
+.provider-updates-actions,
+.provider-accounts-actions,
+.provider-models-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.provider-status-checked {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+}
+
+/* Models: one page-scroll list. The search stays under the group heading while rows scroll. */
 .provider-cli-model-heading {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
-.provider-accounts-heading {
-  display: flex;
-  flex-wrap: wrap;
+.provider-models-search {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  padding: 8px 16px;
+  background: var(--color-background-base);
+  border-block-end: 1px solid var(--ui-settings-hairline);
+}
+.provider-models-search + .settings-row {
+  border-block-start: 0;
+}
+.provider-model-name {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding-block-end: 8px;
+  min-inline-size: 0;
 }
-.provider-accounts-title {
-  flex: 1;
-  min-inline-size: 5rem;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  color: var(--ui-text-secondary);
+.provider-models-source {
+  padding: 10px 16px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
 }
-/* The account list is a repeated editing unit, so it keeps one quiet box. */
-.provider-accounts-list {
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-editor-border);
-  border-radius: var(--ui-radius-card);
-  overflow: hidden;
-}
-.provider-accounts-list:not(:has(> :not([hidden]))) {
+.provider-models-source:empty {
   display: none;
 }
-.provider-antigravity-box {
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-editor-border);
-  border-radius: var(--ui-radius-card);
-  overflow: hidden;
+
+/* Accounts: rows share the settings row padding and hairlines. */
+#setting-provider-accounts > .settings-group-content {
+  overflow: clip;
 }
-.provider-account-row {
+.provider-accounts-body[hidden] {
+  display: none;
+}
+.provider-account-row,
+.provider-account-editor,
+.provider-account-empty {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  min-inline-size: 0;
+  padding: 10px 16px;
 }
-/* Rows separate by spacing and hover fill, like every settings collection. */
+.provider-account-row
+  ~ :is(.provider-account-row, .provider-account-editor, .provider-account-empty),
+.provider-account-editor ~ :is(.provider-account-row, .provider-account-editor),
+.provider-accounts-body:not([hidden]) ~ .settings-row {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+.provider-account-empty {
+  margin: 0;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.provider-account-main {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
 @media (hover: hover) and (pointer: fine) {
   .provider-account-row:hover {
-    background: var(--ui-surface-hover);
+    background: var(--ui-settings-row-hover);
   }
-}
-.provider-signin-box {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-editor-border);
-  border-radius: var(--ui-radius-card);
 }
 .provider-account-identity {
   display: flex;
@@ -118,7 +242,7 @@
 }
 .provider-account-name {
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-body);
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
   color: var(--color-content);
 }
@@ -128,8 +252,8 @@
   align-items: center;
   gap: 8px;
   min-inline-size: 0;
-  margin-block-start: 6px;
-  font-size: var(--ui-font-secondary);
+  margin-block-start: 4px;
+  font-size: var(--ui-font-caption);
 }
 .provider-account-subtitle {
   overflow: hidden;
@@ -140,193 +264,42 @@
 .provider-account-meta > * {
   max-inline-size: 100%;
 }
-.provider-account-meta > :first-child {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.provider-cli-panel > #setting-claude-hooks {
-  padding-inline: 12px;
-  padding-block: 10px;
-}
-.bycoda-settings-workbench .bycoda-settings-form .provider-cli-detail #setting-provider-accounts {
-  margin-block-end: 28px;
-}
-.provider-cli-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
-  gap: 12px;
-}
-.provider-cli-card {
-  display: flex;
-  min-inline-size: 0;
-  flex-direction: column;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.provider-cli-panel[hidden],
-.provider-cli-card[hidden] {
-  display: none;
-}
-
-.provider-cli-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding-block-end: 20px;
-}
-.provider-cli-header-main {
-  display: flex;
-  min-inline-size: 0;
-  align-items: center;
-  gap: 8px;
-}
-.provider-cli-header-copy,
-.provider-cli-title-line {
-  min-inline-size: 0;
-}
-.provider-cli-title-line h3 {
-  overflow-wrap: anywhere;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
-  color: var(--color-content);
-}
-.provider-cli-title-line {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-.provider-cli-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-  margin-block-start: 0;
-  font-size: var(--ui-font-caption);
-  line-height: 1.35;
-  color: var(--ui-text-secondary);
-}
-.provider-cli-machine {
-  color: var(--ui-text-secondary);
-}
-/* Installed version and update action sit on the identity row, not in a separate list. */
-.provider-cli-update,
-.provider-cli-version {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
-.provider-cli-update {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.provider-cli-update-text {
-  overflow-wrap: anywhere;
-}
-/* Defaults read as label / control rows instead of an auto-fit field grid. */
-.provider-cli-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-}
-.provider-cli-field {
-  display: flex;
-  min-inline-size: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  padding-block: 8px;
-}
-.provider-cli-field > span {
-  flex: 1 1 8rem;
-  min-inline-size: 0;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-}
-.provider-cli-field > :not(span) {
-  flex: 1 1 12rem;
-  min-inline-size: 12rem;
-  max-inline-size: 18rem;
-}
-/* Inherited vs overridden model: its own line under the picker, with the reset beside it. */
-.provider-cli-field > .provider-cli-model-scope {
-  display: flex;
-  flex: 1 1 100%;
-  min-inline-size: 0;
-  max-inline-size: none;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px 8px;
-  margin: 0;
-}
-.provider-cli-defaults {
-  margin-block-start: 0;
-}
-.provider-cli-defaults-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 12px;
-  margin-block-end: 8px;
-}
-.provider-cli-defaults-title {
-  display: flex;
-  min-inline-size: 0;
-  align-items: baseline;
-  gap: 8px;
-}
-.provider-cli-defaults-heading h4 {
-  width: fit-content;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  color: var(--color-content);
-}
-.provider-cli-defaults-scope {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
-.provider-cli-defaults-help {
-  flex-basis: 100%;
-  margin: 0;
-  color: var(--ui-text-secondary);
+.provider-account-note {
+  margin: 4px 0 0;
   font-size: var(--ui-font-caption);
   line-height: 1.5;
-}
-.provider-cli-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  margin-block-start: 8px;
-  padding-block: 8px;
-}
-
-.provider-cli-install {
-  margin-block-start: 12px;
-  font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
-}
-.provider-cli-install > h3 {
-  width: fit-content;
-}
-
-.provider-cli-install > p {
-  margin-block-start: 8px;
-  line-height: 1.7;
   overflow-wrap: anywhere;
 }
-@container (max-width: 560px) {
+.provider-account-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+.provider-account-editor > [data-provider-account-editor-field] {
+  min-inline-size: 0;
+  flex: 1 1 0;
+}
+.provider-antigravity-box {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
+  overflow: hidden;
+}
+
+/* "Show in picker" lives on each list row; only the one-column layout, which has no list, repeats it. */
+.provider-picker-narrow {
+  display: none;
+}
+.provider-picker-narrow + .settings-row {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+
+@container provider-page (max-width: 640px) {
   .provider-cli-workspace {
     grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
+    gap: 12px;
   }
   .provider-cli-selector {
     display: none;
@@ -334,22 +307,18 @@
   .provider-cli-select {
     display: block;
   }
-  .provider-cli-header {
-    align-items: flex-start;
+  .provider-picker-narrow {
+    display: block;
   }
 }
 @container (max-width: 430px) {
-  .provider-account-row > :first-child {
-    flex-basis: 100%;
+  .provider-account-row {
+    flex-wrap: wrap;
   }
-  .provider-account-row > :last-child {
+  .provider-account-main {
+    flex-basis: calc(100% - 3rem);
+  }
+  .provider-account-actions {
     margin-inline-start: auto;
   }
-}
-
-/* Update status stays beside the CLI instead of spanning the entire page. */
-.provider-cli-updates {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  column-gap: 24px;
 }

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { HARNESSES } from "../../sessions/model/session";
 import { defaultModelSettings, resolveModel } from "../../sessions/model/models";
 import { canRunHarnessTextPrompt } from "../../../integrations/harness";
@@ -53,20 +54,21 @@ export function TranslationSettings({
       id={reprompt ? "reprompt-model-default" : "translation-model-default"}
       label={reprompt ? t("Default reprompt model") : t("Default translation model")}
       feedback={saveError ? <SettingsFeedback state="error" action={failedChoice ? <Button onClick={() => commit(failedChoice.choice)}>{t("Retry")}</Button> : undefined}>{saveError}</SettingsFeedback> : !canRunHarnessTextPrompt(selected.harness) ? <SettingsFeedback state="warning">{t("Selected model does not support text actions. Choose a supported model.")}</SettingsFeedback> : undefined}
-      description={
-        reprompt
-          ? t(
-              "Used to clarify prompts across conversations. Without a selection, uses the default model from Settings.",
-            )
-          : t(
-              "Used for text translations across conversations. Without a selection, uses the default model from Settings.",
-            )
+      description={t("Uses the default model from Settings until you choose one.")}
+      info={
+        <InfoPopover className="shrink-0">
+          <p>
+            {reprompt
+              ? t("Used to clarify prompts across conversations.")
+              : t("Used for text translations across conversations.")}
+          </p>
+        </InfoPopover>
       }
+      modified={Boolean(choice)}
+      onReset={() => commit(undefined)}
+      resetLabel={t("Restore default")}
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {!choice && (
-          <span className="text-ui-secondary text-(--ui-text-secondary)">{t("Default model")}</span>
-        )}
+      <div className="flex min-w-0 flex-nowrap items-center justify-end">
         <Suspense fallback={<span>{t("Loading…")}</span>}>
           <ModelPicker
             harness={selected.harness}
@@ -98,11 +100,6 @@ export function TranslationSettings({
             }
           />
         </Suspense>
-        {choice && (
-          <Button variant="link" onClick={() => commit(undefined)}>
-            {t("Restore defaults")}
-          </Button>
-        )}
       </div>
     </Row>
   );

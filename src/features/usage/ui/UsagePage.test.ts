@@ -49,11 +49,9 @@ it("keeps known quota visible when refresh fails", () => {
 it("uses account colors for limits and exposes usage preferences", () => {
   const markup = renderToStaticMarkup(createElement(UsagePage));
   expect(markup).toContain("hsl(330 70% 62%)");
-  expect(markup).toContain("Color for Default account: Pink");
-  // Usage preferences live in a collapsed "Display preferences" disclosure until it is revealed.
-  expect(markup).toContain("Display preferences");
-  expect(markup).toContain('aria-expanded="false"');
-  expect(markup).not.toContain("Show remaining usage");
+  expect(markup).toContain("Account actions");
+  expect(markup).not.toContain("Display preferences");
+  expect(markup).toContain("Show remaining usage");
   const revealed = renderToStaticMarkup(
     createElement(
       RevealedSetting.Provider,

@@ -44,3 +44,93 @@ reopened in Settings. Setup does not install providers or import history
 automatically. Connection changes use the existing explicit connection controls.
 Finishing setup opens the workspace directly. The usage guide is an explicit,
 optional action and remains available in Settings.
+
+## Guide
+
+The Guide (View → Usage guide, or Settings → General) is a topic-by-topic walkthrough
+that works with the app instead of only describing it.
+
+- **Steps.** Every topic lists a few short steps (Chat with agents has four, including
+  choosing the access mode). A step shows ✓ when it is finished:
+  automatically when the app already shows it (a project is open, several projects
+  exist, a project is pinned, a session already has a message, you opened a diff, a
+  commit or all changes for review, you opened a terminal), when you use the topic's
+  primary button, when you finish a quick tour or a "Show me", or when you tick the step
+  yourself. Opening a diff or a terminal is remembered in a small local record
+  (`bycoda.guide.activity.v1`), so those two steps finish by themselves; the manual tick
+  still works for every step.
+  The Guide's progress counts finished steps, and a short "First steps" row
+  (open a project, start a session, review a change, use the terminal) names what to
+  do next.
+- **Show me.** A step with a control to point at has a "Show me" button (for example the
+  message box, model and access-mode controls, the pin on a project row, Changes,
+  Explorer, the terminal and the sidebar tools). The Guide
+  steps aside, the control is spotlighted, and Done returns to the same topic. If the
+  control is not on screen (no project, the sidebar or a tool is hidden) the spotlight
+  says why and offers the action that opens it, plus "Check again". For the pin, the
+  help also explains how to make a group (a project's … menu → Move to group → New group…).
+- **Quick tours.** Projects, Chat with agents, Changes & Git, Files & search, Terminal
+  and Tasks & goals have a Quick tour of three to five steps. Continue / Back, the
+  arrow keys, Skip tour and Esc all work. Esc or Skip leaves without ticking steps off.
+- **Try it.** Each topic has one primary button that opens the surface (open a
+  project, start a session, open Changes, Explorer, the terminal, Tasks…).
+- **Tips and shortcuts.** Extra detail is behind a quiet "Tips" disclosure. Shortcuts
+  use plain names and show your current keys, including custom or disabled bindings.
+  Previous and Next sit side by side at the bottom of each topic.
+
+Progress is stored locally (`bycoda.guide.seen.v1` for viewed topics,
+`bycoda.guide.done.v1` for finished steps).
+
+## Guided tour
+
+A one-minute spotlight tour walks a new user through the main controls: the project rail,
+starting a session, the message box (`@` files, `/` commands), model and reasoning, access
+mode, the Sessions / Explorer / Changes tabs, Changes, the terminal, the background-work tools
+(Tasks, Automations, Inbox, Notes) and Settings with the Guide. Every card has a short title,
+one sentence and, where it helps, a **Try it** button that does the real thing (open a folder,
+start a session, open Explorer, Changes or the terminal, open the Guide) and then moves on.
+
+- **Who sees the offer.** Everyone who has never finished, skipped or declined the tour,
+  existing users included. A small notice offers "Take a 1-minute tour" or "Later" once. It
+  never appears over Quick setup, the Guide or any open dialog; it waits until they are
+  closed (for Quick setup that means after "Finish setup" or "Set up later"). "Later" ends the
+  offer for good, and so does finishing or skipping the tour.
+- **Start it again.** Guide → "Take the tour", View → Take the tour, and Settings → General →
+  Getting started → Take the tour. A tour left part-way shows "Resume tour" and continues from
+  the card where it stopped.
+- **Using it.** The spotlight dims the rest of the window and the keyboard focus moves into the
+  card (Tab stays inside it). Next / Back, the left and right arrow keys and the Try it button
+  move through the cards, Skip tour or the close button ends it, and Esc closes it and
+  remembers the card. The card shows the progress ("3 / 9") and announces it to screen
+  readers. It follows the control when the window is resized or scrolled, and the entry
+  animation is off with reduced motion.
+- **Missing controls.** If a card's control is not on screen, the tour first tries a safe
+  navigation (for example showing Explorer or Changes); if that is not possible (no project,
+  hidden sidebar, a tool turned off) the card is skipped and the progress count shrinks
+  ("3 / 8"). Nothing is created or changed to make a card appear.
+- **Stored state.** `bycoda.tour.v1` keeps `completed`, `skipped`, `later` or `paused` plus the
+  card to resume from.
+
+### What's new highlights
+
+After an update, features added since the user last looked can be pointed out in the app.
+
+- **Markers.** A small "New" dot sits on the control of each highlight. It disappears when the
+  control is clicked or focused, or when the "What's new" tour has shown it.
+- **Tour.** The What's new dialog shows "Show me" when highlights are pending, and the Guide
+  shows a "What's new" button; both start a short tour of only the new cards (same card,
+  spotlight and keyboard behavior as above).
+- **Who sees what.** Only highlights whose `sinceVersion` is newer than the version the user
+  last handled. A fresh install starts from its own version, so it never gets older highlights
+  (the first tour already covers them), and so does an existing user the first time this
+  feature runs. Stored state: `bycoda.highlights.v1` (last handled version and the ids seen).
+
+**For developers: adding a highlight.** In `src/features/onboarding/model/featureHighlights.ts`
+add an entry to `featureHighlights()` in the release that ships the feature:
+`{ id, sinceVersion, target, title, body, reveal? }`. `sinceVersion` is that release (for
+example `0.8.0`, not the current one: the current version is treated as already seen),
+`target` is the control's `data-usage-guide` name (add the attribute to the control and the
+name to `model/usageGuideTargets.ts` if it has none), `title` and `body` use literal `t()`
+calls (add the strings to the eight locale catalogs), and `reveal` is an optional safe
+navigation action from `model/guide.ts` that brings a hidden control on screen. Remove old
+entries once a few releases have passed.

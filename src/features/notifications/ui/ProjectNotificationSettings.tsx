@@ -4,6 +4,10 @@ import { ChevronRight, Folder } from "../../../shared/ui/icons";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Switch } from "../../../shared/ui/Switch";
 import { NotificationMuteControl } from "./NotificationMuteControl";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
+import { useRemoteMachines } from "../../connections/model/connections";
+import { machineLabel } from "../../connections/model/machineIdentity";
 import { Button } from "../../../shared/ui/Button";
 import { Segmented, SettingsFeedback } from "../../settings/ui/settingsControls";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
@@ -55,7 +59,12 @@ export function ProjectNotificationSettings({
     notificationProjectPath ?? "",
     ...recents.map((project) => project.path),
   ]);
-  const projects = [...notificationProjects.projects].sort((a, b) => a.name.localeCompare(b.name));
+  const { machines } = useRemoteMachines(notificationProjects.projects.some((project) => project.detail.startsWith("remote://")));
+  const projects = notificationProjects.projects.map((project) => {
+    const remote = /^remote:\/\/([^/]+)\/(.*)$/.exec(project.detail);
+    const machine = remote ? machines.find((entry) => entry.id === remote[1]) : undefined;
+    return { ...project, detail: remote ? `${machine ? machineLabel(machines, machine) : t("Remote host")} / ${remote[2]}` : project.detail };
+  }).sort((a, b) => a.name.localeCompare(b.name));
   const preferences = useProjectNotificationPreferences();
   const { status: preferencesStatus, retry: retryPreferencesRead } =
     useProjectNotificationPreferencesStatus();
@@ -146,26 +155,7 @@ export function ProjectNotificationSettings({
           <h2 className="text-ui-secondary font-medium text-content">
             {t("Project notifications")}
           </h2>
-          <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
-            {t(
-              "Choose categories per project. Sounds and desktop alerts follow the application settings above.",
-            )}
-          </p>
         </div>
-        {projects.length ? (
-          <Button
-            variant="secondary"
-            className="shrink-0"
-            type="button"
-            aria-pressed={selecting}
-            onClick={() => {
-              setSelecting(!selecting);
-              setSelected([]);
-            }}
-          >
-            {selecting ? t("Done") : t("Select projects")}
-          </Button>
-        ) : null}
       </div>
       <div
         className="project-notification-collection settings-collection"
@@ -193,11 +183,12 @@ export function ProjectNotificationSettings({
               label={t("Search projects")}
               query={query}
               onQueryChange={setQuery}
-              count={t("Showing {p0} of {p1} known projects", {
+              count={search || scope !== "all" ? t("Showing {p0} of {p1} known projects", {
                 p0: visibleProjects.length,
                 p1: projects.length,
-              })}
+              }) : undefined}
             >
+              <InfoPopover label={t("About project notifications")}>{t("Choose categories per project. Sounds and desktop alerts follow the application settings above.")}</InfoPopover>
               <Segmented
                 label={t("Show projects")}
                 value={scope}
@@ -208,6 +199,20 @@ export function ProjectNotificationSettings({
                 ]}
                 onChange={setScope}
               />
+              {projects.length ? (
+                <Button
+                  variant="secondary"
+                  className="shrink-0"
+                  type="button"
+                  aria-pressed={selecting}
+                  onClick={() => {
+                    setSelecting(!selecting);
+                    setSelected([]);
+                  }}
+                >
+                  {selecting ? t("Done") : t("Select projects")}
+                </Button>
+              ) : null}
             </CollectionToolbar>
             {selecting ? (
               <div className="settings-collection-row">
@@ -283,6 +288,7 @@ export function ProjectNotificationSettings({
                     ref={project.id === targetId ? targetCard : undefined}
                     tabIndex={-1}
                     className="project-notification-item"
+                    style={{ paddingInlineStart: /^\s*\u21b3/.test(project.name) ? "1rem" : undefined }}
                   >
                     <legend className="sr-only">{project.name} ({project.detail})</legend>
                     <div className="project-notification-item-heading settings-collection-row">
@@ -305,6 +311,7 @@ export function ProjectNotificationSettings({
                           motion="none"
                           type="button"
                           aria-label={t("Notification categories for {p0}", { p0: `${project.name} (${project.detail})` })}
+                          tooltip={t("Notification categories for {p0}", { p0: project.name })}
                           aria-expanded={isExpanded}
                           aria-controls={panelId}
                           onClick={() => setExpanded(isExpanded ? null : project.id)}
@@ -336,24 +343,19 @@ export function ProjectNotificationSettings({
                               />
                             )}
                           </span>
-                          <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
                             <p
-                              className="project-notification-name"
+                              className="project-notification-name min-w-0 flex-1"
                               title={`${project.name} (${project.detail})`}
                             >
-                              {project.name}
+                              {project.name.replace(/^\s*\u21b3\s*/, "")}
                             </p>
-                            <p className="project-notification-summary break-all">{project.detail}</p>
-                            <p className="project-notification-summary">
-                              {project.kind === "local" ? t("Local project · ") : ""}
+                            <p className="project-notification-summary shrink-0">
                               {muted
-                                ? t("All notifications paused")
+                                ? t("Muted")
                                 : enabledCount === categories.length
-                                  ? t("All categories enabled")
-                                  : t("{p0} of {p1} enabled", {
-                                      p0: enabledCount,
-                                      p1: categories.length,
-                                    })}
+                                  ? t("All")
+                                  : t("{p0} categories", { p0: enabledCount })}
                             </p>
                           </div>
                           <ChevronRight
@@ -364,6 +366,7 @@ export function ProjectNotificationSettings({
                       </div>
                       <div className="settings-collection-actions">
                         <NotificationMuteControl projectIds={[project.id]} compact />
+                        <InfoPopover label={t("About muting notifications")}>{t("Mute pauses alerts without changing categories. Unread items stay in Inbox.")}</InfoPopover>
                       </div>
                     </div>
                     {error?.projectId === project.id ? (
@@ -382,6 +385,7 @@ export function ProjectNotificationSettings({
                       hidden={!isExpanded}
                       className="project-notification-categories"
                     >
+                      <MiddleTruncate className="project-notification-summary">{project.detail}</MiddleTruncate>
                       <div className="project-notification-category-grid">
                         {muted ? (
                           <p
@@ -420,9 +424,6 @@ export function ProjectNotificationSettings({
           </>
         ) : null}
       </div>
-      <p className="project-notification-footnote">
-        {t("Mute pauses alerts without changing categories. Unread items stay in Inbox.")}
-      </p>
     </section>
   );
 }

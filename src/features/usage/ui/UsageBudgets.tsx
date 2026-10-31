@@ -1,4 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Badge } from "../../../shared/ui/Badge";
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -44,7 +46,7 @@ export function UsageBudgets({ refresh = 0 }: { refresh?: number }) {
 }
 
 function UsageBudgetsContent({ refresh }: { refresh: number }) {
-  useLocale();
+  const locale = useLocale();
   const sessions = useShellSessions();
   const lock = useLockSnapshot();
   const [version, setVersion] = useState(0);
@@ -131,7 +133,17 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
   return (
     <section className="mb-7 space-y-3" aria-label={t("Usage budgets")} aria-busy={pending}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-ui-title font-medium">{t("Usage budgets")}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-ui-title font-medium">{t("Usage budgets")}</h2>
+          <InfoPopover label={t("About usage budgets")}>
+            <p>{t("Budgets apply to local desktop turns. Host tasks, remote sessions and other machines are not covered.")}</p>
+            <p>{t("Local rules can overlap. Their readings are not added together and provider quota percentages are never pooled.")}</p>
+          </InfoPopover>
+          {(["block", "monitor"] as const).map((action) => {
+            const count = visible.filter((budget) => budget.action === action).length;
+            return count ? <Badge key={action}>{count} {t(action === "block" ? "Block new turns" : "Monitor only")}</Badge> : null;
+          })}
+        </div>
         <Button
           ref={addButton}
           onClick={() => {
@@ -142,14 +154,6 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           {t("Add budget")}
         </Button>
       </div>
-      <p className="text-ui-caption text-(--ui-text-secondary)">
-        {t(
-          "Budgets apply to local desktop turns. Host tasks, remote sessions and other machines are not covered.",
-        )}
-      </p>
-      <p className="text-ui-caption text-(--ui-text-secondary)">
-        {t("Local rules can overlap. Their readings are not added together and provider quota percentages are never pooled.")} · {visible.filter((budget) => budget.action === "block").length} {t("Block new turns")} · {visible.filter((budget) => budget.action === "monitor").length} {t("Monitor only")}
-      </p>
       {error ? (
         <Alert tone="danger" role="alert">
           {error}
@@ -258,7 +262,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
               </Alert>
             )}
             {pending && known ? <p role="status" className="text-ui-caption text-(--ui-text-secondary)">{t("Refreshing usage… Previous results remain visible.")}</p> : null}
-            {!pending && known ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Last observed")}: {new Date(now).toLocaleString()}</p> : null}
+            {!pending && known ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Last observed")}: <time dateTime={new Date(now).toISOString()} title={new Date(now).toLocaleString(locale)}>{new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(-Math.round((Date.now() - now) / 60_000), "minute")}</time></p> : null}
             {budget.metric === "accountPercent" ? (
               <p className="text-ui-caption text-(--ui-text-secondary)">
                 {budget.provider} ·{" "}
@@ -277,14 +281,13 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           </div>
         );
       })}
-      <details className="text-ui-caption text-(--ui-text-secondary)">
-        <summary>{t("How budgets are measured")}</summary>
+      <InfoPopover label={t("How budgets are measured")}>
         <p className="mt-2">
           {t(
             "Token budgets include input, output and cache tokens from local records. Project and workspace reports use 15-minute buckets; boundary buckets are included. Session budgets require complete turn metrics. Percentage rules compare the selected account's weekly or 5-hour usage with your threshold; they do not reserve provider capacity. Missing or stale data blocks new turns only when blocking is enabled. Running turns can exceed a budget.",
           )}
         </p>
-      </details>
+      </InfoPopover>
     </section>
   );
 }
@@ -391,12 +394,6 @@ function BudgetEditor({
           onChange={setTarget}
           options={targets}
         />
-        <TextField
-          label={t("Budget name")}
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          maxLength={200}
-        />
         <BudgetSelect
           label={t("Measurement")}
           value={metric}
@@ -408,15 +405,6 @@ function BudgetEditor({
             { value: "tokens", label: t("Token allocation") },
             ...(scope === "machine" ? [] : [{ value: "accountPercent", label: t("Provider account threshold (%)") }]),
           ]}
-        />
-        <BudgetSelect
-          label={t("Period")}
-          value={period}
-          onChange={(v) => setPeriod(v as UsageBudget["period"])}
-          options={(metric === "tokens"
-            ? (["all", "weekly", "fiveHour"] as const)
-            : (["weekly", "fiveHour"] as const)
-          ).map((p) => ({ value: p, label: t(periodLabel[p]) }))}
         />
         {metric === "tokens" ? (
           <NumberField
@@ -448,6 +436,15 @@ function BudgetEditor({
           onChange={(e) => setPercent(e.target.value)}
         />
         <BudgetSelect
+          label={t("Period")}
+          value={period}
+          onChange={(v) => setPeriod(v as UsageBudget["period"])}
+          options={(metric === "tokens"
+            ? (["all", "weekly", "fiveHour"] as const)
+            : (["weekly", "fiveHour"] as const)
+          ).map((p) => ({ value: p, label: t(periodLabel[p]) }))}
+        />
+        <BudgetSelect
           label={t("When reached")}
           value={action}
           onChange={(v) => setAction(v as UsageBudget["action"])}
@@ -456,21 +453,28 @@ function BudgetEditor({
             { value: "block", label: t("Block new turns") },
           ]}
         />
+        <TextField
+          label={t("Budget name (optional)")}
+          placeholder={targets.find((option) => option.value === target)?.label ?? t("Budget target")}
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          maxLength={200}
+        />
       </div>
-      <p className="text-ui-secondary text-(--ui-text-secondary)">
-        {metric === "tokens" ? `${t("Effective token limit")}: ${effectiveLimit}` : `${t("Account usage threshold (%)")}: ${percent}%`}
-        {" · "}{t(action === "block" ? "Block new turns" : "Monitor only")}
-      </p>
-      {scope === "machine" ? <div className="space-y-1 text-ui-caption text-(--ui-text-secondary)">
+      {scope === "machine" ? <InfoPopover label={t("About machine budgets")}>
         <p>{t("Supported local Codex and Claude usage. Missing, unsupported or private data stays unknown; a blocking rule refuses new turns until usage can be verified.")}</p>
         <p>{t("Multiple profiles of one provider may share logs; common usage remains unknown until their sources can be verified.")}</p>
-      </div> : null}
+      </InfoPopover> : null}
       {error ? (
         <Alert tone="danger" role="alert">
           {error}
         </Alert>
       ) : null}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-ui-secondary text-(--ui-text-secondary)">
+          {metric === "tokens" ? `${t("Effective token limit")}: ${effectiveLimit}` : `${t("Account usage threshold (%)")}: ${percent}%`}
+        {" · "}{t(action === "block" ? "Block new turns" : "Monitor only")}
+        </p>
         <Button type="submit" variant="primary">
           {t("Save budget")}
         </Button>

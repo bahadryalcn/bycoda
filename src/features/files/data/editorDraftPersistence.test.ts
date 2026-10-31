@@ -288,6 +288,27 @@ describe("Native editor full capture ownership", () => {
     expect(f.row?.payload.text).toBe("latest-14");
   });
 
+  it("debounces continuous edits, bounded by the max wait, and skips unchanged-view emits", async () => {
+    vi.useFakeTimers();
+    const f = nativeFixture();
+    await f.doc.ready;
+    const listener = vi.fn();
+    f.doc.subscribe(listener);
+    // Each edit lands inside the 100 ms window, so only max wait (5 s) can fire it.
+    for (let n = 0; n < 40; n++) {
+      f.doc.capture(input(`edit-${n}`, `id-${n}`));
+      await vi.advanceTimersByTimeAsync(90);
+    }
+    expect(f.putPayloads).toHaveLength(0);
+    // Initial snapshot plus the single ready -> queued transition, not one per edit.
+    expect(listener.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(f.doc.observe().captureId).toBe("id-39");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(f.putPayloads).toHaveLength(1);
+    await f.doc.flush();
+    expect(f.row?.payload.text).toBe("edit-39");
+  });
+
   it("times out a waiter without releasing actual Native work, then accepts only the exact late ACK", async () => {
     vi.useFakeTimers();
     const f = nativeFixture();
@@ -490,6 +511,16 @@ describe("Native editor full capture ownership", () => {
     f.doc.capture(input("new valid full snapshot"));
     await f.doc.flush();
     expect(f.doc.observe().error).toBeUndefined();
+  });
+
+  it("skips an oversized capture without raising a draft error", async () => {
+    const f = nativeFixture();
+    await f.doc.ready;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const big = f.doc.capture(input("x".repeat(2 * 1024 * 1024 + 1)));
+    await expect(big.persisted).rejects.toMatchObject({ code: "invalid-capture" });
+    expect(f.doc.observe().error).toBeUndefined();
+    (console.warn as unknown as { mockRestore(): void }).mockRestore();
   });
 
   it("rebases only after exact conflict resolution, preserving the external row until a fresh full capture", async () => {

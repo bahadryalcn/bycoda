@@ -25,6 +25,7 @@ import {
 } from "../model/settings";
 import { AdvancedSettings, Group, Row, Segmented, SettingsFeedback, Toggle } from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { loadComposerSpelling, saveComposerSpelling, useComposerSpelling } from "../model/composerSpelling";
 import { TranslationSettings } from "./TranslationSettings";
 import { TemplatesSettings } from "./TemplatesSettings";
@@ -109,58 +110,30 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
             onChange={onTranscriptAnchor}
           />
         </Row>
-      </Group>
-
-      <Group title={t("Writing")} layout="full">
-        <Row
-          id="composer-spelling"
-          feedback={feedback("composer-spelling")}
-          label={t("Spelling and autocorrect")}
-          description={t(
-            "Enable spelling checks and automatic correction where supported by your platform.",
-          )}
-        >
-          <Toggle
-            label={t("Spelling and autocorrect")}
-            on={spelling}
-            onChange={(next) => commit("composer-spelling", () => saveComposerSpelling(next), loadComposerSpelling, next, () => {})}
-          />
-        </Row>
         <AdvancedSettings
-          id="follow-up"
-          settingIds={["follow-up"]}
-          title={t("Sending while working")}
+          title={t("Advanced conversation settings")}
           defaultOpen={false}
+          settingIds={["resume-at-reset", "auto-continue-interrupted", "model-controls"]}
         >
-          <p className="chat-detail">
-            {t(
-              "Send steers the active turn. Use the queue button to send after it finishes. If steering is unavailable, the message waits in the queue.",
-            )}
-          </p>
-        </AdvancedSettings>
-      </Group>
-      <Group title={t("Translation and reprompt")} layout="full">
-        <TranslationSettings embedded />
-        <TranslationSettings embedded action="reprompt" />
-      </Group>
-      <TemplatesSettings />
-      <VoiceSettings />
-      <AdvancedSettings
-        title={t("Advanced conversation settings")}
-        defaultOpen={false}
-        settingIds={["resume-at-reset", "auto-continue-interrupted", "model-controls"]}
-      >
-        <Group title={t("Continuation and model options")} layout="full">
           <Row
             id="resume-at-reset"
             feedback={feedback("resume-at-reset")}
-            dependency={t(
-              "Automatic resumption requires the provider to report when its usage limit resets.",
-            )}
             label={t("Resume at reset")}
-            description={t(
-              "When a provider stops a turn at its usage limit, continue the session automatically once the limit resets. You can still cancel it from the notice above the composer.",
-            )}
+            description={t("Continue automatically after a provider's usage limit resets.")}
+            info={
+              <InfoPopover className="shrink-0">
+                <p>
+                  {t(
+                    "When a provider stops a turn at its usage limit, continue the session automatically once the limit resets. You can still cancel it from the notice above the composer.",
+                  )}
+                </p>
+                <p>
+                  {t(
+                    "Automatic resumption requires the provider to report when its usage limit resets.",
+                  )}
+                </p>
+              </InfoPopover>
+            }
           >
             <Toggle label={t("Resume at reset")} on={resumeAtReset} onChange={onResumeAtReset} />
           </Row>
@@ -168,10 +141,17 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
             id="auto-continue-interrupted"
             feedback={feedback("auto-continue-interrupted")}
             label={t("Automatically continue interrupted turns")}
-            description={t(
-              "When {p0} quit in the middle of a turn and the transcript shows it was cut off, send Continue at the next launch. Turns that finished or are still running are never continued, and nothing is sent when you have queued messages. When off, the chat shows an Interrupted - Continue action instead.",
-              { p0: PRODUCT_IDENTITY.displayName },
-            )}
+            description={t("Send Continue at launch when a turn was cut off.")}
+            info={
+              <InfoPopover className="shrink-0">
+                <p>
+                  {t(
+                    "When {p0} quit in the middle of a turn and the transcript shows it was cut off, send Continue at the next launch. Turns that finished or are still running are never continued, and nothing is sent when you have queued messages. When off, the chat shows an Interrupted - Continue action instead.",
+                    { p0: PRODUCT_IDENTITY.displayName },
+                  )}
+                </p>
+              </InfoPopover>
+            }
           >
             <Toggle
               label={t("Automatically continue interrupted turns")}
@@ -183,9 +163,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
             id="model-controls"
             feedback={feedback("model-controls")}
             label={t("Extras summary")}
-            description={t(
-              "Keep the main model separate. Choose whether Extras also shows your active options.",
-            )}
+            description={t("Choose whether Extras also shows your active options.")}
           >
             <Segmented
               label={t("Extras summary")}
@@ -207,8 +185,38 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
               onChange={onModelControls}
             />
           </Row>
-        </Group>
-      </AdvancedSettings>
+        </AdvancedSettings>
+      </Group>
+
+      <Group title={t("Writing")} layout="full">
+        <Row
+          id="composer-spelling"
+          feedback={feedback("composer-spelling")}
+          label={t("Spelling and autocorrect")}
+          description={t(
+            "Enable spelling checks and automatic correction where supported by your platform.",
+          )}
+        >
+          <Toggle
+            label={t("Spelling and autocorrect")}
+            on={spelling}
+            onChange={(next) => commit("composer-spelling", () => saveComposerSpelling(next), loadComposerSpelling, next, () => {})}
+          />
+        </Row>
+        <Row
+          id="follow-up"
+          label={t("Sending while working")}
+          description={t(
+            "Send steers the active turn; the queue button sends after it finishes, or when steering is unavailable.",
+          )}
+        />
+      </Group>
+      <Group title={t("Translation and reprompt")} layout="full">
+        <TranslationSettings embedded />
+        <TranslationSettings embedded action="reprompt" />
+      </Group>
+      <TemplatesSettings />
+      <VoiceSettings />
     </div>
   );
 }

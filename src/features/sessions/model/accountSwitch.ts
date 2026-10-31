@@ -9,6 +9,8 @@ import {
 import { sessionWorkCwd, type Block, type Session } from "./session";
 
 export const SWITCH_BUSY_STATUS = "Wait for the current turn to finish before switching accounts.";
+export const SWITCH_PREPARING_STATUS =
+  "Wait for the provider handoff to finish before switching accounts.";
 
 export type AccountSwitchDeps = {
   /** Copies the provider thread between accounts; false when it was not found. */
@@ -41,6 +43,11 @@ export type AccountSwitchDeps = {
 export type AccountSwitchResult =
   | { kind: "noop" }
   | { kind: "refused"; status: string }
+  /**
+   * A turn is running: it keeps its account and the pick waits for the next
+   * idle send (or is cleared when it names the running account again).
+   */
+  | { kind: "deferred"; update: (session: Session) => Session; status?: string }
   /** The session changed during the transfer; nothing was applied. */
   | { kind: "stale" }
   | {
@@ -61,9 +68,22 @@ export async function switchSessionAccount(
   const target = deps.latest(sessionId);
   if (!target || target.harness !== provider) return { kind: "noop" };
   const fromId = sessionProviderAccountId(provider, target);
-  if (fromId === accountId) return { kind: "noop" };
-  if (target.busy || isPreparingHandoff(target) || deps.removing?.(sessionId)) {
-    return { kind: "refused", status: SWITCH_BUSY_STATUS };
+  if (fromId === accountId) {
+    // Picking the running account again withdraws a waiting pick.
+    return target.nextProviderAccountId
+      ? { kind: "deferred", update: (s) => ({ ...s, nextProviderAccountId: undefined }) }
+      : { kind: "noop" };
+  }
+  if (isPreparingHandoff(target)) return { kind: "refused", status: SWITCH_PREPARING_STATUS };
+  if (deps.removing?.(sessionId)) return { kind: "refused", status: SWITCH_BUSY_STATUS };
+  if (target.busy) {
+    if (target.nextProviderAccountId === accountId) return { kind: "noop" };
+    const label = deps.label(provider, accountId);
+    return {
+      kind: "deferred",
+      update: (s) => ({ ...s, nextProviderAccountId: accountId }),
+      status: `The next message will use ${label}. The running turn keeps its account.`,
+    };
   }
   const workCwd = sessionWorkCwd(target);
   const { providerSessionId, cwd, worktreeRemoved, pendingSwitch, blocks } = target;
@@ -91,12 +111,15 @@ export async function switchSessionAccount(
     target.pendingSwitch ||
     (!target.providerSessionId && pendingHandoff(target))
   ) {
-    await deps.forget(provider, sessionId);
+    await forgetQuietly(deps, provider, sessionId);
     if (!ownsSnapshot(deps.latest(sessionId))) return { kind: "stale" };
     return {
       kind: "switched",
       mode: "account",
-      update: (s) => (ownsSnapshot(s) ? { ...s, providerAccountId: accountId } : s),
+      update: (s) =>
+        ownsSnapshot(s)
+          ? { ...s, providerAccountId: accountId, nextProviderAccountId: undefined }
+          : s,
     };
   }
 
@@ -122,7 +145,7 @@ export async function switchSessionAccount(
 
   // The live child holds the old account's environment: stop it so the next
   // send spawns under the new one, then rebind the thread to that account.
-  await deps.forget(provider, sessionId);
+  await forgetQuietly(deps, provider, sessionId);
   const afterForget = deps.latest(sessionId);
   if (!ownsSnapshot(afterForget)) return { kind: "stale" };
   if (transferred && afterForget.providerSessionId) {
@@ -142,11 +165,27 @@ export async function switchSessionAccount(
     update: (s) =>
       !ownsSnapshot(s)
         ? s
-        : transferred
-          ? withTransferredAccount(s, accountId)
-          : withAccountHandoff(s, accountId),
+        : {
+            ...(transferred
+              ? withTransferredAccount(s, accountId)
+              : withAccountHandoff(s, accountId)),
+            nextProviderAccountId: undefined,
+          },
     status: transferred
       ? `Continuing with ${label}`
       : `Continuing with ${label}. The conversation could not be moved over, so a summary goes with your next message.`,
   };
+}
+
+/** Cleanup trouble must not lose the pick; the next spawn replaces the child anyway. */
+async function forgetQuietly(
+  deps: AccountSwitchDeps,
+  provider: ProviderAccountProvider,
+  sessionId: string,
+): Promise<void> {
+  try {
+    await deps.forget(provider, sessionId);
+  } catch (error) {
+    console.warn("App operation failed", error);
+  }
 }

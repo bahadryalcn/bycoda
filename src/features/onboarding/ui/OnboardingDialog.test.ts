@@ -131,6 +131,11 @@ function button(text: string) {
 async function click(text: string) {
   await act(async () => button(text).click());
 }
+async function toggleAllProjects() {
+  await act(async () =>
+    container.querySelector<HTMLInputElement>('input[aria-label="Select all"]')!.click(),
+  );
+}
 async function render() {
   await act(async () =>
     root.render(
@@ -189,7 +194,8 @@ describe("onboarding workflow", () => {
   });
   it("imports only interactive, usable, unimported sessions in selected folders", async () => {
     await projects();
-    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+    // The list header's select-all plus one folder row.
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
     await click("Import 1 projects");
     expect(
       mock.run.mock.calls[0][0].candidates.map((item: ImportCandidate) => item.providerSessionId),
@@ -201,7 +207,7 @@ describe("onboarding workflow", () => {
   });
   it("allows starting without importing any project", async () => {
     await projects();
-    await click("Select none");
+    await toggleAllProjects();
     await click("Finish setup");
     expect(mock.run).not.toHaveBeenCalled();
     expect(onFinish).toHaveBeenCalledOnce();
@@ -345,7 +351,7 @@ describe("onboarding workflow", () => {
     const claude = rows.find((row) => row.textContent?.includes("Claude"))!;
     expect(codex.textContent).toContain("Signed in");
     expect(codex.textContent).not.toContain("Sign in");
-    expect(claude.textContent).toContain("not signed in");
+    expect(claude.textContent).toContain("Not signed in");
     expect(
       [...claude.querySelectorAll("button")].some((node) => node.textContent === "Sign in"),
     ).toBe(true);
@@ -377,8 +383,8 @@ describe("onboarding workflow", () => {
     mock.available.mockImplementation((id: string) => id === "codex");
     await render();
     await click("Agents");
-    expect(container.textContent).toContain("sign-in status unavailable");
-    expect(container.textContent).not.toContain("not signed in");
+    expect(container.textContent).toContain("Sign-in not checked");
+    expect(container.textContent).not.toContain("Not signed in");
     mock.auth.mockResolvedValue("signedIn");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Refresh agent status"]')!.click(),
@@ -418,7 +424,7 @@ describe("onboarding workflow", () => {
   });
   it("retains project selections and added folders when navigating back", async () => {
     await projects();
-    await click("Select none");
+    await toggleAllProjects();
     await click("Choose project folders");
     await click("Back");
     await click("Projects");

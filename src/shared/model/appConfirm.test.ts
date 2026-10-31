@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { confirmInApp, registerAppConfirmHost, type AppConfirmRequest } from "./appConfirm";
+import {
+  CONFIRM_SHOW_TIMEOUT_MS,
+  confirmInApp,
+  markAppConfirmShown,
+  registerAppConfirmHost,
+  type AppConfirmRequest,
+} from "./appConfirm";
 
 const mocks = vi.hoisted(() => ({ isTauri: vi.fn(), ask: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: mocks.isTauri }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: mocks.ask }));
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   mocks.ask.mockReset();
   mocks.isTauri.mockReset();
@@ -93,6 +100,37 @@ describe("confirmInApp", () => {
     expect(await confirmInApp({ ...request, onConfirm })).toBe(true);
     expect(host).toHaveBeenCalledWith(expect.objectContaining({ onConfirm }));
     expect(onConfirm).not.toHaveBeenCalled();
+    unregister();
+  });
+
+  it("asks with the platform dialog when the host never shows its dialog", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    mocks.isTauri.mockReturnValue(true);
+    mocks.ask.mockResolvedValue(true);
+    const unregister = registerAppConfirmHost(() => new Promise<boolean>(() => {}));
+    const answer = confirmInApp(request);
+    await vi.advanceTimersByTimeAsync(CONFIRM_SHOW_TIMEOUT_MS);
+    await expect(answer).resolves.toBe(true);
+    expect(mocks.ask).toHaveBeenCalledOnce();
+    unregister();
+    (console.warn as unknown as { mockRestore(): void }).mockRestore();
+  });
+
+  it("keeps waiting on a dialog that is on screen", async () => {
+    vi.useFakeTimers();
+    let answer!: (value: boolean) => void;
+    const unregister = registerAppConfirmHost((shownRequest) => {
+      markAppConfirmShown(shownRequest);
+      return new Promise<boolean>((resolve) => {
+        answer = resolve;
+      });
+    });
+    const result = confirmInApp(request);
+    await vi.advanceTimersByTimeAsync(CONFIRM_SHOW_TIMEOUT_MS * 4);
+    expect(mocks.ask).not.toHaveBeenCalled();
+    answer(false);
+    await expect(result).resolves.toBe(false);
     unregister();
   });
 });

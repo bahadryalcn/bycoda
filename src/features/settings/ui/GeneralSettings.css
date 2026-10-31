@@ -4,29 +4,6 @@
   min-inline-size: 0;
 }
 
-.general-dependency,
-.general-detail {
-  margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-
-/* Dependent options are indented under their switch; indentation alone shows the relationship. */
-.general-sleep-options {
-  margin-block: 0 4px;
-  padding-inline-start: 16px;
-}
-
-.general-dependency {
-  padding-block: 4px 8px;
-}
-
-.general-detail {
-  padding-block-end: 8px;
-}
-
 /* Version, update state and progress live in one action area; it may use more than the default control width. */
 #setting-update .settings-row-control {
   max-inline-size: 26rem;
@@ -43,4 +20,21 @@
   color: var(--ui-text-secondary);
   font-family: var(--font-mono);
   font-size: var(--ui-font-secondary);
+}
+
+/* Setup and help actions share one width, so the column of buttons keeps one right edge. */
+.general-action {
+  min-inline-size: 7.5rem;
+}
+
+/* About: the developer name and the links use one type size and the same inline inset, so their
+   right edges match. */
+.general-about-value,
+.general-settings .general-about-link {
+  font-size: var(--ui-font-secondary);
+  line-height: 1.5;
+}
+.general-about-value {
+  padding-inline: var(--space-1);
+  color: var(--color-content);
 }

@@ -1,3 +1,4 @@
+import { withTimeout } from "../../../../shared/lib/withTimeout";
 import {
   assertProviderOperation,
   observeProviderProcess,
@@ -312,6 +313,7 @@ export async function cancelCursorTurn(
 
   const live = liveByThread.get(sessionId);
   const preparing = startingByThread.get(sessionId);
+  // A captured cancellation must not affect a newer operation.
   if (
     !ownsOperation(
       context,
@@ -321,7 +323,10 @@ export async function cancelCursorTurn(
   )
     return;
   sourceEpochByThread.set(sessionId, {});
-  if (!live) return;
+  if (!live) {
+    if (preparing) await stopCursorSession(sessionId, context ?? preparing.handle);
+    return;
+  }
   const acp = context
     ? await acpTurnWriter(live.handle, live.acp, context.nativeControlTurn, context, "control")
     : live.acp;
@@ -392,11 +397,9 @@ export async function forgetCursorSession(
   sessionId: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
-
-  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
-  if (original && !ownsOperation(context, original.handle, original.operation)) return;
+  // Delete/switch must end the process; stop runs by session (no stale context).
   resumeByThread.delete(sessionId);
+  cancelQueuedOperation(context);
   await settleProviderRetirements([
     stopCursorSession(sessionId),
     stopCursorTitleGeneration(sessionId),
@@ -619,7 +622,7 @@ async function applyModelSelection(
       .request("session/set_model", {
         sessionId: live.acpSessionId,
         modelId: base,
-      })
+      }, 20_000)
       .catch(() => undefined);
   }
 
@@ -643,7 +646,7 @@ async function setConfigOption(
     sessionId: live.acpSessionId,
     configId,
     value,
-  });
+  }, 20_000);
   if (result?.configOptions) {
     live.configOptions = readConfigOptions(result.configOptions);
     live.modelConfigId = extractModelConfigId(result) || live.modelConfigId;
@@ -686,7 +689,10 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
         return;
       }
       nativeOutputSink(responseScope.work, settleCursorBackgroundAgents)(live, "completed");
-      await nativeOutputSink(responseScope.work, refreshCursorSubagents)(live);
+      // Final enrichment is optional and must not hold turn completion.
+      void nativeOutputSink(responseScope.work, refreshCursorSubagents)(live).catch((error: unknown) => {
+        console.warn("[cursor] Final subagent refresh failed", error);
+      });
       if (live.cancelled || live.muteUpdates) return;
       live.subagentFinalPolls = 3;
       nativeOutputSink(responseScope.work, scheduleCursorSubagents)(live, 500);
@@ -1216,11 +1222,11 @@ function refreshCursorSubagents(live: Live): Promise<void> {
   const emitNative = nativeOutputSink(outputWork, (event: HarnessEvent) => live.onEvent(event));
   const job = trackNativeOutputWork(
     (async () => {
-      const runs = await readStoredCursorSubagentRuns(
+      const runs = await withTimeout(readStoredCursorSubagentRuns(
         live.acpSessionId,
         [...live.agentTools.keys()].slice(-256),
         live.subagentRevisions,
-      ).catch(() => []);
+      ), 20_000, "Cursor subagent refresh timed out").catch(() => []);
       if (live.muteUpdates || live.subagentGeneration !== generation) return;
       for (const run of runs) {
         if (!live.agentTools.has(run.toolCallId)) continue;

@@ -2,20 +2,14 @@
    follows palette, accent, mode and contrast. The window is inert; it is a picture, not a control. */
 .appearance-preview {
   display: grid;
-  gap: 8px;
   margin: 0;
   min-inline-size: 0;
   max-inline-size: 28rem;
 }
-.appearance-preview-title {
-  font-size: var(--ui-font-secondary);
-  font-weight: 600;
-  color: var(--color-content);
-}
 .appearance-preview-window {
   display: grid;
   grid-template-columns: 5.5rem minmax(0, 1fr);
-  min-block-size: 11.5rem;
+  min-block-size: 9.5rem;
   overflow: hidden;
   border-radius: var(--ui-radius-card);
   background: var(--ui-surface-panel);
@@ -105,43 +99,55 @@
   background: var(--ui-surface-selected);
 }
 
-/* Samples that show the effect of a typography choice. Controls themselves live in the shared frame. */
+/* Samples that show the effect of a typography choice. They sit inside their font row, compact;
+   controls themselves live in the shared frame. */
 .appearance-type-sample {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 4px 0 8px;
+  align-items: baseline;
+  gap: 12px;
+  min-inline-size: 0;
   color: var(--color-content);
   overflow-wrap: anywhere;
 }
 .appearance-type-alphabet {
-  font-size: 28px;
+  flex: none;
+  font-size: 22px;
   line-height: 1;
   letter-spacing: -0.04em;
 }
-.appearance-type-sample p {
-  margin-block: 0 4px;
-  line-height: 1.6;
-}
-.appearance-type-sample div > span {
+.appearance-type-sample > span:last-child {
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
+  line-height: 1.5;
 }
 .appearance-code-sample,
 .appearance-terminal-sample {
-  margin: 4px 0 10px;
+  margin: 0;
   min-inline-size: 0;
   max-inline-size: 100%;
   overflow: auto;
-  padding: 12px 16px;
-  border-radius: var(--ui-radius-card);
+  padding: 8px 12px;
+  border-radius: var(--ui-control-radius);
   color: var(--color-content);
   background: var(--ui-surface);
 }
 .appearance-code-sample {
   font-family: var(--font-mono);
   font-size: var(--appearance-code-size);
-  line-height: 1.8;
+  line-height: 1.6;
+}
+.appearance-code-line {
+  display: block;
+  white-space: pre;
+}
+/* The diff lines follow the chosen diff colors through the shared diff roles. */
+.appearance-code-line[data-diff="add"] {
+  background: var(--color-diff-add-bg);
+  color: var(--color-diff-add-fg);
+}
+.appearance-code-line[data-diff="del"] {
+  background: var(--color-diff-del-bg);
+  color: var(--color-diff-del-fg);
 }
 .appearance-code-comment {
   color: var(--syntax-comment);
@@ -152,7 +158,7 @@
 .appearance-code-string {
   color: var(--syntax-string);
 }
-html.appearance-word-wrap .appearance-code-sample {
+html.appearance-word-wrap .appearance-code-line {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

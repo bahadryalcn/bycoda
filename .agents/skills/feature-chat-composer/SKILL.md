@@ -839,3 +839,13 @@ and OS screenshot/popup behavior were not compiled or exercised on this Windows
 host; portable tests do not establish installed macOS or crash/durability
 acceptance. Source manifest separates the seven Native and nine renderer owned
 files from Root's separate lib registration/combined checks.
+
+## V3-002 Reading-mode motion (2026-10-31)
+
+Owner, 2026-10-31, with a screenshot of reading mode, exact quote:
+
+> bu şekilde gözüküyor. animasyonuda hiç hoşuma gitmedi daha güzel olabilirdi.
+
+Delivered in source (uncommitted; `useComposerDockMotion.ts`, `composerReading.ts`, `chat-controls.css`): entering or leaving reading mode eases the field's height and the workspace row's height, opacity and offset in place (shared `--motion-ease-out` token), so the box, its controls and the transcript viewport move together and nothing is clipped. Reduced motion, or an already open popover (it stays aligned with its trigger), switches instantly. The delivering agent added test cases beyond the existing-tests-only brief.
+
+**V2-018 is still open:** whether the workspace row is hidden or shown in reading mode has no recorded owner answer. The current source collapses and fades the row. Unverified: light/dark screenshots and a mid-transition capture; 0.5rem padding clipping and transcript jump checks.

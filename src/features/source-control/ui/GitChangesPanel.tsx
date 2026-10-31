@@ -147,6 +147,7 @@ import { Button } from "../../../shared/ui/Button";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
+import { InlineAction } from "../../../shared/ui/ActionHost";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { ChangeList } from "./GitChangesList";
@@ -422,7 +423,7 @@ export function GitChangesPanel({
         className={
           repository
             ? styles.header
-            : "flex h-9 shrink-0 items-center gap-1.5 px-2"
+            : styles.branchHeader
         }
         data-current-checkout={repository?.current || undefined}
       >
@@ -542,6 +543,7 @@ export function GitChangesPanel({
             </Button>
           ) : null}
           {repository ? branchControl : null}
+          <div className={styles.branchSlots}>
           <Button
             size="sm"
             variant="ghost"
@@ -572,6 +574,8 @@ export function GitChangesPanel({
               onRevealChanges={repository ? () => repository.onToggle(true) : undefined}
             />
           ) : null}
+          <span aria-hidden="true" />
+          </div>
         </div>
       </header>
       {repository && operation && !detailsOpen ? (
@@ -844,8 +848,9 @@ function ChangedFiles({
     toggleAmend: toggleAmendDraft,
     clearDraft,
   } = useCommitDraft({ cwd, index, textHarness, canGenerate, fail });
+  // Nothing staged: Commit takes every change, as the header menu's Commit does.
   const canCommit =
-    (staged.length > 0 || amend) &&
+    (staged.length > 0 || amend || unstaged.length > 0) &&
     message.trim().length > 0 &&
     !busy &&
     !generating &&
@@ -869,8 +874,8 @@ function ChangedFiles({
     hasRemote && Boolean(index?.upstream) && ((index?.ahead ?? 0) > 0 || (index?.behind ?? 0) > 0);
   const pushPossible = hasRemote && !diverged && (!amend || !index?.headPushed);
   const canCommitPush = canCommit && pushPossible;
-  // A drafted message with something to commit: the commit action leads, otherwise sync/PR does.
-  const commitIntent = (staged.length > 0 || amend) && message.trim().length > 0;
+  // Anything to commit: Commit leads and sync stays its own direct action; otherwise sync/PR leads.
+  const commitIntent = files.length > 0 || amend;
   const canCommitPushPr = canCommitPush && !hasOpenPr && !prLoading && !prError && !onDefault;
   // Drafting is independent of staging. Commit and generation retain their
   // own eligibility checks and every checkout retains its own message.
@@ -1111,7 +1116,8 @@ function ChangedFiles({
     // Nothing staged: Commit takes everything, but amending never sweeps in
     // files the user did not stage.
     const stageAll =
-      options?.scope === "all" || (options?.scope === "smart" && !amending && staged.length === 0);
+      options?.scope === "all" ||
+      ((options?.scope ?? "smart") === "smart" && !amending && staged.length === 0);
     if (runtime.state.busy || runtime.state.generating || generateAbortRef.current) return;
     setGitFeedback(cwd, null);
     setBusy(createPr ? "pr" : "commit");
@@ -1316,42 +1322,43 @@ function ChangedFiles({
               }
             }}
             className={styles.message}
+            endAdornment={
+              <>
+                {generating ? <WorkingIndicator label={t("Generating message…")} /> : null}
+                <InlineAction
+                  reveal="always"
+                  label={
+                    generating ? t("Cancel commit message generation") : t("Generate commit message")
+                  }
+                  title={
+                    generating ? t("Cancel commit message generation") : t("Generate commit message")
+                  }
+                  aria-label={
+                    generating ? t("Cancel commit message generation") : t("Generate commit message")
+                  }
+                  disabled={!generating && !canGenerate}
+                  onClick={() => (generating ? cancelGenerate() : void generate())}
+                >
+                  {generating ? (
+                    <X className="size-3.5" strokeWidth={1.75} />
+                  ) : (
+                    <WandSparkles className="size-3.5" strokeWidth={1.75} />
+                  )}
+                </InlineAction>
+                {!isRemoteProjectPath(cwd) && (
+                  <GitGenerationSettings
+                    cwd={cwd}
+                    preferred={textHarness}
+                    choice={generationChoice}
+                    hasOverride={hasGenerationOverride}
+                    onChange={setGenerationChoice}
+                    disabled={generating || committing}
+                  />
+                )}
+              </>
+            }
           />
-          <div className={styles.generationActions}>
-            {generating ? <WorkingIndicator label={t("Generating message…")} /> : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              label={
-                generating ? t("Cancel commit message generation") : t("Generate commit message")
-              }
-              title={
-                generating ? t("Cancel commit message generation") : t("Generate commit message")
-              }
-              aria-label={
-                generating ? t("Cancel commit message generation") : t("Generate commit message")
-              }
-              disabled={!generating && !canGenerate}
-              onClick={() => (generating ? cancelGenerate() : void generate())}
-            >
-              {generating ? (
-                <X className="size-3.5" strokeWidth={1.75} />
-              ) : (
-                <WandSparkles className="size-3.5" strokeWidth={1.75} />
-              )}
-            </Button>
-            {!isRemoteProjectPath(cwd) && (
-              <GitGenerationSettings
-                cwd={cwd}
-                preferred={textHarness}
-                choice={generationChoice}
-                hasOverride={hasGenerationOverride}
-                onChange={setGenerationChoice}
-                disabled={generating || committing}
-              />
-            )}
-          </div>
+
         </div>
         <div className="min-w-0">
           <GitCommitActions
@@ -1364,7 +1371,6 @@ function ChangedFiles({
             onDefault={onDefault}
             amend={amend}
             commitIntent={commitIntent}
-            pushPossible={pushPossible}
             canCommit={canCommit}
             canCommitPush={canCommitPush}
             canCommitPushPr={canCommitPushPr}
@@ -1671,12 +1677,12 @@ function usePrStatus(cwd: string, branch: string | null | undefined, enabled: bo
   };
 }
 
-type CommitPrimary = "commit" | "commit-push" | "sync" | "create-pr" | "view-pr";
+type CommitPrimary = "commit" | "sync" | "create-pr" | "view-pr";
 
 /**
- * One contextual split action for the commit area. The primary follows intent: a drafted
- * message leads with Commit (& Push when pushing is possible); otherwise the pending sync,
- * Create PR or View PR leads. Everything else stays in the menu behind its own gates.
+ * One contextual split action for the commit area. The primary follows intent: anything to
+ * commit leads with Commit, with a pending sync beside it as its own button; otherwise the
+ * pending sync, Create PR or View PR leads. Everything else stays in the menu behind its own gates.
  */
 function GitCommitActions({
   index,
@@ -1688,7 +1694,6 @@ function GitCommitActions({
   onDefault,
   amend,
   commitIntent,
-  pushPossible,
   canCommit,
   canCommitPush,
   canCommitPushPr,
@@ -1714,7 +1719,6 @@ function GitCommitActions({
   onDefault: boolean;
   amend: boolean;
   commitIntent: boolean;
-  pushPossible: boolean;
   canCommit: boolean;
   canCommitPush: boolean;
   canCommitPushPr: boolean;
@@ -1768,9 +1772,7 @@ function GitCommitActions({
   const syncDisabled = !!busy && !syncing;
   const primary: CommitPrimary =
     committing || commitIntent
-      ? pushPossible
-        ? "commit-push"
-        : "commit"
+      ? "commit"
       : showSync
         ? "sync"
         : showCreatePr
@@ -1852,19 +1854,17 @@ function GitCommitActions({
             }
           : {
               variant: "primary" as const,
-              label: committing
-                ? (pending ?? busyLabel(busy ?? ""))
-                : primary === "commit-push"
-                  ? t("Commit & Push")
-                  : commitLabel,
+              label: committing ? (pending ?? busyLabel(busy ?? "")) : commitLabel,
               title: undefined,
               disabled: !canCommit,
               loading: committing,
               loadingLabel: undefined,
               icon: <Check className="size-3.5" strokeWidth={2} />,
               trailing: null,
-              onClick: () => onCommit(primary === "commit-push"),
+              onClick: () => onCommit(false),
             };
+  // Beside a pending commit, sync keeps its own button: commit-only and push-only stay one click.
+  const directSync = primary === "commit" && showSync;
 
   const actions: SplitButtonAction[] = [];
   if (primary !== "commit") {
@@ -1875,15 +1875,13 @@ function GitCommitActions({
       onSelect: () => onCommit(false),
     });
   }
-  if (primary !== "commit-push") {
-    actions.push({
+  actions.push(
+    {
       id: "push",
       label: t("Commit & Push"),
       disabled: !canCommitPush,
       onSelect: () => onCommit(true),
-    });
-  }
-  actions.push(
+    },
     {
       id: "push-pr",
       label: t("Commit, Push & Create PR"),
@@ -1897,7 +1895,7 @@ function GitCommitActions({
       onSelect: onToggleAmend,
     },
   );
-  if (showSync && primary !== "sync") {
+  if (showSync && primary !== "sync" && !directSync) {
     actions.push({
       id: "sync",
       label: syncLabel,
@@ -1925,7 +1923,7 @@ function GitCommitActions({
     });
   }
 
-  return (
+  const split = (
     <SplitButton
       variant={lead.variant}
       size="sm"
@@ -1945,6 +1943,32 @@ function GitCommitActions({
       onClick={lead.onClick}
       actions={actions}
     />
+  );
+  if (!directSync) return split;
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="min-w-[8rem] flex-1">{split}</div>
+      <Button
+        variant="secondary"
+        size="sm"
+        className="min-w-0 max-w-full"
+        title={syncDetail}
+        disabled={syncDisabled}
+        loading={syncing}
+        loadingLabel={t("Syncing…")}
+        startIcon={
+          canPublish ? (
+            <CloudUpload className="size-3.5 shrink-0" strokeWidth={1.75} />
+          ) : (
+            <RefreshCw className="size-3.5 shrink-0" strokeWidth={1.75} />
+          )
+        }
+        onClick={onSync}
+      >
+        <span className="min-w-0 truncate">{syncLabel}</span>
+        {syncBadges}
+      </Button>
+    </div>
   );
 }
 
@@ -2004,7 +2028,7 @@ export function FileSection({
     <div>
       {/* In a narrow pane the icon group wraps under the title instead of squeezing the title to
           nothing and overlapping the count (the title keeps a readable floor). */}
-      <div className="flex min-h-7 flex-wrap items-center gap-x-1 px-1.5">
+      <div className={styles.sectionHeader}>
         <Button
           size="sm"
           variant="item"
@@ -2036,8 +2060,9 @@ export function FileSection({
             {countLabel ?? count}
           </span>
         </Button>
-        <div className="ml-auto flex items-center gap-1">
-          {headerExtra}
+        <div className={styles.actionSlots}>
+          <div className={styles.actionSlot}>{headerExtra}</div>
+          <div className={styles.actionSlot}>
           {view && onToggleView ? (
             <IconAction
               title={view === "tree" ? t("View as List") : t("View as Tree")}
@@ -2050,6 +2075,8 @@ export function FileSection({
               )}
             </IconAction>
           ) : null}
+          </div>
+          <div className={styles.actionSlot}>
           {overflow.length ? (
             <IconAction
               title={t("More actions")}
@@ -2060,6 +2087,8 @@ export function FileSection({
               <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
             </IconAction>
           ) : null}
+          </div>
+          <div className={styles.actionSlot}>
           {direct.map((action) =>
             action.label ? (
               <Button
@@ -2081,6 +2110,7 @@ export function FileSection({
               </IconAction>
             ),
           )}
+          </div>
         </div>
       </div>
       {moreAnchor ? (

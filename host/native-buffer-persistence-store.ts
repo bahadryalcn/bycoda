@@ -333,7 +333,7 @@ export function createNativeBufferPersistenceStore(store: HostStore): NativeBuff
       const result = await work();
       await authorize();
       return result;
-    });
+    }, "critical");
     // Revocation after COMMIT cannot undo a reservation: an unknown ACK consumes the gap.
     await authorize();
     return value;

@@ -103,7 +103,7 @@ it.each([false, true])(
         await vi.waitFor(
           () =>
             expect(logged).toHaveBeenCalledWith(
-              "[bycoda] remote worktree branch",
+              "[bycoda] retained provider hint",
               expect.any(Error),
             ),
           { timeout: 20_000 },

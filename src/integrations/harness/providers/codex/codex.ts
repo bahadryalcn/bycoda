@@ -238,7 +238,13 @@ export async function sendCodexTurn(input: SendTurnInput): Promise<void> {
       input.operationContext,
       async () => {
         if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
-        const live = await ensureLive(input);
+        let live: Live;
+        try {
+          live = await ensureLive(input);
+        } catch (error) {
+          if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
+          throw error;
+        }
         if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
 
         observeProviderProcess(input, live.handle);
@@ -435,7 +441,7 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
     throw new Error("Provider operation replaced before steer");
   const turnId = live.activeTurnId;
-  if (!turnId) throw new Error("No active turn to steer");
+  if (!turnId) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
 
   const rpc = await rpcTurnWriter(
     live.handle,
@@ -547,6 +553,7 @@ export function respondCodexQuestion(
       if (live.questions.get(requestId) !== pending) return;
       const rejected =
         error instanceof JsonRpcResponseError && [-32600, -32601, -32602].includes(error.code ?? 0);
+      // Only a definitive rejection permits another answer.
       if (rejected) pending.sending = false;
       live.onEvent({
         type: "question.updated",
@@ -622,6 +629,7 @@ export async function cancelCodexTurn(
 
   const live = liveByThread.get(sessionId);
   const preparing = startingByThread.get(sessionId);
+  // A captured stale control cannot cancel a newer operation on a warm process.
   if (
     !ownsOperation(
       context,
@@ -631,12 +639,22 @@ export async function cancelCodexTurn(
   )
     return;
   cancellationEpoch.set(sessionId, (cancellationEpoch.get(sessionId) ?? 0) + 1);
-  if (!live) return;
+  if (!live) {
+    if (preparing) await stopCodexSession(sessionId, context ?? preparing.handle);
+    return;
+  }
   const turnId = live.activeTurnId;
-  const rpc =
+  let rpc;
+  try {
+    rpc =
     context && turnId
       ? await rpcTurnWriter(live.handle, live.rpc, context.nativeControlTurn, context, "control")
       : live.rpc;
+  } catch (error) {
+    console.warn("[codex] Control writer unavailable; stopping process", error);
+    await stopCodexSession(sessionId, live.handle);
+    return;
+  }
   if (!ownsOperation(context, live.handle, live.operation)) return;
   live.cancelled = true;
   live.muteUpdates = true;
@@ -650,8 +668,11 @@ export async function cancelCodexTurn(
       .request("turn/interrupt", {
         threadId: live.threadId,
         turnId,
-      })
-      .catch(() => undefined);
+      }, 5_000)
+      .catch(async (error: unknown) => {
+        console.warn("[codex] Interrupt failed; stopping process", error);
+        await stopCodexSession(sessionId, live.handle);
+      });
   }
   if (!ownsOperation(context, live.handle, live.operation)) return;
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
@@ -702,12 +723,14 @@ export async function forgetCodexSession(
   sessionId: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
-
-  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
-  if (original && !ownsOperation(context, original.handle, original.operation)) return;
+  // Delete/switch must always end the process: clear resume state first and
+  // fall back to a by-session stop when the context no longer owns it.
   resumeByThread.delete(sessionId);
-  await stopCodexSession(sessionId, context);
+  const queuedOnly = cancelQueuedOperation(context);
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  const owned =
+    !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  await stopCodexSession(sessionId, owned ? context : undefined);
 }
 
 export function bindCodexSession(

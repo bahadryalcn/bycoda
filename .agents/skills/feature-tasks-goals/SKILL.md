@@ -226,6 +226,20 @@ that commit. Existing staged/dirty work was preserved.
 
 Uncommitted UI-only pass in `src/features/tasks/ui/`; no Host, RPC, lifecycle, budget or limit semantics changed.
 - One header (`header.task-board-toolbar`): section switch, project/sprint scope, search, view switch, filters popover, select, More, refresh/status, New task. The separate section band and repeated scope text are gone.
-- New task, edit task, new goal and goal settings share `.task-form`, `.task-form-body` (the single scroll region, `Modal scroll="none"`), `.task-form-options`/`.task-form-section` and `.task-form-footer` from `tasks.css`. "Working branch and worktree" is one disclosure heading (`TaskWorkspacePicker headingHidden`); the machine task limit is a separate `.task-form-limit` block that says it saves immediately.
+- New task, edit task, new goal and goal settings share `.task-form`, `.task-form-body` (the single scroll region, `Modal scroll="none"`), `.task-form-options`/`.task-form-section` and `.task-form-footer` from `tasks.css`. "Working branch and worktree" is one disclosure heading (`TaskWorkspacePicker headingHidden`); the machine task limit block (`.task-form-limit`) no longer appears in the task form (V3-026 below); it remains only in the goal form.
 - Board drop cues are theme-token only (`data-drop-active`, `data-drop-before`, `data-dragging`), cleared on drop, dragend and leave; list rows mark the open task and show status as a badge; empty Reports offers choose-sprint / Go to Sprints / Open backlog.
 - Fixture evidence: `temp/verification/vis-tasks/`. Source/fixture checks only; no installed-app acceptance.
+
+## V3-026 simple Tasks screen and New task (2026-10-31)
+
+Owner, 2026-10-31, with screenshots of the New task dialog and the Backlog/Sprints/Reports views, exact quote:
+
+> Tasks ekranı bu şekilde gözüküyor bence baya karmaşık ve gereksiz yine Task yoksa bunların hepsini ne yapıyoruz neden ihtiyacımız var onu bile anlamadık. Yani bu ekranı Gerçekten en salak insanın bile rahatlıkla kullanabileceği hale getirmen gerekiyor. Bir o kadar da güzel gözükmesi gerekiyor.
+
+Delivered in source (uncommitted; no Host/RPC change; no checks run by the delivering agents):
+- **Empty backlog:** `TasksEmptyState.tsx` shows one sentence, one `New task` button and a three-step "How it works" list. Summary, limits, stewards, project/filter controls and the toolbar `New task` button stay hidden until there is at least one task (`showOnboarding` in `TasksView.tsx`). Sprints and Reports have their own empty states; Reports only appears once a sprint exists.
+- **Panels on demand:** summary, stewards and limits no longer repeat on every tab. They open from `More actions` (Summary, Stewards when a steward-capable machine exists, Limits when limits are known) and only render under Backlog. A short line ("N tasks · N running · agent time today") replaces the former summary block. The sprint filter moved into the Filters popover.
+- **Limits panel:** per-machine task limit, daily agent time and used-today live in the `Limits` panel (`TaskLimits.tsx` `LimitsPanel`), not in the New task form. `MachineConcurrency` (`.task-form-limit`) remains only in the goal form.
+- **New task default view:** title, description, project/machine, crew choice and a collapsed "Agent settings" row. **Advanced** is closed by default (it opens when the draft already uses a check command, budget, required resources or workflow) and holds Check command, Working branch and worktree, Workflow and Total run budget. Workflow save/refresh/remove sit under "Save or refresh workflows"; the preparation badge shows only after a workflow, resource or check exists and is neutral unless Ready/Blocked. Disabled footer actions explain themselves in a tooltip.
+- Existing browser selectors in `tests/browser/tasks.spec.ts` were updated to open Advanced first (`openAdvanced`); no cases added.
+- Unverified: light/dark and 800/1280 px screenshots, installed-build acceptance.

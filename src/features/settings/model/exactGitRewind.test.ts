@@ -3,9 +3,15 @@ import { beforeEach, expect, it, vi } from "vitest";
 const mock = vi.hoisted(() => ({ invoke: vi.fn(), remote: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mock.invoke }));
 vi.mock("../../connections/model/connections", () => ({ remoteRequest: mock.remote }));
-import { getExactGitRewindEnabled, loadExactGitRewind, saveExactGitRewind } from "./exactGitRewind";
+import {
+  getExactGitRewindEnabled,
+  loadExactGitRewind,
+  resetExactGitRewindCache,
+  saveExactGitRewind,
+} from "./exactGitRewind";
 
 beforeEach(() => {
+  resetExactGitRewindCache();
   mock.invoke.mockReset().mockResolvedValue({ id: "local-fixture" });
   mock.remote.mockReset().mockResolvedValue({ enabled: false });
 });
@@ -43,4 +49,19 @@ it("keeps Host failures visible in Settings while ordinary sends remain availabl
   mock.remote.mockRejectedValue(new Error("Synthetic Host offline"));
   await expect(saveExactGitRewind(true)).rejects.toThrow("Synthetic Host offline");
   expect(await getExactGitRewindEnabled()).toBe(false);
+});
+
+it("reuses a successful policy read across sends until saved or invalidated", async () => {
+  mock.remote.mockResolvedValue({ enabled: true });
+  expect(await getExactGitRewindEnabled()).toBe(true);
+  expect(await getExactGitRewindEnabled()).toBe(true);
+  expect(mock.remote).toHaveBeenCalledTimes(1);
+  mock.remote.mockResolvedValue({ enabled: false });
+  expect(await saveExactGitRewind(false)).toBe(false);
+  expect(await getExactGitRewindEnabled()).toBe(false);
+  expect(mock.remote).toHaveBeenCalledTimes(2);
+  mock.remote.mockResolvedValue({ enabled: true });
+  resetExactGitRewindCache();
+  expect(await getExactGitRewindEnabled()).toBe(true);
+  expect(mock.remote).toHaveBeenCalledTimes(3);
 });

@@ -45,7 +45,6 @@ import { mergeStream } from "../../core/streamText";
 const retirements = createProviderRetirementLedger("claude.text", killChild);
 
 const TEXT_CHILD_ID = "bycoda-claude-text";
-const INIT_TIMEOUT_MS = 8_000;
 const REQUEST_TIMEOUT_MS = 45_000;
 const TEXT_MODEL = "claude-haiku-4-5";
 
@@ -144,10 +143,21 @@ export async function stopClaudeTextPrompt(): Promise<void> {
   await dropLive();
 }
 
-export function warmupClaudeText(cwd: string): Promise<void> {
+export function warmupClaudeText(
+  cwd: string,
+  options?: { providerAccountId?: string; model?: string; modelSettings?: Record<string, string> },
+): Promise<void> {
   if (!cwd || cwd === "~") return Promise.resolve();
   const run = continueAfterFailure(turns, async () => {
-    await ensureLive(cwd);
+    if (!options) return void (await ensureLive(cwd));
+    // Same model and settings as promptOnLive, so the next matching prompt reuses this process.
+    const model = pickTextModel(options.model);
+    await ensureLive(
+      cwd,
+      options.providerAccountId,
+      model,
+      textSettings(model, options.modelSettings),
+    );
   });
   turns = settledTail(run);
   return observeProviderProbeCleanup(run);
@@ -379,7 +389,9 @@ async function startLive(
     await captureByteTurnWriter(child, operationContext?.nativeControlTurn, operationContext)();
     pendingSetup = null;
     live = session;
-    await waitForReady(session, INIT_TIMEOUT_MS);
+    // Do not wait for `init`: current CLIs emit it only after the first message,
+    // and stream-json input is buffered until startup finishes. Waiting delayed
+    // every cold prompt (and any prompt queued behind a warmup) by 8 s.
     return session;
   } catch (error) {
     return preserveProviderFailure(error, settleProviderRetirements([stopping, dropLive(session)]));
@@ -510,23 +522,5 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
     status: "pending",
     detail: summarizeToolRequest(tool.name, parsed),
     preview: previewFromTool(tool.name, parsed),
-  });
-}
-
-function waitForReady(session: LiveText, timeoutMs: number): Promise<void> {
-  if (session.ready) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      session.readyDone = null;
-      resolve();
-    }, timeoutMs);
-    session.readyDone = () => {
-      clearTimeout(timer);
-      if (session.closed) {
-        reject(new Error("Claude text generator exited"));
-        return;
-      }
-      resolve();
-    };
   });
 }

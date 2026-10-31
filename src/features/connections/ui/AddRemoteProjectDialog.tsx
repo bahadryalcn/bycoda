@@ -477,7 +477,7 @@ function AddRemoteProjectForm({
             <Button type="button" onClick={cancel} variant="ghost">
               {t("Cancel")}
             </Button>
-            <Button
+            <Button reserveLabels={[t("Opening…")]}
               type="submit"
               loading={opening}
               disabled={

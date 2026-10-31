@@ -776,10 +776,7 @@ describe("Host HTTP/WS read composition", () => {
         };
         if (transport === "ws") {
           expect(await host.rpc(socket, "commands.dispatch", command)).toMatchObject({
-            error: {
-              message: expect.stringContaining("control was sent"),
-              data: { commandId: "stop-run", delivery: "unknown", retryable: false },
-            },
+            result: { commandId: "stop-run", runId: accepted.result.runId },
           });
         } else {
           const response = await fetch(`http://127.0.0.1:${host.port}/rpc`, {
@@ -792,10 +789,10 @@ describe("Host HTTP/WS read composition", () => {
               params: command,
             }),
           });
-          expect(response.status).toBe(400);
-          expect(await response.json()).toMatchObject({
-            code: "HOST_CONTROL_RECEIPT_UNCONFIRMED",
-            delivery: "unknown",
+          expect(response.status).toBe(200);
+          expect((await response.json()).result).toMatchObject({
+            commandId: "stop-run",
+            runId: accepted.result.runId,
           });
         }
         expect(cancel).toHaveBeenCalledExactlyOnceWith(value.session.id);

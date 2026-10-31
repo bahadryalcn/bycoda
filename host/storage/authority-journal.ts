@@ -171,7 +171,7 @@ export class HostAuthorityJournal {
         CREATE TABLE IF NOT EXISTS host_authority_heads (
         environment_id TEXT NOT NULL, session_id TEXT NOT NULL, generation INTEGER NOT NULL,
         migration_id TEXT NOT NULL, phase TEXT NOT NULL, PRIMARY KEY(environment_id, session_id));`);
-      }),
+      }, "critical"),
     );
     void this.ready.catch(() => undefined);
   }
@@ -302,7 +302,7 @@ export class HostAuthorityJournal {
         row.converter_version!,
       );
       return isNativeAuthorityTarget(target) ? target.nativePreservation : undefined;
-    });
+    }, "critical");
   }
   async prepare(
     raw: NativeFenceEvidence,
@@ -354,7 +354,7 @@ export class HostAuthorityJournal {
         )
         .run(fence.environmentId, fence.sessionId, fence.generation, fence.migrationId);
       return this.statusOf(await this.matching(fence));
-    });
+    }, "critical");
   }
   async stage(
     input: Omit<AuthorityStage, "targetDigest">,
@@ -447,7 +447,7 @@ export class HostAuthorityJournal {
         )
         .run(input.sourceJson, targetJson, targetDigest, input.converterVersion, fence.migrationId);
       return this.statusOf(await this.matching(fence));
-    });
+    }, "critical");
   }
   private decision(
     fence: NativeFenceEvidence,
@@ -603,7 +603,7 @@ export class HostAuthorityJournal {
           : {}),
       });
       return decision;
-    });
+    }, "critical");
   }
   async activate(
     raw: NativeFenceEvidence,
@@ -648,7 +648,7 @@ export class HostAuthorityJournal {
         .prepare("UPDATE host_authority_journal SET acknowledged=1 WHERE migration_id=?")
         .run(fence.migrationId);
       return this.statusOf(await this.matching(fence));
-    });
+    }, "critical");
   }
   /** Root command/provider admission must call this before external work. */
   async assertHostWriteAllowed(sessionId: string, expectedGeneration?: number): Promise<void> {

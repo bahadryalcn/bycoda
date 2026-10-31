@@ -146,7 +146,7 @@ export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
 
 type Props = {
   /** Travels with the element when TranscriptPool renders it in its outlet. */
-  approvalContext?: { session: import("../model/session").Session; dispatch: ApprovalDispatch };
+  approvalContext?: { session: import("../model/session").Session; getSession?: () => import("../model/session").Session; dispatch: ApprovalDispatch };
   sessionId?: string;
   blocks: Block[];
   busy?: boolean;

@@ -1,6 +1,4 @@
-/* Keybindings: one compact search/filter/count band, then grouped command-key rows.
-   Capture is an explicit mode: the row editor is tinted and offers Cancel, which
-   is never the look of ordinary keyboard focus. */
+/* Compact command rows keep the same geometry while recording or reporting conflicts. */
 .page {
   display: flex;
   flex-direction: column;
@@ -59,14 +57,10 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
+  inline-size: 18rem;
   max-inline-size: 100%;
   padding: 2px;
   border-radius: var(--ui-control-radius);
-}
-
-.editor[data-capturing] {
-  background: var(--ui-tone-accent-subtle);
-  padding: 6px 8px;
 }
 
 .control {
@@ -74,22 +68,33 @@
   align-items: center;
   justify-content: flex-end;
   gap: 2px;
+  inline-size: 100%;
   max-inline-size: 100%;
 }
 
 .recorder {
+  flex: 1;
   min-inline-size: 0;
   max-inline-size: 100%;
 }
 
-.captureHint {
-  display: flex;
-  flex-wrap: wrap;
+.actionSlot,
+.feedbackSlot {
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px 8px;
+  justify-content: center;
+  flex: 0 0 28px;
+  inline-size: 28px;
+  block-size: 28px;
 }
-
+.context {
+  display: block;
+  max-inline-size: 100%;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-muted);
+}
 .hint,
 .error {
   font-size: var(--ui-font-caption);
@@ -128,7 +133,6 @@
    quiet hover fill keep 70+ commands scannable. */
 .list :global(.settings-row) {
   padding-block: 3px;
-  border-radius: var(--ui-control-radius);
 }
 @media (hover: hover) and (pointer: fine) {
   .list :global(.settings-row):hover {
@@ -169,4 +173,8 @@
     align-self: stretch;
     justify-content: flex-start;
   }
+}
+
+.list :global(.settings-row-control) {
+  flex-wrap: nowrap;
 }

@@ -90,18 +90,27 @@ export function useTurnScrollAnchor(
         resize.observe(turn);
       }
     };
+    let liveTurn = inner.querySelector(".transcript-turn-live");
     const mutations = new MutationObserver((records) => {
-      const listChanged = records.some(
+      if (!liveTurn || !liveTurn.classList.contains("transcript-turn-live") ||
+        records.some((record) => record.target === inner))
+        liveTurn = inner.querySelector(".transcript-turn-live");
+      const relevant = records.filter((record) =>
+        !liveTurn?.contains(record.target) ||
+        (record.target === liveTurn && record.type === "attributes" && record.attributeName === "class"),
+      );
+      if (!relevant.length) return;
+      const listChanged = relevant.some(
         (record) => record.target === inner && record.type === "childList",
       );
       // Removal is rare (a rewind or edit), so start over rather than hold
       // detached turns. Re-observed turns report the height already stored.
-      if (records.some((record) => record.target === inner && record.removedNodes.length > 0)) {
+      if (relevant.some((record) => record.target === inner && record.removedNodes.length > 0)) {
         resize.disconnect();
         observed = new WeakSet();
       }
       const changed = new Set<Element>();
-      for (const record of records) {
+      for (const record of relevant) {
         const target =
           record.target instanceof Element ? record.target : record.target.parentElement;
         const turn = target?.closest(".transcript-turn");

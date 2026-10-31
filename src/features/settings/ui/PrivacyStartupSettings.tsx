@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useGroupLock } from "../../group-lock/hooks/useGroupLock";
 import { setStartInPrivacyMode } from "../../group-lock/model/groupLock";
 import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
@@ -18,7 +19,15 @@ export function PrivacyStartupSettings() {
   const saveStart = (on: boolean) => setStartSaved(setStartInPrivacyMode(on));
   return (
     <>
-      <Group title={t("Privacy")} scope={t("Applies to this computer.")}>
+      <Group
+        title={t("Privacy")}
+        scope={t("Applies to this computer.")}
+        description={
+          t("Privacy controls affect what appears in ") +
+          PRODUCT_IDENTITY.displayName +
+          t(". Project files and transcripts on disk are not encrypted.")
+        }
+      >
         <Row
           id="start-in-privacy-mode"
           label={t("Start in privacy mode")}

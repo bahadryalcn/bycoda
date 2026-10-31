@@ -325,11 +325,15 @@ not a new product build or UI test suite.
 
 ## Appearance and motion
 
-Text-field focus is owned by `src/styles/arc.css`: one 1px outline inset on the
-existing border using `--ui-field-border-focus`, with the shared danger token for
-invalid fields. Hover uses `--ui-field-border-hover`; neither state uses the text
-or accent color as its border. `SearchInput`
-owns this outline by default for `appearance="field"` or `standalone`; an
+Text-field focus is owned by `src/styles/arc.css` and follows the V3 field/focus contract
+in `docs/reference/ui-component-catalog.md` ("Field frame and action slots"): a faint 1px
+boundary and 8px radius; focus uses adjusted accent ink (`--ui-field-border-focus`) plus the
+`--ui-focus-ring` halo, forced colors keep a real outline, and invalid fields keep the shared
+danger boundary. Hover uses `--ui-field-border-hover`; neither state uses the text color as
+its border. One frame draws the focus: a field with leading/trailing actions uses
+`FieldControl` slots (`InlineAction`), never overlaid buttons, so a hover fill stays inside the
+frame. `SearchInput`
+owns this focus treatment by default for `appearance="field"` or `standalone`; an
 unframed bare input defaults to the menu owner. For a bordered composite, use `SearchInputGroup`
 and `focusOwner="group"`; for an already framed menu header, use
 `focusOwner="menu"`. Clear buttons retain their own keyboard focus indicator.

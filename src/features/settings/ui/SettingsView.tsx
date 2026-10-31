@@ -1,5 +1,6 @@
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { Button } from "../../../shared/ui/Button";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { CrewsSettings } from "../../crews/ui/CrewsSettings";
 import { t, useLocale } from "../../../shared/i18n";
@@ -39,6 +40,8 @@ import {
   settingDomId,
   RevealedSetting,
   PageAutomaticSaveHint,
+  SettingsPageResetRegistry,
+  type SettingsPageResetRegistration,
   SettingsPageHelp,
   Group,
   Row,
@@ -203,6 +206,14 @@ export function SettingsView({
     collapsedProjectRailMode,
     onCollapsedProjectRailModeChange,
   );
+  // Page-level "Restore defaults": only a page that registers a handler (useSettingsPageReset) gets
+  // the header action, always behind a confirmation. Appearance registers through the shell.
+  const [registeredReset, setRegisteredReset] = useState<SettingsPageResetRegistration | null>(
+    null,
+  );
+  const pageReset =
+    section === "appearance" ? { run: appearance.restoreDefaults } : registeredReset;
+  const { confirm: confirmPageReset, dialog: pageResetDialog } = useConfirm();
 
   useEffect(() => {
     if (!notificationHighlightActive) return;
@@ -328,14 +339,23 @@ export function SettingsView({
         <div className="bycoda-settings-toolbar-actions">
           <SidebarUpdateFooter />
           <SettingsSearch onReveal={onReveal} />
-          {section === "appearance" ? (
+          {pageReset ? (
             <Button
               variant="ghost"
               size="sm"
               type="button"
               iconOnly
               label={t("Restore defaults")}
-              onClick={appearance.restoreDefaults}
+              onClick={() =>
+                void confirmPageReset({
+                  title: t("Restore defaults"),
+                  message: t(
+                    "Restore this page's settings to their defaults? Other pages are not affected.",
+                  ),
+                  confirmLabel: t("Restore defaults"),
+                  onConfirm: pageReset.run,
+                })
+              }
             >
               <RotateCcw aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
             </Button>
@@ -495,125 +515,128 @@ export function SettingsView({
           ) : (
             <RevealedSetting.Provider value={revealed}>
               <PageAutomaticSaveHint.Provider value={AUTOMATIC_SAVE_SECTIONS.includes(section)}>
-                <div
-                  key={section}
-                  data-settings-scroller
-                  ref={lockOverscroll}
-                  className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
-                >
-                  {pageBar}
+                <SettingsPageResetRegistry.Provider value={setRegisteredReset}>
                   <div
-                    data-settings-section={section}
-                    className="bycoda-settings-content bycoda-settings-form min-w-0 w-full"
+                    key={section}
+                    data-settings-scroller
+                    ref={lockOverscroll}
+                    className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
                   >
-                    {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
-                    {section === "crews" ? (
-                      <div className="settings-topics">
-                        <CrewsSettings
-                          cwd={cwd}
-                          onOpen={
-                            onOpenBackgroundSession
-                              ? async (target) => {
-                                  await onOpenBackgroundSession(target);
-                                  onClose();
-                                }
-                              : undefined
-                          }
-                        />
-                      </div>
-                    ) : null}
-                    {section === "connections" ? (
-                      <>
-                        <ConnectionsSettings />
-                      </>
-                    ) : null}
-                    {section === "appearance" ? <AppearancePage appearance={appearance} /> : null}
-                    {section === "workspace" ? (
-                      <WorkspacePage>
-                        <Group title={t("Explorer")} layout="full">
-                          <Row
-                            id="show-excluded-files"
-                            label={t("Show excluded files")}
-                            feedback={<AppearanceSaveFeedback settingIds={["show-excluded-files"]} />}
-                            description={t(
-                              "Show files and folders Git excludes, such as build output and dependencies, in the explorer.",
-                            )}
-                          >
-                            <Toggle
-                              label={t("Show excluded files")}
-                              on={appearance.showExcludedFiles}
-                              onChange={appearance.onShowExcludedFiles}
-                            />
-                          </Row>
-                        </Group>
-                        <WorkspaceEditorSettings />
-                      </WorkspacePage>
-                    ) : null}
-                    {section === "notifications" ? (
-                      <div className="settings-topics">
-                        <NotificationAlerts />
-                        <div
-                          id={settingDomId("project-notifications")}
-                          data-setting-id="project-notifications"
-                        >
-                          <ProjectNotificationSettings
+                    {pageBar}
+                    <div
+                      data-settings-section={section}
+                      className="bycoda-settings-content bycoda-settings-form min-w-0 w-full"
+                    >
+                      {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
+                      {section === "crews" ? (
+                        <div className="settings-topics">
+                          <CrewsSettings
                             cwd={cwd}
-                            recents={recents}
-                            notificationProjectPath={notificationProjectPath}
-                            notificationSettingsRequest={notificationSettingsRequest}
-                            highlighted={notificationHighlight}
+                            onOpen={
+                              onOpenBackgroundSession
+                                ? async (target) => {
+                                    await onOpenBackgroundSession(target);
+                                    onClose();
+                                  }
+                                : undefined
+                            }
                           />
                         </div>
-                      </div>
-                    ) : null}
-                    {section === "chat" ? <ChatPage appearance={appearance} /> : null}
-                    {section === "policies" ? <PoliciesSettings /> : null}
-                    {section === "keybindings" ? <KeybindingsPage /> : null}
-                    {section === "terminal" ? <TerminalPage /> : null}
-                    {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
-                    {section === "providers" ? <ProvidersPage cwd={cwd} recents={recents} /> : null}
-                    {section === "usage" ? <UsagePage /> : null}
-                    {section === "limits" ? <UsagePage limitsOnly /> : null}
-                    {section === "worktrees" ? (
-                      <div className="settings-topics">
-                        <SourceControlSettings />
-                        <WorktreesPage
-                          boundary
+                      ) : null}
+                      {section === "connections" ? (
+                        <>
+                          <ConnectionsSettings />
+                        </>
+                      ) : null}
+                      {section === "appearance" ? <AppearancePage appearance={appearance} /> : null}
+                      {section === "workspace" ? (
+                        <WorkspacePage>
+                          <Group title={t("Explorer")} layout="full">
+                            <Row
+                              id="show-excluded-files"
+                              label={t("Show excluded files")}
+                              feedback={<AppearanceSaveFeedback settingIds={["show-excluded-files"]} />}
+                              description={t(
+                                "Show files and folders Git excludes, such as build output and dependencies, in the explorer.",
+                              )}
+                            >
+                              <Toggle
+                                label={t("Show excluded files")}
+                                on={appearance.showExcludedFiles}
+                                onChange={appearance.onShowExcludedFiles}
+                              />
+                            </Row>
+                          </Group>
+                          <WorkspaceEditorSettings />
+                        </WorkspacePage>
+                      ) : null}
+                      {section === "notifications" ? (
+                        <div className="settings-topics">
+                          <NotificationAlerts />
+                          <div
+                            id={settingDomId("project-notifications")}
+                            data-setting-id="project-notifications"
+                          >
+                            <ProjectNotificationSettings
+                              cwd={cwd}
+                              recents={recents}
+                              notificationProjectPath={notificationProjectPath}
+                              notificationSettingsRequest={notificationSettingsRequest}
+                              highlighted={notificationHighlight}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                      {section === "chat" ? <ChatPage appearance={appearance} /> : null}
+                      {section === "policies" ? <PoliciesSettings /> : null}
+                      {section === "keybindings" ? <KeybindingsPage /> : null}
+                      {section === "terminal" ? <TerminalPage /> : null}
+                      {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
+                      {section === "providers" ? <ProvidersPage cwd={cwd} recents={recents} /> : null}
+                      {section === "usage" ? <UsagePage /> : null}
+                      {section === "limits" ? <UsagePage limitsOnly /> : null}
+                      {section === "worktrees" ? (
+                        <div className="settings-topics">
+                          <SourceControlSettings />
+                          <WorktreesPage
+                            boundary
+                            cwd={cwd}
+                            recents={recents}
+                            liveSessions={liveSessions}
+                            onRemove={onRemoveWorktree}
+                            onCheckRemove={onCheckWorktreeRemoval}
+                            onDeleteSessions={onDeleteWorktreeSessions}
+                          />
+                        </div>
+                      ) : null}
+                      {section === "groupLock" ? (
+                        <div className="group-privacy settings-topics">
+                          <PrivacyStartupSettings />
+                          <GroupLockSettings controls={{ Group, Row, Toggle, Select }} />
+                        </div>
+                      ) : null}
+                      {section === "inbox" ? <InboxPage /> : null}
+                      {section === "archive" ? (
+                        <ArchivePage
                           cwd={cwd}
-                          recents={recents}
-                          liveSessions={liveSessions}
-                          onRemove={onRemoveWorktree}
-                          onCheckRemove={onCheckWorktreeRemoval}
-                          onDeleteSessions={onDeleteWorktreeSessions}
+                          sessions={sessions}
+                          sessionsStatus={sessionsStatus}
+                          onOpenSession={onOpenSession}
+                          onArchiveSession={onArchiveSession}
+                          onDeleteSession={onDeleteSession}
+                          onRestoreProject={onRestoreProject}
+                          onDeleteProject={onDeleteProject}
                         />
-                      </div>
-                    ) : null}
-                    {section === "groupLock" ? (
-                      <div className="group-privacy settings-topics">
-                        <PrivacyStartupSettings />
-                        <GroupLockSettings controls={{ Group, Row, Toggle, Select }} />
-                      </div>
-                    ) : null}
-                    {section === "inbox" ? <InboxPage /> : null}
-                    {section === "archive" ? (
-                      <ArchivePage
-                        cwd={cwd}
-                        sessions={sessions}
-                        sessionsStatus={sessionsStatus}
-                        onOpenSession={onOpenSession}
-                        onArchiveSession={onArchiveSession}
-                        onDeleteSession={onDeleteSession}
-                        onRestoreProject={onRestoreProject}
-                        onDeleteProject={onDeleteProject}
-                      />
-                    ) : null}
+                      ) : null}
+                    </div>
                   </div>
-                </div>
+                </SettingsPageResetRegistry.Provider>
               </PageAutomaticSaveHint.Provider>
             </RevealedSetting.Provider>
           )}
         </div>
       </div>
+      {pageResetDialog}
     </div>
   );
 }

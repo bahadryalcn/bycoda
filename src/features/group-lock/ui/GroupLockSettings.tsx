@@ -3,7 +3,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useState, type ReactNode } from "react";
-import { Folder, Lock, LockOpen, Shield } from "../../../shared/ui/icons";
+import { Lock } from "../../../shared/ui/icons";
 import "./GroupPrivacy.css";
 import { Badge } from "../../../shared/ui/Badge";
 import { useGroupLock } from "../hooks/useGroupLock";
@@ -29,6 +29,8 @@ export type GroupLockControls = {
     id?: string;
     title: ReactNode;
     description?: string;
+    /** `false` moves a long description into an information popover beside the title. */
+    descriptionVisible?: boolean;
     action?: ReactNode;
     scope?: ReactNode;
     /** Open by default; only a real editing or ownership unit (a danger zone) is boxed. */
@@ -125,21 +127,36 @@ export function GroupLockSettings({
 
   return (
     <div className="group-privacy-controls">
-      <Group
-        id="group-lock-password"
-        title={
-          <span className="privacy-heading">
-            <Shield aria-hidden className="icon-md" />
-            {t("Lock password")}
-          </span>
-        }
-      >
+      <Group id="group-lock-password" title={t("Lock password")}>
         {lock.hasPassword ? (
-          <Row label={t("Password is set")}>
-            <Button className="shrink-0" onClick={() => setDialog({ kind: "change" })}>
-              {t("Change password…")}
-            </Button>
-          </Row>
+          <>
+            <Row label={t("Password is set")}>
+              <Button className="shrink-0" onClick={() => setDialog({ kind: "change" })}>
+                {t("Change password…")}
+              </Button>
+            </Row>
+            <Row
+              label={t("Forgot the password?")}
+              description={t("Reset protection. Your projects and hidden preferences stay saved.")}
+            >
+              <Button className="shrink-0" onClick={() => setDialog({ kind: "forgot" })}>
+                {t("Forgot password…")}
+              </Button>
+            </Row>
+            {/* The only destructive action of the group; it keeps its password confirmation. */}
+            <Row
+              label={t("Remove protection")}
+              description={t("Removes the password and all group locks.")}
+            >
+              <Button
+                variant="danger"
+                className="shrink-0"
+                onClick={() => setDialog({ kind: "remove" })}
+              >
+                {t("Remove password…")}
+              </Button>
+            </Row>
+          </>
         ) : (
           <Row
             label={t("No password set")}
@@ -151,35 +168,6 @@ export function GroupLockSettings({
           </Row>
         )}
       </Group>
-
-      {lock.hasPassword ? (
-        <Group title={t("Password recovery & removal")} variant="box">
-          <Row
-            label={t("Remove protection")}
-            description={t("Removes the password and all group locks.")}
-          >
-            <Button
-              variant="danger"
-              className="shrink-0"
-              onClick={() => setDialog({ kind: "remove" })}
-            >
-              {t("Remove password…")}
-            </Button>
-          </Row>
-          <Row
-            label={t("Forgot the password?")}
-            description={t("Reset protection. Your projects and hidden preferences stay saved.")}
-          >
-            <Button
-              variant="danger"
-              className="shrink-0"
-              onClick={() => setDialog({ kind: "forgot" })}
-            >
-              {t("Forgot password…")}
-            </Button>
-          </Row>
-        </Group>
-      ) : null}
 
       <Group id="group-lock-options" title={t("Automatic locking")}>
         <Row
@@ -232,7 +220,7 @@ export function GroupLockSettings({
 
       <Group
         id="group-lock-groups"
-        title={<span className="privacy-heading">{t("Group protection")}</span>}
+        title={t("Group protection")}
         description={t("Choose which groups require your password.")}
         action={
           <Button
@@ -305,20 +293,21 @@ export function GroupLockSettings({
                     className="settings-collection-row privacy-group-row"
                   >
                     <span className="privacy-group-name">
-                      <span className="privacy-group-icon" aria-hidden>
-                        {locked ? (
-                          <Lock className="icon-sm" strokeWidth={1.75} />
-                        ) : group.lockable ? (
-                          <LockOpen className="icon-sm" strokeWidth={1.75} />
-                        ) : (
-                          <Folder className="icon-sm" />
-                        )}
-                      </span>
                       <span className="privacy-group-title">{group.name}</span>
                     </span>
-                    <Badge className="privacy-group-state">
-                      {locked ? t("Locked") : group.lockable ? t("Unlocked") : t("Not protected")}
-                    </Badge>
+                    {/* Only real states: locked now, unlocked, or (a dash) not protected at all. */}
+                    {locked ? (
+                      <Badge className="privacy-group-state">{t("Locked")}</Badge>
+                    ) : group.lockable ? (
+                      <span className="privacy-group-state privacy-group-state-quiet">
+                        {t("Unlocked")}
+                      </span>
+                    ) : (
+                      <span className="privacy-group-state privacy-group-state-quiet">
+                        <span aria-hidden>—</span>
+                        <span className="sr-only">{t("Not protected")}</span>
+                      </span>
+                    )}
                     <span className="privacy-group-toggle">
                       <Toggle
                         label={t("{p0} is lockable", { p0: group.name })}
@@ -335,11 +324,6 @@ export function GroupLockSettings({
         )}
       </Group>
       <HiddenGroupsSettings controls={{ Group, Row }} />
-      <p className="privacy-footnote">
-        {t("Privacy controls affect what appears in ")}
-        {PRODUCT_IDENTITY.displayName}
-        {t(". Project files and transcripts on disk are not encrypted.")}
-      </p>
 
       {dialog?.kind === "set" ? (
         <SetLockPasswordDialog

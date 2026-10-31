@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use crate::native_authority_bootstrap::HostBootstrap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
@@ -32,6 +32,42 @@ struct Receipt {
     qualified: bool,
 }
 
+const CACHE_FILE: &str = "native-authority-deployment-cache.json";
+
+#[derive(Deserialize, Serialize)]
+struct FingerprintCache {
+    executable: std::path::PathBuf,
+    size: u64,
+    modified: (u64, u32),
+    sha256: String,
+    provisioned: Option<(String, String)>,
+}
+
+fn read_cache(profile: &Path) -> Option<FingerprintCache> {
+    let path = profile.join(CACHE_FILE);
+    if std::fs::metadata(&path).ok()?.len() > 16 * 1024 { return None; }
+    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+}
+
+fn save_cache(profile: &Path, cache: &FingerprintCache) {
+    // This is only an optimization; a partial/missing cache is a cache miss.
+    if let Ok(bytes) = serde_json::to_vec(cache) {
+        let _ = std::fs::write(profile.join(CACHE_FILE), bytes);
+    }
+}
+
+pub(crate) fn invalidate_cached_provision(profile: &Path) {
+    let _ = std::fs::remove_file(profile.join(CACHE_FILE));
+}
+
+fn deployment_digest(host: &HostBootstrap, source_profile_id: &str) -> Option<String> {
+    let id = uuid::Uuid::parse_str(source_profile_id).ok()?;
+    let path = host.directory().join("native-authority").join("deployments")
+        .join(format!("{id}.json"));
+    if std::fs::metadata(&path).ok()?.len() > MAX_INPUT as u64 { return None; }
+    Some(format!("{:x}", Sha256::digest(std::fs::read(path).ok()?)))
+}
+
 pub(crate) fn provision(
     host: &HostBootstrap,
     application_identifier: &str,
@@ -52,7 +88,28 @@ pub(crate) fn provision(
     let profile = profile_directory
         .canonicalize()
         .map_err(|_| DeploymentError::Unavailable)?;
-    let (raw_sha256, executable_size) = fingerprint(&executable)?;
+    let stat = std::fs::metadata(&executable).map_err(|_| DeploymentError::Unavailable)?;
+    let modified = stat.modified().ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .ok_or(DeploymentError::Unavailable)?;
+    let stamp = (modified.as_secs(), modified.subsec_nanos());
+    let cached = read_cache(&profile).filter(|cache| {
+        cache.executable == executable && cache.size == stat.len() && cache.modified == stamp
+            && cache.sha256.len() == 64 && cache.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+    });
+    let mut cache = match cached {
+        Some(cache) => cache,
+        None => {
+            let (sha256, size) = fingerprint(&executable)?;
+            let cache = FingerprintCache {
+                executable: executable.clone(), size, modified: stamp, sha256, provisioned: None,
+            };
+            save_cache(&profile, &cache);
+            cache
+        }
+    };
+    let raw_sha256 = &cache.sha256;
+    let executable_size = cache.size;
     let platform = if cfg!(windows) {
         "win32"
     } else if cfg!(target_os = "macos") {
@@ -69,6 +126,13 @@ pub(crate) fn provision(
     })).map_err(|_| DeploymentError::Unavailable)?;
     if input.len() > MAX_INPUT || stop.load(Ordering::Acquire) {
         return Err(DeploymentError::Cancelled);
+    }
+    let input_digest = format!("{:x}", Sha256::digest(&input));
+    if cache.provisioned.as_ref().is_some_and(|(prior_input, prior_deployment)| {
+        prior_input == &input_digest
+            && deployment_digest(host, source_profile_id).as_ref() == Some(prior_deployment)
+    }) {
+        return Ok(source_profile_id.to_string());
     }
     let node = Path::new(&launcher.node_executable)
         .canonicalize()
@@ -98,6 +162,9 @@ pub(crate) fn provision(
     {
         return Err(DeploymentError::InvalidReceipt);
     }
+    cache.provisioned = deployment_digest(host, source_profile_id)
+        .map(|digest| (input_digest, digest));
+    save_cache(&profile, &cache);
     Ok(receipt.deployment_id)
 }
 
@@ -274,6 +341,31 @@ impl InvocationJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn invalidating_provision_preserves_cached_fingerprint() {
+        let directory = std::env::temp_dir().join(format!("bycoda-deploy-cache-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(self.0.join(CACHE_FILE));
+                let _ = std::fs::remove_dir(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(directory.clone());
+        let cache = FingerprintCache {
+            executable: directory.join("app.exe"), size: 42,
+            modified: (123, 456), sha256: "a".repeat(64),
+            provisioned: Some(("input".into(), "record".into())),
+        };
+        save_cache(&directory, &cache);
+        assert!(read_cache(&directory).unwrap().provisioned.is_some());
+        invalidate_cached_provision(&directory);
+        assert!(read_cache(&directory).is_none());
+        std::fs::write(directory.join(CACHE_FILE), b"partial").unwrap();
+        assert!(read_cache(&directory).is_none());
+    }
+
     #[cfg(windows)]
     #[test]
     fn invocation_job_reaps_its_actual_descendant_without_touching_a_sibling() {
@@ -352,7 +444,7 @@ mod tests {
     }
     #[cfg(windows)]
     #[test]
-    fn an_unobserved_descendant_birth_never_becomes_successful_settlement() {
+    fn settlement_observes_descendant_notifications_without_a_poll_loop() {
         let job = InvocationJob::new().unwrap();
         let mut command = Command::new("cmd.exe");
         command
@@ -361,9 +453,10 @@ mod tests {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         let mut parent = job.spawn(&mut command).unwrap();
-        // Intentionally omit the production supervisor's observation loop.
+        // No explicit polling is required: settlement consumes kernel birth/exit
+        // notifications and verifies them against the job's accounting totals.
         assert!(parent.wait().unwrap().success());
-        assert!(matches!(job.settle(), Err(DeploymentError::Unavailable)));
+        job.settle().unwrap();
     }
     #[test]
     fn owned_local_cli_success_is_bounded_and_joined() {

@@ -20,6 +20,13 @@ current draft. The generation settings control shows effective provider/model,
 checkout override versus global/default selection, and provider-default account
 provenance in optional details. Account selection is resolved when generation runs.
 
+While there are changes, the main button is **Commit**: it commits what is staged,
+or every change when nothing is staged (amending never adds unstaged files). It
+never pushes. **Commit & Push** and **Commit, Push & Create PR** are in its menu.
+Pending outgoing or incoming commits keep their own **Push**, **Pull**, **Sync
+Changes** or **Publish Branch** button beside it. With nothing to commit, that sync,
+Create PR or View PR action leads instead.
+
 Remote actions distinguish incoming and outgoing commits and display their upstream
 destination. Existing publication, amend, conflict and destructive-operation gates
 remain in force. Diagnostic **Details** retains raw output and the checkout path,

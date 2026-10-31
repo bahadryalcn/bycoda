@@ -32,14 +32,6 @@
 .mainColumn {
   min-inline-size: 0;
 }
-@container worktrees-page (min-width: 58rem) {
-  .columns {
-    display: grid;
-    grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
-    align-items: start;
-    column-gap: 32px;
-  }
-}
 
 .project {
   min-inline-size: 0;
@@ -180,3 +172,19 @@
 .location > span {
   color: var(--ui-text-muted);
 }
+
+.fixedHeader {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: var(--ui-surface);
+  padding-block: 8px;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.location { flex-direction: row; flex-wrap: wrap; padding-block: 0; }

@@ -5,6 +5,8 @@ import { isFilesystemTab, type FilePaneTab } from "../../../features/workspace/m
 
 type BufferState = { path: string; dirty: boolean };
 
+const BUFFER_KEEPALIVE_MS = 25_000;
+
 export function managedWorkspaceBuffers(
   files: readonly FilePaneTab[],
   dirtyIds: ReadonlySet<string>,
@@ -48,8 +50,10 @@ export function useManagedWorkspaceBuffers(
       // Failed/unsupported transport remains unknown to the native/Host gate.
       void report(JSON.parse(snapshot) as BufferState[]).catch(() => undefined);
     };
+    // Reported on every change; the repeat only keeps an unchanged report fresh, because the
+    // native gate treats a report older than 45 s as stale (buffer_reports.rs).
     send();
-    const timer = window.setInterval(send, 15_000);
+    const timer = window.setInterval(send, BUFFER_KEEPALIVE_MS);
     return () => window.clearInterval(timer);
   }, [report, snapshot]);
   // Unmount is not evidence that editor contents were saved or a process exited.

@@ -22,22 +22,30 @@ export function gateRunLease(
   input: SubmitInput,
   pre: SubmitPreflight,
   start: () => SubmissionAcceptance,
+  prepare?: () => Promise<unknown>,
 ): SubmissionAcceptance | undefined {
   // The very first turn of a run waits for the first look at the host (briefly),
   // so it takes its lease like every later turn instead of racing ahead of it.
   const firstLook = runLeaseMachine() ? undefined : firstRunLeaseLook();
   if (!firstLook && !runLeaseMachine()) return undefined;
   const { sessionId, options } = input;
+  // Speculative guidance never starts a provider and failures are retried by
+  // the normal fail-closed send path. Observe them even when the lease is held.
+  const preparation = prepare ? Promise.allSettled([Promise.resolve().then(prepare)]) : undefined;
   return (async () => {
     if (firstLook) {
       await firstLook;
-      if (!runLeaseMachine()) return start();
+      if (!runLeaseMachine()) {
+        await preparation;
+        return start();
+      }
     }
     const outcome = await acquireRunLease(sessionId);
     if (outcome.kind !== "held") {
       // A turn that throws before it runs must not leave the lease behind.
       let accepted: boolean = false;
       try {
+        await preparation;
         accepted = await start();
       } finally {
         if (outcome.kind === "granted" && !accepted) await releaseRunLease(sessionId);

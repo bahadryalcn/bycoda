@@ -289,7 +289,8 @@ import {
 import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
 import { useComposerMentionSources } from "./useComposerMentionSources";
 import { useComposerSlashInventory } from "./useComposerSlashInventory";
-import { applyTextareaEdit } from "./composerTextareaEdit";
+import { applyTextareaEdit, insertAtCaret } from "./composerTextareaEdit";
+import { DictationButton } from "../../voice/ui/DictationButton";
 import { useEditingLastTurn } from "./useEditingLastTurn";
 import {
   useAttachmentSink,
@@ -1277,8 +1278,10 @@ export const Composer = memo(function Composer({
     workspaceMode,
     effectiveWorktreeBase,
   );
+  // Only an explicit worktree choice blocks; a policy default falls back to current.
   const remoteWorkspaceCreationBlocked =
     draftWorkspace &&
+    workspaceMode === "worktree" &&
     workspaceCreation.mode === "worktree" &&
     !!parseRemotePath(cwd) &&
     !managedWorkspaceCreationReady;
@@ -1296,8 +1299,10 @@ export const Composer = memo(function Composer({
         (remoteWorkspaceCreationBlocked
           ? t("Update bycoda to create managed sessions on this remote Host.")
           : undefined));
+  // Policy reads are short-bounded; only an explicit worktree error stops Send.
   const workspaceSendBlocked =
-    draftWorkspace && (workspaceCreation.pending || !!workspaceCreationError);
+    draftWorkspace &&
+    (workspaceCreation.pending || (!!workspaceCreationError && workspaceMode === "worktree"));
   const resolvedWorktreeBase =
     workspaceCreation.base || branch || draftBranches?.current || undefined;
   const [hasText, setHasText] = useState(() => (initialDraft ?? "").trim().length > 0);
@@ -2333,14 +2338,18 @@ export const Composer = memo(function Composer({
   }, [parentChanged]);
   const submit = (value: string, queue = false) => {
     if (!canMutateDraft()) return;
-    if (
-      disabled ||
-      worktreeRemoved ||
-      workspaceActionBlocked ||
-      sendHeldReason ||
-      submitLockRef.current
-    )
+    if (submitLockRef.current) return;
+    if (disabled || worktreeRemoved || workspaceActionBlocked || sendHeldReason) {
+      // Enter reaches here without the send button's tooltip; say why nothing was sent.
+      setPasteError(
+        sendHeldReason ||
+          sendBlockedReason ||
+          t(
+            "The message was not sent. Resolve the conversation or workspace blocker and try again.",
+          ),
+      );
       return;
+    }
     const admitted = parentChanged.admit();
     if (!admitted) return;
     const rawAction = mountedClosure.admitAction();
@@ -2367,7 +2376,14 @@ export const Composer = memo(function Composer({
           // Check the original owner before reading refs that a reused view may
           // already have assigned to a different logical session.
           if (parentChanged.identity() !== originalIdentity) return;
-          if (pasteGenerationRef.current !== generation || sendIntentRef.current !== intent) return;
+          if (pasteGenerationRef.current !== generation || sendIntentRef.current !== intent) {
+            // A failed read already explains itself; keep that message.
+            setPasteError(
+              (current) =>
+                current ?? t("The draft changed while it was being prepared. Send it again."),
+            );
+            return;
+          }
           pending = pasteFlightRef.current;
         }
         if (parentChanged.identity() !== originalIdentity) return;
@@ -3081,7 +3097,10 @@ export const Composer = memo(function Composer({
       return;
     }
     e.preventDefault();
-    if (!attachmentsSupported) return;
+    if (!attachmentsSupported) {
+      setPasteError(t("This conversation does not accept attachments."));
+      return;
+    }
     rememberAttachmentRead((accepted) =>
       attachmentsFromFiles(files).then((pasted) =>
         accepted.apply(() => {
@@ -3093,6 +3112,10 @@ export const Composer = memo(function Composer({
         }),
       ),
     );
+  };
+
+  const insertDictation = (text: string) => {
+    if (ref.current && canMutateDraft()) insertAtCaret(ref.current, text);
   };
 
   const attachFromPicker = () => {
@@ -3829,6 +3852,7 @@ export const Composer = memo(function Composer({
                 iconOnly
                 label={t("Add files or skills")}
                 title={t("Add files or skills")}
+                data-usage-guide="composer-plus"
                 selected={plusOpen}
                 aria-haspopup="menu"
                 aria-expanded={plusOpen}
@@ -4018,6 +4042,11 @@ export const Composer = memo(function Composer({
                   working={busy && enabled}
                 />
               ) : null}
+              <DictationButton
+                disabled={disabled}
+                onText={insertDictation}
+                onError={setPasteError}
+              />
               <ComposerAction
                 busy={busy}
                 submitting={submission?.sessionId === sessionId ? submission?.action : null}

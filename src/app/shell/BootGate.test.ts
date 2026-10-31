@@ -65,14 +65,14 @@ describe("transferred workspace boot ownership", () => {
     await act(async () => resolve());
     expect(container.textContent).toBe("ready");
   });
-  it("leaves a rejected destination locked for native teardown and source rollback", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
+  it("falls back to a normal boot when the acknowledgement is rejected", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     invoke.mockRejectedValue(new Error("Transfer was cancelled"));
     render(true);
     frame();
     frame();
     await act(async () => {});
-    expect(container.textContent).toBe("locked");
+    expect(container.textContent).toBe("ready");
   });
   it("cancels readiness when the destination unmounts before its second paint", () => {
     render(true);

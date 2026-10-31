@@ -9,7 +9,17 @@ import {
 } from "../../../shared/lib/performanceTraceSettings";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
+
+/**
+ * Page-level "Restore defaults": the trace goes back to off. The mounted group follows through
+ * the same storage event sibling windows use.
+ */
+export function restorePerformanceTraceDefault() {
+  savePerformanceTraceEnabled(false);
+  window.dispatchEvent(new StorageEvent("storage", { key: PERFORMANCE_TRACE_KEY, storageArea: localStorage }));
+}
 
 /** Timings only: the copied JSON holds stage names, times, durations and counters. */
 export function DiagnosticsGroup() {
@@ -84,34 +94,41 @@ export function DiagnosticsGroup() {
       <Row
         id="performance-trace"
         label={t("Performance trace")}
-        description={t(
-          "Record startup timing, rendering stalls and long main-thread tasks. Only durations are kept, never message text, paths or script names.",
-        )}
+        description={t("Record startup timing, rendering stalls and long main-thread tasks.")}
+        info={
+          <InfoPopover className="shrink-0">
+            <p>{t("Only durations are kept, never message text, paths or script names.")}</p>
+          </InfoPopover>
+        }
+        feedback={
+          unsaved ? (
+            <SettingsFeedback
+              state="warning"
+              action={
+                <Button size="sm" onClick={() => onEnabled(enabled)}>
+                  {t("Retry saving")}
+                </Button>
+              }
+            >
+              {enabled
+                ? t(
+                    "Performance trace is on in this window, but the setting could not be saved. It will revert after a restart.",
+                  )
+                : t(
+                    "Performance trace is off in this window, but the setting could not be saved. It will revert after a restart.",
+                  )}
+            </SettingsFeedback>
+          ) : undefined
+        }
       >
         <Toggle label={t("Performance trace")} on={enabled} onChange={onEnabled} />
       </Row>
-      {unsaved ? (
-        <SettingsFeedback
-          state="warning"
-          action={
-            <Button size="sm" onClick={() => onEnabled(enabled)}>
-              {t("Retry saving")}
-            </Button>
-          }
-        >
-          {enabled
-            ? t(
-                "Performance trace is on in this window, but the setting could not be saved. It will revert after a restart.",
-              )
-            : t(
-                "Performance trace is off in this window, but the setting could not be saved. It will revert after a restart.",
-              )}
-        </SettingsFeedback>
-      ) : null}
       <Row
         id="performance-trace-data"
         label={t("Trace data")}
         description={t("Copy the recorded timings as JSON, or clear them.")}
+        dependsOn={enabled}
+        disabledReason={t("Turn on Performance trace first")}
         feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
       >
         <span role="status" className="text-ui-caption text-(--ui-text-secondary) empty:hidden">

@@ -725,6 +725,35 @@ it("bounds logical resnapshot recovery before HTTP fallback without a physical r
   stop();
 });
 
+it("abandons a WebSocket route that never becomes ready and polls over HTTP", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  const { port } = nativeFixture("ws-stuck");
+  vi.mocked(port.attach).mockImplementation(async () => true); // connecting forever
+  vi.mocked(remoteRequest).mockImplementation(() => new Promise(() => {}));
+  const errors = vi.fn();
+  const stop = subscribeRemoteMachineChannel(
+    "ws-stuck",
+    { projects: [{ projectId: "p" }] },
+    vi.fn(),
+    errors,
+  );
+  await flushNative();
+  await vi.advanceTimersByTimeAsync(4000);
+  expect(errors).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(3000);
+  await flushNative();
+  expect(errors).toHaveBeenCalledOnce();
+  expect(port.detach).toHaveBeenCalled();
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "ws-stuck",
+    "machine.changes",
+    expect.objectContaining({ projects: [{ projectId: "p" }] }),
+  );
+  stop();
+  (console.warn as unknown as { mockRestore(): void }).mockRestore();
+});
+
 it("shares route acquisition with unary callers and releases only the final native owner", async () => {
   const { port } = nativeFixture("ws-unary");
   const first = acquireRemoteHostRuntime("ws-unary")!;

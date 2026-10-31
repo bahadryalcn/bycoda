@@ -4,6 +4,8 @@ import { hostProjectFor } from "../../automations/model/hostAutomationClient";
 import { machineCapabilities } from "../../automations/model/machineSnapshot";
 import { remoteRequest } from "../../connections/model/connections";
 import {
+  getSendWorkspaceCapabilities,
+  resetSendWorkspaceCapabilities,
   resolveWorkspaceContext,
   workspaceRequest,
   WorkspaceCapabilityError,
@@ -20,6 +22,7 @@ const local = { id: "local-machine", environmentId: "env-local" };
 const remote = { id: "remote-machine", environmentId: "env-remote" };
 beforeEach(() => {
   vi.resetAllMocks();
+  resetSendWorkspaceCapabilities();
   vi.mocked(invoke).mockImplementation(async (command) =>
     command === "local_host_connect" ? local : [local, remote],
   );
@@ -180,4 +183,16 @@ it("requires publication support for publish reviews and never retries an uncert
     ),
   ).rejects.toThrow("connection lost");
   expect(remoteRequest).toHaveBeenCalledTimes(1);
+});
+
+it("reuses a successful per-send capability lookup, never a failure, until reset on machine changes", async () => {
+  vi.mocked(machineCapabilities).mockRejectedValueOnce(new Error("offline"));
+  await expect(getSendWorkspaceCapabilities({ cwd: "/repo" })).rejects.toThrow("offline");
+  await Promise.resolve();
+  expect(await getSendWorkspaceCapabilities({ cwd: "/repo" })).toContain("workspaces.managed.v1");
+  expect(await getSendWorkspaceCapabilities({ cwd: "/repo" })).toContain("workspaces.managed.v1");
+  expect(machineCapabilities).toHaveBeenCalledTimes(2);
+  resetSendWorkspaceCapabilities();
+  await getSendWorkspaceCapabilities({ cwd: "/repo" });
+  expect(machineCapabilities).toHaveBeenCalledTimes(3);
 });

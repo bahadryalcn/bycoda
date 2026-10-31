@@ -82,6 +82,18 @@
   translate: 0 -50%;
   pointer-events: none;
 }
+/* Folded `inline` search with a query still applied: a dot on the icon says the list is filtered. */
+.activeMark {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 999px;
+  background: var(--ui-tone-accent-fg);
+  pointer-events: none;
+}
 .input {
   position: absolute;
   inset: 0;

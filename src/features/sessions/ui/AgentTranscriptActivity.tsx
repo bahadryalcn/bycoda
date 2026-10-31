@@ -51,7 +51,7 @@ import {
   type ToolPreview,
 } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
-import { formatElapsed } from "./useElapsedFrom";
+import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
 import { consumeOpenSubagent, OPEN_SUBAGENT_EVENT, requestViewSubagent } from "./subagentFocus";
 import { AgentMarkdown } from "./AgentMarkdown";
 import {
@@ -853,14 +853,25 @@ export function ActivityRow({
 /** A status row folded into the trail: one muted line, nothing to open. */
 function ActivityStatusRow({ block }: { block: Block }) {
   useLocale();
+  const startedAt = block.statusRunningSince;
+  const running = startedAt != null;
+  // Idle (paused) once the row settles, so a finished row keeps no ticker.
+  const elapsedMs = useElapsedFrom(startedAt, !running);
+  const elapsed = running ? formatElapsed(elapsedMs) : null;
   return (
     <div className="flex min-w-0 items-center gap-1.5 py-1">
+      {running ? <Spinner size="xs" className="shrink-0" /> : null}
       <span
         title={block.text}
         className={`min-w-0 flex-1 truncate font-sans text-sm ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
       >
         {block.text.trim()}
       </span>
+      {elapsed ? (
+        <span className="shrink-0 text-ui-micro text-(--ui-text-secondary) tabular-nums">
+          {elapsed}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { forwardRef, useId } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
 import { FieldMessage } from "../lib/field-message";
 import { fieldDescribedBy, fieldMessageIds } from "../lib/field-ids";
+import { FieldControl } from "../../Field";
 import styles from "./input.module.css";
 import { SearchInput } from "../../SearchInput";
 
@@ -19,6 +20,9 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   clearable?: boolean;
   /** A compact trailing icon action, separate from the label and messages. */
   endAdornment?: ReactNode;
+  startAdornment?: ReactNode;
+  appearance?: "default" | "quiet";
+  fieldSize?: "sm" | "md";
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
@@ -33,6 +37,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     hideLabel = false,
     clearable = false,
     endAdornment,
+    startAdornment,
+    appearance = "default",
+    fieldSize,
     ...props
   },
   ref,
@@ -46,11 +53,15 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   const control = (
     <Control
       {...props}
-      {...(Control === SearchInput ? { standalone: true } : {})}
+      {...(Control === SearchInput ? {
+        standalone: endAdornment == null && startAdornment == null,
+        fieldSize: fieldSize ?? (fieldVariant === "compact" ? "sm" : "md"),
+        appearance: appearance === "quiet" && endAdornment == null && startAdornment == null ? "quiet" : "bare",
+      } : {})}
       id={controlId}
       ref={ref}
       aria-label={props["aria-label"] ?? (hideLabel && label ? label : undefined)}
-      className={[styles.input, endAdornment != null && styles.withEndAdornment, className]
+      className={[styles.input, className]
         .filter(Boolean)
         .join(" ")}
       aria-invalid={error ? true : props["aria-invalid"]}
@@ -61,20 +72,19 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     <div
       className={[styles.field, fieldClassName].filter(Boolean).join(" ")}
       data-variant={fieldVariant}
+      data-field-size={fieldSize}
+      data-field-appearance={appearance}
     >
       {!hideLabel && (
         <label className={styles.label} htmlFor={controlId}>
           {label}
         </label>
       )}
-      {endAdornment != null ? (
-        <div className={styles.control}>
+      {endAdornment != null || startAdornment != null ? (
+        <FieldControl startAdornment={startAdornment} endAdornment={endAdornment} appearance={appearance} size={fieldSize ?? (fieldVariant === "compact" ? "sm" : "md")}>
           {control}
-          <div className={styles.endAdornment}>{endAdornment}</div>
-        </div>
-      ) : (
-        control
-      )}
+        </FieldControl>
+      ) : control}
       <FieldMessage id={errorId} text={error} className={styles.error} alert />
       <FieldMessage id={hintId} text={description} className={styles.description} />
     </div>

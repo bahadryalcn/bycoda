@@ -94,6 +94,7 @@ import {
   resolveClaudeApiModelId,
   runtimeModeToPermission,
   sessionIdFromMessage,
+  compactionPhaseFromSystem,
   statusTextFromSystem,
   streamDeltaFromEvent,
   stringField,
@@ -112,6 +113,10 @@ import {
   type ClaudeCliSettings,
   type ClaudeControlRequest,
 } from "./claudeProtocol";
+import {
+  COMPACTING_TEXT,
+  COMPACTION_STATUS_KEY,
+} from "../../../../features/sessions/model/compactionStatus";
 import { agentFallbackCallId, resolveStopTargets, settledTaskStatus } from "./claudeStopTask";
 import { isAgentToolName } from "../../core/preview";
 import { reportSessionCommands } from "../../core/reportedCommands";
@@ -269,6 +274,7 @@ const tasksByThread = new Map<
 /** Task-list block key for TaskCreate/TaskUpdate items. */
 const CLAUDE_TASKS_KEY = "claude-tasks";
 const cancelledThreads = new Set<string>();
+const cancelEpochByThread = new Map<string, object>();
 
 let resolveClaudeBinaryImpl: () => Promise<{ path: string }> = resolveClaudeBinary;
 
@@ -279,6 +285,8 @@ export function setClaudeBinaryResolver(fn: () => Promise<{ path: string }>): vo
 
 export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
   assertProviderOperation(input.operationContext);
+  cancelledThreads.delete(input.sessionId);
+  const cancelEpoch = cancelEpochByThread.get(input.sessionId);
 
   input = { ...input };
 
@@ -297,7 +305,10 @@ export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
           cancelledThreads.delete(input.sessionId);
           throw error;
         }
-        if (cancelledThreads.delete(input.sessionId)) return;
+        if (cancelledThreads.delete(input.sessionId)) {
+          input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+          return;
+        }
 
         if (live.handle) observeProviderProcess(input, live.handle);
         const bindWriter = captureByteTurnWriter(
@@ -307,6 +318,10 @@ export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
         );
         live.turns = continueAfterFailure(live.turns, async () => {
           const writer = await bindWriter();
+          if (cancelEpochByThread.get(input.sessionId) !== cancelEpoch) {
+            input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+            return;
+          }
           live.onEvent = input.onEvent;
           live.runtimeMode = input.runtimeMode;
           live.cancelled = false;
@@ -328,6 +343,7 @@ export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
 
 export async function compactClaudeContext(input: CompactContextInput): Promise<void> {
   assertProviderOperation(input.operationContext);
+  const cancelEpoch = cancelEpochByThread.get(input.sessionId);
 
   input = { ...input };
 
@@ -344,7 +360,10 @@ export async function compactClaudeContext(input: CompactContextInput): Promise<
         if (!live || live.cwd !== input.cwd || live.settingsKey !== settingsKey) {
           live = await ensureLive(input);
         }
-        if (cancelledThreads.delete(input.sessionId)) return;
+        if (cancelledThreads.delete(input.sessionId)) {
+          input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+          return;
+        }
 
         if (live.handle) observeProviderProcess(input, live.handle);
         const bindWriter = captureByteTurnWriter(
@@ -354,6 +373,10 @@ export async function compactClaudeContext(input: CompactContextInput): Promise<
         );
         live.turns = continueAfterFailure(live.turns, async () => {
           const writer = await bindWriter();
+          if (cancelEpochByThread.get(input.sessionId) !== cancelEpoch) {
+            input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+            return;
+          }
           live.onEvent = input.onEvent;
           live.runtimeMode = input.runtimeMode;
           live.cancelled = false;
@@ -395,7 +418,7 @@ export async function steerClaudeTurn(input: SteerTurnInput): Promise<void> {
   input = { ...input };
 
   const live = liveByThread.get(input.sessionId);
-  if (!live?.activeTurn) throw new Error("No active turn to steer");
+  if (!live?.activeTurn) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
     throw new Error("Provider operation replaced before steer");
 
@@ -461,6 +484,7 @@ export async function cancelClaudeTurn(
 
   const live = liveByThread.get(sessionId);
   const preparing = startingByThread.get(sessionId);
+  // A captured cancellation must not affect a newer operation.
   if (
     !ownsOperation(
       context,
@@ -469,10 +493,13 @@ export async function cancelClaudeTurn(
     )
   )
     return;
-  if (!live) {
+  cancelEpochByThread.set(sessionId, {});
+  if (preparing) {
     cancelledThreads.add(sessionId);
+    await stopClaudeSession(sessionId, context ?? preparing.handle);
     return;
   }
+  if (!live) return;
   const backgroundTaskIds = [...live.backgroundTasks.keys()];
   const writer = context
     ? await captureByteTurnWriter(live.handle, context.nativeControlTurn, context, "control")()
@@ -514,7 +541,6 @@ export async function stopClaudeBackgroundWork(
   callId?: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
 
   const live = liveByThread.get(sessionId);
   if (!live || !ownsOperation(context, live.handle, live.operation)) return;
@@ -593,13 +619,16 @@ export async function forgetClaudeSession(
   sessionId: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
-
-  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
-  if (original && !ownsOperation(context, original.handle, original.operation)) return;
+  // Delete/switch must end the process: a context that no longer owns it falls
+  // back to a by-session stop instead of returning with the process alive.
   resumeByThread.delete(sessionId);
+  cancelEpochByThread.delete(sessionId);
   tasksByThread.delete(sessionId);
-  await stopClaudeSession(sessionId, context);
+  const queuedOnly = cancelQueuedOperation(context);
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  const owned =
+    !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  await stopClaudeSession(sessionId, owned ? context : undefined);
 }
 
 export function bindClaudeSession(
@@ -1016,8 +1045,15 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
+    const failure = startup.live?.exitError ?? error;
+    if (/No conversation found with session ID:/i.test(String(failure)) && resumeByThread.has(input.sessionId)) {
+      await stopClaudeSession(input.sessionId, handle);
+      resumeByThread.delete(input.sessionId);
+      input.onEvent({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
+      return ensureLive(input);
+    }
     return preserveProviderFailure(
-      startup.live?.exitError ?? error,
+      failure,
       stopClaudeSession(input.sessionId, handle),
     );
   } finally {
@@ -1200,12 +1236,40 @@ function handleLine(sessionId: string, live: Live, line: string): void {
     return;
   }
   if (type === "system") {
+    const compaction = compactionPhaseFromSystem(rec);
+    if (compaction) {
+      // One row follows the compaction: running here, settled by the boundary.
+      if (compaction.phase === "running") {
+        live.onEvent({
+          type: "status",
+          key: COMPACTION_STATUS_KEY,
+          running: true,
+          text: COMPACTING_TEXT,
+        });
+        return;
+      }
+      // The pass is over. A success is settled by `compact_boundary`; an
+      // empty settle only closes a row that is still running.
+      live.onEvent({ type: "status", key: COMPACTION_STATUS_KEY, running: false, text: "" });
+      if (compaction.phase === "failed") {
+        live.onEvent({
+          type: "status",
+          text: compaction.error
+            ? `Could not compact context: ${compaction.error}`
+            : "Could not compact context",
+        });
+      }
+      return;
+    }
     const text = statusTextFromSystem(rec);
     if (text) {
-      if ((stringField(rec, "subtype") ?? "").startsWith("compact")) {
-        live.compactionConfirmed = true;
-      }
-      live.onEvent({ type: "status", text });
+      const compact = (stringField(rec, "subtype") ?? "").startsWith("compact");
+      if (compact) live.compactionConfirmed = true;
+      live.onEvent(
+        compact
+          ? { type: "status", key: COMPACTION_STATUS_KEY, running: false, text }
+          : { type: "status", text },
+      );
     }
   }
 }

@@ -186,6 +186,7 @@ export function TerminalView({
   );
   const [savedFontSize, setSavedFontSize] = useState(loadAppearancePreferences().terminalSize);
   const [searchDecorations, setSearchDecorations] = useState<ISearchOptions["decorations"]>();
+  const changeFontSizeRef = useRef<(size: number) => void>(() => {});
   const resetFontSizeRef = useRef<() => void>(() => {});
   const [tool, setTool] = useState<TerminalTool>(null);
   const [shellReady, setShellReady] = useState(false);
@@ -390,6 +391,7 @@ export function TerminalView({
       applySize: () => applySizeRef.current(),
     });
     resetFontSizeRef.current = typography.resetFontSize;
+    changeFontSizeRef.current = typography.changeFontSize;
 
     const fitting = createTerminalFitting({
       term,
@@ -432,6 +434,7 @@ export function TerminalView({
       theme.dispose();
       reducedMotion?.removeEventListener("change", onMotionChange);
       resetFontSizeRef.current = () => {};
+      changeFontSizeRef.current = () => {};
       typography.dispose();
       dataSub.dispose();
       oscCwd.dispose();
@@ -605,6 +608,7 @@ export function TerminalView({
         fontSize={displayFontSize}
         savedFontSize={savedFontSize}
         onResetFontSize={() => resetFontSizeRef.current()}
+        onFontSizeChange={(size) => changeFontSizeRef.current(size)}
         searchDecorations={searchDecorations}
         terminalId={id}
         terminal={terminal}

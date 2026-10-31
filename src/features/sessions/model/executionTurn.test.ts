@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import {
   appendUser,
   appendSteerUser,
+  applyHarnessEvent,
   stopStreaming,
 } from "../../../integrations/harness/core/apply";
 import { newSession } from "./session";
@@ -13,6 +14,8 @@ it("keeps the execution owner's elapsed and completed duration across multiple s
     vi.setSystemTime(1000);
     let session = appendUser(newSession("codex", "/repo"), "Start");
     session = { ...session, busy: true };
+    // The duration starts when the provider accepts the turn, not when it is typed.
+    session = applyHarnessEvent(session, { type: "turn.started", providerTurnId: "turn" });
     const owner = session.blocks.at(-1)!;
     vi.setSystemTime(4000);
     session = appendSteerUser(session, "Steer");
@@ -24,6 +27,7 @@ it("keeps the execution owner's elapsed and completed duration across multiple s
     expect(liveAgentsFromSessions([session], new Set([session.id]))[0]?.durationMs).toBe(6000);
     vi.setSystemTime(9000);
     session = { ...appendUser(session, "Next real turn"), busy: true };
+    session = applyHarnessEvent(session, { type: "turn.started", providerTurnId: "next" });
     expect(liveAgentsFromSessions([session])[0]?.startedAt).toBe(9000);
   } finally {
     vi.useRealTimers();

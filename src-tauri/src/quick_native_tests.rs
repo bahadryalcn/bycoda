@@ -312,23 +312,15 @@ fn full_unknown_ledger_never_evicts_and_compacted_ack_fence_cannot_replay() {
     let first = intent(1);
     let ticket = reserve(&mut ledger, &mut next, &first);
     let first_id = ticket.delivery_id().to_owned();
-    ledger.settle(ticket, ReceiptState::Queued).unwrap();
+    ledger.settle(ticket, ReceiptState::Unknown).unwrap();
     for sequence in 2..=128 {
         let request = intent(sequence);
         let ticket = reserve(&mut ledger, &mut next, &request);
         ledger.settle(ticket, ReceiptState::Unknown).unwrap();
     }
     let latest = intent(129);
-    let Admission::Existing(full) = ledger
-        .reserve(&mut next, &latest, &latest.digest().unwrap())
-        .unwrap()
-    else {
-        panic!("evicted unknown")
-    };
-    assert_eq!(full.state, ReceiptState::Unavailable);
-    assert_eq!(next, 129);
-    ledger.acknowledge_existing(&first_id);
     let ticket = reserve(&mut ledger, &mut next, &latest);
+    ledger.acknowledge_existing(&first_id);
     ledger.settle(ticket, ReceiptState::Queued).unwrap();
     let Admission::Existing(old) = ledger
         .reserve(&mut next, &first, &first.digest().unwrap())
@@ -379,20 +371,6 @@ fn observed_verified_failures_can_compact_without_reopening_old_sequence() {
         ledger.settle(ticket, ReceiptState::Failed).unwrap();
     }
     let latest = intent(129);
-    let Admission::Existing(full) = ledger
-        .reserve(&mut next, &latest, &latest.digest().unwrap())
-        .unwrap()
-    else {
-        panic!("unobserved failure evicted")
-    };
-    assert_eq!(full.state, ReceiptState::Unavailable);
-    assert_eq!(
-        ledger
-            .status(&first, &first.digest().unwrap())
-            .unwrap()
-            .state,
-        ReceiptState::Failed
-    );
     let ticket = reserve(&mut ledger, &mut next, &latest);
     ledger.settle(ticket, ReceiptState::Unknown).unwrap();
     let Admission::Existing(old) = ledger

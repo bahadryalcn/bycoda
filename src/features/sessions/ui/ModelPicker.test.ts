@@ -1469,7 +1469,7 @@ describe("model picker menu order", () => {
     return container.querySelector<HTMLElement>('[role="menu"][aria-label="Model and settings"]')!;
   }
 
-  it("leads with Model, Reasoning and Fast, then Context, then Advisor and subagents", async () => {
+  it("leads with Advisor and subagents, then Context, Fast, Reasoning and Model", async () => {
     const menu = await openMenu({});
     const rows = [...menu.children].map((child) =>
       child.getAttribute("data-model-group")
@@ -1477,15 +1477,15 @@ describe("model picker menu order", () => {
         : (child.querySelector("span")?.textContent ?? ""),
     );
     expect(rows).toEqual([
-      "Model",
-      "Reasoning",
-      "Fast",
-      "# Context",
-      "Auto-compact",
-      "Auto-compact window",
       "# Advisor and subagents",
-      "Advisor",
       "Subagent model",
+      "Advisor",
+      "# Context",
+      "Auto-compact window",
+      "Auto-compact",
+      "Fast",
+      "Reasoning",
+      "Model",
     ]);
   });
 

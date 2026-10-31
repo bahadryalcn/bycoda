@@ -77,6 +77,10 @@ type State = {
 const MAX_MOUNTS = 256;
 const MAX_LEASES = 32;
 const MAX_BYTES = 64 * 1024 * 1024;
+/** Grace after a closure's own deadline before admission is force-reopened. */
+export const NATIVE_INPUT_CLOSURE_WATCHDOG_MS = 10_000;
+/** Longest extra wait while a write admitted before the closure is still running. */
+const NATIVE_INPUT_CLOSURE_WRITE_EXTENSION_MS = 60_000;
 export const NATIVE_INPUT_WORK_LIMITS = Object.freeze({ global: 64, owner: 16 });
 const encoder = new TextEncoder();
 function fresh(): State {
@@ -341,7 +345,8 @@ function implement<Kind extends string>(
         for (const entry of roster) entry.controls?.close(false);
         throw error;
       }
-      return Object.freeze({
+      let watchdog: ReturnType<typeof setTimeout> | undefined;
+      const closure: NativeInputClosure<Kind> = Object.freeze({
         async capture() {
           if (captured) {
             if (!valid() || !captured.current())
@@ -379,6 +384,7 @@ function implement<Kind extends string>(
           if (gate.released) return;
           gate.released = true;
           clearTimeout(timer);
+          clearTimeout(watchdog);
           options.signal?.removeEventListener("abort", abort);
           captured?.release();
           if (state.gate === gate) {
@@ -390,6 +396,29 @@ function implement<Kind extends string>(
           gate.wake.clear();
         },
       });
+      // A checkpoint that never releases would leave editors read-only forever.
+      // Past its deadline plus a grace, reopen admission instead of waiting on it, but
+      // never while a write admitted before the closure is still running: reopening then
+      // lets a new edit race the checkpoint. That wait is bounded too.
+      const watchdogStart = Date.now();
+      const watchdogDelay = Math.max(0, options.timeoutMs) + NATIVE_INPUT_CLOSURE_WATCHDOG_MS;
+      const check = () => {
+        if (gate.released) return;
+        const writing = [...state.works].some((work) => !work.done && work.root <= gate.boundary);
+        if (
+          writing &&
+          Date.now() - watchdogStart < watchdogDelay + NATIVE_INPUT_CLOSURE_WRITE_EXTENSION_MS
+        ) {
+          watchdog = setTimeout(check, 1_000);
+          (watchdog as { unref?: () => void }).unref?.();
+          return;
+        }
+        console.warn(`[closure] ${configuration.subject} closure was never released; reopening input`);
+        closure.release();
+      };
+      watchdog = setTimeout(check, watchdogDelay);
+      (watchdog as { unref?: () => void }).unref?.();
+      return closure;
     },
     async captureInputs(sessionId: string): Promise<NativeInputLease<Kind>> {
       if (

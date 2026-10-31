@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
-import { Plus } from "../../../shared/ui/icons";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { MoreHorizontal, Plus } from "../../../shared/ui/icons";
 import { Group, Row, Toggle } from "../../settings/ui/settingsControls";
 import "../../settings/ui/SettingsCollection.css";
 import { useProjectCrews } from "../model/crewClient";
@@ -37,7 +38,7 @@ export function CrewsSettings({
   const [managedCrewId, setManagedCrewId] = useState<string | null>(null);
   return (
     <>
-      <Group title={t("Crews")}>
+      <Group title={t("Sidebar")}>
         <Row label={t("Show crews")}>
           <Toggle label={t("Show crews")} on={shown} onChange={saveCrewsOnRail} />
         </Row>
@@ -126,18 +127,15 @@ export function CrewsSettings({
                       <div className="settings-collection-actions">
                         <Button
                           variant="ghost"
-                          aria-label={t("Crew work: {p0}", { p0: crew.name })}
-                          onClick={() => setManagedCrewId(crew.id)}
-                        >
-                          {t("Crew work")}
-                        </Button>
-                        <Button
-                          variant="ghost"
                           aria-label={t("Edit {p0}", { p0: crew.name })}
                           onClick={() => setDialog({ crewId: crew.id })}
                         >
                           {t("Edit")}
                         </Button>
+                        <CrewRowMenu
+                          crewName={crew.name}
+                          onManage={() => setManagedCrewId(crew.id)}
+                        />
                       </div>
                     </div>
                   ))}
@@ -163,6 +161,43 @@ export function CrewsSettings({
           crewId={dialog.crewId}
           createScope={dialog.createScope}
           onClose={() => setDialog(null)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** Overflow actions of one crew row; Edit stays direct beside it. */
+function CrewRowMenu({ crewName, onManage }: { crewName: string; onManage: () => void }) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        ref={trigger}
+        variant="ghost"
+        iconOnly
+        label={t("Crew actions")}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+      >
+        <MoreHorizontal className="icon-sm" />
+      </Button>
+      {open ? (
+        <DropdownMenu
+          anchor={trigger}
+          label={t("Crew actions")}
+          items={[
+            {
+              kind: "item",
+              id: "work",
+              label: t("Crew work"),
+              title: t("Crew work: {p0}", { p0: crewName }),
+            },
+          ]}
+          onPick={() => onManage()}
+          onClose={() => setOpen(false)}
         />
       ) : null}
     </>

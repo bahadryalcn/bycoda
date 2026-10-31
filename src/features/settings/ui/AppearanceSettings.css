@@ -1,28 +1,12 @@
-/* Appearance topics. The shared settings frame owns Group/Row geometry; this file only sequences the
-   topics and styles the few Appearance-specific controls (palette chips, background previews). */
+/* Appearance is one page: topics are landmark sections, each holding framed groups from the shared
+   settings frame (Group/Row own geometry, hairlines and corner radii). This file only sequences the
+   topics and styles the few Appearance-specific controls: mode and theme cards, the one-row accent
+   picker, font + size pairs and the background thumbnail slot. One content width, no side column. */
 .appearance-settings {
-  /* Label and control stay within one reading measure instead of spreading across the shared
-     column; the live preview uses the room beside it. */
-  --appearance-measure: 40rem;
-  container: appearance / inline-size;
   display: grid;
-  /* Topics are tasks, not pages: a 32px rhythm separates them and the topic links sit close to the first one. */
-  gap: 32px;
+  /* The same rhythm as the groups inside a topic, so topics do not read as separate pages. */
+  gap: var(--settings-group-gap, 28px);
   min-inline-size: 0;
-}
-/* Topic links read as one tab strip: the current topic carries the shared selected fill. */
-.appearance-topic-nav {
-  margin-block: -4px -16px;
-  padding: 4px;
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.appearance-topic-nav > button {
-  flex: none;
 }
 .appearance-section {
   min-inline-size: 0;
@@ -30,132 +14,163 @@
 }
 .appearance-section-body {
   min-inline-size: 0;
-  max-inline-size: var(--appearance-measure);
 }
-/* One grid for related slider rows: label, slider and value align, with tighter rhythm. */
-.appearance-section-body .settings-advanced .settings-row {
-  padding-block: 6px;
-}
-/* Theme and colors: controls in the measure, one sticky live preview beside them when wide. */
-.appearance-section-body[data-appearance-layout="colors"] {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
-}
-@container appearance (min-width: 58rem) {
-  .appearance-section-body[data-appearance-layout="colors"] {
-    max-inline-size: none;
-    grid-template-columns: minmax(0, var(--appearance-measure)) minmax(15rem, 1fr);
-    column-gap: 32px;
-  }
-  .appearance-section-body[data-appearance-layout="colors"] > * {
-    grid-column: 1;
-  }
-  .appearance-section-body[data-appearance-layout="colors"] > .appearance-preview {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    align-self: start;
-    position: sticky;
-    inset-block-start: 4.5rem;
-  }
-}
-.appearance-section-body > .settings-advanced {
-  margin-block: 0;
-}
-.appearance-section-body > .settings-advanced > .settings-group {
-  padding-block-start: 4px;
+/* Slider value chips share one width so 216°, 0%, 700 ms and 24px line up on every row. */
+.appearance-settings .settings-row-control span.tabular-nums {
+  min-inline-size: 6ch;
 }
 
-/* Palettes are a compact grid of tiles: a measured swatch (surface, raised surface, accent) and
-   the name; selection is the shared fill. */
+/* Mode and theme cards: a sample of the option, its name and a selected frame in the accent
+   interaction role. Selection never relies on the sample's own colors. */
+.appearance-modes,
 .appearance-palettes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
-  gap: 4px;
+  gap: 8px;
   inline-size: 100%;
+  max-inline-size: 28.5rem;
 }
-.appearance-palette {
+.appearance-modes {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.appearance-palettes {
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+}
+.appearance-settings .appearance-mode-card,
+.appearance-settings .appearance-palette {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  block-size: auto;
+  min-block-size: 0;
   min-inline-size: 0;
-  white-space: nowrap;
-  gap: 10px;
+  padding: 6px;
+  border: 1px solid var(--ui-settings-hairline);
+  border-radius: var(--ui-radius-card);
 }
-.appearance-palette-swatch {
+.appearance-settings .appearance-mode-card[aria-checked="true"],
+.appearance-settings .appearance-palette[aria-pressed="true"] {
+  border-color: var(--ui-focus-ring-color);
+  box-shadow: inset 0 0 0 1px var(--ui-focus-ring-color);
+}
+.appearance-mode-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  block-size: 3.25rem;
+  overflow: hidden;
+  border-radius: var(--ui-control-radius);
+  box-shadow: inset 0 0 0 1px var(--color-stroke);
+}
+.appearance-mode-preview[data-split] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* A tone shows one option's surface, a raised card and the accent; values come from the option. */
+.appearance-tone {
   position: relative;
   display: block;
-  flex: none;
-  inline-size: 2.25rem;
-  block-size: 1.375rem;
-  box-sizing: border-box;
-  border-radius: 6px;
+  min-inline-size: 0;
   background: var(--palette-base);
-  box-shadow: inset 0 0 0 1px var(--color-stroke);
-  overflow: hidden;
 }
-.appearance-palette-swatch > i {
+.appearance-tone > i {
   position: absolute;
-  inset-block: 4px;
-  inset-inline: 4px 14px;
+  inset-block-start: 8px;
+  inset-inline: 8px;
+  block-size: 40%;
   border-radius: 3px;
   background: var(--palette-raised);
 }
-.appearance-palette-swatch > b {
+.appearance-tone::after {
+  content: "";
   position: absolute;
-  inset-block-end: 4px;
-  inset-inline-end: 4px;
+  inset-block-end: 8px;
+  inset-inline-start: 8px;
+  inline-size: 40%;
+  block-size: 5px;
+  border-radius: 3px;
+  background: var(--palette-raised);
+}
+.appearance-tone > b {
+  position: absolute;
+  inset-block-end: 7px;
+  inset-inline-end: 8px;
   inline-size: 8px;
   block-size: 8px;
   border-radius: 50%;
   background: var(--palette-accent);
 }
-.appearance-palette-name {
+.appearance-card-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   min-inline-size: 0;
+  padding-inline: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
 }
 
-/* Background previews are small real samples, never a gallery. */
-.appearance-background-empty {
-  display: grid;
-  min-block-size: 4rem;
-  place-content: center;
-  padding: 12px;
+/* Accent: every swatch, the palette default first and the custom picker last, on one row. */
+.appearance-accent {
+  inline-size: 17.5rem;
+  max-inline-size: 100%;
 }
-.appearance-bg-block {
-  padding-block: 8px;
+
+/* Font + size: one pattern for interface-adjacent, monospace and terminal rows. The control column
+   widens just enough for a font control and a compact size select side by side. */
+.settings-row:has(.appearance-font-pair) > .settings-row-control {
+  flex: 0 1 24rem;
+  max-inline-size: 24rem;
 }
-.appearance-bg-frame {
-  overflow: hidden;
-  max-inline-size: 28rem;
-  border: 1px solid var(--ui-editor-border);
-  border-radius: var(--ui-radius-card);
-}
-.appearance-live-preview {
+.appearance-font-pair {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
-  padding-block: 8px;
+  gap: 8px;
+  inline-size: 100%;
+  min-inline-size: 0;
 }
-.appearance-live-stage {
-  position: relative;
-  flex: 0 1 16rem;
-  min-inline-size: 8rem;
-  block-size: 6rem;
+.appearance-font {
+  display: flex;
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+.appearance-font > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.appearance-size {
+  flex: none;
+  inline-size: 6.25rem;
+}
+.settings-row:not([data-stacked]) > .settings-row-control .appearance-size .bycoda-arc-select {
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+
+/* Chat background: a thumbnail-sized slot with Choose / Change / Remove beside it. */
+.appearance-bg-picker {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.appearance-bg-thumb {
+  flex: none;
+  inline-size: 8rem;
+  block-size: 4.5rem;
   overflow: hidden;
   border: 1px solid var(--ui-editor-border);
   border-radius: var(--ui-radius-card);
-  background: var(--color-background-base);
 }
-.appearance-live-caption {
-  flex: 1 1 12rem;
-  min-inline-size: 0;
+.appearance-bg-thumb[data-empty] {
   display: grid;
-  gap: 2px;
+  place-items: center;
+  background: var(--ui-surface);
 }
-.appearance-live-caption > p {
-  margin: 0;
-}
-.appearance-live-picker {
-  padding-block: 8px;
+.appearance-bg-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
 }

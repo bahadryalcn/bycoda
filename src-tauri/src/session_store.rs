@@ -74,6 +74,9 @@ impl SessionStore {
     }
 
     pub fn open(path: PathBuf) -> Result<Self, String> {
+        // Stable across reopenings: never clear ingress created by this process.
+        static STARTED_AT: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+        let started_at = *STARTED_AT.get_or_init(now_millis);
         let admission = cohort::OpenAdmission::begin(&path)?;
         let path = admission.path().to_owned();
         let conn = cohort::RegisteredConnection::new(
@@ -93,10 +96,11 @@ impl SessionStore {
         // (an index rebuild, a migration) left a 700 MB file behind for good.
         conn.execute_batch(
             "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;
-             PRAGMA journal_size_limit = 67108864;",
+             PRAGMA journal_size_limit = 67108864; PRAGMA cache_size = -65536;",
         )
         .map_err(|e| e.to_string())?;
         migrate(&conn).map_err(|e| e.to_string())?;
+        authority::clear_stale_cli_ingress(&conn, started_at);
         crate::ssh_group_defaults::migrate(&conn)?;
         crate::worktrees::reconcile_removals(&conn)?;
         let open_reader = || -> Result<Connection, String> {
@@ -105,7 +109,7 @@ impl SessionStore {
                     .map_err(|e| e.to_string())?;
             conn.verify_connection(&reader)?;
             reader
-                .execute_batch("PRAGMA query_only = ON; PRAGMA busy_timeout = 5000;")
+                .execute_batch("PRAGMA query_only = ON; PRAGMA busy_timeout = 5000; PRAGMA cache_size = -65536;")
                 .map_err(|e| e.to_string())?;
             Ok(reader)
         };
@@ -541,13 +545,71 @@ pub fn session_upsert(
 }
 
 fn upsert_git_info(session: &SessionUpsert) -> crate::fs::GitInfo {
-    crate::fs::git_info_for(&crate::fs::expand_home(
+    // Scope by cwd and the caller's branch hint. Read HEAD as well so an
+    // external branch switch invalidates the longer save-path cache promptly.
+    type Entry = (std::time::Instant, crate::fs::GitInfo);
+    static CACHE: std::sync::OnceLock<
+        Mutex<std::collections::HashMap<(PathBuf, Option<String>, Option<Vec<u8>>), Entry>>,
+    > = std::sync::OnceLock::new();
+    let root = crate::fs::expand_home(
         session
             .worktree_cwd
             .as_deref()
             .filter(|cwd| !cwd.is_empty())
             .unwrap_or(&session.cwd),
-    ))
+    );
+    let marker = root
+        .ancestors()
+        .map(|dir| dir.join(".git"))
+        .find(|marker| marker.exists())
+        .unwrap_or_else(|| root.join(".git"));
+    let git_dir = if marker.is_file() {
+        std::fs::read_to_string(&marker).ok().and_then(|text| {
+            text.trim()
+                .strip_prefix("gitdir: ")
+                .map(|path| marker.parent().unwrap_or(&root).join(path))
+        })
+    } else {
+        Some(marker)
+    };
+    let head = git_dir.and_then(|dir| std::fs::read(dir.join("HEAD")).ok());
+    let key = (root.clone(), session.branch.clone(), head);
+    let cache = CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    if let Some(info) = cache.lock().ok().and_then(|entries| {
+        entries
+            .get(&key)
+            .filter(|(time, _)| time.elapsed().as_secs() < 30)
+            .map(|(_, info)| info.clone())
+    }) {
+        return info;
+    }
+    let info = crate::fs::git_info_for(&root);
+    // The shared Git cache has its own short TTL. Do not extend a stale branch
+    // result to 30 seconds when HEAD already proves a branch switch occurred.
+    if let Some(head) = key
+        .2
+        .as_deref()
+        .and_then(|bytes| std::str::from_utf8(bytes).ok())
+    {
+        let head = head.trim();
+        let matches = if let Some(branch) = head.strip_prefix("ref: refs/heads/") {
+            info.branch.as_deref() == Some(branch)
+        } else {
+            info.branch
+                .as_deref()
+                .is_some_and(|branch| head.starts_with(branch))
+        };
+        if !matches {
+            return info;
+        }
+    }
+    if let Ok(mut entries) = cache.lock() {
+        if entries.len() >= 256 {
+            entries.clear();
+        }
+        entries.insert(key, (std::time::Instant::now(), info.clone()));
+    }
+    info
 }
 
 fn validate_upsert(session: &SessionUpsert) -> Result<(), String> {
@@ -777,9 +839,11 @@ pub fn session_get(
     // Failed Host reads preserve the fence while the retained transcript remains readable.
     // Recovery can resume shared workspace-file rewind effects. Keep that work
     // in the shared lane; a closed gate still permits the retained read below.
-    let _ = crate::native_window_lifecycle::persistence_write(&window, || {
-        rewind::reconcile_pending_native(&app, &store, Some(&session_id))
-    });
+    if rewind::has_pending_native(&store, Some(&session_id)).unwrap_or(false) {
+        let _ = crate::native_window_lifecycle::persistence_write(&window, || {
+            rewind::reconcile_pending_native(&app, &store, Some(&session_id))
+        });
+    }
     store
         .with_read_conn(|conn| get_session_json(conn, &session_id).map_err(|e| e.to_string()))
         .map(tauri::ipc::Response::new)
@@ -2030,9 +2094,30 @@ fn upsert_session_in_transaction(
             None,
         ),
     };
-    let mut result = upsert_session_core(conn, session, git, expected, &blocks_json)?;
+    // Compare normalized rows directly: do not rebuild the stored multi-MB
+    // transcript through the compatibility view just to compare it.
+    let encoded_pieces = serde_json::to_string(&pieces).map_err(to_sql_err)?;
+    let normalized_same: bool = pieces.is_some()
+        && conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM session_block_state st WHERE st.session_id=?1
+         AND st.length=json_array_length(?2) AND st.length>=0
+         AND (SELECT count(*) FROM session_blocks WHERE session_id=?1)=st.length
+         AND NOT EXISTS(SELECT 1 FROM json_each(?2) incoming
+           LEFT JOIN session_blocks b ON b.session_id=?1 AND b.ordinal=incoming.key
+           WHERE b.block_json IS NOT incoming.value))",
+            params![session.id, encoded_pieces],
+            |row| row.get(0),
+        )?;
+    let mut result =
+        upsert_session_core(conn, session, git, expected, &blocks_json, normalized_same)?;
     if let Some(summary) = result.as_mut() {
-        if let Some(pieces) = &pieces {
+        if normalized_same {
+            // Metadata-only saves still invalidate stale deltas and exact-row receipts.
+            conn.execute(
+                "UPDATE session_block_state SET revision=revision+1 WHERE session_id=?1",
+                [&session.id],
+            )?;
+        } else if let Some(pieces) = &pieces {
             incremental::checkpoint(conn, &session.id, &session.blocks, pieces)?;
         }
         summary.transcript_revision = conn
@@ -2104,6 +2189,7 @@ fn upsert_session_core(
     git: crate::fs::GitInfo,
     expected: Option<Option<i64>>,
     blocks_json: &str,
+    normalized_same: bool,
 ) -> rusqlite::Result<Option<SessionSummary>> {
     let now = now_millis();
     let model_settings = serde_json::to_string(&session.model_settings)
@@ -2171,10 +2257,12 @@ fn upsert_session_core(
     // what was agreed, which must not reorder history on its own.
     let existing: Option<(i64, i64, bool, i64, i64, bool)> = conn
         .prepare(
-            "SELECT created_at, updated_at, blocks_json = ?2, archived, pinned, adopted_divergence IS ?3 FROM session_transcripts WHERE id = ?1",
+            "SELECT created_at, updated_at, CASE WHEN ?4 THEN 1
+             WHEN EXISTS(SELECT 1 FROM session_block_state WHERE session_id=?1 AND length>=0) THEN 0
+             ELSE blocks_json = ?2 END, archived, pinned, adopted_divergence IS ?3 FROM sessions WHERE id = ?1",
         )?
         .query_row(
-            params![session.id, blocks_json, session.adopted_divergence],
+            params![session.id, blocks_json, session.adopted_divergence, normalized_same],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
         .optional()?;
@@ -2227,7 +2315,7 @@ fn upsert_session_core(
            runtime_mode = excluded.runtime_mode,
            title = excluded.title,
            provider_session_id = excluded.provider_session_id,
-           blocks_json = excluded.blocks_json,
+           blocks_json = CASE WHEN ?29 THEN sessions.blocks_json ELSE excluded.blocks_json END,
            updated_at = excluded.updated_at,
            branch = excluded.branch,
            context_used = excluded.context_used,
@@ -2277,6 +2365,7 @@ fn upsert_session_core(
             session.workspace_id,
             session.workspace_revision,
             session.workspace_mode,
+            normalized_same,
         ],
     )?;
 

@@ -163,7 +163,11 @@ pub(crate) fn projection_coordinator(
 fn run(app: tauri::AppHandle, shared: Arc<Shared>) {
     let mut retry = Duration::from_secs(5);
     while !shared.stopping() {
-        let _ = associate(&app, &shared);
+        if associate(&app, &shared).is_err() {
+            if let Ok(profile) = app.path().app_data_dir() {
+                crate::native_authority_deployment::invalidate_cached_provision(&profile);
+            }
+        }
         if shared.stopping() {
             break;
         }

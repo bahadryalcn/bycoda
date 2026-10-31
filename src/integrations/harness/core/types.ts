@@ -36,7 +36,12 @@ export type HarnessEvent =
       model?: string;
       modelSettings?: Record<string, string>;
     }
-  | { type: "status"; text: string; key?: string }
+  /**
+   * `running` marks a status row that is still in progress (compaction). Its
+   * later event with the same `key` and `running: false` settles that same
+   * row; an empty `text` then closes it without leaving a row behind.
+   */
+  | { type: "status"; text: string; key?: string; running?: boolean }
   /** The provider refused the turn until its usage window resets (epoch ms). */
   | { type: "usage.limited"; resetsAt?: number }
   /**

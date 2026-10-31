@@ -175,7 +175,7 @@ impl OutputGate {
             .iter()
             .position(|(pending, _)| *pending == sequence)
         {
-            flow.pending.remove(index);
+            flow.pending.drain(..=index);
             self.available.notify_all();
         }
     }
@@ -2307,6 +2307,19 @@ mod coalesce_tests {
         output.acknowledge(first.generation, current.sequence);
         assert_eq!(output.flow.lock().unwrap().pending.len(), 1);
         output.acknowledge(current.generation, current.sequence);
+        assert!(output.flow.lock().unwrap().pending.is_empty());
+    }
+
+    #[test]
+    fn output_flow_ack_is_cumulative_and_requires_an_emitted_sequence() {
+        let output = OutputGate::for_desktop(true);
+        let first = output.reserve(1).unwrap();
+        let second = output.reserve(1).unwrap();
+        output.acknowledge(second.generation, second.sequence + 1);
+        assert_eq!(output.flow.lock().unwrap().pending.len(), 2);
+        output.acknowledge(second.generation, second.sequence);
+        assert!(output.flow.lock().unwrap().pending.is_empty());
+        output.acknowledge(first.generation, first.sequence);
         assert!(output.flow.lock().unwrap().pending.is_empty());
     }
 

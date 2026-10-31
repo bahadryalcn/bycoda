@@ -1,3 +1,4 @@
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import {
   useContext,
   useEffect,
@@ -621,7 +622,7 @@ export function UsageOverview({
         <p className="usage-muted">
           {t(metricNames[metric])} · {t(names[dimension])} · {t(({ "15m": "15 minutes", hour: "Hourly", day: "Daily", week: "Weekly" })[actualResolution])}
         </p>
-      ) : <p className="usage-muted">{t("Provider and account filters apply to account limits and history. Local budget rules keep their own scope.")}</p>}
+      ) : <InfoPopover label={t("About limit filters")}>{t("Provider and account filters apply to account limits and history. Local budget rules keep their own scope.")}</InfoPopover>}
       {view !== "limits" && firstLoad && (
         <p role="status" className="usage-empty">
           {t("Loading usage…")}

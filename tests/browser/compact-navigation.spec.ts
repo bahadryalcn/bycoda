@@ -94,12 +94,13 @@ test("compact navigation keeps workspace tabs in place and groups project and ap
       await expect(tools).toBeInViewport();
       // The collapsed rail is icon-only: the name lives in the accessible name and tooltip.
       expect((await projects.textContent())?.trim()).toBe("");
-      await expect(projects).toHaveAttribute("title", "Projects and groups");
+      await expect(projects).toHaveAttribute("aria-label", "Projects and groups");
       for (const label of ["Sessions", "Explorer", "Changes"]) {
         const tab = tabNamed(label);
         await expect(tab).toBeVisible();
-        if (width === 1000) {
-          await expect(tab.locator(".workspace-tab-content")).toBeVisible();
+        // The same icon stays at every width; the label steps away before it could be clipped.
+        await expect(tab.locator(".workspace-tab-icon")).toBeVisible();
+        if (await tab.locator(".workspace-tab-content").isVisible()) {
           const labelBounds = await tab
             .locator(".workspace-tab-content > span")
             .first()
@@ -111,7 +112,7 @@ test("compact navigation keeps workspace tabs in place and groups project and ap
             labelBounds.content,
             `${label} caption must remain readable beside its badge`,
           ).toBeLessThanOrEqual(labelBounds.available);
-        } else await expect(tab.locator(".workspace-tab-icon")).toBeVisible();
+        }
       }
       const initialTabs = await tabs.boundingBox();
       await tabNamed("Explorer").click();
@@ -187,12 +188,15 @@ test("compact navigation keeps workspace tabs in place and groups project and ap
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("radio", { name: "All", exact: true })).toBeChecked();
   await page.keyboard.press("Escape");
+  // "Search conversations" is an inline filter of the session list now, not the shared dialog.
   await page.getByRole("button", { name: "Search conversations", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Search conversations" })).toBeFocused();
+  await page.keyboard.type("zzz-no-such-conversation");
+  await expect(page.getByText("No matching sessions")).toBeVisible();
+  await page.getByRole("button", { name: /^Search all conversations/ }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("radio", { name: "Conversations", exact: true })).toBeChecked();
-  await expect(
-    page.getByRole("button", { name: "Chat search filters", exact: true }),
-  ).toContainText("This project");
   await page.screenshot({
     path: testInfo.outputPath("shared-conversation-search.png"),
   });

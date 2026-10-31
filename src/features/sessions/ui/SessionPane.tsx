@@ -657,7 +657,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (requestId: number, decision: ApprovalDecision) => onApproval(session.id, requestId, decision),
     [onApproval, session.id],
   );
-  const approvalContext = useMemo(() => ({ session, dispatch: onApproval }), [session, onApproval]);
+  const approvalSession = useRef(session);
+  approvalSession.current = session;
+  const approvalContext = useMemo(() => ({
+    get session() { return approvalSession.current; },
+    getSession: () => approvalSession.current,
+    dispatch: onApproval,
+  }), [onApproval]);
   const replyQuestion = useCallback(
     (requestId: number, reply: UserQuestionReply) => onQuestionReply(session.id, requestId, reply),
     [onQuestionReply, session.id],
@@ -1300,7 +1306,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onUsageLimitDismiss={composerUsageLimitDismiss}
       providerAccountId={
         supportsProviderAccounts(session.harness)
-          ? sessionProviderAccountId(session.harness, session)
+          ? (session.nextProviderAccountId ?? sessionProviderAccountId(session.harness, session))
           : undefined
       }
       onSelectProviderAccount={onSelectProviderAccount ? composerSelectProviderAccount : undefined}

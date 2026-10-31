@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SWITCH_BUSY_STATUS, switchSessionAccount, type AccountSwitchDeps } from "./accountSwitch";
+import { switchSessionAccount, type AccountSwitchDeps } from "./accountSwitch";
 import { appendPreparingHandoff, planComposerSwitch, pendingHandoff } from "./handoff";
 import { newSession, type Session } from "./session";
 
@@ -213,11 +213,32 @@ describe("switchSessionAccount", () => {
     expect(result.kind === "switched" && result.mode).toBe("handoff");
   });
 
-  it("refuses while a turn is running", async () => {
-    const s = setup(convo({ busy: true }));
-    expect(await run(s)).toEqual({ kind: "refused", status: SWITCH_BUSY_STATUS });
+  it("defers the pick while a turn is running, without touching the turn", async () => {
+    const busy = convo({ busy: true });
+    const s = setup(busy);
+    const result = await run(s);
+    expect(result.kind).toBe("deferred");
+    if (result.kind !== "deferred") return;
+    expect(result.update(busy)).toMatchObject({ nextProviderAccountId: "account-b" });
+    expect(result.update(busy).providerAccountId).toBe(busy.providerAccountId);
     expect(s.deps.transfer).not.toHaveBeenCalled();
     expect(s.deps.forget).not.toHaveBeenCalled();
+  });
+
+  it("withdraws a waiting pick when the running account is picked again", async () => {
+    const busy = convo({ busy: true, nextProviderAccountId: "account-b" });
+    const s = setup(busy);
+    const result = await run(s, "account-a");
+    expect(result.kind).toBe("deferred");
+    if (result.kind === "deferred")
+      expect(result.update(busy).nextProviderAccountId).toBeUndefined();
+  });
+
+  it("still applies the pick when cleanup of the old child fails", async () => {
+    const s = setup(convo());
+    s.deps.forget.mockRejectedValueOnce(new Error("busy"));
+    const result = await run(s);
+    expect(result.kind).toBe("switched");
   });
 
   it("refuses while a handoff is being prepared or the session is closing", async () => {

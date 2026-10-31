@@ -38,8 +38,8 @@ button:global(.bycoda-arc):is(
     [data-select-variant="panel"]
   ):focus-visible {
   border-color: var(--ui-field-border-focus);
-  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
-  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
+  outline: none;
+  box-shadow: var(--ui-focus-ring);
 }
 button:global(.bycoda-arc):is(
     [data-select-variant="row"],

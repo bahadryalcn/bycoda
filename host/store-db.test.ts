@@ -119,7 +119,7 @@ it("gates cached readers behind the owning transaction and publishes revisions o
       sessionId: "session",
       revision: 2,
     });
-  });
+  }, "critical");
   await entered.promise;
   let observed = false;
   const read = store.session("session").then((value) => {
@@ -157,10 +157,10 @@ it("rolls back nested asynchronous callbacks, cached values, receipts and commit
           revision: 2,
         });
         store.afterCommit(effect);
-      });
+      }, "critical");
       await Promise.resolve();
       throw new Error("rollback fixture");
-    }),
+    }, "critical"),
   ).rejects.toThrow("rollback fixture");
   expect((await store.session("session")).session.title).toBe("Committed");
   expect(await store.receiptStatus("rolled-back")).toBeUndefined();
@@ -500,7 +500,7 @@ it("detaches request authority from durable afterCommit effects", async () => {
           done.resolve();
         }
       });
-    }),
+    }, "critical"),
   );
   await entered.promise;
   try {
@@ -587,4 +587,48 @@ it("closes the worker even when the final flush fails and retains that shared fa
   } finally {
     reader.close();
   }
+});
+
+it("survives a cache-publication fault after a commit: logs, clears caches and keeps storage usable", async () => {
+  const { store } = await fixture();
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  store.db.onMutation = () => {
+    throw new Error("cache publication boom");
+  };
+  const faults = vi.fn();
+  store.db.onMutationFault = faults;
+  await store.db.exec("CREATE TABLE IF NOT EXISTS cache_fault_fixture(value TEXT)");
+  expect(faults).toHaveBeenCalledOnce();
+  expect(store.db.restartRequired).toBe(false);
+  expect(store.db.persistenceHealth()).toEqual({ state: "ready" });
+  await store.db.exec("INSERT INTO cache_fault_fixture VALUES ('still writable')");
+  error.mockRestore();
+});
+
+
+it("batches ordered writes atomically and keeps cached statements usable after eviction", async () => {
+  const { store } = await fixture();
+  await store.db.exec("CREATE TABLE batch_fixture(id INTEGER PRIMARY KEY, value TEXT)");
+  const insert = store.db.prepare("INSERT INTO batch_fixture VALUES (?, ?)");
+  await insert.runMany([[1, "one"], [2, "two"]]);
+  await expect(insert.runMany([[3, "three"], [1, "duplicate"]])).rejects.toThrow();
+  expect(await store.db.prepare("SELECT id FROM batch_fixture ORDER BY id").all()).toEqual([{ id: 1 }, { id: 2 }]);
+  for (let i = 0; i < 260; i++) await store.db.prepare(`SELECT ${i} AS value`).get();
+  await insert.runMany([[3, "three"]]);
+  expect((await store.db.prepare("SELECT count(*) AS count FROM batch_fixture").get())?.count).toBe(3);
+});
+
+it("authenticates warm tokens without entering SQLite and invalidates them on revoke", async () => {
+  const { store } = await fixture();
+  const device = await store.issueDevice("cache fixture");
+  expect(await store.authenticated(device.token)).toBe(true);
+  const admission = store.db.admissionVersion;
+  for (let i = 0; i < 20; i++) expect(await store.authenticated(device.token)).toBe(true);
+  expect(store.db.admissionVersion).toBe(admission);
+  const changed = vi.fn();
+  const unsubscribe = store.subscribeAuthorizationChanges(changed);
+  await store.revokeDevice(device.id);
+  expect(await store.authenticated(device.token)).toBe(false);
+  expect(changed).toHaveBeenCalled();
+  unsubscribe();
 });

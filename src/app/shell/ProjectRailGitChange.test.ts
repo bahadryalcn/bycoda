@@ -53,6 +53,19 @@ async function renderRail(paths: string[]) {
 const rowButton = (container: HTMLElement, path: string) =>
   container.querySelector<HTMLButtonElement>(`[data-project-path="${path}"] > button`)!;
 
+/** Hovers a control until the shared tooltip opens and returns its text. */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 it("keeps wide detail and compact mark in one decorative slot, with the full change in the name and tooltip", async () => {
   stats.set("/work/both", { files: 3, additions: 120149, deletions: 1344 });
   const container = await renderRail(["/work/both"]);
@@ -66,8 +79,8 @@ it("keeps wide detail and compact mark in one decorative slot, with the full cha
   expect(button.getAttribute("aria-label")).toBe(
     "both, 3 changed files, 120,149 lines added, 1,344 lines removed",
   );
-  expect(button.title).toContain("3 files · +120,149 -1,344 uncommitted");
-  expect(button.title).not.toContain("\n");
+  expect(button.title).toBe("");
+  expect(await tooltipText(button)).toContain("3 files · +120,149 -1,344 uncommitted");
   expect(button.querySelectorAll("button")).toHaveLength(0);
 });
 
@@ -90,7 +103,7 @@ it("shows no Git mark and no clean claim without data, a failed read or a clean 
     const button = rowButton(container, `/work/${name}`);
     expect(button.querySelector("[data-project-git]")).toBeNull();
     expect(button.getAttribute("aria-label")).toBe(name);
-    expect(button.title).not.toMatch(/uncommitted|clean/i);
+    expect(await tooltipText(button)).not.toMatch(/uncommitted|clean/i);
   }
 });
 
@@ -101,5 +114,7 @@ it("adds the parent folder to same-named local projects only", async () => {
   expect(rowButton(container, "/work/site").getAttribute("aria-label")).toBe("site");
   // The stored name is untouched: the visible name is still just "app".
   expect(rowButton(container, "/work/app").textContent).toContain("app");
-  expect(rowButton(container, "/work/app").title).toBe("app · /work/app");
+  const tip = await tooltipText(rowButton(container, "/work/app"));
+  expect(tip).toContain("app");
+  expect(tip).toContain("/work/app");
 });

@@ -1,5 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
-import { t, useLocale } from "../../../shared/i18n";
+import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "../../../shared/ui/icons";
 import {
@@ -12,11 +12,14 @@ import {
 import type { DailySummary, SummaryTask } from "../model/dailySummary";
 import { formatAgentMinutes } from "../model/hostSettings";
 
-const SUMMARY_TIME = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-});
+/** Day and time in the app language, never the system's: an English UI must not
+ * show another language's weekday names. */
+const summaryTime = (at: number) =>
+  new Date(at).toLocaleString(getLocale(), {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 const SUMMARY_HEADING =
   "text-ui-micro font-medium uppercase tracking-wide text-(--ui-text-secondary)";
@@ -105,12 +108,12 @@ export function SummaryPanel({
         <p className="min-w-0 flex-1 text-ui-caption text-(--ui-text-secondary)">
           {summary
             ? t("From {p0} to {p1}", {
-                p0: SUMMARY_TIME.format(summary.since),
-                p1: SUMMARY_TIME.format(summary.until),
+                p0: summaryTime(summary.since),
+                p1: summaryTime(summary.until),
               })
             : t("No summary yet. One is sent every day at the time set in Settings.")}
         </p>
-        <Button
+        <Button reserveLabels={[t("Refreshing…")]}
           variant="secondary"
           type="button"
           onClick={onRefresh}

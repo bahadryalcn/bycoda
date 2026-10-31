@@ -6,6 +6,7 @@ import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { ALT, MOD, SHIFT } from "../../platform/tauri/platform";
 import { runUpdateFlow } from "../model/updater";
 import { openUsageGuide } from "../../features/onboarding/model/usageGuide";
+import { startTour } from "../../features/onboarding/model/tourState";
 import type { TitleBarLayout } from "./TitleBar";
 import {
   SPLIT_DOWN_ID,
@@ -213,6 +214,9 @@ const MemoMenuBar = memo(function MenuBar({
           break;
         case "usage_guide":
           openUsageGuide();
+          break;
+        case "product_tour":
+          startTour("first-run");
           break;
         case "go_to_file":
           onGoToFile?.();
@@ -423,6 +427,13 @@ const MemoMenuBar = memo(function MenuBar({
             id: "usage_guide",
             get label() {
               return t("Usage guide");
+            },
+          },
+          {
+            kind: "item",
+            id: "product_tour",
+            get label() {
+              return t("Take the tour");
             },
           },
           { kind: "sep" },

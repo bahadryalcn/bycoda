@@ -332,10 +332,10 @@ function hex(rgb: Rgb) {
 const appliedTint: { hue?: number; saturation?: number; darkLightness?: number } = {};
 
 /**
- * The darkest-reading surface a selection sits on in each scheme, from the applied tint
- * (mirrors the CSS formulas): the dark editor/terminal `--ui-surface` (content 10% over the
- * canvas) is the lightest ground there; the light `--ui-surface-panel` (content 3%) is the
- * darkest. Visibility against these also holds against the page canvas.
+ * Conservative contrast envelope for selection surfaces, from the applied tint:
+ * the dark editor/terminal `--ui-surface` (content 10% over the base) is the lightest
+ * ground there. Keep the light envelope at content 3%, even though navigation now
+ * shares the lighter chat canvas (V3-033), to retain the existing accent derivation.
  */
 function themeCanvases(): AccentCanvas {
   const hue = appliedTint.hue ?? loadThemeHue();

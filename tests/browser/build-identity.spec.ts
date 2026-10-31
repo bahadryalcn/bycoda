@@ -14,7 +14,7 @@ for (const theme of ["light", "dark"])
         page.getByRole("status").filter({ hasText: "does not support managed workspace" }),
       ).toBeVisible();
       await page.getByRole("button", { name: "Copy build details", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
+      await expect(page.getByRole("status").filter({ hasText: "Copied" })).toBeVisible();
       mkdirSync("temp/verification/i2a", { recursive: true });
       await page.screenshot({
         path: `temp/verification/i2a/build-identity-${theme}-${width}.png`,

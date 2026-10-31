@@ -36,15 +36,25 @@ export function turnCarriesRuntimeHint(
 const SELECTION_GUIDANCE =
   'Use a capability only when the task needs it. For non-trivial work where skills may help, use the bycoda-skill-router skill when installed and allowed (skills.read name "bycoda-skill-router"); skip trivial replies and reuse the selection until the task or restrictions change. Call skills.search with task-specific terms (try more than one), compare candidates\' descriptions, scope and source with the tools you already have, and skills.read the smallest useful selection; then apply those instructions to the task. Prefer the narrowest project-scoped match over broad general guidance. Search is an installation inventory: it does not enable disabled skills, and an installed plugin is not proof that it is connected. If no installed skill fits, report missing capabilities and continue with available tools; never install without owner authorization. Reuse applicable explicit approval; a declined or unanswered question never authorizes installation. Continue independent work with available tools. Never install, activate or change permissions without owner authorization, and never bypass disabled skills. Owner instructions and project contracts override generic skill advice.';
 
+const emptyHints = new Map<string, number>();
+
 /** One capability-discovery contract for desktop and headless turns. */
 export async function harnessRuntimeHints(sessionId: string): Promise<string> {
+  if ((emptyHints.get(sessionId) ?? 0) > Date.now()) return "";
+  emptyHints.delete(sessionId);
   const [social, logs, conversation] = await Promise.all([
     socialBridge(sessionId),
     runtimeLogsBridge(sessionId),
     conversationToolsBridge(sessionId),
   ]);
   const bridges = [conversation, social, logs].filter((bridge) => !!bridge);
-  if (!bridges.length) return "";
+  if (!bridges.length) {
+    // Bound retained negative answers, including sessions never opened again.
+    for (const [id, expires] of emptyHints) if (expires <= Date.now()) emptyHints.delete(id);
+    if (emptyHints.size >= 256) emptyHints.delete(emptyHints.keys().next().value!);
+    emptyHints.set(sessionId, Date.now() + 30_000);
+    return "";
+  }
   const commands = [...new Set(bridges.map(mcpCliCommand))];
   return [
     "bycoda tools for this session:",
@@ -89,4 +99,5 @@ export function markRuntimeHintDelivered(
 
 export function forgetRuntimeHint(sessionId: string) {
   delivered.delete(sessionId);
+  emptyHints.delete(sessionId);
 }

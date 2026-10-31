@@ -36,7 +36,7 @@ const model = (settings: ModelSetting[]): AgentModel => ({
   settings,
 });
 
-it("orders Reasoning, then Fast, then the rarer groups regardless of catalog order", () => {
+it("orders delegation, Context, Fast and Reasoning regardless of catalog order", () => {
   const settings = [
     select("subagentModel"),
     select("autoCompactWindow"),
@@ -50,18 +50,18 @@ it("orders Reasoning, then Fast, then the rarer groups regardless of catalog ord
     group.settings.map((setting) => setting.id),
   );
   expect(ordered).toEqual([
-    "effort",
-    "fast",
-    "context",
-    "autoCompact",
-    "autoCompactWindow",
-    "advisor",
     "subagentModel",
+    "advisor",
+    "autoCompactWindow",
+    "autoCompact",
+    "context",
+    "fast",
+    "effort",
   ]);
   expect(groupSettings(pickerSettings(model(settings))).map((group) => group.id)).toEqual([
-    "model",
-    "context",
     "delegation",
+    "context",
+    "model",
   ]);
 });
 

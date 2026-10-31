@@ -159,6 +159,9 @@ const question = {
   error: "Pending transport",
   autoResolveAt: 9999,
 };
+// Delegated approval replies must echo the source-issued occurrence (UUID v4) of the pending request.
+const approvalOccurrenceId = "7d5b2a52-3f0c-4a6e-9c1d-2b8e5f4a9c10";
+
 const params = {
   "crews.list": { projectId: "project" },
   "crews.schema": { projectId: "project" },
@@ -219,6 +222,7 @@ const params = {
     targetRunId: "turn",
     requestId: "respond",
     approvalId: 7,
+    approvalOccurrenceId,
     decision: "allow",
   },
   "crews.answer": {
@@ -559,7 +563,7 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
               id: "approval",
               role: "assistant",
               text: "Approval text",
-              approval: { requestId: 7 },
+              approval: { requestId: 7, occurrenceId: approvalOccurrenceId },
             },
           ],
           pendingQuestion: question,
@@ -670,6 +674,7 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
     targetRunId: "turn",
     requestId: "respond",
     approvalId: 7,
+    approvalOccurrenceId,
     decision: "allow",
   });
   await call("crews.answer", {

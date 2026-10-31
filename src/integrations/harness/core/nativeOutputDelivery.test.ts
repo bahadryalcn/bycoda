@@ -11,6 +11,28 @@ beforeEach(() => {
   vi.resetModules();
   vi.stubGlobal("crypto", webcrypto);
 });
+
+it("bounds diagnostic outcomes without disabling long streams or evicting retained work ownership", async () => {
+  const api = await import("./nativeOutputDelivery");
+  let retained: ReturnType<typeof api.captureNativeOutputWork> = null;
+  const items = Array.from({ length: 4096 }, () => "delta");
+  for (let sequence = 1; sequence <= 9; sequence++) {
+    const tokens = api.observeNativeOutputBatch("session", "stdout", items, wire("stdout", items, { sequence }))!;
+    expect(tokens).toHaveLength(items.length);
+    for (let index = 0; index < tokens.length; index++)
+      api.deliverNativeOutputItem(tokens[index], () => {
+        if (sequence === 1 && index === 0) retained = api.captureNativeOutputWork();
+      });
+    await vi.waitFor(() => expect(api.inspectNativeOutputDelivery("session").streams[0].deliveredThrough).toBe(sequence));
+  }
+  const stream = api.inspectNativeOutputDelivery("session").streams[0];
+  expect(stream.outcomes).toHaveLength(32768);
+  expect(stream.unavailableReason).toBeNull();
+  const joined = api.joinNativeOutputWorks([retained!], "session");
+  expect(joined).not.toBeNull();
+  joined!.finish();
+  retained!.finish();
+});
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();

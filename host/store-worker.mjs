@@ -6,6 +6,16 @@ let active;
 let databaseClosed = false;
 let cursorSequence = 0;
 const cursors = new Map();
+// Cursor iterators use dedicated statements; cached statements are never busy.
+const statements = new Map();
+const prepare = (sql) => {
+  let statement = statements.get(sql);
+  if (statement) statements.delete(sql);
+  else statement = db.prepare(sql);
+  statements.set(sql, statement);
+  if (statements.size > 256) statements.delete(statements.keys().next().value);
+  return statement;
+};
 const closeCursors = (owner) => {
   for (const [id, cursor] of cursors)
     if (!owner || cursor.owner === owner) {
@@ -51,6 +61,7 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
       } else if (method === "exec") db.exec(sql);
       else if (method === "close") {
         closeCursors();
+        statements.clear();
         db.close();
         databaseClosed = true;
       } else if (method === "registerFunction") {
@@ -97,8 +108,24 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
           parentPort.postMessage({ id, value: { rows, done } });
           return;
         }
+      } else if (method === "runMany") {
+        if (!params.every(Array.isArray)) throw new Error("Invalid batch rows.");
+        const statement = prepare(sql);
+        // The caller owns the transaction, so failures roll back the whole batch.
+        db.exec("SAVEPOINT host_run_many");
+        try {
+          for (const row of params) statement.run(...row);
+          db.exec("RELEASE host_run_many");
+        } catch (error) {
+          try {
+            db.exec("ROLLBACK TO host_run_many; RELEASE host_run_many");
+          } catch {
+            // SQLite may already have rolled back; preserve the original failure.
+          }
+          throw error;
+        }
       } else if (method === "get" || method === "all" || method === "run") {
-        const value = db.prepare(sql)[method](...params);
+        const value = prepare(sql)[method](...params);
         parentPort.postMessage({ id, value });
         return;
       } else throw new Error("Unknown database operation.");

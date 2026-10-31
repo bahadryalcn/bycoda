@@ -53,6 +53,14 @@ async function click(text: string) {
   expect(button, text).toBeDefined();
   await act(async () => button!.click());
 }
+async function openLocate() {
+  const more = document.querySelector<HTMLButtonElement>(
+    'button[aria-label="More voice setup actions"]',
+  );
+  expect(more).not.toBeNull();
+  await act(async () => more!.click());
+  await click("Locate existing");
+}
 it("does not check or install until enabled; shows only the next actions for missing setup", async () => {
   await setup(false);
   await advance();
@@ -61,16 +69,20 @@ it("does not check or install until enabled; shows only the next actions for mis
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), enabled: true }));
   await advance();
   expect(container.textContent).toContain("Voice setup is needed");
-  expect(container.textContent).toContain("Locate existing");
+  expect(
+    document.querySelector('button[aria-label="More voice setup actions"]'),
+  ).not.toBeNull();
   expect(container.textContent).not.toMatch(
     /faster-whisper|VoxCPM2|pip install|Python executable|Missing:/,
   );
   expect(backend.setup).not.toHaveBeenCalled();
 });
 it("keeps locations behind a dialog, saves a picked folder and discards stale detection", async () => {
+  // Only the High quality voice (VoxCPM2) uses a model folder the owner can choose.
+  saveVoiceSettings({ ...loadVoiceSettings(), engine: "voxcpm2" });
   await setup();
   await advance();
-  await click("Locate existing");
+  await openLocate();
   const dialog = document.querySelector('[role="dialog"]')!;
   expect(dialog.textContent).toContain("Speech recognition model");
   backend.browse.mockResolvedValue("G:\\Models\\VoxCPM2");
@@ -84,6 +96,7 @@ it("keeps locations behind a dialog, saves a picked folder and discards stale de
   await advance();
   expect(backend.inspect).toHaveBeenLastCalledWith({
     natural: true,
+    engine: "voxcpm2",
     ttsPath: "G:\\Models\\VoxCPM2",
   });
   expect(backend.setup).not.toHaveBeenCalled();
@@ -146,7 +159,7 @@ it("ignores a late initial job status after starting a new install", async () =>
 it("keeps folder selection progress on one Browse action and suppresses duplicate dialogs", async () => {
   await setup();
   await advance();
-  await click("Locate existing");
+  await openLocate();
   let finish!: (path: string) => void;
   backend.browse.mockImplementationOnce(
     () =>
@@ -252,4 +265,78 @@ it("chooses visual previews with radio arrows and keeps runtime setup unchanged"
   expect(backend.inspect).toHaveBeenCalledTimes(calls);
   await act(async () => radios[3].click());
   expect(loadVoiceSettings().visual).toBe("orb");
+});
+
+it("offers GPU support for a ready CPU-only High quality voice and installs with the chosen device", async () => {
+  backend.inspect.mockResolvedValue({
+    ready: true,
+    missing: [],
+    gpu: "NVIDIA GeForce RTX 4070",
+    accelerated: false,
+  });
+  saveVoiceSettings({ ...loadVoiceSettings(), engine: "voxcpm2" });
+  await setup();
+  await advance();
+  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("NVIDIA GeForce RTX 4070");
+  backend.setup.mockResolvedValue({ state: "installing", stage: "gpu" });
+  await click("Install GPU support");
+  expect(backend.setup).toHaveBeenCalledExactlyOnceWith({ natural: true, engine: "voxcpm2" });
+  expect(container.textContent).toContain("Installing GPU support…");
+});
+
+it("persists the processing choice and rechecks with it; CPU hides the GPU offer", async () => {
+  backend.inspect.mockResolvedValue({
+    ready: true,
+    missing: [],
+    gpu: "NVIDIA GeForce RTX 4070",
+    accelerated: false,
+  });
+  saveVoiceSettings({ ...loadVoiceSettings(), engine: "voxcpm2" });
+  await setup();
+  await advance();
+  expect(container.textContent).toContain("Install GPU support");
+  await click("CPU");
+  expect(loadVoiceSettings().device).toBe("cpu");
+  await advance();
+  expect(backend.inspect).toHaveBeenLastCalledWith({
+    natural: true,
+    engine: "voxcpm2",
+    device: "cpu",
+  });
+  expect(container.textContent).not.toContain("Install GPU support");
+});
+
+it("offers Natural, High quality and System replies and keeps Supertonic implicit", async () => {
+  await setup();
+  await advance();
+  const options = () =>
+    [...document.querySelectorAll<HTMLElement>('[role="radio"]')].filter((option) =>
+      ["Natural", "High quality", "System voice"].includes(option.textContent?.trim() ?? ""),
+    );
+  expect(options().map((option) => option.textContent?.trim())).toEqual([
+    "Natural",
+    "High quality",
+    "System voice",
+  ]);
+  await act(async () => options()[1].click());
+  expect(loadVoiceSettings()).toMatchObject({ natural: true, engine: "voxcpm2" });
+  await advance();
+  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: true, engine: "voxcpm2" });
+  await act(async () => options()[0].click());
+  await advance();
+  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: true });
+});
+
+it("never offers GPU support for the default Natural voice, which runs on the CPU", async () => {
+  backend.inspect.mockResolvedValue({
+    ready: true,
+    missing: [],
+    gpu: "NVIDIA GeForce RTX 4070",
+    accelerated: false,
+  });
+  await setup();
+  await advance();
+  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).not.toContain("Install GPU support");
 });

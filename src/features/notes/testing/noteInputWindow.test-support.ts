@@ -46,13 +46,11 @@ export function resetNoteInputWindowForTest() {
     | {
         records: Map<number, { pending: boolean }>;
         bytes: number;
-        observationUnavailable: boolean;
       }
     | undefined;
   if (intents) {
     expect([...intents.records.values()].some((record) => record.pending)).toBe(false);
     intents.records.clear();
     intents.bytes = 0;
-    intents.observationUnavailable = false;
   }
 }

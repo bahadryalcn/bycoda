@@ -64,8 +64,8 @@
    outline on the same role, danger when invalid. Disabled dims through its semantic pair, never opacity twice. */
 .trigger:global(.bycoda-arc.bycoda-arc-select):focus-visible {
   border-color: var(--ui-field-border-focus);
-  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
-  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
+  outline: none;
+  box-shadow: var(--ui-focus-ring);
 }
 .trigger:global(.bycoda-arc-select)[aria-invalid="true"],
 .trigger:global(.bycoda-arc-select)[aria-invalid="true"]:hover:not([data-disabled]) {
@@ -171,9 +171,9 @@
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 36px;
-  border-radius: calc(var(--radius-control) - 4px);
-  padding: 0 34px 0 11px;
+  min-height: var(--ui-field-height-md);
+  border-radius: calc(var(--ui-field-radius) - 2px);
+  padding: 0 11px;
   color: var(--foreground);
   font-size: var(--text-sm);
   cursor: default;
@@ -265,4 +265,10 @@
     color: GrayText;
     opacity: 1;
   }
+}
+
+.indicator { display: none; }
+.item:is([data-highlighted], [data-state="checked"], [aria-selected="true"]) {
+  background: var(--ui-surface-selected);
+  box-shadow: inset 0 0 0 1px var(--ui-field-border);
 }

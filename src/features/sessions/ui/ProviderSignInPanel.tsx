@@ -50,7 +50,7 @@ export function ProviderSignInPanel({
           ? (completeDescription ?? t("You can retry your last message now."))
           : t("Sign in to continue using {p0}.", { p0: title })}
       </p>
-      <Button
+      <Button reserveLabels={[t("Waiting for browser…")]}
         variant="primary"
         type="button"
         autoFocus={autoFocus}

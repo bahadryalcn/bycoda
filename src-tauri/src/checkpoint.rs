@@ -113,9 +113,24 @@ impl CheckpointStore {
         operation: impl FnOnce(&Self) -> Result<T, String>,
     ) -> Result<T, String> {
         match &self.authority {
-            Some(gate) => gate.guarded(session_id, "native-checkpoint", || {
-                self.exclusive_read(session_id, cwds, operation)
-            }),
+            Some(gate) => {
+                let mut completed = None;
+                let guarded = gate.guarded(session_id, "native-checkpoint", || {
+                    completed = Some(self.exclusive_read(session_id, cwds, operation)?);
+                    Ok(())
+                });
+                if let Some(value) = completed {
+                    if let Err(error) = guarded {
+                        eprintln!(
+                            "[checkpoint] operation succeeded; lease cleanup failed: {error}"
+                        );
+                    }
+                    Ok(value)
+                } else {
+                    guarded?;
+                    Err("Checkpoint operation did not complete".into())
+                }
+            }
             None => self.exclusive_read(session_id, cwds, operation),
         }
     }

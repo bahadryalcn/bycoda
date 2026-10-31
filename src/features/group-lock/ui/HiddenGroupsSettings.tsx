@@ -2,7 +2,6 @@ import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
-import { EyeOff, Lock } from "../../../shared/ui/icons";
 import { useGroupLock } from "../hooks/useGroupLock";
 import {
   authorizeHiddenGroups,
@@ -42,24 +41,15 @@ export function HiddenGroupsSettings({
   return (
     <Group
       id="hidden-project-groups"
-      title={
-        <span className="privacy-heading">
-          <EyeOff aria-hidden className="icon-md" />
-          {t("Hidden groups")}
-        </span>
-      }
+      title={t("Hidden groups")}
+      descriptionVisible={false}
       description={t(
         "Right-click a project group and choose Hide group to hide it on this device. Temporary visibility ends on restart. Make visible restores the group permanently.",
       )}
     >
       {!authorized ? (
         <Row
-          label={
-            <span className="privacy-gate-label">
-              <Lock aria-hidden className="icon-md" />
-              {t("Group names are concealed")}
-            </span>
-          }
+          label={t("Group names are concealed")}
         >
           <Button className="shrink-0" onClick={() => setPrompt(true)}>
             {t("Manage hidden groups…")}

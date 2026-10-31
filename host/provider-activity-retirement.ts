@@ -28,7 +28,10 @@ export class ProviderActivityRetirement {
   private startSucceeded = false;
   private releaseCallback?: () => Promise<void>;
   private cohort?: Cohort;
+  private cohortSettled = false;
   private retirementWork?: Promise<void>;
+  private retirementSettled = false;
+  private startSettled = false;
   private releaseWork?: Promise<void>;
   private bookkeepingWork?: Promise<unknown>;
   private bookkeepingDone = false;
@@ -57,13 +60,20 @@ export class ProviderActivityRetirement {
       .catch((error) => {
         this.failed = true;
         throw error;
-      });
+      }).finally(() => { this.startSettled = true; });
     void this.startWork.catch(() => {});
     return this.startWork;
   }
 
   private capture(): Cohort {
-    return (this.cohort ??= captureProviderRetirementCohort(this.ownerKey));
+    if (!this.cohort) {
+      this.cohort = captureProviderRetirementCohort(this.ownerKey);
+      void this.cohort.settled.finally(() => {
+        this.cohortSettled = true;
+        this.forgetIfComplete();
+      }).catch(() => {});
+    }
+    return this.cohort;
   }
 
   retire(stop: () => Promise<void>): Promise<void> {
@@ -87,6 +97,11 @@ export class ProviderActivityRetirement {
       : admitted
         ? admitted.then(perform)
         : Promise.reject(new Error("Original provider activity has not started"));
+    // Observe physical cohort settlement independently of a bounded stop failure.
+    void Promise.allSettled([work, original.settled]).then(() => {
+      this.retirementSettled = true;
+      this.forgetIfComplete();
+    });
     void work.then(resolve, (error) => {
       this.failed = true;
       reject(error);
@@ -158,24 +173,37 @@ export class ProviderActivityRetirement {
   recordFailure(error: unknown): void {
     this.failed = true;
     this.error ??= error;
+    if (this.startSucceeded) this.capture();
   }
   private forgetIfComplete(): void {
-    if (this.bookkeepingDone && this.resourceReleased) this.released();
+    if (this.bookkeepingDone && this.resourceReleased &&
+        (!this.retirementWork || this.retirementSettled)) this.released();
   }
   observation() {
-    return { failed: this.failed };
+    return { failed: this.failed, settled: this.retirementWork
+      ? this.retirementSettled : this.cohortSettled || (this.startSettled && !this.startSucceeded),
+      retiring: !!this.retirementWork && !this.retirementSettled };
+  }
+  /** Only settled records may release ledger capacity. */
+  evict(): void {
+    if (!this.observation().settled) return;
+    this.released();
   }
 }
 
 export class ProviderActivityRetirements {
   private readonly records = new Set<ProviderActivityRetirement>();
   reserve(ownerKey: string, released?: () => void): ProviderActivityRetirement {
-    if (
-      [...this.records].some(
-        (record) => record.ownerKey === ownerKey && record.observation().failed,
-      )
-    )
-      throw new Error("Original provider activity cleanup is unverified");
+    // A failed observation cannot discard an outstanding physical stop.
+    for (const record of [...this.records]) {
+      const state = record.observation();
+      if (record.ownerKey === ownerKey && (state.retiring || (state.failed && !state.settled)))
+        throw new Error("The original provider is still stopping. Retry when it exits.");
+      if (!state.failed || !state.settled) continue;
+      if (record.ownerKey !== ownerKey && this.records.size < PROVIDER_ACTIVITY_CAPACITY) continue;
+      console.warn(`Evicting failed provider activity record for ${record.ownerKey}`);
+      record.evict();
+    }
     if (this.records.size >= PROVIDER_ACTIVITY_CAPACITY)
       throw new Error("Provider activity retirement capacity is held by unfinished work");
     const original = new ProviderActivityRetirement(ownerKey, () => {

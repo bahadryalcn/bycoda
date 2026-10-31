@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { X } from "../../../shared/ui/icons";
 import { Stepper } from "../../../shared/ui/Stepper";
 import type { TooltipRenderProps } from "react-joyride";
@@ -5,25 +6,105 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 
 const guides = [
-  { name: "Obi-Wan Kenobi", asset: "obi-wan", label: "New Tab" },
-  { name: "Leia Organa", asset: "leia", label: "Queue message" },
-  { name: "Yoda", asset: "yoda", label: "Stop" },
-  { name: "Luke Skywalker", asset: "luke", label: "Changes" },
-  { name: "Chewbacca", asset: "chewbacca", label: "Shortcuts" },
+  { name: "Obi-Wan Kenobi", asset: "obi-wan" },
+  { name: "Leia Organa", asset: "leia" },
+  { name: "Yoda", asset: "yoda" },
+  { name: "Luke Skywalker", asset: "luke" },
+  { name: "Chewbacca", asset: "chewbacca" },
 ];
 
-/** Joyride owns positioning, focus management and tour actions; Arc owns the controls. */
-export function UsageGuideTooltip({
+/**
+ * Joyride owns positioning, focus management and tour actions; Arc owns the controls.
+ * Steps flagged `data: { compact: true }` (first-run and "What's new" tours) get the compact card.
+ */
+export function UsageGuideTooltip(props: TooltipRenderProps) {
+  return props.step.data?.compact ? <TourCard {...props} /> : <UsageGuidePanel {...props} />;
+}
+
+/** One short step: progress, title, a sentence, an optional Try it (in `content`), Skip/Back/Next. */
+function TourCard({
   backProps,
   closeProps,
   index,
   isLastStep,
   primaryProps,
+  skipProps,
   size,
   step,
   tooltipProps,
 }: TooltipRenderProps) {
-  const guide = guides[index];
+  const card = useRef<HTMLElement>(null);
+  // Joyride traps focus in the card and lands on the primary action when it opens. A Try it
+  // button disappears with its step, so focus is put back on the main action for the next card.
+  useEffect(() => {
+    const root = card.current;
+    if (!root || root.contains(document.activeElement)) return;
+    root.querySelector<HTMLElement>('[data-action="primary"]')?.focus({ preventScroll: true });
+  }, [index]);
+  return (
+    <section
+      {...tooltipProps}
+      ref={card}
+      className="bycoda-arc usage-guide-panel usage-guide-panel--compact"
+      data-joyride-step={index}
+      aria-labelledby="usage-guide-title"
+      aria-describedby="usage-guide-description"
+    >
+      <header className="usage-guide-toolbar">
+        <span className="usage-guide-progress-count" aria-hidden="true">
+          {t("{p0} / {p1}", { p0: index + 1, p1: size })}
+        </span>
+        <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {t("Step {p0} of {p1}", { p0: index + 1, p1: size })}
+        </span>
+        <Button
+          {...closeProps}
+          variant="ghost"
+          iconOnly
+          label={closeProps["aria-label"] ?? closeProps.title ?? t("Close")}
+        >
+          <X size={16} aria-hidden="true" />
+        </Button>
+      </header>
+      <div className="usage-guide-scroll" key={index}>
+        <h2 id="usage-guide-title" className="usage-guide-tour-title">
+          {step.title}
+        </h2>
+        {step.content}
+      </div>
+      <footer className="usage-guide-footer">
+        {size > 1 && !isLastStep ? (
+          <Button {...skipProps} variant="ghost" size="sm" className="usage-guide-skip">
+            {t("Skip tour")}
+          </Button>
+        ) : null}
+        <div className="usage-guide-actions">
+          {size > 1 ? (
+            <Button {...backProps} variant="secondary" size="sm" disabled={index === 0}>
+              {t("Back")}
+            </Button>
+          ) : null}
+          <Button {...primaryProps} size="sm">
+            {t(isLastStep ? "Done" : "Next")}
+          </Button>
+        </div>
+      </footer>
+    </section>
+  );
+}
+
+function UsageGuidePanel({
+  backProps,
+  closeProps,
+  index,
+  isLastStep,
+  primaryProps,
+  skipProps,
+  size,
+  step,
+  tooltipProps,
+}: TooltipRenderProps) {
+  const guide = guides[index % guides.length];
   return (
     <section
       {...tooltipProps}
@@ -65,14 +146,29 @@ export function UsageGuideTooltip({
       <footer className="usage-guide-footer">
         <Stepper
           label={t("Usage guide")}
-          steps={guides.map((guide) => ({ id: guide.asset, label: t(guide.label) }))}
+          steps={Array.from({ length: size }, (_, position) => ({
+            id: String(position),
+            label: t("Step {p0} of {p1}", { p0: position + 1, p1: size }),
+          }))}
           current={index}
           compact
         />
         <div className="usage-guide-actions">
-          <Button {...backProps} variant="secondary" disabled={index === 0}>
-            {t("← Back")}
-          </Button>
+          {size > 1 && !isLastStep ? (
+            <Button
+              {...skipProps}
+              variant="ghost"
+              aria-label={t("Skip tour")}
+              className="usage-guide-skip"
+            >
+              {t("Skip tour")}
+            </Button>
+          ) : null}
+          {size > 1 ? (
+            <Button {...backProps} variant="secondary" disabled={index === 0}>
+              {t("← Back")}
+            </Button>
+          ) : null}
           <Button {...primaryProps}>{t(isLastStep ? "Done" : "Continue →")}</Button>
         </div>
       </footer>

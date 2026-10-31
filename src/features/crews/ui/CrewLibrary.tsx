@@ -133,17 +133,17 @@ export function CrewLibrary({
                 <div key={agent.id} className="settings-collection-row">
                   <div className="settings-collection-main">
                     {/* Identity is data, not help text: it stays visible in the row. */}
-                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                      <span className="settings-collection-title">{agent.name}</span>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="settings-collection-title min-w-0">{agent.name}</span>
                       {agent.groups?.map((name) => (
-                        <Badge key={name} size="sm">
+                        <Badge key={name} size="sm" className="max-w-32 shrink-0 truncate">
                           {name}
                         </Badge>
                       ))}
                     </div>
                     <CrewMemberMeta agent={agent} catalog={data.catalog} />
                   </div>
-                  <div className="settings-collection-actions">
+                  <div className="settings-collection-actions shrink-0">
                     <Button
                       variant="ghost"
                       aria-label={t("Edit {p0}", { p0: agent.name })}

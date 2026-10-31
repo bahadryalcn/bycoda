@@ -1,26 +1,13 @@
-/* The privacy page is one ordered column: this computer, password and recovery,
-   automatic locking, then the group lists. Groups come from the shared settings
-   frame; only the group collections add markup of their own. */
+/* The privacy page is one ordered column: this computer, file access, password,
+   automatic locking, then the group lists. Spacing comes from the shared
+   .settings-topics rhythm; groups come from the shared settings frame, and only the
+   group collections add markup of their own. */
 .group-privacy {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
   min-inline-size: 0;
   container-type: inline-size;
 }
 .group-privacy-controls {
   display: contents;
-}
-.privacy-heading,
-.privacy-gate-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.privacy-heading svg,
-.privacy-gate-label svg {
-  flex-shrink: 0;
-  color: var(--ui-text-secondary);
 }
 .privacy-file-access-status {
   color: var(--ui-text-secondary);
@@ -54,15 +41,7 @@
   justify-self: end;
 }
 .privacy-group-name {
-  display: grid;
-  grid-template-columns: 1rem minmax(0, 1fr);
-  column-gap: 10px;
-  align-items: center;
   min-inline-size: 0;
-}
-.privacy-group-icon {
-  display: inline-flex;
-  color: var(--ui-text-secondary);
 }
 .privacy-group-title {
   overflow-wrap: anywhere;
@@ -73,17 +52,15 @@
 .privacy-group-state {
   justify-self: start;
 }
+/* "Unlocked" and the not-protected dash are quiet text; only a lock that is on right now is a badge. */
+.privacy-group-state-quiet {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
 .privacy-empty {
   display: grid;
   gap: 2px;
   padding: 12px 16px;
-}
-.privacy-footnote {
-  max-inline-size: 60ch;
-  margin: 0;
-  font-size: var(--ui-font-caption);
-  line-height: 1.6;
-  color: var(--ui-text-secondary);
 }
 .privacy-hidden-footer {
   display: flex;

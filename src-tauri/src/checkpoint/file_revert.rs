@@ -14,6 +14,10 @@ const FOREIGN: &str = "The file changed after this session last wrote it.";
 struct Journal {
     cwd: String,
     turns: Vec<FileTurn>,
+    #[serde(default)]
+    cached_baseline: BTreeMap<String, SnapshotKind>,
+    #[serde(default)]
+    cached_stamps: BTreeMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -28,6 +32,8 @@ struct FileTurn {
     baseline: BTreeMap<String, SnapshotKind>,
     #[serde(default)]
     baseline_complete: bool,
+    #[serde(default)]
+    baseline_stamps: BTreeMap<String, String>,
     #[serde(default)]
     baseline_skipped_stamps: BTreeMap<String, String>,
     #[serde(default)]
@@ -159,6 +165,49 @@ fn stamp(root: &Path, path: &str) -> String {
             Err(_) => return "unreadable".into(),
         }
     }
+}
+
+// Recent timestamps may coalesce on disk. Hash those files rather than trusting
+// metadata; failures and unsafe paths never qualify for the fast path.
+fn file_stamp(root: &Path, path: &str) -> Option<String> {
+    if path_contains_symlink(root, path) {
+        return None;
+    }
+    let meta = std::fs::symlink_metadata(root.join(path)).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    let modified = meta.modified().ok()?;
+    let recent = modified.elapsed().map_or(true, |age| age.as_secs() < 2);
+    let content = if recent {
+        let value = stamp(root, path);
+        if value.len() != 64 {
+            return None;
+        }
+        value
+    } else {
+        String::new()
+    };
+    Some(format!(
+        "{}:{modified:?}:{:?}:{content}",
+        meta.len(),
+        file_mode(&root.join(path))
+    ))
+}
+
+fn remove_cached_file(baseline: &Path, path: &str) -> Result<(), String> {
+    let old = state_blob_path(baseline, path)?;
+    if old.is_file() {
+        std::fs::remove_file(&old).map_err(|e| e.to_string())?;
+        let mut parent = old.parent();
+        while let Some(dir) = parent.filter(|dir| *dir != baseline && dir.starts_with(baseline)) {
+            if std::fs::remove_dir(dir).is_err() {
+                break;
+            }
+            parent = dir.parent();
+        }
+    }
+    Ok(())
 }
 
 fn prune(dir: &Path, journal: &mut Journal, limit: u64) -> Result<(), String> {
@@ -311,9 +360,15 @@ impl CheckpointStore {
         // This observation lease never denies or delays admission. Overlap only limits attribution.
         turn::leases::publish(&self.leases, session, id, cwd)?;
         let baseline_dir = dir.join("files-baseline");
-        if baseline_dir.exists() {
+        let cached_baseline = std::mem::take(&mut journal.cached_baseline);
+        let cached_stamps = std::mem::take(&mut journal.cached_stamps);
+        if cached_baseline.is_empty() && baseline_dir.exists() {
+            // Legacy/crash-invalidated caches have no trusted inventory.
             std::fs::remove_dir_all(&baseline_dir).map_err(|e| e.to_string())?;
         }
+        // Invalidate on disk before touching any cached bytes. A crash during
+        // refresh must never associate old stamps with partially copied files.
+        save(&dir, &journal)?;
         let mut turn = FileTurn {
             id: id.into(),
             user_block_id: user_block_id.into(),
@@ -322,6 +377,7 @@ impl CheckpointStore {
             files: BTreeMap::new(),
             baseline: BTreeMap::new(),
             baseline_complete: false,
+            baseline_stamps: BTreeMap::new(),
             baseline_skipped_stamps: BTreeMap::new(),
             bytes: Some(0),
             provider_calls: BTreeSet::new(),
@@ -329,11 +385,27 @@ impl CheckpointStore {
         match discover(&root) {
             Ok((paths, complete)) => {
                 turn.baseline_complete = complete;
+                // Clear deleted paths first, including empty parents, so file /
+                // directory replacements do not collide with the previous cache.
+                for path in cached_baseline.keys().filter(|path| !paths.contains(*path)) {
+                    remove_cached_file(&baseline_dir, path)?;
+                }
                 let mut bytes = 0;
                 for path in paths {
                     let size = std::fs::symlink_metadata(root.join(&path)).map_or(0, |m| m.len());
+                    let before_stamp = file_stamp(&root, &path);
                     let kind = if bytes + size <= BASELINE_BYTES {
-                        let kind = snapshot_file_at(&baseline_dir, &root, &path)?;
+                        let reusable = before_stamp
+                            .as_ref()
+                            .is_some_and(|value| cached_stamps.get(&path) == Some(value))
+                            && cached_baseline.get(&path) == Some(&SnapshotKind::Contents)
+                            && std::fs::symlink_metadata(state_blob_path(&baseline_dir, &path)?)
+                                .is_ok_and(|meta| meta.is_file() && meta.len() == size);
+                        let kind = if reusable {
+                            SnapshotKind::Contents
+                        } else {
+                            snapshot_file_at(&baseline_dir, &root, &path)?
+                        };
                         if kind == SnapshotKind::Contents {
                             bytes += size;
                         }
@@ -345,8 +417,20 @@ impl CheckpointStore {
                         turn.baseline_skipped_stamps
                             .insert(path.clone(), stamp(&root, &path));
                     }
+                    if before_stamp.is_some() && before_stamp == file_stamp(&root, &path) {
+                        turn.baseline_stamps
+                            .insert(path.clone(), before_stamp.unwrap());
+                    }
                     turn.baseline.insert(path, kind);
                 }
+                // Remove stale cached entries without walking the baseline tree.
+                for (path, kind) in &turn.baseline {
+                    if *kind == SnapshotKind::Skipped {
+                        remove_cached_file(&baseline_dir, path)?;
+                    }
+                }
+                journal.cached_baseline = turn.baseline.clone();
+                journal.cached_stamps = turn.baseline_stamps.clone();
             }
             Err(error) => {
                 turn.unavailable = Some(format!("File baseline could not be captured: {error}"))
@@ -388,6 +472,12 @@ impl CheckpointStore {
                 // Structured edit completions record what this session last wrote. Do not adopt
                 // subsequent foreign writes, even on an otherwise exclusive turn.
                 if turn.files.get(&path).is_some_and(|p| p.after.is_some()) {
+                    continue;
+                }
+                if file_stamp(&root, &path)
+                    .as_ref()
+                    .is_some_and(|value| turn.baseline_stamps.get(&path) == Some(value))
+                {
                     continue;
                 }
                 let before_kind = turn
@@ -443,15 +533,13 @@ impl CheckpointStore {
         }
         turn.active = false;
         turn.baseline.clear();
+        turn.baseline_stamps.clear();
         turn.baseline_skipped_stamps.clear();
         turn.bytes = Some(disk_bytes(&turn_dir(&dir, id)?));
         prune(&dir, &mut journal, HISTORY_BYTES)?;
         save(&dir, &journal)?;
         self.settle_light_turn(session, id, shared)?;
         turn::leases::release(&self.leases, session, id)?;
-        if baseline_dir.exists() {
-            std::fs::remove_dir_all(baseline_dir).map_err(|e| e.to_string())?;
-        }
         Ok(true)
     }
 }
@@ -946,7 +1034,12 @@ fn candidates(dir: &Path, message: &str) -> Result<(PathBuf, Vec<Candidate>), St
             return Err("A turn is still recording file history.".into());
         }
         if let Some(reason) = &turn.unavailable {
-            return Err(reason.clone());
+            if turn.user_block_id == message {
+                return Err(reason.clone());
+            }
+            // Retain the earlier known after-state. The ordinary worktree
+            // conflict check protects any file touched during this unknown gap.
+            continue;
         }
         let history_dir = turn_dir(dir, &turn.id)?;
         for (path, pair) in &turn.files {

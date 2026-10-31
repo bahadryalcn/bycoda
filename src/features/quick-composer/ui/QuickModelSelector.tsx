@@ -1,17 +1,16 @@
-import { Slider } from "../../../shared/ui/Slider";
+import { ModelExtrasPanel } from "../../sessions/ui/ModelExtras";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { emit } from "@tauri-apps/api/event";
-import { Check, RotateCcw, Search, Star, Zap } from "../../../shared/ui/icons";
+import { Check, RotateCcw, Search, Star, ChevronDown } from "../../../shared/ui/icons";
 import {
   findModel,
   getModelSnapshot,
   getPickerVisibilitySnapshot,
   isModelEnabled,
   loadFavoriteModels,
-  modelEffortSetting,
   modelsFor,
   saveFavoriteModels,
   showProviderInModelPicker,
@@ -35,11 +34,6 @@ import {
 } from "../../sessions/model/modelListReconcile";
 import { filterQuickModels, QUICK_COMPOSER_CATALOG_REQUEST_EVENT } from "../model/quickComposer";
 import { quickSessionModelSettings } from "../model/quickSessionDefaults";
-import {
-  fastSetting,
-  fastToggleValues,
-  settingLabel,
-} from "../../sessions/model/modelPickerData";
 
 type Props = {
   cwd?: string;
@@ -65,6 +59,8 @@ export function QuickModelSelector({
   useSyncExternalStore(subscribeModels, getModelSnapshot);
   useSyncExternalStore(subscribePickerVisibility, getPickerVisibilitySnapshot);
   useSyncExternalStore(subscribeProjectProviders, projectProvidersRevision, projectProvidersRevision);
+  const [showModels, setShowModels] = useState(true);
+  const modelRowRef = useRef<HTMLButtonElement>(null);
   const [tab, setTab] = useState<ModelPickerTab>(model.harness);
   const [query, setQuery] = useState("");
   // The keyboard row is owned by provider/model identity. `scope` ties it to the
@@ -108,37 +104,12 @@ export function QuickModelSelector({
   const active = modelKeyIndex(models, activeKey);
   const setActive = (item: AgentModel) =>
     setActiveChoice({ key: modelRowKey(item), scope: activeScope });
-  const effort =
-    modelEffortSetting(model) ??
-    model.settings?.find(
-      (setting) =>
-        setting.kind === "select" && /^(effort|reasoning effort|reasoning)$/i.test(setting.label),
-    );
-  const valueFor = (id: string, fallback: string) => values[id] ?? fallback;
-  const changeSetting = (id: string, value: string) => onSettingsChange({ ...values, [id]: value });
-  const effortIndex = Math.max(
-    0,
-    effort?.options.findIndex((option) => option.value === valueFor(effort.id, effort.value)) ?? 0,
-  );
-  // Same Fast detection and on/off pair as the shared picker menu.
-  const fast = fastSetting(model);
-  const fastValues = fastToggleValues(fast);
-  const fastOn = fastValues?.on;
-  const fastOff = fastValues?.off;
-  const canToggleFast = fast != null && fastOn != null && fastOff != null;
-  const fastEnabled = canToggleFast && valueFor(fast.id, fast.value) === fastOn;
-  const resetSettings = () => {
-    const defaults = quickSessionModelSettings(model, cwd);
-    onSettingsChange({
-      ...values,
-      ...(effort ? { [effort.id]: defaults[effort.id] } : {}),
-      ...(canToggleFast ? { [fast.id]: defaults[fast.id] } : {}),
-    });
-  };
+  const resetSettings = () => onSettingsChange({ ...values, ...quickSessionModelSettings(model, cwd) });
 
   useEffect(() => {
-    searchRef.current?.focus({ preventScroll: true });
-  }, []);
+    if (showModels) searchRef.current?.focus({ preventScroll: true });
+    else modelRowRef.current?.focus({ preventScroll: true });
+  }, [showModels]);
   useEffect(() => {
     if (visibleTab !== "favorites") void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, visibleTab);
   }, [visibleTab]);
@@ -159,7 +130,9 @@ export function QuickModelSelector({
     setActiveChoice(null);
   };
   const pick = (item: AgentModel) => {
-    if (enabled(item)) onChange(item);
+    if (!enabled(item)) return;
+    onChange(item);
+    setShowModels(false);
   };
 
   return (
@@ -174,6 +147,18 @@ export function QuickModelSelector({
         }
       }}
     >
+      <ModelExtrasPanel
+        compact
+        harness={model.harness}
+        model={model.id}
+        values={values}
+        onSettingsChange={onSettingsChange}
+      />
+      <Button variant="ghost" size="sm" aria-label={t("Reset to saved defaults")} title={t("Reset to saved defaults")} onClick={resetSettings}>
+        <RotateCcw className="size-4" />
+        {t("Reset to saved defaults")}
+      </Button>
+      {showModels ? <>
       <nav
         role="tablist"
         aria-label={t("Providers")}
@@ -355,68 +340,27 @@ export function QuickModelSelector({
               </p>
             )}
           </div>
-          {effort && effort.options.length > 0 ? (
-            <div className="shrink-0 border-t border-stroke px-4 pb-3 pt-2">
-              {/* Same names and order as the shared picker menu: Reasoning, then Fast. */}
-              <div className="mb-1 flex min-h-7 items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-ui-secondary">
-                  {t(settingLabel(effort))}
-                </span>
-                <span className="shrink-0 text-ui-secondary font-medium text-accent">
-                  {t(effort.options[effortIndex]?.label ?? "")}
-                </span>
-                <Button
-                  iconOnly
-                  label={t("Reset to saved defaults")}
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  aria-label={t("Reset to saved defaults")}
-                  title={t("Reset to saved defaults")}
-                  onClick={resetSettings}
-                  className="grid shrink-0 place-items-center"
-                >
-                  <RotateCcw className="size-4" />
-                </Button>
-              </div>
-              <Slider
-                hideLabel
-                label={t(settingLabel(effort))}
-                value={effortIndex}
-                min={0}
-                max={effort.options.length - 1}
-                step={1}
-                marks={effort.options.map((_, index) => index)}
-                format={(index) => t(effort.options[index]?.label ?? "")}
-                onValueChange={(index) => changeSetting(effort.id, effort.options[index].value)}
-              />
-              {canToggleFast ? (
-                <Button
-                  fullWidth
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  aria-label={t("Fast")}
-                  aria-pressed={fastEnabled}
-                  title={fastEnabled ? t("Turn off fast mode") : t("Turn on fast mode")}
-                  onClick={() => changeSetting(fast.id, fastEnabled ? fastOff : fastOn)}
-                  className="mt-1 flex items-center gap-2 text-left"
-                >
-                  <Zap className="size-4 shrink-0" fill={fastEnabled ? "currentColor" : "none"} />
-                  <span className="min-w-0 flex-1 truncate text-ui-secondary">{t("Fast")}</span>
-                  <span
-                    className={`shrink-0 text-ui-secondary ${
-                      fastEnabled ? "font-medium text-accent" : "text-(--ui-text-secondary)"
-                    }`}
-                  >
-                    {fastEnabled ? t("On") : t("Off")}
-                  </span>
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
+
         </div>
       </div>
+      </> : null}
+      <Button
+        ref={modelRowRef}
+        variant="item"
+        fullWidth
+        aria-expanded={showModels}
+        aria-label={t("Model")}
+        onClick={() => {
+          setTab(model.harness);
+          setQuery("");
+          setActiveChoice(null);
+          setShowModels((value) => !value);
+        }}
+      >
+        <span>{t("Model")}</span>
+        <span className="ml-auto truncate">{model.name}</span>
+        <ChevronDown className="size-4 shrink-0" />
+      </Button>
     </section>
   );
 }

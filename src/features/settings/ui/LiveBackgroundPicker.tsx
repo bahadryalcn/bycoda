@@ -26,7 +26,7 @@ export function liveBackgroundKeyTarget(key: string, index: number, count: numbe
   }
 }
 
-/** The scene `delta` steps away, wrapping at both ends (used by the preview's previous/next). */
+/** The scene `delta` steps away, wrapping at both ends. */
 export function stepLiveBackground(value: LiveBackground, delta: number): LiveBackground {
   const index = Math.max(0, LIVE_BACKGROUNDS.indexOf(value));
   const count = LIVE_BACKGROUNDS.length;
@@ -34,8 +34,9 @@ export function stepLiveBackground(value: LiveBackground, delta: number): LiveBa
 }
 
 /**
- * Radio group of scene tiles. Only the selected tile is a tab stop; arrow keys,
- * Home and End move focus and select together, like a native radio group.
+ * Radio group of evenly sized scene tiles. Only the selected tile is a tab stop; arrow keys,
+ * Home and End move focus and select together, like a native radio group. The selected tile plays
+ * its scene live (the picker's own preview); the others stay still.
  */
 export function LiveBackgroundPicker({
   value,
@@ -66,7 +67,7 @@ export function LiveBackgroundPicker({
       ref={groupRef}
       role="radiogroup"
       aria-label={label}
-      className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-2"
+      className="grid w-full grid-cols-[repeat(auto-fill,5.5rem)] justify-start gap-2"
     >
       {LIVE_BACKGROUNDS.map((option, index) => (
         <LiveBackgroundTile
@@ -139,7 +140,7 @@ function LiveBackgroundTile({
           <LiveBackgroundCanvas
             effect={scene}
             intensity={1}
-            still
+            still={!selected}
             demoSpeech
             className="absolute inset-0"
           />

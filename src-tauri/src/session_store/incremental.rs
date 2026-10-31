@@ -52,13 +52,16 @@ pub(super) fn checkpoint(
         [id],
         |r| r.get(0),
     )?;
-    let mut upsert = conn.prepare("INSERT INTO session_blocks(session_id,ordinal,block_id,block_json,revision) VALUES(?1,?2,?3,?4,?5)
+    // One SQLite statement inside the caller's transaction, with a bounded
+    // parameter count regardless of transcript size.
+    let mut upsert = conn.prepare("INSERT INTO session_blocks(session_id,ordinal,block_id,block_json,revision)
+          SELECT ?1,CAST(key AS INTEGER),CASE WHEN json_type(value,'$.id')='text' THEN json_extract(value,'$.id') ELSE '' END,value,?3
+          FROM json_each(?2) WHERE true
           ON CONFLICT(session_id,ordinal) DO UPDATE SET block_id=excluded.block_id,block_json=excluded.block_json,revision=excluded.revision
           WHERE session_blocks.block_json != excluded.block_json")?;
-    for (index, (block, raw)) in blocks.iter().zip(raw).enumerate() {
-        let block_id = block.get("id").and_then(Value::as_str).unwrap_or("");
-        upsert.execute(params![id, index as i64, block_id, raw, revision])?;
-    }
+    let encoded = serde_json::to_string(raw)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    upsert.execute(params![id, encoded, revision])?;
     drop(upsert);
     conn.execute(
         "DELETE FROM session_blocks WHERE session_id=?1 AND ordinal>=?2",
@@ -443,9 +446,11 @@ pub fn session_get_page(
     limit: Option<usize>,
 ) -> Result<Option<TranscriptPage>, String> {
     // Reconciliation can resume workspace-file effects, beyond this row's ID.
-    let _ = crate::native_window_lifecycle::persistence_write(&window, || {
-        super::rewind::reconcile_pending_native(&app, &store, Some(&session_id))
-    });
+    if super::rewind::has_pending_native(&store, Some(&session_id)).unwrap_or(false) {
+        let _ = crate::native_window_lifecycle::persistence_write(&window, || {
+            super::rewind::reconcile_pending_native(&app, &store, Some(&session_id))
+        });
+    }
     store.with_read_conn(|conn| {
         page_with_cache(
             conn,

@@ -7,8 +7,9 @@ const status = vi.hoisted(() => ({
   value: null as unknown,
   machines: [] as unknown[],
   descriptor: { capabilities: [] as string[] },
+  requests: vi.fn(),
 }));
-vi.mock("../model/connections", () => ({ remoteRequest: async () => status.descriptor }));
+vi.mock("../model/connections", () => ({ remoteRequest: async () => { status.requests(); return status.descriptor; } }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: async (command: string) =>
     command === "local_host_bundle_status"
@@ -67,4 +68,23 @@ it("reuses the existing notice for an incompatible paired Host without starting 
   status.machines = [{ id: "paired-local", localHost: true }];
   status.descriptor = { capabilities: [] };
   expect((await render()).textContent).toContain("does not support managed workspace");
+});
+
+
+it("refreshes compatibility on focus without polling the descriptor", async () => {
+  vi.useFakeTimers();
+  try {
+    status.value = { state: "current", installed: "1", bundled: "1" };
+    status.machines = [{ id: "local", localHost: true }];
+    await render();
+    status.requests.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(status.requests).not.toHaveBeenCalled();
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(status.requests).toHaveBeenCalledTimes(1);
+  } finally {
+    cleanup?.();
+    cleanup = undefined;
+    vi.useRealTimers();
+  }
 });

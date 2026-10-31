@@ -85,7 +85,7 @@ export function useSessionPlacement({
       if (replaceTarget) {
         lastPersisted.current.delete(targetId);
         const blank = sessionsRef.current.find((entry) => entry.id === targetId);
-        if (blank) void forgetHarnessSession(blank.harness, targetId);
+        if (blank) void forgetHarnessSession(blank.harness, targetId).catch(console.warn);
       }
 
       const result = applyPlaceSessionOnPane({
@@ -153,7 +153,7 @@ export function useSessionPlacement({
 
       if (blankTarget) {
         lastPersisted.current.delete(blankTarget.id);
-        void forgetHarnessSession(blankTarget.harness, blankTarget.id);
+        void forgetHarnessSession(blankTarget.harness, blankTarget.id).catch(console.warn);
       }
       sessionsRef.current = result.sessions;
       tabsRef.current = result.tabs;

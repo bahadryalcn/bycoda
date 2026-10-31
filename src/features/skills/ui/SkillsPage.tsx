@@ -171,6 +171,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   const savePending = useRef(false);
   const editorView = useRef<EditorView | null>(null);
   const editable = previewSkill !== null && !previewMachine && canDeleteSkill(previewSkill);
+  const editingSource = editable && (editing || previewMode === "source");
   const draft = previewSkill ? (drafts[previewSkill.path] ?? previewText) : null;
   const dirty = draft !== null && previewText !== null && draft !== previewText;
 
@@ -959,17 +960,17 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                 <span className={styles.fileLabel}>SKILL.md</span>
                 <Segmented
                   label={t("Markdown view")}
-                  value={split ? "split" : editing ? "edit" : previewMode}
+                  value={split ? "split" : editingSource ? "edit" : previewMode}
                   options={[
                     ...(editable ? [{ value: "edit", label: t("Edit") }] : []),
                     { value: "preview", label: t("Preview") },
-                    { value: "source", label: t("Source") },
+                    ...(!editable ? [{ value: "source", label: t("Source") }] : []),
                     { value: "split", label: t("Split") },
                   ]}
                   onChange={(mode) => {
                     setEditing(mode === "edit");
                     setSplit(mode === "split");
-                    if (mode === "preview" || mode === "source") setPreviewMode(mode);
+                    if (mode === "preview" || mode === "source" || mode === "edit") setPreviewMode(mode === "edit" ? "preview" : mode);
                   }}
                 />
                 {editable && drafts[previewSkill.path] !== undefined ? (
@@ -1010,7 +1011,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                 <Alert inline tone="info" role="status">
                   {t("Loading skill…")}
                 </Alert>
-              ) : (editing && editable) || split ? (
+              ) : editingSource || split ? (
                 <div className={split ? styles.split : styles.editPane}>
                   <section className={styles.rawPane} aria-label={editable ? t("Skill instructions") : t("Source")}>
                   {editable ? (
@@ -1037,7 +1038,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             </div>
             <footer className={styles.detailFooter}>
               <span>{previewError ? t("Could not read skill") : previewText === null ? t("Loading skill…") : saving ? t("Saving…") : dirty ? t("Unsaved changes") : t("Saved")}</span>
-              <span>{editing || (split && editable) ? t("Ctrl/Cmd+S to save") : t("Markdown")}</span>
+              <span>{editingSource || (split && editable) ? t("Ctrl/Cmd+S to save") : t("Markdown")}</span>
             </footer>
           </aside>
         ) : showCreate ? null : (

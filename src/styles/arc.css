@@ -1,3 +1,20 @@
+/* Shared field/focus contract. Density preferences remain authoritative. */
+html:root {
+  --ui-field-height-sm: var(--ui-control-height-compact);
+  --ui-field-height-md: calc(var(--ui-control-height) - 0.25rem);
+  --ui-field-radius: 0.5rem;
+  --ui-field-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface-muted));
+  --ui-field-border-hover: color-mix(in oklab, var(--color-content) 22%, var(--ui-surface-muted));
+  --ui-field-border-focus: var(--ui-interaction-ink);
+  --ui-field-border-invalid: var(--ui-tone-danger-fg);
+  --ui-focus-ring-color: var(--ui-interaction-ink);
+  --ui-focus-ring: 0 0 0 3px color-mix(in oklab, var(--ui-focus-ring-color) 18%, transparent);
+  --ui-focus-width: 1px;
+}
+html[data-control-density="touch"] {
+  --ui-field-height-md: var(--ui-control-height);
+}
+
 /* Arc roles are scoped to control roots. The global Arc foundation reset owns
    a separate theme/focus system and must not change the rest of the workbench. */
 .bycoda-arc {
@@ -52,8 +69,8 @@
   --font-display: var(--font-sans);
   --leading-body: 1.4;
   --tracking-body: normal;
-  --control-height-sm: var(--ui-control-height-sm);
-  --control-height-md: var(--ui-control-height-md);
+  --control-height-sm: var(--ui-field-height-sm);
+  --control-height-md: var(--ui-field-height-md);
   --control-height-lg: var(--ui-control-height-lg);
   --duration-instant: 80ms;
   --duration-fast: var(--motion-feedback-duration);
@@ -68,8 +85,8 @@
 /* The camera island stays black in both themes to join the physical cutout. */
 .bycoda-arc[data-ui-appearance="island"],
 .bycoda-arc[data-ui-appearance="island"] .bycoda-arc {
-  --ui-focus-ring-color: var(--ui-island-text);
-  --ui-field-border-focus: var(--ui-island-text);
+  --ui-focus-ring-color: var(--ui-interaction-ink);
+  --ui-field-border-focus: var(--ui-interaction-ink);
   --ui-tone-neutral-fg: var(--ui-island-text);
   --ui-tone-neutral-solid: var(--ui-island-text);
   --ui-tone-neutral-on-solid: var(--ui-island-surface);
@@ -99,6 +116,7 @@
 .bycoda-arc :is(button, input, textarea, [tabindex]):focus-visible {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: var(--ui-focus-offset);
+  box-shadow: var(--ui-focus-ring);
 }
 
 .bycoda-arc-switch,
@@ -123,7 +141,8 @@
 
 .bycoda-arc-field {
   --surface: var(--ui-surface-muted);
-  --border-strong: var(--ui-control-border);
+  --border-strong: var(--ui-field-border);
+  --radius-control: var(--ui-field-radius);
   min-inline-size: 0;
 }
 /* F3 contract: the default width is placement, layered below Tailwind utilities so a caller's `w-*` wins. */
@@ -178,14 +197,15 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 }
 
 .bycoda-arc.bycoda-arc-select {
-  --border: var(--ui-control-border);
+  --border: var(--ui-field-border);
+  --radius-control: var(--ui-field-radius);
   --surface: var(--ui-surface-muted);
   display: inline-flex;
-  min-block-size: var(--ui-control-height-md);
+  min-block-size: var(--ui-field-height-md);
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding-block: var(--space-2);
+  padding-block: 0;
   padding-inline: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
@@ -268,9 +288,8 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 [data-ui-focus="input"]:focus-visible,
 .bycoda-arc [data-ui-focus="input"]:focus-visible,
 [data-ui-focus-group]:has([data-ui-focus="group"]:focus-visible) {
-  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
-  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
-  box-shadow: none;
+  outline: none;
+  box-shadow: var(--ui-focus-ring);
 }
 
 .bycoda-arc.bycoda-arc-field :is(input, textarea)[aria-invalid="true"]:focus-visible,
@@ -541,4 +560,18 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   .bycoda-image-compare-picker:hover {
     background: var(--color-selection-subtle);
   }
+}
+
+.bycoda-arc.bycoda-arc-select[data-field-size="sm"] { min-block-size: var(--ui-field-height-sm); }
+.bycoda-arc .bycoda-arc-select-option {
+  border-radius: calc(var(--ui-field-radius) - 2px);
+}
+.bycoda-arc .bycoda-arc-select-option:is([data-highlighted], [aria-selected="true"]) {
+  box-shadow: inset 0 0 0 1px var(--ui-field-border);
+}
+/* Native select uses the same field focus; custom selects share the adapter rule. */
+select.bycoda-arc-select:focus-visible {
+  outline: none;
+  border-color: var(--ui-field-border-focus);
+  box-shadow: var(--ui-focus-ring);
 }

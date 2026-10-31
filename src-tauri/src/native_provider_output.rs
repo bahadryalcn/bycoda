@@ -602,6 +602,9 @@ pub(crate) struct OutputSource {
     test_owner: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     initial: Option<UnavailableReason>,
 }
+pub(crate) fn logical_session(route: &str) -> &str {
+    route.rsplit_once('#').filter(|(id, suffix)| !id.is_empty() && !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())).map_or(route, |(id, _)| id)
+}
 impl OutputSource {
     pub(crate) fn capture(
         app: &tauri::AppHandle,
@@ -630,7 +633,7 @@ impl OutputSource {
         if !valid(session) || logical.is_some_and(|value| !valid(value)) {
             return Err("NATIVE_OUTPUT_INVALID_SESSION".into());
         }
-        let target = logical.unwrap_or(session);
+        let target = logical.unwrap_or_else(|| logical_session(session));
         let mut source = Self {
             app: None,
             identity: None,
@@ -662,6 +665,43 @@ impl OutputSource {
             return Err("NATIVE_OUTPUT_LOGICAL_SESSION_UNAVAILABLE".into());
         }
         Ok(source)
+    }
+    /// Binds the requested logical session when its saved row is available. If not,
+    /// the turn continues unbound, like every route without a logical session; the
+    /// bool reports whether the binding was kept.
+    pub(crate) fn capture_or_unbound(
+        app: &tauri::AppHandle,
+        window: &tauri::WebviewWindow,
+        session: &str,
+        logical: Option<&str>,
+    ) -> Result<(Self, bool), String> {
+        match Self::capture(app, window, session, logical) {
+            Err(error)
+                if logical.is_some() && error == "NATIVE_OUTPUT_LOGICAL_SESSION_UNAVAILABLE" =>
+            {
+                eprintln!("[harness] {session}: logical session unavailable; continuing without persisted output");
+                let mut source = Self::capture(app, window, session, None)?;
+                source.target = logical.unwrap_or_else(|| logical_session(session)).into();
+                source.row = None;
+                source.initial = Some(UnavailableReason::SessionUnbound);
+                Ok((source, false))
+            }
+            result => result.map(|source| (source, logical.is_some())),
+        }
+    }
+    /// A changed logical row or owner drops the binding (see bind) instead of failing
+    /// the turn. Unbound routes keep their existing check.
+    pub(crate) fn check_target_before_start(&self, explicit: bool) -> Result<(), String> {
+        match self.assert_explicit_target_current(explicit) {
+            Err(error) if explicit => {
+                eprintln!(
+                    "[harness] {}: {error}; continuing without persisted output",
+                    self.session
+                );
+                Ok(())
+            }
+            result => result,
+        }
     }
     pub(crate) fn instance(&self) -> Option<uuid::Uuid> {
         self.instance
@@ -847,8 +887,15 @@ impl NativeOutputChild {
     pub(crate) fn request_stop(&self) -> std::io::Result<()> {
         self.owner.request_stop()
     }
+    #[cfg(test)]
     pub(crate) fn wait_actual(&self) -> std::io::Result<ExitStatus> {
         self.owner.wait()
+    }
+    pub(crate) fn wait_actual_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Option<std::io::Result<ExitStatus>> {
+        self.owner.wait_timeout(timeout)
     }
     pub(crate) fn wait(
         self: &Arc<Self>,
@@ -866,10 +913,12 @@ impl NativeOutputChild {
         }
         self.owner.activate();
         let result = self.owner.wait();
-        if self.retirement().require_verified().is_err() {
-            // Retain unknown before terminal publication; a real leader status
-            // must never briefly mint an eligible emit/retirement seal.
+        if result.is_err() {
+            // An actual wait failure invalidates output before terminal publication.
+            // Unverified job retirement is best-effort and does not.
             output.invalidate(UnavailableReason::TerminalError);
+        } else if let Err(error) = self.retirement().require_verified() {
+            eprintln!("[harness] provider retirement unverified: {error}");
         }
         output.terminal_complete(result.is_ok(), cancelled);
         result
@@ -982,6 +1031,11 @@ struct ItemCommitment {
     bytes: usize,
     sha256: [u8; 32],
 }
+pub(crate) struct PreparedDelivery {
+    record: BatchRecord,
+    items: Vec<ItemCommitment>,
+}
+
 struct RecipientDelivery {
     owner: Option<Arc<OutputOwner>>,
     known_enqueue: bool,
@@ -1134,6 +1188,11 @@ impl NativeProviderOutputRegistry {
             self.overflow.store(true, Ordering::Release);
             error.into_inner()
         });
+        streams.retain(|_, stream| {
+            let state = stream.state.lock().unwrap_or_else(|e| e.into_inner());
+            !(state.terminal && state.terminal_enqueued && state.readers == 0 && state.in_flight == 0 && Arc::strong_count(stream) == 1)
+        });
+        if streams.len() < MAX_STREAMS { self.overflow.store(false, Ordering::Release); }
         if streams.len() >= MAX_STREAMS {
             self.overflow.store(true, Ordering::Release);
         }
@@ -1533,14 +1592,53 @@ impl NativeOutputStream {
         let Some(metadata) = metadata else {
             return;
         };
+        if payload_digest(metadata.channel, items).as_ref()
+            != Some(&(metadata.utf8_bytes, metadata.payload_sha256.clone()))
+        {
+            self.invalidate(UnavailableReason::EmitFailed);
+            return;
+        }
+        let prepared = PreparedDelivery {
+            record: BatchRecord {
+                sequence: metadata.sequence,
+                channel: metadata.channel,
+                item_count: items.len(),
+                utf8_bytes: metadata.utf8_bytes,
+                payload_sha256: metadata.payload_sha256.clone(),
+            },
+            items: items
+                .iter()
+                .map(|item| ItemCommitment {
+                    bytes: item.len(),
+                    sha256: Sha256::digest(item.as_bytes()).into(),
+                })
+                .collect(),
+        };
+        self.observe_prepared_delivery(Some(metadata), owner, Some(&prepared), enqueued);
+    }
+
+    // The token is minted once by emit_prepared from the actual immutable payload.
+    pub(crate) fn observe_prepared_delivery(
+        &self,
+        metadata: Option<&OutputMetadata>,
+        owner: Option<Arc<OutputOwner>>,
+        prepared: Option<&PreparedDelivery>,
+        enqueued: bool,
+    ) {
+        let Some(metadata) = metadata else {
+            return;
+        };
         // No extra SQL wait on ordinary output. These are construction/send
         // facts only; the seal/resolver/handle independently revalidate source.
         let owner_current = owner.as_ref().is_some_and(|owner| owner.current());
         let mut state = self.lock_state();
         let record = state
             .records
-            .iter()
-            .find(|record| record.sequence == metadata.sequence)
+            .first()
+            .and_then(|first| metadata.sequence.checked_sub(first.sequence))
+            .and_then(|index| usize::try_from(index).ok())
+            .and_then(|index| state.records.get(index))
+            .filter(|record| record.sequence == metadata.sequence)
             .cloned();
         let Some(record) = record else {
             state
@@ -1552,12 +1650,12 @@ impl NativeOutputStream {
             || metadata.owner_epoch.is_some()
             || state.in_flight == 0
             || !record_matches(&record, metadata)
-            || payload_digest(metadata.channel, items).as_ref()
-                != Some(&(metadata.utf8_bytes, metadata.payload_sha256.clone()))
+            || !prepared.is_some_and(|prepared| record_matches(&prepared.record, metadata))
         {
             state.reason.get_or_insert(UnavailableReason::EmitFailed);
             return;
         }
+        let items = &prepared.unwrap().items;
         if !state.input_batches.contains_key(&record.sequence) {
             if state.input_items.saturating_add(items.len()) > MAX_INPUT_ITEMS
                 || !reserve(&INPUT_ITEMS, items.len(), MAX_TOTAL_INPUT_ITEMS)
@@ -1567,19 +1665,12 @@ impl NativeOutputStream {
                     .get_or_insert(UnavailableReason::RetentionCapacity);
                 return;
             }
-            let commitments = items
-                .iter()
-                .map(|item| ItemCommitment {
-                    bytes: item.len(),
-                    sha256: Sha256::digest(item.as_bytes()).into(),
-                })
-                .collect();
             state.input_items += items.len();
             state.input_batches.insert(
                 record.sequence,
                 InputBatch {
                     record: record.clone(),
-                    items: commitments,
+                    items: items.clone(),
                     recipients: Vec::new(),
                 },
             );
@@ -1661,6 +1752,15 @@ impl NativeOutputStream {
         channel: OutputChannel,
         items: &[String],
         enqueue: impl FnOnce(Option<OutputMetadata>) -> bool,
+    ) {
+        self.emit_prepared(channel, items, |metadata, _| enqueue(metadata));
+    }
+
+    pub(crate) fn emit_prepared(
+        &self,
+        channel: OutputChannel,
+        items: &[String],
+        enqueue: impl FnOnce(Option<OutputMetadata>, Option<PreparedDelivery>) -> bool,
     ) {
         let _serial = self.emit_gate.lock().unwrap_or_else(|error| {
             self.invalidate(UnavailableReason::StatePoisoned);
@@ -1749,7 +1849,23 @@ impl NativeOutputStream {
             stream: self,
             completed: false,
         };
-        let success = enqueue(metadata);
+        let prepared = metadata.as_ref().map(|metadata| PreparedDelivery {
+            record: BatchRecord {
+                sequence: metadata.sequence,
+                channel,
+                item_count: items.len(),
+                utf8_bytes: metadata.utf8_bytes,
+                payload_sha256: metadata.payload_sha256.clone(),
+            },
+            items: items
+                .iter()
+                .map(|item| ItemCommitment {
+                    bytes: item.len(),
+                    sha256: Sha256::digest(item.as_bytes()).into(),
+                })
+                .collect(),
+        });
+        let success = enqueue(metadata, prepared);
         actual.finish(success);
     }
     pub(crate) fn reader(self: &Arc<Self>, slot: u8) -> Reader {

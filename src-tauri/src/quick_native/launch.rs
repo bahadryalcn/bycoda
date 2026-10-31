@@ -280,8 +280,13 @@ impl LaunchLedger {
         }
         if self.records.len() == MAX_RECORDS {
             if let Some(index) = self.records.iter().position(|record| {
-                record.receipt.state == ReceiptState::Acknowledged
-                    || (record.receipt.state == ReceiptState::Failed && record.failed_observed)
+                matches!(
+                    record.receipt.state,
+                    ReceiptState::Acknowledged
+                        | ReceiptState::Failed
+                        | ReceiptState::Unknown
+                        | ReceiptState::Unavailable
+                )
             }) {
                 self.records.remove(index);
             } else {

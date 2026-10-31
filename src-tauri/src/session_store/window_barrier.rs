@@ -253,7 +253,10 @@ impl WindowBarrier {
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, State>, BarrierError> {
-        self.state.lock().map_err(|_| BarrierError::Unavailable)
+        Ok(self.state.lock().unwrap_or_else(|poisoned| {
+            eprintln!("Recovering poisoned native window barrier lock");
+            poisoned.into_inner()
+        }))
     }
 
     fn owns(&self, owner: &Weak<Mutex<State>>) -> Result<(), BarrierError> {
@@ -533,11 +536,7 @@ impl WindowBarrier {
     /// Check closure and taint qualification in one critical section: this is
     /// deliberately NOT a lease or evidence of a drained operation.
     pub(crate) fn admit_unqualified_write(&self) -> Result<(), BarrierError> {
-        let mut state = self.state.lock().unwrap_or_else(|poisoned| {
-            let mut state = poisoned.into_inner();
-            state.fault(BarrierError::Unavailable);
-            state
-        });
+        let mut state = self.lock()?;
         state.taint(BarrierError::UnattributedNativeOperation);
         state.scope_open(None)?;
         Ok(())

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
+import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -71,6 +72,18 @@ import { FolderTree, GitBranch } from "../../../shared/ui/icons";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
 import { DeleteSessionDialog } from "../../sessions/ui/DeleteSessionDialog";
 import { WorktreesPage } from "./WorktreesPage";
+
+// Existing deletion cases now enter through the row overflow menu.
+function worktreeDelete(scope: ParentNode, selector: string): HTMLButtonElement | null {
+  const label = selector.match(/aria-label="Delete (.*)"/)?.[1];
+  if (!label) return null;
+  const trigger = [...scope.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.getAttribute("aria-label") === `Actions for ${label}`);
+  if (!trigger) return null;
+  if (trigger.getAttribute("aria-expanded") !== "true") act(() => flushSync(() => trigger.click()));
+  return [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+    .find((button) => button.textContent?.trim() === `Delete ${label}`) ?? null;
+}
 
 let container: HTMLDivElement;
 let root: Root;
@@ -381,7 +394,7 @@ it("keeps the settings rows mounted through focus refreshes and failures", async
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Git unavailable");
   expect(container.textContent).toContain("Deletion is unavailable until Refresh succeeds.");
   expect(
-    container.querySelector<HTMLButtonElement>('[aria-label="Delete feature"]')?.disabled,
+    worktreeDelete(container, '[aria-label="Delete feature"]')?.disabled,
   ).toBe(true);
   expect(
     container.querySelector('[aria-label="Refresh worktrees"]')?.getAttribute("title"),
@@ -629,8 +642,8 @@ it("uses the shared project picker without leaking late worktree responses", asy
   expect(picker.querySelectorAll("svg").length).toBeGreaterThanOrEqual(2);
   const create = button("Create worktree");
   expect(create.getAttribute("data-button-size")).toBe("sm");
-  const refresh = container.querySelector<HTMLButtonElement>('[aria-label="Refresh worktrees"]')!;
-  expect(refresh.textContent).toBe("Refresh");
+  const refresh = container.querySelector<HTMLButtonElement>('[title="Refresh worktrees"]')!;
+  expect(refresh.getAttribute("title")).toBe("Refresh worktrees");
   expect(refresh.getAttribute("data-button-variant")).toBe("ghost");
   expect(create.getAttribute("data-button-variant")).toBe("secondary");
   await act(async () => picker.click());
@@ -641,8 +654,7 @@ it("uses the shared project picker without leaking late worktree responses", asy
   expect(secondProject.querySelector("svg")).not.toBeNull();
   await act(async () => secondProject.click());
   expect(container.querySelector('[aria-label="Reveal second"]')).not.toBeNull();
-  const help = container.querySelector('section[data-setting-id="worktree-location"]')!;
-  expect(help.getAttribute("aria-labelledby")).toBeTruthy();
+  const help = container.querySelector('[data-setting-id="worktree-location"]')!;
   expect(help.textContent).toContain("New worktrees are created in");
   await act(async () => request.resolve(result("first")));
   expect(container.querySelector('[aria-label="Reveal first"]')).toBeNull();
@@ -666,7 +678,7 @@ it("searches worktrees by branch and folder, and clears an empty result without 
   expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2);
   await act(async () => type(search, " FEATURE/ALPHA "));
   expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(1);
-  expect(container.querySelector('[aria-label="Delete feature/alpha"]')).not.toBeNull();
+  expect(worktreeDelete(container, '[aria-label="Delete feature/alpha"]')).not.toBeNull();
   await act(async () => type(search, "beta-folder"));
   expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(1);
   expect(
@@ -703,7 +715,7 @@ it("keeps full worktree identity available in details without revealing or delet
   expect(details.textContent).toContain(path);
   await act(async () => details.querySelector("summary")!.click());
   expect(details.open).toBe(true);
-  expect(row.querySelector(`[aria-label="Delete ${branch}"]`)).not.toBeNull();
+  expect(worktreeDelete(row, `[aria-label="Delete ${branch}"]`)).not.toBeNull();
   expect(onRemove).not.toHaveBeenCalled();
 });
 
@@ -843,9 +855,9 @@ it("offers cascade deletion for a session-linked worktree but not the main copy"
     ),
   );
 
-  expect(document.querySelector('[aria-label="Delete main"]')).toBeNull();
+  expect(worktreeDelete(document, '[aria-label="Delete main"]')).toBeNull();
   expect(document.querySelector('[aria-label="Reveal main"]')).toBeNull();
-  const removeFeature = document.querySelector<HTMLButtonElement>('[aria-label="Delete feature"]')!;
+  const removeFeature = worktreeDelete(document, '[aria-label="Delete feature"]')!;
   expect(removeFeature.disabled).toBe(false);
   await act(async () => removeFeature.click());
   await act(async () => document.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
@@ -894,7 +906,7 @@ it.each(["file", "terminal", "native"] as const)(
       ),
     );
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Delete feature"]')!.click(),
+      worktreeDelete(container, '[aria-label="Delete feature"]')!.click(),
     );
     await act(async () => document.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
     await act(async () => button("Delete worktree and sessions").click());
@@ -923,7 +935,7 @@ it("reports partial completion if worktree removal fails after successful prefli
     ),
   );
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Delete feature"]')!.click(),
+    worktreeDelete(container, '[aria-label="Delete feature"]')!.click(),
   );
   await act(async () => document.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
   await act(async () => button("Delete worktree and session").click());
@@ -957,19 +969,19 @@ it.each(["partial", "rejected", "worktree", "refresh"] as const)(
         }),
       ),
     );
-    const remove = container.querySelector<HTMLButtonElement>('[aria-label="Delete feature"]')!;
-    await act(async () => remove.click());
+    const remove = () => worktreeDelete(container, '[aria-label="Delete feature"]')!;
+    await act(async () => remove().click());
     await act(async () => document.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
     const refresh = deferred();
     vi.mocked(listWorktrees).mockReturnValue(refresh.promise);
     await act(async () => button("Delete worktree and sessions").click());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(remove.disabled).toBe(true);
+    expect(remove().disabled).toBe(true);
     expect(onDeleteSessions).toHaveBeenCalledWith(["deleted", "remaining"]);
     const sessionIds = failure === "worktree" ? [] : ["remaining"];
     if (failure === "refresh") {
       await act(async () => refresh.reject(new Error("Refresh unavailable")));
-      expect(remove.disabled).toBe(true);
+      expect(remove().disabled).toBe(true);
       vi.mocked(listWorktrees).mockResolvedValue({
         ...result(),
         worktrees: [{ ...tree, sessionIds }],
@@ -977,10 +989,10 @@ it.each(["partial", "rejected", "worktree", "refresh"] as const)(
       await act(async () => button("Refresh").click());
     }
     await act(async () => refresh.resolve({ ...result(), worktrees: [{ ...tree, sessionIds }] }));
-    expect(remove.disabled).toBe(false);
+    expect(remove().disabled).toBe(false);
     onDeleteSessions.mockResolvedValue(true);
     onRemove.mockResolvedValue(undefined);
-    await act(async () => remove.click());
+    await act(async () => remove().click());
     if (sessionIds.length) {
       expect(document.body.textContent).toContain(
         "Sessions using this worktree: 1. They will be kept.",
@@ -1123,7 +1135,7 @@ it("keeps associated sessions by default when deleting a worktree", async () => 
     ),
   );
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Delete feature"]')!.click(),
+    worktreeDelete(container, '[aria-label="Delete feature"]')!.click(),
   );
   await act(async () => button("Delete worktree").click());
   expect(onDeleteSessions).not.toHaveBeenCalled();
@@ -1198,7 +1210,7 @@ it("keeps create and delete off for a project on a connected machine", async () 
   );
   expect(container.textContent).toContain("unavailable for a project on a connected machine");
   expect(button("Create worktree").disabled).toBe(true);
-  expect(container.querySelector<HTMLButtonElement>('[aria-label="Delete feature"]')!.disabled).toBe(
+  expect(worktreeDelete(container, '[aria-label="Delete feature"]')!.disabled).toBe(
     true,
   );
   // Listing and Reveal still follow the machine that owns the path.

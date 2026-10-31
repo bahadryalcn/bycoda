@@ -3,6 +3,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Badge } from "../../../shared/ui/Badge";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { MoreHorizontal } from "../../../shared/ui/icons";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { TextField } from "../../../shared/ui/TextField";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -17,6 +20,7 @@ import {
 } from "../../settings/ui/settingsControls";
 import {
   localVoiceBackend,
+  type VoiceDevice,
   type VoiceRuntimeStatus,
   type VoiceSetupStatus,
 } from "../model/localVoiceClient";
@@ -50,6 +54,8 @@ function stageLabel(stage: VoiceSetupStatus["stage"]) {
   switch (stage) {
     case "packages":
       return t("Installing voice support…");
+    case "gpu":
+      return t("Installing GPU support…");
     case "models":
       return t("Downloading voice files…");
     case "checking":
@@ -66,6 +72,8 @@ export function VoiceSettings() {
   const [error, setError] = useState<Failure>();
   const [checkedKey, setCheckedKey] = useState("");
   const [locating, setLocating] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreAnchor = useRef<HTMLButtonElement>(null);
   const [browsing, setBrowsing] = useState<PathKey | null>(null);
   const browsePending = useRef(false);
   // Bumped when the Locate dialog closes or voice is turned off, so a picker that
@@ -258,13 +266,35 @@ export function VoiceSettings() {
           : !checked || busy
             ? t("Checking voice setup…")
             : t("Voice setup is needed"));
+  // A ready CPU-only install can still be accelerated on a detected NVIDIA GPU.
+  // Only the High quality voice (VoxCPM2) uses PyTorch; Supertonic runs on the CPU.
+  const gpuUpgrade =
+    ready &&
+    settings.natural &&
+    settings.engine === "voxcpm2" &&
+    settings.device !== "cpu" &&
+    result?.gpu &&
+    result.accelerated === false
+      ? result.gpu
+      : undefined;
   const detail =
     visibleError?.detail ??
     (setupFailed ? job.detail : checked && !busy ? result?.missing.join(", ") : undefined);
+  const setupError = Boolean(visibleError) || setupFailed;
+  const working = installing || busy || !checked;
+  // One quiet line under "Voice setup"; the status itself is the badge.
+  const setupHint = installing
+    ? t("You can leave this page. Setup will continue.")
+    : gpuUpgrade
+      ? t("Natural voice runs on the CPU. Install GPU support to use {p1}.", { p1: gpuUpgrade })
+      : !ready && !visibleError && !pythonMissing
+        ? t("Downloads voice files once. This may use several GB.")
+        : undefined;
   const paths: [PathKey, string, string][] = [
     ["python", "Python", "voice-python"],
     ["whisperPath", "Speech recognition model", "voice-whisper"],
-    ...(settings.natural
+    // Only VoxCPM2 uses a model folder the owner can choose.
+    ...(settings.natural && settings.engine === "voxcpm2"
       ? [["ttsPath", "Natural voice model", "voice-tts"] as [PathKey, string, string]]
       : []),
   ];
@@ -286,67 +316,98 @@ export function VoiceSettings() {
       </Row>
       {settings.enabled ? (
         <>
-          <div className={styles.visualChoice}>
-            <Row id="voice-visual-style" label={t("Visual style")}>
-              <SegmentedControl
-                label={t("Visual style")}
-                value={settings.visual}
-                optionIdPrefix="voice-visual"
-                options={(
-                  [
-                    ["mark", t("bycoda mark")],
-                    ["wave", t("Wave")],
-                    ["dots", t("Dots")],
-                    ["orb", t("Orb")],
-                  ] as [VoiceVisual, string][]
-                ).map(([value, label]) => ({
-                  value,
-                  label,
-                  accessory: <VoiceVisualizer visual={value} state="listening" small preview />,
-                }))}
-                onValueChange={(visual) => change({ visual: visual as VoiceVisual })}
-              />
-            </Row>
-          </div>
-          <fieldset className={styles.engine} disabled={installing}>
-            <Row id="voice-engine" label={t("Reply voice")}>
-              <Segmented
-                label={t("Reply voice")}
-                value={settings.natural ? "natural" : "system"}
-                options={[
-                  { value: "natural", label: t("Natural") },
-                  { value: "system", label: t("System voice") },
-                ]}
-                onChange={(value) => {
-                  setJob({ state: "idle" });
-                  change({ natural: value === "natural" });
-                }}
-              />
-            </Row>
-          </fieldset>
-          <div className={styles.setup}>
-            <div className={styles.statusRow}>
-              <SettingsFeedback
-                state={
-                  visibleError || setupFailed
-                    ? "error"
-                    : ready
-                      ? "success"
-                      : installing || busy || !checked
-                        ? "loading"
-                        : "empty"
-                }
-              >
-                {message}
-              </SettingsFeedback>
-              {detail ? (
-                <InfoPopover label={t("Technical details")}>
-                  <p className={styles.detail}>{detail}</p>
-                </InfoPopover>
-              ) : null}
-            </div>
+          {/* A deliberate full-width chooser: four previews need more room than the control column. */}
+          <Row id="voice-visual-style" label={t("Visual style")} stacked>
+            <SegmentedControl
+              label={t("Visual style")}
+              value={settings.visual}
+              optionIdPrefix="voice-visual"
+              options={(
+                [
+                  ["mark", t("bycoda mark")],
+                  ["wave", t("Wave")],
+                  ["dots", t("Dots")],
+                  ["orb", t("Orb")],
+                ] as [VoiceVisual, string][]
+              ).map(([value, label]) => ({
+                value,
+                label,
+                accessory: <VoiceVisualizer visual={value} state="listening" small preview />,
+              }))}
+              onValueChange={(visual) => change({ visual: visual as VoiceVisual })}
+            />
+          </Row>
+          <Row
+            id="voice-engine"
+            label={t("Reply voice")}
+            description={t("High quality sounds richer but needs an NVIDIA GPU.")}
+            disabled={installing}
+          >
+            <Segmented
+              label={t("Reply voice")}
+              value={
+                !settings.natural ? "system" : settings.engine === "voxcpm2" ? "quality" : "natural"
+              }
+              options={[
+                // Supertonic: fast on the CPU, 31 languages. VoxCPM2: richer, needs a GPU.
+                { value: "natural", label: t("Natural") },
+                { value: "quality", label: t("High quality") },
+                { value: "system", label: t("System voice") },
+              ]}
+              onChange={(value) => {
+                setJob({ state: "idle" });
+                change({
+                  natural: value !== "system",
+                  ...(value !== "system"
+                    ? { engine: value === "quality" ? "voxcpm2" : "supertonic" }
+                    : {}),
+                });
+              }}
+            />
+          </Row>
+          <Row
+            id="voice-device"
+            label={t("Processing")}
+            description={t("Automatic uses a supported NVIDIA GPU when available.")}
+            disabled={installing}
+          >
+            <Segmented
+              label={t("Processing")}
+              value={settings.device}
+              options={[
+                { value: "auto", label: t("Automatic") },
+                { value: "gpu", label: t("GPU") },
+                { value: "cpu", label: t("CPU") },
+              ]}
+              onChange={(value) => {
+                setJob({ state: "idle" });
+                change({ device: value as VoiceDevice });
+              }}
+            />
+          </Row>
+          <Row
+            id="voice-setup"
+            label={t("Voice setup")}
+            description={setupHint}
+            feedback={
+              setupError ? <SettingsFeedback state="error">{message}</SettingsFeedback> : undefined
+            }
+          >
+            <Badge
+              tone={setupError ? "danger" : ready ? "success" : working ? "info" : "warning"}
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {setupError ? t("Needs attention") : message}
+            </Badge>
+            {detail ? (
+              <InfoPopover label={t("Technical details")}>
+                <p className={styles.detail}>{detail}</p>
+              </InfoPopover>
+            ) : null}
             {!installing ? (
-              <div className={styles.actions}>
+              <>
                 {pythonMissing ? (
                   <Button
                     variant="primary"
@@ -368,8 +429,12 @@ export function VoiceSettings() {
                     {t("Install")}
                   </Button>
                 ) : null}
-                <Button onClick={() => setLocating(true)}>{t("Locate existing")}</Button>
-                {visibleError || ready || pythonMissing ? (
+                {gpuUpgrade ? (
+                  <Button variant="primary" onClick={() => void install()}>
+                    {t("Install GPU support")}
+                  </Button>
+                ) : null}
+                {visibleError ? (
                   <Button
                     variant="ghost"
                     onClick={() => {
@@ -378,19 +443,53 @@ export function VoiceSettings() {
                     }}
                     disabled={busy}
                   >
-                    {t(visibleError ? "Try again" : "Check again")}
+                    {t("Try again")}
                   </Button>
                 ) : null}
-              </div>
+                <Button
+                  ref={moreAnchor}
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t("More voice setup actions")}
+                  tooltip={t("More voice setup actions")}
+                  aria-haspopup="menu"
+                  aria-expanded={moreOpen}
+                  onClick={() => setMoreOpen((open) => !open)}
+                >
+                  <MoreHorizontal aria-hidden className="icon-sm" />
+                </Button>
+                {moreOpen ? (
+                  <DropdownMenu
+                    anchor={moreAnchor}
+                    label={t("More voice setup actions")}
+                    items={[
+                      { kind: "item", id: "locate", label: t("Locate existing") },
+                      ...((ready || pythonMissing) && !visibleError
+                        ? [
+                            {
+                              kind: "item" as const,
+                              id: "check",
+                              label: t("Check again"),
+                              disabled: busy,
+                            },
+                          ]
+                        : []),
+                    ]}
+                    onClose={() => setMoreOpen(false)}
+                    onPick={(id) => {
+                      setMoreOpen(false);
+                      if (id === "locate") setLocating(true);
+                      else {
+                        setJob({ state: "idle" });
+                        void check();
+                      }
+                    }}
+                  />
+                ) : null}
+              </>
             ) : null}
-            {installing || (!ready && !visibleError && !pythonMissing) ? (
-              <p className={styles.hint}>
-                {installing
-                  ? t("You can leave this page. Setup will continue.")
-                  : t("Downloads voice files once. This may use several GB.")}
-              </p>
-            ) : null}
-          </div>
+          </Row>
           {locating ? (
             <Modal
               title={t("Locate voice files")}

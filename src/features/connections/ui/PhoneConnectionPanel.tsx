@@ -27,7 +27,6 @@ export function PhoneConnectionPanel({
       <div className="flex flex-wrap items-center gap-3">
         <Internet className="icon-lg shrink-0 text-(--ui-text-muted)" />
         <div className="min-w-0 flex-1 basis-48">
-          <h2 className="text-ui-body font-medium text-content">{t("Connect your phone")}</h2>
           <p className="mbs-1 text-ui-secondary leading-relaxed text-(--ui-text-muted)">
             {t("Scan a QR code to manage your computers from your phone.")}
           </p>
@@ -44,13 +43,6 @@ export function PhoneConnectionPanel({
           {t("Connect your phone")}
         </Button>
       </div>
-      {machine ? (
-        <p className="text-ui-caption text-(--ui-text-muted)">
-          {t("Pairing target: {p0}. You can choose another computer in the pairing screen.", {
-            p0: isLocalSyncMachine(machine) ? t("This computer") : machine.name,
-          })}
-        </p>
-      ) : null}
       {loaded && !loading && !machine ? (
         <div className="flex flex-wrap items-center gap-3 text-ui-caption text-(--ui-text-muted)">
           <p>

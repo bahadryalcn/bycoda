@@ -67,11 +67,12 @@ export class RemoteChanges {
     input: RemoteChangesInput,
     readSession: (id: string) => number | undefined | Promise<number | undefined>,
     readProject: (id: string) => Promise<{ etag: string; sessions: HostSessionSummary[] }>,
-    cancelled: () => boolean | Promise<boolean> = () => false,
+    cancelled: () => boolean = () => false,
     readTasks?: () => Promise<string>,
     readGit?: (cwd: string) => Promise<{ etag: string; watching: boolean }>,
     recheckMs: () => number | Promise<number> = () => 1000,
     owner?: string,
+    authorized?: () => Promise<boolean>,
   ): Promise<RemoteChangesValue> {
     let state: { signal: ChangeSignal; readers: number; seenAt: number } | undefined;
     if (owner !== undefined) {
@@ -98,6 +99,7 @@ export class RemoteChanges {
         readGit,
         recheckMs,
         state,
+        authorized,
       );
     } finally {
       if (state) {
@@ -111,11 +113,12 @@ export class RemoteChanges {
     input: RemoteChangesInput,
     readSession: (id: string) => number | undefined | Promise<number | undefined>,
     readProject: (id: string) => Promise<{ etag: string; sessions: HostSessionSummary[] }>,
-    cancelled: () => boolean | Promise<boolean>,
+    cancelled: () => boolean,
     readTasks: (() => Promise<string>) | undefined,
     readGit: ((cwd: string) => Promise<{ etag: string; watching: boolean }>) | undefined,
     recheckMs: () => number | Promise<number>,
     owner: { signal: ChangeSignal } | undefined,
+    authorized?: () => Promise<boolean>,
   ): Promise<RemoteChangesValue> {
     if (!Array.isArray(input.sessions) || input.sessions.length > 64)
       throw new Error("At most 64 session subscriptions are allowed");
@@ -174,6 +177,7 @@ export class RemoteChanges {
       return revision;
     };
     const changed = async (): Promise<RemoteChangesValue> => {
+      if (authorized && !(await authorized())) throw new Error("Device authorization was revoked");
       const sessionValues = (
         await Promise.all(
           sessions.map(async ({ sessionId, revision }) => {
@@ -310,7 +314,7 @@ export class RemoteChanges {
       first.projects.length ||
       first.tasks ||
       first.git ||
-      (await cancelled())
+      cancelled()
     )
       return first;
     if (this.active >= 64 || !(Number(input.waitMs) > 0)) return first;
@@ -318,7 +322,7 @@ export class RemoteChanges {
     const deadline = Date.now() + Math.min(10_000, Math.max(0, Number(input.waitMs) || 0));
     let latest = first;
     try {
-      while (!(await cancelled()) && Date.now() < deadline) {
+      while (!cancelled() && Date.now() < deadline) {
         const waitUntil = Math.min(deadline, Date.now() + (await recheckMs()));
         if (owner) {
           const pending = new AbortController();
@@ -334,6 +338,8 @@ export class RemoteChanges {
           // immediately contains the newly registered native demand.
           if (owner.signal.version !== ownerVersion) return latest;
         } else await this.signal.wait(waitUntil, cancelled, version);
+        if (cancelled()) return latest;
+        // Keep the safety-tick recheck: some changes reach readers without a signal bump.
         version = this.signal.version;
         this.sessionCache.clear();
         latest = await changed();

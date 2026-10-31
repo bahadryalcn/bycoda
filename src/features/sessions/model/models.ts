@@ -34,6 +34,8 @@ export type AgentModel = {
     name: string;
   };
   settings?: ModelSetting[];
+  /** A CLI speed variant represented by this model's Fast setting. */
+  fastVariant?: { id: string; nativeId: string };
   /** Context window, when the harness catalog reports one. */
   contextWindow?: number;
 };
@@ -277,6 +279,7 @@ export function getModelSnapshot(): number {
 
 export function setHarnessModels(harness: HarnessId, models: AgentModel[]) {
   if (models.length === 0 && harness !== "acp") return;
+  models = foldFastVariants(models);
   models = models.map((model) => withClaudeAdvisor(model, models));
   const defaultId = pickDefaultId(harness, models);
   // Workspace windows re-broadcast unchanged catalogs on every request. An
@@ -289,6 +292,56 @@ export function setHarnessModels(harness: HarnessId, models: AgentModel[]) {
   overlays = { ...overlays, [harness]: models };
   overlayDefaults = { ...overlayDefaults, [harness]: defaultId };
   emit();
+}
+
+/** Grok reports speed as model ids; fold only an unambiguous same-provider pair. */
+function foldFastVariants(models: AgentModel[]): AgentModel[] {
+  const pairs = new Map<AgentModel, AgentModel>();
+  for (const variant of models) {
+    if (variant.harness !== "grok") continue;
+    if (!/[-_ ]fast$/i.test(variant.nativeId ?? variant.id) || !/ fast$/i.test(variant.name)) continue;
+    const name = variant.name.replace(/ fast$/i, "").toLowerCase();
+    const candidates = models.filter((base) =>
+      base !== variant && base.harness === variant.harness &&
+      base.provider?.id === variant.provider?.id && base.name.toLowerCase() === name &&
+      !base.settings?.some((setting) => setting.id === "fast"),
+    );
+    if (candidates.length === 1 && !pairs.has(candidates[0])) pairs.set(candidates[0], variant);
+  }
+  const variants = new Set(pairs.values());
+  return models.filter((model) => !variants.has(model)).map((model) => {
+    const variant = pairs.get(model);
+    if (!variant) return model;
+    return {
+      ...model,
+      fastVariant: { id: variant.id, nativeId: variant.nativeId ?? nativeIdFrom(variant.id) },
+      settings: [...(model.settings ?? []), {
+        id: "fast", label: "Fast", kind: "toggle" as const, value: "false",
+        options: [{ value: "true", label: "On" }, { value: "false", label: "Off" }],
+      }],
+    };
+  });
+}
+
+/** A historical fast id retains its launch identity and resolves to base + Fast. */
+function savedFastVariant(id: string): AgentModel | undefined {
+  const base = allModels().find((model) => model.fastVariant?.id === id || model.fastVariant?.nativeId === id);
+  return base ? {
+    ...base,
+    nativeId: base.fastVariant!.nativeId,
+    settings: base.settings?.map((setting) => setting.id === "fast" ? { ...setting, value: "true" } : setting),
+  } : undefined;
+}
+
+/** Resolve a catalog Fast toggle to the actual CLI model identity. */
+export function nativeModelIdWithSettings(modelId: string, settings?: Record<string, string>): string {
+  const model = lookupModel(modelId) ?? findModelIdentity(modelId);
+  if (!model?.fastVariant) return nativeModelId(model ?? modelId);
+  const fast = settings?.fast ?? model.settings?.find((setting) => setting.id === "fast")?.value;
+  if (fast === "true") return model.fastVariant.nativeId;
+  // A historical fast selection may have been explicitly switched off.
+  const base = allModels().find((item) => item.id === model.id);
+  return nativeModelId(base ?? model);
 }
 
 function sameModelCatalog(a: AgentModel[], b: AgentModel[]): boolean {
@@ -447,7 +500,7 @@ export function findModel(id: string): AgentModel | undefined {
     }
     indexById = index;
   }
-  return indexById.get(id);
+  return indexById.get(id) ?? savedFastVariant(id);
 }
 
 /** Match id OR nativeId in catalog order, preserving the old linear-find collision precedence. */
@@ -461,7 +514,7 @@ export function findModelIdentity(id: string): AgentModel | undefined {
     }
     indexByIdentity = index;
   }
-  return indexByIdentity.get(id);
+  return indexByIdentity.get(id) ?? savedFastVariant(id);
 }
 
 /** The bundled list never changes, so index it once for `lookupModel`. */

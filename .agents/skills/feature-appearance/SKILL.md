@@ -5,6 +5,31 @@ description: Appearance Settings inventory for theme/palette/accent, scale/contr
 
 # Appearance Settings
 
+## V3-033 Navigation canvas, 2026-10-31
+
+Owner, exact quote from `temp/local/2026-10-31-ui-refinements-3/TODO.md`, V3-033
+(light-theme project rail, sidebar and chat screenshots):
+
+> burda en soldaki burası ve burasının renkleri burdan farklı sağdaki chat paneli gibi olsunlar istiyorum aynı arka plan renginde zaten borderlar ile ayrılmış durumda bunu düzeltelim lütfen
+
+Source implementation: `src/styles/index.css` aliases `--ui-surface-panel` to
+`--ui-chat-canvas` in dark/custom and light themes. Canvas = navigation; existing
+borders separate the panes. `--ui-surface-muted` keeps its previous independent
+control tone, and dark selection/pane borders use that preserved tone. Search
+normal/quiet, rail icons, group-colored project/session rows, tabs and scrollbars
+retain their interaction roles. The session scroll fade follows the new ground.
+All direct panel consumers and `--bycoda-panel` aliases were searched; Social Today
+hover now uses `--ui-surface-hover` so it cannot disappear into the new canvas.
+Other panel consumers inherit the shared ground; no local panel skins were added.
+Reading/form, composer and floating-surface tokens remain unchanged. Native glass
+selectors retain their shared base tint, independent sidebar/main opacity controls,
+blur behavior and light-mode opaque policy. The accent contrast envelope remains
+conservative; its existing values and saved preferences are unchanged.
+
+Acceptance: source review only until the main agent's checks. Whole-window
+light/dark/custom-theme and glass on/off screenshots remain UNVERIFIED because
+the V3 brief prohibits worker browser/native runs. No tests or compiler run here.
+
 ## H3 implementation, 2026-10-28 (uncommitted)
 
 Appearance now consumes the shared Settings topic/row presentation without page-local
@@ -241,3 +266,18 @@ Delivered in source (uncommitted; fixture and unit evidence only, no installed-b
 - Accent readability is `Auto | Strong` (`AccentReadabilityControl.tsx`, stored in the appearance preferences, applied as `data-accent-readability`). WCAG targets are 4.5:1 for Auto and 7:1 for Strong. The solid accent fill is never recoloured; only text, selection and on-solid foreground adapt.
 - "Reset colors" also returns accent readability to Auto; its scope text names it. "Restore defaults" already did through `APPEARANCE_DEFAULTS`.
 - Checks: `SettingsView.test.ts` indexed-setting render passes with the control mounted. Screenshot evidence is under `temp/verification/vis-integration/` (fixture evidence).
+
+## V3-020 Appearance redesign (2026-10-31)
+
+Owner, 2026-10-31, with five Appearance screenshots and three T3 Code references, exact quote:
+
+> Bence en kötü yönettiğimiz ekran bu. Çok daha iyi olabilirdi. T3Code da o kadar güzel ve anlaşılırki herşey gördüğün gibi bu şekilde daha güzel anlaşılır şkeilde göstermemiz gerekiyor bence
+
+Delivered in source (uncommitted; unit/fixture checks pending, no installed-build acceptance):
+- Sections: Theme and colors, Text and readability, Layout, Translucency, Backgrounds, Motion and crew, each a framed Group (no gray fill, V3-013) with a short visible description and `info` only for extra detail.
+- Rare controls sit behind a closed Advanced row (custom surface colors: hue, saturation, dark-mode lightness). A deep link into a closed Advanced opens it.
+- Reset icons appear only while a value is modified (`modified`/`onReset`, e.g. accent, hue, collapsed project rail).
+- Dependent translucency rows are indented sub-rows of Window glass / Main pane glass; when the parent is off they are inert and the reason is only a tooltip (`Turn on Window glass first`, `Light mode always uses an opaque window.`). Blur stays macOS-only.
+- The Motion section states that the OS reduced-motion setting keeps decorative animations still. Agent crew group and row titles no longer repeat.
+- Proposal (not owner-confirmed): visual Light/Dark/System preview cards and theme cards with light/dark tones were in the V3-020 target; the delivered source keeps the existing mode/palette controls and one live preview.
+- Unverified: 1280/800 light/dark/custom-theme screenshots.

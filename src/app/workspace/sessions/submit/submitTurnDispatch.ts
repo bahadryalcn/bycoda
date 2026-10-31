@@ -1,6 +1,7 @@
 import type { SubmitDeps, SubmitInput, SubmitPreflight, SubmitSetup } from "./submitTypes";
 import type { SubmitTurnEvents } from "./submitTurnEvents";
-import { prepareNativeOutputSession } from "./prepareNativeOutputSession";
+import { startNativeOutputSession } from "./prepareNativeOutputSession";
+import { readableHarnessError } from "../../../../integrations/harness/core/readableError";
 
 import { inboxAskPrompt } from "../../../../features/inbox/model/inboxAsk";
 import { announceSessionFinished } from "../../../../features/notifications/model/notifications";
@@ -63,7 +64,7 @@ import { isRemoteProjectPath } from "../../../../features/projects/model/recents
 import { beginNativeManagedTurn } from "../../../../features/workspaces/model/nativeManagedTurn";
 import { t } from "../../../../shared/i18n";
 import { getExactGitRewindEnabled } from "../../../../features/settings/model/exactGitRewind";
-import { getWorkspaceCapabilities } from "../../../../features/workspaces/model/workspaceClient";
+import { getSendWorkspaceCapabilities } from "../../../../features/workspaces/model/workspaceClient";
 import { hostSessionBinding } from "../../../../features/connections/model/sessionExecutionBinding";
 
 export async function runSubmitDispatch(
@@ -103,22 +104,34 @@ export async function runSubmitDispatch(
     planEventKey,
   } = events;
   let finishManagedTurn: ((interrupted: boolean) => Promise<void>) | undefined;
+  let checkpointSettled: Promise<void> | undefined;
   try {
     const latest = sessionsRef.current.find((session) => session.id === sessionId) ?? current;
-    if (latest.workspaceId && editedResend)
+    // Both Host policy lookups are memoized briefly and independent: start them
+    // together so a send pays at most one round trip, and none when warm.
+    const exactRewind =
+      latest.workspaceId && !isRemoteProjectPath(latest.cwd)
+        ? getExactGitRewindEnabled()
+        : Promise.resolve(false);
+    const capabilities = latest.workspaceId
+      ? getSendWorkspaceCapabilities({ cwd: latest.cwd }).catch((): string[] => [])
+      : Promise.resolve<string[]>([]);
+    // Only exact Git rewind captures files an edited resend could desync.
+    if (latest.workspaceId && editedResend && (await exactRewind))
       throw new Error(t("Rewind conversation and files before resending an edited turn."));
-    if (
-      latest.workspaceId &&
-      !isRemoteProjectPath(latest.cwd) &&
-      (await getExactGitRewindEnabled())
-    )
+    // The pre-provider save is the slowest local step; start it before checkpoint
+    // and registry preparation so they overlap it. sendTurn awaits it before the
+    // provider is entered.
+    let earlyNativeOutput = startNativeOutputSession(
+      sessionId,
+      () => turnGen.current.get(sessionId) === gen,
+    );
+    if (await exactRewind)
       finishManagedTurn = await beginNativeManagedTurn(latest, checkpointTurnId);
     const lightweightWorktree = Boolean(
       latest.workspaceId &&
       !finishManagedTurn &&
-      (await getWorkspaceCapabilities({ cwd: latest.cwd }).catch((): string[] => [])).includes(
-        "sessions.desktop-writer-retirement.v1",
-      ),
+      (await capabilities).includes("sessions.desktop-writer-retirement.v1"),
     );
     const preparation = await prepareLocalTurn({
       traceId,
@@ -192,7 +205,10 @@ export async function runSubmitDispatch(
       if (turnGen.current.get(sessionId) !== gen) {
         const latest = sessionsRef.current.find((session) => session.id === sessionId);
         if (!latest || (!latest.busy && latest.providerSessionId === current.providerSessionId)) {
-          await forgetHarnessSession(current.harness, sessionId);
+          // Best effort: a failed cleanup must not skip the binding reset below.
+          await forgetHarnessSession(current.harness, sessionId).catch((error) => {
+            console.warn("App operation failed", error);
+          });
           if (latest) {
             setSessions((prev) =>
               prev.map((session) =>
@@ -213,11 +229,14 @@ export async function runSubmitDispatch(
       prepareText?: (text: string, runtimeInstructions?: string) => Promise<string>,
     ) => {
       if (turnGen.current.get(sessionId) !== gen) return Promise.resolve();
-      const nativeOutputSessionId = await prepareNativeOutputSession(
-        sessionId,
-        () => turnGen.current.get(sessionId) === gen,
-      );
-      if (turnGen.current.get(sessionId) !== gen) return;
+      // The save overlaps registry preparation (retirement drain, control turn,
+      // skill policy) and is awaited, with the same generation check, right
+      // before the provider is entered.
+      const nativeOutput =
+        earlyNativeOutput ??
+        startNativeOutputSession(sessionId, () => turnGen.current.get(sessionId) === gen);
+      earlyNativeOutput = undefined;
+      const nativeOutputSessionId = nativeOutput?.sessionId;
       recordPerformanceEvent("dispatch", {}, traceId);
       const finishDispatch = startPerformanceSpan("dispatch", {}, traceId);
       // A queued send waits for the provider from here on, not from its claim.
@@ -245,7 +264,17 @@ export async function runSubmitDispatch(
             ? `${contextReplay}\n\nCurrent user request:\n${text}`
             : text,
         attachments: turnAttachments,
-        prepareText,
+        prepareText: nativeOutput
+          ? async (text, runtimeInstructions) => {
+              await nativeOutput.ready;
+              if (turnGen.current.get(sessionId) !== gen)
+                throw new Error("Turn changed before it started");
+              return prepareText ? prepareText(text, runtimeInstructions) : text;
+            }
+          : prepareText,
+        onReplyEnded: (endedAt) => {
+          turn.replyEndedAt = endedAt;
+        },
         onAccepted: () => {
           acceptContextReplay();
           acceptEditedResend();
@@ -339,13 +368,16 @@ export async function runSubmitDispatch(
       );
     }
     turn.buildSucceeded = true;
+    turn.replyCompleted = !turn.providerFailureSeen && !isProviderFailureText(turn.controlText);
   } catch (error: unknown) {
     recoverEditedResend();
     if (turnGen.current.get(sessionId) !== gen) return;
     if (turn.wrap) revealHandoff(turn.wrap.text);
-    const message =
-      error instanceof Error ? error.message : String(error) || `${current.harness} adapter failed`;
+    const message = readableHarnessError(
+      error instanceof Error ? error.message : String(error) || `${current.harness} adapter failed`,
+    );
     turn.controlOutcome.error = message;
+    turn.replyEndedAt ??= Date.now();
     retiringTurns.current.set(sessionId, gen);
     if (!turn.providerFailureSeen) {
       enqueueHarnessEvent(sessionId, {
@@ -380,6 +412,16 @@ export async function runSubmitDispatch(
           try {
             await finishManagedTurn(turn.checkpointRetirementUncertain);
           } catch (error) {
+            if (turn.replyCompleted) {
+              // The reply finished; the native fence stays up, but the message is not failed.
+              console.warn("Managed turn cleanup failed", error);
+              enqueueHarnessEvent(sessionId, {
+                type: "status",
+                text: "The reply finished, but the workspace writer could not be confirmed stopped. Reconnect before continuing.",
+              });
+              flushHarnessEvents();
+              return;
+            }
             turn.providerFailureSeen = true;
             turn.controlOutcome = {
               status: "failed",
@@ -391,21 +433,28 @@ export async function runSubmitDispatch(
           }
           return;
         }
-        return turn.checkpointStarted
-          ? finishSessionTurn(
-              sessionId,
-              workCwd,
-              checkpointTurnId,
-              turn.checkpointRetirementUncertain,
-            ).catch((error) => console.warn("Workspace checkpoint failed", error))
-          : Promise.resolve();
+        // The checkpoint queue is ordered per session, so a following turn's
+        // begin always runs after this finish: the session may go idle first.
+        if (turn.checkpointStarted)
+          checkpointSettled = finishSessionTurn(
+            sessionId,
+            workCwd,
+            checkpointTurnId,
+            turn.checkpointRetirementUncertain,
+          ).catch((error) => console.warn("Workspace checkpoint failed", error));
       },
-      checkpoint: () => flushSessionCheckpoint(sessionId),
+      // Durable checkpoint writes are awaited below, after the session is idle.
+      checkpoint: () => Promise.resolve(),
       commit: () =>
         setSessions((prev) =>
           prev.map((s) => {
             if (s.id !== sessionId || turnGen.current.get(sessionId) !== gen) return s;
-            const stopped = stopStreaming(s, Date.now(), turn.providerFailureSeen);
+            // The reply's own end time: cleanup and persistence are not part of the run.
+            const stopped = stopStreaming(
+              s,
+              turn.replyEndedAt ?? Date.now(),
+              turn.providerFailureSeen,
+            );
             const providerFailed =
               turn.providerFailureSeen || isProviderFailureText(lastAssistantTextInTurn(stopped));
             const finalized =
@@ -440,6 +489,12 @@ export async function runSubmitDispatch(
           }),
         ),
     });
+    // Idle is already visible; keep the transcript/checkpoint ordering guarantees
+    // for everything that follows (notifications read the settled review state).
+    await checkpointSettled;
+    await flushSessionCheckpoint(sessionId).catch((error) =>
+      console.warn("Workspace checkpoint flush failed", error),
+    );
     if (finalizedCurrentTurn) {
       const worktreePath = current.worktreeCwd;
       if (turn.providerFailureSeen && worktreePath && !isRemoteProjectPath(current.cwd)) {

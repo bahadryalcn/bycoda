@@ -122,8 +122,8 @@ it("preserves an app binding when the native menu rejects a recorded shortcut", 
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Native shortcut rejected",
   );
-  expect(container.querySelector('.settings-row-control [role="alert"]')).toBeNull();
-  expect(container.querySelector('.settings-row-feedback [role="alert"]')).not.toBeNull();
+  expect(container.querySelector('.settings-row-control [role="alert"]')).not.toBeNull();
+  expect(container.querySelector('.settings-row-feedback [role="alert"]')).toBeNull();
 });
 
 it("records a global shortcut, persists it, and restores the default", async () => {
@@ -346,7 +346,7 @@ it("shows pressed keys without an error and Escape cancels recording", async () 
   )!;
   await act(async () => input.click());
   expect(input.querySelector("[data-shortcut-display]")!.textContent).toBe("Record shortcut");
-  expect(container.textContent).toContain("Del disables · Esc cancels");
+  expect(container.querySelector('[title="Del disables · Esc cancels"]')).not.toBeNull();
   await act(async () =>
     document.body.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -370,7 +370,7 @@ it("shows pressed keys without an error and Escape cancels recording", async () 
     ),
   );
   expect(input.querySelector("[data-shortcut-display]")!.textContent).toBe("⌘⇧Space");
-  expect(container.textContent).not.toContain("Del disables · Esc cancels");
+  expect(container.querySelector('[title="Del disables · Esc cancels"]')).toBeNull();
   expect(invoke).not.toHaveBeenCalledWith("quick_composer_set_enabled", expect.anything());
 });
 

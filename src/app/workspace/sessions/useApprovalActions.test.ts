@@ -41,6 +41,8 @@ afterEach(async () => {
 });
 function request(id = 71) {
   const value = newSession("codex", "G:/original");
+  // A pending approval request exists only while its turn is running.
+  value.busy = true;
   value.blocks = [
     {
       id: crypto.randomUUID(),

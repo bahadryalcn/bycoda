@@ -1,4 +1,7 @@
 "use client";
+import { Popover } from "../../Popover";
+import { isImeComposition } from "../../../lib/keyboard";
+import { t } from "../../../i18n";
 import { SearchInput, SearchInputGroup } from "../../SearchInput";
 
 import { animate, AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -59,8 +62,6 @@ export const ComboboxItem = forwardRef<HTMLButtonElement, ComponentPropsWithoutR
 
 /** Content of a choice row: check slot, optional icon, truncating label and an optional description beneath it. */
 export function ComboboxChoice({
-  selected,
-  icon,
   label,
   description,
   descriptionId,
@@ -76,10 +77,6 @@ export function ComboboxChoice({
 }) {
   return (
     <>
-      <span className={styles.choiceCheck} aria-hidden="true">
-        {selected ? <Check size={12} strokeWidth={2} /> : null}
-      </span>
-      {icon ? <span className={styles.choiceIcon}>{icon}</span> : null}
       <span className={styles.choiceBody} title={title}>
         <span className={`${styles.choiceLabel} truncate`}>{label}</span>
         {description ? (
@@ -134,6 +131,9 @@ export interface ComboboxProps extends Omit<
   "value" | "defaultValue" | "onChange" | "placeholder"
 > {
   label: string;
+  hideLabel?: boolean;
+  /** Accept an editable value outside the suggestions on Enter or blur. */
+  allowCustomValue?: boolean;
   options: ComboboxOption[];
   value?: string;
   defaultValue?: string;
@@ -167,6 +167,8 @@ function AutoHeight({
 export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Combobox(
   {
     label,
+    hideLabel = false,
+    allowCustomValue = false,
     options,
     value: controlledValue,
     defaultValue = "",
@@ -178,6 +180,8 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     className,
     disabled,
     onFocus,
+    onBlur,
+    onKeyDown,
     ...inputProps
   },
   forwardedRef,
@@ -193,6 +197,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   const [uncontrolledValue, setUncontrolledValue] = useState(defaultValue);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const draftDirty = useRef(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const selectedValue = controlledValue ?? uncontrolledValue;
   const selectedOption = options.find((option) => option.value === selectedValue);
@@ -224,7 +229,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     return () => controls.complete();
   }, [selectedValue, reduceMotion, open]);
 
-  const filteredOptions = useMemo(() => {
+  const matchingOptions = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     if (!normalizedQuery) return options;
     return options.filter((option) =>
@@ -233,6 +238,14 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
       ),
     );
   }, [options, query]);
+
+  const customValue = query.trim();
+  const exactOption = options.find((option) =>
+    [option.value, option.label].some((text) => text.toLocaleLowerCase() === customValue.toLocaleLowerCase()),
+  );
+  const filteredOptions = allowCustomValue && customValue && !exactOption
+    ? [...matchingOptions, { value: customValue, label: t("Use “{p0}”", { p0: customValue }) }]
+    : matchingOptions;
 
   const enabledIndices = filteredOptions.reduce<number[]>((indices, option, index) => {
     if (!option.disabled) indices.push(index);
@@ -254,6 +267,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   }, [activeIndex, filteredOptions, open]);
 
   useEffect(() => {
+    if (allowCustomValue) return; // The app Popover owns dismissal in editable mode.
     const handlePointerDown = (event: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
         setOpen(false);
@@ -262,10 +276,11 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, []);
+  }, [allowCustomValue]);
 
   const choose = (option: ComboboxOption) => {
-    if (option.disabled) return;
+    if (option.disabled || (allowCustomValue && (disabled || inputProps.readOnly))) return;
+    draftDirty.current = false;
     setUncontrolledValue(option.value);
     onValueChange?.(option.value);
     setQuery("");
@@ -273,8 +288,28 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     inputRef.current?.focus();
   };
 
+  const commitDraft = () => {
+    if (!allowCustomValue || !draftDirty.current || disabled || inputProps.readOnly) return;
+    draftDirty.current = false;
+    if (exactOption?.disabled) return;
+    const nextValue = exactOption?.value ?? customValue;
+    if (nextValue !== selectedValue) {
+      setUncontrolledValue(nextValue);
+      onValueChange?.(nextValue);
+    }
+  };
+
+  const dismiss = (reason: "outside" | "escape") => {
+    if (reason === "outside") commitDraft();
+    draftDirty.current = false;
+    setOpen(false);
+    setQuery("");
+    setActiveIndex(-1);
+  };
+
   const clear = (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
+    draftDirty.current = false;
     setUncontrolledValue("");
     onValueChange?.("");
     setQuery("");
@@ -283,13 +318,17 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   };
 
   const openMenu = () => {
-    if (disabled) return;
+    if (disabled || (allowCustomValue && (open || inputProps.readOnly))) return;
     setOpen(true);
-    setQuery("");
+    setQuery(allowCustomValue ? (selectedOption?.label ?? selectedValue) : "");
     setActiveIndex(-1);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (allowCustomValue) {
+      onKeyDown?.(event);
+      if (event.defaultPrevented || inputProps.readOnly || isImeComposition(event.nativeEvent)) return;
+    }
     if (disabled) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -300,7 +339,9 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
       if (!enabledIndices.length) return;
       const currentPosition = enabledIndices.indexOf(activeIndex);
       const nextPosition =
-        event.key === "ArrowDown"
+        allowCustomValue && currentPosition < 0
+          ? (event.key === "ArrowDown" ? 0 : enabledIndices.length - 1)
+          : event.key === "ArrowDown"
           ? (currentPosition + 1) % enabledIndices.length
           : (currentPosition - 1 + enabledIndices.length) % enabledIndices.length;
       setActiveIndex(enabledIndices[nextPosition]!);
@@ -312,20 +353,90 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
       if (option) choose(option);
       return;
     }
+    if (allowCustomValue && event.key === "Enter" && open) {
+      event.preventDefault();
+      commitDraft();
+      dismiss("escape");
+      return;
+    }
+    if (allowCustomValue && event.key === "Tab" && open) {
+      dismiss("outside");
+      return;
+    }
     if (event.key === "Escape" && open) {
       event.preventDefault();
-      setOpen(false);
-      setQuery("");
+      if (allowCustomValue) {
+        event.stopPropagation();
+        dismiss("escape");
+      } else {
+        setOpen(false);
+        setQuery("");
+      }
       return;
     }
   };
 
-  const inputValue = open ? query : (selectedOption?.label ?? "");
+  const inputValue = open ? query : (selectedOption?.label ?? (allowCustomValue ? selectedValue : ""));
   const activeOption = activeIndex >= 0 ? filteredOptions[activeIndex] : undefined;
+
+  const menu = (
+    <AutoHeight reduceMotion={reduceMotion}>
+      <div
+        id={listboxId}
+        className={styles.listbox}
+        role="listbox"
+        aria-label={allowCustomValue ? t("{p0} options", { p0: label }) : `${label} options`}
+      >
+        {filteredOptions.length ? (
+          filteredOptions.map((option, index) => (
+            <div
+              key={option.value}
+              ref={(element) => {
+                optionRefs.current[option.value] = element;
+              }}
+              id={`${controlId}-option-${allowCustomValue ? index : option.value}`}
+              className={styles.option}
+              data-active={index === activeIndex ? "true" : undefined}
+              data-disabled={option.disabled ? "true" : undefined}
+              role="option"
+              aria-selected={option.value === selectedValue}
+              aria-disabled={option.disabled || undefined}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => !option.disabled && setActiveIndex(index)}
+              onClick={() => choose(option)}
+            >
+              <span>{option.label}</span>
+              {option.value === selectedValue && (
+                <Check
+                  className={styles.check}
+                  size={16}
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+          ))
+        ) : (
+          <motion.div
+            className={styles.empty}
+            role="status"
+            initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: motionTokens.duration.standard,
+              ease: [...motionTokens.ease.enter],
+            }}
+          >
+            {emptyMessage}
+          </motion.div>
+        )}
+      </div>
+    </AutoHeight>
+  );
 
   return (
     <div ref={rootRef} className={styles.field}>
-      <label htmlFor={controlId}>{label}</label>
+      <label htmlFor={controlId} className={hideLabel ? "sr-only" : undefined}>{label}</label>
       <SearchInputGroup
         className={[
           styles.control,
@@ -349,19 +460,24 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
           // While searching, the chosen label stays in place as muted placeholder copy instead of vanishing.
           placeholder={selectedOption?.label ?? placeholder}
           disabled={disabled}
-          aria-describedby={hintId}
+          aria-describedby={[hintId, inputProps["aria-describedby"]].filter(Boolean).join(" ") || undefined}
           aria-expanded={open}
           aria-controls={open ? listboxId : undefined}
           aria-autocomplete="list"
           aria-activedescendant={
-            open && activeOption ? `${controlId}-option-${activeOption.value}` : undefined
+            open && activeOption ? `${controlId}-option-${allowCustomValue ? activeIndex : activeOption.value}` : undefined
           }
           onFocus={(event) => {
             onFocus?.(event);
-            openMenu();
+            if (!allowCustomValue || !event.defaultPrevented) openMenu();
+          }}
+          onBlur={(event) => {
+            if (allowCustomValue) dismiss("outside");
+            onBlur?.(event);
           }}
           onClick={openMenu}
           onChange={(event) => {
+            if (allowCustomValue) draftDirty.current = true;
             setQuery(event.target.value);
             setOpen(true);
             setActiveIndex(-1);
@@ -369,11 +485,11 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
           onKeyDown={handleKeyDown}
         />
         <AnimatePresence initial={false}>
-          {selectedOption && !disabled && (!open || !query) && (
+          {(selectedOption || (allowCustomValue && selectedValue)) && !disabled && (!allowCustomValue || !inputProps.readOnly) && (!open || !query) && (
             <motion.button
               type="button"
               className={styles.clear}
-              aria-label="Clear selection"
+              aria-label={allowCustomValue ? t("Clear selection") : "Clear selection"}
               onMouseDown={(event) => event.preventDefault()}
               onClick={clear}
               initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
@@ -415,7 +531,19 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         </span>
       )}
       <AnimatePresence initial={false}>
-        {open && (
+        {open && (allowCustomValue ? (
+          <Popover
+            anchor={rootRef}
+            align="start"
+            ignore={`[id="${controlId}"]`}
+            maxHeight={240}
+            restoreFocus={false}
+            onDismiss={dismiss}
+            className="bycoda-arc"
+          >
+            {menu}
+          </Popover>
+        ) : (
           <motion.div
             className={styles.popover}
             initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
@@ -443,60 +571,9 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             }}
             role="presentation"
           >
-            <AutoHeight reduceMotion={reduceMotion}>
-              <div
-                id={listboxId}
-                className={styles.listbox}
-                role="listbox"
-                aria-label={`${label} options`}
-              >
-                {filteredOptions.length ? (
-                  filteredOptions.map((option, index) => (
-                    <div
-                      key={option.value}
-                      ref={(element) => {
-                        optionRefs.current[option.value] = element;
-                      }}
-                      id={`${controlId}-option-${option.value}`}
-                      className={styles.option}
-                      data-active={index === activeIndex ? "true" : undefined}
-                      data-disabled={option.disabled ? "true" : undefined}
-                      role="option"
-                      aria-selected={option.value === selectedValue}
-                      aria-disabled={option.disabled || undefined}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onMouseEnter={() => !option.disabled && setActiveIndex(index)}
-                      onClick={() => choose(option)}
-                    >
-                      <span>{option.label}</span>
-                      {option.value === selectedValue && (
-                        <Check
-                          className={styles.check}
-                          size={16}
-                          strokeWidth={1.75}
-                          aria-hidden="true"
-                        />
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <motion.div
-                    className={styles.empty}
-                    role="status"
-                    initial={reduceMotion ? false : { opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      duration: motionTokens.duration.standard,
-                      ease: [...motionTokens.ease.enter],
-                    }}
-                  >
-                    {emptyMessage}
-                  </motion.div>
-                )}
-              </div>
-            </AutoHeight>
+            {menu}
           </motion.div>
-        )}
+        ))}
       </AnimatePresence>
     </div>
   );

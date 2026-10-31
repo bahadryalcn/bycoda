@@ -53,8 +53,10 @@ pub(crate) fn device_finish_payload(
         .or_else(|error| source.project(|_| Ok(json!({"id": id, "error": error}))))
 }
 
-/// Poll cadence: answers stay quick while agents are using desktop tools, idle
-/// polling slows down, and an unreachable or unpaired host backs off to 30 s.
+/// Poll cadence: answers stay quick while agents are using desktop tools,
+/// idle polling slows down in steps to 15 s (the caller keeps 2 s while a
+/// provider session holds a conversation grant), and an unreachable or
+/// unpaired host backs off to 30 s.
 fn next_poll_delay(failures: u32, since_request: std::time::Duration) -> std::time::Duration {
     use std::time::Duration;
     if failures > 0 {
@@ -62,8 +64,12 @@ fn next_poll_delay(failures: u32, since_request: std::time::Duration) -> std::ti
     }
     if since_request < Duration::from_secs(60) {
         Duration::from_secs(1)
-    } else {
+    } else if since_request < Duration::from_secs(300) {
         Duration::from_secs(2)
+    } else if since_request < Duration::from_secs(1800) {
+        Duration::from_secs(5)
+    } else {
+        Duration::from_secs(15)
     }
 }
 
@@ -127,7 +133,12 @@ pub fn start_desktop_relay(app: AppHandle) {
                     });
                 }
             }
-            std::thread::sleep(next_poll_delay(failures, last_request.elapsed()));
+            let session_active = grants().lock().map(|map| !map.is_empty()).unwrap_or(true);
+            let mut delay = next_poll_delay(failures, last_request.elapsed());
+            if failures == 0 && session_active {
+                delay = delay.min(std::time::Duration::from_secs(2));
+            }
+            std::thread::sleep(delay);
         }
     });
 }

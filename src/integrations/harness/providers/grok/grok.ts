@@ -41,7 +41,7 @@ import {
   showNextQueuedQuestion,
   type QuestionDelivery,
 } from "../questionDelivery";
-import { nativeModelId } from "../../../../features/sessions/model/models";
+import { nativeModelIdWithSettings } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
@@ -294,6 +294,7 @@ export async function cancelGrokTurn(
 
   const live = liveByThread.get(sessionId);
   const preparing = startingByThread.get(sessionId);
+  // A captured cancellation must not affect a newer operation.
   if (
     !ownsOperation(
       context,
@@ -303,7 +304,10 @@ export async function cancelGrokTurn(
   )
     return;
   sourceEpochByThread.set(sessionId, {});
-  if (!live) return;
+  if (!live) {
+    if (preparing) await stopGrokSession(sessionId, context ?? preparing.handle);
+    return;
+  }
   const acp = context
     ? await acpTurnWriter(live.handle, live.acp, context.nativeControlTurn, context, "control")
     : live.acp;
@@ -359,12 +363,14 @@ export async function forgetGrokSession(
   sessionId: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
-
-  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
-  if (original && !ownsOperation(context, original.handle, original.operation)) return;
+  // Delete/switch must end the process: a context that no longer owns it falls
+  // back to a by-session stop instead of returning with the process alive.
   resumeByThread.delete(sessionId);
-  await stopGrokSession(sessionId, context);
+  const queuedOnly = cancelQueuedOperation(context);
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  const owned =
+    !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  await stopGrokSession(sessionId, owned ? context : undefined);
 }
 
 export function bindGrokSession(threadId: string, acpSessionId: string, cwd: string): void {
@@ -470,7 +476,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       handle,
       path,
       grokSpawnArgs({
-        model: input.model,
+        model: nativeModelIdWithSettings(input.model, input.modelSettings),
         effort: grokEffort(input.modelSettings),
         fullAccess: wantFullAccess,
         plan: wantPlanning,
@@ -540,6 +546,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
           );
           acpSessionId = sessionIdFromResult(setup) ?? resume.acpSessionId;
           didLoad = true;
+        } catch (error) {
+          if (!(error instanceof JsonRpcResponseError)) throw error;
+          resumeByThread.delete(input.sessionId);
+          input.onEvent({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
         } finally {
           muteGate.current = false;
         }
@@ -569,7 +579,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       acp,
       acpSessionId,
       cwd: input.cwd,
-      modelId: currentModelId(setup) ?? nativeModelId(input.model),
+      modelId: currentModelId(setup) ?? nativeModelIdWithSettings(input.model, input.modelSettings),
       contextWindow: contextWindowFromSetup(setup) ?? contextWindowFromSetup(init),
       muteUpdates: didLoad,
       cancelled: false,
@@ -605,7 +615,7 @@ async function applyModelSelection(
   input: HarnessSessionInput,
   acp: AcpWriterView,
 ): Promise<void> {
-  const base = nativeModelId(input.model);
+  const base = nativeModelIdWithSettings(input.model, input.modelSettings);
   if (base && base !== live.modelId) {
     await acp
       .request(

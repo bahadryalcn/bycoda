@@ -1,10 +1,43 @@
 // @vitest-environment happy-dom
-import { act, createElement, Fragment } from "react";
+import { act, createElement, Fragment, memo } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { AgentTranscript } from "./AgentTranscript";
 import { PooledTranscript, TranscriptPool, TranscriptPoolOutlet } from "./TranscriptPool";
 import { newSession } from "../model/session";
+import { ApprovalDecisionProvider, useApprovalDecisionContext } from "./ApprovalDecisionContext";
+
+it("keeps context consumers stable while reads follow the current original session", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const node = document.createElement("div");
+  const root = createRoot(node);
+  let session = newSession("codex", "G:/fixture");
+  const dispatch = vi.fn();
+  const getSession = () => session;
+  let renders = 0;
+  let context: ReturnType<typeof useApprovalDecisionContext> = null;
+  const Consumer = memo(() => {
+    renders++;
+    context = useApprovalDecisionContext();
+    return null;
+  });
+  const render = () => act(() => root.render(createElement(ApprovalDecisionProvider, {
+    session, getSession, dispatch, children: createElement(Consumer),
+  })));
+  try {
+    render();
+    const original = context;
+    session = { ...session, context: { ...session.context, used: 42 } };
+    render();
+    expect(renders).toBe(1);
+    expect(context).toBe(original);
+    expect(context!.session).toBe(session);
+    expect(context!.dispatch).toBe(dispatch);
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
 
 it("carries the original approval context through the real pooled outlet and disables a handed-off decision", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -57,6 +90,12 @@ it("carries the original approval context through the real pooled outlet and dis
     expect(allow().disabled).toBe(true);
     act(() => allow().click());
     expect(dispatch).toHaveBeenCalledTimes(1);
+    session.blocks = session.blocks.map((block) => ({
+      ...block,
+      approval: { ...block.approval!, decided: "allow" as const },
+    }));
+    render();
+    expect(allow()).toBeUndefined();
   } finally {
     act(() => root.unmount());
     node.remove();

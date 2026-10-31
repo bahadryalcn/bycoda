@@ -283,7 +283,7 @@
   }
 }
 
-/* The active row is a surface fill; forced-colors mode keeps it visible with an outline, and a selected row keeps its check. */
+/* The active row is a surface fill; forced-colors mode keeps it visible with an outline, and selection remains exposed through aria-selected. */
 @media (forced-colors: active) {
   .choice[data-highlighted],
   .choice[data-active] {
@@ -299,4 +299,10 @@
     forced-color-adjust: auto;
     color: CanvasText;
   }
+}
+
+.choice:is([data-highlighted], [data-active], [aria-selected="true"]) {
+  border-radius: calc(var(--ui-field-radius) - 2px);
+  background: var(--ui-surface-selected);
+  box-shadow: inset 0 0 0 1px var(--ui-field-border);
 }

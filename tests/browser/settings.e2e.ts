@@ -6,12 +6,19 @@ for (const theme of ["light", "dark"]) {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=tr`);
-      const font = page.getByRole("textbox", { name: "Terminal yazı tipi", exact: true });
+      // The editable combobox commits a suggested or custom font on Enter/blur.
+      const font = page.getByRole("combobox", { name: "Terminal yazı tipi", exact: true });
       await font.fill("JetBrains Mono");
-      const size = page.getByRole("slider", { name: "Terminal yazı boyutu", exact: true });
-      await size.focus();
-      await size.press("ArrowRight");
-      await expect(size).toHaveAttribute("aria-valuenow", "14");
+      await font.press("Enter");
+      const size = page.locator('[data-setting-id="terminal-font-size"] button');
+      await size.click();
+      await page.getByRole("option", { name: /^14/ }).click();
+      await expect(size).toHaveAccessibleName(/14/);
+      // Weight and line spacing sit under the closed Advanced disclosure.
+      await page
+        .locator('[data-setting-id="terminal-font-size"] ~ .settings-advanced .settings-advanced-toggle')
+        .first()
+        .click();
       await page.locator('[data-setting-id="terminal-font-weight"] button').click();
       await page.getByRole("option", { name: "Yarı kalın", exact: true }).click();
       await page.locator('[data-setting-id="terminal-line-height"] button').click();
@@ -29,7 +36,7 @@ for (const theme of ["light", "dark"]) {
       });
       await page.reload();
       await expect(font).toHaveValue("JetBrains Mono");
-      await expect(size).toHaveAttribute("aria-valuenow", "14");
+      await expect(size).toHaveAccessibleName(/14/);
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
       ).toBe(true);
@@ -210,7 +217,7 @@ test("control density persists shared control targets and resets without changin
   await page.reload();
   await expect(trigger).toHaveAccessibleName("Control density: Touch");
   await expect(page.locator("html")).toHaveAttribute("data-control-density", "touch");
-  await page.getByRole("button", { name: "Reset reading settings", exact: true }).click();
+  await row.getByRole("button", { name: "Restore default", exact: true }).click();
   await expect(trigger).toHaveAccessibleName("Control density: Compact");
   await expect(page.locator("html")).toHaveAttribute("data-control-density", "compact");
   expect((await trigger.boundingBox())!.height).toBeLessThan(44);

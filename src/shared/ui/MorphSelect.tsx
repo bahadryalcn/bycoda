@@ -25,10 +25,10 @@ const PANEL_WIDTH = 272;
  * that a narrow row left at the start), so it never opens off-screen.
  */
 function panelAlignment(root: HTMLElement | null): "start" | "end" {
-  if (!root) return "end";
+  if (!root) return "start";
   const bounds = root.getBoundingClientRect();
   const panel = Math.min(PANEL_WIDTH, window.innerWidth - 32);
-  return bounds.right - panel >= 0 ? "end" : "start";
+  return bounds.left + panel <= window.innerWidth - 16 ? "start" : "end";
 }
 
 /** A compact, inline property picker; large/search-driven lists use SearchableSelect. */
@@ -68,7 +68,7 @@ export function MorphSelect({
   const t = useT();
   const root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [align, setAlign] = useState<"start" | "end">("end");
+  const [align, setAlign] = useState<"start" | "end">("start");
   // A disabled or read-only select cannot stay open: close during render so a later enable does not reopen it.
   if ((disabled || readOnly) && open) setOpen(false);
   const close = () => {

@@ -191,7 +191,7 @@ pub(crate) fn probe_lifecycle_status(
         .and_then(serde_json::Value::as_str)
         .ok_or(Unconfirmed)?;
     let response = ureq::post(&format!("http://127.0.0.1:{port}/lifecycle"))
-        .timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
         .set("Authorization", &format!("Bearer {secret}"))
         .set("Content-Type", "application/json")
         .send_string(r#"{"action":"status"}"#)

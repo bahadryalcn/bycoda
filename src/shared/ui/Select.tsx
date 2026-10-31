@@ -75,6 +75,7 @@ export type SelectProps = Omit<
   error?: string;
   /** Only used with the field composition above. */
   fieldVariant?: FieldVariant;
+  fieldSize?: "sm" | "md";
   ref?: Ref<HTMLButtonElement>;
 };
 
@@ -91,6 +92,7 @@ export function Select({
   description,
   error,
   fieldVariant = "form",
+  fieldSize,
   className,
   ref,
   onKeyDown,
@@ -110,6 +112,7 @@ export function Select({
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const activeOption = useRef<HTMLButtonElement>(null);
+  const typeahead = useRef({ text: "", at: 0 });
   const listId = useId();
   const generatedId = useId();
   const triggerId = triggerProps.id ?? generatedId;
@@ -131,6 +134,24 @@ export function Select({
   };
 
   const onMenuKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.nativeEvent.isComposing || disabled || trigger.current?.matches(":disabled")) return;
+    if (e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const now = Date.now();
+      const previous = typeahead.current;
+      const text = (now - previous.at < 700 ? previous.text : "") + e.key.toLocaleLowerCase();
+      typeahead.current = { text, at: now };
+      const query = [...text].every((letter) => letter === text[0]) ? text[0]! : text;
+      for (let offset = 1; offset <= options.length; offset++) {
+        const index = (active + offset) % options.length;
+        const option = options[index]!;
+        if (!option.disabled && option.label.toLocaleLowerCase().startsWith(query)) {
+          e.preventDefault();
+          setActive(index);
+          break;
+        }
+      }
+      return;
+    }
     if (disabled || trigger.current?.matches(":disabled")) {
       setOpen(false);
       return;
@@ -182,6 +203,7 @@ export function Select({
           if (typeof ref === "function") return ref(node);
           if (ref) ref.current = node;
         }}
+        data-field-size={fieldSize ?? (fieldVariant === "compact" ? "sm" : "md")}
         data-state={expanded ? "open" : "closed"}
         data-disabled={disabled || undefined}
         disabled={disabled}
@@ -227,8 +249,8 @@ export function Select({
           id={listId}
           anchor={root}
           side="bottom"
-          align="end"
-          width={280}
+          align="start"
+          width={Math.max(200, trigger.current?.getBoundingClientRect().width ?? 0)}
           maxHeight={320}
           autoFocus
           onDismiss={(reason) => {

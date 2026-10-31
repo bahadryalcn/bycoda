@@ -8,20 +8,25 @@ const mock = vi.hoisted(() => ({
   close: vi.fn(),
   speak: vi.fn(() => true),
   converse: vi.fn(async () => ({ action: "submit", reply: "" })),
+  connect: vi.fn(async () => {}),
+  warm: vi.fn(async () => {}),
 }));
 vi.mock("../model/localVoice", () => ({
   LocalVoice: class {
     constructor(callbacks: unknown) {
       mock.callbacks = callbacks;
     }
-    async connect() {}
+    connect = mock.connect;
     close = mock.close;
     speak = mock.speak;
     mute() {}
     silence() {}
   },
 }));
-vi.mock("../model/voiceConversation", () => ({ converseWithSession: mock.converse }));
+vi.mock("../model/voiceConversation", () => ({
+  converseWithSession: mock.converse,
+  warmVoiceReply: mock.warm,
+}));
 vi.mock("../../sessions/model/sessionsStore", () => ({
   sessionsRef: { current: [] },
   useSession: () => undefined,
@@ -115,16 +120,48 @@ it("closes with Escape and restores launcher focus without stopping coding", asy
 });
 it("answers while the job is busy without submitting the question", async () => {
   mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Still working." });
+  mock.warm.mockClear();
   const { onSubmit } = await setup();
+  // Warmed on start; a reply consumes the warm process, so it is warmed again.
+  expect(mock.warm).toHaveBeenCalledWith(expect.objectContaining({ id: "a" }));
+  const warmed = mock.warm.mock.calls.length;
   await speech("What are you working on?");
-  expect(mock.speak).toHaveBeenCalledWith("Still working.");
+  expect(mock.warm.mock.calls.length).toBeGreaterThan(warmed);
+  expect(mock.speak).toHaveBeenCalledWith("Still working.", false);
+  expect(onSubmit).not.toHaveBeenCalled();
+});
+it("speaks a streamed reply from its first sentence and shows it progressively", async () => {
+  let finish!: (value: unknown) => void;
+  let sentence!: (text: string) => void;
+  mock.converse.mockImplementationOnce(
+    (_session: unknown, _text: unknown, _history: unknown, _signal: unknown, onSentence: any) =>
+      new Promise((done) => {
+        sentence = onSentence;
+        finish = done;
+      }),
+  );
+  const { onSubmit } = await setup();
+  await speech("Unit test nedir?");
+  await act(async () => sentence("Kısa cevap şu."));
+  expect(mock.speak).toHaveBeenLastCalledWith("Kısa cevap şu.", false);
+  expect(container.textContent).toContain("Kısa cevap şu.");
+  await act(async () => sentence("İkinci cümle."));
+  expect(mock.speak).toHaveBeenLastCalledWith("İkinci cümle.", true);
+  expect(container.textContent).toContain("Kısa cevap şu. İkinci cümle.");
+  const spoken = mock.speak.mock.calls.length;
+  await act(async () => finish({ action: "reply", reply: "Kısa cevap şu. İkinci cümle." }));
+  // Already spoken while streaming: the final reply is not repeated.
+  expect(mock.speak.mock.calls.length).toBe(spoken);
   expect(onSubmit).not.toHaveBeenCalled();
 });
 it("does not claim acceptance when submission was rejected", async () => {
   const { onSubmit } = await setup();
   onSubmit.mockReturnValue(false);
   await speech("Fix login");
-  expect(mock.speak).toHaveBeenCalledWith("The request was not accepted. Check the session.");
+  expect(mock.speak).toHaveBeenCalledWith(
+    "The request was not accepted. Check the session.",
+    false,
+  );
 });
 it("discards a pending side reply when a newer utterance starts", async () => {
   let resolve!: (value: any) => void;
@@ -154,7 +191,10 @@ it("announces the end of tracked work without invoking another agent", async () 
     },
     b,
   ]);
-  expect(mock.speak).toHaveBeenCalledWith(expect.stringContaining("Changes ready for review."));
+  expect(mock.speak).toHaveBeenCalledWith(
+    expect.stringContaining("Changes ready for review."),
+    false,
+  );
   expect(mock.converse).toHaveBeenCalledTimes(1);
 });
 
@@ -181,4 +221,11 @@ it("uses playback events rather than reply text to announce assistant speech", a
   expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("listening");
   await act(async () => mock.callbacks.error("Playback failed"));
   expect(container.querySelector("section")?.getAttribute("data-voice-state")).toBe("error");
+});
+
+it("shows the Host's reason when local voice start is rejected with a string", async () => {
+  mock.connect.mockRejectedValueOnce("Voice setup is still running.");
+  await setup();
+  expect(container.textContent).toContain("Voice setup is still running.");
+  expect(container.textContent).not.toContain("Local voice could not start.");
 });

@@ -2206,6 +2206,8 @@ describe("Composer question focus", () => {
       cwd: "remote://fixture/repo",
       executionCwd: "remote://fixture/repo",
       draftWorkspace: true,
+      // Only an explicit worktree choice holds Send; a policy default falls back to current.
+      workspaceMode: "worktree" as const,
       hideTopBar: true,
       hideBranchPicker: true,
       initialDraft: "Keep this remote draft",
@@ -2253,6 +2255,14 @@ describe("Composer question focus", () => {
     expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(false);
     await act(async () =>
       root.render(createElement(Composer, { ...props, draftWorkspace: false })),
+    );
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(false);
+    // Without an explicit worktree choice (policy default) the remote draft is not held.
+    await act(async () =>
+      root.render(createElement(Composer, { ...props, workspaceMode: undefined })),
+    );
+    expect(container.textContent).not.toContain(
+      "Update bycoda to create managed sessions on this remote Host.",
     );
     expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(false);
   });

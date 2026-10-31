@@ -392,12 +392,24 @@ type LiveWriteOptions = {
   /** Called as the write starts, never for a snapshot that was replaced. */
   onStart?: () => void;
   onFailed?: () => void;
+  /** Called once with whether this snapshot (or a newer write) was persisted. */
+  onSettled?: (saved: boolean) => void;
 };
 type LiveSlot = {
   session: Session;
   options: LiveWriteOptions;
   outputWrite: SessionOutputWrite | null;
+  settlers: ((saved: boolean) => void)[];
 };
+function settleLiveSlot(slot: LiveSlot, saved: boolean): void {
+  for (const settle of slot.settlers.splice(0)) {
+    try {
+      settle(saved);
+    } catch {
+      /* A waiter cannot change the write's outcome. */
+    }
+  }
+}
 const pendingLiveWrites = new Map<string, LiveSlot>();
 
 const sessionPersistence = rendererPersistenceDrain.reuseModuleProducer("session-store", {
@@ -441,6 +453,20 @@ function enqueueSessionWrite<T>(
   );
 }
 
+/**
+ * Pre-send save. Uses the incremental path the streaming saves use (a delta
+ * against the stored baseline) instead of rewriting the whole transcript, and
+ * falls back to the full replace when there is no usable baseline. Resolves
+ * to whether the snapshot, or a newer write that replaced it, was persisted.
+ */
+export async function saveSessionBeforeSend(session: Session): Promise<boolean> {
+  if (hostSessionBinding(session)) return false;
+  if (!shouldPersistSession(session) || deletedSessionIds.has(session.id)) return false;
+  return new Promise<boolean>((resolve, reject) => {
+    upsertSessionLive(session, { onSettled: resolve }).catch(reject);
+  });
+}
+
 /** Initial timestamps are used only when the native store creates a missing row. */
 export function upsertSession(
   session: Session,
@@ -473,6 +499,7 @@ export function upsertClearedSession(session: Session): Promise<SessionSummary |
  */
 export function upsertSessionLive(session: Session, options: LiveWriteOptions = {}): Promise<void> {
   if (!shouldPersistSession(session) || deletedSessionIds.has(session.id)) {
+    options.onSettled?.(false);
     return Promise.resolve();
   }
   const id = session.id;
@@ -482,11 +509,19 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
     sessionPersistence.noteMutation([id]);
     releaseSessionOutputWrite(pending.outputWrite);
     pending.session = session;
-    pending.options = options;
+    // A waiter that only wants to know the outcome keeps the joined write's options.
+    if (!options.onSettled || options.shouldWrite || options.onStart || options.onFailed)
+      pending.options = options;
+    if (options.onSettled) pending.settlers.push(options.onSettled);
     pending.outputWrite = outputWrite;
     return Promise.resolve();
   }
-  const slot: LiveSlot = { session, options, outputWrite };
+  const slot: LiveSlot = {
+    session,
+    options,
+    outputWrite,
+    settlers: options.onSettled ? [options.onSettled] : [],
+  };
   pendingLiveWrites.set(id, slot);
   return enqueueSessionWrite(
     id,
@@ -495,13 +530,18 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
       if (pendingLiveWrites.get(id) !== slot) {
         releaseSessionOutputWrite(slot.outputWrite);
         work.fail(new Error("Live snapshot retired before persistence"));
+        // A later full write replaced this snapshot with newer data.
+        settleLiveSlot(slot, true);
         return;
       }
       pendingLiveWrites.delete(id);
       const { session: latest, options: latestOptions } = slot;
       if (deletedSessionIds.has(id) || latestOptions.shouldWrite?.() === false) {
         failSessionOutputWrite(slot.outputWrite);
-        work.fail(new Error("Live snapshot was not persisted"));
+        // A deleted session has nothing left to persist; do not leave a failure behind.
+        if (deletedSessionIds.has(id)) work.confirmRecovery();
+        else work.fail(new Error("Live snapshot was not persisted"));
+        settleLiveSlot(slot, false);
         return;
       }
       try {
@@ -513,9 +553,11 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
           // Every acknowledged delta is durable. Full checkpoints only compact
           // the baseline; keep live recovery at 1.5s without rewriting history
           // every 48s. Eviction and unnormalized baselines still checkpoint now.
+          // The periodic compaction waits for the turn to end (the settle write
+          // or the next idle live write); a busy session keeps appending deltas.
           if (
             baseline?.normalized &&
-            baseline.writes < 256 &&
+            (baseline.writes < 256 || latest.busy) &&
             !sessionOutputNeedsReplacement(latest)
           ) {
             const delta = buildSessionBlockDelta(baseline.blocks, blocks);
@@ -538,7 +580,10 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
                 "delta",
               ),
             );
-            if (!ack) throw new Error("Session changed in another window; reload before saving");
+            if (!ack) {
+              await refreshStaleBaseline(id);
+              throw new Error("Session changed in another window; reload before saving");
+            }
             persistenceBaselines.set(id, {
               blocks,
               updatedAt: ack.updatedAt,
@@ -553,6 +598,7 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
               ...(ack.nativeWriteId === undefined ? {} : { nativeWriteId: ack.nativeWriteId }),
             });
             finish({ blocks: delta.changes.length, revision: ack.revision });
+            settleLiveSlot(slot, true);
           } else {
             const summary = await invoke<SessionSummary | null>(
               "session_upsert",
@@ -567,8 +613,10 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
                 "replace",
               ),
             );
-            if (!summary)
+            if (!summary) {
+              await refreshStaleBaseline(id);
               throw new Error("Session changed in another window; reload before saving");
+            }
             persistenceBaselines.set(id, {
               blocks,
               updatedAt: summary.updatedAt,
@@ -588,6 +636,7 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
             else failSessionOutputWrite(slot.outputWrite);
             work.confirmRecovery();
             finish({ blocks: blocks.length });
+            settleLiveSlot(slot, true);
           }
         } catch (error) {
           finish();
@@ -597,6 +646,7 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
         failSessionOutputWrite(slot.outputWrite);
         work.fail(error);
         latestOptions.onFailed?.();
+        settleLiveSlot(slot, false);
       }
     },
     true,
@@ -609,10 +659,40 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
 /** The stored row's `updatedAt`, read without the load-time backfills (which
  * write), so it is safe to call from inside the write queue. */
 export async function storedSessionUpdatedAt(sessionId: string): Promise<number | null> {
-  const record = await invoke<{ updatedAt?: unknown } | null>("session_get", {
+  // A one-block page carries the same row stamps without reading and parsing
+  // the whole transcript (up to several MB in a long session).
+  const page = await invoke<{ session?: { updatedAt?: unknown } } | null>("session_get_page", {
     sessionId,
+    limit: 1,
   });
-  return record ? (sanitizeTimestamp(record.updatedAt) ?? null) : null;
+  return page ? (sanitizeTimestamp(page.session?.updatedAt) ?? null) : null;
+}
+
+/** A save lost its compare-and-swap, so the remembered stamp is stale and every
+ * later save would lose it too. Adopt the stored row's stamp (or forget it when
+ * the row is gone) so the next save goes through as a full replace. */
+async function refreshStaleBaseline(sessionId: string): Promise<void> {
+  try {
+    const page = await invoke<{
+      session?: { updatedAt?: unknown; transcriptRevision?: unknown };
+    } | null>("session_get_page", { sessionId, limit: 1 });
+    const record = page?.session;
+    const updatedAt = record ? sanitizeTimestamp(record.updatedAt) : undefined;
+    if (updatedAt === undefined) {
+      persistenceBaselines.delete(sessionId);
+      return;
+    }
+    persistenceBaselines.set(sessionId, {
+      blocks: [],
+      updatedAt,
+      revision:
+        typeof record!.transcriptRevision === "number" ? record!.transcriptRevision : undefined,
+      writes: 0,
+      normalized: false,
+    });
+  } catch {
+    // The next conflict tries again; this save already reports its own failure.
+  }
 }
 
 /** Saves only if the row still has the `updatedAt` the caller read before it
@@ -661,7 +741,8 @@ async function persistSession(
     async (work) => {
       if (deletedSessionIds.has(session.id)) {
         failSessionOutputWrite(outputWrite);
-        work.fail(new Error("Session was deleted before its queued save"));
+        // Nothing is left to persist for a deleted session; do not leave a failure behind.
+        work.confirmRecovery();
         return null;
       }
       const baseline = persistenceBaselines.get(session.id);
@@ -710,6 +791,8 @@ async function persistSession(
         work.confirmRecovery();
       } else {
         failSessionOutputWrite(outputWrite);
+        // An explicit guard belongs to its caller; only our own remembered stamp is repaired.
+        if (!guard) await refreshStaleBaseline(session.id);
         work.fail(new Error("Session changed in another window; reload before saving"));
       }
       return summary;
@@ -1324,6 +1407,7 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
         "delete",
       );
       persistenceBaselines.delete(sessionId);
+      sessionPersistence.forget?.([sessionId]);
       removeSessionAdditionalDirs(sessionId);
       // The cache's change listener deletes the saved draft row.
       clearComposerDraft(sessionId, work);
@@ -1351,6 +1435,7 @@ export async function discardDraftSessionRecord(sessionId: string): Promise<void
     "delete",
   );
   persistenceBaselines.delete(sessionId);
+  sessionPersistence.forget?.([sessionId]);
 }
 
 export async function setSessionArchived(sessionId: string, archived: boolean): Promise<void> {
@@ -1662,6 +1747,8 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
   // Interjection chrome survives restarts only on system blocks; a malformed
   // payload keeps the ordinary system row rather than losing its body.
   if (block.role === "system") {
+    // A compaction still running when saved did not survive the restart.
+    if (block.statusRunningSince != null) return null;
     const interjection = sanitizeInterjection(block.interjection);
     if (interjection) next.interjection = interjection;
     if (block.notice === "error" || block.notice === "interrupt" || block.notice === "info") {

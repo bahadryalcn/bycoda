@@ -68,6 +68,31 @@ export async function getWorkspaceCapabilities(context: WorkspaceContext = {}): 
   return machineCapabilities(await owningMachine(context));
 }
 
+const SEND_CAPABILITY_TTL_MS = 30_000;
+const sendCapabilities = new Map<string, { at: number; value: Promise<string[]> }>();
+
+/** Per-send lookup: the owning machine resolves through Tauri each time, so
+ * successful answers are reused briefly and dropped when machines change. */
+export function getSendWorkspaceCapabilities(context: WorkspaceContext = {}): Promise<string[]> {
+  const key = JSON.stringify([context.cwd, context.environmentId, context.machineId]);
+  const hit = sendCapabilities.get(key);
+  if (hit && Date.now() - hit.at < SEND_CAPABILITY_TTL_MS) return hit.value;
+  const entry = { at: Date.now(), value: getWorkspaceCapabilities(context) };
+  sendCapabilities.set(key, entry);
+  entry.value.catch(() => {
+    if (sendCapabilities.get(key) === entry) sendCapabilities.delete(key);
+  });
+  return entry.value;
+}
+
+/** Test seam, and the machine-change invalidation. */
+export function resetSendWorkspaceCapabilities(): void {
+  sendCapabilities.clear();
+}
+
+if (typeof window !== "undefined")
+  window.addEventListener("bycoda:remote-machines", resetSendWorkspaceCapabilities);
+
 export async function requireWorkspaceCapability(
   capability: string,
   context: WorkspaceContext = {},

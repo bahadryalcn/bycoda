@@ -43,3 +43,27 @@ it("counts a pending voice preflight as active before any worker starts", async 
     service.close();
   }
 });
+
+it("shares the recognizer for dictation without loading natural speech", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python", ttsPath: "tts" });
+  const internals = service as unknown as {
+    ensureWorker: () => Promise<unknown>;
+    speech: { start: (config: unknown) => Promise<void> };
+  };
+  vi.spyOn(internals, "ensureWorker").mockResolvedValue({ model: "small", device: "cuda" });
+  const speech = vi.spyOn(internals.speech, "start").mockResolvedValue();
+  try {
+    const dictation = await service.start({ natural: true }, true);
+    expect(speech).not.toHaveBeenCalled();
+    // The companion can join the same runtime afterwards and loads speech then.
+    const companion = await service.start({ natural: true });
+    expect(speech).toHaveBeenCalledOnce();
+    expect(dictation.lease).not.toBe(companion.lease);
+  } finally {
+    inspect.mockRestore();
+    service.close();
+  }
+});

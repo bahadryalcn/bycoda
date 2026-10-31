@@ -87,6 +87,8 @@ fn open_intent_is_deterministic_durable_and_old_native_restore_cannot_bind_nonem
     let db = FileDb::new();
     let store = db.open();
     let ids = identity(&store.lock_conn().unwrap()).unwrap();
+    // Copy a complete database, not a main file whose current state is in WAL.
+    store.lock_conn().unwrap().execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
     drop(store);
     let backup = db.directory.join("before-epochs.sqlite");
     std::fs::copy(&db.path, &backup).unwrap();
@@ -105,6 +107,8 @@ fn open_intent_is_deterministic_durable_and_old_native_restore_cannot_bind_nonem
     let reopened = db.open();
     assert_eq!(open_id(&reopened, ROUTE).unwrap(), desc.open_id);
     assert_eq!(bind(&reopened, ROUTE, &host).unwrap().high_water(), 1);
+    // A newer WAL must not replay over the deliberately restored old main file.
+    reopened.lock_conn().unwrap().execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
     drop(reopened);
     std::fs::copy(&backup, &db.path).unwrap();
     let restored = db.open();

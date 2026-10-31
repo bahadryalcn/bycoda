@@ -161,6 +161,16 @@ async function render(
   );
 }
 
+/** Opens a provider account's overflow menu and picks one of its items. */
+async function accountAction(account: string, item: string) {
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>(`[aria-label="Actions for ${account}"]`)!.click(),
+  );
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>(`[role="menuitem"][aria-label="${item}"]`)!.click(),
+  );
+}
+
 function renderedSettingIds(): string[] {
   return Array.from(
     document.querySelectorAll<HTMLElement>("[data-setting-id]"),
@@ -375,6 +385,11 @@ describe("settings pages", () => {
       (node) => node.getAttribute("aria-label") === "Restore defaults",
     )!;
     await act(async () => reset.click());
+    // Page-level restore is confirmed first; the dialog's confirm button runs the reset.
+    const confirmReset = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((node) => node.textContent?.trim() === "Restore defaults")!;
+    await act(async () => confirmReset.click());
     const preferences = JSON.parse(localStorage.getItem("bycoda.appearancePreferences.v1")!);
     expect(preferences).toMatchObject({
       chatWidth: "wide",
@@ -564,6 +579,12 @@ describe("settings pages", () => {
     expect(localStorage.getItem("bycoda.accentColor")).toBe("#65b4db");
     expect(ocean.getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector(".appearance-settings details")).toBeNull();
+    // Custom surface colors sit closed under Advanced; search and deep links open them.
+    expect(container.querySelector('[data-setting-id="dark-lightness"]')).toBeNull();
+    const advanced = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".settings-advanced-toggle"),
+    ).find((button) => button.textContent?.includes("Custom surface colors"))!;
+    await act(async () => advanced.click());
     expect(container.querySelector('[data-setting-id="dark-lightness"]')).not.toBeNull();
   });
 
@@ -591,6 +612,11 @@ describe("settings pages", () => {
       (node) => node.getAttribute("aria-label") === "Restore defaults",
     )!;
     await act(async () => reset.click());
+    // Page-level restore is confirmed first; the dialog's confirm button runs the reset.
+    const confirmReset = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((node) => node.textContent?.trim() === "Restore defaults")!;
+    await act(async () => confirmReset.click());
     expect(document.documentElement.style.getPropertyValue("--font-sans")).toBe("");
     expect(JSON.parse(localStorage.getItem("bycoda.appearancePreferences.v1")!).interfaceFont).toBe(
       "System",
@@ -713,14 +739,17 @@ describe("settings pages", () => {
       '[aria-label="Prevent sleep while agents work"]',
     )!;
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(toggle.closest("section")?.textContent).toContain(
-      "Prevent idle sleep during agent work",
-    );
-    expect(toggle.closest("section")?.textContent).not.toContain("battery-powered Modern Standby");
-    expect(toggle.closest("section")?.textContent).toContain(
-      "Automatic screen locking remains available",
-    );
-    expect(toggle.closest("section")?.textContent).not.toContain("choosing Sleep still works");
+    // The platform detail lives in the row's information popover.
+    const info = toggle
+      .closest(".settings-row")!
+      .querySelector<HTMLButtonElement>('button[aria-label="Sleep behavior"]')!;
+    await act(async () => info.click());
+    const help = document.querySelector('[role="dialog"][aria-label="Sleep behavior"]')?.textContent;
+    expect(help).toContain("Prevent idle sleep during agent work");
+    expect(help).not.toContain("battery-powered Modern Standby");
+    expect(help).toContain("Automatic screen locking remains available");
+    expect(help).not.toContain("choosing Sleep still works");
+    await act(async () => info.click());
 
     const hold = [...container.querySelectorAll<HTMLButtonElement>('button[role="combobox"]')].find(
       (button) => button.closest(".settings-row")?.textContent?.includes("After agents finish"),
@@ -761,7 +790,13 @@ describe("settings pages", () => {
     const toggle = container.querySelector<HTMLButtonElement>(
       '[aria-label="Prevent sleep while agents work"]',
     )!;
-    expect(toggle.closest("section")?.textContent).toContain("battery-powered Modern Standby");
+    const info = toggle
+      .closest(".settings-row")!
+      .querySelector<HTMLButtonElement>('button[aria-label="Sleep behavior"]')!;
+    await act(async () => info.click());
+    expect(
+      document.querySelector('[role="dialog"][aria-label="Sleep behavior"]')?.textContent,
+    ).toContain("battery-powered Modern Standby");
   });
 
   it("keeps account emails blurred until clicked and hides them when settings reopen", async () => {
@@ -832,13 +867,6 @@ describe("settings pages", () => {
         .querySelector('[role="meter"][aria-label="Default account session remaining"]')
         ?.getAttribute("aria-valuenow"),
     ).toBe("77");
-    // Display preferences are a collapsed disclosure until opened.
-    expect(container.querySelector('[aria-label="Show remaining usage"]')).toBeNull();
-    await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")]
-        .find((button) => button.textContent === "Display preferences")!
-        .click(),
-    );
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Show remaining usage"]')!.click(),
     );
@@ -873,9 +901,7 @@ describe("settings pages", () => {
     });
     await render("providers");
     const pick = async (label: string, color: string) => {
-      await act(async () =>
-        container.querySelector<HTMLButtonElement>(`[aria-label^="Color for ${label}:"]`)!.click(),
-      );
+      await accountAction(label, "Color…");
       await act(async () =>
         document.querySelector<HTMLButtonElement>(`[aria-label="${color}"]`)!.click(),
       );
@@ -889,10 +915,31 @@ describe("settings pages", () => {
       "pink",
     );
     await render("usage");
-    expect(
-      container.querySelector('[aria-label="Color for Default account: Orange"]'),
-    ).not.toBeNull();
-    expect(container.querySelector('[aria-label="Color for Work: Pink"]')).not.toBeNull();
+    // The usage page is a lazy module: wait for its account sections.
+    await vi.waitFor(
+      () => expect(container.querySelectorAll("section.usage-account").length).toBeGreaterThan(0),
+      { timeout: 15_000 },
+    );
+    // The usage page sets colors from each account's actions menu and shows the current one checked.
+    for (const [label, color] of [
+      ["Default account", "Orange"],
+      ["Work", "Pink"],
+    ]) {
+      const section = [...container.querySelectorAll<HTMLElement>("section.usage-account")].find(
+        (node) => node.getAttribute("aria-label") === `Claude · ${label}`,
+      )!;
+      await act(async () =>
+        section.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click(),
+      );
+      expect(
+        document
+          .querySelector(`[role="menuitemradio"][aria-label="${color}"], [role="menuitemcheckbox"][aria-label="${color}"]`)
+          ?.getAttribute("aria-checked"),
+      ).toBe("true");
+      await act(async () =>
+        section.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click(),
+      );
+    }
   });
 
   it("shows background effect choices above scope when artwork is available", async () => {
@@ -978,9 +1025,7 @@ describe("settings pages", () => {
 
     expect(container.textContent).toContain("Claude Code");
     expect(container.textContent).toContain("Codex");
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Rename Default account"]')!.click(),
-    );
+    await accountAction("Default account", "Rename account");
     const defaultInput = container.querySelector<HTMLInputElement>(
       '[aria-label="Rename Claude Code account"]',
     )!;
@@ -996,9 +1041,7 @@ describe("settings pages", () => {
     );
     expect(providerAccounts("claude")[0]?.label).toBe("Primary");
 
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Rename Wrk"]')!.click(),
-    );
+    await accountAction("Wrk", "Rename account");
     const input = container.querySelector<HTMLInputElement>('[aria-label="Rename Codex account"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -1012,9 +1055,7 @@ describe("settings pages", () => {
     );
     expect(providerAccounts("codex")[1]?.label).toBe("Work");
 
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Remove Work"]')!.click(),
-    );
+    await accountAction("Work", "Remove account…");
     await act(async () =>
       Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
         .find((button) => button.textContent === "Remove account")!
@@ -1034,14 +1075,17 @@ describe("settings pages", () => {
       label: "Work",
     });
     await render("providers");
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Use Work by default"]')!.click(),
-    );
+    await accountAction("Work", "Make default");
     expect(defaultProviderAccountId("codex")).toBe("account-work");
-    const remove = container.querySelectorAll<HTMLButtonElement>(
-      '[aria-label="Remove Default account"]',
+    const menus = container.querySelectorAll<HTMLButtonElement>(
+      '[aria-label="Actions for Default account"]',
     );
-    await act(async () => remove[1]!.click());
+    await act(async () => menus[1]!.click());
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Remove account…"]')!
+        .click(),
+    );
     await act(async () =>
       Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
         .find((button) => button.textContent === "Remove account")!
@@ -1087,10 +1131,15 @@ describe("settings pages", () => {
     expect(container.textContent).toContain("Same sign-in as Max A");
     expect(container.textContent?.match(/Same sign-in as/g)).toHaveLength(1);
     expect(container.textContent).toContain("Signed out");
-    expect(container.querySelectorAll('[aria-label="Use Max A by default"]')).toHaveLength(1);
-
+    // The default account has no "Make default" item; the other accounts do.
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label^="Color for Max A:"]')!.click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="Actions for Max A"]')!.click(),
+    );
+    expect(document.querySelectorAll('[role="menuitem"][aria-label="Make default"]')).toHaveLength(
+      1,
+    );
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Color…"]')!.click(),
     );
     await act(async () =>
       document.body.querySelector<HTMLButtonElement>('[aria-label="Purple"]')!.click(),
@@ -1113,9 +1162,9 @@ describe("settings pages", () => {
     });
     await render("providers");
     const remove = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Remove Default account"]',
+      '[aria-label="Actions for Default account"]',
     )!;
-    await act(async () => remove.click());
+    await accountAction("Default account", "Remove account…");
     const confirm = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
       (button) => button.textContent === "Remove account",
     )!;
@@ -1509,24 +1558,27 @@ describe("settings pages", () => {
       return undefined;
     });
     await render("providers");
+    // The page keeps one summary row; each provider's own version lives in its Status group.
     const group = container.querySelector('[data-setting-id="harness-updates"]')!;
+    const status = Array.from(container.querySelectorAll("section")).find(
+      (section) => section.querySelector("h2")?.textContent === "Status",
+    )!;
     expect(group.textContent).toContain("Not checked yet");
+    expect(status.textContent).toContain("Not checked yet");
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "harness_exec")).toBe(
       false,
     );
 
     const checkButton = Array.from(group.querySelectorAll("button")).find(
-      (button) => button.textContent === "Check for updates",
+      (button) => button.textContent === "Check all",
     )!;
     await act(async () => checkButton.click());
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-    expect(group.textContent).toContain("Claude Code2.1.284");
-    expect(group.textContent).toContain("Version 2.1.285 is available.");
-    expect(group.textContent).toContain("Cursor2026.09.28");
-    expect(group.textContent).toContain("Up to date.");
+    expect(status.textContent).toContain("2.1.284 · Version 2.1.285 is available.");
+    expect(group.textContent).toContain("1 CLI needs attention");
 
     await act(async () =>
-      group
+      status
         .querySelector<HTMLButtonElement>('[aria-label="Update Claude Code to 2.1.285"]')!
         .click(),
     );
@@ -1537,8 +1589,8 @@ describe("settings pages", () => {
       binaryPath: null,
       targetVersion: "2.1.285",
     });
-    expect(group.textContent).toContain("CLI updated to 2.1.285.");
-    expect(group.querySelector('[aria-label="Update Claude Code to 2.1.285"]')).toBeNull();
+    expect(status.textContent).toContain("CLI updated to 2.1.285.");
+    expect(status.querySelector('[aria-label="Update Claude Code to 2.1.285"]')).toBeNull();
 
     // Claude Code, updated earlier in this session, falls behind again and
     // still counts for Update all.
@@ -1861,7 +1913,7 @@ describe("providers scope inheritance", () => {
     const management = container.querySelector<HTMLElement>("#setting-acp-agents")!;
     const panel = management.closest<HTMLElement>(".provider-cli-panel")!;
     expect(panel).not.toBeNull();
-    expect(management.closest("#setting-agent-clis")).not.toBeNull();
+    expect(management.closest(".provider-cli-workspace")).not.toBeNull();
     const providerButton = (name: string) =>
       Array.from(
         container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button"),
@@ -1969,6 +2021,6 @@ describe("providers scope inheritance", () => {
     // Global precedence: the project toggle cannot turn a globally hidden
     // provider back on, so it is locked and explained.
     expect(cursorToggle.hasAttribute("disabled")).toBe(true);
-    expect(cursorToggle.closest(".provider-cli-card")?.textContent).toContain("Hidden globally");
+    expect(cursorToggle.closest(".provider-cli-item")?.textContent).toContain("Hidden globally");
   });
 });

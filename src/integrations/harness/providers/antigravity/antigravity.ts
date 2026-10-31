@@ -318,6 +318,7 @@ export async function cancelAntigravityTurn(
   if (cancelQueuedOperation(context)) return;
 
   const original = liveByThread.get(sessionId) ?? pendingSetupByThread.get(sessionId);
+  // A captured cancellation must not affect a newer operation.
   if (!ownsOperation(context, original?.handle, original?.operation)) return;
   cancelEpoch.set(sessionId, (cancelEpoch.get(sessionId) ?? 0) + 1);
   // Also retire queued/in-flight lifecycle work: a cancel before the child
@@ -403,12 +404,14 @@ export async function forgetAntigravitySession(
   sessionId: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
-
-  const original = liveByThread.get(sessionId) ?? pendingSetupByThread.get(sessionId);
-  if (original && !ownsOperation(context, original.handle, original.operation)) return;
+  // Delete/switch must end the process: a context that no longer owns it falls
+  // back to a by-session stop instead of returning with the process alive.
   resumeByThread.delete(sessionId);
-  await stopAntigravitySession(sessionId, context);
+  const queuedOnly = cancelQueuedOperation(context);
+  const original = liveByThread.get(sessionId) ?? pendingSetupByThread.get(sessionId);
+  const owned =
+    !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  await stopAntigravitySession(sessionId, owned ? context : undefined);
 }
 
 export function bindAntigravitySession(threadId: string, acpSessionId: string, cwd: string): void {

@@ -1,12 +1,14 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./UsagePage.css";
-import { RefreshCw } from "../../../shared/ui/icons";
+import { RefreshCw, MoreHorizontal } from "../../../shared/ui/icons";
 import { WORKSPACE_REFRESH_EVENT } from "../../../app/shell/WorkspaceControls";
 import {
   providerAccounts,
+  PROVIDER_ACCOUNT_COLORS,
+  setProviderAccountColor,
   providerAccountColorValue,
   type ProviderAccount,
   subscribeProviderAccounts,
@@ -20,7 +22,7 @@ import {
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { UsageOverview } from "./UsageOverview";
 import { UsageDisplaySettings } from "./UsageDisplaySettings";
-import { AccountColorPicker } from "../../providers/ui/AccountColorPicker";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import {
   identityKey,
@@ -30,7 +32,6 @@ import {
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
 import { Button } from "../../../shared/ui/Button";
 import { UsageBudgets } from "./UsageBudgets";
-import { AdvancedSettings } from "../../settings/ui/settingsControls";
 
 export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
   useLocale();
@@ -93,9 +94,7 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
               ) : null}
             </div>
             <UsageBudgets refresh={refresh} />
-            <AdvancedSettings settingIds={["show-remaining-usage"]} title={t("Display preferences")} defaultOpen={false}>
-              <UsageDisplaySettings />
-            </AdvancedSettings>
+            <UsageDisplaySettings />
           </div>
         )}
       />
@@ -115,6 +114,8 @@ function AccountLimits({
   identity?: ProviderAccountIdentity | null;
 }) {
   const locale = useLocale();
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const { id: accountId, label } = account;
   const showRemaining = useShowRemainingUsage();
   const color = providerAccountColorValue(account);
@@ -127,6 +128,9 @@ function AccountLimits({
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+  const observationAge = Math.max(0, now - limits.updatedAt);
+  const observationUnit = observationAge >= 86_400_000 ? "day" : observationAge >= 3_600_000 ? "hour" : "minute";
+  const observationStep = observationUnit === "day" ? 86_400_000 : observationUnit === "hour" ? 3_600_000 : 60_000;
   const windows = (["session", "weekly", "monthly"] as const).flatMap((kind) =>
     limits[kind] ? [{ kind, window: limits[kind]! }] : [],
   );
@@ -158,7 +162,16 @@ function AccountLimits({
             className="text-ui-caption text-(--ui-text-secondary)"
           />
         </div>
-        <AccountColorPicker account={account} />
+        <Button ref={menuButton} variant="ghost" iconOnly label={t("Account actions")} tooltip={t("Account actions")} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
+          <MoreHorizontal aria-hidden className="icon-sm" />
+        </Button>
+        {menuOpen ? <DropdownMenu anchor={menuButton} label={t("Account color")} items={[
+          { kind: "group", id: "color", label: t("Color"), items: PROVIDER_ACCOUNT_COLORS.map((option) => ({
+            kind: "item" as const, id: option.id, label: t(option.label), checked: account.color === option.id,
+            icon: <span className="size-2.5 rounded-full" style={{ background: option.value }} />,
+          })) },
+          { kind: "item", id: "default", label: t("Default"), checked: !account.color },
+        ]} onPick={(id) => { setProviderAccountColor(account.provider, account.id, PROVIDER_ACCOUNT_COLORS.find((option) => option.id === id)?.id); setMenuOpen(false); }} onClose={() => setMenuOpen(false)} /> : null}
       </div>
       <div className="usage-quota-list">
         {windows.map(({ kind, window }) => {
@@ -208,7 +221,7 @@ function AccountLimits({
           );
         })}
       </div>
-      {limits.updatedAt > 0 ? <p className="usage-muted">{t("Last observed")}: {new Date(limits.updatedAt).toLocaleString(locale)}</p> : null}
+      {limits.updatedAt > 0 ? <p className="usage-muted">{t("Last observed")}: <time dateTime={new Date(limits.updatedAt).toISOString()} title={new Date(limits.updatedAt).toLocaleString(locale)}>{new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(-Math.round(observationAge / observationStep), observationUnit)}</time></p> : null}
       {limits.error ? (
         <Alert tone="danger" role="alert" action={<Button loading={limits.status === "fetching"} onClick={() => void loadRateLimits(provider, accountId, true)}>{t("Retry")}</Button>}>
           {label}: {limits.error}

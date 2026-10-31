@@ -7,3 +7,12 @@
 .folder[data-folder-dragging="true"] {
   opacity: 0.4;
 }
+
+/* A top-level group or section (Pinned, Reminders, a folder) ends on a hairline with a little
+   air, so it reads apart from the next group and from loose sessions. No filled box: the
+   header, the indented guide line and this divider carry the hierarchy. */
+.folder[data-section-divided]:has(~ li:not([aria-hidden])) {
+  margin-block-end: 0.375rem;
+  padding-block-end: 0.375rem;
+  border-block-end: 1px solid var(--ui-pane-border);
+}

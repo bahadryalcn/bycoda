@@ -48,7 +48,7 @@ function useModelExtras(harness: HarnessId, model: string, values: Record<string
       : id === "autoCompactWindow" && effective.autoCompact === "off";
   const active = settings.filter((s) => effective[s.id] !== s.value && !isInactive(s.id));
   const changed = active.length;
-  // Same groups and order as the picker menu: model options, then Context, then delegation.
+  // Same groups and order as the picker menu: delegation, then Context, then Fast and Reasoning.
   const grouped = groupSettings(settings);
   const groups: Array<{ id: SettingGroupId; title?: string; settings: ModelSetting[] }> =
     grouped.length > 1 || (grouped[0] && grouped[0].id !== "model")
@@ -69,6 +69,7 @@ export function ModelExtrasPanel({
   disabled = false,
   title,
   leading,
+  compact = false,
 }: {
   harness: HarnessId;
   model: string;
@@ -79,6 +80,8 @@ export function ModelExtrasPanel({
   title?: string;
   /** Rendered before the heading, e.g. a back button. */
   leading?: ReactNode;
+  /** Inline pickers already provide their own title and saved-default reset. */
+  compact?: boolean;
 }) {
   const t = useT();
   const { current, effective, isInactive, changed, groups } = useModelExtras(
@@ -183,7 +186,7 @@ export function ModelExtrasPanel({
   };
   return (
     <>
-      <div className="sticky top-0 z-10 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 pt-2.5 pb-2">
+      {!compact && <div className="sticky top-0 z-10 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 pt-2.5 pb-2">
         <div className="flex items-center justify-between gap-2">
           {leading}
           <span className="min-w-0 flex-1 truncate text-ui-caption font-medium">
@@ -204,7 +207,7 @@ export function ModelExtrasPanel({
         <p className="mt-0.5 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)">
           {t("Extras apply to this model selection. They do not change the main model.")}
         </p>
-      </div>
+      </div>}
       <div className="space-y-3 px-3 pt-2 pb-3">
         {groups.map((group) => (
           <section key={group.id}>

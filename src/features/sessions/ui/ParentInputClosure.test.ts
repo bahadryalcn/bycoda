@@ -80,10 +80,20 @@ async function closeInputs() {
   inputClosures.push(close);
   return close;
 }
+// The profile-scoped approval-decision input is registered once per module and
+// appears in every parent capture; these tests assert on session-owned inputs.
+function withoutProfileApprovals<T extends { snapshots: ParentInputCapture["snapshots"] }>(
+  lease: T,
+): T {
+  return {
+    ...lease,
+    snapshots: lease.snapshots.filter((entry) => entry.kind !== "approval-decision"),
+  };
+}
 async function captureParentInputs(sessionId: string) {
   const lease = await capture(sessionId);
   leases.push(lease);
-  return lease;
+  return withoutProfileApprovals(lease);
 }
 const question: UserQuestionPrompt = {
   requestId: 17,
@@ -161,8 +171,14 @@ it("closes actual question edits/reply/cache writes and preserves authoritative 
   expect(readQuestionDraft(id, question)).toBeUndefined();
   expect(close.current()).toBe(false);
   await act(async () => close.release());
-  expect(field.readOnly).toBe(false);
+  // Authoritative discard retires the reservation: the mounted form stays held
+  // (never silently re-reserves or resurrects the discarded draft). Product code
+  // only discards via resolveQuestionDraft, when the prompt is gone and the form
+  // unmounts, so a live editable form never loses its reservation.
+  expect(field.readOnly).toBe(true);
+  expect(readQuestionDraft(id, question)).toBeUndefined();
   expect(field.value).toBe("  kept answer  ");
+  expect(reply).not.toHaveBeenCalled();
 });
 
 it("gates real queue save and picker admission while Escape/cancel remains usable", async () => {
@@ -316,7 +332,7 @@ it("closes a synthetic child Composer by the genuine root without rebinding its 
     ),
   );
   expect(submit).not.toHaveBeenCalled();
-  const captured = await close.capture();
+  const captured = withoutProfileApprovals(await close.capture());
   expect(
     captured.snapshots.find((entry) => entry.kind === "composer-parent")!.snapshot
       .composerSessionId,

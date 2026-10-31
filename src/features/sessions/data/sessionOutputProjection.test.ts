@@ -423,6 +423,8 @@ it("retains genuine item comparisons and the exact immutable admitted payload af
   const { comparison } = await fullComparison(f, session);
   expect(comparison.admittedPayload).toBe(admitted);
   expect(admitted.captureOutputReceipt).toBe(true);
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id).payloadBytes)
+    .toBe(new TextEncoder().encode(JSON.stringify(admitted)).byteLength);
   expect(comparison).toMatchObject({
     qualified: false,
     fullCheckpoint: false,
@@ -440,7 +442,7 @@ it("retains genuine item comparisons and the exact immutable admitted payload af
   ).toBeNull();
 });
 
-it("invalidates an acknowledged candidate on later accepted metadata and recaptures the retained origin on a genuine covering save", async () => {
+it("invalidates an acknowledged candidate on metadata edits without snapshotting historical origins again", async () => {
   const f = await fixture();
   const first = f.emit({ type: "context", used: 1 }).session;
   await f.persistence.upsertSession(first);
@@ -451,10 +453,9 @@ it("invalidates an acknowledged candidate on later accepted metadata and recaptu
   expect(f.projection.getSessionOutputFullCandidate(next)).toBeNull();
   expect(f.state().pendingOrigins).toBe(0);
   await f.persistence.upsertSession(next);
-  const current = await fullComparison(f, next);
-  expect(current.comparison.items).toEqual(previous.comparison.items);
-  expect(current.comparison.modelVersion).toBeGreaterThan(previous.comparison.modelVersion);
-  expect((current.comparison.admittedPayload as any).session.title).toBe("Accepted edit");
+  expect(f.projection.getSessionOutputFullCandidate(next)).toBeNull();
+  expect(mocks.invoke.mock.calls[1][1].captureOutputReceipt).toBeUndefined();
+  expect(mocks.invoke.mock.calls[1][1].session.title).toBe("Accepted edit");
 });
 
 it("a later no-op event from the same original item revokes the earlier candidate", async () => {
@@ -595,9 +596,44 @@ it("disposes a completed comparison and rechecks genuine original metadata rathe
   expect(f.projection.getSessionOutputFullCandidateComparison(first.token)).toBeNull();
   expect(f.projection.sessionOutputFullCandidateObservation(session.id).payloadBytes).toBe(0);
   await f.persistence.upsertSession(session);
-  const next = await fullComparison(f, session);
+  expect(f.projection.getSessionOutputFullCandidate(session)).toBeNull();
+  expect(mocks.invoke.mock.calls[1][1].captureOutputReceipt).toBeUndefined();
+  const fresh = f.emit({ type: "context", used: 2 }).session;
+  await f.persistence.upsertSession(fresh);
+  const next = await fullComparison(f, fresh);
   f.output.invalidateNativeOutputDelivery("fixture-source-reloaded");
   expect(f.projection.getSessionOutputFullCandidateComparison(next.token)).toBeNull();
+});
+
+it("leaves arguments untouched without inspecting them when only historical output remains", async () => {
+  const f = await fixture();
+  const session = f.emit({ type: "context", used: 1 }).session;
+  await f.persistence.upsertSession(session);
+  const write = f.projection.captureSessionOutputWrite(session);
+  const read = vi.fn(() => { throw new Error("must not inspect"); });
+  const input = Object.defineProperty({}, "session", { enumerable: true, get: read });
+  expect(f.projection.prepareSessionOutputWritePayload(write, input, "replace")).toBe(input);
+  expect(read).not.toHaveBeenCalled();
+  f.projection.releaseSessionOutputWrite(write);
+});
+
+it("defers busy output notices to the live tick and wakes persistence when it becomes idle", async () => {
+  const f = await fixture();
+  f.model.setSessions([{ ...f.initial, busy: true }]);
+  await Promise.resolve();
+  const notice = vi.fn();
+  const unsubscribe = f.projection.subscribePendingSessionOutput(notice);
+  try {
+    const busy = f.emit({ type: "context", used: 1 }).session;
+    await Promise.resolve();
+    expect(notice).not.toHaveBeenCalled();
+    f.model.setSessions([{ ...busy, busy: false }]);
+    await Promise.resolve();
+    expect(notice).toHaveBeenCalledTimes(1);
+    expect(f.projection.pendingSessionOutputSnapshots()).toHaveLength(1);
+  } finally {
+    unsubscribe();
+  }
 });
 
 it.each([undefined, "not-a-native-locator", "55555555-5555-4555-A555-555555555555"])(

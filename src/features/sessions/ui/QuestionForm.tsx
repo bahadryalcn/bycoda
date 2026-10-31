@@ -543,6 +543,7 @@ function QuestionFormContent({
               loading={dismissing}
               loadingLabel={pendingLabel}
               startIcon={<DismissIcon />}
+              reserveLabels={[prompt.dismissAction === "cancel" ? t("Cancelling…") : t("Sending…")]}
               aria-describedby={held ? statusId : undefined}
               onClick={skipCurrent}
             >
@@ -575,6 +576,7 @@ function QuestionFormContent({
               loading={sending && !dismissing}
               loadingLabel={pendingLabel}
               startIcon={<SubmitIcon />}
+              reserveLabels={[t("Sending answer…"), t("Send again"), t("Connection issue")]}
               aria-describedby={statusId}
             >
               {submitLabel}

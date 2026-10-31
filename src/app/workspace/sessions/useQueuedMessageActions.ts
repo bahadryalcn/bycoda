@@ -20,6 +20,8 @@ import {
   reorderSessionQueue,
   runningTargetOf,
 } from "../../../features/sessions/model/messageQueue";
+import { repairStaleHandoff } from "../../../features/sessions/model/activeSubmits";
+import { isPreparingHandoff } from "../../../features/sessions/model/handoff";
 import { applyQueuedEdit } from "../../../features/sessions/model/queuedMessageEdit";
 import {
   settleSharedSend,
@@ -139,6 +141,9 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
         );
         continue;
       }
+      // A handoff no running submit owns would hold the queue forever; the
+      // repair changes the sessions, which runs this effect again.
+      if (isPreparingHandoff(session) && repairStaleHandoff(session.id)) continue;
       if (
         !canDispatchQueuedHead(session) ||
         !sharedLocalQueueReady(session.id) ||
@@ -289,7 +294,14 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
 
   const onSteerQueuedMessage = useCallback(
     async (sessionId: string, messageId: string): Promise<QueueActionResult> => {
-      if (manualActions.current.has(sessionId)) return false;
+      if (manualActions.current.has(sessionId)) {
+        enqueueHarnessEvent(sessionId, {
+          type: "status",
+          text: "Another queue action is still running. Try again in a moment.",
+        });
+        flushHarnessEvents();
+        return false;
+      }
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
       const message = session ? queuedMessageForSubmit(session, messageId, "steer") : undefined;
       if (!session) return false;
@@ -359,7 +371,14 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
 
   const onResumeQueue = useCallback(
     async (sessionId: string): Promise<QueueActionResult> => {
-      if (manualActions.current.has(sessionId)) return false;
+      if (manualActions.current.has(sessionId)) {
+        enqueueHarnessEvent(sessionId, {
+          type: "status",
+          text: "Another queue action is still running. Try again in a moment.",
+        });
+        flushHarnessEvents();
+        return false;
+      }
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
       if (!session || !session.queuedMessages?.length) {
         return false;
@@ -450,7 +469,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
         manualActions.current.delete(sessionId);
       }
     },
-    [onSubmit],
+    [onSubmit, enqueueHarnessEvent, flushHarnessEvents],
   );
 
   return {

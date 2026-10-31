@@ -149,7 +149,10 @@ export function useComposerAttachmentReads({
   const rememberAttachmentRead = useCallback(
     (read: (accepted: ComposerPreparation & { isCurrent(): boolean }) => Promise<void>) => {
       let parentAttempt: ParentAdmission | null = parentInputRef.current?.admit() ?? null;
-      if (!parentAttempt) return;
+      if (!parentAttempt) {
+        setPasteError("Attachments cannot be added while this conversation changes. Try again.");
+        return;
+      }
       const initialParentAttempt = parentAttempt;
       let generation = pasteGenerationRef.current;
       let failures = pasteFailuresRef.current;
@@ -203,7 +206,7 @@ export function useComposerAttachmentReads({
         if (pasteFlightRef.current === joined) pasteFlightRef.current = null;
       });
     },
-    [mountedClosure],
+    [mountedClosure, setPasteError],
   );
 
   const readDroppedAttachments = useCallback(

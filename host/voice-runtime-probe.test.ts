@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { afterEach, expect, it, vi } from "vitest";
 const command = vi.hoisted(() => ({ statuses: new Map<string, unknown>(), calls: [] as string[] }));
 vi.mock("node:fs/promises", () => ({ readdir: vi.fn(async () => []) }));
+vi.mock("./voice-gpu", () => ({ detectNvidiaGpu: async () => undefined }));
 vi.mock("node:child_process", () => ({
   spawn: (python: string) => {
     command.calls.push(python);

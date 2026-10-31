@@ -111,9 +111,6 @@ export function warmupCodexText(cwd: string): Promise<void> {
 /** Codex app-server turn that reuses a warm process, like Cursor text generation. */
 export async function runCodexTextPrompt(input: TextPromptInput): Promise<string> {
   input = captureTextInput(input);
-  if (input.model !== undefined && !input.model.trim()) {
-    throw new Error("The selected Codex model is unavailable.");
-  }
   const run = turns
     .catch(() => undefined)
     .then(() => runTextOperation(input.operationContext, () => promptOnLive(input)));

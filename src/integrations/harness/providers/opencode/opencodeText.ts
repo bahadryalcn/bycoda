@@ -450,12 +450,10 @@ function mergeTextPart(previous: OpenCodePart | undefined, next: OpenCodePart): 
 
 function retainTextWireRetirement(owner: LiveText | TextSetup, work: Promise<void>): void {
   wireRetirements.set(owner, work);
-  void work.then(
-    () => {
-      if (wireRetirements.get(owner) === work) wireRetirements.delete(owner);
-    },
-    () => {},
-  );
+  const clear = () => {
+    if (wireRetirements.get(owner) === work) wireRetirements.delete(owner);
+  };
+  void work.then(clear, clear);
 }
 
 function stopSetup(setup: TextSetup): Promise<void> {

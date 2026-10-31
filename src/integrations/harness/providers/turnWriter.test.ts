@@ -54,11 +54,11 @@ it("keeps one warm transport while A cannot write or regain cleanup ownership af
   const bView = await captureRpcTurnWriter(process, client, b.nativeControlTurn, b)();
   await bView.notify("fixture/b");
   expect(ownsOperation(a, process)).toBe(false);
-  await expect(aView.notify("fixture/stale-a")).rejects.toThrow(/closed|replaced/);
+  await expect(aView.notify("fixture/stale-a")).rejects.toThrow(/finished/);
   finishProviderOperation(b);
   expect(ownsOperation(a, process)).toBe(false);
   expect(ownsOperation(b, process)).toBe(true);
-  await expect(bView.notify("fixture/after-close")).rejects.toThrow(/closed/);
+  await expect(bView.notify("fixture/after-close")).rejects.toThrow(/finished/);
   expect(bytes).toHaveBeenCalledTimes(2);
   expect(processConstructions.created).toEqual([process]);
   expect(
@@ -169,10 +169,10 @@ it("permanently closes a finished operation before pruning, alias observation or
   // C's source reservation prunes the superseded closed A census entry.
   const startC = captureRpcTurnWriter(process, client, c.nativeControlTurn, c);
   const bindings = processConstructions.operations.filter((entry) => entry.kind === "bind").length;
-  await expect(startA()).rejects.toThrow(/closed/);
-  expect(() => captureRpcTurnWriter(process, client, a.nativeControlTurn, a)).toThrow(/closed/);
+  await expect(startA()).rejects.toThrow(/finished/);
+  expect(() => captureRpcTurnWriter(process, client, a.nativeControlTurn, a)).toThrow(/finished/);
   const alias = processConstructions.create("finished-source#alias");
-  expect(() => observeProviderProcess(input(a), alias, "starting")).toThrow(/closed/);
+  expect(() => observeProviderProcess(input(a), alias, "starting")).toThrow(/finished/);
   expect(processConstructions.operations.filter((entry) => entry.kind === "bind")).toHaveLength(
     bindings,
   );
@@ -182,6 +182,6 @@ it("permanently closes a finished operation before pruning, alias observation or
   expect(ownsOperation(c, process)).toBe(true);
   const neverAdmitted = context(alias);
   finishProviderOperation(neverAdmitted);
-  expect(() => observeProviderProcess(input(neverAdmitted), alias)).toThrow(/closed/);
+  expect(() => observeProviderProcess(input(neverAdmitted), alias)).toThrow(/finished/);
   expect(bytes).toHaveBeenCalledTimes(3);
 });

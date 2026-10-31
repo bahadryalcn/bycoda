@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ask, message } from "@tauri-apps/plugin-dialog";
-import { confirmInApp } from "../../shared/model/appConfirm";
+import { platformConfirm } from "../../shared/model/appConfirm";
 import { flushComposerDrafts } from "../../features/sessions/data/composerDraftStore";
 import { forgetHarnessSession } from "../../integrations/harness/core/registry";
 import { killAllChildren } from "../../integrations/harness/core/child";
@@ -38,7 +38,7 @@ function nativeSuccess(command: string) {
   );
 }
 vi.mock("../../shared/model/appConfirm", () => ({
-  confirmInApp: vi.fn().mockResolvedValue(true),
+  platformConfirm: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: vi.fn().mockResolvedValue(true),
@@ -238,7 +238,7 @@ describe("project choices through lifecycle saves", () => {
 describe("closing a busy window", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(confirmInApp).mockResolvedValue(true);
+    vi.mocked(platformConfirm).mockResolvedValue(true);
   });
 
   function workspace() {
@@ -262,7 +262,7 @@ describe("closing a busy window", () => {
     const { session, release } = workspace();
     try {
       await closeBusyWindow();
-      expect(confirmInApp).toHaveBeenCalled();
+      expect(platformConfirm).toHaveBeenCalled();
       expect(forgetHarnessSession).toHaveBeenCalledWith("cursor", session.id);
       expect(killAllChildren).not.toHaveBeenCalled();
       expect(invoke).toHaveBeenCalledWith("destroy_window");
@@ -276,7 +276,7 @@ describe("closing a busy window", () => {
 
   it("leaves the window and sessions running when closing is cancelled", async () => {
     const { release } = workspace();
-    vi.mocked(confirmInApp).mockResolvedValue(false);
+    vi.mocked(platformConfirm).mockResolvedValue(false);
     try {
       await closeBusyWindow();
       expect(forgetHarnessSession).not.toHaveBeenCalled();
@@ -451,17 +451,17 @@ describe("coordinated quit", () => {
 describe("confirming reload", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(confirmInApp).mockResolvedValue(true);
+    vi.mocked(platformConfirm).mockResolvedValue(true);
   });
 
   it("reloads without prompting when files are clean", async () => {
     await expect(confirmReload(false)).resolves.toBe(true);
-    expect(confirmInApp).not.toHaveBeenCalled();
+    expect(platformConfirm).not.toHaveBeenCalled();
   });
 
   it("allows reload after unsaved changes are confirmed", async () => {
     await expect(confirmReload(true)).resolves.toBe(true);
-    expect(confirmInApp).toHaveBeenCalledWith({
+    expect(platformConfirm).toHaveBeenCalledWith({
       title: "Reload bycoda?",
       message: "Unsaved changes in open files will be discarded.",
       confirmLabel: "Reload",
@@ -470,7 +470,7 @@ describe("confirming reload", () => {
   });
 
   it("cancels reload when unsaved changes are kept", async () => {
-    vi.mocked(confirmInApp).mockResolvedValue(false);
+    vi.mocked(platformConfirm).mockResolvedValue(false);
     await expect(confirmReload(true)).resolves.toBe(false);
   });
 });
@@ -600,7 +600,7 @@ it("paints transferred tabs without waiting for sidebar history", async () => {
 describe("destructive window close safeguards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(confirmInApp).mockResolvedValue(true);
+    vi.mocked(platformConfirm).mockResolvedValue(true);
     vi.mocked(invoke).mockImplementation(nativeSuccess);
   });
   function workspace(options: { inboxAsk?: boolean; busy?: boolean; terminal?: boolean } = {}) {
@@ -629,10 +629,10 @@ describe("destructive window close safeguards", () => {
   }
   it.each([true, false])("confirms non-resumable busy work (Inbox Ask: %s)", async (inboxAsk) => {
     const release = workspace({ busy: true, inboxAsk });
-    vi.mocked(confirmInApp).mockResolvedValue(false);
+    vi.mocked(platformConfirm).mockResolvedValue(false);
     try {
       await closeBusyWindow();
-      expect(confirmInApp).toHaveBeenCalledOnce();
+      expect(platformConfirm).toHaveBeenCalledOnce();
       expect(invoke).not.toHaveBeenCalledWith("destroy_window");
       expect(forgetHarnessSession).not.toHaveBeenCalled();
     } finally {
@@ -684,14 +684,14 @@ describe("destructive window close safeguards", () => {
             )
           : nativeSuccess(name),
       );
-      vi.mocked(confirmInApp).mockResolvedValue(false);
+      vi.mocked(platformConfirm).mockResolvedValue(false);
       try {
         await closeBusyWindow();
         if (foreground === null) {
-          expect(confirmInApp).not.toHaveBeenCalled();
+          expect(platformConfirm).not.toHaveBeenCalled();
           expect(invoke).toHaveBeenCalledWith("destroy_window");
         } else {
-          expect(confirmInApp).toHaveBeenCalledOnce();
+          expect(platformConfirm).toHaveBeenCalledOnce();
           expect(invoke).not.toHaveBeenCalledWith("destroy_window");
           expect(await handleCurrentWorkspaceQuit()).toBe(false);
           expect(invoke).not.toHaveBeenCalledWith("pty_kill", expect.anything());

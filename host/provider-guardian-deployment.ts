@@ -43,8 +43,8 @@ export type PreparedGuardian = {
 };
 
 /** Fixed local installation input only. It grants no provider/application authority.
- * Missing optional bundle keeps legacy source development usable; a declared but
- * corrupt/unsupported bundle fails before any provider executes. */
+ * A missing, corrupt, mismatched or unsupported bundle yields undefined (warned), so
+ * the caller falls back to the plain provider-guard spawn. */
 export async function prepareProviderGuardian(
   directory: string,
 ): Promise<PreparedGuardian | undefined> {
@@ -176,8 +176,10 @@ export async function prepareProviderGuardian(
         }
       },
     };
-  } catch {
+  } catch (error) {
     await executable?.close().catch(() => {});
-    throw unavailable();
+    // A stale or mismatched bundle must not stop providers: fall back to the plain guard.
+    console.warn("Provider guardian bundle is unusable; falling back to the plain guard:", error);
+    return undefined;
   }
 }

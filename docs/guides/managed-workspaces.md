@@ -46,7 +46,9 @@ The quick composer follows the same policy and preserves an explicit
 
 In that page, refreshing keeps an unsaved policy draft. If the Host policy changed
 meanwhile, choose **Reload** or **Keep my edits** before saving. Saving stores the
-whole project override, and **Use Host defaults** removes it. Inventory, policy and
+whole project override. A badge shows **Following Host defaults** or **Project override**;
+Save appears only while there are unsaved changes, and **Reset to Host defaults**
+(shown only while an override exists) removes the override. Inventory, policy and
 storage each keep their last loaded data with their own Retry when a read fails.
 For remote projects, creating and deleting managed directories is unavailable;
 listing and reveal still work.

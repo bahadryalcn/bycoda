@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession } from "../../sessions/model/session";
 import type { ManagedWorkspace, WorkspacePolicy } from "./contracts";
 import {
@@ -58,6 +58,10 @@ const workspace: ManagedWorkspace = {
   lastActivityAt: 1,
   pinned: false,
 };
+afterEach(() => {
+  vi.useRealTimers();
+  (console.warn as Partial<{ mockRestore: () => void }>).mockRestore?.();
+});
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
@@ -121,8 +125,10 @@ it("re-resolves Automatic after failed preparation survives a persisted user tur
     }),
   );
   expect(needsSessionWorkspace(retry)).toBe(true);
+  vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.mocked(workspaceRequest).mockRejectedValueOnce(new Error("Policy temporarily unavailable"));
-  await expect(prepareSessionWorkspace(retry)).rejects.toThrow("temporarily unavailable");
+  // An unreadable policy is a retryable error: it must not silently bypass the worktree policy.
+  await expect(prepareSessionWorkspace(retry)).rejects.toThrow("Policy temporarily unavailable");
   vi.mocked(workspaceRequest).mockResolvedValueOnce({
     revision: 1,
     resolved: { policy: { ...policy, defaultMode: "current" }, appliedScopes: ["host"] },
@@ -204,10 +210,27 @@ it("honors current-checkout policy and explicit worktree override without creati
   );
 });
 
-it("refuses an older Host before any workspace mutation", async () => {
+it("refuses an older Host for an explicit worktree before any workspace mutation", async () => {
+  vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
+  await expect(
+    prepareSessionWorkspace({ ...session, workspaceMode: "worktree" }),
+  ).rejects.toThrow("Update bycoda Host");
+  expect(workspaceRequest).not.toHaveBeenCalled();
+});
+
+it("does not guess the current checkout when an Automatic session cannot verify the Host", async () => {
   vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
   await expect(prepareSessionWorkspace(session)).rejects.toThrow("Update bycoda Host");
   expect(workspaceRequest).not.toHaveBeenCalled();
+});
+
+it("fails with a readable retry error when the policy read hangs", async () => {
+  vi.useFakeTimers();
+  vi.mocked(getWorkspaceCapabilities).mockReturnValue(new Promise<string[]>(() => {}));
+  const result = expect(prepareSessionWorkspace(session)).rejects.toThrow("taking too long");
+  await vi.advanceTimersByTimeAsync(10_000);
+  await result;
+  vi.useRealTimers();
 });
 
 it("keeps preparation failures as errors and rejects a workspace belonging to another session", async () => {
@@ -236,10 +259,12 @@ it("uses current by default when a known legacy Host has no policy capability", 
   expect(workspaceRequest).not.toHaveBeenCalled();
 });
 
-it("rejects policy worktree before preparation if remote managed creation is unavailable", async () => {
-  await expect(prepareSessionWorkspace(session, false)).rejects.toThrow(
-    "Update bycoda to create managed sessions",
-  );
+it("rejects explicit worktree before preparation if remote managed creation is unavailable", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  await expect(prepareSessionWorkspace(session, false)).resolves.toBeNull();
+  await expect(
+    prepareSessionWorkspace({ ...session, workspaceMode: "worktree" }, false),
+  ).rejects.toThrow("Update bycoda to create managed sessions");
   expect(
     vi.mocked(workspaceRequest).mock.calls.some(([method]) => method === "workspaces.prepare"),
   ).toBe(false);

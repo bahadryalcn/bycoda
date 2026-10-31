@@ -86,7 +86,7 @@ export function useOpenSessionTargets({
     lastPersisted.current.delete(paneId);
     {
       const blank = sessionsRef.current.find((entry) => entry.id === paneId);
-      if (blank) void forgetHarnessSession(blank.harness, paneId);
+      if (blank) void forgetHarnessSession(blank.harness, paneId).catch(console.warn);
     }
     setSessions((prev) => {
       const next = prev.filter((entry) => entry.id !== paneId);

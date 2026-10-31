@@ -32,14 +32,13 @@ export function LocalHostUpdateNotice() {
       }
     };
     void loadCompatibility();
-    const timer = window.setInterval(() => {
-      void loadCompatibility();
-    }, 15_000);
+    const onFocus = () => void loadCompatibility();
+    window.addEventListener("focus", onFocus);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
     };
-  }, []);
+  }, [status?.installed, status?.bundled]);
   const pendingUpdate = status?.state === "deferred" || status?.state === "failed";
   if (!pendingUpdate && !mismatch) return null;
   const versions =

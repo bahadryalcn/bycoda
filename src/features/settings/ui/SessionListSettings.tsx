@@ -7,7 +7,6 @@ import {
   updateSessionListDisplay,
   useSessionListDisplay,
 } from "../../sessions/model/sessionListDisplay";
-import { Button } from "../../../shared/ui/Button";
 import { Group, Row, Segmented, Slider, Toggle } from "./settingsControls";
 
 /** The sidebar's default session row layout; the list's view menu edits the same values. */
@@ -18,14 +17,14 @@ export function SessionListSettings() {
     <Group
       id="session-list"
       title={t("Session list")}
-      action={
-        <Button
-          variant="ghost"
-          onClick={() => updateSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY })}
-        >
-          {t("Reset session list")}
-        </Button>
+      modified={
+        display.density !== DEFAULT_SESSION_LIST_DISPLAY.density ||
+        display.showModel !== DEFAULT_SESSION_LIST_DISPLAY.showModel ||
+        display.showBranch !== DEFAULT_SESSION_LIST_DISPLAY.showBranch ||
+        display.groupDelayMs !== DEFAULT_SESSION_LIST_DISPLAY.groupDelayMs
       }
+      resetLabel={t("Reset session list")}
+      onReset={() => updateSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY })}
     >
       <Row
         label={t("Row density")}

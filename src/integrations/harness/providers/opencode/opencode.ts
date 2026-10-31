@@ -29,6 +29,11 @@ import {
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { TurnNotReadyError } from "../../core/types";
+import {
+  COMPACTED_TEXT,
+  COMPACTING_TEXT,
+  COMPACTION_STATUS_KEY,
+} from "../../../../features/sessions/model/compactionStatus";
 import { modelContextWindow, nativeModelId } from "../../../../features/sessions/model/models";
 import type { RuntimeMode, TurnMetrics } from "../../../../features/sessions/model/session";
 import { taskListFromToolInput } from "../../../../features/sessions/model/taskList";
@@ -165,14 +170,17 @@ function retainWireRetirement(
 ): Promise<void> {
   const existing = wireRetirements.get(live);
   if (existing) return existing.work;
-  const record = { sessionId, work: Promise.resolve().then(cleanup) };
+  // Best-effort: warn on failure and always drop the record.
+  const record = {
+    sessionId,
+    work: Promise.resolve()
+      .then(cleanup)
+      .catch((error: unknown) => console.warn("[opencode] wire cleanup failed", error))
+      .finally(() => {
+        if (wireRetirements.get(live) === record) wireRetirements.delete(live);
+      }),
+  };
   wireRetirements.set(live, record);
-  void record.work.then(
-    () => {
-      if (wireRetirements.get(live) === record) wireRetirements.delete(live);
-    },
-    () => {},
-  );
   return record.work;
 }
 
@@ -551,9 +559,17 @@ export async function cancelOpenCodeTurn(
   live.approvals.clear();
   for (const [, pending] of live.questions) pending.resolve({ kind: "skipped" });
   live.questions.clear();
-  await cleanupClient(live, hostControlRun, context !== undefined).abortSession(
-    live.openCodeSessionId,
-  );
+  try {
+    await cleanupClient(live, hostControlRun, context !== undefined).abortSession(
+      live.openCodeSessionId,
+    );
+  } catch (error) {
+    console.warn("[opencode] abortSession failed; stopping server", error);
+    if (!live.handle) throw error;
+    await retirements.retire(new Set([live.handle]));
+    await stopOpenCodeSession(sessionId, live);
+    return;
+  }
   if (!ownsHttpOperation(context, live)) return;
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
 }
@@ -651,8 +667,9 @@ export async function stopOpenCodeSession(
     if (ownsEvents()) originalWire.push(closeHarnessSse(sessionId));
   }
   await settleProviderRetirements([
-    ...originalWire,
-    ...(wire ? [wire] : []),
+    ...originalWire.map((work) => work.catch((error: unknown) => {
+      console.warn("[opencode] wire cleanup failed", error);
+    })),
     context || expectedOwner
       ? retirements.retire(handles)
       : retirements.retireOwner(sessionId, handles),
@@ -663,16 +680,18 @@ export async function forgetOpenCodeSession(
   sessionId: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
+  // Delete/switch must end the process: clear resume state first and stop by
+  // session when the context no longer owns it.
+  resumeByThread.delete(sessionId);
+  const queuedOnly = cancelQueuedOperation(context);
   const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
-  if (original && !ownsHttpOperation(context, original)) return;
+  const owned = !queuedOnly && (!original || ownsHttpOperation(context, original));
+  await forgetGenericAcpSession(sessionId, owned ? context : undefined);
   if (socialAcpSessions.has(sessionId)) {
-    await forgetGenericAcpSession(sessionId, context);
     socialAcpSessions.delete(sessionId);
     return;
   }
-  resumeByThread.delete(sessionId);
-  await stopOpenCodeSession(sessionId, context);
+  await stopOpenCodeSession(sessionId, owned ? context : undefined);
 }
 
 export function bindOpenCodeSession(
@@ -1420,6 +1439,30 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
       if (live.muteUpdates || live.turnDone !== turn) return;
     } else if (live.client.generation === "v2") {
       live.inbox.observe(type, properties);
+      // One transcript row follows a compaction: running, then settled or closed.
+      if (!live.muteUpdates && !live.cancelled) {
+        if (type === "session.compaction.started") {
+          emitNative({
+            type: "status",
+            key: COMPACTION_STATUS_KEY,
+            running: true,
+            text: COMPACTING_TEXT,
+          });
+        } else if (type === "session.compaction.ended") {
+          emitNative({
+            type: "status",
+            key: COMPACTION_STATUS_KEY,
+            running: false,
+            text: COMPACTED_TEXT,
+          });
+        } else if (type === "session.compaction.failed") {
+          emitNative({ type: "status", key: COMPACTION_STATUS_KEY, running: false, text: "" });
+          // A manual compaction reports its failure as the turn error instead.
+          if (live.awaitedInbox?.kind !== "compaction") {
+            emitNative({ type: "status", text: "Could not compact context" });
+          }
+        }
+      }
       if (nativeOutputSink(outputWork, gateAwaitedInbox)(live, type, properties)) return;
     }
 

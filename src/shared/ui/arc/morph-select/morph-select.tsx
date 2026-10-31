@@ -290,7 +290,7 @@ export function MorphSelect({
       const isOpen = live.current.open;
       const next = isOpen
         ? { w: Math.max(trigger, listW), h: lid + listH, r: OPEN_RADIUS }
-        : { w: trigger, h: lid, r: lid / 2 };
+        : { w: trigger, h: lid, r: 8 };
       if (!animated || live.current.reduced || !live.current.measured) {
         anchorW.jump(trigger);
         shapeW.jump(next.w);

@@ -107,6 +107,7 @@ import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/
 import { goalKey } from "../model/goalClient";
 import { declineProposal } from "../model/stewardClient";
 import { dailyLimitNotice } from "../model/settingsClient";
+import { formatAgentMinutes } from "../model/hostSettings";
 import {
   type BackgroundSessionTarget,
   taskBackgroundSessionTarget,
@@ -120,6 +121,7 @@ import {
 import { COLUMN_LABELS, TaskBoardColumns } from "./TaskBoardColumns";
 import { TaskDetail } from "./TaskDetail";
 import { TaskForm } from "./TaskForm";
+import { TasksEmptyState } from "./TasksEmptyState";
 import { resolveTaskMachineId } from "./useTaskTargetMachine";
 import { machineName } from "./TaskFormFields";
 import {
@@ -415,6 +417,21 @@ function TasksContent({
   });
   const onChangeLimits = useMachineLimitSave(limitCapable, putLimits, setError);
   const summary = useDailySummaryPanel();
+  // Summary, limits and stewards belong to the backlog: opening one (also from a
+  // notification) goes there, so no other tab repeats them.
+  const showBacklog = () => {
+    setSection("backlog");
+    setSprintFilter("");
+  };
+  useEffect(() => {
+    if (summary.open) showBacklog();
+  }, [summary.open]);
+  useEffect(() => {
+    if (stewards.open) showBacklog();
+  }, [stewards.open]);
+  useEffect(() => {
+    if (limitsOpen) showBacklog();
+  }, [limitsOpen]);
   const planningFor = (task: BoardTask) => {
     const ref = sprintBoard.taskRef(task);
     return ref ? sprintBoard.planning.get(sprintTaskKey(ref)) : undefined;
@@ -491,7 +508,8 @@ function TasksContent({
   const activeFilterCount =
     Number(goalFilter !== ALL_GOALS) +
     Number(statusFilter !== "all") +
-    Number(machineFilter !== "all");
+    Number(machineFilter !== "all") +
+    Number(sprintFilter !== "");
   // Changing scope drops hidden selections; select-all never means hidden tasks.
   // Adjusted during render when the visible set changes (the list itself is rebuilt often).
   const visibleSignature = JSON.stringify(tasks.map(bulkTaskKey));
@@ -878,6 +896,20 @@ function TasksContent({
     setProjectFilter("all");
     setSprintFilter("");
   };
+  const hasTasks = visibleTasks.length > 0;
+  // Nothing to run yet: only "what is this and how do I start" is shown.
+  const showOnboarding = section === "backlog" && !loading && !hasTasks && !unreadable;
+  const runningTasks = visibleTasks.filter((task) => taskColumn(task.status) === "running").length;
+  const agentMinutesToday = limits.reduce((sum, entry) => sum + entry.usedMinutes, 0);
+  const summaryLine = [
+    t("{p0} tasks", { p0: tasks.length }),
+    runningTasks > 0 ? t("{p0} running", { p0: runningTasks }) : "",
+    limits.length > 0
+      ? t("{p0} agent time today", { p0: formatAgentMinutes(agentMinutesToday) })
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const emptyTasks = unreadable ? (
     <EmptyState
       context="panel"
@@ -902,8 +934,10 @@ function TasksContent({
       icon={null}
       description={t("Every task is planned in a sprint.")}
     />
+  ) : showOnboarding ? (
+    // The one New task action lives here; the toolbar leaves it out while there is nothing else.
+    <TasksEmptyState onCreate={beginCreate} disabled={draft != null || goals.draft != null} />
   ) : (
-    // The toolbar already carries the one New task action; do not repeat it here.
     <EmptyState
       context="panel"
       kind="empty"
@@ -922,61 +956,59 @@ function TasksContent({
           options={[
             { value: "backlog", label: t("Backlog") },
             { value: "sprints", label: t("Sprints") },
-            { value: "reports", label: t("Reports") },
+            // Reports have nothing to show before the first sprint.
+            ...(accessibleSprints.length > 0 || section === "reports"
+              ? [{ value: "reports", label: t("Reports") }]
+              : []),
           ]}
           onValueChange={(value) => {
             setSection(value as typeof section);
             if (value === "backlog") setSprintFilter("");
           }}
         />
-        <SearchableSelect
-          label={t("Project")}
-          value={projectFilter}
-          options={[
-            { value: "all", label: t("All projects") },
-            ...(projectFilter.startsWith("path:") && !selectedProject
-              ? [{ value: projectFilter, label: projectDisplayName(cwd || "") }]
-              : []),
-            ...projectScopes
-              .filter(
-                (project) =>
-                  !currentSprint ||
-                  currentSprint.projects.some((member) => sprintProjectKey(member) === project.key),
-              )
-              .map((project) => ({
-                value: project.key,
-                label: `${project.name} · ${project.machineName}`,
-                description: project.cwd,
-              })),
-            ...(selectedProject && projectFilter.startsWith("path:")
-              ? [
-                  {
-                    value: projectFilter,
-                    label: `${selectedProject.name} · ${selectedProject.machineName}`,
-                  },
-                ]
-              : []),
-          ]}
-          onChange={setProjectFilter}
-        />
-        <SearchableSelect
-          label={t("Sprint")}
-          value={sprintFilter}
-          options={[
-            { value: "", label: t("All sprints") },
-            ...accessibleSprints.map((sprint) => ({ value: sprint.id, label: sprint.name })),
-          ]}
-          onChange={selectSprint}
-        />
-        <TextField
-          fieldClassName="task-search-field"
-          label={t("Search tasks")}
-          hideLabel
-          placeholder={t("Search tasks")}
-          type="search"
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.currentTarget.value)}
-        />
+        {showOnboarding ? null : (
+          <SearchableSelect
+            label={t("Project")}
+            value={projectFilter}
+            options={[
+              { value: "all", label: t("All projects") },
+              ...(projectFilter.startsWith("path:") && !selectedProject
+                ? [{ value: projectFilter, label: projectDisplayName(cwd || "") }]
+                : []),
+              ...projectScopes
+                .filter(
+                  (project) =>
+                    !currentSprint ||
+                    currentSprint.projects.some((member) => sprintProjectKey(member) === project.key),
+                )
+                .map((project) => ({
+                  value: project.key,
+                  label: `${project.name} · ${project.machineName}`,
+                  description: project.cwd,
+                })),
+              ...(selectedProject && projectFilter.startsWith("path:")
+                ? [
+                    {
+                      value: projectFilter,
+                      label: `${selectedProject.name} · ${selectedProject.machineName}`,
+                    },
+                  ]
+                : []),
+            ]}
+            onChange={setProjectFilter}
+          />
+        )}
+        {hasTasks ? (
+          <TextField
+            fieldClassName="task-search-field"
+            label={t("Search tasks")}
+            hideLabel
+            placeholder={t("Search tasks")}
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.currentTarget.value)}
+          />
+        ) : null}
         {machines.length === 0 ? (
           <span className="task-board-notice">
             {loading
@@ -1006,10 +1038,7 @@ function TasksContent({
               {newReviewNotes === 1 ? t("note") : t("notes")}
             </span>
           ) : null}
-          {section !== "reports" && visibleTasks.length > 0 ? (
-            <span className="task-scope-summary">{t("{p0} tasks", { p0: tasks.length })}</span>
-          ) : null}
-          {goalList.length > 0 || visibleTasks.length > 0 ? (
+          {!showOnboarding && (goalList.length > 0 || hasTasks || accessibleSprints.length > 0) ? (
             <>
               <Button
                 ref={filterTrigger}
@@ -1092,10 +1121,31 @@ function TasksContent({
                         onChange={setGoalFilter}
                       />
                     </label>
+                    {accessibleSprints.length > 0 ? (
+                      <label className="task-filter-field">
+                        <span>{t("Sprint")}</span>
+                        <SearchableSelect
+                          variant="pill"
+                          align="end"
+                          label={t("Sprint")}
+                          layer={LAYER.submenu}
+                          value={sprintFilter}
+                          options={[
+                            { value: "", label: t("All sprints") },
+                            ...accessibleSprints.map((sprint) => ({
+                              value: sprint.id,
+                              label: sprint.name,
+                            })),
+                          ]}
+                          onChange={selectSprint}
+                        />
+                      </label>
+                    ) : null}
                     <Button
                       variant="ghost"
                       disabled={activeFilterCount === 0}
                       onClick={() => {
+                        setSprintFilter("");
                         setGoalFilter(ALL_GOALS);
                         setStatusFilter("all");
                         setMachineFilter("all");
@@ -1222,15 +1272,17 @@ function TasksContent({
               <RefreshCw className="icon-sm" strokeWidth={1.75} />
             </Button>
           </div>
-          <Button
-            variant="primary"
-            type="button"
-            onClick={beginCreate}
-            disabled={draft != null || goals.draft != null}
-          >
-            <Plus className="icon-sm" strokeWidth={1.75} />
-            {t("New task")}
-          </Button>
+          {showOnboarding ? null : (
+            <Button
+              variant="primary"
+              type="button"
+              onClick={beginCreate}
+              disabled={draft != null || goals.draft != null}
+            >
+              <Plus className="icon-sm" strokeWidth={1.75} />
+              {t("New task")}
+            </Button>
+          )}
         </div>
       </header>
       {planningRecovery.length ? (
@@ -1285,7 +1337,6 @@ function TasksContent({
             projectKey={selectedProject?.key}
             onChooseSprint={selectSprint}
             onOpenSprints={() => setSection("sprints")}
-            onOpenBacklog={() => setSection("backlog")}
           />
         </div>
       ) : null}
@@ -1357,7 +1408,7 @@ function TasksContent({
           {dailyNotice}
         </Alert>
       ) : null}
-      {summary.open ? (
+      {section === "backlog" && summary.open ? (
         <SummaryPanel
           summary={summary.summary}
           busy={summary.busy}
@@ -1366,7 +1417,7 @@ function TasksContent({
           onOpenTask={setSelectedKey}
         />
       ) : null}
-      {limitsOpen && limits.length > 0 ? (
+      {section === "backlog" && limitsOpen && limits.length > 0 ? (
         <LimitsPanel limits={limits} onChange={onChangeLimits} />
       ) : null}
       {draft ? (
@@ -1407,8 +1458,6 @@ function TasksContent({
                 if (!saving) setDraft(null);
               }}
               onSubmit={(mode) => void onSave(mode)}
-              limits={limits}
-              onChangeLimits={onChangeLimits}
             />
           </HostModelSource>
         </Modal>
@@ -1496,16 +1545,23 @@ function TasksContent({
           </div>
         </Modal>
       ) : null}
-      <StewardsSection
-        stewards={stewards}
-        capable={stewardCapable}
-        recents={recents}
-        saving={saving}
-        acting={acting}
-        now={now}
-      />
+      {section === "backlog" ? (
+        <StewardsSection
+          stewards={stewards}
+          capable={stewardCapable}
+          recents={recents}
+          saving={saving}
+          acting={acting}
+          now={now}
+        />
+      ) : null}
       {section !== "reports" && goalList.length > 0 ? (
         <GoalList goals={goals} filter={goalFilter} tasks={storedTasks} acting={acting} />
+      ) : null}
+      {section !== "reports" && hasTasks && !loading ? (
+        <p className="task-board-summary">
+          <span className="task-scope-summary">{summaryLine}</span>
+        </p>
       ) : null}
       <div
         className={`@container/task-area min-h-0 min-w-0 flex-1 ${section === "reports" ? "hidden" : "flex"}`}

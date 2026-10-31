@@ -373,8 +373,9 @@ it("commits the exact later queued publication without orphaning batched earlier
   detach();
 });
 
-it("conserves the original rejected production upsert request even without an editor owner", async () => {
-  const failure = new Error("Native outcome unknown");
+it("drops a definitely rejected production upsert request even without an editor owner", async () => {
+  // Tauri rejects with what the command returned (a string), never an Error.
+  const failure = "Native rejected the note";
   invoke.mockRejectedValue(failure);
   const request = {
     id: crypto.randomUUID(),
@@ -389,16 +390,8 @@ it("conserves the original rejected production upsert request even without an ed
   const data = await gate.capture();
   const records = data.snapshots.find((row) => row.snapshot.surface === "service-intents")!.snapshot
     .records;
-  expect(records).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        command: "notes_upsert",
-        phase: "native-outcome-unverified",
-        status: "unverified",
-        args: { note: { ...request, body: "exact service-only\r\n漢🦀" } },
-      }),
-    ]),
-  );
+  // A definite Native rejection is returned to the caller; nothing is conserved.
+  expect(records).toEqual([]);
   expect(invoke).toHaveBeenCalledExactlyOnceWith("notes_upsert", { note: request });
   expect(gate.current()).toBe(true);
   data.release();

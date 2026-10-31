@@ -362,9 +362,12 @@ native("rejects changed declared metadata at the final synchronous spawn check",
   }
 });
 
-it("rejects a declared invalid guardian before invoking a provider and permits a missing optional bundle", async () => {
+it("warns and falls back to the plain guard for a declared invalid guardian, like a missing optional bundle", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bycoda-guardian-invalid-"));
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   await expect(prepareProviderGuardian(directory)).resolves.toBeUndefined();
   await writeFile(join(directory, "provider-guardian.json"), "{}\n");
-  await expect(prepareProviderGuardian(directory)).rejects.toThrow("installation is unavailable");
+  await expect(prepareProviderGuardian(directory)).resolves.toBeUndefined();
+  expect(warn).toHaveBeenCalled();
+  warn.mockRestore();
 });

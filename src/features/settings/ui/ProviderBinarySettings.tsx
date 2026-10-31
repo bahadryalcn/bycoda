@@ -57,8 +57,11 @@ export function ProviderBinaryControl({
   onPathSaved,
   inline = false,
   onCancel,
+  triggerVariant = "ghost",
 }: {
   provider: ConfigurableBinaryProvider;
+  /** Look of the trigger button; a settings row uses `secondary`. */
+  triggerVariant?: "ghost" | "secondary";
   showLabel?: boolean;
   onPathSaved?: () => void;
   /** Embed the existing validated path form in an add-provider dialog. Fixed for the mounted control. */
@@ -295,7 +298,7 @@ export function ProviderBinaryControl({
   return (
     <span ref={root} className="inline-flex align-middle">
       <Button
-        variant="ghost"
+        variant={triggerVariant}
         size="sm"
         iconOnly={!showLabel}
         label={
@@ -342,7 +345,6 @@ export function ProviderBinaryControl({
         >
           <div aria-busy={working} id={`${provider}-binary-popover`} className="p-1">
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge size="sm">{t("This machine · all projects")}</Badge>
               <Badge size="sm" tone={error ? "warning" : restartRequired ? "warning" : "neutral"}>
                 {working
                   ? t("Checking…")

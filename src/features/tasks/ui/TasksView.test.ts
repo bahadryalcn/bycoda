@@ -255,6 +255,9 @@ const button = (scope: ParentNode, label: string) =>
     (entry) => buttonName(entry) === label || buttonText(entry) === label,
   );
 async function allProjects() {
+  // The empty backlog hides collection filters; Sprints still exposes project scope.
+  if (!container.querySelector('header.task-board-toolbar button[aria-label^="Project:"]'))
+    await act(async () => button(container, "Sprints")!.click());
   await act(async () =>
     container
       .querySelector<HTMLButtonElement>('header.task-board-toolbar button[aria-label^="Project:"]')!
@@ -618,16 +621,20 @@ it("shows pending and unreachable task board states", async () => {
   expect(button(container, "Select tasks")).toBeUndefined();
 });
 
-it("explains a genuinely empty board once, without repeating the toolbar start, and shows no bulk row", async () => {
+it("explains a genuinely empty board once, with the one New task action inside it and no admin controls", async () => {
   host([]);
   await render(vi.fn(), "backlog");
   const empty = container.querySelector('[data-kind="empty"]');
   expect(empty?.textContent).toContain("No tasks yet");
-  expect(empty?.querySelector("button")).toBeNull();
+  // The empty state carries the only New task action; the toolbar leaves it out.
+  expect(empty && button(empty, "New task")).toBeTruthy();
   expect(
     Array.from(container.querySelectorAll("button")).filter((entry) => buttonText(entry) === "New task"),
   ).toHaveLength(1);
+  expect(container.querySelector('ol[aria-label="How it works"]')?.children).toHaveLength(3);
   expect(button(container, "Select tasks")).toBeUndefined();
+  expect(button(container, "Filters")).toBeUndefined();
+  expect(container.querySelector('input[type="search"]')).toBeNull();
   expect(container.querySelector(".task-scope-summary")).toBeNull();
   expect(container.querySelector('[data-kind="unavailable"]')).toBeNull();
 });
@@ -918,7 +925,7 @@ it("offers the branch, check and review options on a new task", async () => {
   expect(form.textContent).toContain("Reviewer instructions");
 });
 
-it("shows one Working branch and worktree heading and keeps the machine limit apart from the task", async () => {
+it("shows one Working branch and worktree heading and keeps the machine limit out of the task", async () => {
   host([], LIMIT_CAPABILITIES, [], [], LIMITS);
   await render();
   await act(async () => button(container, "New task")!.click());
@@ -929,12 +936,13 @@ it("shows one Working branch and worktree heading and keeps the machine limit ap
       !node.classList.contains("sr-only"),
   );
   expect(visible.map((node) => node.tagName)).toEqual(["SUMMARY"]);
-  // Machine-wide settings save at once and say so, outside the task's own option group.
-  const limit = form.querySelector(".task-form-limit");
-  expect(limit?.closest(".task-form-options")).toBeNull();
-  expect(limit?.textContent).toContain("it is not part of this task");
-  // Without a description the footer says why starting is unavailable.
-  expect(form.querySelector(".task-form-footer")?.textContent).toContain(
+  // The machine-wide limit lives under Limits, not in the task form.
+  expect(form.querySelector(".task-form-limit")).toBeNull();
+  expect(form.textContent).not.toContain("Machine task limit");
+  // The advanced options stay closed until asked for.
+  expect(form.querySelector<HTMLDetailsElement>("details.task-form-advanced")!.open).toBe(false);
+  // Without a description the start button says why in its tooltip.
+  expect(button(form, "Add and start")!.getAttribute("title")).toBe(
     "Add a description to start this with an agent.",
   );
 });
@@ -1471,7 +1479,8 @@ it("discards a preparation display when its resource requirements change", async
   await act(async () =>
     type(form.querySelector('textarea[aria-label="Description"]')!, "Inspect the source material"),
   );
-  expect(form.textContent).toContain("Preparation not verified");
+  // No workflow is picked and nothing is required yet: no preparation state.
+  expect(form.textContent).not.toContain("Preparation not verified");
   await act(async () => button(form, "Check preparation")!.click());
   const visibleText = () => {
     const copy = form.cloneNode(true) as HTMLElement;
@@ -2536,6 +2545,7 @@ it("disables unrelated task, goal, steward and note mutations while a board acti
   });
   await render();
   await pickAction(container, "Stewards");
+  await act(async () => button(container, "Sprints")!.click());
   await act(async () => button(card("Running A"), "Stop")!.click());
   expect(stops).toEqual(["a"]);
   await act(async () => card("Running B").click());
@@ -2546,6 +2556,7 @@ it("disables unrelated task, goal, steward and note mutations while a board acti
   expect(button(notes, "Mark fixed")!.disabled).toBe(true);
   const goalCard = container.querySelector('article[aria-label="Launch the beta"]')!;
   expect(button(goalCard, "Approve")!.disabled).toBe(true);
+  await act(async () => button(container, "Backlog")!.click());
   const stewardRow = stewardCard()!;
   expect(button(stewardRow, "Run now")!.disabled).toBe(true);
   expect(
@@ -2652,7 +2663,7 @@ it("builds a fresh summary of the last day on Refresh now, leaving the stored on
 it("opens the summary panel when a notification click asked for it", async () => {
   host([]);
   requestSummaryPanel();
-  await render();
+  await render(vi.fn(), "backlog");
   expect(container.querySelector('[aria-label="Summary"]')).not.toBeNull();
 });
 

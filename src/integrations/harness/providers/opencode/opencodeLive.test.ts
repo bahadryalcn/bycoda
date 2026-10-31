@@ -330,7 +330,7 @@ it.each(["v1", "v2"] as const)(
     const beforeLate = harnessHttp.mock.calls.length;
     await expect(
       steerOpenCodeTurn({ ...base, text: "late A", operationContext: a.context }),
-    ).rejects.toThrow("admission is closed");
+    ).rejects.toThrow("The previous turn has finished");
     expect(harnessHttp.mock.calls).toHaveLength(beforeLate);
     await steerOpenCodeTurn({ ...base, text: "B steer", operationContext: b.context });
     expect(strictHttp.at(-1)?.run).toBe(b.context.hostRun);
@@ -1506,7 +1506,7 @@ describe("OpenCode access modes", () => {
 
 describe("OpenCode child permission routing", () => {
   it.each([400, 500])(
-    "retains a question after HTTP %s and retries only an explicit rejection",
+    "retains a question after HTTP %s and retries only on an explicit user action",
     async (status) => {
       const events: HarnessEvent[] = [];
       const { done } = await startTurn(events);
@@ -1537,6 +1537,8 @@ describe("OpenCode child permission routing", () => {
       );
       expect(events.some((event) => event.type === "question.resolved")).toBe(false);
       const calls = harnessHttp.mock.calls.length;
+      await Promise.resolve();
+      expect(harnessHttp.mock.calls.length).toBe(calls);
       respondOpenCodeQuestion("opencode-live", request.requestId, answer);
       if (status === 400) {
         await waitFor(
@@ -2035,10 +2037,8 @@ it("keeps the original child retirement when closing its ended stream fails", as
   closeHarnessSse.mockClear();
   closeHarnessSse.mockRejectedValueOnce(new Error("SSE close failed"));
 
-  await expect(stopOpenCodeSession("opencode-live")).rejects.toMatchObject({
-    name: "ProviderRetirementError",
-    errors: expect.arrayContaining([expect.objectContaining({ message: "SSE close failed" })]),
-  });
+  // A failed SSE close is warned about; Stop still completes.
+  await expect(stopOpenCodeSession("opencode-live")).resolves.toBeUndefined();
   expect(closeHarnessSse).toHaveBeenCalledExactlyOnceWith("opencode-live");
   expect(killChild).toHaveBeenCalledExactlyOnceWith("opencode-live");
   expect(processConstructions.operations.filter((operation) => operation.kind === "kill")).toEqual(

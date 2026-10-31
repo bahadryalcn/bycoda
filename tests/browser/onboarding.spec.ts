@@ -30,7 +30,7 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   await dialog.getByRole("radio", { name: "Light", exact: true }).click();
   await expect(page.locator("html")).toHaveClass(/theme-light/);
   await expect(dialog.locator('input[name="onboarding-crew"][value="none"]')).toBeInViewport();
-  await expect(dialog.getByRole("checkbox", { name: "Decorative animations" })).toBeInViewport();
+  await expect(dialog.getByRole("switch", { name: "Decorative animations" })).toBeInViewport();
   await page.screenshot({ path: `${captures}/appearance-light.png` });
   await dialog.getByRole("button", { name: /3\s*Agents/ }).click();
   await expect(dialog.getByRole("heading", { name: "Connect your agents" })).toBeVisible();
@@ -75,9 +75,12 @@ test("finds existing accounts, links another profile and lets the user choose a 
   await expect(
     claude.getByRole("button", { name: "Sign in to Claude Code", exact: true }),
   ).toHaveCount(0);
-  await expect(codex.getByRole("status")).toHaveText("CLI installed · not signed in");
+  await expect(codex.getByRole("status")).toHaveText("Not signed in");
   await expect(codex.getByRole("button", { name: "Sign in to Codex", exact: true })).toBeEnabled();
-  await claude.getByRole("button", { name: "Terminal account profiles", exact: true }).click();
+  await claude
+    .getByRole("button", { name: "More options for Claude Code", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Terminal account profiles", exact: true }).click();
   await expect(page.getByText("D:/profiles/claude", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Use account", exact: true }).click();
   await expect
@@ -91,7 +94,8 @@ test("finds existing accounts, links another profile and lets the user choose a 
     )
     .toBe("terminal-work");
   await page.keyboard.press("Escape");
-  await codex.getByRole("button", { name: "Show Codex CLI details", exact: true }).click();
+  await codex.getByRole("button", { name: "More options for Codex", exact: true }).click();
+  await page.getByRole("button", { name: "Show Codex CLI details", exact: true }).click();
   await page.getByRole("button", { name: "Edit Codex CLI path", exact: true }).click();
   await page.getByRole("button", { name: "Choose executable", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "CLI path", exact: true })).toHaveValue(

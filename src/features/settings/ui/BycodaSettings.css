@@ -237,7 +237,9 @@
   color: var(--color-content);
 }
 
-/* Topics are open: spacing separates them, never a frame, row divider or heading rule. */
+/* One section rhythm: a heading above a framed topic, --settings-group-gap between topics.
+   The frame is a thin border with hairline row dividers and no fill (owner decision 2026-10-31,
+   V3-013); its roles are --ui-settings-group-* and --ui-settings-hairline in styles/index.css. */
 .settings-group {
   display: block;
   min-inline-size: 0;
@@ -247,11 +249,6 @@
 }
 .settings-group:first-child {
   padding-block-start: 0;
-}
-/* Open topics bleed 12px so a search-revealed fill has breathing room while text stays aligned. */
-.bycoda-settings-workbench .settings-group[data-settings-variant="open"] {
-  margin-inline: -12px;
-  padding-inline: 12px;
 }
 /* Topic collections own the 28px rhythm between groups, wherever the wrapper sits. */
 .settings-topics {
@@ -282,6 +279,14 @@
   gap: 4px;
   min-inline-size: 0;
 }
+/* Info and reset icons are 28px targets; they must not make a titled row taller than a plain one,
+   and the reset icon appearing must not move anything. */
+.settings-title-line > button {
+  margin-block: -4px;
+}
+.settings-reset {
+  color: var(--ui-text-secondary);
+}
 .settings-row-title {
   margin: 0;
   font-size: var(--ui-font-secondary);
@@ -303,40 +308,60 @@
   flex-shrink: 0;
   max-inline-size: 100%;
 }
+/* The frame: every topic (open or box) uses it. Rows pad themselves, so the frame has no padding. */
 .settings-group[data-settings-variant][data-settings-layout] > .settings-group-content {
   align-self: start;
   min-inline-size: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
+  border: 1px solid var(--ui-settings-group-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-settings-group-surface);
   overflow: visible;
   container: settings-group / inline-size;
 }
-/* Boxed topics are for ownership and editing units: credential forms, list editors, danger zones. */
-.settings-group[data-settings-variant="box"][data-settings-layout] > .settings-group-content {
-  border: 1px solid var(--ui-editor-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
+/* A collection (own frame) or nested topic inside a frame must not draw a second one. */
+.settings-group-content > :is(.settings-collection, .settings-topics) {
+  border: 0;
+  border-radius: 0;
 }
 
+/* One row padding (10px/16px) and one minimum height for every row. Dividers are hairlines
+   between rows; nothing inside the frame has a fill at rest. */
 .settings-row {
   display: flex;
   align-items: center;
   min-inline-size: 0;
-  padding-block: 10px;
+  min-block-size: 3rem;
+  padding: 10px 16px;
   gap: 12px 24px;
-  border-radius: var(--ui-control-radius);
-}
-.bycoda-settings-workbench .settings-group[data-settings-variant="open"] .settings-row {
-  margin-inline: -12px;
-  padding-inline: 12px;
-}
-.settings-group[data-settings-variant="box"] .settings-row {
-  padding: 12px 16px;
   border-radius: 0;
 }
-.settings-group[data-settings-variant="box"] .settings-row:not(:first-child) {
-  border-block-start: 1px solid var(--color-stroke);
+.settings-group-content > :is(.settings-row, .settings-advanced) ~ :is(.settings-row, .settings-advanced),
+.settings-advanced > .settings-row {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+.settings-group-content > :first-child {
+  border-start-start-radius: calc(var(--ui-radius-card) - 1px);
+  border-start-end-radius: calc(var(--ui-radius-card) - 1px);
+}
+.settings-group-content > :last-child {
+  border-end-start-radius: calc(var(--ui-radius-card) - 1px);
+  border-end-end-radius: calc(var(--ui-radius-card) - 1px);
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-row:hover {
+    background: var(--ui-settings-row-hover);
+  }
+}
+/* Dependent sub-row: indented under its parent; dimmed and inert (with a tooltip reason) when the
+   parent is off. The reason is never repeated as visible text. */
+.settings-row[data-dependent] {
+  padding-inline-start: 40px;
+}
+.settings-row[data-disabled] {
+  cursor: not-allowed;
+}
+.settings-row[data-disabled] > :is(.settings-row-label, .settings-row-control) {
+  opacity: var(--ui-disabled-opacity, 0.5);
 }
 .settings-description {
   color: var(--ui-text-secondary);
@@ -361,33 +386,14 @@
     background-color: transparent;
   }
 }
-.settings-group[data-revealed],
-.settings-row[data-revealed] {
+.settings-row[data-revealed],
+.settings-group[data-revealed][data-settings-layout] > .settings-group-content {
   background-color: var(--ui-surface-selected);
   animation: settings-reveal-flash 2.4s var(--motion-ease-out, ease-out) forwards;
 }
-@keyframes settings-reveal-flash-box {
-  0%,
-  60% {
-    background-color: var(--ui-surface-selected);
-  }
-  100% {
-    background-color: var(--ui-surface);
-  }
-}
-/* A boxed topic keeps its surface and settles the fill inside the box instead. */
-.settings-group[data-settings-variant="box"][data-revealed] {
-  background: none;
-  animation: none;
-}
-.settings-group[data-settings-variant="box"][data-revealed][data-settings-layout] > .settings-group-content {
-  background-color: var(--ui-surface-selected);
-  animation: settings-reveal-flash-box 2.4s var(--motion-ease-out, ease-out) forwards;
-}
 @media (prefers-reduced-motion: reduce) {
-  .settings-group[data-revealed],
   .settings-row[data-revealed],
-  .settings-group[data-settings-variant="box"][data-revealed][data-settings-layout] > .settings-group-content {
+  .settings-group[data-revealed][data-settings-layout] > .settings-group-content {
     animation: none;
   }
 }
@@ -404,6 +410,11 @@
   align-self: center;
   gap: 8px;
   overflow-wrap: anywhere;
+}
+/* One right column: every control kind ends on the row's right edge at the compact height, and a
+   Select keeps a fixed minimum width so neighbouring rows do not zig-zag. */
+.settings-row:not([data-stacked]) > .settings-row-control .bycoda-arc-select {
+  min-inline-size: 9rem;
 }
 .settings-row-control > * {
   max-width: 100%;
@@ -465,12 +476,12 @@
 .settings-group-feedback {
   padding-block: 10px;
 }
-.settings-group[data-settings-variant="box"] .settings-group-content > .settings-feedback {
-  padding: 12px 16px;
+.settings-group-content > .settings-feedback,
+.settings-group-feedback {
+  padding-inline: 16px;
 }
-.settings-group[data-settings-variant="box"] .settings-group-feedback {
-  padding: 12px 16px;
-  border-block-start: 1px solid var(--color-stroke);
+.settings-group-feedback {
+  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 .settings-group-content > [role="alert"],
 .settings-row-control > [role="alert"] {
@@ -538,10 +549,27 @@
   min-inline-size: 0;
 }
 .settings-advanced > .settings-subheading {
-  padding-block: 10px;
   font-size: var(--ui-font-secondary);
   color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
+}
+/* The disclosure row aligns with row titles (16px), spans the frame, and puts the chevron on the right. */
+.settings-advanced-toggle {
+  min-block-size: 3rem;
+  padding-inline: 16px;
+  border-radius: 0;
+  justify-content: flex-start;
+}
+.settings-advanced-toggle svg {
+  order: 1;
+  margin-inline-start: auto;
+}
+.settings-advanced > p {
+  margin: 0;
+  padding: 8px 16px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
 }
 .settings-advanced-toggle svg {
   flex-shrink: 0;
@@ -560,27 +588,23 @@
   }
 }
 
-/* Secondary settings use the same open hierarchy as their topic. */
+/* Secondary settings sit inside their topic's frame as a closing disclosure row. Standalone
+   (outside a Group) they draw their own thin frame. */
 .settings-advanced {
   min-inline-size: 0;
   margin-block: 12px;
+  border: 1px solid var(--ui-settings-group-border);
+  border-radius: var(--ui-radius-card);
+}
+.settings-group-content > .settings-advanced {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
 }
 .settings-subheading {
   margin: 0;
   font-weight: 500;
   line-height: 1.5;
-}
-.settings-group[data-settings-variant="box"] .settings-group-content > .settings-advanced {
-  margin-inline: 16px;
-}
-.settings-group[data-settings-variant="box"]
-  .settings-group-content
-  > .settings-advanced
-  > .settings-row {
-  padding-inline: 0;
-}
-.bycoda-settings-workbench .provider-cli-header > .settings-advanced {
-  flex-basis: 100%;
 }
 .bycoda-settings-workbench .bycoda-settings-form section > h3 {
   cursor: auto;

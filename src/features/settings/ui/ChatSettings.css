@@ -1,31 +1,19 @@
 .chat-settings {
   container: chat-settings / inline-size;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 28px;
   min-inline-size: 0;
 }
-.chat-detail {
-  margin: 0 0 12px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-.chat-settings > .settings-advanced { margin-block: 0; }
 .settings-templates {
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-inline-size: 0;
 }
-/* One editing unit: template list and editor share a single quiet box. */
+/* One editing unit: template list and editor share a single hairline-framed region (no fill). */
 .template-manager {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-inline-size: 0;
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-editor-border);
+  border: 1px solid var(--ui-settings-hairline);
   border-radius: var(--ui-radius-card);
   overflow: hidden;
 }
@@ -79,6 +67,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+/* The save state sits beside Save, so a dirty draft is visible where it is committed. */
+.template-manager-state {
+  margin-inline-start: auto;
 }
 @container chat-settings (min-width: 48rem) {
   .template-manager { grid-template-columns: minmax(12rem, 1fr) minmax(0, 2fr); }

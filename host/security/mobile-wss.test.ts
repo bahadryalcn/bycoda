@@ -79,7 +79,8 @@ async function fixture(maxSocketsPerDevice = 4, limits?: MobileWssOptions["limit
       token === TOKEN && !revoked.value
         ? { id: "paired.device", authorized: () => !revoked.value }
         : null,
-    dispatch: async () => ({ projects: ["fixture"] }),
+    // projects.list results are schema-validated by the transport: an array, not an object.
+    dispatch: async () => [],
     limits: { maxSocketsPerDevice },
   });
   await new Promise<void>((done) => core.listen(0, "127.0.0.1", done));
@@ -191,9 +192,7 @@ it("proxies real verified TLS WS through the existing authenticated Host and rew
     },
   });
   expect((await hello(socket)).result.environmentId).toBe(ENVIRONMENT);
-  expect((await rpc(socket, "projects.1", "projects.list", {})).result).toEqual({
-    projects: ["fixture"],
-  });
+  expect((await rpc(socket, "projects.1", "projects.list", {})).result).toEqual([]);
   expect(input.requests).toContainEqual({
     url: "/ws",
     host: `127.0.0.1:${input.internalPort}`,

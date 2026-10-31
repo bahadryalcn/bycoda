@@ -32,10 +32,10 @@
   box-sizing: border-box;
   place-items: center;
   padding: 0 var(--space-2) 1px;
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-bottom-width: 2px;
+  border: 1px solid var(--ui-field-border);
+  border-bottom-width: 1px;
   border-radius: calc(var(--ui-control-radius) - 2px);
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-muted);
   color: var(--ui-tone-neutral-fg);
   font-family: var(--font-body);
   font-size: var(--ui-font-caption);
@@ -109,8 +109,8 @@
   height: var(--control-height-md);
   box-sizing: border-box;
   align-items: center;
-  border: 1px solid var(--ui-control-border);
-  border-radius: var(--ui-control-radius);
+  border: 1px solid var(--ui-field-border);
+  border-radius: var(--ui-field-radius);
   background: var(--ui-surface-muted);
   transition:
     border-color var(--duration-fast) var(--ease-standard),
@@ -123,8 +123,8 @@
 }
 .control:has(.recorder:focus-visible) {
   border-color: var(--ui-field-border-focus);
-  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
-  outline-offset: -1px;
+  outline: none;
+  box-shadow: var(--ui-focus-ring);
 }
 .control[data-state="recording"] {
   border-color: var(--ui-tone-accent-border);
@@ -137,6 +137,7 @@
    class stronger than the shared `.bycoda-arc :is([tabindex]):focus-visible` rule, which it otherwise ties. */
 .control .recorder.recorder:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 .field[data-disabled] .control {
   border-color: var(--ui-control-disabled-border);
@@ -150,7 +151,7 @@
   align-items: center;
   padding: 0 var(--space-2) 0 var(--space-3);
   border: 0;
-  border-radius: var(--ui-control-radius);
+  border-radius: var(--ui-field-radius);
   background: transparent;
   color: var(--foreground);
   cursor: pointer;
@@ -325,7 +326,7 @@
   justify-content: space-between;
   gap: var(--space-3);
   padding: 0 var(--space-2);
-  border-radius: var(--ui-control-radius);
+  border-radius: var(--ui-field-radius);
   transition:
     opacity var(--duration-standard) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard);
@@ -392,3 +393,5 @@
     animation: none;
   }
 }
+
+.control[data-state="idle"]:not(:hover, :focus-within) { border-color: transparent; background: transparent; }

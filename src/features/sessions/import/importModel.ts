@@ -153,3 +153,11 @@ export function countSelection(
   counts.folders = folders.size;
   return counts;
 }
+
+const TEMPORARY_FOLDER =
+  /(^|\/)(appdata\/local\/temp|tmp|var\/folders|private\/var\/folders|private\/tmp)(\/|$)|bycoda-e2e/i;
+
+/** Scratch folders (OS temp, e2e runs). Hidden by default; never deleted or imported silently. */
+export function isTemporaryFolder(path: string): boolean {
+  return TEMPORARY_FOLDER.test(slash(path));
+}

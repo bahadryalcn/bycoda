@@ -24,6 +24,11 @@ import type { HarnessEvent, HarnessFileChange } from "../../core/types";
 import { dollarTokenAt } from "../../../../features/skills/model/slashCommands";
 import { retainToolInspection } from "../../../../features/sessions/model/toolInspection";
 import { codexStructuredResultText } from "./codexStructuredResult";
+import {
+  COMPACTED_TEXT,
+  COMPACTING_TEXT,
+  COMPACTION_STATUS_KEY,
+} from "../../../../features/sessions/model/compactionStatus";
 
 /** Codex approval / sandbox settings for thread/start and turn/start. */
 export type CodexThreadConfig = {
@@ -628,7 +633,7 @@ export function mapCodexNotification(
 }
 
 /** Codex thread items Bycoda already renders elsewhere or that are internal metadata. */
-const SILENT_ITEM_TYPES = new Set(["userMessage", "contextCompaction", "enteredReviewMode"]);
+const SILENT_ITEM_TYPES = new Set(["userMessage", "enteredReviewMode"]);
 
 /**
  * Codex reports both `last` (the most recent request) and `total` (cumulative
@@ -736,6 +741,17 @@ function mapItemLifecycle(method: string, rec: Record<string, unknown>): MappedC
   if (!callId) return { events: [] };
   const itemType = stringField(item, "type") ?? "";
   const completed = method === "item/completed";
+
+  // Codex brackets a compaction with started/completed items: one row follows it.
+  if (itemType === "contextCompaction") {
+    return {
+      events: [
+        completed
+          ? { type: "status", key: COMPACTION_STATUS_KEY, running: false, text: COMPACTED_TEXT }
+          : { type: "status", key: COMPACTION_STATUS_KEY, running: true, text: COMPACTING_TEXT },
+      ],
+    };
+  }
 
   if (SILENT_ITEM_TYPES.has(itemType)) {
     return { events: [] };

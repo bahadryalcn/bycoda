@@ -213,6 +213,9 @@ function finishFullCandidate(write: Write, ack: StorageAck | null, reason?: stri
     typeof ack.nativeWriteId !== "string" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(ack.nativeWriteId)
   ) {
+    // The ordinary ACK is valid, but a checkpoint still needs one replacement
+    // with a usable locator even though these origins are already settled.
+    write.node.lineage.fullReplacementRequired = true;
     candidate.unavailable = "native-write-locator-unavailable";
     dropFullCandidate(candidate);
     return;
@@ -317,17 +320,22 @@ export function prepareSessionOutputWritePayload<T extends object>(
     node.lineage.fullUnavailable ||
     node.lineage.current !== node ||
     !node.lineage.fullOrigins.size ||
+    (!write.records.some((record) => !record.settled) && !node.lineage.fullReplacementRequired) ||
     (node.lineage.fullReplacementRequired && kind !== "replace")
   )
     return input;
   try {
     const snapshot = boundedJsonSnapshot(input);
+    if (Array.isArray(snapshot.payload)) throw new Error("unsupported");
     const payload = Object.freeze(
       Object.assign(Object.create(null) as object, snapshot.payload, {
         captureOutputReceipt: true,
       }),
     );
-    const bytes = new TextEncoder().encode(JSON.stringify(payload)).byteLength;
+    // The validated snapshot is a plain JSON object with no receipt field.
+    const bytes = snapshot.bytes + (snapshot.bytes > 2 ? 1 : 0) +
+      '"captureOutputReceipt":true'.length;
+    if (Object.prototype.hasOwnProperty.call(snapshot.payload, "captureOutputReceipt")) throw new Error("unsupported");
     if (bytes > SESSION_OUTPUT_FULL_LIMITS.payloadBytesPerCandidate) throw new Error("capacity");
     const args = payload as { session?: { id?: unknown }; delta?: { session?: { id?: unknown } } };
     if ((kind === "replace" ? args.session?.id : args.delta?.session?.id) !== node.lineage.id)
@@ -520,18 +528,28 @@ function nodeFor(session: Session, previous?: Node): Node | null {
   return node;
 }
 function committed(previous: readonly Session[], next: readonly Session[], reset: boolean) {
-  const before = new Map(previous.map((session) => [session.id, session]));
+  if (!reset && previous === next) return;
+  let before: Map<string, Session> | undefined;
   const ids = new Set<string>();
-  for (const session of next) {
+  let notify = reset;
+  for (let index = 0; index < next.length; index++) {
+    const session = next[index];
     if (ids.has(session.id)) {
       const lineage = runtime.lineages.get(session.id);
       if (lineage) retire(lineage, "duplicate-session-projection");
+      notify = true;
       continue;
     }
     ids.add(session.id);
-    const old = before.get(session.id);
+    const atIndex = previous[index];
+    let old = atIndex;
+    if (atIndex?.id !== session.id) {
+      before ??= new Map(previous.map((entry) => [entry.id, entry]));
+      old = before.get(session.id)!;
+    }
     const oldNode = old ? runtime.nodes.get(old) : undefined;
     if (!reset && old === session && oldNode && !oldNode.lineage.retired) continue;
+    if (!session.busy) notify = true;
     const previousLineage = runtime.lineages.get(session.id);
     if (reset || !oldNode || oldNode.lineage.retired) {
       if (previousLineage) retire(previousLineage, "session-projection-replaced");
@@ -542,9 +560,10 @@ function committed(previous: readonly Session[], next: readonly Session[], reset
     if (!ids.has(id)) {
       retire(lineage, "session-projection-removed");
       runtime.lineages.delete(id);
+      notify = true;
     }
   }
-  changed();
+  if (notify) changed();
 }
 runtime.unsubscribe?.();
 runtime.unsubscribe = subscribeSessionCommits(committed);
@@ -624,7 +643,7 @@ export function recordAppliedSessionOutput(session: Session, events: readonly ob
     markNativeOutputOriginProjectionAccepted(origin, session.id);
     runtime.retained++;
   }
-  changed();
+  if (!session.busy) changed();
 }
 
 /** Capture at actual service admission, before queue/debounce/coalescing. */

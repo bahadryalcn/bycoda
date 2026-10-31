@@ -8,6 +8,7 @@ import {
 } from "../../../platform/tauri/fileAccess";
 import { Group, Row } from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RefreshCw } from "../../../shared/ui/icons";
 
 export function FileAccessSettings({ embedded = false }: { embedded?: boolean }) {
@@ -74,7 +75,17 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
     <>
       <Row
         id="file-access"
-        label={t("File access")}
+        label={t("Current access")}
+        description={t("Agent approval rules still control commands and tools.")}
+        info={
+          <InfoPopover className="shrink-0" label={t("About file access")}>
+            <p>
+              {t(
+                "All files access allows reading and editing files on this computer. Selected-folder grants may be read-only. Change file access opens the native consent flow.",
+              )}
+            </p>
+          </InfoPopover>
+        }
         scope={
           <>
             <span role="status" aria-live="polite" className="privacy-file-access-status">
@@ -114,7 +125,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
             disabled={pending !== null || mode === null || statusUnavailable}
             onClick={() => void review()}
           >
-            {t("Change file access")}
+            {t("Change file access…")}
           </Button>
           <Button
             variant="ghost"
@@ -129,23 +140,12 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
           </Button>
         </div>
       </Row>
-      <Row
-        id="file-access-permissions"
-        label={t("Separate permissions")}
-        descriptionVisible
-        description={t(
-          "All files access allows reading and editing files on this computer. Selected-folder grants may be read-only. Agent approval rules still control commands and tools. Change file access opens the native consent flow.",
-        )}
-      />
     </>
   );
   return embedded ? (
     content
   ) : (
-    <Group
-      title={t("File access")}
-      scope={t("Scope: this computer. Remote hosts manage their own file access.")}
-    >
+    <Group id="file-access-permissions" title={t("File access")} description={t("Remote hosts manage their own file access.")}>
       {content}
     </Group>
   );

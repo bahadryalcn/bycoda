@@ -57,6 +57,7 @@ type Stream = {
   deleted: boolean;
   reading?: AbortController;
   readingBaseline?: boolean;
+  refreshAt?: number;
   consumers: Map<string, Consumer>;
 };
 
@@ -78,6 +79,7 @@ export class HostSubscriptionHub {
   private bytes = 0;
   private reads = 0;
   private queued = false;
+  private refreshTimer?: ReturnType<typeof setTimeout>;
   private stopped = false;
   private readonly pruning: ReturnType<typeof setInterval>;
 
@@ -218,6 +220,10 @@ export class HostSubscriptionHub {
       if (entry.consumer.owner.connectionId === connectionId) this.remove(key);
   }
 
+  targets(): HostStreamTarget[] {
+    return [...this.streams.values()].filter((stream) => !stream.deleted).map((stream) => stream.target);
+  }
+
   invalidate(target?: HostStreamTarget): void {
     for (const stream of this.streams.values())
       if (!target || JSON.stringify(stream.target) === JSON.stringify(target)) {
@@ -265,6 +271,7 @@ export class HostSubscriptionHub {
     if (this.stopped) return;
     this.stopped = true;
     clearInterval(this.pruning);
+    clearTimeout(this.refreshTimer);
     for (const stream of this.streams.values()) stream.reading?.abort();
     this.subscriptions.clear();
     this.streams.clear();
@@ -298,10 +305,7 @@ export class HostSubscriptionHub {
       const last = stream.events.at(-1);
       if (last?.event.kind === "snapshot" && !stream.dirty && !stream.reading)
         this.deliver(stream, consumer, last.event);
-      else if (
-        !stream.reading ||
-        (stream.readingBaseline === false && stream.target.kind === "session")
-      ) {
+      else {
         stream.forceSnapshot = true;
         stream.dirty = true;
       }
@@ -380,6 +384,18 @@ export class HostSubscriptionHub {
           ![...stream.consumers.values()].some((consumer) => consumer.active)
         )
           continue;
+        const delay = (stream.refreshAt ?? 0) - Date.now();
+        if (delay > 0) {
+          if (!this.refreshTimer) {
+            this.refreshTimer = setTimeout(() => {
+              this.refreshTimer = undefined;
+              this.schedule();
+            }, delay);
+            this.refreshTimer.unref();
+          }
+          continue;
+        }
+        stream.refreshAt = Date.now() + 250;
         this.reads++;
         stream.dirty = false;
         const controller = new AbortController();
@@ -412,8 +428,6 @@ export class HostSubscriptionHub {
   ): Promise<void> {
     try {
       const live = [...stream.consumers.values()].filter((consumer) => consumer.active);
-      for (const consumer of live)
-        if (!(await consumer.owner.authorized())) this.detach(consumer.owner.connectionId);
       if (!stream.consumers.size || this.stopped || controller.signal.aborted) return;
       const forceSnapshot =
         stream.forceSnapshot ||
@@ -423,7 +437,8 @@ export class HostSubscriptionHub {
         );
       stream.forceSnapshot = false;
       stream.readingBaseline = forceSnapshot;
-      const owner = live[0].owner;
+      const owner = live[0]?.owner;
+      if (!owner) return;
       const snapshot = await this.options.load(
         stream.target,
         stream.principalId,
@@ -441,6 +456,14 @@ export class HostSubscriptionHub {
         controller.signal.aborted
       )
         return;
+      // Check each consumer once, after the asynchronous load. This also checks
+      // unchanged refreshes and rejects revocation during a protected read.
+      const authorized = new Set<Consumer>();
+      for (const consumer of live) {
+        if (await consumer.owner.authorized()) authorized.add(consumer);
+        else this.detach(consumer.owner.connectionId);
+      }
+      if (!stream.consumers.size) return;
       if (!snapshot) {
         this.tombstone(stream);
         return;
@@ -476,10 +499,7 @@ export class HostSubscriptionHub {
       stream.touched = this.now();
       this.prune();
       for (const consumer of stream.consumers.values()) {
-        if (!(await consumer.owner.authorized())) {
-          this.detach(consumer.owner.connectionId);
-          continue;
-        }
+        if (!authorized.has(consumer)) continue;
         if (this.stopped || stream.deleted || generation !== stream.generation) return;
         this.deliver(stream, consumer, event);
       }

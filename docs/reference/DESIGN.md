@@ -155,6 +155,19 @@ appearance settings; hover must not be required to discover where a region ends.
 
 ## Elevation & Depth
 
+Owner decision, 2026-10-31, V3-033, source:
+`temp/local/2026-10-31-ui-refinements-3/TODO.md` (rail/sidebar/chat screenshots):
+
+> burda en soldaki burası ve burasının renkleri burdan farklı sağdaki chat paneli gibi olsunlar istiyorum aynı arka plan renginde zaten borderlar ile ayrılmış durumda bunu düzeltelim lütfen
+
+The project rail and Sessions/Explorer/Changes sidebar share the chat canvas in
+light, dark and custom themes: `--ui-surface-panel` resolves to `--ui-chat-canvas`.
+Existing pane borders provide separation. Navigation is no longer a separate gray
+layer: canvas = navigation < reading/form surface < floating surface. Muted fields,
+hover, selection, group colors and pane borders retain their own roles; composer
+and floating-surface roles remain unchanged. Native glass keeps its existing shared
+base tint, independent sidebar/main opacity settings and light-mode opaque policy.
+
 Make separation clear before reducing containment. Separate ordinary sections
 primarily with spacing and subtle surface-tone differences.
 Use alignment and type to reinforce hierarchy; reserve boxes and borders for
@@ -175,6 +188,24 @@ local focus cue. Treat required input/drag/resize and system high-contrast
 boundaries separately. Do not wrap a composer's subordinate workspace toolbar
 in another attached outline. Apply this rule to screen compositions and shared
 controls together rather than inventing an edge treatment on each screen.
+
+Owner decision, 2026-10-31, V3-013 (Crews page with a reference screenshot of
+T3 Code "Sharing & access"):
+
+> Bu ortadaki gri arka planların hepsinden kurtulmak istiyorum aslına bakarsan. Bak t3code nasıl design etmiş bizde gri renkle ayırmışız heryeri bunlarıda düzeltelim bence.
+
+Settings groups and collections therefore have no gray fill: the group interior
+is the page canvas. A group is a thin-bordered, rounded frame; rows inside are
+separated by hairline dividers. This explicit owner decision takes precedence
+over the general "standard panel/card surfaces use `var(--ui-surface)`" rule for
+Settings groups and collections only. The roles are defined once in
+`src/styles/index.css` and derive from the user's tint, so light, dark and
+custom themes follow: `--ui-settings-group-surface` (transparent),
+`--ui-settings-group-border`, `--ui-settings-hairline` and
+`--ui-settings-row-hover` (a very subtle hover). Inputs, selected rows, focus
+rings and drag targets keep their own boundary roles. Exceptions that stay
+colored or filled: Appearance previews, danger zones (status tone) and code/path
+views. Reference order only; the visual design stays ours.
 
 Use shared floating surfaces to distinguish menus, popovers and dialogs from
 the work beneath them. Preserve existing glass and background preferences while

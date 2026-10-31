@@ -393,3 +393,46 @@ Handoff: `temp/local/2026-10-28-source-control-impl/handoff.json`; final source
 fingerprints and morning scenarios are adjacent. User guide:
 `docs/guides/source-control.md`. No delivery commit/build/install/release exists;
 source inclusion UNKNOWN, requested state REVIEW, canonical TODO untouched.
+
+## Commit-only and push-only actions (2026-10-31)
+
+Owner report (2026-10-31, this Claude Code session): "commit & push doğru olmadı
+değişiklik varken sadece commitlemek istersem yada push lamak istersem yapamıyorum".
+406a8546d made Commit & Push the split-button primary whenever a message was drafted
+and folded the sync button into the menu. Now any change (or amend) makes **Commit**
+the primary; it never pushes. With nothing staged it commits every change, as the
+header menu's smart Commit does; amend never sweeps in unstaged files. Commit & Push
+and Commit, Push & Create PR stay in the menu. A pending sync/publish keeps its own
+direct button beside Commit and wraps below it on narrow panels. With no changes,
+406a8546d's contextual sync/Create PR/View PR primary is unchanged.
+Files: `src/features/source-control/ui/GitChangesPanel.tsx` (`canCommit`,
+`commitIntent`, `commit` stage-all scope, `GitCommitActions`), its unit test,
+`tests/browser/git-checkouts.spec.ts` (the fixture root now also holds
+AppConfirmHost; the default-branch push confirms in-app) and
+`docs/guides/source-control.md`.
+Checks: source-control vitest 58 files/568 tests; `git-checkouts` Chromium suite
+10/10; oxlint and hook lint clean on the changed files. Screenshots at 280/390/566
+light/dark: `temp/verification/2026-10-31-git-commit-push/` (browser fixture).
+`check:types:rust` fails only on another session's uncommitted
+`src/integrations/harness/core/providerRetirement.ts` (`Error.cause`). Native,
+real-Git and installed acceptance were not run. Uncommitted; no build/install.
+
+## V3-015 Source control settings and V3-027 Git panel (2026-10-31)
+
+Owner, 2026-10-31, V3-015 (three Source control settings screenshots), exact quote:
+
+> en kötüsü bu ekran burası o kadar kötüki hiç birşey anlamıyorum bu ekran üzerinden bunların hepsini düzeltelim daha iyi yapabiliriz burayı kesinlikle
+
+Owner, 2026-10-31, V3-027 (Worktrees dialog, Git panel, focus and commit field screenshots), exact quotes:
+
+> git panelininde yerleşimleri kayıyor sanki birde worktrees şeklinde açılan yer çok kötü bunun da düzeltilmesi geerekiyor.
+
+> fokus böyle oluyor yine çok kötü duruyor.
+
+> açılan bencede yine gereksiz bilgiler var
+
+Delivered in source (uncommitted; no checks run by the delivering agents; V2-024's single Commit/Push action is unchanged):
+- Settings: Generation group (commit/PR model with Automatic, diff view). The workspace policy shows a state badge (`Following Host defaults` / `Project override`) with the explanation behind ⓘ, a `Reset to Host defaults` action only while an override exists, and Save only when there are changes. Managed workspace rows show the session title/branch/provider with one primary action and an overflow menu; delete still confirms and stays unavailable while managed workspaces are loading.
+- Git panel and Worktrees dialog: stable header, fixed action and diff-stat columns (`ChangeRow.tsx`), the refresh icon aligned to the right edge, the shared field focus/action-slot contract (see `docs/reference/ui-component-catalog.md`), and the generation popover and model list limited to the relevant models (Fast is a toggle, not a model).
+- Proposal (not owner-confirmed): one Worktrees list for managed and other worktrees with a shared row model.
+- Unverified: 1280/800 light/dark screenshots of the empty project, override, loading and error states.

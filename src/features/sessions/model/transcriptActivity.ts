@@ -11,6 +11,7 @@ import { leafName } from "../../files/model/fileName";
 import { displayPath, pathKey, resolveWorkspacePath } from "../../../shared/lib/paths";
 import { isTurnInterruptMessage } from "./inFlight";
 import { isSessionErrorBlock } from "./sessionIssue";
+import { COMPACTING_TEXT, isRunningCompaction } from "./compactionStatus";
 import type { AgentStep, Block, ToolPreview } from "./session";
 import { findModelIdentity } from "./models";
 import { bycodaWorkSummary } from "./bycodaToolCall";
@@ -934,6 +935,10 @@ function currentWorkKind(steps: Block[]): ActivityWorkKind | undefined {
  * "N notes" clause; a group holding nothing but notes is just that clause.
  */
 export function workSummaryLine(steps: Block[], live = false): string {
+  // While context compacts, say so instead of a bare "Working"/"Thinking".
+  if (live && steps.length > 0 && isRunningCompaction(steps[steps.length - 1])) {
+    return COMPACTING_TEXT;
+  }
   const appSummary = bycodaWorkSummary(steps, live);
   if (appSummary) return appSummary;
   const tally = tallySteps(steps);

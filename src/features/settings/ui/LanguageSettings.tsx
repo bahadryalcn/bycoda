@@ -91,9 +91,7 @@ function DomainLanguageRow({ domain }: { domain: LanguageDomain }) {
       description={
         domain === "git"
           ? t("Git panels, branches, commits and diffs. English by default.")
-          : t(
-              "Terminal, file viewer and developer tool controls. Code and command output keep their original language.",
-            )
+          : t("Terminal, file viewer and developer tools. Code and output stay as written.")
       }
     >
       <Select

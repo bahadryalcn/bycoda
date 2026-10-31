@@ -413,7 +413,10 @@ export function FileEditor({
     draftHandleRef.current = handle;
     const update = () => {
       editorClosure.changed();
-      setDraftPersistence(handle.observe());
+      // Keep the previous state object when nothing rendered from it changed
+      // (per-keystroke captureId churn must not re-render the editor).
+      const next = handle.observe();
+      setDraftPersistence((prev) => (prev && sameDraftView(prev, next) ? prev : next));
     };
     const unsubscribe = handle.subscribe(update);
     update();
@@ -995,7 +998,10 @@ export function FileEditor({
     if (identity.documentId !== documentId || identity.path !== path) return;
     const generation = draftViewGeneration.current;
     const settled = editorClosure.operation("draft-decision");
-    if (!settled) return;
+    if (!settled) {
+      setDraftActionError(t("The editor is busy closing or moving. Try again in a moment."));
+      return;
+    }
     draftActionRef.current = true;
     setDraftAction(decision);
     setDraftActionError(null);
@@ -1045,7 +1051,10 @@ export function FileEditor({
     if (draftActionRef.current) return;
     const generation = draftViewGeneration.current;
     const settled = editorClosure.operation("draft-retry");
-    if (!settled) return;
+    if (!settled) {
+      setDraftActionError(t("The editor is busy closing or moving. Try again in a moment."));
+      return;
+    }
     draftActionRef.current = true;
     setDraftAction("replace");
     setDraftActionError(null);
@@ -1457,6 +1466,20 @@ function SvgPreview({ source, name }: { source: string; name: string }) {
         className="max-h-full max-w-full object-contain"
       />
     </div>
+  );
+}
+
+function sameDraftView(a: NativeCaptureState, b: NativeCaptureState): boolean {
+  return (
+    a.phase === b.phase &&
+    a.pending === b.pending &&
+    a.error === b.error &&
+    a.disposed === b.disposed &&
+    a.path === b.path &&
+    a.ownerEpoch === b.ownerEpoch &&
+    a.currentDraft === b.currentDraft &&
+    a.acknowledgedDraft === b.acknowledgedDraft &&
+    a.initializationDecisionRequired === b.initializationDecisionRequired
   );
 }
 

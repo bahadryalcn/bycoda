@@ -24,6 +24,8 @@ const MAX_COMMANDS = 100;
 const MAX_COMMAND_RECEIPTS = 500;
 export const DESKTOP_COMMAND_RETAIN_MS = 5 * 60_000;
 export const DESKTOP_WRITER_TRANSFER_MS = 12_000;
+/** A client silent this long no longer owns any writer. */
+export const DESKTOP_WRITER_STALE_MS = 60_000;
 /**
  * How long the desktop database's in-flight mark is believed from an app that
  * never sent a heartbeat. A crashed app leaves the mark behind for good; without
@@ -152,7 +154,7 @@ export class DesktopLive {
   private commands: (DesktopCommand & { queuedAt: number })[] = [];
   // Bounded acceptance fingerprints, not provider-completion or durable receipts.
   private commandReceipts = new Map<string, { signature: string; acceptedAt: number }>();
-  private writerClients = new Map<string, Set<string>>();
+  private writerClients = new Map<string, { sessions: Set<string>; at: number }>();
   private writerTransfers = new Map<
     string,
     { clientId: string; sessionId: string; finish: (error?: string) => void }
@@ -164,7 +166,7 @@ export class DesktopLive {
 
   private lastChange = 0;
 
-  onChange?: () => void;
+  onChange?: (sessionIds: string[]) => void;
   /** A window reported a conversation busy (each beat while it runs). */
   onBusy?: (sessionId: string, clientId: string) => void;
   /** A conversation a window ran is no longer busy there (`idle`), or the window stopped answering (`gone`). */
@@ -232,15 +234,20 @@ export class DesktopLive {
     const acked = new Set(Array.isArray(value.acked) ? value.acked.map(String) : []);
     const writers = value.writers as { version?: number; sessionIds?: unknown } | undefined;
     if (writers?.version === 1 && Array.isArray(writers.sessionIds))
-      this.writerClients.set(
-        clientId,
-        new Set(writers.sessionIds.filter((id): id is string => typeof id === "string")),
-      );
+      this.writerClients.set(clientId, {
+        sessions: new Set(writers.sessionIds.filter((id): id is string => typeof id === "string")),
+        at: this.now(),
+      });
+    else {
+      const known = this.writerClients.get(clientId);
+      if (known) known.at = this.now();
+    }
+    this.pruneWriterClients();
     for (const id of acked) {
       const transfer = this.writerTransfers.get(id);
       if (transfer?.clientId === clientId)
         transfer.finish(
-          this.writerClients.get(clientId)?.has(transfer.sessionId)
+          this.writerClients.get(clientId)?.sessions.has(transfer.sessionId)
             ? "The desktop still owns the provider writer. Retry after it finishes."
             : undefined,
         );
@@ -306,9 +313,10 @@ export class DesktopLive {
           changedAt: this.changeStamp(),
         });
       }
-    let changed =
-      [...next].some(([id, value]) => this.sessions.get(id)?.changedAt !== value.changedAt) ||
-      next.size !== this.sessions.size;
+    const changedIds = new Set<string>();
+    for (const [id, value] of next)
+      if (this.sessions.get(id)?.changedAt !== value.changedAt) changedIds.add(id);
+    for (const id of this.sessions.keys()) if (!next.has(id)) changedIds.add(id);
     this.sessions = next;
     // ACKs are scoped to the owner too, including retries sent by old clients.
     this.commands = this.commands.filter(
@@ -325,13 +333,13 @@ export class DesktopLive {
         if (session.clientId === id) {
           this.sessions.delete(sessionId);
           if (session.busy) this.onIdle?.(sessionId, id, "gone");
-          changed = true;
+          changedIds.add(sessionId);
         }
     }
     // Watchers must read the committed sessions and heartbeat, including on the
     // first beat. Signalling earlier can expose the previous running state.
     this.reclaimCommands();
-    if (changed) this.onChange?.();
+    if (changedIds.size) this.onChange?.([...changedIds]);
     return {
       ...(revision && this.directories.get(clientId)?.revision === revision
         ? { projectDirectoryRevision: revision }
@@ -455,30 +463,43 @@ export class DesktopLive {
     return session?.busy && this.clientAlive(session.clientId) ? session.clientId : undefined;
   }
 
-  /** Before Host continuation, every updated window must release this writer.
-   * Known stale owners remain a blocker until they reconnect and acknowledge. */
+  /** A client silent past the stale window cannot hold a writer any more. */
+  private pruneWriterClients(): void {
+    for (const [clientId, known] of this.writerClients)
+      if (this.now() - known.at > DESKTOP_WRITER_STALE_MS) this.writerClients.delete(clientId);
+  }
+
+  /** Before Host continuation, every live window must release this writer.
+   * A dead (silent) client counts as retired; only a busy live one blocks. */
   async retireWriters(sessionId: string): Promise<void> {
+    this.pruneWriterClients();
     const clients = [...this.writerClients].filter(
-      ([clientId, writers]) => writers.has(sessionId) || this.clientAlive(clientId),
+      ([clientId, known]) => this.clientAlive(clientId) || known.sessions.has(sessionId),
     );
-    if (clients.some(([clientId]) => !this.clientAlive(clientId)))
-      throw new Error(
-        "The desktop writer is unreachable. Reopen bycoda there before continuing on the Host.",
-      );
+    for (const [clientId] of clients)
+      if (!this.clientAlive(clientId))
+        console.warn(`Desktop writer client ${clientId} is silent; treating it as retired.`);
+    const live = clients.filter(([clientId]) => this.clientAlive(clientId));
     if (this.busyClient(sessionId))
       throw new Error("The desktop session is still running. Retry after it finishes.");
     await Promise.all(
-      clients.map(
+      live.map(
         ([clientId]) =>
           new Promise<void>((resolve, reject) => {
             const id = randomUUID();
-            const timer = setTimeout(
-              () =>
+            const timer = setTimeout(() => {
+              // A live heartbeat retaining this writer is evidence against transfer.
+              this.pruneWriterClients();
+              if (this.busyClient(sessionId) ||
+                  (this.clientAlive(clientId) && this.writerClients.get(clientId)?.sessions.has(sessionId)))
                 finish(
                   "The desktop did not confirm provider writer retirement. Reopen bycoda there and retry.",
-                ),
-              DESKTOP_WRITER_TRANSFER_MS,
-            );
+                );
+              else {
+                console.warn("Desktop writer retirement was not confirmed; proceeding.");
+                finish();
+              }
+            }, DESKTOP_WRITER_TRANSFER_MS);
             const finish = (error?: string) => {
               clearTimeout(timer);
               this.writerTransfers.delete(id);

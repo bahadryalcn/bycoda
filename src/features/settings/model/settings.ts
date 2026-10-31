@@ -1466,7 +1466,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   theme: ["Theme and colors", "System", "Light", "Dark"],
   "theme-palettes": ["Blue", "Violet", "Pink", "Red", "Orange", "Green"],
   "file-access": ["File access", "Change file access"],
-  "file-access-permissions": ["Separate permissions"],
+  "file-access-permissions": ["File access"],
   "import-history": ["Import Claude Code and Codex sessions"],
   "file-tabs": ["Beside chat", "Top bar"],
   "collapsed-project-rail": ["Icon rail", "Hidden"],

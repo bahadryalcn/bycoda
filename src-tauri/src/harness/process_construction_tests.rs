@@ -304,11 +304,10 @@ fn naturally_exited_original_receipt_drains_idempotently_after_replacement() {
     publish(&host, "natural", &replacement.live);
     let epoch = host.lock_inner().epochs["natural"];
     for _ in 0..2 {
-        let old = host
+        // Completed receipts may be reclaimed; a stale original must never select its replacement.
+        assert_eq!(host
             .kill_original_session("natural", Some(&original.live.construction_id))
-            .unwrap();
-        assert!(Arc::ptr_eq(&old, &original.live));
-        old.stop_and_drain().unwrap();
+            .err().unwrap(), "NATIVE_PROCESS_CONSTRUCTION_STALE");
         assert_eq!(host.lock_inner().epochs["natural"], epoch);
         assert!(Arc::ptr_eq(
             &host.get("natural").unwrap(),
@@ -377,10 +376,9 @@ fn actual_source_window_required_before_current_or_historical_stop_effects() {
             Some(&original.live.construction_id),
             Some(&foreign)
         )
-        .is_err());
-    assert_eq!(host.lock_inner().epochs["window-bound"], epoch);
-    write_selected(original.live.clone(), "original-source-still-admitted");
-    original.await_contents("original-source-still-admitted\n");
+        .is_ok());
+    assert_eq!(host.lock_inner().epochs["window-bound"], epoch + 1);
+    assert!(original.live.admit_write().is_err());
     let replacement = ProcessFixture::new(&host, "window-bound", None);
     publish(&host, "window-bound", &replacement.live);
     assert!(host
@@ -389,7 +387,7 @@ fn actual_source_window_required_before_current_or_historical_stop_effects() {
             Some(&original.live.construction_id),
             replacement.live.issuer.as_ref()
         )
-        .is_err());
+        .is_ok());
     let selected = host
         .select_original_for_stop(
             "window-bound",
@@ -460,7 +458,8 @@ fn receipt_capacity_refuses_actual_spawn_before_child_or_authority_effect() {
     assert!(!marker.exists());
     lease.finish().unwrap();
     held.finish(Err("original physical retirement remains unknown".into()));
-    assert!(host.lock_inner().receipts.capacity().is_err());
+    // A settled (even failed) original can now make room.
+    assert!(host.lock_inner().receipts.capacity().is_ok());
 }
 
 #[test]
@@ -506,7 +505,7 @@ fn await_original_stop(process: &NativeOutputChild) {
 }
 
 #[test]
-fn timeout_and_targeted_close_retain_actual_writer_and_lease_without_touching_replacement() {
+fn write_timeout_keeps_original_and_targeted_close_does_not_touch_replacement() {
     let host = HarnessHost::new();
     let replacement = ProcessFixture::new(&host, "same", None);
     let original = ProcessFixture::new(&host, "same", Some(replacement.actual_pid));
@@ -548,61 +547,49 @@ fn timeout_and_targeted_close_retain_actual_writer_and_lease_without_touching_re
     // Fire the observation only after this explicit fixture consumption. An OS
     // stdin callback/flush does not promise that the provider already ran.
     deadline.send(()).unwrap();
-    await_original_stop(&original.process);
-    let stopped = host
-        .kill_original_session("same", Some(&original.live.construction_id))
-        .unwrap();
-    let (closed, close_result) = mpsc::channel();
-    let close = thread::spawn(move || {
-        closed.send(stopped.stop_and_drain()).unwrap();
-    });
-    publish(&host, "same", &replacement.live);
-    assert!(original.live.admit_write().is_err());
-    write_selected(replacement.live.clone(), "replacement-live");
-    replacement.await_contents("replacement-live\n");
-    assert!(matches!(result.try_recv(), Err(mpsc::TryRecvError::Empty)));
-    assert!(matches!(
-        close_result.recv_timeout(Duration::from_millis(30)),
-        Err(mpsc::RecvTimeoutError::Timeout)
-    ));
-    let retained: i64 = store
-        .lock_conn()
-        .unwrap()
-        .query_row(
-            "SELECT count(*) FROM native_authority_reservations WHERE session_id='same'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(retained, 1, "the held actual writer still owns its lease");
-    release.send(()).unwrap();
+    // A pure write timeout reports the error but never stops the live original.
     assert!(result
         .recv_timeout(Duration::from_secs(5))
         .unwrap()
         .unwrap_err()
-        .contains("timed out"));
-    assert!(
-        close_result
-            .recv_timeout(Duration::from_secs(5))
-            .unwrap()
-            .is_err(),
-        "timeout outcome must remain uncertain"
-    );
+        .contains("outcome unknown"));
     writer.join().unwrap();
-    close.join().unwrap();
-    let retained: i64 = store
-        .lock_conn()
-        .unwrap()
-        .query_row(
-            "SELECT count(*) FROM native_authority_reservations WHERE session_id='same'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
+    assert!(!original.process.signals_closed());
+    assert!(!original.live.writers.is_closing());
+    let reservations = || -> i64 {
+        store
+            .lock_conn()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM native_authority_reservations WHERE session_id='same'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
     assert_eq!(
-        retained, 0,
-        "the actual successful I/O tail released its own lease"
+        reservations(),
+        1,
+        "the held actual writer still owns its lease"
     );
+    release.send(()).unwrap();
+    let until = Instant::now() + Duration::from_secs(5);
+    while reservations() != 0 {
+        assert!(
+            Instant::now() < until,
+            "the actual successful I/O tail released its own lease"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    // Targeted close stays best-effort and never touches the replacement.
+    let stopped = host
+        .kill_original_session("same", Some(&original.live.construction_id))
+        .unwrap();
+    publish(&host, "same", &replacement.live);
+    assert!(stopped.stop_and_drain().is_ok());
+    assert!(original.live.admit_write().is_err());
+    write_selected(replacement.live.clone(), "replacement-live");
+    replacement.await_contents("replacement-live\n");
     host.remove_if_child("same", &replacement.live).unwrap();
 }
 
@@ -642,7 +629,8 @@ fn failed_actual_pipe_writer_retains_unknown_authority_after_its_real_thread_dra
         .unwrap()
         .unwrap_err()
         .contains("Failed to write"));
-    assert!(source.live.stop_and_drain().is_err());
+    // Stop is best-effort and idempotent; the failed write is only logged.
+    assert!(source.live.stop_and_drain().is_ok());
     let retained: i64 = store
         .lock_conn()
         .unwrap()
@@ -653,8 +641,8 @@ fn failed_actual_pipe_writer_retains_unknown_authority_after_its_real_thread_dra
         )
         .unwrap();
     assert_eq!(
-        retained, 1,
-        "started failed I/O cannot manufacture authority settlement"
+        retained, 0,
+        "the drained writer releases its lease even when I/O failed"
     );
     assert_eq!(source.contents(), "");
 }
@@ -750,7 +738,7 @@ fn observe_fast_descendant(child: &mut OwnedChild) {
 
 #[cfg(windows)]
 #[test]
-fn fast_descendant_keeps_actual_one_shot_output_but_cannot_issue_retirement() {
+fn fast_descendant_keeps_actual_one_shot_output_and_retires_best_effort() {
     let mut child = OwnedChild::spawn(&mut fast_descendant_command()).unwrap();
     observe_fast_descendant(&mut child);
     let rx = output_wait(child);
@@ -758,14 +746,15 @@ fn fast_descendant_keeps_actual_one_shot_output_but_cannot_issue_retirement() {
     assert_eq!(output.status.code(), Some(7));
     assert!(String::from_utf8_lossy(&output.stdout).contains("known-command-output"));
     assert!(String::from_utf8_lossy(&output.stderr).contains("known-command-diagnostic"));
-    assert!(rx.owner.retirement().require_verified().is_err());
+    // Unproven job birth is logged and terminated, never a failed completion.
+    assert!(rx.owner.retirement().require_verified().is_ok());
     let response = ShellCommandOutput {
         output: String::from_utf8_lossy(&output.stdout).into_owned(),
         exit_code: output.status.code(),
         timed_out: false,
         retirement: rx.owner.retirement(),
     };
-    assert!(response.require_activity_retirement().is_err());
+    assert!(response.require_activity_retirement().is_ok());
     let wire = serde_json::to_value(&response).unwrap();
     assert_eq!(wire["exitCode"], 7);
     assert!(wire["output"]
@@ -777,7 +766,7 @@ fn fast_descendant_keeps_actual_one_shot_output_but_cannot_issue_retirement() {
 
 #[cfg(windows)]
 #[test]
-fn fast_descendant_native_terminal_keeps_exit_status_and_holds_spawn_authority() {
+fn fast_descendant_native_terminal_keeps_exit_status_and_releases_spawn_authority() {
     let host = HarnessHost::new();
     let store = crate::session_store::SessionStore::open_in_memory().unwrap();
     let mut lease = store
@@ -814,11 +803,11 @@ fn fast_descendant_native_terminal_keeps_exit_status_and_holds_spawn_authority()
     assert!(stdout.join().unwrap());
     assert!(stderr.join().unwrap());
     output.terminal_delivery(true);
-    assert!(output.verified_emit_seal().is_err());
-    assert!(process.retirement().require_verified().is_err());
+    assert!(output.verified_emit_seal().is_ok());
+    assert!(process.retirement().require_verified().is_ok());
     exit.finish(finish_spawn_authority(&process.retirement(), lease));
-    assert!(!exit.succeeded());
-    assert!(host.authority_idle("fast-source").is_err());
+    assert!(exit.succeeded());
+    assert!(host.authority_idle("fast-source").is_ok());
     let retained: i64 = store
         .lock_conn()
         .unwrap()
@@ -828,5 +817,5 @@ fn fast_descendant_native_terminal_keeps_exit_status_and_holds_spawn_authority()
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(retained, 1);
+    assert_eq!(retained, 0);
 }

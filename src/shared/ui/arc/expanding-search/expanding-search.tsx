@@ -1,7 +1,15 @@
 "use client";
 
-import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, ReactNode, RefObject } from "react";
+import {
+  useCallback,
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { KeyboardEvent, ReactNode, Ref, RefObject } from "react";
 import { flushSync } from "react-dom";
 import {
   AnimatePresence,
@@ -63,7 +71,20 @@ export interface ExpandingSearchProps {
    *  ghost icon button (28px, 6px radius, 14px icon, no field shell); the open field always shows
    *  its frame. `field` keeps a framed circular shell while closed. */
   variant?: "ghost" | "field";
+  /** Filter mode: the host filters a list it already shows, so no result panel opens.
+   *  Escape clears the query and folds the field; leaving the field folds it too, and a query that
+   *  is still applied keeps a marker on the icon. */
+  inline?: boolean;
+  /** Names the folded icon while an `inline` query is applied, such as "Search conversations, filtering by “x”". */
+  activeLabel?: string;
+  /** Lets a host open the field from a shortcut. */
+  ref?: Ref<ExpandingSearchHandle>;
   className?: string;
+}
+
+export interface ExpandingSearchHandle {
+  /** Opens the field and moves focus into it. */
+  expand: () => void;
 }
 
 type Group = { name: string; items: ExpandingSearchItem[] };
@@ -296,6 +317,9 @@ export function ExpandingSearch({
   anchor = "end",
   emptyHint = "Try a shorter word or check the spelling.",
   variant = "ghost",
+  inline = false,
+  activeLabel,
+  ref,
   className,
 }: ExpandingSearchProps) {
   const id = useId();
@@ -414,18 +438,22 @@ export function ExpandingSearch({
     onExpandedChange?.(false);
   }
 
+  useImperativeHandle(ref, () => ({ expand }));
+
   const trimmed = query.trim();
   const results = useMemo(
-    () => (trimmed ? (externalResults ?? rank(items, trimmed, maxResults)) : []),
-    [externalResults, items, trimmed, maxResults],
+    () => (trimmed && !inline ? (externalResults ?? rank(items, trimmed, maxResults)) : []),
+    [externalResults, items, trimmed, maxResults, inline],
   );
-  const mode: Mode | null = !trimmed
-    ? suggestions.length
-      ? "suggestions"
-      : null
-    : results.length
-      ? "results"
-      : "empty";
+  const mode: Mode | null = inline
+    ? null
+    : !trimmed
+      ? suggestions.length
+        ? "suggestions"
+        : null
+      : results.length
+        ? "results"
+        : "empty";
   const groups = useMemo<Group[]>(
     () =>
       mode === "suggestions"
@@ -460,7 +488,7 @@ export function ExpandingSearch({
     if (event.key === "Escape" && !panelOpen) {
       event.preventDefault();
       event.stopPropagation();
-      collapse(true);
+      collapse(true, inline);
       return;
     }
     if (!panelOpen || !flat.length) return;
@@ -497,12 +525,15 @@ export function ExpandingSearch({
           variant="ghost"
           motion="none"
           iconOnly
-          label={label}
+          label={inline && trimmed ? (activeLabel ?? label) : label}
           ref={buttonRef}
           className={styles.trigger}
           hidden={expanded}
           onClick={expand}
         />
+        {inline && !expanded && trimmed ? (
+          <span className={styles.activeMark} data-search-active="" aria-hidden="true" />
+        ) : null}
         <Search
           className={styles.icon}
           width={variant === "ghost" ? 14 : 18}
@@ -549,7 +580,7 @@ export function ExpandingSearch({
             // Switching windows keeps the search as it was; the field refocuses on return.
             if (typeof document !== "undefined" && !document.hasFocus()) return;
             setFocused(false);
-            if (open.current && !inputRef.current?.value.trim()) collapse(false);
+            if (open.current && (inline || !inputRef.current?.value.trim())) collapse(false);
           }}
           onKeyDown={handleKeyDown}
         />

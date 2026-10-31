@@ -153,3 +153,14 @@ scopes, live state, source index/branch, package build/install/release or commit
 changed. No behavior change requires a user-guide update yet. Baseline SHA is
 context, not committed delivery. Refresh this card with actual change/evidence
 when implementation is delivered.
+
+## V3-014 Inbox page layout and stable status (2026-10-31)
+
+Owner, 2026-10-31, with the Inbox → Jira screenshot: “bu ekranda daha iyi olabilirdi.” With the button screenshot: “buna basınca solundaki buton küçülüp büyüyor sayfada kaıyoyr bu tarz problemlerde var bunlarıda düzeltelim”
+
+Delivered in source (uncommitted; handoff `temp/local/2026-10-31-ui-refinements-3/HANDOFF-v3-p5.md`; no runtime acceptance):
+- `InboxConnectionStatus.tsx`: the status Badge has a reserved minimum width, a spinner with `aria-busy` while checking and a short `Verified` with the timestamp in a tooltip; the action Button uses `stableWidth`, so nothing moves when the state changes. `Configured` stays saved presence; only Save and test marks verification.
+- One Connection group with a scope line per provider; long explanations moved into `info`; credential-provider account rows keep Edit and move the rest into an overflow menu with confirmation. Jira masked email, save/test, errors and handlers are unchanged. GitHub uses a reserved Badge and no duplicate scope line.
+- A source sweep for other async labels is in `ASYNC-LABELS-v3-p5.md` (candidates, not measured defects).
+- Connections (V3-016) share the pattern: Machines count and header actions, sync/details in an overflow, one Options toggle for recovery, a simplified phone page and pairing dialog, the Sharing form in one column. Not done: a paired-phone roster (no data source exposes it).
+- Unverified: all five provider tabs at 1280/800 light/dark with long locales.

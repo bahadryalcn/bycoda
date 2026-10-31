@@ -1,3 +1,4 @@
+import { nativeModelIdWithSettings } from "../../../../features/sessions/model/models";
 import { captureTextInput, prepareTextProcess, runTextOperation } from "../../core/textSource";
 import { acpTurnWriter, type AcpWriterView } from "../turnWriter";
 import { killChild } from "../../core/child";
@@ -98,7 +99,7 @@ async function promptOnLive(input: {
   input.signal?.throwIfAborted();
   const session = await ensureLive(
     input.cwd,
-    input.model,
+    input.model ? nativeModelIdWithSettings(input.model, input.modelSettings) : undefined,
     input.modelSettings,
     input.operationContext,
   );

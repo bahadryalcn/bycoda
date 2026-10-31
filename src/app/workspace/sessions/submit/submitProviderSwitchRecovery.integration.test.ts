@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useSessionModelActions } from "../useSessionModelActions";
+import { applyPendingAccount } from "./submitPendingAccount";
 import { prepareSubmitPreflight } from "./submitPreflight";
 import { prepareSubmittedTurn } from "./submitTurnSetup";
 import { startSubmittedTurn } from "./submitTurnRun";
@@ -19,7 +20,12 @@ import {
   resetSessionsStore,
   setSessions,
 } from "../../../../features/sessions/model/sessionsStore";
-import { isPreparingHandoff, lastHandoffBlock } from "../../../../features/sessions/model/handoff";
+import {
+  appendPreparingHandoff,
+  failHandoff,
+  isPreparingHandoff,
+  lastHandoffBlock,
+} from "../../../../features/sessions/model/handoff";
 import type { HandoffHistory } from "../../../../features/sessions/model/handoffBudget";
 import { failedTurnRetry } from "../../../../features/sessions/ui/RetryFailedTurn";
 import { sanitizeSessionForPersist } from "../../../../features/sessions/data/sessionStore";
@@ -48,17 +54,22 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, isTauri: () => f
 vi.mock("../../../../features/settings/model/exactGitRewind", () => ({
   getExactGitRewindEnabled: vi.fn(async () => false),
 }));
-vi.mock("../../../../features/workspaces/model/workspaceClient", () => ({
-  getWorkspaceCapabilities: vi.fn(),
-  resolveWorkspaceContext: vi.fn(async () => ({
-    cwd: "/repo",
-    projectId: "project",
-    environmentId: "environment",
-    machineId: "machine",
-  })),
-  requireWorkspaceCapability: vi.fn(async () => {}),
-  workspaceRequest: vi.fn(),
-}));
+vi.mock("../../../../features/workspaces/model/workspaceClient", () => {
+  const getWorkspaceCapabilities = vi.fn();
+  return {
+    getWorkspaceCapabilities,
+    // The per-send memoized lookup delegates, so each test controls the answer.
+    getSendWorkspaceCapabilities: (context: unknown) => getWorkspaceCapabilities(context),
+    resolveWorkspaceContext: vi.fn(async () => ({
+      cwd: "/repo",
+      projectId: "project",
+      environmentId: "environment",
+      machineId: "machine",
+    })),
+    requireWorkspaceCapability: vi.fn(async () => {}),
+    workspaceRequest: vi.fn(),
+  };
+});
 vi.mock("../../../../features/orchestration/model/orchestration", () => ({
   orchestrator: {
     submissionError: () => undefined,
@@ -392,39 +403,22 @@ describe("provider switch context and failed retirement recovery", () => {
     assertOriginalContext();
   });
 
-  it("keeps Grok selectable after failed Claude retirement and never dispatches while that same cleanup remains unverified", async () => {
+  it("continues after failed Claude retirement, keeps Grok selectable and never replays a completed request", async () => {
     cleanupError = new Error("Owned process job retirement unknown");
     await choose("codex", codexAccount);
     const request = "PRESERVED-REQUEST: keep these files and continue the original task.";
-    await submit(request, [currentAttachment], "failed");
-    let state = getSessions()[0];
-    expect(sends.some((send) => send.harness === "codex")).toBe(false);
-    expect(lastHandoffBlock(state.blocks)?.handoff?.status).toBe("failed");
-    expect(isPreparingHandoff(state)).toBe(false);
-    expect(state.pendingSwitch).toMatchObject({
-      from: "claude",
-      fromModel: model.claude,
-      fromSettings: original.modelSettings,
-      fromProviderSessionId: "claude-original-thread",
-      fromProviderAccountId: claudeAccount,
-    });
-    expect(failedTurnRetry(state)).toMatchObject({
-      text: request,
-      attachments: [currentAttachment],
-    });
-    assertOriginalContext();
-
-    await choose("grok");
-    state = getSessions()[0];
-    expect(state).toMatchObject({ harness: "grok", model: model.grok });
-    expect(state.pendingSwitch?.from).toBe("claude");
-    const retry = failedTurnRetry(state)!;
-    await submit(retry.text, retry.attachments, "failed");
-    expect(sends.some((send) => send.harness === "grok")).toBe(false);
-    expect(forgets).toEqual(["claude", "claude"]);
-    expect(getSessions()[0].pendingSwitch?.from).toBe("claude");
-    expect(lastHandoffBlock(getSessions()[0].blocks)?.handoff?.status).toBe("failed");
+    await submit(request, [currentAttachment], "completed");
+    expect(sends.filter((send) => send.harness === "codex" && !send.recap)).toHaveLength(1);
+    expect(getSessions()[0].pendingSwitch).toBeUndefined();
+    expect(failedTurnRetry(getSessions()[0])).toBeNull();
     expect(isPreparingHandoff(getSessions()[0])).toBe(false);
+    assertOriginalContext();
+    await choose("grok");
+    expect(getSessions()[0]).toMatchObject({ harness: "grok", model: model.grok });
+    await submit("A distinct follow-up", [], "completed");
+    expect(sends.filter((send) => send.harness === "grok" && !send.recap)).toHaveLength(1);
+    expect(sends.filter((send) => send.harness === "codex" && !send.recap)).toHaveLength(1);
+    expect(forgets).toEqual(["claude", "codex"]);
     assertOriginalContext();
   });
 
@@ -432,7 +426,18 @@ describe("provider switch context and failed retirement recovery", () => {
     cleanupError = new Error("Owned process job retirement unknown");
     await choose("codex", codexAccount);
     const request = "RECOVERED-REQUEST: resolve CONTRACT-7421 with the attached trace.";
-    await submit(request, [currentAttachment], "failed");
+    // Restore a failed divider produced before best-effort cleanup was introduced.
+    // New submissions no longer fail solely because retirement is unverified.
+    setSessions((all) => all.map((session) => {
+      const source = session.pendingSwitch!;
+      const prepared = appendPreparingHandoff(session, "claude", "codex", source);
+      const failed = failHandoff(prepared, source, cleanupError!.message);
+      return { ...failed, blocks: [...failed.blocks, {
+        id: "preserved-user", role: "user", text: request, attachments: [currentAttachment],
+      }, {
+        id: "historical-cleanup-error", role: "system", text: cleanupError!.message, notice: "error",
+      }] };
+    }));
     const failed = getSessions()[0];
     const saved = JSON.parse(JSON.stringify(sanitizeSessionForPersist(failed)));
     // Rehydrate from persisted data and fresh defaults, never from the live
@@ -454,8 +459,7 @@ describe("provider switch context and failed retirement recovery", () => {
     });
     const retry = failedTurnRetry(getSessions()[0])!;
     expect(retry).toMatchObject({ text: request, attachments: [currentAttachment] });
-    // This fixture now reports an independently verified original cleanup. The
-    // production retirement ledger must never convert its retained failure to success.
+    // The historical failed request was never dispatched; cleanup now succeeds.
     cleanupError = undefined;
     await submit(retry.text, retry.attachments, "completed");
     const target = sends.find((send) => send.harness === "grok" && !send.recap)!;
@@ -466,11 +470,87 @@ describe("provider switch context and failed retirement recovery", () => {
     expect(target.input.text).toContain("/isolated/handoff-history-1.json");
     expect(target.input.text.split(request)).toHaveLength(2);
     expect(target.input.attachments).toEqual([currentAttachment]);
-    expect(forgets).toEqual(["claude", "claude"]);
+    expect(sends.filter((send) => !send.recap)).toHaveLength(1);
+    expect(failedTurnRetry(getSessions()[0])).toBeNull();
+    expect(forgets).toEqual(["claude"]);
     expect(timeline.indexOf("cleanup:claude:verified")).toBeLessThan(timeline.indexOf("send:grok"));
     assertFullArchive(archives[0]);
     expect(getSessions()[0].pendingSwitch).toBeUndefined();
     expect(isPreparingHandoff(getSessions()[0])).toBe(false);
     assertOriginalContext();
+  });
+
+  it("keeps picks open while a turn runs and applies another account on the next idle send", async () => {
+    const other = newProviderAccount("claude", "Other Claude account");
+    saveProviderAccount(other);
+    const running = {
+      harness: "claude" as const,
+      model: model.claude,
+      modelSettings: original.modelSettings,
+      providerAccountId: claudeAccount,
+    };
+    setSessions((all) =>
+      all.map((session) => ({ ...session, busy: true, runningModelTarget: running })),
+    );
+    await choose("claude", other.id);
+    let state = getSessions()[0];
+    // The running turn keeps its account; no account-switch refusal is shown.
+    expect(state).toMatchObject({
+      providerAccountId: claudeAccount,
+      nextProviderAccountId: other.id,
+    });
+    expect(state.providerSessionId).toBe("claude-original-thread");
+    expect(forgets).toEqual([]);
+    expect(state.blocks.some((block) => /Wait for the current turn/.test(block.text))).toBe(false);
+
+    // A provider pick during the same turn arms the switch and drops the waiting account.
+    await choose("codex", codexAccount);
+    state = getSessions()[0];
+    expect(state).toMatchObject({ harness: "codex", providerAccountId: codexAccount });
+    expect(state.nextProviderAccountId).toBeUndefined();
+    expect(state.pendingSwitch?.from).toBe("claude");
+    expect(forgets).toEqual([]);
+
+    // Back to the running provider with another account while busy: deferred again, running turn untouched.
+    await choose("claude", other.id);
+    state = getSessions()[0];
+    expect(state).toMatchObject({ harness: "claude", nextProviderAccountId: other.id });
+    expect(state.pendingSwitch).toBeUndefined();
+    expect(forgets).toEqual([]);
+
+    // The turn ends; the next send switches first and then resumes.
+    setSessions((all) =>
+      all.map((session) => ({ ...session, busy: false, runningModelTarget: undefined })),
+    );
+    const resume = vi.fn(() => true);
+    const applied = applyPendingAccount(
+      ctx,
+      { sessionId: original.id, text: "next", attachments: [], options: undefined },
+      resume,
+    );
+    expect(await applied).toBe(true);
+    expect(resume).toHaveBeenCalledOnce();
+    expect(getSessions()[0]).toMatchObject({ providerAccountId: other.id });
+    expect(getSessions()[0].nextProviderAccountId).toBeUndefined();
+    expect(forgets).toEqual(["claude"]);
+  });
+
+  it("repairs a handoff left preparing with no running submit so picks and sends work again", async () => {
+    const source = {
+      from: "claude" as const,
+      fromModel: model.claude,
+      fromSettings: original.modelSettings,
+    };
+    setSessions((all) =>
+      all.map((session) =>
+        appendPreparingHandoff({ ...session, pendingSwitch: source }, "claude", "codex", source),
+      ),
+    );
+    expect(isPreparingHandoff(getSessions()[0])).toBe(true);
+    await choose("grok");
+    const state = getSessions()[0];
+    expect(isPreparingHandoff(state)).toBe(false);
+    expect(state).toMatchObject({ harness: "grok" });
+    expect(state.pendingSwitch?.from).toBe("claude");
   });
 });

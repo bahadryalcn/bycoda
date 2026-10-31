@@ -30,7 +30,14 @@ function denseArray(value: unknown[]): unknown[] {
   return value;
 }
 
+// Printable ASCII without quote/backslash costs exactly one byte per unit (base64, ids).
+const PLAIN_ASCII = /^[\x20\x21\x23-\x5b\x5d-\x7e]*$/;
+
 function stringBytes(value: string): number {
+  if (value.length >= 32 && PLAIN_ASCII.test(value)) {
+    if (value.length + 2 > NATIVE_CAPTURE_JSON_LIMITS.bytes) return fail("capacity");
+    return value.length + 2;
+  }
   let bytes = 2;
   for (let index = 0; index < value.length; index++) {
     const code = value.charCodeAt(index);

@@ -49,18 +49,22 @@ export function createTerminalTypography(options: {
   };
   window.addEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
 
-  // Capture before xterm and the webview can scroll a TUI or zoom the whole app.
-  const onZoomWheel = (event: WheelEvent) => {
-    if (!event.ctrlKey || event.deltaY === 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const size = Math.max(8, Math.min(40, term.options.fontSize! + (event.deltaY < 0 ? 1 : -1)));
+  const changeFontSize = (requested: number) => {
+    const size = Math.max(8, Math.min(40, requested));
     if (size === term.options.fontSize) return;
     zoomSize.current = size;
     term.options.fontSize = size;
     onDisplayFontSize(size);
     onFontSizeChange.current?.(size);
     applySize();
+  };
+
+  // Capture before xterm and the webview can scroll a TUI or zoom the whole app.
+  const onZoomWheel = (event: WheelEvent) => {
+    if (!event.ctrlKey || event.deltaY === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    changeFontSize(term.options.fontSize! + (event.deltaY < 0 ? 1 : -1));
   };
   host.addEventListener("wheel", onZoomWheel, {
     capture: true,
@@ -73,6 +77,7 @@ export function createTerminalTypography(options: {
   });
 
   return {
+    changeFontSize,
     /** Line height the grid should be fitted and restored with. */
     lineHeight(): number {
       return typography.current.lineHeight ?? preferences.terminalLineHeight;

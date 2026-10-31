@@ -439,6 +439,8 @@ export type Block = {
    */
   notice?: "error" | "interrupt" | "info";
   statusKey?: string;
+  /** Status rows only: when the work behind this row started, while it still runs. */
+  statusRunningSince?: number;
   /** Durable reason the turn ended before a normal assistant completion. */
   turnOutcome?: "stopped";
   turnStoppedAt?: number;
@@ -538,6 +540,11 @@ export type Session = {
   providerSessionId?: string;
   /** Named local credential profile used by Claude or Codex. */
   providerAccountId?: string;
+  /**
+   * Account picked while a turn runs: the running turn keeps its own, and the
+   * next idle send switches to this one. In-memory only.
+   */
+  nextProviderAccountId?: string;
   /** Context-window level reported by the harness. Absent until it reports. */
   context?: ContextUsage;
   /** Running totals from Claude turn results. In-memory only. */

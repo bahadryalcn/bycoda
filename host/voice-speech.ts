@@ -26,7 +26,7 @@ export class VoiceSpeechService {
         },
       }));
       const timer = setTimeout(() => {
-        reject(new Error("VoxCPM2 startup timed out."));
+        reject(new Error("Natural voice startup timed out."));
         this.close();
       }, 90_000);
       child.stderr.on("data", () => {});
@@ -63,7 +63,7 @@ export class VoiceSpeechService {
       });
       const failed = () => {
         clearTimeout(timer);
-        reject(new Error("VoxCPM2 disconnected. Check voice setup in Chat settings."));
+        reject(new Error("Natural voice disconnected. Check voice setup in Chat settings."));
         if (this.child === child) this.close();
       };
       child.on("error", failed);
@@ -73,9 +73,11 @@ export class VoiceSpeechService {
     return this.loading;
   }
 
-  speak(owner: string, text: unknown) {
+  speak(owner: string, text: unknown, language?: unknown) {
     if (typeof text !== "string" || !text.trim() || text.length > 700)
       throw new Error("Invalid speech text.");
+    if (language !== undefined && (typeof language !== "string" || !/^[a-z]{2}$/.test(language)))
+      throw new Error("Invalid voice language.");
     if (!this.child) throw new Error("Natural voice is not connected.");
     // The GPU is shared: avoid silently interrupting another window's voice.
     if ([...this.speeches.values()].some((speech) => speech.owner !== owner))
@@ -83,7 +85,7 @@ export class VoiceSpeechService {
     this.release(owner);
     const id = randomUUID();
     this.speeches.set(id, { owner, chunks: [] });
-    this.child.stdin.write(JSON.stringify({ id, text }) + "\n");
+    this.child.stdin.write(JSON.stringify({ id, text, ...(language ? { language } : {}) }) + "\n");
     return { id };
   }
 

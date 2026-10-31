@@ -40,11 +40,11 @@ impl Binding {
             .ready
             .lock()
             .map_err(|_| "NATIVE_TURN_BINDING_UNAVAILABLE")?;
-        let ready = self
+        let (ready, _) = self
             .changed
-            .wait_while(ready, |result| result.is_none())
+            .wait_timeout_while(ready, Duration::from_secs(12), |result| result.is_none())
             .map_err(|_| "NATIVE_TURN_BINDING_UNAVAILABLE")?;
-        ready.as_ref().unwrap().clone()?;
+        ready.as_ref().ok_or("Turn binding timed out; previous write may still be in flight")?.clone()?;
         Ok(self.receipt.clone())
     }
     fn finish(&self, result: Result<(), String>) {
@@ -55,7 +55,7 @@ impl Binding {
         self.changed.notify_all();
     }
     fn reclaimable(&self) -> bool {
-        self.turn.finished() && self.ready.lock().is_ok_and(|ready| ready.is_some())
+        (self.turn.finished() || self.turn.writes.settled()) && self.ready.lock().is_ok_and(|ready| ready.is_some())
     }
     fn matches_source(&self, route: &str, live: &Arc<LiveChild>, turn: &Arc<TurnWork>) -> bool {
         self.route == route
@@ -100,6 +100,7 @@ impl Bindings {
                 _operation: operation,
             });
         }
+        self.records.retain(|binding| !binding.reclaimable());
         if self.records.len() >= CAPACITY {
             if let Some(index) = self
                 .records
@@ -109,6 +110,7 @@ impl Bindings {
                 self.records.remove(index);
             }
         }
+        self.records.retain(|binding| !binding.reclaimable());
         if self.records.len() >= CAPACITY {
             return Err("NATIVE_TURN_BINDING_CAPACITY".into());
         }
@@ -240,6 +242,10 @@ fn bind_original(
         let mut drained = Ok(());
         for old in &plan.predecessors {
             let result = old.writes.drain();
+            let result = if old.writes.settled() {
+                if let Err(error) = &result { eprintln!("[harness] predecessor write failed: {error}"); }
+                Ok(())
+            } else { result };
             if drained.is_ok() {
                 drained = result;
             }
@@ -349,8 +355,8 @@ fn admit_original(
     )
 }
 
-/// There is deliberately no deadline that kills P to rotate turns. The actual
-/// blocking writer retains all original permits and lease through join/tail.
+/// The response deadline never kills P. The blocking writer retains all
+/// original permits and lease until its actual I/O and callback tail finish.
 fn write_controlled(
     live: Arc<LiveChild>,
     line: String,
@@ -362,12 +368,13 @@ fn write_controlled(
         lease.begin_external()?;
     }
     admission.start();
-    let writer = thread::spawn(move || {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
         let result = (|| {
             let mut stdin = live
                 .stdin
-                .lock()
-                .map_err(|_| "NATIVE_TURN_STDIN_UNAVAILABLE".to_string())?;
+                .try_lock()
+                .map_err(|_| "Previous provider write is still in flight; wait before retrying".to_string())?;
             stdin
                 .write_all(line.as_bytes())
                 .and_then(|_| stdin.write_all(b"\n"))
@@ -375,14 +382,12 @@ fn write_controlled(
                 .map_err(|error| format!("Failed to write original controlled harness: {error}"))
         })();
         after_io();
-        result.and_then(|_| authority.map_or(Ok(()), |lease| lease.finish()))
+        let cleanup = authority.map_or(Ok(()), |lease| lease.finish());
+        let result = result.and(cleanup);
+        admission.finish(&result);
+        let _ = tx.send(result);
     });
-    let result = writer
-        .join()
-        .map_err(|_| "NATIVE_TURN_WRITER_PANICKED".to_string())
-        .and_then(|result| result);
-    admission.finish(&result);
-    result
+    rx.recv_timeout(Duration::from_secs(12)).map_err(|_| "Provider stdin delivery outcome unknown; do not retry while writing".to_string())?
 }
 
 #[tauri::command]
@@ -414,16 +419,13 @@ pub async fn harness_write_controlled(
     let scope = native_authority_scope(authority_environment_id, authority_generation)?;
     // Strict turn admission has no JSON-shape bypass. Existing byte authority is
     // independent; a stale/closed turn is rejected before these rewrites/effects.
-    let lease = gate.reserve_existing(
-        original.output.target(),
-        "provider-stdin",
-        scope.as_ref(),
-        false,
-    )?;
-    let line = crate::social_bridge::authorize_acp_frame(&session_id, line);
-    let line = crate::runtime_logs_bridge::authorize_acp_frame(&session_id, line);
-    let line = crate::conversation_tools_bridge::authorize_acp_frame(&session_id, line);
+    let target = original.output.target().to_owned();
+    // Lease SQL must not run on the async command thread.
     tauri::async_runtime::spawn_blocking(move || {
+        let lease = gate.reserve_existing(&target, "provider-stdin", scope.as_ref(), false)?;
+        let line = crate::social_bridge::authorize_acp_frame(&session_id, line);
+        let line = crate::runtime_logs_bridge::authorize_acp_frame(&session_id, line);
+        let line = crate::conversation_tools_bridge::authorize_acp_frame(&session_id, line);
         write_controlled(live, line, Some(lease), admission, || {})
     })
     .await

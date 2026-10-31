@@ -12,7 +12,7 @@ vi.mock("../../../../integrations/harness/core/child", () => ({
 }));
 vi.mock("../../../../features/sessions/data/sessionStore", () => ({
   shouldPersistSession: () => mocks.persistable,
-  upsertSession: mocks.upsert,
+  saveSessionBeforeSend: mocks.upsert,
 }));
 beforeEach(() => {
   vi.resetModules();
@@ -53,7 +53,7 @@ it("waits for the actual local row-save acknowledgement before exposing a locato
   await Promise.resolve();
   expect(settled).toBe(false);
   expect(mocks.upsert).toHaveBeenCalledWith(f.session);
-  resolve({ id: f.session.id });
+  resolve(true);
   expect(await pending).toBe(f.session.id);
 });
 it.each(["web", "headless", "ephemeral", "remote"])(
@@ -68,14 +68,14 @@ it.each(["web", "headless", "ephemeral", "remote"])(
     expect(mocks.upsert).not.toHaveBeenCalled();
   },
 );
-it.each([null, { id: "different-row" }])(
-  "a missing/mismatched ACK cannot supply a hint",
+it.each([false, undefined])(
+  "an unconfirmed save cannot supply a hint and does not block the turn",
   async (ack) => {
     const f = await fixture();
     mocks.upsert.mockResolvedValue(ack);
-    await expect(f.prepareNativeOutputSession(f.session.id, () => true)).rejects.toThrow(
-      "could not be saved before starting",
-    );
+    await expect(
+      f.prepareNativeOutputSession(f.session.id, () => true),
+    ).resolves.toBeUndefined();
   },
 );
 it("a retired turn cannot proceed after a late successful save", async () => {
@@ -89,7 +89,7 @@ it("a retired turn cannot proceed after a late successful save", async () => {
   );
   const pending = f.prepareNativeOutputSession(f.session.id, () => current);
   current = false;
-  resolve({ id: f.session.id });
+  resolve(true);
   expect(await pending).toBeUndefined();
 });
 it("identical-ID model reset cannot rebind an older preparation", async () => {
@@ -102,8 +102,8 @@ it("identical-ID model reset cannot rebind an older preparation", async () => {
   );
   const pending = f.prepareNativeOutputSession(f.session.id, () => true);
   f.model.resetSessionsStore([{ ...f.session }]);
-  resolve({ id: f.session.id });
-  await expect(pending).rejects.toThrow("changed while preparing to start");
+  resolve(true);
+  await expect(pending).resolves.toBeUndefined();
 });
 it("ordinary accepted edits in the same model lifetime do not block preparation", async () => {
   const f = await fixture();
@@ -115,6 +115,21 @@ it("ordinary accepted edits in the same model lifetime do not block preparation"
   );
   const pending = f.prepareNativeOutputSession(f.session.id, () => true);
   f.model.setSessions([{ ...f.session, title: "New title" }]);
-  resolve({ id: f.session.id });
+  resolve(true);
   expect(await pending).toBe(f.session.id);
+});
+it("starts the save without waiting so dispatch can overlap it", async () => {
+  const f = await fixture();
+  const { startNativeOutputSession } = await import("./prepareNativeOutputSession");
+  let resolve!: (value: unknown) => void;
+  mocks.upsert.mockReturnValue(
+    new Promise((yes) => {
+      resolve = yes;
+    }),
+  );
+  const started = startNativeOutputSession(f.session.id, () => true);
+  expect(started?.sessionId).toBe(f.session.id);
+  expect(mocks.upsert).toHaveBeenCalledOnce();
+  resolve(true);
+  expect(await started?.ready).toBe(f.session.id);
 });

@@ -39,6 +39,21 @@ audit scope (verbatim excerpts separated at the inline image):
 This requests staged Settings audit/design, starting with Policies. No new legal
 text, language persistence/default, consent or permission behavior was selected.
 
+2026-10-31, V3-013 (Crews page plus a T3 Code "Sharing & access" reference
+screenshot), exact quote:
+
+> Bu ortadaki gri arka planların hepsinden kurtulmak istiyorum aslına bakarsan. Bak t3code nasıl design etmiş bizde gri renkle ayırmışız heryeri bunlarıda düzeltelim bence.
+
+Settings groups and collections have no gray fill: thin border, rounded frame,
+hairline dividers between rows, group interior = page canvas. Roles
+`--ui-settings-group-surface|border`, `--ui-settings-hairline`,
+`--ui-settings-row-hover` live once in `src/styles/index.css`; `BycodaSettings.css`
+and `SettingsCollection.css` use them. Row contract (description line, `info`,
+`dependsOn`/`disabledReason`, `modified`/`onReset`, closed Advanced row, page-level
+Restore defaults): `docs/reference/ui-design-system.md` "Settings row contract".
+Exceptions: Appearance previews, danger zones, code/path views. Pages must not add
+their own surface work.
+
 ## Proposals
 
 Policies proposal, 2026-10-27: move short document-language scope beside its
@@ -666,3 +681,10 @@ is not claimed as delivered by a settings-only edit.
 Test edilmedi per overnight RULES. Only one direct fast compiler run is recorded
 in the packet; `check:web:fast` includes tests and is deliberately not invoked.
 All items are at most REVIEW. No native/device/installed or release acceptance.
+
+## V3 page-level notes (2026-10-31)
+
+Pages on the shared V3-022/V3-013 row and group pattern (source only, uncommitted; the per-feature cards hold the detail):
+- Providers (V3-008, `feature-providers`), Appearance (V3-020, `feature-appearance`), MCP and Skills edit modes (V3-010/V3-009, `feature-mcp`), Inbox and Connections (V3-014/V3-016, `feature-inbox-settings`), Source control and worktrees (V3-015/V3-027, `feature-source-control`), Limits & budgets and Notifications (V3-011/V3-019), Keybindings (V3-018), Chat, General and Privacy (V3-012/V3-021/V3-017), Crews (V3-013).
+- Common behavior: framed groups without gray fill, one visible description line with long help behind ⓘ, closed Advanced rows, reset icons only while a value is modified, dependent rows inert with the reason as a tooltip, stable control widths during async state.
+- Follow-ups recorded by the page agents: the settings search index label "Separate permissions" is stale (`settings.ts`); unused `VoiceSettings.module.css` classes remain (voice area, owned elsewhere); the paired-phone roster needs real data.

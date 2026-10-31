@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useRef, type ReactNode } from "react";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import type { Session } from "../model/session";
 import type { ApprovalRequestToken } from "../model/approvalIntents";
@@ -15,14 +15,21 @@ const Context = createContext<{ session: Session; dispatch: ApprovalDispatch } |
 /** The actual pane supplies its original Session; a transcript cannot invent it. */
 export function ApprovalDecisionProvider({
   session,
+  getSession,
   dispatch,
   children,
 }: {
   session: Session;
+  getSession?: () => Session;
   dispatch: ApprovalDispatch;
   children: ReactNode;
 }) {
-  const value = useMemo(() => ({ session, dispatch }), [session, dispatch]);
+  const current = useRef(session);
+  current.current = session;
+  const value = useMemo(() => ({
+    get session() { return getSession?.() ?? current.current; },
+    dispatch,
+  }), [dispatch, getSession]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

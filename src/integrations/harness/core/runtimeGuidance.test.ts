@@ -29,6 +29,7 @@ it("advertises only available bridges and states the CLI fallback once", async (
   expect(await harnessRuntimeHints("session")).toBe("");
   const host = { command: "C:\\Program Files\\nodejs\\node.exe", args: ["G:\\owner's\\host.mjs"] };
   bridges.logs.mockResolvedValue(host);
+  forgetRuntimeHint("session");
   const logsOnly = await harnessRuntimeHints("session");
   expect(logsOnly).toContain("logs available");
   expect(logsOnly).not.toContain("skills.search");

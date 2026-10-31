@@ -83,7 +83,7 @@ it.each([
       url: "https://target.example.com",
       token: "keep-token",
     });
-    expect(container.textContent).toContain("Verified at");
+    expect(container.textContent).toContain("Verified");
     expect(container.querySelector('input[type="password"]')).toBeNull();
   },
 );
@@ -133,7 +133,7 @@ it("separates a Linear team read failure from saved credentials and offers retry
   await act(async () => root.render(createElement(LinearSettings)));
   expect(container.textContent).toContain("Configured");
   // Reading saved credentials never claims the provider accepted them.
-  expect(container.textContent).not.toContain("Verified at");
+  expect(container.querySelector('[data-state="verified"]')).toBeNull();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Teams unavailable");
   fail = false;
   await click("Retry");
@@ -166,7 +166,9 @@ it.each([false, true])(
     });
     await act(async () => root.render(createElement(LinearSettings)));
     await click("Refresh teams");
-    await click("Disconnect");
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click());
+    await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) => button.textContent?.includes("Disconnect"))!.click());
     await fill("Linear API key", "replacement-test-key");
     await click("Save and test connection");
     expect(container.textContent).toContain("New account team");
@@ -236,7 +238,7 @@ it.each([
       vi.mocked(invoke).mock.calls.filter(([command]) => command === saveCommand),
     ).toHaveLength(1);
     await act(async () => finish());
-    expect(container.textContent).toContain("Verified at");
+    expect(container.textContent).toContain("Verified");
     expect(container.querySelector('button[aria-busy="true"]')).toBeNull();
   },
 );

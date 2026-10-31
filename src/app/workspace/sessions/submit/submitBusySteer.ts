@@ -12,6 +12,7 @@ import {
   holdUndeliveredFollowUp,
   queuedModelTarget,
   resolveFollowUpRoute,
+  runningTargetOf,
   sentQueuedMessage,
 } from "../../../../features/sessions/model/messageQueue";
 import { preparePrompt } from "../../../../features/sessions/model/promptPreparation";
@@ -24,6 +25,7 @@ import {
   steerHarnessTurn,
 } from "../../../../integrations/harness";
 import { t } from "../../../../shared/i18n";
+import { TurnNotReadyError } from "../../../../integrations/harness/core/types";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import { userTurnCards } from "../../helpers/sessionHelpers";
 import { DeliveryUnknownError } from "../../../../shared/lib/deliveryUnknown";
@@ -240,14 +242,16 @@ export function steerBusySubmit(
     });
     // A native command (/goal, /review) must start its own turn; steering would
     // deliver it to the running turn as plain text.
-    if (followUpRoute === "queue" || rawCommand || !canSteerHarness(current.harness))
+    // A provider picked during this turn is for the next one; steer the turn's own.
+    const running = runningTargetOf(current);
+    if (followUpRoute === "queue" || rawCommand || !canSteerHarness(running.harness))
       return queueFollowUp();
-    if (!isLiveHarness(current.harness) || !canSteerHarness(current.harness)) {
+    if (!isLiveHarness(running.harness) || !canSteerHarness(running.harness)) {
       // Harnesses that cannot steer (fx) used to drop the message on the
       // floor here, so a follow-up sent mid-turn just vanished. Say so.
       enqueueHarnessEvent(sessionId, {
         type: "status",
-        text: `${current.harness} cannot take a follow-up mid-turn — wait for this turn to finish, or stop it first.`,
+        text: `${running.harness} cannot take a follow-up mid-turn — wait for this turn to finish, or stop it first.`,
       });
       flushHarnessEvents();
       return false;
@@ -305,7 +309,7 @@ export function steerBusySubmit(
       try {
         const prepared = await prepareAttachments(attachments);
         const prompt = await preparePrompt(harnessText, {
-          harness: current.harness,
+          harness: running.harness,
           sessionId,
           cwd: initialWorkCwd,
         });
@@ -323,11 +327,11 @@ export function steerBusySubmit(
         markSharedProviderSend(sessionId);
         await steerHarnessTurn({
           onReady: () => updateDeliveryProgress(sessionId, progress, "confirming"),
-          harness: current.harness,
+          harness: running.harness,
           sessionId,
           cwd: initialWorkCwd,
-          model: current.model,
-          modelSettings: current.modelSettings,
+          model: running.model,
+          modelSettings: running.modelSettings,
           text: inboxAskPrompt(rawCommand ? undefined : current.inboxAsk, prompt),
           attachments: prepared,
         });
@@ -396,10 +400,31 @@ export function steerBusySubmit(
           );
           return false;
         }
+        if (error instanceof TurnNotReadyError) {
+          setSessions((prev) =>
+            prev.map((entry) => {
+              if (entry.id !== sessionId) return entry;
+              return appendQueuedMessage(
+                { ...entry, blocks: entry.blocks.filter((block) => block.id !== steerUserId) },
+                { id: messageId, text, attachments, noteCard, handoffCard, intent,
+                  modelTarget: queuedModelTarget(storedCurrent) },
+              );
+            }),
+          );
+          updateDeliveryProgress(sessionId, progress, "rejected",
+            t("The turn finished. Your message will be sent next."));
+          enqueueHarnessEvent(sessionId, {
+            type: "status", text: t("The turn finished. Your message will be sent next."),
+          });
+          flushHarnessEvents();
+          wakeSharedLocalQueues([sessionId]);
+          // A queue action must not remove this reinserted row as an accepted steer.
+          return !options?.queuedMessageId;
+        }
         const message =
           error instanceof Error
             ? error.message
-            : `${current.harness} could not steer the active turn`;
+            : `${running.harness} could not steer the active turn`;
         holdFollowUp();
         updateDeliveryProgress(sessionId, progress, "rejected", message);
         enqueueHarnessEvent(sessionId, {

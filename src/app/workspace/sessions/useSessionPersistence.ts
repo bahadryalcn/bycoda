@@ -219,6 +219,21 @@ export function useSessionPersistence({
             !needsSessionOutputWrite(session)
           )
             return;
+          if (session.busy) {
+            // A running session saves incrementally; the full replace is kept for
+            // the turn end, when it stops being busy.
+            await upsertSessionLive(session, {
+              shouldWrite: () =>
+                !removingSessionIds.current.has(session.id) &&
+                !switchingWorktrees.current.has(session.id),
+              onStart: () => lastPersisted.current.set(session.id, revision),
+              onFailed: () => {
+                if (lastPersisted.current.get(session.id) === revision)
+                  lastPersisted.current.delete(session.id);
+              },
+            }).catch((error) => console.warn("App operation failed", error));
+            return;
+          }
           const summary = await upsertSession(session).catch(() => null);
           if (!summary) return;
           lastPersisted.current.set(session.id, revision);

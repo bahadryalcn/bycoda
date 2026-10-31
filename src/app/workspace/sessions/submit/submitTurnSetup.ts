@@ -15,6 +15,10 @@ import {
   sessionProviderAccountId,
   supportsProviderAccounts,
 } from "../../../../features/providers/model/providerAccounts";
+import {
+  beginActiveSubmit,
+  endActiveSubmit,
+} from "../../../../features/sessions/model/activeSubmits";
 import { displayAttachments } from "../../../../features/sessions/model/attachments";
 import {
   appendPreparingHandoff,
@@ -87,6 +91,8 @@ export function prepareSubmittedTurn(
   recordPerformanceEvent("send-prepare", { phase: 0 }, traceId);
   const gen = (turnGen.current.get(sessionId) ?? 0) + 1;
   turnGen.current.set(sessionId, gen);
+  // Owned until startSubmittedTurn settles; guards use it to spot a stale handoff.
+  beginActiveSubmit(sessionId, gen);
   const proposalId = intent === "orchestrate" ? crypto.randomUUID() : undefined;
   // Turn state that later phases read and write (formerly the `let`s of the
   // submit body). Initial values are the original declarations' initializers.
@@ -130,6 +136,7 @@ export function prepareSubmittedTurn(
     checkpointRetirementUncertain: false,
     sawProviderEvent: false,
     contextReplayAccepted: false,
+    replyCompleted: false,
   };
   const isFirstTurn = current.blocks.length === 0;
   const placeholderTitle =
@@ -342,8 +349,11 @@ export function prepareSubmittedTurn(
   };
 
   if (!live) {
+    endActiveSubmit(sessionId, gen);
     if (pendingSwitch) {
-      void forgetHarnessSession(pendingSwitch.from, sessionId);
+      void forgetHarnessSession(pendingSwitch.from, sessionId).catch((error) => {
+        console.warn("App operation failed", error);
+      });
     }
     editedResend?.reject();
     options?.onSettled?.({

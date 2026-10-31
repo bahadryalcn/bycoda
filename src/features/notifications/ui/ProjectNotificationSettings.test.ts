@@ -153,7 +153,7 @@ it("keeps local projects while offering only local notification categories", asy
   await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "/fun" })));
 
   const local = categoriesButton("fun");
-  expect(local.textContent).toContain("Local project · All categories enabled");
+  expect(local.textContent).toContain("All");
   act(() => local.click());
   expect(checked(checkbox("Agent finished for fun"))).toBe(true);
   expect(checked(checkbox("Agent approvals and questions for fun"))).toBe(true);
@@ -204,7 +204,7 @@ it("keeps projects collapsed until opened and preserves choices when switching p
   act(() => personal.click());
   expect(personalPanel.hidden).toBe(false);
   act(() => checkbox("Issues and Linear tasks for me/private").click());
-  expect(personal.textContent).toContain("5 of 6 enabled");
+  expect(personal.textContent).toContain("5 categories");
   act(() => work.click());
   expect(personalPanel.hidden).toBe(true);
   expect(workPanel.hidden).toBe(false);
@@ -267,7 +267,7 @@ it.each(["manual", "expiry"])(
     await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "" })));
     const project = checkbox("Issues and Linear tasks for me/private").closest("fieldset")!;
     act(() => categoriesButton("me/private").click());
-    expect(categoriesButton("me/private").textContent).toContain("All notifications paused");
+    expect(categoriesButton("me/private").textContent).toContain("Muted");
     const pr = checkbox("Pull requests / Merge requests for me/private");
     const description = document.getElementById(pr.getAttribute("aria-describedby") ?? "");
     expect(description?.textContent).toContain(
@@ -276,7 +276,7 @@ it.each(["manual", "expiry"])(
     expect(checked(pr)).toBe(true);
     expect(pr.disabled).toBe(false);
     act(() => checkbox("Reminders for me/private").click());
-    expect(categoriesButton("me/private").textContent).toContain("All notifications paused");
+    expect(categoriesButton("me/private").textContent).toContain("Muted");
     const resume = [...project.querySelectorAll("button")].find(
       (button) => button.getAttribute("aria-label") === "Resume notifications",
     );
@@ -286,8 +286,8 @@ it.each(["manual", "expiry"])(
     } else {
       await act(async () => vi.advanceTimersByTimeAsync(60_000));
     }
-    expect(categoriesButton("me/private").textContent).toContain("4 of 6 enabled");
-    expect(project.textContent).not.toContain("All notifications paused");
+    expect(categoriesButton("me/private").textContent).toContain("4 categories");
+    expect(project.textContent).not.toContain("Muted");
     expect(pr.hasAttribute("aria-describedby")).toBe(false);
     expect(checked(checkbox("Issues and Linear tasks for me/private"))).toBe(false);
     expect(loadNotificationPreferences()["repository:github.com/me/private"]).toMatchObject({

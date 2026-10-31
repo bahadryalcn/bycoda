@@ -8,6 +8,10 @@ import {
   withOrchestrationProposal,
 } from "../../../../features/orchestration/model/orchestrationPlan";
 import { invalidateProjectLocation } from "../../../../features/projects/model/projectLocation";
+import {
+  endActiveSubmit,
+  repairStaleHandoff,
+} from "../../../../features/sessions/model/activeSubmits";
 import { notifyReviewChanged } from "../../../../features/sessions/model/checkpoint";
 import {
   chooseHandoffBrief,
@@ -19,7 +23,7 @@ import {
 import { requestOutgoingHandoff } from "../../../../features/sessions/model/handoffTurn";
 import { handoffContextSession } from "../../../../features/sessions/model/handoffBudget";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
-import { prepareSessionWorkspace } from "../../../../features/workspaces/model/sessionWorkspace";
+import { prepareSessionWorkspaceDetailed } from "../../../../features/workspaces/model/sessionWorkspace";
 import {
   forgetHarnessSession,
   isLiveHarness,
@@ -43,7 +47,7 @@ export function startSubmittedTurn(
   void (async () => {
     let workCwd = initialWorkCwd;
     if (createDraftWorktree) {
-      const workspace = await prepareSessionWorkspace(current);
+      const { workspace, outcome } = await prepareSessionWorkspaceDetailed(current);
       if (turnGen.current.get(sessionId) !== gen) return;
       workCwd = workspace?.path ?? initialWorkCwd;
       workspacePins.current.set(sessionId, currentWorkspace(current.cwd));
@@ -61,7 +65,13 @@ export function startSubmittedTurn(
                       branch: workspace.branchRef.replace(/^refs\/heads\//, ""),
                     }
                   : {}),
-                workspaceMode: workspace ? undefined : "current",
+                // "current" is recorded only when policy or the user chose it; a
+                // legacy-Host fallback or an unneeded workspace leaves the mode alone.
+                ...(outcome === "workspace"
+                  ? { workspaceMode: undefined }
+                  : outcome === "current"
+                    ? { workspaceMode: "current" as const }
+                    : {}),
                 blocks: session.blocks.map((block) =>
                   block.workspacePreparationPending
                     ? { ...block, workspacePreparationPending: undefined }
@@ -130,7 +140,11 @@ export function startSubmittedTurn(
             : session,
         ),
       );
-      await forgetHarnessSession(pendingSwitch.from, sessionId);
+      // Unverified retirement of the outgoing provider is a warning, not a reason to
+      // drop the user's request; the switch completes and the request is sent once.
+      await forgetHarnessSession(pendingSwitch.from, sessionId).catch((error) => {
+        console.warn("App operation failed", error);
+      });
       outgoingRetired = true;
       if (turnGen.current.get(sessionId) !== gen) return;
       setSessions((prev) =>
@@ -155,6 +169,24 @@ export function startSubmittedTurn(
     await runSubmitDispatch(ctx, input, pre, setup, workCwd, checkpointTurnId, events);
   })()
     .catch((error: unknown) => {
+      if (turn.replyCompleted) {
+        // The reply is already complete: later cleanup trouble is a warning.
+        console.warn("Post-turn cleanup failed", error);
+        if (turnGen.current.get(sessionId) !== gen) return;
+        enqueueHarnessEvent(sessionId, {
+          type: "status",
+          text: "The reply finished, but cleanup afterwards did not complete.",
+        });
+        flushHarnessEvents();
+        setSessions((prev) =>
+          prev.map((session) =>
+            session.id === sessionId && turnGen.current.get(sessionId) === gen
+              ? { ...stopStreaming(session, Date.now()), worktreePreparing: undefined }
+              : session,
+          ),
+        );
+        return;
+      }
       invalidateProjectLocation(current.cwd);
       turn.controlOutcome = {
         status: "failed",
@@ -194,6 +226,8 @@ export function startSubmittedTurn(
       }
     })
     .finally(() => {
+      // A handoff still preparing here (Stop, a newer turn, an early exit) has no owner left.
+      if (endActiveSubmit(sessionId, gen)) repairStaleHandoff(sessionId);
       if (retiringTurns.current.get(sessionId) === gen) retiringTurns.current.delete(sessionId);
       editedResend?.reject();
       if (editedResend) editedResends.finish(sessionId);

@@ -127,19 +127,12 @@ function SyncLine({ machineId }: { machineId: string }) {
         </details>
       ) : (
         <span className="min-w-0 text-(--ui-text-muted)">
-          {describeSyncStatus(sync, Date.now())}
+          {sync.state === "ok" && sync.lastSyncAt
+            ? t("Synced {p0} min ago", { p0: Math.max(0, Math.floor((Date.now() - sync.lastSyncAt) / 60_000)) }) + (sync.pendingOps ? ` · ${t("{p0} pending changes", { p0: sync.pendingOps })}` : "")
+            : describeSyncStatus(sync, Date.now())}
         </span>
       )}
-      <Button
-        loading={sync.state === "syncing"}
-        onClick={() => void syncNow(machineId)}
-        variant="ghost"
-        iconOnly
-        label={t("Sync now")}
-        type="button"
-      >
-        <RefreshCw className="icon-sm" />
-      </Button>
+
     </div>
   );
 }
@@ -168,6 +161,7 @@ export function ConnectionsSettings() {
   const [removing, setRemoving] = useState<string>();
   const [revoking, setRevoking] = useState(false);
   const [removeMode, setRemoveMode] = useState<"revoke" | "local">("local");
+  const [detailMachine, setDetailMachine] = useState<string>();
   const [rowMenu, setRowMenu] = useState<{ machine: RemoteMachine; anchor: HTMLElement }>();
   const [url, setUrl] = useState("http://127.0.0.1:3776");
   const [token, setToken] = useState("");
@@ -478,12 +472,9 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           />
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h2 className="sr-only">{t("Your machines")}</h2>
-          <Badge variant="count" label={t("Your machines")}>
-            {machines.length}
-          </Badge>
+          <h2 className="text-ui-body font-medium">{t("Machines · {p0}", { p0: machines.length })}</h2>
           <div className="flex items-center gap-2">
-            <Button
+            <Button stableWidth
               iconOnly
               label={t("Refresh machines")}
               variant="ghost"
@@ -492,7 +483,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             >
               <RefreshCw aria-hidden className="icon-md" />
             </Button>
-            <Button
+            <Button stableWidth
               disabled={busy}
               onClick={startAdd}
               variant="primary"
@@ -596,7 +587,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 fieldClassName="min-w-0 flex-1"
               />
               {suggestion && (
-                <Button
+                <Button stableWidth
                   type="button"
                   disabled={busy}
                   title={t("Fills the address. Nothing is saved or tested until you save.")}
@@ -668,7 +659,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               </Alert>
             )}
             <div className="flex justify-end gap-2">
-              <Button
+              <Button stableWidth
                 type="button"
                 disabled={busy}
 
@@ -677,7 +668,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               >
                 {t("Cancel")}
               </Button>
-              <Button disabled={busy || !target.trim()} variant="primary" type="submit">
+              <Button stableWidth reserveLabels={[t("Saving…"), t("Connecting…")]} loading={busy} disabled={busy || !target.trim()} variant="primary" type="submit">
                 {editing
                   ? busy
                     ? t("Saving…")
@@ -705,7 +696,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             {job?.prompt && (
               <SshSetupPromptForm key={job.prompt.id} prompt={job.prompt} onRespond={respond} />
             )}
-            <Button
+            <Button stableWidth
               type="button"
               className="self-start"
               onClick={() => {
@@ -727,14 +718,14 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             <span className="text-ui-caption text-(--ui-text-muted)">
               {t("Remote target: {p0}", { p0: retryMachine.name })}
             </span>
-            <Button
+            <Button stableWidth
               variant="secondary"
               className="shrink-0"
               onClick={() => startEdit(retryMachine)}
             >
               {t("Edit name and address…")}
             </Button>
-            <Button
+            <Button stableWidth
               variant="secondary"
               className="shrink-0"
               onClick={() => void begin(retryMachine)}
@@ -755,11 +746,11 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 <div
                   className={`flex flex-wrap items-center gap-3 px-4 py-3 ${editing?.id === machine.id ? "bg-selection" : ""}`}
                 >
-                  <Internet aria-hidden className="icon-lg shrink-0 text-(--ui-text-muted)" />
+                  <Internet aria-hidden className="icon-lg shrink-0 self-start text-(--ui-text-muted)" />
                   <div className="min-w-0 flex-1 basis-48">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="truncate text-ui-secondary font-medium" title={machine.name}>
-                        {machine.name}
+                        {isLocalSyncMachine(machine) ? t("This computer") : machine.name}
                       </span>
                       {machineContext(machines, machine) ? (
                         <span
@@ -769,17 +760,16 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                           {machineContext(machines, machine)}
                         </span>
                       ) : null}
-                      <Badge size="sm" className="shrink-0">
+                      <span className="shrink-0 text-ui-caption text-(--ui-text-muted)">
                         {isLocalSyncMachine(machine) ? t("Local") : t("Remote computer")}
-                      </Badge>
+                      </span>
                       <MachineConnectionLine
                         environmentId={machine.environmentId}
                         probed={status[machine.id]}
                       />
                     </div>
                     <SyncLine machineId={machine.id} />
-                    <details className="connection-details">
-                      <summary>{t("Connection details")}</summary>
+                    {detailMachine === machine.id || status[machine.id] === "offline" || needsUpdate[machine.id] ? <div className="connection-details">
                       {machine.ssh?.alternate && (
                         <div className="mt-1 break-all text-ui-caption text-(--ui-text-muted)">
                           {t("Other address · ")}
@@ -809,7 +799,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                           </span>
                         </div>
                       ) : null}
-                    </details>
+                    </div> : null}
                     {machine.ssh && needsUpdate[machine.id] ? (
                       <div className="mt-1 text-ui-micro text-(--ui-text-muted)">
                         {t("Updating restarts the host and interrupts active agent turns.")}
@@ -818,7 +808,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {machine.ssh && needsUpdate[machine.id] ? (
-                      <Button
+                      <Button stableWidth
                         disabled={busy}
                         title={t(
                           "Downloads the matching host package and restarts the host; active agent turns will be interrupted",
@@ -831,7 +821,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                         {t("Update Host")}
                       </Button>
                     ) : machine.ssh && status[machine.id] === "offline" ? (
-                      <Button
+                      <Button stableWidth
                         disabled={busy}
                         onClick={() => void begin(machine)}
                         variant="secondary"
@@ -841,7 +831,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                         {t("Reconnect")}
                       </Button>
                     ) : null}
-                    <Button
+                    <Button stableWidth
                       iconOnly
                       variant="ghost"
                       label={t("Actions for {p0}", { p0: machineLabel(machines, machine) })}
@@ -869,7 +859,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             icon={<Internet aria-hidden className="icon-lg" />}
             description={t("Add your always-on Windows, Mac, or Linux machine to get started.")}
             action={
-              <Button variant="primary" disabled={busy} onClick={startAdd}>
+              <Button stableWidth variant="primary" disabled={busy} onClick={startAdd}>
                 {t("Add machine")}
               </Button>
             }
@@ -880,6 +870,8 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             anchor={rowMenu.anchor}
             label={t("Actions for {p0}", { p0: machineLabel(machines, rowMenu.machine) })}
             items={[
+              { kind: "item", id: "sync", label: t("Sync now") },
+              { kind: "item", id: "details", label: t("Connection details") },
               ...(rowMenu.machine.ssh
                 ? [
                     { kind: "item" as const, id: "reconnect", label: t("Reconnect") },
@@ -902,7 +894,9 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             onPick={(id) => {
               const machine = rowMenu.machine;
               setRowMenu(undefined);
-              if (id === "reconnect") void begin(machine);
+              if (id === "sync") void syncNow(machine.id);
+              else if (id === "details") setDetailMachine((current) => current === machine.id ? undefined : machine.id);
+              else if (id === "reconnect") void begin(machine);
               else if (id === "edit") startEdit(machine);
               else if (id === "remove") {
                 closeForm();
@@ -924,7 +918,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             size="md"
             footer={
               <>
-                <Button
+                <Button stableWidth
                   type="button"
                   variant="ghost"
                   disabled={revoking}
@@ -932,7 +926,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 >
                   {t("Cancel")}
                 </Button>
-                <Button
+                <Button stableWidth
                   type="button"
                   variant="danger"
                   loading={revoking}
@@ -1024,7 +1018,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             >
               <p>
                 {t(
-                  "Connect this desktop to an already running host at the URL below. Use a device token issued by that host. A loopback address targets this computer; a remote address targets that computer.",
+                  "Enter the host URL and a device token issued by that host.",
                 )}
               </p>
               <TextField
@@ -1046,7 +1040,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 value={token}
                 onChange={(event) => setToken(event.target.value)}
               />
-              <Button disabled={busy} variant="secondary" type="submit">
+              <Button stableWidth reserveLabels={[t("Connecting…"), t("Retry connection")]} loading={busy} disabled={busy} variant="secondary" type="submit">
                 {busy ? t("Connecting…") : error ? t("Retry connection") : t("Connect by URL")}
               </Button>
             </form>

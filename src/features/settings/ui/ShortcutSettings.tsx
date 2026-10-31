@@ -7,7 +7,7 @@ import styles from "./ShortcutSettings.module.css";
 import { t, useLocale } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 
-import { RotateCcw, ListFilter } from "../../../shared/ui/icons";
+import { RotateCcw, ListFilter, X } from "../../../shared/ui/icons";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
@@ -195,7 +195,7 @@ export function ShortcutEditor({
 
   return (
     <div className={styles.editor} aria-busy={busy} data-capturing={recording || undefined}>
-      <div className={styles.control}>
+      <div className={styles.control} title={recording ? t("Del disables · Esc cancels") : undefined}>
         <div
           className={styles.recorder}
           onPointerDownCapture={() => {
@@ -247,35 +247,24 @@ export function ShortcutEditor({
             }
           />
         </div>
-        {resetVisible && !recording ? (
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Reset {p0} shortcut", { p0: name })}
-            tooltip={t("Restore default")}
-            disabled={busy || disabled}
-            onClick={() => void run(onReset)}
-          >
-            <RotateCcw aria-hidden strokeWidth={1.75} />
-          </Button>
-        ) : null}
+        <span className={styles.actionSlot}>
+          {recording ? (
+            <Button variant="ghost" iconOnly label={t("Cancel")}
+              tooltip={t("Del disables · Esc cancels")}
+              onClick={() => {
+                setRecording(false);
+                setError(null);
+                onFeedbackChange?.(null);
+              }}><X aria-hidden className="icon-sm" /></Button>
+          ) : resetVisible ? (
+            <Button variant="ghost" iconOnly
+              label={t("Reset {p0} shortcut", { p0: name })} tooltip={t("Restore default")}
+              disabled={busy || disabled} onClick={() => void run(onReset)}>
+              <RotateCcw aria-hidden strokeWidth={1.75} />
+            </Button>
+          ) : null}
+        </span>
       </div>
-      {recording ? (
-        <div className={styles.captureHint} aria-live="polite">
-          <span className={styles.hint}>{t("Del disables · Esc cancels")}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setRecording(false);
-              setError(null);
-              onFeedbackChange?.(null);
-            }}
-          >
-            {t("Cancel")}
-          </Button>
-        </div>
-      ) : null}
       {onFeedbackChange ? null : error ? (
         <SettingsFeedback state="error">{error}</SettingsFeedback>
       ) : busy || saved ? (
@@ -422,7 +411,8 @@ function KeybindingSettingsRow({
           {modified ? <span className={styles.modified}>{t("Modified")}</span> : null}
         </span>
       }
-      scope={row.when === "Always" ? undefined : t("When: {p0}", { p0: t(row.when) })}
+      scope={row.when === "Always" ? undefined : <span className={styles.context} title={t("When: {p0}", { p0: t(row.when) })}>{t("When: {p0}", { p0: t(row.when) })}</span>}
+      descriptionVisible={false}
       description={
         modified
           ? t("Default: {p0}", {
@@ -431,18 +421,13 @@ function KeybindingSettingsRow({
             })
           : undefined
       }
-      feedback={
-        feedback ? (
-          <SettingsFeedback state={feedback.state}>
-            {feedback.state === "loading"
-              ? t("Saving…")
-              : feedback.state === "success"
-                ? t("Saved")
-                : feedback.message}
-          </SettingsFeedback>
-        ) : null
-      }
     >
+      <span className={styles.feedbackSlot} role={feedback?.state === "error" ? "alert" : "status"}>
+        <span className="sr-only">{feedback?.state === "error" ? feedback.message : feedback?.state === "loading" ? t("Saving…") : feedback ? t("Saved") : ""}</span>
+        {feedback ? <InfoPopover label={feedback.state === "error" ? feedback.message : feedback.state === "loading" ? t("Saving…") : t("Saved")}>
+          <p>{feedback.state === "error" ? feedback.message : feedback.state === "loading" ? t("Saving…") : t("Saved")}</p>
+        </InfoPopover> : null}
+      </span>
       {row.command === "App: Quick Composer" ? (
         <QuickComposerShortcutEditor onSaved={onSaved} onFeedbackChange={setFeedback} />
       ) : (
@@ -555,7 +540,7 @@ export function KeybindingsPage() {
         <div className={styles.search}>
           <SearchInput
             type="search"
-            appearance="field"
+            appearance="quiet"
             aria-label={t("Filter keybindings")}
             placeholder={t("Filter keybindings")}
             value={query}
@@ -589,9 +574,9 @@ export function KeybindingsPage() {
             )}
           </p>
         </InfoPopover>
-        <span className={styles.summary} role="status">
+        {query.trim() || filtered ? <span className={styles.summary} role="status">
           {t("Showing {p0} of {p1} bindings", { p0: rows.length, p1: allRows.length })}
-        </span>
+        </span> : null}
         {filtersOpen ? (
           <Popover
             anchor={filterAnchor}
@@ -674,8 +659,7 @@ export function KeybindingsPage() {
             return (
               <Group
                 key={group}
-                title={t(group)}
-                action={<span className={styles.groupCount}>{entries.length}</span>}
+                title={<span>{t(group)} <span className={styles.groupCount}>· {entries.length}</span></span>}
               >
                 {entries.map((row) => (
                   <KeybindingSettingsRow

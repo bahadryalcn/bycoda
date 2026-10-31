@@ -50,7 +50,7 @@ it("keeps event choices and schedule findable while application alerts are off",
     expect(control!.disabled).toBe(true);
     expect(control!.getAttribute("aria-checked")).toBe("true");
   }
-  expect(container.textContent).toContain("Your choices are preserved.");
+  expect(container.querySelector('[data-setting-id="notification-event-finished"]')?.getAttribute("data-dependent")).toBeTruthy();
   expect(container.querySelector('[aria-label^="Daily summary time:"]')).not.toBeNull();
   expect(localStorage.getItem("bycoda.notifications.events.v1")).toBeNull();
 });
@@ -71,7 +71,7 @@ it("refreshes platform availability without enabling notifications", async () =>
   expect(container.textContent).toContain("Not available on this platform");
   permission.value = "granted";
   await act(async () => window.dispatchEvent(new Event("focus")));
-  expect(container.textContent).toContain("System permission granted");
+  expect(container.textContent).toContain("Allowed by system");
   expect(
     container.querySelector('[aria-label="Desktop notifications"]')?.getAttribute("aria-checked"),
   ).toBe("false");
@@ -121,8 +121,8 @@ it("offers read-only recovery for unavailable permission status", async () => {
   await act(async () => root.render(createElement(NotificationAlerts)));
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Status unavailable");
   permission.value = "granted";
-  const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Refresh")!;
+  const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.getAttribute("aria-label") === "Refresh permission status")!;
   await act(async () => refresh.click());
-  expect(container.textContent).toContain("System permission granted");
+  expect(container.textContent).toContain("Allowed by system");
   expect(saveNotificationsEnabled).not.toHaveBeenCalled();
 });

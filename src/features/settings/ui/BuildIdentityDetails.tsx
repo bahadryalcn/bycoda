@@ -8,6 +8,7 @@ import {
   compareBuildIdentity,
 } from "../../../shared/model/build-info";
 import { Button } from "../../../shared/ui/Button";
+import { Check, Copy } from "../../../shared/ui/icons";
 import type { BuildIdentity } from "../../workspaces/model/contracts";
 import { SettingsFeedback } from "./settingsControls";
 
@@ -56,6 +57,7 @@ export function BuildIdentityDetails() {
       setCopying(false);
     }
   };
+  const comparison = compareBuildIdentity(buildIdentity, native);
   return (
     <details
       className="min-w-0 text-ui-caption text-(--ui-text-secondary)"
@@ -63,36 +65,64 @@ export function BuildIdentityDetails() {
     >
       <summary>{t("Build details")}</summary>
       <dl className="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 py-2">
-        <dt>{t("App source")}</dt>
-        <dd className="break-all text-content">{t(buildIdentityLabel())}</dd>
-        <dt>{t("Native source")}</dt>
-        <dd className="break-all text-content">
-          {readState === "failed" && !native
-            ? t("Unavailable: the native build stamp could not be read.")
-            : t(buildIdentityLabel(native))}
-          {readState === "failed" && native ? (
-            <span className="text-(--ui-text-secondary)">
-              {" "}
-              {t("(last successful read; the latest read failed)")}
-            </span>
-          ) : null}
-        </dd>
-        <dt>{t("Source comparison")}</dt>
-        <dd className="text-content">
-          {t(
-            {
-              exact: "Same source",
-              included: "Source included",
-              different: "Different source",
-              unknown: "Unknown",
-            }[compareBuildIdentity(buildIdentity, native)],
-          )}
-        </dd>
+        {comparison === "exact" && readState !== "failed" ? (
+          <>
+            {/* Both stamps are the same: say so once and show the identity once. */}
+            <dt>{t("Source")}</dt>
+            <dd className="break-all text-content">
+              {t(buildIdentityLabel())}{" "}
+              <span className="text-(--ui-text-secondary)">· {t("Same source")}</span>
+            </dd>
+          </>
+        ) : (
+          <>
+            <dt>{t("App source")}</dt>
+            <dd className="break-all text-content">{t(buildIdentityLabel())}</dd>
+            <dt>{t("Native source")}</dt>
+            <dd className="break-all text-content">
+              {readState === "failed" && !native
+                ? t("Unavailable: the native build stamp could not be read.")
+                : t(buildIdentityLabel(native))}
+              {readState === "failed" && native ? (
+                <span className="text-(--ui-text-secondary)">
+                  {" "}
+                  {t("(last successful read; the latest read failed)")}
+                </span>
+              ) : null}
+            </dd>
+            <dt>{t("Source comparison")}</dt>
+            <dd className="text-content">
+              {t(
+                {
+                  exact: "Same source",
+                  included: "Source included",
+                  different: "Different source",
+                  unknown: "Unknown",
+                }[comparison],
+              )}
+            </dd>
+          </>
+        )}
       </dl>
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => void copy()} loading={copying} loadingLabel={t("Copying…")}>
-          {copied ? t("Copied") : t("Copy build details")}
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Copy build details")}
+          tooltip={copied ? t("Copied") : t("Copy build details")}
+          loading={copying}
+          onClick={() => void copy()}
+        >
+          {copied ? (
+            <Check aria-hidden className="icon-xs" strokeWidth={1.75} />
+          ) : (
+            <Copy aria-hidden className="icon-xs" strokeWidth={1.75} />
+          )}
         </Button>
+        <span role="status" className="text-(--ui-text-secondary) empty:hidden">
+          {copied ? t("Copied") : ""}
+        </span>
         {readState === "failed" ? (
           <Button onClick={() => setAttempt((value) => value + 1)}>{t("Retry native read")}</Button>
         ) : null}

@@ -115,7 +115,7 @@ it.each([false, true])(
       state: "deferred",
       message: "The host update waits until running sessions finish.",
     };
-    await draw({ hideTopBar });
+    await draw({ hideTopBar, workspaceMode: "worktree" });
     expect(container.textContent).toContain(
       "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
     );
@@ -149,9 +149,20 @@ it("does not describe a local pending update as the remote machine's update", as
     state: "deferred",
     message: "The host update waits until running sessions finish.",
   };
-  await draw({ cwd: "remote://older/repo", executionCwd: "remote://older/repo" });
+  await draw({
+    cwd: "remote://older/repo",
+    executionCwd: "remote://older/repo",
+    workspaceMode: "worktree",
+  });
   expect(container.textContent).not.toContain("will install automatically");
   expect(button("Send")?.disabled).toBe(true);
+});
+
+it("does not hold Send for an unreadable policy default, only for an explicit worktree choice", async () => {
+  await draw();
+  expect(button("Send")?.disabled).toBe(false);
+  await act(async () => button("Send")!.click());
+  expect(submit).toHaveBeenCalledWith("Preserve this draft", [], expect.anything());
 });
 
 it("keeps update recovery available when the owner changes language while the error is visible", async () => {

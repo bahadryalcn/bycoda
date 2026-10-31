@@ -60,7 +60,7 @@ it("selects FULL before command BEGIN, commits receipt/domain atomically, restor
       sessionId: "session",
       revision: 2,
     });
-  });
+  }, "critical");
   expect(await synchronous(store.db)).toBe(1);
   const reader = new DatabaseSync(path);
   try {
@@ -106,7 +106,7 @@ it("critical outer command retains FULL even when a nested save uses journal opt
       sessionId: "session",
       revision: 2,
     });
-  });
+  }, "critical");
   expect(await store.receiptStatus("nested")).toBeDefined();
 });
 
@@ -134,7 +134,7 @@ it("rollback publishes no commit wake or receipt and resets the durability class
         revision: 2,
       });
       throw new Error("rollback fixture");
-    }),
+    }, "critical"),
   ).rejects.toThrow("rollback fixture");
   expect(wake).not.toHaveBeenCalled();
   expect(await store.receiptStatus("rollback")).toBeUndefined();
@@ -186,7 +186,7 @@ it("classifies SQLite extended busy/corruption codes without retaining sensitive
     state: "recovery-required",
     reason: "corrupt",
   });
-  expect(storageFailure({ errcode: 10 })).toEqual({ state: "recovery-required", reason: "io" });
+  expect(storageFailure({ errcode: 10 })).toEqual({ state: "temporarily-blocked", reason: "io" });
   expect(storageFailure(new Error("constraint violation"))).toBeUndefined();
 });
 

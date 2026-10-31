@@ -42,20 +42,73 @@ export function registerAppConfirmHost(next: AppConfirmHost): () => void {
   };
 }
 
+/** Longest wait for the in-app dialog to appear before the platform dialog asks instead. */
+export const CONFIRM_SHOW_TIMEOUT_MS = 15_000;
+const shownListeners = new WeakMap<AppConfirmRequest, Set<() => void>>();
+/** Requests the platform dialog took over; the in-app host must not open them late. */
+const abandoned = new WeakSet<AppConfirmRequest>();
+
+/** The host checks this after each await: an abandoned request is already answered elsewhere. */
+export function isAppConfirmAbandoned(request: AppConfirmRequest): boolean {
+  return abandoned.has(request);
+}
+
+/** The host calls this once its dialog is on screen, which ends the appear-timeout. */
+export function markAppConfirmShown(request: AppConfirmRequest): void {
+  const listeners = shownListeners.get(request);
+  shownListeners.delete(request);
+  listeners?.forEach((listener) => listener());
+}
+
+async function platformAnswer(request: AppConfirmRequest): Promise<boolean> {
+  const confirmed = await platformConfirm(request);
+  if (confirmed) await request.onConfirm?.();
+  return confirmed;
+}
+
 /**
  * Resolves true only when the owner confirms; Escape, Cancel and closing resolve false. Without a mounted
  * host (tests, a bare component in the web preview) it falls back to the platform dialog, so a destructive
- * action still never skips asking.
+ * action still never skips asking. A host whose dialog never appears is replaced by the platform dialog
+ * after 15 seconds, so an approval cannot hang forever.
  */
 export function confirmInApp(request: AppConfirmRequest): Promise<boolean> {
-  if (host) return host(request);
-  return platformConfirm(request).then(async (confirmed) => {
-    if (confirmed) await request.onConfirm?.();
-    return confirmed;
+  if (!host) return platformAnswer(request);
+  const inApp = host;
+  abandoned.delete(request);
+  return new Promise<boolean>((resolve, reject) => {
+    let settled = false;
+    const listeners = shownListeners.get(request) ?? new Set<() => void>();
+    shownListeners.set(request, listeners);
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      abandoned.add(request);
+      shownListeners.delete(request);
+      console.warn("[confirm] in-app dialog did not appear; asking with the platform dialog");
+      platformAnswer(request).then(resolve, reject);
+    }, CONFIRM_SHOW_TIMEOUT_MS);
+    const shown = () => clearTimeout(timer);
+    listeners.add(shown);
+    inApp(request).then(
+      (answer) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        resolve(answer);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        reject(error);
+      },
+    );
   });
 }
 
-function platformConfirm(request: AppConfirmRequest): Promise<boolean> {
+/** The native dialog, bypassing the in-app host. For decisions that must not depend on page state. */
+export function platformConfirm(request: AppConfirmRequest): Promise<boolean> {
   if (isTauri()) {
     return ask(request.fallbackText ?? request.message, {
       title: request.title,

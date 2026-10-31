@@ -15,25 +15,6 @@
      stretches the field to a taller neighbour (e.g. one with helper text). */
   align-content: start;
 }
-.control {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  min-inline-size: 0;
-}
-.control > .input {
-  grid-area: 1 / 1 / 2 / 3;
-  min-inline-size: 0;
-}
-.input.withEndAdornment {
-  padding-inline-end: calc(var(--control-height-sm) + var(--space-3));
-}
-.endAdornment {
-  grid-area: 1 / 2;
-  display: flex;
-  align-items: center;
-  margin-inline-end: var(--space-1);
-}
 .label {
   margin-bottom: var(--space-2);
   color: var(--foreground);
@@ -41,7 +22,7 @@
   font-weight: 500;
   line-height: var(--leading-body);
 }
-/* Focus answers with the border colour alone (no rings or halos); the field itself never changes size. */
+/* Frame geometry stays stable through focus. */
 .input {
   min-height: var(--control-height-md);
   padding: 0 var(--space-3);
@@ -147,11 +128,16 @@
   font-size: var(--text-xs);
 }
 .field[data-variant="compact"] .input {
-  min-height: var(--ui-control-height-compact);
-}
-.field[data-variant="compact"] .input.withEndAdornment {
-  padding-inline-end: calc(var(--ui-control-height-compact) + var(--space-2));
+  min-height: var(--ui-field-height-sm);
 }
 .field[data-variant="compact"] :is(.description, .error) {
   padding-top: var(--space-1);
 }
+
+.field[data-field-size="sm"] .input { min-height: var(--ui-field-height-sm); }
+.field[data-field-size="md"] .input { min-height: var(--ui-field-height-md); }
+.field[data-field-appearance="quiet"] .input:not(:focus-visible, [aria-invalid="true"]) {
+  border-color: transparent;
+  background: transparent;
+}
+.field[data-field-appearance="quiet"] .input:hover:not(:focus-visible, :disabled) { background: var(--ui-surface-hover); }

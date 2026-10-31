@@ -40,10 +40,11 @@ for (const theme of ["light", "dark"]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      const bounds = await group.boundingBox();
-      expect(bounds!.height).toBeLessThan(420);
       await mkdir(captures, { recursive: true });
       await group.screenshot({ path: join(captures, `voice-missing-${theme}-${width}.png`) });
+      const bounds = await group.boundingBox();
+      // Enable, visual style, reply voice, processing and the setup box.
+      expect(bounds!.height).toBeLessThan(490);
     });
   }
 }
@@ -137,3 +138,31 @@ test("Turkish voice setup keeps the same simple actions at a narrow width", asyn
   await mkdir(captures, { recursive: true });
   await group.screenshot({ path: join(captures, "voice-missing-dark-390-tr.png") });
 });
+
+for (const theme of ["light", "dark"]) {
+  test(`voice processing choice and GPU upgrade offer: ${theme}`, async ({ page }) => {
+    const group = await openVoice(page, "cpu-only", theme);
+    await expect(group.getByText("Voice is ready", { exact: true })).toBeVisible();
+    // The default Natural voice (Supertonic) runs on the CPU: no GPU offer.
+    await expect(
+      group.getByRole("button", { name: "Install GPU support", exact: true }),
+    ).toHaveCount(0);
+    await group.getByRole("radio", { name: "High quality", exact: true }).click();
+    await expect(group.getByText("Voice is ready", { exact: true })).toBeVisible();
+    await expect(group.getByText("NVIDIA GeForce RTX 4070", { exact: false })).toBeVisible();
+    await expect(
+      group.getByRole("button", { name: "Install GPU support", exact: true }),
+    ).toBeVisible();
+    await group.scrollIntoViewIfNeeded();
+    const gpuCaptures = join(process.cwd(), "temp/verification/2026-10-31-voice-gpu");
+    await mkdir(gpuCaptures, { recursive: true });
+    await group.screenshot({ path: join(gpuCaptures, `voice-gpu-offer-${theme}-1280.png`) });
+    await group.getByRole("radio", { name: "CPU", exact: true }).click();
+    await expect(
+      group.getByRole("button", { name: "Install GPU support", exact: true }),
+    ).toHaveCount(0);
+    expect(
+      await page.evaluate(() => JSON.parse(localStorage.getItem("bycoda.voice")!).device),
+    ).toBe("cpu");
+  });
+}

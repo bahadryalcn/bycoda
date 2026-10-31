@@ -67,7 +67,7 @@ import {
 } from "../../features/projects/model/recents";
 import type { ProjectReturnMemory } from "../../features/projects/model/projectReturn";
 import { appName } from "../../shared/lib/appName";
-import { confirmInApp } from "../../shared/model/appConfirm";
+import { platformConfirm } from "../../shared/model/appConfirm";
 import { readToolWindow } from "./toolWindows";
 import { setSessions } from "../../features/sessions/model/sessionsStore";
 
@@ -98,7 +98,12 @@ let bootPromise: Promise<BootWorkspace> | null = null;
 let quitting = false;
 let quitDialogOpen = false;
 let bootingResumed: ResumedWorkspace | null = null;
-let deferredBootReads: (() => Promise<void>)[] = [];
+/** One hidden chat's history read; `timedOut` publishes the retryable error state. */
+type DeferredBootRead = { run: () => Promise<void>; timedOut: () => void };
+let deferredBootReads: DeferredBootRead[] = [];
+/** A single stuck history read must not hold up the rest of the queue. */
+const BOOT_READ_TIMEOUT_MS = 10_000;
+const HISTORY_LOAD_ERROR = "Earlier messages could not be loaded. Reopen this chat to retry.";
 
 function publishBootSession(original: Session, hydrated: Session): void {
   if (quitting) return;
@@ -119,7 +124,29 @@ function startDeferredBootReads(): void {
   const jobs = deferredBootReads;
   deferredBootReads = [];
   const worker = async () => {
-    while (jobs.length && !quitting) await jobs.shift()!();
+    while (jobs.length && !quitting) {
+      const job = jobs.shift()!;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const outcome = await Promise.race([
+        job.run().then(
+          () => "done" as const,
+          (error: unknown) => {
+            console.warn("appLifecycle boot hydration failed", error);
+            return "done" as const;
+          },
+        ),
+        new Promise<"timeout">((resolve) => {
+          timer = setTimeout(() => resolve("timeout"), BOOT_READ_TIMEOUT_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+      if (outcome === "timeout") {
+        console.warn("appLifecycle boot hydration timed out; continuing with the next chat");
+        job.timedOut();
+      }
+    }
+    // A quit that was called off must not leave the unread chats stuck loading.
+    if (jobs.length) deferredBootReads = [...jobs.splice(0), ...deferredBootReads];
   };
   // Earlier-page hydration shares native storage. Avoid flooding it with all
   // hidden tabs at once, and never start before the workspace owns live state.
@@ -164,7 +191,25 @@ export function setQuitWorkspace(
     keepTab,
     flush,
   };
+  // Hydration that finished after the workspace read its initial state but before
+  // this registration only reached the booting copy; carry it into live state.
+  const booted = bootingResumed;
   bootingResumed = null;
+  if (booted) {
+    const hydratedById = new Map(
+      booted.sessions.filter((session) => !session.historyLoading).map((s) => [s.id, s]),
+    );
+    setSessions((current) =>
+      current.some((session) => !session.busy && session.historyLoading)
+        ? current.map((session) => {
+            const hydrated = hydratedById.get(session.id);
+            return hydrated && hydrated !== session && !session.busy && session.historyLoading
+              ? hydrated
+              : session;
+          })
+        : current,
+    );
+  }
   startDeferredBootReads();
   return () => {
     if (liveWorkspace?.sessions === sessions) liveWorkspace = null;
@@ -266,6 +311,7 @@ export async function commitQuit(id: number): Promise<void> {
  */
 export function abortQuit(): void {
   quitting = false;
+  if (liveWorkspace && deferredBootReads.length) startDeferredBootReads();
 }
 
 /** A successfully drained pop-out must not save a stale workspace on unload. */
@@ -456,9 +502,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
       if (activeIds.has(session.id) || !ids.has(session.id)) return session;
       const placeholder = { ...session, historyLoading: true };
       const owns = () =>
-        !!liveWorkspace
-          ?.sessions()
-          .some(
+        !!(liveWorkspace?.sessions() ?? bootingResumed?.sessions)?.some(
             (value) =>
               value.id === placeholder.id &&
               !value.busy &&
@@ -466,27 +510,31 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
               value.queuedMessages === placeholder.queuedMessages,
           );
       if (interrupted.has(session.id)) {
-        deferredBootReads.push(async () => {
-          try {
-            if (!owns()) return;
-            const record = await getSession(session.id);
-            if (!record) throw new Error("Stored session is unavailable.");
-            if (!owns()) return;
-            const recovered = await recoverInterruptedTurn(markTurnInterrupted(record));
-            if (!owns()) return;
-            if (shouldPersistSession(recovered)) await upsertSession(recovered);
-            publishBootSession(placeholder, recovered);
-          } catch {
-            publishBootSession(placeholder, {
-              ...placeholder,
-              historyLoadError: "Earlier messages could not be loaded. Reopen this chat to retry.",
-            });
-          }
+        const failed = () =>
+          publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR });
+        deferredBootReads.push({
+          timedOut: failed,
+          run: async () => {
+            try {
+              if (!owns()) return;
+              const record = await getSession(session.id);
+              if (!record) throw new Error("Stored session is unavailable.");
+              if (!owns()) return;
+              const recovered = await recoverInterruptedTurn(markTurnInterrupted(record));
+              if (!owns()) return;
+              if (shouldPersistSession(recovered)) await upsertSession(recovered);
+              publishBootSession(placeholder, recovered);
+            } catch {
+              failed();
+            }
+          },
         });
         return placeholder;
       }
-      deferredBootReads.push(
-        () =>
+      deferredBootReads.push({
+        timedOut: () =>
+          publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR }),
+        run: () =>
           new Promise<void>((resolve) => {
             if (!owns()) {
               resolve();
@@ -522,13 +570,19 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
                 resolve();
               });
           }),
-      );
+      });
       return placeholder;
     });
+    // Normally the mounting workspace starts these. If it never mounts, still hydrate.
+    if (deferredBootReads.length)
+      setTimeout(() => {
+        if (!liveWorkspace) console.warn("appLifecycle starting boot hydration without a workspace");
+        startDeferredBootReads();
+      }, BOOT_READ_TIMEOUT_MS);
     // Progressive callbacks can finish while interrupted sessions are being
     // recovered. Publish into this same object rather than restoring an older
     // non-interrupted tail after that await.
-    bootingResumed = workspace;
+    if (!liveWorkspace && !quitting) bootingResumed = workspace;
     const recovered = await Promise.all(
       workspace.sessions.map((session) =>
         interrupted.has(session.id) && !session.historyLoading
@@ -542,7 +596,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     );
   }
 
-  bootingResumed = workspace;
+  if (!liveWorkspace && !quitting) bootingResumed = workspace;
   if (workspace) {
     const recoverable = workspace.sessions.filter(
       (session) =>
@@ -732,7 +786,8 @@ export async function closeCurrentWindow(): Promise<void> {
 
 export async function confirmReload(hasUnsavedFiles: boolean): Promise<boolean> {
   if (!hasUnsavedFiles) return true;
-  return confirmInApp({
+  // The native dialog cannot hang behind page state while the window is going away.
+  return platformConfirm({
     title: t("Reload {p0}?", { p0: PRODUCT_IDENTITY.displayName }),
     message: t("Unsaved changes in open files will be discarded."),
     confirmLabel: t("Reload"),
@@ -857,7 +912,7 @@ async function confirmAndCloseWindow(
   quitDialogOpen = true;
   try {
     if (hasInFlightSessions(sessions)) {
-      const ok = await confirmInApp({
+      const ok = await platformConfirm({
         title: t("Close window and stop running chats?"),
         message: t("Running chats in this window stop. Other windows stay open."),
         confirmLabel: t("Close window"),
@@ -907,7 +962,8 @@ async function prepareWindowToClose(
   const unique = [
     ...new Map(files.filter((file) => file.terminal).map((file) => [file.id, file])).values(),
   ];
-  if (!(await confirmCloseTerminals(unique))) return false;
+  // Native dialog: the window is going away, so page state must not be able to hide the ask.
+  if (!(await confirmCloseTerminals(unique, platformConfirm))) return false;
   return prepareEditorsToClose();
 }
 

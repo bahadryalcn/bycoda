@@ -1,8 +1,11 @@
 import type { FilePaneTab } from "../../workspace/model/layout";
 import { getPtyStatus } from "../../../platform/tauri/pty";
 import { t } from "../../../shared/i18n";
-import { confirmInApp } from "../../../shared/model/appConfirm";
+import { confirmInApp, type AppConfirmRequest } from "../../../shared/model/appConfirm";
 import { terminalTabLabel } from "./terminalTab";
+
+/** Asks the owner; window close passes the native dialog so it cannot hang behind page state. */
+type Confirm = (request: AppConfirmRequest) => Promise<boolean>;
 
 type RunningTerminal = {
   file: FilePaneTab;
@@ -37,10 +40,13 @@ export async function confirmCloseTerminal(file: FilePaneTab): Promise<boolean> 
 }
 
 /** Confirm closing terminals that still have a foreground process. */
-export async function confirmCloseTerminals(files: FilePaneTab[]): Promise<boolean> {
+export async function confirmCloseTerminals(
+  files: FilePaneTab[],
+  confirm: Confirm = confirmInApp,
+): Promise<boolean> {
   const running = await runningTerminals(files);
   if (running.length === 0) return true;
-  if (running.length === 1) return confirmSingle(running[0]);
+  if (running.length === 1) return confirmSingle(running[0], confirm);
   const unknown = running.some(({ process }) => !process);
   const lines = running
     .slice(0, LISTED_TERMINALS)
@@ -51,7 +57,7 @@ export async function confirmCloseTerminals(files: FilePaneTab[]): Promise<boole
   if (running.length > LISTED_TERMINALS) {
     lines.push(t("and {p0} more", { p0: running.length - LISTED_TERMINALS }));
   }
-  return confirmInApp({
+  return confirm({
     title: t("Close {p0} terminals?", { p0: running.length }),
     message: [
       unknown
@@ -66,9 +72,12 @@ export async function confirmCloseTerminals(files: FilePaneTab[]): Promise<boole
   });
 }
 
-function confirmSingle({ file, process }: RunningTerminal): Promise<boolean> {
+function confirmSingle(
+  { file, process }: RunningTerminal,
+  confirm: Confirm = confirmInApp,
+): Promise<boolean> {
   const label = terminalTabLabel(file);
-  return confirmInApp({
+  return confirm({
     title: t("Close terminal?"),
     message: process
       ? t("“{p0}” is still running in {p1}. Closing the terminal stops it.", {

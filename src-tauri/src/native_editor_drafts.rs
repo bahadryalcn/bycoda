@@ -338,6 +338,52 @@ fn read_record(
     Ok(Some((DraftRecord { metadata, payload }, raw)))
 }
 
+/// Keep the latest previous launch, plus the latest previous incarnation of
+/// this window. Other windows in this launch and this exact owner are protected.
+fn prune_drafts(conn: &Connection, owner: &NativeBufferOwner) -> Result<(), String> {
+    let owner_id = owner.key();
+    let instance = owner.store_instance().to_string();
+    conn.execute(
+        &format!(
+            "DELETE FROM native_editor_drafts WHERE owner_id != ?1
+        AND NOT COALESCE({BOUNDED} AND retained_bytes=length(CAST(payload_json AS BLOB))
+          +length(CAST(document_id AS BLOB))+length(CAST(path AS BLOB))
+          +length(CAST(window_label AS BLOB))+512,0)"
+        ),
+        [&owner_id],
+    )
+    .map_err(|_| failure("UNAVAILABLE"))?;
+    conn.execute(
+        "DELETE FROM native_editor_drafts WHERE owner_id != ?1 AND (
+        (store_instance != ?2 AND store_instance NOT IN (
+          SELECT store_instance FROM native_editor_drafts WHERE store_instance != ?2
+          GROUP BY store_instance ORDER BY MAX(updated_at) DESC,store_instance DESC LIMIT 1))
+        OR (store_instance = ?2 AND window_label = ?3 AND owner_id NOT IN (
+          SELECT owner_id FROM native_editor_drafts WHERE store_instance = ?2
+            AND window_label = ?3 AND owner_id != ?1
+          GROUP BY owner_id ORDER BY MAX(updated_at) DESC,owner_id DESC LIMIT 1)))",
+        params![owner_id, instance, owner.label()],
+    )
+    .map_err(|_| failure("UNAVAILABLE"))?;
+    Ok(())
+}
+
+fn draft_usage(conn: &Connection) -> Result<(i64, i64), String> {
+    // An invalid row must not poison unrelated saves. Current-owner rows are
+    // never deleted; they remain available for explicit recovery/repair.
+    conn.query_row(
+        &format!(
+            "SELECT COUNT(*),COALESCE(SUM(retained_bytes),0)
+        FROM native_editor_drafts WHERE COALESCE({BOUNDED} AND
+          retained_bytes=length(CAST(payload_json AS BLOB))+length(CAST(document_id AS BLOB))
+          +length(CAST(path AS BLOB))+length(CAST(window_label AS BLOB))+512,0)"
+        ),
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .map_err(|_| failure("UNAVAILABLE"))
+}
+
 fn put(
     store: &SessionStore,
     owner: &NativeBufferOwner,
@@ -391,16 +437,19 @@ fn put(
     } else if input.expected_revision.is_some() {
         return Err(failure("REVISION_CONFLICT"));
     }
-    let (count,total,valid): (i64,i64,bool) = tx.query_row(&format!("SELECT COUNT(*),COALESCE(SUM(retained_bytes),0),COALESCE(MIN(CASE WHEN {BOUNDED} AND retained_bytes=length(CAST(payload_json AS BLOB))+length(CAST(document_id AS BLOB))+length(CAST(path AS BLOB))+length(CAST(window_label AS BLOB))+512 THEN 1 ELSE 0 END),1) FROM native_editor_drafts"), [], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).map_err(|_| failure("UNAVAILABLE"))?;
-    if !valid || count > MAX_RECORDS || total > MAX_PROFILE {
-        return Err(failure("CORRUPT"));
+    let old_bytes = previous
+        .as_ref()
+        .map_or(0, |(record, _)| record.metadata.retained_bytes);
+    let (mut count, mut total) = draft_usage(&tx)?;
+    if (previous.is_none() && count >= MAX_RECORDS)
+        || total.saturating_sub(old_bytes).saturating_add(bytes as i64) > MAX_PROFILE
+    {
+        prune_drafts(&tx, owner)?;
+        (count, total) = draft_usage(&tx)?;
     }
     if previous.is_none() && count >= MAX_RECORDS {
         return Err(failure("PROFILE_LIMIT"));
     }
-    let old_bytes = previous
-        .as_ref()
-        .map_or(0, |(record, _)| record.metadata.retained_bytes);
     if total < old_bytes
         || total
             .checked_sub(old_bytes)
@@ -556,7 +605,7 @@ fn inventory(
         document_id: String::new(),
     });
     let keys = {
-        let mut statement = tx.prepare("SELECT CASE WHEN typeof(owner_id)='text' AND length(CAST(owner_id AS BLOB))=64 THEN owner_id END,CASE WHEN typeof(document_id)='text' AND length(CAST(document_id AS BLOB)) BETWEEN 1 AND 512 THEN document_id END FROM native_editor_drafts WHERE (owner_id,document_id)>(?1,?2) ORDER BY owner_id,document_id LIMIT ?3").map_err(|_| failure("UNAVAILABLE"))?;
+        let mut statement = tx.prepare(&format!("SELECT CASE WHEN typeof(owner_id)='text' AND length(CAST(owner_id AS BLOB))=64 THEN owner_id END,CASE WHEN typeof(document_id)='text' AND length(CAST(document_id AS BLOB)) BETWEEN 1 AND 512 THEN document_id END FROM native_editor_drafts WHERE COALESCE({BOUNDED},0) AND (owner_id,document_id)>(?1,?2) ORDER BY owner_id,document_id LIMIT ?3")).map_err(|_| failure("UNAVAILABLE"))?;
         let rows = statement
             .query_map(
                 params![after.owner_id, after.document_id, request.limit + 1],
@@ -571,17 +620,20 @@ fn inventory(
         // Only metadata is returned; content for foreign owners is not exposed.
         let bounded: bool = tx.query_row(&format!("SELECT COALESCE({BOUNDED} AND retained_bytes=length(CAST(payload_json AS BLOB))+length(CAST(document_id AS BLOB))+length(CAST(path AS BLOB))+length(CAST(window_label AS BLOB))+512,0) FROM native_editor_drafts WHERE owner_id=?1 AND document_id=?2"),params![owner,document],|row|row.get(0)).map_err(|_| failure("UNAVAILABLE"))?;
         if !bounded {
-            return Err(failure("CORRUPT"));
+            continue;
         }
         let record = tx.query_row(&format!("SELECT {COLUMNS} FROM native_editor_drafts WHERE owner_id=?1 AND document_id=?2"),params![owner,document],metadata).map_err(|_| failure("UNAVAILABLE"))?;
-        validate_metadata(&record)?;
+        if validate_metadata(&record).is_err() {
+            continue;
+        }
         records.push(record);
     }
     let next = if keys.len() > request.limit as usize {
-        records.last().map(|record| DraftCursor {
-            owner_id: record.owner_id.clone(),
-            document_id: record.document_id.clone(),
-        })
+        keys.get(request.limit as usize - 1)
+            .map(|(owner, document)| DraftCursor {
+                owner_id: owner.clone(),
+                document_id: document.clone(),
+            })
     } else {
         None
     };
@@ -596,6 +648,11 @@ fn inventory(
 
 fn open_current(store: &SessionStore, owner: &NativeBufferOwner) -> Result<DraftOpen, String> {
     check_owner(store, owner)?;
+    let conn = store.lock_conn()?;
+    let tx = Transaction::new_unchecked(&conn, TransactionBehavior::Immediate)
+        .map_err(|_| failure("UNAVAILABLE"))?;
+    prune_drafts(&tx, owner)?;
+    tx.commit().map_err(|_| failure("UNAVAILABLE"))?;
     Ok(DraftOpen {
         version: 1,
         qualified: false,

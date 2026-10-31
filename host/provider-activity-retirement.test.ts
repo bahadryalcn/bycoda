@@ -29,25 +29,26 @@ function source(kill: (handle: ChildProcessHandle) => Promise<void>) {
 }
 
 describe("original provider activity retirement", () => {
-  it("refuses acquisition on another same-owner family's failed original without touching active children", async () => {
+  it("warns about another same-owner family's failed kill and still acquires without touching active children", async () => {
     const mainKill = vi.fn(async (_handle: ChildProcessHandle) => {});
     const { ledger: main, id, handle } = source(mainKill);
     const skills = createProviderRetirementLedger(`activity-skills-${randomUUID()}`, async () => {
       throw new Error("Original skill probe retirement unverified");
     });
     const probe = skills.admit(createChildProcessHandle(id));
-    await expect(skills.retire([probe])).rejects.toThrow();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // A failed kill is cleanup uncertainty: it is warned about, never a permanent refusal.
+    await expect(skills.retire([probe])).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
     const records = new ProviderActivityRetirements();
     const acquire = vi.fn(async () => async () => {});
     const ticket = records.reserve(id);
-    await expect(ticket.start(acquire)).rejects.toThrow();
-    const stop = vi.fn(async () => {});
-    await expect(ticket.retire(stop)).rejects.toThrow();
-    expect(acquire).not.toHaveBeenCalled();
-    expect(stop).not.toHaveBeenCalled();
+    await ticket.start(acquire);
+    expect(acquire).toHaveBeenCalledOnce();
+    // The other family's active child is untouched.
     expect(mainKill).not.toHaveBeenCalled();
     expect(main.observation().active).toBe(1);
-    expect(records.observation()).toEqual({ retained: 1, failed: 1 });
+    expect(records.observation()).toEqual({ retained: 1, failed: 0 });
 
     const unrelated = records.reserve(randomUUID());
     const unrelatedAcquire = vi.fn(async () => undefined);
@@ -55,6 +56,7 @@ describe("original provider activity retirement", () => {
     unrelated.bookkeepingFinished();
     expect(unrelatedAcquire).toHaveBeenCalledOnce();
     expect(records.observation().retained).toBe(1);
+    warn.mockRestore();
     await main.retire([handle]);
   });
 
@@ -280,20 +282,22 @@ describe("original provider activity retirement", () => {
     expect(records.observation()).toEqual({ retained: 1, failed: 1 });
   });
 
-  it("refuses a new same-owner effect while its original cleanup is unverified", async () => {
+  it("warns, evicts the failed record and proceeds on a new same-owner effect", async () => {
     const records = new ProviderActivityRetirements();
     const owner = randomUUID();
     const original = records.reserve(owner);
     await original.start(async () => async () => {});
     original.recordFailure(new Error("original completion unknown"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const effect = vi.fn(async () => undefined);
-    expect(() => records.reserve(owner).start(effect)).toThrow("unverified");
-    expect(effect).not.toHaveBeenCalled();
-    expect(records.observation().retained).toBe(1);
-    const unrelated = records.reserve(randomUUID());
-    await unrelated.start(async () => undefined);
-    unrelated.bookkeepingFinished();
-    expect(records.observation().retained).toBe(1);
+    const next = records.reserve(owner);
+    await next.start(effect);
+    expect(effect).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalled();
+    expect(records.observation()).toEqual({ retained: 1, failed: 0 });
+    next.bookkeepingFinished();
+    expect(records.observation().retained).toBe(0);
+    warn.mockRestore();
   });
 
   it("captures shutdown originals before a synchronous stop publishes a new child", async () => {

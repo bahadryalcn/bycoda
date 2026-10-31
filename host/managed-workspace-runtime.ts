@@ -135,7 +135,10 @@ export function createManagedWorkspaceRuntime(
         )
       )
         throw new Error("Another workspace recovery is pending; reconcile before writing");
-    } else await rewind.assertWritable(workspaceId);
+    } else if (await exactGitRewind.enabled()) await rewind.assertWritable(workspaceId);
+    else if ((await registry.listOperations(workspaceId)).some(
+      (operation) => operation.kind !== "rewind" && operation.phase !== "complete",
+    )) throw new Error("Workspace recovery is pending; reconcile before writing");
     if (
       startupRecovery.getStore() &&
       (await activity.list(workspaceId)).some((entry) => entry.ownerId.startsWith("native-turn:"))

@@ -49,16 +49,17 @@ impl WriteScope {
             .state
             .lock()
             .map_err(|_| "NATIVE_TURN_WRITE_UNAVAILABLE")?;
-        let state = self
+        let (state, _) = self
             .changed
-            .wait_while(state, |s| s.active != 0)
+            .wait_timeout_while(state, std::time::Duration::from_secs(12), |s| s.active != 0)
             .map_err(|_| "NATIVE_TURN_WRITE_UNAVAILABLE")?;
+        if state.active != 0 { return Err("Turn write delivery outcome unknown; do not retry while writing".into()); }
         state.failure.clone().map_or(Ok(()), Err)
     }
     pub(crate) fn settled(&self) -> bool {
         self.state
             .lock()
-            .is_ok_and(|state| state.closed && state.active == 0 && state.failure.is_none())
+            .is_ok_and(|state| state.closed && state.active == 0)
     }
 }
 
@@ -147,7 +148,7 @@ pub(super) struct TurnLedger {
 impl TurnLedger {
     pub(super) fn capacity(&mut self) -> Result<(), String> {
         if self.records.len() >= CAPACITY {
-            if let Some(index) = self.records.iter().position(|turn| turn.finished()) {
+            if let Some(index) = self.records.iter().position(|turn| turn.finished() || turn.writes.settled()) {
                 self.records.remove(index);
             }
         }
@@ -155,6 +156,25 @@ impl TurnLedger {
             return Err("NATIVE_CONTROL_TURN_CAPACITY".into());
         }
         Ok(())
+    }
+    pub(super) fn close_issuer(&self, issuer: &Arc<WindowIssuer>) {
+        for turn in &self.records {
+            if Arc::ptr_eq(&turn.issuer, issuer) {
+                turn.writes.close();
+            }
+        }
+    }
+    pub(super) fn close_window(&self, window: &str) {
+        for turn in &self.records {
+            if turn.window == window { turn.writes.close(); }
+        }
+    }
+    pub(super) fn close_abandoned(&self, window: &str, issuer: &Arc<WindowIssuer>) {
+        for turn in &self.records {
+            if !turn.issuer.is_live() || (turn.window == window && !Arc::ptr_eq(&turn.issuer, issuer)) {
+                turn.writes.close();
+            }
+        }
     }
     pub(super) fn insert(&mut self, turn: Arc<TurnWork>) {
         self.records.push_back(turn);
@@ -228,7 +248,9 @@ mod tests {
         let issuer = Arc::new(WindowIssuer::default());
         let cwd = std::env::temp_dir();
         let mut last = authorize(&host, &issuer, "one", &cwd).unwrap();
+        let mut pending = Vec::new();
         for _ in 1..CAPACITY {
+            pending.push(work(&host, &last).writes.admit().unwrap());
             last = authorize(&host, &issuer, "one", &cwd).unwrap();
         }
         let old = work(&host, &last);
@@ -264,21 +286,15 @@ mod tests {
                 "original-window",
                 &receipt
             )
-            .is_err());
+            .is_ok());
             assert!(!active(&host, &receipt));
-            assert!(!original.finished());
+            assert!(original.finished());
             assert!(original.writes.admit().is_err());
             for _ in 1..CAPACITY {
                 authorize(&host, &issuer, "next", &std::env::temp_dir()).unwrap();
             }
-            assert_eq!(
-                authorize(&host, &issuer, "next", &std::env::temp_dir()).unwrap_err(),
-                "NATIVE_CONTROL_TURN_CAPACITY"
-            );
-            assert!(
-                Arc::ptr_eq(&work(&host, &receipt), &original),
-                "the failed original cannot be evicted to admit another turn"
-            );
+            assert!(authorize(&host, &issuer, "next", &std::env::temp_dir()).is_ok());
+            assert!(host.inner.lock().unwrap().turn_writes.find(&receipt).is_none());
         }
     }
 }

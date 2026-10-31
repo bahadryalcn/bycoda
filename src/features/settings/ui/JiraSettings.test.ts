@@ -91,7 +91,7 @@ it("shows progress on the active Jira operation without labelling a successful c
   await input("Jira API token", "test-key");
   await submit();
   const disconnect = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Disconnect",
+    (button) => button.getAttribute("aria-label") === "Account actions",
   )!;
   expect(disconnect).toBeDefined();
   expect(disconnect.getAttribute("aria-busy")).not.toBe("true");
@@ -138,12 +138,9 @@ it("connects Jira, synchronizes project filters, and disconnects", async () => {
   const project = await pickOption("Engineering");
   expect(project.checked).toBe(false);
   expect(loadHiddenJiraProjectIds()).toEqual(["10000"]);
-  const disconnect = [...container.querySelectorAll("button")].find((button) =>
-    [...button.querySelectorAll("span")].some(
-      (span) => !span.closest('[aria-hidden="true"]') && span.textContent === "Disconnect",
-    ),
-  )!;
-  await act(async () => disconnect.click());
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click());
+  await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
+  await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) => button.textContent?.includes("Disconnect"))!.click());
   expect(invoke).toHaveBeenCalledWith("jira_set_config", {
     site: "",
     email: "",

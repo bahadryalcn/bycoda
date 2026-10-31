@@ -135,6 +135,7 @@ import { HostTerminals } from "./terminals";
 import { createManagedWorkspaceRuntime, inManagedWorkspace } from "./managed-workspace-runtime";
 import { readHostBuildIdentity } from "./build-identity";
 import { WORKSPACE_CAPABILITIES } from "./workspace-contracts";
+import { HostAuthorityFenceError } from "./storage/authority-fence";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import { createHash, randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
@@ -458,10 +459,13 @@ export async function createHostServer(
     ownerId: string,
   ) => {
     const entries: { id: string; workspaceId: string }[] = [];
+    // The runtime relaxes only stale rewind journals when exact rewind is off.
+    const gated = kind === "mutation" || kind === "operation" ||
+      kind === "provider" || kind === "shell" || kind === "devServer" || kind === "editor";
     try {
       for (const workspace of await managed.list()) {
         if (!inWorkspace(cwd, workspace.path)) continue;
-        await managed.assertWritable(workspace.id);
+        if (gated) await managed.assertWritable(workspace.id);
         const entry = await managed.activity.start({ workspaceId: workspace.id, kind, ownerId });
         entries.push({ id: entry.id, workspaceId: workspace.id });
         await recordWorkspaceActivity(() => managedWorkspaces.touchActivity(workspace.id));
@@ -896,8 +900,8 @@ export async function createHostServer(
       // store transaction, while keeping queue dispatch and consume atomic.
       transaction: async (action, id) =>
         id
-          ? await withRetiredDesktopWriters(id, () => engine.store.transaction(action))
-          : await engine.store.transaction(action),
+          ? await withRetiredDesktopWriters(id, () => engine.store.transaction(action, "critical"))
+          : await engine.store.transaction(action, "critical"),
       wakeAt: () => {
         const times = [runLeases.nextExpiry(), desktop.live.nextStoredExpiry()].filter(
           (time): time is number => time !== undefined,
@@ -988,7 +992,7 @@ export async function createHostServer(
         continue;
       const current = runLeases.holder(sessionId);
       if (current && current.holder !== holder) answers[sessionId] = null;
-      else if (current) answers[sessionId] = runLeases.renew(sessionId, holder) ?? null;
+      else if (current) answers[sessionId] = runLeases.renew(sessionId, holder, Number(epoch)) ?? null;
       else {
         try {
           answers[sessionId] = await engine.store.db.scope(async () => {
@@ -1007,6 +1011,10 @@ export async function createHostServer(
     return answers;
   };
   /** Renews the drain leases a desktop reports on its heartbeat. */
+  const queueLeaseAnswers = new Map<string, {
+    lease: import("../src/features/connections/model/sharedQueue").DrainLease;
+    version: number; blocked: boolean; checkedAt: number;
+  }>();
   const renewQueueLeases = async (params: Record<string, unknown>) => {
     if (!Array.isArray(params.queueLeases) || typeof params.clientId !== "string") return undefined;
     const holder = `desktop:${params.clientId}`;
@@ -1021,6 +1029,13 @@ export async function createHostServer(
         blocked?: unknown;
       };
       if (typeof sessionId !== "string" || !Number.isSafeInteger(epoch)) continue;
+      const key = JSON.stringify([holder, sessionId, epoch]);
+      const cached = queueLeaseAnswers.get(key);
+      if (cached && cached.version === engine.store.db.dataMutationVersion &&
+          cached.blocked === (blocked === true) && Date.now() - cached.checkedAt < 5000 && cached.lease.expiresAt > Date.now() + 5000) {
+        leases[sessionId] = await sessionQueues.renew(sessionId, holder, Number(epoch));
+        continue;
+      }
       // A holder that cannot send for a reason of its own (a sync conflict on its
       // copy) is neither stalled nor replaced by the host sending on its own copy.
       queueDrainer.noteBlocked(sessionId, holder, blocked === true);
@@ -1029,6 +1044,10 @@ export async function createHostServer(
       leases[sessionId] = (await queueDrainer.holderStalled(sessionId))
         ? await sessionQueues.release(sessionId, holder, Number(epoch))
         : await sessionQueues.renew(sessionId, holder, Number(epoch));
+      const lease = leases[sessionId];
+      if (lease) queueLeaseAnswers.set(key, { lease, version: engine.store.db.dataMutationVersion, blocked: blocked === true, checkedAt: Date.now() });
+      else queueLeaseAnswers.delete(key);
+      while (queueLeaseAnswers.size > 1024) queueLeaseAnswers.delete(queueLeaseAnswers.keys().next().value!);
     }
     return leases;
   };
@@ -1787,7 +1806,7 @@ export async function createHostServer(
   });
   const sessionQueueService = createSessionQueueService({
     environmentId: engine.store.environmentId,
-    transaction: (work) => engine.store.transaction(work),
+    transaction: (work) => engine.store.transaction(work, "critical"),
     sessionStatus: queueSessionStatus,
     desktopWatch,
     queues: {
@@ -1813,7 +1832,7 @@ export async function createHostServer(
   const commandService = createCommandService<HostSession>({
     repository: {
       receiptStatus: (id) => engine.store.receiptStatus(id),
-      transaction: (operation) => engine.store.transaction(operation),
+      transaction: (operation) => engine.store.transaction(operation, "critical"),
       readView: readSessionView,
       modelTarget: async (id) => (await featureSession(id)).session,
       adopt,
@@ -2241,6 +2260,7 @@ export async function createHostServer(
     load: async (target, principalId, signal, context) =>
       await engine.store.db.outsideScope(async () => {
         signal.throwIfAborted();
+        pruneStreamVersions();
         const resource =
           target.kind === "session"
             ? `session:${target.sessionId}`
@@ -2255,6 +2275,7 @@ export async function createHostServer(
           let kind: "snapshot" | "delta" = "snapshot";
           if (target.kind === "environment") value = { projects: await projectsService.list() };
           else if (target.kind === "project") {
+            streamProjectVersions.set(target.projectId, engine.store.projectVersion(target.projectId));
             const current = await projectSessionList(target.projectId);
             value = { etag: current.etag, sessions: current.list };
           } else {
@@ -2263,6 +2284,13 @@ export async function createHostServer(
               !(await desktop.projectCwdAsync(target.sessionId))
             )
               return null;
+            const projectRow = await engine.store.db.prepare("SELECT project_id FROM session_state WHERE id=?").get(target.sessionId);
+            const projectId = projectRow ? String(projectRow.project_id) : undefined;
+            if (projectId) {
+              streamProjects.set(target.sessionId, projectId);
+              if (!streamProjectVersions.has(projectId))
+                streamProjectVersions.set(projectId, engine.store.projectVersion(projectId));
+            }
             const sync = await engine.store.db.withAuthorization(context.authorized, () =>
               sessionService.stream(
                 { sessionId: target.sessionId, revision: context.revision },
@@ -2291,7 +2319,46 @@ export async function createHostServer(
         }
       }),
   });
-  const unsubscribeChanges = engine.store.subscribeChanges(() => subscriptionHub.invalidate());
+  const streamProjects = new Map<string, string>();
+  const streamProjectVersions = new Map<string, number>();
+  const pruneStreamVersions = () => {
+    const targets = subscriptionHub.targets();
+    const sessions = new Set(targets.flatMap((target) => target.kind === "session" ? [target.sessionId] : []));
+    for (const id of streamProjects.keys()) if (!sessions.has(id)) streamProjects.delete(id);
+    const projects = new Set([
+      ...targets.flatMap((target) => target.kind === "project" ? [target.projectId] : []),
+      ...streamProjects.values(),
+    ]);
+    for (const id of streamProjectVersions.keys()) if (!projects.has(id)) streamProjectVersions.delete(id);
+  };
+  let unattributedVersion = engine.store.unattributedChangeVersion;
+  const unsubscribeChanges = engine.store.subscribeChanges(() => {
+    const globalChange = unattributedVersion !== engine.store.unattributedChangeVersion;
+    unattributedVersion = engine.store.unattributedChangeVersion;
+    let attributed = false;
+    for (const [projectId, version] of streamProjectVersions) {
+      const current = engine.store.projectVersion(projectId);
+      if (current === version) continue;
+      attributed = true;
+      streamProjectVersions.set(projectId, current);
+      subscriptionHub.invalidate({ kind: "project", projectId });
+      for (const [sessionId, project] of streamProjects)
+        if (project === projectId) subscriptionHub.invalidate({ kind: "session", sessionId });
+    }
+    // A commit no project version explains (queue, approval, settings…) still
+    // refreshes every stream, as before targeted invalidation.
+    if (globalChange || !attributed) subscriptionHub.invalidate();
+    else subscriptionHub.invalidate({ kind: "environment" });
+  });
+  const httpTokenHashes = new WeakMap<object, { token: string; hash: string }>();
+  const heldPolls = new Map<{ revoked: boolean }, string>();
+  const unsubscribeAuthorization = engine.store.subscribeAuthorizationChanges(() => {
+    for (const [state, token] of heldPolls)
+      void engine.store.authenticated(token).then((valid) => {
+        state.revoked = !valid;
+        if (!valid) signal.notify();
+      }, () => { state.revoked = true; signal.notify(); });
+  });
   const unsubscribeAuthority = engine.store.subscribeAuthorityChanges((change) => {
     bulkTransfers.invalidate(`session:${change.sessionId}`);
     transfers.forget(change.sessionId);
@@ -2302,9 +2369,17 @@ export async function createHostServer(
     }
   });
   const previousDesktopChange = desktop.live.onChange;
-  desktop.live.onChange = () => {
-    previousDesktopChange?.();
-    subscriptionHub.invalidate();
+  desktop.live.onChange = (sessionIds) => {
+    previousDesktopChange?.(sessionIds);
+    subscriptionHub.invalidate({ kind: "environment" });
+    for (const sessionId of sessionIds) {
+      subscriptionHub.invalidate({ kind: "session", sessionId });
+      const projectId = streamProjects.get(sessionId);
+      if (projectId) subscriptionHub.invalidate({ kind: "project", projectId });
+    }
+    // Desktop-only project membership can be outside the Host session store.
+    for (const projectId of streamProjectVersions.keys())
+      subscriptionHub.invalidate({ kind: "project", projectId });
   };
   const invalidateSessionCopies = (sessionId: string, projectId: string) => {
     subscriptionHub.forget({ kind: "session", sessionId });
@@ -2388,6 +2463,13 @@ export async function createHostServer(
             );
             return;
           }
+          let tokenIdentity = httpTokenHashes.get(request.socket);
+          if (tokenIdentity?.token !== token) {
+            tokenIdentity = { token, hash: createHash("sha256").update(token).digest("hex") };
+            httpTokenHashes.set(request.socket, tokenIdentity);
+          }
+          const tokenHash = tokenIdentity.hash;
+          const pollState = { revoked: false };
           const input = await body(request);
           // Reading a request body yields: a device may have been revoked since
           // the headers arrived. Reject it before dispatching any operation.
@@ -2436,7 +2518,7 @@ export async function createHostServer(
             },
             nativeServices: nativeServicesOwner(token),
             workspaceOwner: requestWorkspaceOwner(token),
-            principalId: createHash("sha256").update(token).digest("hex"),
+            principalId: tokenHash,
             devServerAccess: (
               method: string,
               params: Record<string, unknown>,
@@ -2620,7 +2702,7 @@ export async function createHostServer(
                       return await workspace.run(
                         command,
                         input,
-                        createHash("sha256").update(token).digest("hex"),
+                        tokenHash,
                       );
                     },
                   );
@@ -3027,7 +3109,7 @@ export async function createHostServer(
               async () => {
                 const principal: SocialPrincipal = socialPrincipal ?? {
                   kind: "owner",
-                  actorId: `device:${createHash("sha256").update(token).digest("hex")}`,
+                  actorId: `device:${tokenHash}`,
                   provider: "owner",
                 };
                 if (
@@ -3504,7 +3586,7 @@ export async function createHostServer(
                       : await workspacePolicy.update(
                           params as unknown as WorkspaceRpcRequest<"projects.workspacePolicy.update">,
                           {
-                            ownerId: createHash("sha256").update(token).digest("hex"),
+                            ownerId: tokenHash,
                             authorizationId: randomUUID(),
                           },
                         );
@@ -3728,7 +3810,7 @@ export async function createHostServer(
                       : voiceSetup.status();
                   break;
                 case "voice.local.speak":
-                  result = localVoice.speak(params.lease, params.text);
+                  result = localVoice.speak(params.lease, params.text, params.language);
                   break;
                 case "voice.local.speechNext":
                   result = await localVoice.nextSpeech(params.lease, params.id);
@@ -3739,10 +3821,15 @@ export async function createHostServer(
                 case "voice.local.start":
                   if (voiceSetup.status().state === "installing")
                     throw new Error("Voice setup is still running.");
-                  result = await localVoice.start(params.config);
+                  result = await localVoice.start(params.config, params.recognitionOnly === true);
                   break;
                 case "voice.local.transcribe":
-                  result = await localVoice.transcribe(params.lease, params.audio, params.language);
+                  result = await localVoice.transcribe(
+                    params.lease,
+                    params.audio,
+                    params.language,
+                    params.endpoint,
+                  );
                   break;
                 case "voice.local.keepAlive":
                   result = localVoice.keepAlive(params.lease);
@@ -3886,6 +3973,10 @@ export async function createHostServer(
                   result = await sessionService.list(params, domainContext);
                   break;
                 case "machine.changes": {
+                  heldPolls.set(pollState, token);
+                  response.once("close", () => {
+                    heldPolls.delete(pollState);
+                  });
                   const inlineSessionIds = params.inlineSessionIds;
                   if (
                     inlineSessionIds !== undefined &&
@@ -3933,8 +4024,7 @@ export async function createHostServer(
                       );
                     },
                     projectChangeSnapshot,
-                    async () =>
-                      closing || response.destroyed || !(await engine.store.authenticated(token)),
+                    () => closing || response.destroyed || pollState.revoked,
                     taskChangeEtag,
                     async (cwd) => await gitWatches.read(cwd),
                     async () =>
@@ -3949,7 +4039,8 @@ export async function createHostServer(
                       ).some((duration) => duration === WATCH_STAMP_MS)
                         ? WATCH_STAMP_MS
                         : 1000,
-                    createHash("sha256").update(token).digest("hex"),
+                    tokenHash,
+                    () => engine.store.authenticated(token),
                   );
                   result = await inlineSessionSync(
                     {
@@ -4038,11 +4129,19 @@ export async function createHostServer(
                 }
                 case "sessions.delete": {
                   const sessionId = String(params.sessionId ?? "");
-                  const authorityGeneration =
+                  const requestedGeneration =
                     params.authorityGeneration === undefined
                       ? undefined
                       : SafeCounterSchema.min(1).parse(params.authorityGeneration);
-                  await engine.store.assertAuthority(sessionId, authorityGeneration);
+                  let authorityGeneration = requestedGeneration;
+                  try {
+                    await engine.store.assertAuthority(sessionId, authorityGeneration);
+                  } catch (error) {
+                    if (!(error instanceof HostAuthorityFenceError)) throw error;
+                    // A stale client generation must not make a session undeletable.
+                    console.warn("Ignoring stale authority generation on session delete.");
+                    authorityGeneration = await engine.store.currentAuthorityGeneration(sessionId);
+                  }
                   const host = await engine.store.sessionAuthority(sessionId);
                   const workspaceId = host
                     ? (await engine.store.session(sessionId)).session.workspaceId
@@ -4050,15 +4149,21 @@ export async function createHostServer(
                         (value) => value.owner.kind === "session" && value.owner.id === sessionId,
                       )?.id;
                   const managedSession = workspaceId ? await managed.get(workspaceId) : undefined;
-                  if (managedSession) await managed.assertWritable(managedSession.id);
-                  const release =
-                    managedSession?.directoryState === "present"
-                      ? await startWorkspaceActivity(
-                          managedSession.path,
-                          "mutation",
-                          "session-delete",
-                        )
-                      : undefined;
+                  if (managedSession) {
+                    await managed.assertWritable(managedSession.id);
+                  }
+                  let release: (() => Promise<void>) | undefined;
+                  if (managedSession?.directoryState === "present") {
+                    try {
+                      release = await startWorkspaceActivity(
+                        managedSession.path,
+                        "mutation",
+                        "session-delete",
+                      );
+                    } catch (error) {
+                      console.warn("Session delete proceeds without a workspace activity:", error);
+                    }
+                  }
                   try {
                     const cwd = await desktop.projectCwdAsync(sessionId);
                     if (cwd) {
@@ -4074,7 +4179,9 @@ export async function createHostServer(
                         throw new Error("Session does not belong to this project");
                       if (
                         (await desktop.stampAsync(sessionId))?.running ||
-                        (await engine.store.sessionStateMetadata(sessionId))?.status === "running"
+                        // A stored "running" with no live Host run is stale, not a blocker.
+                        (engine.hasActiveRun(sessionId) &&
+                          (await engine.store.sessionStateMetadata(sessionId))?.status === "running")
                       )
                         throw new Error("Stop this session before deleting it");
                       await desktopDelete.request(
@@ -4088,7 +4195,9 @@ export async function createHostServer(
                         );
                       // An adopted transcript must go too, or it would reappear in the list.
                       if (await inHost(sessionId))
-                        await engine.store.deleteSession(sessionId, authorityGeneration);
+                        await engine.store.deleteSession(sessionId, authorityGeneration, {
+                          staleRunning: !engine.hasActiveRun(sessionId),
+                        });
                       invalidateSessionCopies(sessionId, project.id);
                       await sessionQueues.delete(sessionId);
                       result = { deleted: true };
@@ -4097,7 +4206,9 @@ export async function createHostServer(
                     const current = await engine.store.session(sessionId);
                     if (current.projectId !== params.projectId)
                       throw new Error("Session does not belong to this project");
-                    await engine.store.deleteSession(sessionId, authorityGeneration);
+                    await engine.store.deleteSession(sessionId, authorityGeneration, {
+                      staleRunning: !engine.hasActiveRun(sessionId),
+                    });
                     invalidateSessionCopies(sessionId, current.projectId);
                     await sessionQueues.delete(sessionId);
                     result = { deleted: true };
@@ -4121,11 +4232,11 @@ export async function createHostServer(
                   result = {
                     ...beat,
                     deletions: await desktopDelete.beat(
-                      `${createHash("sha256").update(token).digest("hex")}:${String(params.clientId ?? "")}`,
+                      `${tokenHash}:${String(params.clientId ?? "")}`,
                       params.deletions,
                     ),
                     inbox: await providerInbox.beat(
-                      createHash("sha256").update(token).digest("hex"),
+                      tokenHash,
                       params.clientId,
                       params.inbox,
                     ),
@@ -4569,6 +4680,7 @@ export async function createHostServer(
                   if (!Array.isArray(params.ops)) throw new Error("Invalid sync ops");
                   result = await engine.store.transaction(
                     async () => await syncPush(engine.store.db, params.ops as SyncOp[]),
+                    "checkpoint",
                   );
                   break;
                 }
@@ -4609,7 +4721,7 @@ export async function createHostServer(
                   )
                     throw new Error("This inbox write requires an explicit owner action.");
                   result = await providerInbox.request(
-                    createHash("sha256").update(token).digest("hex"),
+                    tokenHash,
                     params.requestId,
                     operation,
                   );
@@ -4617,7 +4729,7 @@ export async function createHostServer(
                 }
                 case "inbox.provider.result":
                   result = await providerInbox.result(
-                    createHash("sha256").update(token).digest("hex"),
+                    tokenHash,
                     params.requestId,
                   );
                   break;
@@ -4924,7 +5036,7 @@ export async function createHostServer(
                   result = await tunnels.credential(params);
                   break;
                 case "devices.revokeSelf":
-                  workspace.cancelSearches(createHash("sha256").update(token).digest("hex"));
+                  workspace.cancelSearches(tokenHash);
                   diagnostics.revoke(token);
                   sharedBrowser.revoke(token);
                   // Only the caller's own credential. Sessions and other devices
@@ -4974,7 +5086,7 @@ export async function createHostServer(
                     (await workspace.run(
                       params.command,
                       params.args,
-                      createHash("sha256").update(token).digest("hex"),
+                      tokenHash,
                     )) ?? null;
                   break;
                 case "files.search":
@@ -5170,6 +5282,7 @@ export async function createHostServer(
       drain(() => nativeServiceUploads.close());
       drain(() => {
         unsubscribeChanges();
+        unsubscribeAuthorization();
         unsubscribeAuthority();
         if (tasks.onDelete === taskDeleted) tasks.onDelete = previousTaskDelete;
         if (goals.onDelete === goalDeleted) goals.onDelete = previousGoalDelete;

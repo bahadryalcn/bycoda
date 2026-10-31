@@ -570,6 +570,39 @@ fixed. At narrow widths the navigation moves above the reader.
 Limits and budgets are available directly in settings navigation and through the
 Usage limits view; both reuse the same quota and budget owners.
 
+### Settings row contract
+
+Owner of the contract: `src/features/settings/ui/settingsControls.tsx` (Group, Row,
+AdvancedSettings, PageHeader) with `BycodaSettings.css` / `SettingsCollection.css`.
+Pages compose these; they never reskin them or add page-local surfaces.
+
+- **Group frame (owner decision 2026-10-31, V3-013):** a heading above a thin-bordered,
+  rounded frame; rows separated by hairline dividers; no gray fill. One gap between
+  groups (`--settings-group-gap`), one row padding (10px/16px), one minimum row height.
+  Surface and divider roles are `--ui-settings-group-*` / `--ui-settings-hairline` /
+  `--ui-settings-row-hover` in `src/styles/index.css`. Children are Rows and a closing
+  AdvancedSettings; other content goes in a `stacked` Row. Collections use the same frame.
+- **Row text:** title plus `description` as one short muted line (visible by default).
+  Use `info` (ⓘ) only for long or rare detail. `descriptionVisible={false}` keeps the old
+  info-popover presentation for a row that has not been shortened yet. Do not show the same
+  help twice (description and ⓘ), and state scope once per page or group.
+- **Right column:** the control sits on the row's right edge at the density-aware compact
+  height; a Select has a fixed minimum width; Slider has a fixed width plus a value chip.
+  Wide editors use `stacked`.
+- **Dependent sub-rows:** `dependsOn={parentValue}` indents the row; `false` dims it and makes
+  its controls inert. `disabledReason` is the tooltip text (and read by assistive technology).
+  Never repeat "Enable X to use this option. Your choice is preserved." as visible text.
+  `disabled` gives the same dim/inert state without the indent.
+- **Reset:** `modified` + `onReset` on a Row or Group shows a small reset icon next to the title
+  only while the value differs from the default ("Restore default" tooltip/name). Remove text
+  reset links; keep one page-level action.
+- **Page-level Restore defaults:** a page calls `useSettingsPageReset(handler)` (or the shell
+  supplies one, as for Appearance); the settings header then shows one "Restore defaults" icon
+  that always asks for confirmation and affects only that page. No handler, no action.
+- **AdvancedSettings:** a disclosure row with the same title x as row titles, chevron on the
+  right, at the end of its group. New pages pass `defaultOpen={false}` so Advanced is closed
+  (the prop still defaults to open for existing pages). Never use it to hold only a paragraph.
+
 ## Overlays, focus and motion
 
 `Modal`, `Popover`, `overlay.ts` and native popup routing own layering, Escape,

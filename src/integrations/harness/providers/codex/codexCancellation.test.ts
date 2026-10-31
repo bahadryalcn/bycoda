@@ -273,8 +273,8 @@ describe("Codex native commands and cancellation ownership", () => {
       mock.lines.length = 0;
       const nextAccepted = vi.fn();
       const next = registry.sendHarnessTurn(input("cancel-test", nextAccepted));
-      // Registry completion releases even an interrupted thread's writer.
-      await handshake(true);
+      // An interrupted known turn keeps its warm transport.
+      if (!notifiedId) await handshake(true);
       await waitFor("turn/start");
       reply("turn/start", { turn: { id: "turn_next" } });
       await vi.waitFor(() => expect(nextAccepted).toHaveBeenCalledOnce());
@@ -317,7 +317,7 @@ describe("Codex native commands and cancellation ownership", () => {
     mock.lines.length = 0;
     const nextAccepted = vi.fn();
     const next = registry.sendHarnessTurn(input("cancel-test", nextAccepted));
-    await handshake(true);
+    await handshake();
     await waitFor("turn/start");
     reply("turn/start", { turn: { id: "turn_next" } });
     complete("turn_next");

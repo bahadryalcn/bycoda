@@ -38,7 +38,10 @@ it("uses the tool window history for both overlay arrows and disables empty dire
     await act(() => draw(false, false));
     expect(button("Back").getAttribute("aria-disabled")).toBe("true");
     expect(button("Forward").getAttribute("aria-disabled")).toBe("true");
-    await act(() => { button("Back").click(); button("Forward").click(); });
+    await act(() => {
+      button("Back").click();
+      button("Forward").click();
+    });
     expect(back).not.toHaveBeenCalled();
     expect(forward).not.toHaveBeenCalled();
     await act(() => draw(true, true));
@@ -92,8 +95,11 @@ it("shows live bindings on the projects toggle, history and rail actions without
     expect(button("Toggle Projects").title).toBe(`Toggle Projects (${MOD}B)`);
     expect(button("Back").title).toBe(`Back (${MOD}[)`);
     expect(button("Forward").title).toBe(`Forward (${MOD}])`);
-    expect(button("Search").title).toBe(`Search (${MOD}K)`);
-    expect(button("Settings").title).toBe(`Settings (${MOD},)`);
+    // The rail rows show their shortcut as visible text and in the shared tooltip, never a native title.
+    expect(button("Search").title).toBe("");
+    expect(button("Search").textContent).toContain(`${MOD}K`);
+    expect(button("Settings").title).toBe("");
+    expect(button("Settings").textContent).toContain(`${MOD},`);
 
     for (const [command, label] of [
       ["App: Toggle Sidebar", "Toggle Projects"],
@@ -104,16 +110,16 @@ it("shows live bindings on the projects toggle, history and rail actions without
       await act(async () => {
         saveKeybindingOverride(command, { shortcut: "Control+Shift+KeyM" });
       });
-      expect(button(label).title).toMatch(/M\)$/);
+      const railRow = label === "Search" || label === "Settings";
+      if (!railRow) expect(button(label).title).toMatch(/M\)$/);
       expect(button(label).getAttribute("aria-label")).toBe(label);
       if (label === "Search" || label === "Settings")
         expect(button(label).textContent).toContain("M");
       await act(async () => {
         saveKeybindingOverride(command, { disabled: true });
       });
-      expect(button(label).title).toBe(label);
-      if (label === "Search" || label === "Settings")
-        expect(button(label).textContent).not.toContain("M");
+      expect(button(label).title).toBe(railRow ? "" : label);
+      if (railRow) expect(button(label).textContent).not.toContain("M");
       await act(async () => {
         saveKeybindingOverride(command, {});
       });

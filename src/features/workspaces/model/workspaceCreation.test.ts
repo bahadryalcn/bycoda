@@ -82,6 +82,8 @@ async function renderCreation(choice?: WorkspaceMode, cwd = "/project", active =
 }
 
 afterEach(async () => {
+  vi.useRealTimers();
+  (console.warn as Partial<{ mockRestore: () => void }>).mockRestore?.();
   if (root) await act(async () => root!.unmount());
   root = undefined;
   expect(capabilityListeners.size).toBe(0);
@@ -119,9 +121,11 @@ it("never presents an unavailable Git status as zero excluded paths", async () =
   await expect(loadWorkspaceCreation("/project")).rejects.toThrow("Git status unavailable");
 });
 
-it("requires an update before reading or preparing workspaces on an older Host", async () => {
+it("requires an update before reading or preparing workspaces on an older Host for an explicit worktree", async () => {
   vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
-  await expect(loadWorkspaceCreation("/project")).rejects.toThrow("Update bycoda Host");
+  await expect(loadWorkspaceCreation("/project", undefined, "worktree")).rejects.toThrow(
+    "Update bycoda Host",
+  );
   expect(workspaceRequest).toHaveBeenCalledWith(
     "projects.workspacePolicy.get",
     expect.anything(),
@@ -287,9 +291,31 @@ it("loads current policy without managed admission or Git preview", async () => 
   expect(listWorktrees).not.toHaveBeenCalled();
 });
 
-it("does not convert a failed policy lookup into a current-checkout fallback", async () => {
+it("falls back to the current checkout with a warning when an Automatic policy lookup fails", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.mocked(workspaceRequest).mockRejectedValueOnce(new Error("Policy unavailable"));
   await renderCreation();
-  expect(state.error).toBe("Policy unavailable");
+  expect(state).toMatchObject({
+    mode: "current",
+    pending: false,
+    error: undefined,
+    warning: "Policy unavailable",
+  });
   expect(listWorktrees).not.toHaveBeenCalled();
+});
+
+it("falls back to current after 1.5s when the Host never answers the policy read", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.mocked(workspaceRequest).mockReturnValueOnce(new Promise(() => {}) as never);
+  const result = loadWorkspaceCreation("/project");
+  await vi.advanceTimersByTimeAsync(1500);
+  await expect(result).resolves.toMatchObject({ warning: expect.stringContaining("timed out") });
+  vi.useRealTimers();
+});
+
+it("keeps an explicit worktree policy failure as an error", async () => {
+  vi.mocked(workspaceRequest).mockRejectedValueOnce(new Error("Policy unavailable"));
+  await renderCreation("worktree");
+  expect(state.error).toBe("Policy unavailable");
 });

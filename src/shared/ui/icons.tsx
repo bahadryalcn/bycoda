@@ -84,6 +84,7 @@ import {
   Minimize2 as LucideMinimize2,
   MessagesSquare as LucideMessageMultiple,
   MessageSquare as LucideMessageSquare,
+  Mic as LucideMic,
   MessageSquarePlus as LucideMessageSquarePlus,
   Minus as LucideMinus,
   Strikethrough as LucideStrikethrough,
@@ -306,6 +307,7 @@ export const Menu = wrap(LucideMenu, "Menu");
 export const Minimize2 = wrap(LucideMinimize2, "Minimize2");
 export const MessageMultiple = wrap(LucideMessageMultiple, "MessageMultiple");
 export const MessageSquare = wrap(LucideMessageSquare, "MessageSquare");
+export const Mic = wrap(LucideMic, "Mic");
 export const MessageSquarePlus = wrap(LucideMessageSquarePlus, "MessageSquarePlus");
 export const Minus = wrap(LucideMinus, "Minus");
 export const Strikethrough = wrap(LucideStrikethrough, "Strikethrough");

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useId,
   useRef,
   useState,
@@ -35,6 +36,12 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   selected?: boolean;
   loading?: boolean;
   loadingLabel?: string;
+  /** Retain the widest measured text label across async state changes. Defaults on with loading. */
+  stableWidth?: boolean;
+  /** Other text labels this button will show (pending, retry, done). Their widths are reserved
+   *  up front by invisible ghosts that add no DOM text, so the control never grows when its
+   *  label changes. The current label stays the only text content and accessible name. */
+  reserveLabels?: readonly string[];
   tooltip?: string;
   /** Display only: the owner resolves the current binding and handles the keys. */
   shortcut?: string | null;
@@ -102,6 +109,8 @@ export function Button({
   selected,
   loading: loadingProp,
   loadingLabel,
+  stableWidth,
+  reserveLabels,
   iconOnly = false,
   label,
   tooltip,
@@ -133,6 +142,24 @@ export function Button({
   ...props
 }: ButtonProps) {
   const loading = loadingProp ?? false;
+  const labelMeasure = useRef<HTMLSpanElement>(null);
+  const [labelWidth, setLabelWidth] = useState(0);
+  const reserveLabel = stableWidth ?? (loadingProp !== undefined || !!reserveLabels?.length);
+  // The current label is always the rendered (and accessible) text. Width stays stable by
+  // retaining the widest measured label, so idle/pending/retry texts never shrink the control.
+  useLayoutEffect(() => {
+    const node = labelMeasure.current;
+    if (!reserveLabel || !node) return;
+    const measure = () => {
+      const width = node.getBoundingClientRect().width;
+      setLabelWidth((previous) => Math.max(previous, width));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [children, reserveLabel]);
   const longPress = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
   const clearLongPress = () => {
     const current = longPress.current;
@@ -359,7 +386,17 @@ export function Button({
         </span>
       ) : null}
       {typeof children === "string" || typeof children === "number" ? (
-        <span className={styles.label}>{children}</span>
+        <span
+          className={styles.label}
+          data-label-reserved={reserveLabel || undefined}
+          data-label-ghosts={reserveLabels?.length ? "" : undefined}
+          style={reserveLabel ? { minInlineSize: labelWidth } : undefined}
+        >
+          <span ref={labelMeasure} className={styles.stableLabel}>{children}</span>
+          {reserveLabels?.map((text, index) => (
+            <span key={index} className={styles.labelGhost} data-reserve={text} aria-hidden="true" />
+          ))}
+        </span>
       ) : (
         children
       )}

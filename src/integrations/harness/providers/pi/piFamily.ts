@@ -102,6 +102,11 @@ import type {
   SendTurnInput,
   SteerTurnInput,
 } from "../../core/types";
+import {
+  COMPACTED_TEXT,
+  COMPACTING_TEXT,
+  COMPACTION_STATUS_KEY,
+} from "../../../../features/sessions/model/compactionStatus";
 
 type PendingApproval = {
   occurrenceId: string;
@@ -301,6 +306,7 @@ export function setPiBinaryResolver(flavor: PiFlavor, fn: () => Promise<{ path: 
  */
 export async function sendTurn(flavor: PiFlavor, input: SendTurnInput): Promise<void> {
   assertProviderOperation(input.operationContext);
+  stateFor(flavor).cancelledThreads.delete(input.sessionId);
 
   input = { ...input };
 
@@ -323,7 +329,10 @@ export async function sendTurn(flavor: PiFlavor, input: SendTurnInput): Promise<
           cancelledThreads.delete(input.sessionId);
           throw error;
         }
-        if (cancelledThreads.delete(input.sessionId)) return;
+        if (cancelledThreads.delete(input.sessionId)) {
+          input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+          return;
+        }
 
         observeProviderProcess(input, live.handle);
         const bindWriter = capturePiTurnWriter(
@@ -501,7 +510,7 @@ export async function steerTurn(flavor: PiFlavor, input: SteerTurnInput): Promis
   input = { ...input };
 
   const live = stateFor(flavor).liveByThread.get(input.sessionId);
-  if (!live?.activeTurn) throw new Error("No active turn to steer");
+  if (!live?.activeTurn) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
     throw new Error("Provider operation replaced before steer");
   const rpc = await piTurnWriter(
@@ -570,15 +579,15 @@ export async function cancelTurn(
 ): Promise<void> {
   if (cancelQueuedOperation(context)) return;
 
-  const { liveByThread, startingByThread, cancelledThreads } = stateFor(flavor);
+  const { liveByThread, startingByThread } = stateFor(flavor);
   if (startingByThread.has(sessionId)) {
     await stopSession(flavor, sessionId, context);
     return;
   }
   const live = liveByThread.get(sessionId);
+  // A captured cancellation must not affect a newer operation.
   if (!ownsOperation(context, live?.handle, live?.operation)) return;
   if (!live) {
-    cancelledThreads.add(sessionId);
     return;
   }
   const rpc = context
@@ -688,13 +697,15 @@ export async function forgetSession(
   sessionId: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
-
+  // Delete/switch must end the process: clear resume state first and stop by
+  // session when the context no longer owns it.
   const state = stateFor(flavor);
-  const original = state.liveByThread.get(sessionId) ?? state.startingByThread.get(sessionId);
-  if (original && !ownsOperation(context, original.handle, original.operation)) return;
   state.resumeByThread.delete(sessionId);
-  await stopSession(flavor, sessionId, context);
+  const queuedOnly = cancelQueuedOperation(context);
+  const original = state.liveByThread.get(sessionId) ?? state.startingByThread.get(sessionId);
+  const owned =
+    !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  await stopSession(flavor, sessionId, owned ? context : undefined);
 }
 
 export function bindSession(
@@ -708,7 +719,11 @@ export function bindSession(
   stateFor(flavor).resumeByThread.set(threadId, { sessionId, cwd });
 }
 
-async function ensureLive(flavor: PiFlavor, input: HarnessSessionInput): Promise<Live> {
+async function ensureLive(
+  flavor: PiFlavor,
+  input: HarnessSessionInput,
+  retriedSharedStartup = false,
+): Promise<Live> {
   assertProviderOperation(input.operationContext);
 
   const state = stateFor(flavor);
@@ -723,7 +738,15 @@ async function ensureLive(flavor: PiFlavor, input: HarnessSessionInput): Promise
   const captured = captureStop(flavor, input.sessionId);
   const { starting, live: existing } = captured;
   if (starting?.key === key) {
-    const live = await starting.promise;
+    let live: Live;
+    try {
+      live = await starting.promise;
+    } catch (error) {
+      // The shared startup was cancelled by another caller; start a fresh one
+      // once instead of inheriting that cancellation.
+      if (retriedSharedStartup || !starting.controller.signal.aborted) throw error;
+      return ensureLive(flavor, input, true);
+    }
     observeProviderProcess(input, live.handle);
     return live;
   }
@@ -1218,8 +1241,28 @@ function handleFrame(
   if (type === "auto_retry_start") live.retrying = true;
   if (type === "auto_retry_end") live.retrying = false;
 
-  const status = statusFromPiEvent(rec);
-  if (status) live.onEvent({ type: "status", text: status });
+  // One keyed row follows the compaction: running, then settled or closed.
+  if (type === "compaction_start") {
+    live.onEvent({
+      type: "status",
+      key: COMPACTION_STATUS_KEY,
+      running: true,
+      text: COMPACTING_TEXT,
+    });
+  } else if (type === "compaction_end") {
+    const failed = rec.aborted === true || !!stringField(rec, "errorMessage");
+    live.onEvent({
+      type: "status",
+      key: COMPACTION_STATUS_KEY,
+      running: false,
+      text: failed ? "" : COMPACTED_TEXT,
+    });
+    const reason = stringField(rec, "errorMessage");
+    if (reason) live.onEvent({ type: "status", text: `Could not compact context: ${reason}` });
+  } else {
+    const status = statusFromPiEvent(rec);
+    if (status) live.onEvent({ type: "status", text: status });
+  }
 
   const turnError = turnErrorFromEvent(rec);
   if (turnError !== null) live.turnError = turnError;

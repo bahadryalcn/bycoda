@@ -35,7 +35,7 @@ import {
 } from "./provider-lines";
 import { ProviderProcessLifecycle } from "./provider-process-lifecycle";
 import type { ProviderChild } from "./provider-child";
-import { NativeGuardianChild } from "./provider-guardian";
+import { NativeGuardianChild, ProviderGuardianError } from "./provider-guardian";
 import { prepareProviderGuardian } from "./provider-guardian-deployment";
 import { ProviderConstructions } from "./provider-constructions";
 import {
@@ -695,6 +695,8 @@ export class HostChildBackend implements ChildBackend {
     args: Record<string, unknown>,
   ): Promise<HarnessProcessReceipt> {
     if (this.closing) throw new Error("Host is stopping");
+    if (this.pendingStarts.get(id)?.size)
+      throw new Error("A provider is already starting for this session. Retry after it finishes.");
     const beforeSpawn = args.beforeSpawn;
     if (beforeSpawn !== undefined && typeof beforeSpawn !== "function")
       throw new Error("beforeSpawn must be an in-process function.");
@@ -734,6 +736,22 @@ export class HostChildBackend implements ChildBackend {
       check();
     };
     try {
+      const previous = this.children.get(id);
+      if (previous && previous.exitCode === null && previous.signalCode === null) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            this.retireChild(id, previous),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error("The original provider is still stopping. Retry when it exits.")), 20_000);
+            }),
+          ]);
+        } catch (error) {
+          if (previous.exitCode === null && previous.signalCode === null) throw error;
+          console.warn("Provider exited with unverified cleanup:", error);
+        } finally { clearTimeout(timer); }
+        check();
+      }
       if (runWriters && hostRun) {
         const requestedCwd = await canonicalWorkspacePath(await workingDirectory(String(args.cwd)));
         let cwdGrant: HostRunCwdGrant | undefined;
@@ -826,13 +844,30 @@ export class HostChildBackend implements ChildBackend {
         if (Object.keys(scoped).length) target.set(id, scoped);
       }
       const guardian = await prepareProviderGuardian(this.guardianDirectory);
+      const plainSpawn = () =>
+        spawn(
+          process.execPath,
+          [
+            fileURLToPath(new URL("./provider-guard.mjs", import.meta.url)),
+            launch.command,
+            ...launch.args,
+          ],
+          {
+            cwd,
+            stdio: ["pipe", "pipe", "pipe", "pipe"],
+            detached: process.platform !== "win32",
+            windowsHide: true,
+            env: { ...env, BYCODA_HOST: "1" },
+          },
+        );
       let child: ProviderChild;
       try {
         check();
         if (beforeSpawn || runPreparation) await restrict();
         check();
-        child = guardian
-          ? guardian.spawn(
+        if (guardian) {
+          try {
+            child = guardian.spawn(
               {
                 command: launch.command,
                 args: launch.args,
@@ -841,22 +876,14 @@ export class HostChildBackend implements ChildBackend {
               },
               restrict,
               check,
-            )
-          : spawn(
-              process.execPath,
-              [
-                fileURLToPath(new URL("./provider-guard.mjs", import.meta.url)),
-                launch.command,
-                ...launch.args,
-              ],
-              {
-                cwd,
-                stdio: ["pipe", "pipe", "pipe", "pipe"],
-                detached: process.platform !== "win32",
-                windowsHide: true,
-                env: { ...env, BYCODA_HOST: "1" },
-              },
             );
+          } catch (error) {
+            if (!(error instanceof ProviderGuardianError)) throw error;
+            // The installed guardian changed or is unusable: use the plain guard.
+            console.warn("Provider guardian is unavailable; using the plain provider guard:", error);
+            child = plainSpawn();
+          }
+        } else child = plainSpawn();
       } catch (error) {
         await guardian?.dispose();
         throw error;
@@ -932,9 +959,13 @@ export class HostChildBackend implements ChildBackend {
       );
       this.lines(child, id, constructionId, "stderr", overflow);
       child.on("close", (code) => {
-        if (child instanceof NativeGuardianChild && !child.retirementVerified)
-          exitReason ??=
-            "Provider cleanup could not be verified. This session cannot start a replacement.";
+        if (child instanceof NativeGuardianChild && !child.retirementVerified) {
+          // A normal exit with unverified cleanup is a warning, not an exit failure.
+          if (code === 0) console.warn("Provider cleanup could not be verified after a normal exit.");
+          else
+            exitReason ??=
+              "Provider cleanup could not be verified. This session cannot start a replacement.";
+        }
         if (this.children.get(id) === child) {
           this.children.delete(id);
           this.releaseActiveTools(id);
@@ -1273,18 +1304,15 @@ export class HostChildBackend implements ChildBackend {
     if (!child) {
       this.releaseActiveTools(id);
     } else await this.retireChild(id, child);
-    // Timeout/overflow callbacks remove a retired child from the current roster
-    // immediately. A replacement still owes that original's callbacks and close.
+    // Also drain the captured lifecycle after the close callback removes the child.
     await this.processLifecycles.drainSession(id);
   }
 
-  private retireChild(id: string, child: ProviderChild): Promise<void> {
+  private retireChild(_id: string, child: ProviderChild): Promise<void> {
     // Original callbacks may arrive after replacement. They can retire only
     // their captured process, never a newer child or pending startup by ID.
-    if (this.children.get(id) === child) {
-      this.children.delete(id);
-      this.releaseActiveTools(id);
-    }
+    // Keep the current child discoverable until its close callback, including
+    // when a bounded caller stops waiting for retirement.
     return this.processLifecycles.retire(child, () => this.stopChild(child));
   }
 

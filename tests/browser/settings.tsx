@@ -49,7 +49,9 @@ mockIPC(
       if (command === "remote_request") {
         const config = (args.params as { config?: Record<string, unknown> })?.config ?? {};
         const installed =
-          voiceFixture === "ready" || sessionStorage.getItem("fixture-voice-installed") === "1";
+          voiceFixture === "ready" ||
+          voiceFixture === "cpu-only" ||
+          sessionStorage.getItem("fixture-voice-installed") === "1";
         const installedConfig = {
           natural: config.natural !== false,
           python: "/fixture/voice/bin/python",
@@ -65,7 +67,14 @@ mockIPC(
           return new Promise(() => {});
         if (args.method === "voice.local.inspect")
           return installed
-            ? { ready: true, missing: [], ...installedConfig }
+            ? {
+                ready: true,
+                missing: [],
+                ...installedConfig,
+                ...(voiceFixture === "cpu-only"
+                  ? { gpu: "NVIDIA GeForce RTX 4070", accelerated: false }
+                  : {}),
+              }
             : {
                 ready: false,
                 missing: ["faster-whisper", "Whisper model", "voxcpm", "VoxCPM2 model"],

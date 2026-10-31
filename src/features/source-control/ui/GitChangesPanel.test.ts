@@ -75,6 +75,7 @@ vi.mock("../../../platform/tauri/fs", () => ({
 vi.mock("../../../integrations/harness", () => ({
   generateCommitMessage: vi.fn(async () => ""),
   generatePrContent: vi.fn(async () => null),
+  canRunHarnessTextPrompt: vi.fn(() => true),
 }));
 
 vi.mock("../../files/model/fileWatch", () => ({
@@ -814,13 +815,54 @@ describe("GitChangesPanel action feedback", () => {
       await vi.advanceTimersByTimeAsync(5 * 60_000);
     });
     expect(gitFetch).toHaveBeenCalledTimes(1);
-    expect(primaryAction().textContent?.trim()).toBe("Commit & Push");
+    expect(primaryAction().textContent?.trim()).toBe("Commit");
     expect(primaryAction().disabled).toBe(false);
-    await chooseCommitOption("Commit");
+    await act(async () => primaryAction().click());
     expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit during fetch", false, false);
     await act(async () => {
       finishFetch();
     });
+  });
+
+  it("keeps commit-only and push-only one click each while changes are pending", async () => {
+    const cwd = "/repo-commit-or-push";
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({
+        remote: "origin",
+        upstream: "origin/feature/pull",
+        ahead: 2,
+        files: [changedFile("file.ts", { staged: true, unstaged: false })],
+      }),
+    );
+    vi.mocked(gitCommit).mockClear().mockResolvedValue(undefined);
+    vi.mocked(gitPush).mockClear().mockResolvedValue(undefined);
+    await renderPanel(cwd);
+    await fillCommitMessage("Commit without pushing");
+    expect(primaryAction().textContent?.trim()).toBe("Commit");
+    const push = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => !button.closest('[role="group"]') && button.textContent?.startsWith("Push"),
+    )!;
+    expect(push.disabled).toBe(false);
+    await act(async () => push.click());
+    expect(gitSync).toHaveBeenCalledWith(cwd);
+    expect(gitCommit).not.toHaveBeenCalled();
+    await act(async () => primaryAction().click());
+    expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit without pushing", false, false);
+    expect(gitPush).not.toHaveBeenCalled();
+  });
+
+  it("commits every change from the primary action when nothing is staged", async () => {
+    const cwd = "/repo-commit-unstaged";
+    vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [changedFile("file.ts")] }));
+    vi.mocked(gitStageAll).mockClear();
+    vi.mocked(gitCommit).mockClear().mockResolvedValue(undefined);
+    await renderPanel(cwd);
+    expect(primaryAction().disabled).toBe(true);
+    await fillCommitMessage("Commit everything");
+    expect(primaryAction().disabled).toBe(false);
+    await act(async () => primaryAction().click());
+    expect(gitStageAll).toHaveBeenCalledWith(cwd);
+    expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit everything", false, false);
   });
 
   it("removes committed files without showing a success notification", async () => {
@@ -1031,8 +1073,8 @@ describe("GitChangesPanel action feedback", () => {
     });
     expect(sections()).toEqual(["Staged Changes"]);
 
-    expect(primaryAction().textContent?.trim()).toBe("Commit & Push");
-    await act(async () => primaryAction().click());
+    expect(primaryAction().textContent?.trim()).toBe("Commit");
+    await chooseCommitOption("Commit & Push");
     await act(async () => {});
 
     // Still pushing, and the poll still reads the old index.
@@ -1184,8 +1226,8 @@ describe("GitChangesPanel navigation", () => {
     );
     await renderPanel(cwd);
     await typeMessage("Commit draft");
-    expect(primaryAction().textContent?.trim()).toBe("Commit & Push");
-    await act(async () => primaryAction().click());
+    expect(primaryAction().textContent?.trim()).toBe("Commit");
+    await chooseCommitOption("Commit & Push");
     await renderPanel("/other-navigation");
     expect(status()).toBeUndefined();
     await typeMessage("Other draft");
@@ -1576,8 +1618,8 @@ describe("GitChangesPanel loading and publication recovery", () => {
       );
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(primaryAction().textContent?.trim()).toBe("Commit & Push");
-    await act(async () => primaryAction().click());
+    expect(primaryAction().textContent?.trim()).toBe("Commit");
+    await chooseCommitOption("Commit & Push");
     expect(container.textContent).toContain("Commit created; push failed");
     expect(gitCommit).toHaveBeenCalledTimes(1);
     await act(async () =>
@@ -2049,6 +2091,9 @@ describe("Git changed file multiple selection", () => {
           ),
         ),
       );
+      // Earlier folder-action cases may leave the remembered tree folder closed.
+      const folder = container.querySelector<HTMLButtonElement>('button[title="src"][aria-expanded="false"]');
+      if (folder) await act(async () => folder.click());
       await click("src/a.ts");
       onOpenFile.mockClear();
       await click("src/c.ts", { ctrlKey: true });

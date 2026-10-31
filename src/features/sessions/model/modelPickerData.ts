@@ -11,29 +11,17 @@ type ModelGroup = {
   models: Array<{ item: AgentModel; index: number }>;
 };
 
-/**
- * Stable menu order: Reasoning, then Fast / service tier, then the remaining model
- * options, then the secondary Context and Advisor/subagent groups. The order never
- * depends on usage, so a learned position stays put between opens.
+/** Stable top-to-bottom order: delegation, Context, Fast, Reasoning, then Model.
+ * Model and Reasoning stay closest to the upward-opening composer trigger.
  */
 const SETTING_ORDER = [
-  "effort",
-  "reasoning",
-  "reasoningEffort",
-  "fast",
-  "serviceTier",
-  "thinking",
-  "variant",
-  "agent",
-  "context",
-  "autoCompact",
-  "autoCompactWindow",
-  "advisor",
-  "subagentModel",
-  "subagentPolicy",
+  "subagentPolicy", "subagentModel", "advisor",
+  "autoCompactWindow", "autoCompact", "context",
+  "fast", "serviceTier", "agent", "thinking", "variant",
+  "reasoningEffort", "reasoning", "effort",
 ];
 
-/** Menu/Extras grouping: model options first, then the rarer Context and delegation groups. */
+/** Menu/Extras grouping: delegation first, then Context and model options. */
 export type SettingGroupId = "model" | "context" | "delegation";
 const CONTEXT_SETTINGS = new Set(["context", "autoCompact", "autoCompactWindow"]);
 const DELEGATION_SETTINGS = new Set(["advisor", "subagentModel", "subagentPolicy"]);
@@ -55,7 +43,7 @@ export function settingGroupId(setting: ModelSetting): SettingGroupId {
 export function groupSettings(
   settings: readonly ModelSetting[],
 ): Array<{ id: SettingGroupId; settings: ModelSetting[] }> {
-  return (["model", "context", "delegation"] as const)
+  return (["delegation", "context", "model"] as const)
     .map((id) => ({ id, settings: settings.filter((setting) => settingGroupId(setting) === id) }))
     .filter((group) => group.settings.length > 0);
 }

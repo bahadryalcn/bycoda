@@ -102,7 +102,7 @@ it("keeps sync diagnostics available behind a short error summary", async () => 
   expect(diagnostics.querySelector("summary")?.textContent).toContain("Sync needs attention");
   expect(diagnostics.querySelector("p")?.textContent).toContain("RPC_HOST_UNAVAILABLE");
   expect(diagnostics.querySelector("p")?.textContent).toContain("2 pending");
-  expect(container.querySelector('button[aria-label="Sync now"]')).toBeTruthy();
+  expect(container.querySelector('button[aria-haspopup="menu"]')).toBeTruthy();
 });
 
 it("opens the existing add editor for a Servers request made before Settings mounts", async () => {

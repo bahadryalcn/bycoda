@@ -23,8 +23,6 @@ import { backgroundMachineFor } from "../../automations/model/hostAutomationClie
 import { isLocalSyncMachine } from "../../connections/model/localSync";
 import { REMOTE_PROVIDERS, type RemoteMachine } from "../../connections/model/protocol";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
-import type { HostSettings } from "../model/hostSettings";
-import type { MachineLimits } from "../model/settingsClient";
 import {
   AutoMergeField,
   ContinueUntilDoneField,
@@ -32,7 +30,6 @@ import {
   RUN_TIME_LIMIT_OPTIONS,
   TaskExecutionMode,
 } from "./TaskFormFields";
-import { MachineConcurrency } from "./TaskLimits";
 
 export function TaskForm({
   draft,
@@ -44,8 +41,6 @@ export function TaskForm({
   onChange,
   onCancel,
   onSubmit,
-  limits,
-  onChangeLimits,
 }: {
   draft: TaskDraft;
   recents: RecentProject[];
@@ -59,8 +54,6 @@ export function TaskForm({
   onCancel: () => void;
   /** `todo` and `queued` add a new task; `save` keeps an edited task's status. */
   onSubmit: (mode: "todo" | "queued" | "save") => void;
-  limits: readonly MachineLimits[];
-  onChangeLimits: (machineId: string, settings: Partial<HostSettings>) => void;
 }) {
   useLocale();
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
@@ -98,6 +91,14 @@ export function TaskForm({
   ]);
   // A to-do item is mostly title and description; the agent comes later.
   const [agentOpen, setAgentOpen] = useState(false);
+  // Advanced starts closed; a task that already uses any of it opens it.
+  const [advancedOpen, setAdvancedOpen] = useState(
+    () =>
+      Boolean(draft.verifyCommand?.trim()) ||
+      Boolean(draft.budget) ||
+      Boolean(draft.preflightRequirements?.length) ||
+      Boolean(draft.workflowId),
+  );
   const update = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) =>
     onChange({ ...draft, [key]: value });
   const hasDescription = draft.prompt.trim().length > 0;
@@ -112,6 +113,20 @@ export function TaskForm({
   const canTodo = ready && !todoUnsupported;
   const canSave = ready && (draft.status === "todo" || hasDescription);
   const projectName = projectDisplayName(draft.cwd);
+  // Why a footer action is unavailable, shown as its tooltip.
+  const blockedReason = !draft.title.trim()
+    ? t("Add a title to continue.")
+    : !looksLikeProject(draft.cwd)
+      ? t("Choose a project.")
+      : machine == null
+        ? TASK_MACHINE_ERROR
+        : !draft.crewDefinitionId && (workspaceBusy || !workspaceValid)
+          ? t("Check the working branch under Advanced.")
+          : undefined;
+  const startReason = hasDescription
+    ? blockedReason
+    : t("Add a description to start this with an agent.");
+  const todoReason = blockedReason ?? (todoUnsupported || undefined);
   return (
     <form
       aria-label={draft.id ? t("Edit task") : t("New task")}
@@ -238,14 +253,9 @@ export function TaskForm({
                 options={RUN_TIME_LIMIT_OPTIONS}
                 onChange={(value) => update("maxRunMinutes", Number(value))}
               />
-              <TextField
-                label={t("Check command")}
-                value={draft.verifyCommand}
-                onChange={(event) => update("verifyCommand", event.target.value)}
-              />
             </div>
           ) : null}
-          {/* Advanced options: related groups share one surface and heading style. */}
+          {/* Who does the work: one choice, with the agent's own settings one step away. */}
           <div className="task-form-options">
             {!draft.crewDefinitionId ? (
               <div className="task-form-section">
@@ -343,20 +353,6 @@ export function TaskForm({
                         onChange={(checked) => update("continueUntilDone", checked)}
                       />
                     </div>
-                    <label className="flex min-w-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
-                      <span className="shrink-0">{t("Check command")}</span>
-                      <TextField
-                        hideLabel
-                        label=""
-                        aria-label={t("Check command")}
-                        value={draft.verifyCommand}
-                        onChange={(event) => update("verifyCommand", event.target.value)}
-                        placeholder={"npm test"}
-                        spellCheck={false}
-                        fieldClassName="min-w-[12rem] flex-1"
-                        className="font-mono"
-                      />
-                    </label>
                     {draft.review ? (
                       <details className="min-w-0 space-y-2 text-ui-caption">
                         <summary className="cursor-pointer">{t("Reviewer profile")}</summary>
@@ -425,6 +421,29 @@ export function TaskForm({
                 ) : null}
               </div>
             ) : null}
+          </div>
+          <details
+            className="task-form-advanced"
+            open={advancedOpen}
+            onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+          >
+            <summary>{t("Advanced")}</summary>
+            <div className="task-form-section">
+              <label className="task-form-check-command">
+                <span className="shrink-0">{t("Check command")}</span>
+                <TextField
+                  hideLabel
+                  label=""
+                  aria-label={t("Check command")}
+                  value={draft.verifyCommand}
+                  onChange={(event) => update("verifyCommand", event.target.value)}
+                  placeholder={"npm test"}
+                  spellCheck={false}
+                  fieldClassName="min-w-[12rem] flex-1"
+                  className="font-mono"
+                />
+              </label>
+            </div>
             {!draft.crewDefinitionId ? (
               <details className="task-form-section task-advanced-options">
                 <summary>{t("Working branch and worktree")}</summary>
@@ -486,25 +505,21 @@ export function TaskForm({
               budget={draft.budget}
               onChange={(budget) => update("budget", budget)}
             />
-          </div>
-          <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
+          </details>
         </fieldset>
       </div>
       <div className="task-form-footer">
-        {draft.id ? null : (
-          <p className="task-form-footer-hint">
-            {hasDescription
-              ? t(
-                  "Add to To do saves it without running. Add and start queues it for an agent now.",
-                )
-              : t("Add a description to start this with an agent.")}
-          </p>
-        )}
         <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
           {t("Cancel")}
         </Button>
         {draft.id ? (
-          <Button variant="primary" type="submit" loading={saving} disabled={!canSave || saving}>
+          <Button
+            variant="primary"
+            type="submit"
+            loading={saving}
+            disabled={!canSave || saving}
+            title={canSave ? undefined : (blockedReason ?? t("Add a description to save."))}
+          >
             {t("Save")}
           </Button>
         ) : (
@@ -514,9 +529,7 @@ export function TaskForm({
               type="button"
               disabled={!ready || !hasDescription || saving}
               loading={saving && submitMode === "queued"}
-              title={
-                hasDescription ? undefined : t("Add a description to start this with an agent.")
-              }
+              title={ready && hasDescription ? t("Queues it for an agent now.") : startReason}
               onClick={() => {
                 setSubmitMode("queued");
                 onSubmit("queued");
@@ -529,6 +542,7 @@ export function TaskForm({
               type="submit"
               loading={saving && submitMode === "todo"}
               disabled={!canTodo || saving}
+              title={canTodo ? t("Saves it without running.") : todoReason}
             >
               {t("Add to To do")}
             </Button>

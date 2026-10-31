@@ -35,14 +35,12 @@ const button = (label: string) =>
 
 it("offers the next step instead of an empty report when no sprint exists", () => {
   const openSprints = vi.fn();
-  const openBacklog = vi.fn();
   act(() =>
     root.render(
       createElement(SprintReports, {
         board: controller([]),
         sprintId: "",
         onOpenSprints: openSprints,
-        onOpenBacklog: openBacklog,
       }),
     ),
   );
@@ -50,9 +48,9 @@ it("offers the next step instead of an empty report when no sprint exists", () =
   // No chart or velocity placeholder without a sprint.
   expect(host.textContent).not.toContain("Sprint velocity");
   act(() => button("Go to Sprints")!.click());
-  act(() => button("Open backlog")!.click());
+  // One action only: the backlog is not offered from an empty report.
+  expect(button("Open backlog")).toBeUndefined();
   expect(openSprints).toHaveBeenCalledTimes(1);
-  expect(openBacklog).toHaveBeenCalledTimes(1);
 });
 
 it("lets the owner choose an existing sprint from the empty report", () => {

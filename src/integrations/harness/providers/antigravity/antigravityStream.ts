@@ -390,6 +390,7 @@ export async function cancelAntigravityStreamTurn(
   if (cancelQueuedOperation(context)) return;
 
   const original = liveBySession.get(sessionId);
+  // A captured cancellation must not affect a newer operation.
   if (!ownsOperation(context, original?.handle, original?.operation)) return;
   bumpEpoch(sessionId);
   const live = liveBySession.get(sessionId);
@@ -418,12 +419,14 @@ export async function forgetAntigravityStreamSession(
   sessionId: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
-
-  const original = liveBySession.get(sessionId);
-  if (!ownsOperation(context, original?.handle, original?.operation)) return;
+  // Delete/switch must end the process: a context that no longer owns it falls
+  // back to a by-session stop instead of returning with the process alive.
   resumeBySession.delete(sessionId);
-  await stopAntigravityStreamSession(sessionId, context);
+  const queuedOnly = cancelQueuedOperation(context);
+  const original = liveBySession.get(sessionId);
+  const owned =
+    !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  await stopAntigravityStreamSession(sessionId, owned ? context : undefined);
 }
 
 export function bindAntigravityStreamSession(

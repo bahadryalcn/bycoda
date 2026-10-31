@@ -57,9 +57,11 @@ async function render(props: Partial<Parameters<typeof TaskWorkflowControls>[0]>
 it("loads choices without applying anything, then explicitly applies while preserving the draft objective", async () => {
   const onApply = await render();
   expect(onApply).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("Preparation not verified");
+  // Nothing is chosen yet, so no preparation state is shown.
+  expect(container.textContent).not.toContain("Preparation not verified");
   await act(async () => button("Apply workflow").click());
   expect(onApply).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("Preparation not verified");
   expect(readTaskInstructions(onApply.mock.calls[0][0].prompt)?.objective).toBe(
     "Preserve this payment investigation",
   );

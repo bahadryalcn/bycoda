@@ -34,6 +34,7 @@ vi.mock("./runtimeLogsBridge", async (importOriginal) => ({
   runtimeLogsBridge: runtimeLogsBridgeMock,
 }));
 import {
+  defaultModelId,
   resetHarnessModelOverlays,
   setHarnessModels,
 } from "../../../features/sessions/model/models";
@@ -161,7 +162,8 @@ describe("harness registry", () => {
     expect(steerTurn).not.toHaveBeenCalled();
   });
 
-  it("does not let a failed queued submission inherit a retained failed predecessor", async () => {
+  it("does not let a failed cancellation poison the original turn or the next submission", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     let finish!: () => void;
     const failure = new Error("original cancellation is unresolved");
     const sendTurn = vi.fn(async (_input: SendTurnInput) => {
@@ -184,17 +186,21 @@ describe("harness registry", () => {
       onEvent: vi.fn(),
     };
     const first = sendHarnessTurn(input);
-    const firstFailed = expect(first).rejects.toBe(failure);
     await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
-    await expect(cancelHarnessTurn("claude", input.sessionId)).rejects.toBe(failure);
+    // The failed cancellation is warned about, never rethrown or cached.
+    await expect(cancelHarnessTurn("claude", input.sessionId)).resolves.toBeUndefined();
     const second = sendHarnessTurn({ ...input, text: "second" });
-    const secondFailed = expect(second).rejects.toThrow("unresolved cleanup");
     const followup = steerHarnessTurn({ ...input, text: "follow-up for second" });
     const refused = expect(followup).rejects.toThrow("original turn is no longer ready");
     finish();
-    await Promise.all([firstFailed, secondFailed, refused]);
-    expect(sendTurn).toHaveBeenCalledOnce();
+    await first;
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledTimes(2));
+    finish();
+    await Promise.all([second, refused]);
+    expect(cancelTurn).toHaveBeenCalledOnce();
     expect(steerTurn).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("refuses a retained follow-up when a same-id adapter replaces its actual source", async () => {
@@ -632,12 +638,15 @@ describe("harness registry", () => {
     expect(sendTurn).not.toHaveBeenCalled();
   });
 
-  it("rejects a Gemini model on Codex before any provider operation", async () => {
+  it("remaps a foreign provider model to the provider default for every operation", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
     const steerTurn = vi.fn(async (_input: SteerTurnInput) => {});
-    const compactContext = vi.fn(async () => {});
-    const rewindLastTurn = vi.fn(async () => ({ submitted: false }));
-    const runTextPrompt = vi.fn(async () => "unexpected");
+    const compactContext = vi.fn(async (_input: import("./types").CompactContextInput) => {});
+    const rewindLastTurn = vi.fn(async (_input: import("./types").RewindLastTurnInput) => ({
+      submitted: false,
+    }));
+    const runTextPrompt = vi.fn(async (_input: { model?: string }) => "ok");
     registerHarness(
       stub("codex", { sendTurn, steerTurn, compactContext, rewindLastTurn, runTextPrompt }),
     );
@@ -650,19 +659,20 @@ describe("harness registry", () => {
       text: "Continue the same chat",
       onEvent: vi.fn(),
     };
-    await expect(sendHarnessTurn(input)).rejects.toThrow('does not belong to provider "codex"');
-    await expect(steerHarnessTurn(input)).rejects.toThrow('does not belong to provider "codex"');
-    await expect(compactHarnessContext(input)).rejects.toThrow(
-      'does not belong to provider "codex"',
-    );
-    await expect(rewindHarnessLastTurn(input)).rejects.toThrow(
-      'does not belong to provider "codex"',
-    );
-    await expect(runHarnessTextPrompt({ ...input, prompt: "Recap" })).rejects.toThrow(
-      'does not belong to provider "codex"',
-    );
-    for (const operation of [sendTurn, steerTurn, compactContext, rewindLastTurn, runTextPrompt])
-      expect(operation).not.toHaveBeenCalled();
+    const fallback = defaultModelId("codex");
+    await sendHarnessTurn(input);
+    await steerHarnessTurn(input);
+    await compactHarnessContext(input);
+    await rewindHarnessLastTurn(input);
+    await runHarnessTextPrompt({ ...input, prompt: "Recap" });
+    for (const operation of [sendTurn, steerTurn, compactContext, rewindLastTurn, runTextPrompt]) {
+      expect(operation).toHaveBeenCalledOnce();
+      expect((operation.mock.calls[0] as [{ model?: string }])[0].model).toBe(fallback);
+    }
+    // The caller's own input is never mutated.
+    expect(input.model).toBe("antigravity:gemini-3.8-flash-high");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it.each(["my-private-model", "openrouter:vendor/custom-model", "codex:custom-model"])(
@@ -683,7 +693,8 @@ describe("harness registry", () => {
       expect(sendTurn.mock.calls[0][0].model).toBe(model);
     },
   );
-  it("retains the original failed Stop and refuses a replacement provider turn", async () => {
+  it("warns about a failed Stop, lets Stop retry and never fails the turn or the next one", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     let finish!: () => void;
     let fail!: (error: Error) => void;
     const sendTurn = vi.fn(
@@ -709,28 +720,29 @@ describe("harness registry", () => {
       onEvent: vi.fn(),
     };
     const turn = sendHarnessTurn(input);
-    const originalFailure = new Error("pipe unavailable");
-    const rejectedTurn = expect(turn).rejects.toBe(originalFailure);
     await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
     const first = cancelHarnessTurn("claude", input.sessionId);
     const second = cancelHarnessTurn("claude", input.sessionId);
     const results = Promise.allSettled([first, second]);
     await vi.waitFor(() => expect(cancelTurn).toHaveBeenCalledOnce());
-    fail(originalFailure);
+    fail(new Error("pipe unavailable"));
     expect(await results).toEqual([
-      { status: "rejected", reason: originalFailure },
-      { status: "rejected", reason: originalFailure },
+      { status: "fulfilled", value: undefined },
+      { status: "fulfilled", value: undefined },
     ]);
-    await expect(cancelHarnessTurn("claude", input.sessionId)).rejects.toBe(originalFailure);
-    expect(cancelTurn).toHaveBeenCalledOnce();
+    // The failure was not cached: a later Stop reaches the adapter again.
+    const retry = cancelHarnessTurn("claude", input.sessionId);
+    await vi.waitFor(() => expect(cancelTurn).toHaveBeenCalledTimes(2));
+    fail(new Error("pipe unavailable again"));
+    await retry;
     finish();
-    await rejectedTurn;
-    await expect(sendHarnessTurn({ ...input, text: "replacement" })).rejects.toThrow(
-      "The original provider operation still has unresolved cleanup.",
-    );
-    expect(sendTurn).toHaveBeenCalledOnce();
-    await expect(cancelHarnessTurn("claude", input.sessionId)).rejects.toBe(originalFailure);
-    expect(cancelTurn).toHaveBeenCalledOnce();
+    await turn;
+    const replacement = sendHarnessTurn({ ...input, text: "replacement" });
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledTimes(2));
+    finish();
+    await replacement;
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("does not admit a late Stop between original completion and route removal", async () => {
@@ -803,7 +815,8 @@ describe("harness registry", () => {
     await Promise.all([turn, rejected]);
     expect(compactContext).not.toHaveBeenCalled();
   });
-  it("releases an idle Codex writer before allowing a queued follow-up", async () => {
+  it("waits for idle Codex parking before allowing a queued follow-up", async () => {
+    vi.useFakeTimers();
     const order: string[] = [];
     let release!: () => void;
     const stopSession = vi.fn(async () => {
@@ -827,12 +840,54 @@ describe("harness registry", () => {
       onEvent: () => {},
     };
     const first = sendHarnessTurn(input);
-    await vi.waitFor(() => expect(stopSession).toHaveBeenCalledOnce());
+    await first;
+    await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS);
+    expect(stopSession).toHaveBeenCalledOnce();
     const second = sendHarnessTurn(input);
+    await vi.advanceTimersByTimeAsync(0);
     expect(sendTurn).toHaveBeenCalledOnce();
     release();
     await Promise.all([first, second]);
-    expect(order).toEqual(["send", "release", "send", "release"]);
+    expect(order).toEqual(["send", "release", "send"]);
+  });
+
+  it("reports reply end before idle parking and joins an in-progress park", async () => {
+    vi.useFakeTimers();
+    const order: string[] = [];
+    let release!: () => void;
+    const stopSession = vi.fn(async () => {
+      order.push("release");
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    const sendTurn = vi.fn(async () => {
+      order.push("send");
+    });
+    registerHarness(stub("codex", { sendTurn, stopSession }));
+    const onReplyEnded = vi.fn(() => order.push("reply-ended"));
+    const input = {
+      harness: "codex" as const,
+      sessionId: "writer-release-deferred",
+      cwd: "/tmp",
+      model: "codex:test",
+      runtimeMode: "supervised" as const,
+      text: "hello",
+      onEvent: () => {},
+    };
+    await sendHarnessTurn({ ...input, onReplyEnded });
+    expect(order).toEqual(["send", "reply-ended"]);
+    await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS);
+    expect(order).toEqual(["send", "reply-ended", "release"]);
+    expect(onReplyEnded).toHaveBeenCalledWith(expect.any(Number));
+    // The stop is still running, so the next turn must not start a second writer.
+    const second = sendHarnessTurn(input);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sendTurn).toHaveBeenCalledOnce();
+    release();
+    await second;
+    expect(sendTurn).toHaveBeenCalledTimes(2);
+    expect(stopSession).toHaveBeenCalledOnce();
   });
 
   it("keeps lightweight worktree Codex turns warm and still parks an idle writer", async () => {
@@ -863,7 +918,7 @@ describe("harness registry", () => {
     expect(stopSession).toHaveBeenCalledExactlyOnceWith(input.sessionId);
   });
 
-  it("retains a warm lightweight writer when the original complete Native cohort cannot be proved", async () => {
+  it("retires a warm lightweight writer on transfer with a best-effort stop and native retire", async () => {
     vi.useFakeTimers();
     const stopSession = vi.fn(async () => {});
     registerHarness(stub("codex", { stopSession }));
@@ -879,19 +934,24 @@ describe("harness registry", () => {
     });
     expect(stopSession).not.toHaveBeenCalled();
     expect(retainedHarnessWriters()).toContain("lightweight-transfer");
-    await expect(retireHarnessWriter("lightweight-transfer")).rejects.toThrow(
-      "complete execution cohort",
-    );
-    expect(nativeInvoke).not.toHaveBeenCalledWith("harness_retire", expect.anything());
-    expect(retainedHarnessWriters()).toContain("lightweight-transfer");
-    expect(stopSession).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS);
-    expect(stopSession).not.toHaveBeenCalled();
+    await retireHarnessWriter("lightweight-transfer");
+    expect(stopSession).toHaveBeenCalledOnce();
+    expect(nativeInvoke).toHaveBeenCalledWith("harness_retire", {
+      sessionId: "lightweight-transfer",
+    });
+    expect(retainedHarnessWriters()).not.toContain("lightweight-transfer");
   });
 
-  it("does not retry a session-admin retirement or release an unknown original writer", async () => {
-    const stopSession = vi.fn(async () => {});
+  it("retains the writer record when stop and native retire both fail", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const stopSession = vi.fn(async (): Promise<void> => {
+      throw new Error("stop failed");
+    });
     registerHarness(stub("codex", { stopSession }));
+    nativeInvoke.mockImplementation(async (command) => {
+      if (command === "harness_retire") throw new Error("retire failed");
+      return undefined;
+    });
     await sendHarnessTurn({
       harness: "codex",
       sessionId: "failed-retirement",
@@ -902,19 +962,20 @@ describe("harness registry", () => {
       onEvent: vi.fn(),
       lightweightWorktree: true,
     });
-    await expect(retireHarnessWriter("failed-retirement")).rejects.toThrow(
-      "complete execution cohort",
-    );
     expect(retainedHarnessWriters()).toContain("failed-retirement");
-    expect(stopSession).not.toHaveBeenCalled();
-    await expect(retireHarnessWriter("failed-retirement")).rejects.toThrow(
-      "complete execution cohort",
-    );
+    await expect(retireHarnessWriter("failed-retirement")).rejects.toThrow("stop failed");
     expect(retainedHarnessWriters()).toContain("failed-retirement");
-    expect(nativeInvoke).not.toHaveBeenCalledWith("harness_retire", expect.anything());
+    expect(warn).toHaveBeenCalled();
+    // A second transfer retries the original writer.
+    stopSession.mockResolvedValue(undefined);
+    nativeInvoke.mockResolvedValue(undefined);
+    await expect(retireHarnessWriter("failed-retirement")).resolves.toBeUndefined();
+    expect(retainedHarnessWriters()).not.toContain("failed-retirement");
+    expect(stopSession).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
   });
 
-  it("does not select a writer created after a transfer was queued without an original owner", async () => {
+  it("retires a writer queued behind the original turn only after that turn finishes", async () => {
     let started!: () => void;
     let finish!: () => void;
     const entered = new Promise<void>((resolve) => {
@@ -943,16 +1004,14 @@ describe("harness registry", () => {
       onEvent: vi.fn(),
       lightweightWorktree: true,
     });
-    const transferring = retireHarnessWriter("queued-transfer").catch((error: Error) => error);
+    const transferring = retireHarnessWriter("queued-transfer");
     await entered;
+    expect(stopSession).not.toHaveBeenCalled();
     finish();
     await sending;
-    expect(await transferring).toEqual(
-      expect.objectContaining({ message: expect.stringContaining("writer changed") }),
-    );
-    expect(retainedHarnessWriters()).toContain("queued-transfer");
-    expect(stopSession).not.toHaveBeenCalled();
-    expect(nativeInvoke).not.toHaveBeenCalledWith("harness_retire", expect.anything());
+    await transferring;
+    expect(stopSession).toHaveBeenCalledOnce();
+    expect(retainedHarnessWriters()).not.toContain("queued-transfer");
     resetHarnessIdlePark();
   });
 

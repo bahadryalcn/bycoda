@@ -314,7 +314,7 @@ function ProjectTerminalDockComponent({
             ) : null}
             <div ref={sideButton}>
               <IconButton
-                label={t("Terminal controls")}
+                label={t("Terminal dock actions")}
                 active={!!menu}
                 onClick={() => {
                   setProfileMenu(null);
@@ -607,7 +607,7 @@ function ProjectTerminalDockComponent({
           side={dock.side === "top" ? "bottom" : "top"}
           align="end"
           className="terminal-popup"
-          ariaLabel={t("Terminal controls")}
+          ariaLabel={t("Terminal dock actions")}
           items={[
             {
               kind: "item",

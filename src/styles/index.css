@@ -378,9 +378,10 @@ html.theme-light {
     var(--color-info) 55%,
     var(--color-background-base)
   );
-  /* Canvas < navigation panel < reading/form surface < floating surface.
+  /* Canvas = navigation panel < reading/form surface < floating surface.
+     Navigation shares the chat ground; existing borders separate panes (V3-033).
      Derive every layer from the user's tint rather than a second gray palette. */
-  --ui-surface-panel: color-mix(in oklab, var(--color-content) 5%, var(--color-background-base));
+  --ui-surface-panel: var(--ui-chat-canvas);
   --ui-surface: color-mix(in oklab, var(--color-content) 10%, var(--color-background-base));
   /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
   --ui-startup-surface: var(--palette-scrim);
@@ -399,11 +400,12 @@ html.theme-light {
   /* Intra-conflict differences sit on top of the side's line tint. */
   --ui-conflict-current-word: color-mix(in oklab, var(--color-conflict-ours) 30%, transparent);
   --ui-conflict-incoming-word: color-mix(in oklab, var(--color-conflict-theirs) 30%, transparent);
-  --ui-surface-muted: var(--ui-surface-panel);
+  /* Keep fields and muted controls at their existing tone independently of navigation. */
+  --ui-surface-muted: color-mix(in oklab, var(--color-content) 5%, var(--color-background-base));
   /* Hover stays a transient step below selection so the two never read alike. */
   --ui-surface-hover: color-mix(in oklab, var(--color-content) 13%, var(--color-background-base));
   --ui-surface-pressed: color-mix(in oklab, var(--color-content) 17%, var(--color-background-base));
-  --ui-surface-selected: color-mix(in oklab, var(--color-content) 15%, var(--ui-surface-panel));
+  --ui-surface-selected: color-mix(in oklab, var(--color-content) 15%, var(--ui-surface-muted));
   --ui-border-accent: var(--ui-interaction-ink);
   /* One writing surface owner: identical at rest and while typing. */
   /* The writing box is the reading surface one tier above the chat canvas, not the popup step:
@@ -416,6 +418,15 @@ html.theme-light {
   /* Large editable regions and boxed setting groups are identified by surface
      and caret; their edge is quieter than a 3:1 small-field border. */
   --ui-editor-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-surface));
+  /* Settings groups and collections (owner decision 2026-10-31, V3-013): the group interior is the
+     page canvas itself, so there is no gray fill. A thin frame and hairline row dividers carry the
+     structure. Every role derives from the user's tint (--color-content / --color-background-base),
+     which the light, dark and custom themes already override, so one definition serves all. Inputs,
+     selected rows, focus rings and drag targets keep their own boundary roles. */
+  --ui-settings-group-surface: transparent;
+  --ui-settings-group-border: color-mix(in oklab, var(--color-content) 15%, var(--color-background-base));
+  --ui-settings-hairline: color-mix(in oklab, var(--color-content) 9%, var(--color-background-base));
+  --ui-settings-row-hover: color-mix(in oklab, var(--color-content) 4%, transparent);
   --ui-radius-card: 0.5rem;
   /* One scrollbar family for native bars and custom rails (editor, rulers). */
   --ui-scrollbar-thumb: color-mix(in srgb, var(--color-content) 16%, transparent);
@@ -437,7 +448,7 @@ html.theme-light {
   /* Merge conflict sides are tinted regions, not edge stripes. */
   --ui-conflict-current-marker: color-mix(in oklab, var(--color-conflict-ours) 22%, transparent);
   --ui-conflict-incoming-marker: color-mix(in oklab, var(--color-conflict-theirs) 22%, transparent);
-  --ui-pane-border: color-mix(in oklab, var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 3), var(--ui-surface-panel));
+  --ui-pane-border: color-mix(in oklab, var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 3), var(--ui-surface-muted));
   /* Lightest field edge that keeps 3:1 against its surface; light needs more ink. */
   --ui-control-border: color-mix(in oklab, var(--color-content) 44%, var(--ui-surface-muted));
   /* Ordinary ranges use the exact contrast pair on an opaque fill, including
@@ -591,9 +602,9 @@ html.theme-light {
   --color-content: hsl(
     var(--theme-hue) calc(var(--theme-saturation) * 0.35) var(--content-lightness)
   );
-  /* Canvas (app ground, reading area) is near-white; navigation sits one quiet
-     step below it; editable and floating surfaces are paper white. */
-  --ui-surface-panel: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
+  /* Navigation and chat share the near-white canvas, separated by existing borders;
+     editable and floating surfaces retain their paper-white roles. */
+  --ui-surface-panel: var(--ui-chat-canvas);
   --ui-surface: color-mix(in oklab, var(--color-background-base) 35%, var(--palette-solidInk));
   --ui-surface-raised: var(--palette-solidInk);
   --ui-surface-muted: var(--color-background-base);
@@ -1144,8 +1155,8 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   mask-image: var(--tab-label-mask);
 }
 
-/* Fade a stationary layer, leaving the scroll surface unmasked. The session list sits on the
-   navigation panel ground, so it fades into that role rather than the lighter reading surface. */
+/* Fade a stationary layer, leaving the scroll surface unmasked. The session list shares
+   the chat canvas via the navigation role; fade into that same ground, not a raised card. */
 .sidebar-session-scroll {
   --scroll-fade-surface: var(--ui-surface-panel);
 }

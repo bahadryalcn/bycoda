@@ -1,9 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { processConstructions } from "./processConstruction.testSupport";
-import {
-  createProviderRetirementLedger,
-  ProviderRetirementError,
-} from "../core/providerRetirement";
+import { createProviderRetirementLedger } from "../core/providerRetirement";
 
 const { rawKill } = vi.hoisted(() => ({ rawKill: vi.fn(async (_sessionId: string) => {}) }));
 vi.mock("../core/child", async () => {
@@ -132,7 +129,7 @@ it.each([
   ["antigravity.stream", stopAntigravityStreamSession],
   ["opencode.main", stopOpenCodeSession],
 ] as const)(
-  "%s retains an orphan original failure across second stop while an unrelated owner can close",
+  "%s retains an orphan original kill failure until retry succeeds, and an unrelated owner can close",
   async (family, stop) => {
     const logical = `retained-${family}`;
     const physical = `${logical}#original`;
@@ -143,17 +140,17 @@ it.each([
     rawKill.mockImplementation(async (id) => {
       if (id === physical) throw failure;
     });
-    await expect(stop(logical)).rejects.toBeInstanceOf(ProviderRetirementError);
+    // Failed physical retirement must block this owner until a successful retry.
+    await expect(stop(logical)).rejects.toThrow("has not stopped");
     expect(
       processConstructions.operations
         .filter((entry) => entry.kind === "kill")
         .map((entry) => entry.handle),
     ).toEqual([a]);
-    await expect(stop(logical)).rejects.toBeInstanceOf(ProviderRetirementError);
-    expect(rawKill).toHaveBeenCalledTimes(1);
-    expect(() => ledger.admit(processConstructions.create(physical), logical)).toThrow(
-      ProviderRetirementError,
-    );
+    rawKill.mockResolvedValue(undefined);
+    await expect(stop(logical)).resolves.toBeUndefined();
+    expect(rawKill).toHaveBeenCalledTimes(2);
+    expect(() => ledger.admit(processConstructions.create(physical), logical)).not.toThrow();
     const unrelatedOwner = `${logical}-unrelated`;
     const b = processConstructions.create(`${unrelatedOwner}#actual`);
     ledger.admit(b, unrelatedOwner);
@@ -162,8 +159,8 @@ it.each([
       processConstructions.operations
         .filter((entry) => entry.kind === "kill")
         .map((entry) => entry.handle),
-    ).toEqual([a, b]);
-    expect(ledger.observation().failed).toBe(1);
+    ).toEqual([a, a, b]);
+    expect(ledger.observation().failed).toBe(0);
   },
 );
 

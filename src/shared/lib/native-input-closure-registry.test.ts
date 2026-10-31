@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import {
   createNativeInputClosureRegistry,
+  NATIVE_INPUT_CLOSURE_WATCHDOG_MS,
   type NativeInputErrorCode,
 } from "./native-input-closure-registry";
 import type { NativeInputWork } from "./native-input-observer";
@@ -170,4 +171,26 @@ it("bounds live global/owner roots and children while conserving accepted retire
   expect(lease.current()).toBe(true);
   gate.release();
   registrations.forEach((registration) => registration.unregister());
+});
+
+it("force-reopens admission when a closure is never released", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const engine = createNativeInputClosureRegistry(config);
+    const close = vi.fn();
+    const registration = engine.register(() => ({ snapshot: {} }), {
+      canClose: () => true,
+      close,
+    });
+    engine.beginInputClosure("root", { owner: {}, timeoutMs: 1000 });
+    expect(registration.allowed()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000 + NATIVE_INPUT_CLOSURE_WATCHDOG_MS);
+    expect(registration.allowed()).toBe(true);
+    expect(close).toHaveBeenLastCalledWith(false);
+    registration.unregister();
+  } finally {
+    (console.warn as unknown as { mockRestore(): void }).mockRestore();
+    vi.useRealTimers();
+  }
 });

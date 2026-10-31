@@ -419,7 +419,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       {loading && !data && <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>}
       <div className={styles.toolbar}>
         <div className={styles.search}>
-          <SearchInput appearance="field" aria-label={t("Search tokens")} placeholder={t("Search tokens")} value={query} onChange={(event) => setQuery(event.target.value)} />
+          <SearchInput appearance="quiet" aria-label={t("Search tokens")} placeholder={t("Search tokens")} value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
         <div className={styles.toolbarSlot}>
           <Button ref={filterAnchor} variant="ghost" iconOnly label={t("Filters")} selected={filter !== "all"} aria-expanded={filtersOpen} aria-haspopup="dialog" onClick={() => setFiltersOpen(!filtersOpen)}><ListFilter /></Button>

@@ -103,10 +103,10 @@ it("keeps MCP progress on the exact action and server even when providers share 
   const signIns = [...container.querySelectorAll<HTMLButtonElement>("button")].filter(
     (button) => button.textContent === "Sign in",
   );
-  expect(signIns).toHaveLength(2);
+  expect(signIns).toHaveLength(1);
   await act(async () => signIns[0].click());
   expect(signIns[0].getAttribute("aria-busy")).toBe("true");
-  expect(signIns[1].getAttribute("aria-busy")).not.toBe("true");
+  expect(container.querySelector('[aria-label="Actions for shared-name"][aria-busy="true"]')).toBeNull();
   await act(async () => signIns[0].click());
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(1);
   await act(async () => finishLogin());
@@ -118,10 +118,10 @@ it("keeps MCP progress on the exact action and server even when providers share 
         finishConfirm = resolve;
       }),
   );
-  const remove = container.querySelector<HTMLButtonElement>('button[aria-label="Remove"]')!;
+  const remove = container.querySelector<HTMLButtonElement>('button[aria-label="Actions for shared-name"]')!;
+  await act(async () => remove.click());
   await act(async () => {
-    remove.click();
-    remove.click();
+    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === "Remove")!.click();
   });
   expect(remove.getAttribute("aria-busy")).toBe("true");
   expect([...container.querySelectorAll<HTMLButtonElement>('button[aria-busy="true"]')]).toEqual([
@@ -213,8 +213,9 @@ it("filters connections by provider", async () => {
   await act(async () => codex.click());
   expect(container.textContent).toContain("docs");
   expect(container.textContent).not.toContain("sentry");
-  const signIn = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Sign in",
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Actions for docs"]')!.click());
+  const signIn = [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "Sign in again",
   )!;
   await act(async () => signIn.click());
   expect(invoke).toHaveBeenCalledWith("mcp_provider_login", {

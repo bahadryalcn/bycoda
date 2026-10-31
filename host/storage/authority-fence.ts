@@ -29,17 +29,24 @@ export async function initializeHostAuthorityFence(db: StoreDatabase): Promise<v
     ["session_journal_blocks", "session_id"],
     ["events", "session_id"],
   ] as const) {
+    // Native-owned heads (native-aborted/native-fenced) may still be deleted: the delete
+    // only drops the Host's stale copy and must not strand the session forever.
     const blocked = (
       row: "OLD" | "NEW",
+      deleting = false,
     ) => `EXISTS(SELECT 1 FROM host_authority_heads h WHERE h.session_id=${row}.${key} AND
+      ${deleting ? "h.phase NOT IN ('native-aborted','native-fenced') AND" : ""}
       (h.phase<>'host-active' OR NOT EXISTS(SELECT 1 FROM host_authority_write_permits p WHERE p.session_id=h.session_id AND p.generation=h.generation)))`;
     for (const event of ["INSERT", "UPDATE", "DELETE"] as const) {
       const condition =
         event === "INSERT"
           ? blocked("NEW")
           : event === "DELETE"
-            ? blocked("OLD")
+            ? blocked("OLD", true)
             : `(${blocked("OLD")}) OR (${blocked("NEW")})`;
+      // Existing databases carry the older, stricter delete trigger: replace it.
+      if (event === "DELETE")
+        await db.exec(`DROP TRIGGER IF EXISTS host_authority_${table}_delete`);
       await db.exec(`CREATE TRIGGER IF NOT EXISTS host_authority_${table}_${event.toLowerCase()} BEFORE ${event} ON ${table}
         WHEN ${condition} BEGIN SELECT RAISE(ABORT,'Host authoritative session write is fenced'); END`);
     }
@@ -55,10 +62,8 @@ export async function assertHostAuthority(
   const heads = await db
     .prepare("SELECT generation,phase FROM host_authority_heads WHERE session_id=?")
     .all(sessionId);
-  if (!heads.length) {
-    if (expectedGeneration !== undefined) throw new HostAuthorityFenceError();
-    return false;
-  }
+  // No head row means the session was never fenced; a client-supplied generation is moot.
+  if (!heads.length) return false;
   if (
     heads.length !== 1 ||
     heads[0].phase !== "host-active" ||

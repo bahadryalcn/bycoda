@@ -61,6 +61,20 @@ export function useDesktopLive(
     let checkedAt = 0;
     const { unacked, handled, beat, inboxResults, inboxRunning } = state.current;
 
+    let directoryInputs: { id: string; cwd: string }[] = [];
+    let directoryPaths: string[] = [];
+    const projectDirectory = () => {
+      const sessions = sessionsRef.current;
+      if (!directoryInputs.length || sessions.length !== directoryInputs.length || sessions.some(
+        (session, i) => session.id !== directoryInputs[i]?.id || session.cwd !== directoryInputs[i]?.cwd,
+      )) {
+        directoryInputs = sessions.map(({ id, cwd }) => ({ id, cwd }));
+        directoryPaths = sessions.map((session) => session.cwd);
+      }
+      // The builder also tracks stored privacy/layout inputs, and logos may finish
+      // loading without a session change. Their caches retain object identity.
+      return withMobileProjectLogos(buildMobileProjectDirectory(directoryPaths));
+    };
     const tick = async () => {
       if (running || !hostReachable.current) return;
       running = true;
@@ -86,10 +100,7 @@ export function useDesktopLive(
             remoteRequest<DesktopLiveResult>(id, "sessions.desktopLive", payload),
           sessions: () => sessionsRef.current.filter((session) => !hostSessionBinding(session)),
           writers: retainedHarnessWriters,
-          projectDirectory: () =>
-            withMobileProjectLogos(
-              buildMobileProjectDirectory(sessionsRef.current.map((session) => session.cwd)),
-            ),
+          projectDirectory,
           handlers: {
             retireWriter: retireHarnessWriter,
             delete: (sessionId, cwd) => {

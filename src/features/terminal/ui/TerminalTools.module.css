@@ -6,9 +6,7 @@
   padding: 2px 4px;
   min-block-size: 2rem;
   min-inline-size: 0;
-  background: var(--ui-surface-panel);
-  border-block-end: 1px solid var(--color-stroke);
-  color: var(--color-content);
+  background: var(--ui-surface);
 }
 /* Controls hosted in the "More actions" popover sit on the raised sheet. */
 .popoverBody .tools {
@@ -71,33 +69,55 @@
   overflow: clip;
 }
 
-/* One compact tool row (28px controls) on the same ground as the terminal
-   header so the dock reads as a single chrome band above the canvas. */
+/* Overlay consumes no terminal grid height; focus reveals it before activation. */
+.overlay {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 12px;
+  z-index: 3;
+  max-inline-size: calc(100% - 16px);
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
+}
 .menuTrigger {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .overlay {
+    opacity: 0;
+    pointer-events: none;
+  }
+  :global(.bycoda-terminal):hover > .overlay,
+  :global(.bycoda-terminal):focus-within > .overlay,
+  .overlay:focus-within,
+  .overlay[data-open] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.menuBody {
+  padding: 4px;
+}
+.separator {
+  block-size: 1px;
+  margin-block: 4px;
+  background: var(--ui-pane-border);
+}
+.fontRow {
+  display: flex;
+  align-items: center;
   gap: 4px;
   padding: 2px 4px;
-  min-block-size: 2rem;
-  border-block-end: 1px solid var(--color-stroke);
-  background: var(--ui-surface-panel);
 }
-/* Visible zoom readback: shown only while the size differs from the saved one. */
-.zoom {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-inline-end: auto;
-  min-inline-size: 0;
-  color: var(--ui-text-secondary);
+.fontValue {
+  min-inline-size: 4ch;
+  text-align: center;
   font-size: var(--ui-font-caption);
-  line-height: var(--ui-leading-caption);
+  color: var(--ui-text-secondary);
   font-variant-numeric: tabular-nums;
-}
-.zoomValue {
-  padding-inline: 4px;
-  white-space: nowrap;
 }

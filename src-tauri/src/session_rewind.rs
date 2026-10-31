@@ -756,13 +756,28 @@ fn require_exact_git_rewind(app: &AppHandle) -> Result<(), String> {
     }
 }
 
+pub(crate) fn has_pending_native(
+    store: &SessionStore,
+    session_id: Option<&str>,
+) -> Result<bool, String> {
+    store.with_read_conn(|conn| {
+        let sql = match session_id {
+            Some(_) => "SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE phase!='complete' AND session_id=?1) OR EXISTS(SELECT 1 FROM native_rewind_intents WHERE phase!='complete' AND session_id=?1)",
+            None => "SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE phase!='complete') OR EXISTS(SELECT 1 FROM native_rewind_intents WHERE phase!='complete')",
+        };
+        match session_id {
+            Some(id) => conn.query_row(sql, params![id], |row| row.get(0)),
+            None => conn.query_row(sql, [], |row| row.get(0)),
+        }.map_err(|e| e.to_string())
+    })
+}
+
 pub(crate) fn reconcile_pending_native(
     app: &AppHandle,
     store: &SessionStore,
     session_id: Option<&str>,
 ) -> Result<Vec<String>, String> {
-    let pending: bool = store.lock_conn()?.query_row("SELECT EXISTS(SELECT 1 FROM session_rewind_operations WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1))
-        OR EXISTS(SELECT 1 FROM native_rewind_intents WHERE phase!='complete' AND (?1 IS NULL OR session_id=?1))", params![session_id], |row|row.get(0)).map_err(|e|e.to_string())?;
+    let pending = has_pending_native(store, session_id)?;
     if !pending || !exact_git_rewind_enabled(app) {
         return Ok(vec![]);
     }

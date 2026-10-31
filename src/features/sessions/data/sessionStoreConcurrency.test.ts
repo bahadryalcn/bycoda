@@ -40,19 +40,24 @@ afterEach(() => {
   mocks.invoke.mockReset();
 });
 
+/** A failed compare-and-swap also re-reads the stored stamp (`session_get_page`); these
+ * tests are about the write order, so that read is left out of the comparison. */
+const lastUpsert = () =>
+  mocks.invoke.mock.calls.filter(([command]) => command === "session_upsert").at(-1);
+
 describe("session persistence concurrency", () => {
   it("passes original dates for a newly adopted row without changing ordinary saves", async () => {
     const { upsertSession } = await loadStore();
     mocks.invoke.mockResolvedValue(null);
     await upsertSession(session("adopted"), { createdAt: 100, updatedAt: 200 });
-    expect(mocks.invoke).toHaveBeenLastCalledWith(
+    expect(lastUpsert()).toEqual([
       "session_upsert",
       expect.objectContaining({
         session: expect.objectContaining({ id: "adopted", createdAt: 100, updatedAt: 200 }),
       }),
-    );
+    ]);
     await upsertSession(session("ordinary"));
-    const payload = mocks.invoke.mock.calls.at(-1)![1].session;
+    const payload = lastUpsert()![1].session;
     expect(payload).not.toHaveProperty("createdAt");
     expect(payload).not.toHaveProperty("updatedAt");
   });
@@ -77,7 +82,7 @@ describe("session persistence concurrency", () => {
     const firstWrite = deferred<unknown>();
     const commands: string[] = [];
     mocks.invoke.mockImplementation((command: string) => {
-      commands.push(command);
+      if (command !== "session_get" && command !== "session_get_page") commands.push(command);
       return command === "session_upsert" && commands.length === 1
         ? firstWrite.promise
         : Promise.resolve();
@@ -135,7 +140,7 @@ describe("session persistence concurrency", () => {
     const firstWrite = deferred<unknown>();
     const commands: string[] = [];
     mocks.invoke.mockImplementation((command: string) => {
-      commands.push(command);
+      if (command !== "session_get" && command !== "session_get_page") commands.push(command);
       if (commands.length === 1) return firstWrite.promise;
       return Promise.resolve({
         id: "s1",
@@ -175,7 +180,9 @@ describe("session persistence concurrency", () => {
     expect(flushed).toBe(false);
     firstWrite.resolve(undefined);
     await Promise.all([active, queued, flushing]);
-    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    expect(
+      mocks.invoke.mock.calls.filter(([command]) => command === "session_upsert"),
+    ).toHaveLength(2);
     expect(flushed).toBe(true);
   });
 

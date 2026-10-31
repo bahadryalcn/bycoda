@@ -32,7 +32,7 @@
   border-radius: var(--ui-radius-card);
 }
 .social-today-row:hover {
-  background: var(--ui-surface-panel);
+  background: var(--ui-surface-hover);
 }
 .social-today-row > div {
   min-inline-size: 0;

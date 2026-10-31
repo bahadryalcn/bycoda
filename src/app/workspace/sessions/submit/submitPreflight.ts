@@ -7,6 +7,7 @@ import {
   sessionProviderAccountId,
   supportsProviderAccounts,
 } from "../../../../features/providers/model/providerAccounts";
+import { repairStaleHandoff } from "../../../../features/sessions/model/activeSubmits";
 import { createEditedResendAttempt } from "../../../../features/sessions/model/editLastTurn";
 import {
   isPreparingHandoff,
@@ -46,6 +47,13 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   if (editedResends.isActive(sessionId)) return { settled: true, value: false };
   // Apply received output and terminal state before reading the next turn.
   flushHarnessEvents();
+  // A handoff block no running submit owns would refuse every send below.
+  repairStaleHandoff(sessionId);
+  const refuse = (text: string): PreflightResult => {
+    enqueueHarnessEvent(sessionId, { type: "status", text });
+    flushHarnessEvents();
+    return { settled: true, value: false };
+  };
   const controlError = orchestrator.submissionError(sessionId, options?.managed);
   if (controlError) {
     enqueueHarnessEvent(sessionId, { type: "status", text: controlError });
@@ -75,7 +83,9 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
     switchingWorktrees.current.has(sessionId) ||
     workspaceNavigation.isSwitching(sessionId)
   )
-    return { settled: true, value: false };
+    return refuse(
+      "Message not sent: this conversation is being changed. Send it again in a moment.",
+    );
   const foundCurrent = sessionsRef.current.find((s) => s.id === sessionId);
   const storedCurrent = foundCurrent ? repairSessionModelIdentity(foundCurrent) : undefined;
   if (storedCurrent && storedCurrent !== foundCurrent)
@@ -94,14 +104,16 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
       isPreparingHandoff(storedCurrent))
   )
     return { settled: true, value: false };
+  if (!storedCurrent) return { settled: true, value: false };
   if (
-    !storedCurrent ||
     storedCurrent.worktreeRemoved ||
     [...removingWorktreePaths.current].some((path) =>
       isEqualOrInside(sessionWorkCwd(storedCurrent), path),
     )
   )
-    return { settled: true, value: false };
+    return refuse(
+      "Message not sent: this conversation's checkout was removed or is being removed.",
+    );
   const draftBlock = options?.draftBlockId
     ? storedCurrent.blocks.find(
         (block) => block.id === options.draftBlockId && block.role === "user" && block.draft,
@@ -198,7 +210,8 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   if (!text.trim() && attachments.length === 0 && !noteCard && !handoffCard) {
     return { settled: true, value: false };
   }
-  if (isPreparingHandoff(current)) return { settled: true, value: false };
+  if (isPreparingHandoff(current))
+    return refuse("Message not sent: wait for the provider handoff to finish.");
   saveRecentModelChoice(current.harness, current.model);
   const initialWorkCwd = sessionWorkCwd(current);
   const createDraftWorktree = needsSessionWorkspace(current);

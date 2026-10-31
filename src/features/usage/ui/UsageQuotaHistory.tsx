@@ -1,3 +1,4 @@
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useMemo, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Select } from "../../../shared/ui/Select";
@@ -56,7 +57,12 @@ export function QuotaHistory({
   return (
     <section className="usage-panel">
       <div className="usage-section-heading">
-        <h3>{t("Limit history")}</h3>
+        <div className="flex items-center gap-2">
+          <h3>{t("Limit history")}</h3>
+          <InfoPopover label={t("About limit history")}>
+            {t("Actual account-wide readings, collected when limits refresh. History starts with collection; gaps and resets are not interpolated. Project and model filters do not apply to account quotas.")}
+          </InfoPopover>
+        </div>
         <div className="usage-controls">
           <Select
             label={t("Account")}
@@ -79,11 +85,6 @@ export function QuotaHistory({
           />
         </div>
       </div>
-      <p className="usage-muted">
-        {t(
-          "Actual account-wide readings, collected when limits refresh. History starts with collection; gaps and resets are not interpolated. Project and model filters do not apply to account quotas.",
-        )}
-      </p>
       {rows.length ? (
         <>
           <div

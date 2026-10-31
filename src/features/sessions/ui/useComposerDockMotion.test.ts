@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   readingMotionFrames,
+  readingRowFrames,
   useComposerDockMotion,
   useComposerReadingMotion,
 } from "./useComposerDockMotion";
@@ -83,43 +84,110 @@ describe("useComposerDockMotion", () => {
 });
 
 describe("readingMotionFrames", () => {
-  it("eases only the occupied height between the two layouts", () => {
-    expect(readingMotionFrames(180, 96)).toEqual([{ height: "180px" }, { height: "96px" }]);
+  it("eases only the field height between the two layouts", () => {
+    expect(readingMotionFrames(70, 46)).toEqual([{ height: "70px" }, { height: "46px" }]);
   });
 
   it("skips unmeasured, unchanged and sub-pixel changes", () => {
-    expect(readingMotionFrames(0, 96)).toBeNull();
-    expect(readingMotionFrames(96, 96)).toBeNull();
-    expect(readingMotionFrames(96, 97)).toBeNull();
+    expect(readingMotionFrames(0, 46)).toBeNull();
+    expect(readingMotionFrames(46, 46)).toBeNull();
+    expect(readingMotionFrames(46, 47)).toBeNull();
+  });
+});
+
+describe("readingRowFrames", () => {
+  const full = { height: 40, paddingStart: 6, paddingEnd: 4 };
+
+  it("collapses the row in layout while it fades out first", () => {
+    const frames = readingRowFrames(full, true)!;
+    expect(frames[0]).toMatchObject({ height: "40px", opacity: 1, offset: 0 });
+    expect(frames[1]).toEqual({ opacity: 0, offset: 0.4 });
+    expect(frames[2]).toMatchObject({ height: "0px", paddingBlockStart: "0px", opacity: 0 });
+  });
+
+  it("opens the row from nothing and fades it in late", () => {
+    const frames = readingRowFrames(full, false)!;
+    expect(frames[0]).toMatchObject({ height: "0px", opacity: 0, offset: 0 });
+    expect(frames[2]).toMatchObject({ height: "40px", paddingBlockEnd: "4px", opacity: 1 });
+  });
+
+  it("does nothing for a row that was never measured", () => {
+    expect(readingRowFrames(null, true)).toBeNull();
+    expect(readingRowFrames({ ...full, height: 0 }, false)).toBeNull();
   });
 });
 
 describe("useComposerReadingMotion", () => {
-  let height = 180;
+  let heights = { field: 70, row: 40 };
+  let attention = false;
   function ReadingHarness({ reading }: { reading: boolean }) {
     const ref = useRef<HTMLDivElement>(null);
     useComposerReadingMotion(ref, true, reading);
-    return createElement("div", { ref, "data-slot": "reading" });
+    return createElement(
+      "div",
+      { ref, "data-slot": "reading" },
+      createElement("textarea", { className: "composer-field", "data-slot": "field" }),
+      createElement("div", {
+        "data-composer-secondary": "",
+        "data-composer-attention": attention ? "" : undefined,
+        "data-slot": "row",
+      }),
+    );
   }
   function renderReading(reading: boolean) {
     act(() => root.render(createElement(ReadingHarness, { reading })));
   }
+  const targets = () =>
+    animate.mock.contexts.map((target) => (target as HTMLElement).dataset.slot);
   beforeEach(() => {
-    height = 180;
-    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(() => height);
+    heights = { field: 70, row: 40 };
+    attention = false;
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.dataset.slot === "field") return heights.field;
+      if (this.dataset.slot === "row") return heights.row;
+      return heights.field + heights.row;
+    });
     animate = vi.fn(() => ({ cancel: vi.fn(), addEventListener: vi.fn() }));
     HTMLElement.prototype.animate = animate as never;
   });
 
-  it("animates the dock height from the previous layout when reading mode toggles", () => {
+  it("eases the field height and fades the workspace row when reading starts", () => {
     renderReading(false);
-    height = 96;
+    heights = { field: 46, row: 0 };
     renderReading(true);
-    expect(animate).toHaveBeenCalledTimes(1);
-    expect(animate.mock.calls[0][0]).toEqual([{ height: "180px" }, { height: "96px" }]);
-    expect(container.querySelector<HTMLElement>("[data-slot=reading]")!.style.overflowY).toBe(
-      "clip",
-    );
+    expect(targets()).toEqual(["field", "row"]);
+    // The minimum height follows, so a growing field is not clamped.
+    expect(animate.mock.calls[0][0]).toEqual([
+      { height: "70px", minHeight: "70px" },
+      { height: "46px", minHeight: "46px" },
+    ]);
+    const rowFrames = animate.mock.calls[1][0];
+    expect(rowFrames[0]).toMatchObject({ height: "40px", opacity: 1 });
+    expect(rowFrames.at(-1)).toMatchObject({ height: "0px", opacity: 0 });
+    expect(container.querySelector<HTMLElement>("[data-slot=row]")!.style.overflow).toBe("clip");
+    // The dock itself is never clipped or given a fixed height.
+    expect(container.querySelector<HTMLElement>("[data-slot=reading]")!.style.overflowY).toBe("");
+  });
+
+  it("opens the workspace row again when reading ends", () => {
+    heights = { field: 46, row: 0 };
+    renderReading(true);
+    heights = { field: 70, row: 40 };
+    renderReading(false);
+    expect(targets()).toEqual(["field", "row"]);
+    expect(animate.mock.calls[0][0][0]).toEqual({ height: "46px", minHeight: "46px" });
+    expect(animate.mock.calls[1][0][0]).toMatchObject({ height: "0px", opacity: 0 });
+    expect(animate.mock.calls[1][0].at(-1)).toMatchObject({ height: "40px", opacity: 1 });
+  });
+
+  it("leaves a row that needs attention alone", () => {
+    attention = true;
+    renderReading(false);
+    heights = { field: 46, row: 40 };
+    renderReading(true);
+    expect(targets()).toEqual(["field"]);
   });
 
   it("does not animate on first render or when the mode is unchanged", () => {
@@ -131,7 +199,7 @@ describe("useComposerReadingMotion", () => {
   it("changes the layout without a transition under reduced motion", () => {
     reduce = true;
     renderReading(false);
-    height = 96;
+    heights = { field: 46, row: 0 };
     renderReading(true);
     expect(animate).not.toHaveBeenCalled();
   });
@@ -140,7 +208,7 @@ describe("useComposerReadingMotion", () => {
     const scrolled = vi.fn();
     window.addEventListener("scroll", scrolled, true);
     renderReading(false);
-    height = 96;
+    heights = { field: 46, row: 0 };
     renderReading(true);
     window.removeEventListener("scroll", scrolled, true);
     expect(scrolled).toHaveBeenCalled();
@@ -151,7 +219,7 @@ describe("useComposerReadingMotion", () => {
     const menu = document.createElement("div");
     menu.dataset.popoverSide = "top";
     document.body.append(menu);
-    height = 96;
+    heights = { field: 46, row: 0 };
     renderReading(true);
     menu.remove();
     expect(animate).not.toHaveBeenCalled();

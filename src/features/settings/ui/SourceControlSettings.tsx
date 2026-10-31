@@ -13,6 +13,7 @@ import {
   saveDefaultGitGenerationChoice,
   useDefaultGitGenerationChoice,
 } from "../../source-control/model/gitGenerationPreferences";
+import { RotateCcw } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 
 export function SourceControlSettings() {
@@ -40,13 +41,14 @@ export function SourceControlSettings() {
   return (
     <div className="source-control-settings settings-topics flex min-w-0 flex-col gap-7">
       <Group
-        title={t("Commit and pull request generation")}
+        title={t("Generation")}
         scope={t("Used across projects unless a project has its own generation selection.")}
       >
         <Row
           id="git-generation-default"
           label={t("Model")}
           description={t("Used across projects unless a project has its own generation selection.")}
+          descriptionVisible={false}
           feedback={
             generationError ? (
               <SettingsFeedback
@@ -63,22 +65,18 @@ export function SourceControlSettings() {
           }
         >
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            {!gitGenerationChoice && (
-              <span className="text-ui-secondary text-(--ui-text-secondary)">{t("Automatic")}</span>
-            )}
             <GitGenerationModelControl
               choice={gitGenerationChoice}
               onChange={onGenerationChoice}
             />
-            {gitGenerationChoice && (
-              <Button variant="link" onClick={() => onGenerationChoice(undefined)}>
-                {t("Use automatic selection")}
-              </Button>
-            )}
+            <Button size="sm" variant="ghost" iconOnly
+              label={t("Use automatic selection")} title={t("Use automatic selection")}
+              disabled={!gitGenerationChoice} onClick={() => onGenerationChoice(undefined)}>
+              <RotateCcw className="icon-sm" />
+            </Button>
           </div>
         </Row>
-      </Group>
-      <Group title={t("Code review")} scope={t("Applies to all projects on this computer.")}>
+
         <Row
           id="diff-view"
           label={t("Diff view")}

@@ -48,6 +48,17 @@ type RunningSelection = Pick<
   "busy" | "harness" | "model" | "modelSettings" | "runningModelTarget"
 >;
 
+/**
+ * The provider that owns live-turn actions (approval, answer, steer). While a
+ * turn runs, `session.harness` may already be the next provider picked for the
+ * following message; the running turn still belongs to its own provider.
+ */
+export function liveTurnHarness(
+  session: Omit<RunningSelection, "busy"> & { busy?: boolean },
+): Session["harness"] {
+  return session.busy ? runningTargetOf(session).harness : session.harness;
+}
+
 /** The model and settings of the turn in progress. */
 export function runningTargetOf(session: Omit<RunningSelection, "busy">): ModelTarget {
   return session.runningModelTarget ?? queuedModelTarget(session);

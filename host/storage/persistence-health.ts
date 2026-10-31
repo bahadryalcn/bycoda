@@ -21,7 +21,7 @@ export function storageFailure(error: unknown): PersistenceHealth | undefined {
   if (base === 13 || /SQLITE_FULL|database or disk is full/i.test(value?.message ?? ""))
     return { state: "temporarily-blocked", reason: "full" };
   if (base === 10 || /SQLITE_IOERR|disk I\/O error/i.test(value?.message ?? ""))
-    return { state: "recovery-required", reason: "io" };
+    return { state: "temporarily-blocked", reason: "io" };
   if (
     base === 11 ||
     base === 26 ||

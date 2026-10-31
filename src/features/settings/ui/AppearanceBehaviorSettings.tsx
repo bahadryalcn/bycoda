@@ -14,15 +14,24 @@ import {
   CREW_GROWTH_ENABLED_DEFAULT,
   CREW_SCENE_ENABLED_DEFAULT,
   loadCrewTheme,
+  TAB_ANIMATIONS_ENABLED_DEFAULT,
   type CrewTheme,
   saveCrewTheme,
   subscribeCrewTheme,
 } from "../model/settings";
-import { Button } from "../../../shared/ui/Button";
+import {
+  DECORATIVE_MOTION_DEFAULT,
+  saveDecorativeMotionEnabled,
+  useDecorativeMotionPreference,
+  usePrefersReducedMotion,
+} from "../model/decorativeMotion";
 import { Group, Row, Select, Toggle } from "./settingsControls";
 
-export function TabMotionSettings() {
+/** Tab and decorative animation preferences as one group with a single reset. */
+export function MotionSettings() {
   useLocale();
+  const decorativeMotion = useDecorativeMotionPreference();
+  const reducedMotion = usePrefersReducedMotion();
   const [tabAnimationsEnabled, setTabAnimationsEnabled] = useStoredPreferenceState(
     loadTabAnimationsEnabled,
     subscribeTabAnimationsEnabled,
@@ -32,7 +41,18 @@ export function TabMotionSettings() {
     setTabAnimationsEnabled(loadTabAnimationsEnabled());
   };
   return (
-    <>
+    <Group
+      title={t("Motion")}
+      modified={
+        tabAnimationsEnabled !== TAB_ANIMATIONS_ENABLED_DEFAULT ||
+        decorativeMotion !== DECORATIVE_MOTION_DEFAULT
+      }
+      resetLabel={t("Reset motion")}
+      onReset={() => {
+        saveTabAnimationsEnabled(TAB_ANIMATIONS_ENABLED_DEFAULT);
+        saveDecorativeMotionEnabled(DECORATIVE_MOTION_DEFAULT);
+      }}
+    >
       <Row
         id="tab-animations"
         label={t("Tab animations")}
@@ -46,7 +66,22 @@ export function TabMotionSettings() {
           onChange={onTabAnimationsEnabled}
         />
       </Row>
-    </>
+      <Row
+        id="decorative-motion"
+        label={t("Decorative animations")}
+        description={
+          reducedMotion
+            ? t("Your system requests reduced motion, so decorative animations stay still.")
+            : t("Animate project sigils, chat transitions and the agent crew scene.")
+        }
+      >
+        <Toggle
+          label={t("Decorative animations")}
+          on={decorativeMotion}
+          onChange={saveDecorativeMotionEnabled}
+        />
+      </Row>
+    </Group>
   );
 }
 export function CrewSettings() {
@@ -75,22 +110,21 @@ export function CrewSettings() {
       <Group
         title={t("Agent crew")}
         description={t("Your agent crew in new tasks and behind conversations.")}
-        action={
-          <Button
-            variant="ghost"
-            onClick={() => {
-              saveCrewSceneEnabled(CREW_SCENE_ENABLED_DEFAULT);
-              saveCrewGrowthEnabled(CREW_GROWTH_ENABLED_DEFAULT);
-              saveCrewTheme("classic");
-            }}
-          >
-            {t("Reset crew")}
-          </Button>
+        modified={
+          crewSceneEnabled !== CREW_SCENE_ENABLED_DEFAULT ||
+          crewGrowthEnabled !== CREW_GROWTH_ENABLED_DEFAULT ||
+          crewTheme !== "classic"
         }
+        resetLabel={t("Reset crew")}
+        onReset={() => {
+          saveCrewSceneEnabled(CREW_SCENE_ENABLED_DEFAULT);
+          saveCrewGrowthEnabled(CREW_GROWTH_ENABLED_DEFAULT);
+          saveCrewTheme("classic");
+        }}
       >
         <Row
           id="crew-scene"
-          label={t("Agent crew")}
+          label={t("Show agent crew")}
           description={t(
             "Show the main agent, the advisor and subagents as a crew. Decorative animations control their activity.",
           )}
@@ -99,12 +133,10 @@ export function CrewSettings() {
         </Row>
         <Row
           id="crew-theme"
-          dependency={
-            !crewSceneEnabled
-              ? t("Enable Agent crew to use this option. Your choice is preserved.")
-              : undefined
-          }
+          dependsOn={crewSceneEnabled}
+          disabledReason={t("Turn on the agent crew first")}
           label={t("Crew theme")}
+          descriptionVisible={false}
           description={
             crewTheme === "star-wars"
               ? t(
@@ -131,12 +163,10 @@ export function CrewSettings() {
         </Row>
         <Row
           id="crew-growth"
-          dependency={
-            !crewSceneEnabled
-              ? t("Enable Agent crew to use this option. Your choice is preserved.")
-              : undefined
-          }
+          dependsOn={crewSceneEnabled}
+          disabledReason={t("Turn on the agent crew first")}
           label={growthLabel}
+          descriptionVisible={false}
           description={
             characterTheme
               ? t(

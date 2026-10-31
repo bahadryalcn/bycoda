@@ -183,3 +183,13 @@ it("persists the floor before any journal is constructed and clears defective co
     reopened.db.prepare("UPDATE sessions SET revision=9 WHERE id='fenced'").run(),
   ).rejects.toThrow("fenced");
 });
+
+it("allows deleting a native-fenced session and ignores a client generation when no head exists", async () => {
+  const { store } = await fixture();
+  expect(await store.assertAuthority("never-fenced", 7)).toBe(false);
+  await store.db
+    .prepare("UPDATE host_authority_heads SET phase='native-fenced' WHERE session_id='fenced'")
+    .run();
+  await store.deleteSession("fenced");
+  await expect(store.session("fenced")).rejects.toThrow();
+});

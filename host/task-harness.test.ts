@@ -235,7 +235,7 @@ describe("task harness preparation and aggregate budgets", () => {
       reviewer: { sessionId: reviewerId },
       awaitingOwnerRestart: true,
     });
-    expect(s.provider.cancel).toHaveBeenCalledWith(reviewerId);
+    expect(s.provider.cancel).toHaveBeenCalledWith(reviewerId, expect.anything());
     expect((await s.store.session(reviewerId)).session.id).toBe(reviewerId);
   });
   it("retains unknown historical consumption instead of granting a fresh total budget", async () => {

@@ -40,11 +40,14 @@ export class StoreDatabase {
   private readonly internal = new AsyncLocalStorage<boolean>();
   private readonly authorizations = new AsyncLocalStorage<StoreAuthorization>();
   onMutation?: (sql: string) => void;
+  /** Cache publication failed after a commit: the store must drop its caches. */
+  onMutationFault?: () => void;
   onCommit?: (effect: () => void | Promise<void>) => void;
   private tail: Promise<unknown> = Promise.resolve();
   private sequence = 0;
   admissionVersion = 0;
   dataMutationVersion = 0;
+  unattributedMutationVersion = 0;
   private failed?: Error;
   private closing = false;
   private closePromise?: Promise<void>;
@@ -52,6 +55,8 @@ export class StoreDatabase {
   private critical = new AsyncLocalStorage<boolean>();
   private recovering = new AsyncLocalStorage<boolean>();
   private health: PersistenceHealth = { state: "ready" };
+  private ioFailures = 0;
+  private recoveryTimer?: ReturnType<typeof setTimeout>;
   private pending = new Map<
     number,
     {
@@ -86,25 +91,30 @@ export class StoreDatabase {
           errcode: reply.errcode,
         });
         const health = storageFailure(error);
-        if (health) this.health = health;
+        if (health) this.setHealth(health);
         request.reject(error);
       } else {
         try {
           if (
             request.sql &&
             /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i.test(request.sql)
-          )
+          ) {
             this.dataMutationVersion++;
+            if (request.mutation || !/^\s*(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+(?:sessions|session_state|session_journal|session_journal_blocks|session_events)\b/i.test(request.sql))
+              this.unattributedMutationVersion++;
+          }
           if (request.mutation && request.sql)
             this.owners.run(request.owner, () => this.onMutation?.(request.sql!));
           request.resolve(reply.value);
         } catch (error) {
-          const failure = new Error(
-            "Host database committed but cache publication failed; restart the host before retrying.",
-            { cause: error },
-          );
-          request.reject(failure);
-          this.fail(failure);
+          // The write committed; a cache/listener fault must not kill storage.
+          console.error("Host database cache publication failed; caches were cleared:", error);
+          try {
+            this.onMutationFault?.();
+          } catch (faultError) {
+            console.error("Host cache reset failed:", faultError);
+          }
+          request.resolve(reply.value);
         }
       }
     });
@@ -131,6 +141,26 @@ export class StoreDatabase {
 
   persistenceHealth(): PersistenceHealth {
     return { ...this.health };
+  }
+  /** Transient IO errors escalate only after repeated failed probes. */
+  private setHealth(next: PersistenceHealth, recoveryProbe = false): void {
+    if (recoveryProbe && next.reason === "io" && next.state === "temporarily-blocked" && ++this.ioFailures > 5)
+      next = { state: "recovery-required", reason: "io" };
+    this.health = next;
+    if (next.state === "temporarily-blocked") this.scheduleRecovery();
+  }
+  /** A temporary block heals itself: probe every few seconds until writes work. */
+  private scheduleRecovery(): void {
+    if (this.recoveryTimer || this.failed || this.closing || this.terminating) return;
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = undefined;
+      if (this.health.state !== "temporarily-blocked") return;
+      this.recoverPersistence().catch((error) => {
+        console.warn("Automatic persistence recovery failed; will retry:", error);
+        if (this.health.state === "temporarily-blocked") this.scheduleRecovery();
+      });
+    }, 3000);
+    this.recoveryTimer.unref?.();
   }
   assertWriteAdmission(): void {
     if (this.health.state !== "ready" && !this.recovering.getStore())
@@ -192,11 +222,11 @@ export class StoreDatabase {
       return value;
     });
   }
-  /** Explicit probe; corruption/worker failures require restart or staged restore. */
+  /** Probe (automatic for temporary blocks); a live worker may leave recovery-required
+   * when the integrity check and write probe pass. Worker failure needs a restart. */
   recoverPersistence(): Promise<void> {
     return this.scope(async () => {
-      if (this.health.state === "recovery-required")
-        throw new PersistenceAdmissionError(this.persistenceHealth());
+      if (this.failed) throw new PersistenceAdmissionError(this.persistenceHealth());
       const previous = this.health;
       this.health = { state: "recovering", reason: previous.reason };
       try {
@@ -223,8 +253,9 @@ export class StoreDatabase {
           }),
         );
         this.health = { state: "ready" };
+        this.ioFailures = 0;
       } catch (error) {
-        this.health = storageFailure(error) ?? previous;
+        this.setHealth(storageFailure(error) ?? previous, true);
         throw error;
       }
     });
@@ -236,6 +267,7 @@ export class StoreDatabase {
 
   fail(error: Error): void {
     this.failed ??= error;
+    clearTimeout(this.recoveryTimer);
     this.health = { state: "recovery-required", reason: "worker" };
     for (const request of this.pending.values()) request.reject(this.failed);
     this.pending.clear();
@@ -347,12 +379,12 @@ export class StoreDatabase {
   private request(
     method: string,
     sql?: string,
-    params: SQLInputValue[] = [],
+    params: SQLInputValue[] | SQLInputValue[][] = [],
     owner = this.owners.getStore(),
   ): Promise<any> {
     if (this.failed) return Promise.reject(this.failed);
     const writes =
-      method === "run" ||
+      method === "runMany" || method === "run" ||
       method === "exec" ||
       ((method === "get" || method === "all" || method === "cursorOpen") &&
         !/^\s*(?:SELECT\b|PRAGMA\b|EXPLAIN\b)/i.test(sql ?? ""));
@@ -372,7 +404,7 @@ export class StoreDatabase {
         reject,
         owner,
         sql,
-        mutation: !this.internal.getStore() && (method === "run" || method === "exec"),
+        mutation: !this.internal.getStore() && (method === "runMany" || method === "run" || method === "exec"),
       });
       try {
         this.worker.postMessage({ id, owner: owner.id, method, sql, params });
@@ -394,6 +426,9 @@ export class StoreDatabase {
   }
   query(method: "get" | "all" | "run", sql: string, params: SQLInputValue[]): Promise<any> {
     return this.scope(() => this.request(method, sql, params));
+  }
+  runMany(sql: string, rows: SQLInputValue[][]): Promise<void> {
+    return this.scope(() => this.request("runMany", sql, rows));
   }
   async *iterate(sql: string, params: SQLInputValue[]): AsyncIterableIterator<StoreRow> {
     const owner = this.owners.getStore();
@@ -458,6 +493,8 @@ export class StoreDatabase {
     // Reserve one final FIFO operation before synchronously closing admission.
     // Its flush may reenter with the live final owner; unrelated work cannot.
     this.closing = true;
+    clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = undefined;
     this.closePromise = closing.finally(async () => {
       this.terminating = true;
       await this.worker.terminate();
@@ -481,6 +518,9 @@ export class StoreStatement {
     ...params: SQLInputValue[]
   ): Promise<{ changes: number | bigint; lastInsertRowid: number | bigint }> {
     return this.database.query("run", this.sql, params);
+  }
+  runMany(rows: SQLInputValue[][]): Promise<void> {
+    return this.database.runMany(this.sql, rows);
   }
   async *iterate(...params: SQLInputValue[]): AsyncIterableIterator<StoreRow> {
     yield* this.database.iterate(this.sql, params);

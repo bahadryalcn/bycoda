@@ -4700,7 +4700,13 @@ describe("remote host API", () => {
     const other = new DatabaseSync(join(s.directory, "host.db"));
     other.prepare("DELETE FROM devices WHERE id=?").run(s.first.id);
     other.close();
-    expect((await s.call("environment.describe")).status).toBe(401);
+    // External SQLite revocation is observed at the 1.5s auth-cache boundary.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1501);
+    try {
+      expect((await s.call("environment.describe")).status).toBe(401);
+    } finally {
+      clock.mockRestore();
+    }
     expect((await s.call("environment.describe", {}, s.second.token)).status).toBe(200);
   });
 

@@ -757,6 +757,9 @@ pub(crate) fn on_page_load(webview: &Webview, payload: &tauri::webview::PageLoad
     if !matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
         return;
     }
+    if let Some(issuer) = crate::control::receipts::page_reloaded(webview) {
+        crate::control::page_reloaded(webview.app_handle(), &issuer);
+    }
     let Ok(barrier) = tracker(webview.app_handle()) else {
         return;
     };

@@ -68,6 +68,8 @@ type Channel = {
   responseSequence: number;
   wsFailed?: boolean;
   wsRoute?: { runtime: EnvironmentRuntime; release(): void };
+  /** Watches the route's readiness so a stuck WebSocket falls back to HTTP. */
+  wsWatch?: ReturnType<typeof setInterval>;
   wsSubscriptions: Map<string, () => void>;
 };
 const channels = new Map<string, Channel>();
@@ -127,10 +129,44 @@ export function acquireRemoteHostRuntime(
 }
 
 function releaseWs(channel: Channel) {
+  if (channel.wsWatch) clearInterval(channel.wsWatch);
+  channel.wsWatch = undefined;
   for (const release of channel.wsSubscriptions.values()) release();
   channel.wsSubscriptions.clear();
   channel.wsRoute?.release();
   channel.wsRoute = undefined;
+}
+/** A WS route that is not ready (connecting or retry-wait) this long is abandoned for HTTP. */
+const WS_NOT_READY_MS = 5_000;
+/** Same fallback for a WS error and for a route that never becomes ready. */
+function failWs(machineId: string, channel: Channel, error: unknown) {
+  if (channel.stopped || channel.wsFailed) return;
+  channel.wsFailed = true;
+  releaseWs(channel);
+  for (const subscriber of channel.subscribers) {
+    try {
+      subscriber.onError?.(error);
+    } catch {
+      /* consumer isolation */
+    }
+  }
+  schedule(machineId, channel);
+}
+function watchWsRoute(machineId: string, channel: Channel) {
+  if (channel.wsWatch) clearInterval(channel.wsWatch);
+  let notReadySince: number | undefined;
+  channel.wsWatch = setInterval(() => {
+    const transport = channel.wsRoute?.runtime.state?.transport;
+    if (!transport || transport === "ready") {
+      notReadySince = undefined;
+      return;
+    }
+    notReadySince ??= Date.now();
+    if (Date.now() - notReadySince >= WS_NOT_READY_MS) {
+      console.warn(`[remote] Host WebSocket stayed ${transport}; falling back to HTTP`);
+      failWs(machineId, channel, new Error("Host WebSocket did not become ready"));
+    }
+  }, 1_000);
 }
 /** Git cursors a host answers per poll. */
 const GIT_CURSOR_LIMIT = 32;
@@ -373,8 +409,13 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
       release();
       channel.wsSubscriptions.delete(key);
     }
-  if (desired.size && !channel.wsRoute) channel.wsRoute = acquireRemoteHostRuntime(machineId);
+  if (desired.size && !channel.wsRoute) {
+    channel.wsRoute = acquireRemoteHostRuntime(machineId);
+    if (channel.wsRoute) watchWsRoute(machineId, channel);
+  }
   if (!desired.size && channel.wsRoute) {
+    if (channel.wsWatch) clearInterval(channel.wsWatch);
+    channel.wsWatch = undefined;
     channel.wsRoute.release();
     channel.wsRoute = undefined;
   }
@@ -384,19 +425,7 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
       if (channel.wsSubscriptions.has(key)) continue;
       const id = key.slice(key.indexOf(":") + 1);
       const kind = key.startsWith("session:") ? "session" : "project";
-      const onError = (error: unknown) => {
-        if (channel.stopped || channel.wsFailed) return;
-        channel.wsFailed = true;
-        releaseWs(channel);
-        for (const subscriber of channel.subscribers) {
-          try {
-            subscriber.onError?.(error);
-          } catch {
-            /* consumer isolation */
-          }
-        }
-        schedule(machineId, channel);
-      };
+      const onError = (error: unknown) => failWs(machineId, channel, error);
       let release: () => void;
       try {
         release =

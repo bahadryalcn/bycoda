@@ -1,3 +1,5 @@
+import { Row } from "../../settings/ui/settingsControls";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Alert } from "../../../shared/ui/Alert";
 import "./connections-settings.css";
 import { PasswordField } from "../../../shared/ui/PasswordField";
@@ -130,7 +132,7 @@ function TunnelUrl({ tunnel, machine }: { tunnel: ExternalTunnel; machine: Remot
     <div className="external-tunnel-url">
       <code>{tunnel.publicUrl}</code>
       <div className="external-tunnel-actions">
-        <Button
+        <Button stableWidth
           type="button"
           className="shrink-0"
           disabled={copied === "pending"}
@@ -139,11 +141,11 @@ function TunnelUrl({ tunnel, machine }: { tunnel: ExternalTunnel; machine: Remot
           <Copy className="icon-sm" aria-hidden />
           {t("Copy URL")}
         </Button>
-        <Button type="button" className="shrink-0" onClick={() => setQr(true)}>
+        <Button stableWidth type="button" className="shrink-0" onClick={() => setQr(true)}>
           {t("Show QR code")}
         </Button>
         {tunnel.target === "host" ? (
-          <Button type="button" className="shrink-0" onClick={() => setPair(true)}>
+          <Button stableWidth type="button" className="shrink-0" onClick={() => setPair(true)}>
             {t("Connect your phone")}
           </Button>
         ) : null}
@@ -225,17 +227,55 @@ export function TunnelControls({
       className="external-tunnel-controls"
       aria-busy={state.pending || state.phase === "loading"}
     >
-      <details className="connection-disclosure">
-        <summary>{t("Tunnel setup")}</summary>
-        <p className="external-tunnel-machine">{t("Tunnel runs on: {p0}", { p0: machineLabel })}</p>
-        <p>
-          {t(
-            "Provider CLI and authentication must be available on the selected computer. Local URLs and ports refer to that computer.",
-          )}
-        </p>
-      </details>
+      <div className="external-tunnel-list" aria-label={t("Tunnel status")}>
+        {overview?.tunnels.length === 0 ? <p>{t("No tunnels on this computer.")}</p> : null}
+        {[...(overview?.tunnels ?? [])].reverse().map((tunnel) => (
+          <article key={tunnel.id} className="external-tunnel-item">
+            <div className="external-tunnel-actions">
+              <strong>
+                {providerName(tunnel.provider)} ·{" "}
+                {t(tunnel.target === "host" ? "bycoda host access" : "Dev server sharing")}
+              </strong>
+              <Badge variant="dot" size="sm" tone={stateTone[tunnel.state]} role="status">
+                {t(stateCopy[tunnel.state])}
+              </Badge>
+              {tunnel.canStop ? (
+                <Button stableWidth
+                  type="button"
+                  className="shrink-0"
+                  disabled={state.pending || tunnel.state === "stopping"}
+                  onClick={() => void controller.stop(tunnel.id)}
+                >
+                  {t("Stop tunnel")}
+                </Button>
+              ) : null}
+            </div>
+            <code>{tunnel.localUrl}</code>
+            {tunnel.issue ? (
+              <p role={tunnel.state === "error" ? "alert" : "status"}>
+                {t(issueCopy[tunnel.issue])}
+              </p>
+            ) : null}
+            {ready && tunnel.state === "ready" ? (
+              <TunnelUrl
+                key={`${tunnel.id}:${tunnel.publicUrl}`}
+                tunnel={tunnel}
+                machine={machine}
+              />
+            ) : null}
+          </article>
+        ))}
+      </div>
       <div className="external-tunnel-actions">
-        <Button
+        <Badge variant="dot" tone={selected?.installed ? "success" : "neutral"}>
+          {t(selected?.installed ? "{p0} CLI ready" : "{p0} CLI needed", { p0: provider === "cloudflare" ? "Cloudflare" : "ngrok" })}
+        </Badge>
+        <InfoPopover label={t("Tunnel setup")}>
+          {t("Provider CLI and authentication must be available on the selected computer. Local URLs and ports refer to that computer.")}
+        </InfoPopover>
+      </div>
+      <div className="external-tunnel-actions">
+        <Button stableWidth
           type="button"
           className="shrink-0"
           disabled={state.pending}
@@ -271,6 +311,7 @@ export function TunnelControls({
             });
         }}
       >
+        <Row label={t("Provider")}>
         <SegmentedControl
           label={t("Tunnel provider")}
           value={provider}
@@ -282,6 +323,8 @@ export function TunnelControls({
             { value: "ngrok", label: "ngrok" },
           ]}
         />
+        </Row>
+        <Row label={t("What to share")}>
         <SegmentedControl
           label={t("Tunnel target")}
           value={target}
@@ -293,6 +336,7 @@ export function TunnelControls({
             { value: "host", label: t("bycoda host access") },
           ]}
         />
+        </Row>
         <TextField
           label={t("Local URL or port")}
           id={`${id}-url`}
@@ -311,10 +355,10 @@ export function TunnelControls({
                 "Host access keeps device authentication and pairing. The public URL contains no device credential.",
               )
             : t(
-                "Anyone with the public URL can reach this dev server. Use the server's own access controls.",
+                "Anyone with this URL can reach the dev server. Keep access controls enabled.",
               )}
         </p>
-        <Button
+        <Button stableWidth
           type="submit"
 
           disabled={
@@ -336,11 +380,7 @@ export function TunnelControls({
         </p>
       ) : null}
       {provider === "cloudflare" ? (
-        <p>
-          {t(
-            "Cloudflare Quick Tunnels need no account. URLs are temporary and SSE is not supported.",
-          )}
-        </p>
+        <InfoPopover label={t("Cloudflare")}>{t("Cloudflare Quick Tunnels need no account. URLs are temporary and SSE is not supported.")}</InfoPopover>
       ) : (
         <div className="external-tunnel-credentials">
           <p role="status">
@@ -373,11 +413,11 @@ export function TunnelControls({
               onChange={(event) => setToken(event.target.value)}
               fieldClassName="min-w-0 flex-1"
             />
-            <Button type="submit" disabled={!ready || !token} variant="primary">
+            <Button stableWidth type="submit" disabled={!ready || !token} variant="primary">
               {t("Save token securely")}
             </Button>
             {selected?.credential === "saved" ? (
-              <Button
+              <Button stableWidth
                 type="button"
                 className="shrink-0"
                 disabled={!ready}
@@ -389,45 +429,7 @@ export function TunnelControls({
           </form>
         </div>
       )}
-      <div className="external-tunnel-list" aria-label={t("Tunnel status")}>
-        {overview?.tunnels.length === 0 ? <p>{t("No tunnels on this computer.")}</p> : null}
-        {[...(overview?.tunnels ?? [])].reverse().map((tunnel) => (
-          <article key={tunnel.id} className="external-tunnel-item">
-            <div className="external-tunnel-actions">
-              <strong>
-                {providerName(tunnel.provider)} ·{" "}
-                {t(tunnel.target === "host" ? "bycoda host access" : "Dev server sharing")}
-              </strong>
-              <Badge variant="dot" size="sm" tone={stateTone[tunnel.state]} role="status">
-                {t(stateCopy[tunnel.state])}
-              </Badge>
-              {tunnel.canStop ? (
-                <Button
-                  type="button"
-                  className="shrink-0"
-                  disabled={state.pending || tunnel.state === "stopping"}
-                  onClick={() => void controller.stop(tunnel.id)}
-                >
-                  {t("Stop tunnel")}
-                </Button>
-              ) : null}
-            </div>
-            <code>{tunnel.localUrl}</code>
-            {tunnel.issue ? (
-              <p role={tunnel.state === "error" ? "alert" : "status"}>
-                {t(issueCopy[tunnel.issue])}
-              </p>
-            ) : null}
-            {ready && tunnel.state === "ready" ? (
-              <TunnelUrl
-                key={`${tunnel.id}:${tunnel.publicUrl}`}
-                tunnel={tunnel}
-                machine={machine}
-              />
-            ) : null}
-          </article>
-        ))}
-      </div>
+
     </div>
   );
 }

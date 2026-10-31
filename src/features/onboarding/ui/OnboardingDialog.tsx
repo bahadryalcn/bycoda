@@ -3,7 +3,10 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Stepper } from "../../../shared/ui/Stepper";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Select } from "../../../shared/ui/Select";
+import { Skeleton } from "../../../shared/ui/Skeleton";
 import {
   t,
   useLocale,
@@ -12,9 +15,26 @@ import {
   setLanguagePreference,
   isLocale,
 } from "../../../shared/i18n";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Modal } from "../../../shared/ui/Modal";
-import { AppWindow, Globe, ChevronRight, ArrowLeft } from "../../../shared/ui/icons";
+import {
+  AppWindow,
+  Check,
+  Globe,
+  ChevronRight,
+  ArrowLeft,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+} from "../../../shared/ui/icons";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 const ConnectionsSettings = lazy(() =>
   import("../../connections/ui/ConnectionsSettings").then((module) => ({
@@ -36,7 +56,11 @@ import {
   type ImportCandidate,
 } from "../../../platform/tauri/sessionImport";
 import { importedSessionKeys } from "../../sessions/data/sessionStore";
-import { groupByFolder, isAlreadyImported } from "../../sessions/import/importModel";
+import {
+  groupByFolder,
+  isAlreadyImported,
+  isTemporaryFolder,
+} from "../../sessions/import/importModel";
 import {
   isUsableProjectFolder,
   runSessionImport,
@@ -45,7 +69,7 @@ import {
 } from "../../sessions/import/importRunner";
 import { pickFolders } from "../../../platform/tauri/fs";
 import { rememberProject } from "../../projects/model/recents";
-import { projectName } from "../../../shared/lib/paths";
+import { parentPath, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { OnboardingWorkspace, OnboardingAppearance } from "./OnboardingPreferences";
 import { OnboardingAgents } from "./OnboardingAgents";
 import { loadOnboardingProviders, addOnboardingProviders } from "../model/onboardingProviders";
@@ -103,7 +127,7 @@ export default function OnboardingDialog({
       title={t("Welcome to {p0}", { p0: PRODUCT_IDENTITY.displayName })}
       size="lg"
       minimalHeader
-      className={step === 2 ? "onboarding-panel onboarding-panel-agents" : "onboarding-panel"}
+      className="onboarding-panel"
       onClose={busy ? () => undefined : onFinish}
     >
       <div className="onboarding-layout" ref={body}>
@@ -114,28 +138,48 @@ export default function OnboardingDialog({
               <span>{PRODUCT_IDENTITY.displayName}</span>
               <small>{t("Quick setup")}</small>
             </div>
-            <div className="onboarding-language">
-              <Select
-                label={t("Language")}
-                value={getLanguagePreference()}
-                options={[{ value: "system", label: t("System language") }, ...LANGUAGES]}
-                onValueChange={(value) => {
-                  if (value === "system" || isLocale(value))
-                    void setLanguagePreference(value).catch((reason) => setError(String(reason)));
-                }}
-              />
+            <div className="onboarding-topline-actions">
+              {onStartGuide && !busy ? (
+                <Button onClick={onStartGuide} variant="ghost" type="button">
+                  {t("Usage guide")}
+                </Button>
+              ) : null}
+              <div className="onboarding-language">
+                <Select
+                  label={t("Language")}
+                  value={getLanguagePreference()}
+                  options={[{ value: "system", label: t("System language") }, ...LANGUAGES]}
+                  onValueChange={(value) => {
+                    if (value === "system" || isLocale(value))
+                      void setLanguagePreference(value).catch((reason) =>
+                        setError(String(reason)),
+                      );
+                  }}
+                />
+              </div>
             </div>
           </div>
-          <Stepper
-            label={t("Getting started")}
-            steps={STEPS.map((label) => ({ id: label, label: t(label) }))}
-            current={step}
-            completed={[...visited].filter((index) => index !== step).map((index) => STEPS[index])}
-            selectable="all"
-            disabled={busy}
-            onStepSelect={goTo}
-            details="current"
-          />
+          <div className="onboarding-stepper-wrap">
+            <Stepper
+              className="onboarding-stepper"
+              label={t("Getting started")}
+              steps={STEPS.map((label) => ({ id: label, label: t(label) }))}
+              current={step}
+              completed={[...visited]
+                .filter((index) => index !== step)
+                .map((index) => STEPS[index])}
+              selectable="all"
+              disabled={busy}
+              onStepSelect={goTo}
+            />
+            <p className="onboarding-step-caption" aria-hidden="true">
+              {t("Step {p0} of {p1} · {p2}", {
+                p0: step + 1,
+                p1: STEPS.length,
+                p2: t(STEPS[step]),
+              })}
+            </p>
+          </div>
         </header>
         {step < 4 ? (
           <div className="onboarding-stage">
@@ -172,69 +216,68 @@ export default function OnboardingDialog({
                       )}
                     </p>
                   </div>
-                  <div className="onboarding-card">
-                    <AppWindow aria-hidden className="size-5" />
-                    <div>
-                      <strong>{t("This computer")}</strong>
-                      <small>{t("Your local projects and agents")}</small>
-                    </div>
-                    <span className="onboarding-status">{t("Local")}</span>
-                  </div>
-                  {remotes.map((machine) => (
-                    <div className="onboarding-card" key={machine.id}>
-                      <Globe aria-hidden className="size-5" />
+                  <div className="onboarding-scroll">
+                    <div className="onboarding-card">
+                      <AppWindow aria-hidden className="size-5" />
                       <div>
-                        <strong>{machine.name}</strong>
-                        <small>{t("Remote computer")}</small>
+                        <strong>{t("This computer")}</strong>
+                        <small>{t("Your local projects and agents")}</small>
                       </div>
-                      <Button
-                        onClick={() => setConnections(true)}
-                        variant="secondary"
-                        type="button"
-                      >
-                        {t("Manage")}
+                      <span className="onboarding-status">{t("Local")}</span>
+                    </div>
+                    {remotes.map((machine) => (
+                      <div className="onboarding-card" key={machine.id}>
+                        <Globe aria-hidden className="size-5" />
+                        <div>
+                          <strong>{machine.name}</strong>
+                          <small>{t("Remote computer")}</small>
+                        </div>
+                        <Button
+                          onClick={() => setConnections(true)}
+                          variant="secondary"
+                          type="button"
+                        >
+                          {t("Manage")}
+                        </Button>
+                      </div>
+                    ))}
+                    <div className="onboarding-actions">
+                      <Button onClick={() => setConnections(true)} variant="secondary" type="button">
+                        <Globe aria-hidden className="icon-sm" />
+                        {t("Manage connections…")}
                       </Button>
                     </div>
-                  ))}
-                  <Button onClick={() => setConnections(true)} variant="secondary" type="button">
-                    <Globe aria-hidden className="size-5" />
-                    <div>
-                      <strong>{t("Manage connections")}</strong>
-                      <small>{t("Computers, phone pairing and sharing")}</small>
-                    </div>
-                    <ChevronRight className="icon-md" />
-                  </Button>
-                  <p className="onboarding-hint">
-                    {t(
-                      "Your remote agents stay on their own computer. You can add connections later in Settings.",
-                    )}
-                  </p>
+                    <p className="onboarding-hint">
+                      {t("Remote agents stay on their own computer. Add connections later in Settings.")}
+                    </p>
+                  </div>
                 </>
               ) : null}
             </div>
-            <footer className="onboarding-footer">
-              <Button
-                onClick={step === 0 ? onFinish : () => goTo(step - 1)}
-                variant={step === 0 ? "ghost" : "secondary"}
-                type="button"
-              >
-                {step === 0 ? (
-                  t("Set up later")
-                ) : (
-                  <>
-                    <ArrowLeft className="icon-sm" />
-                    {t("Back")}
-                  </>
-                )}
-              </Button>
-              {step === 1 ? (
-                <span className="onboarding-save-note">{t("Changes save automatically")}</span>
-              ) : null}
+            <OnboardingFooter
+              start={
+                <Button
+                  onClick={step === 0 ? onFinish : () => goTo(step - 1)}
+                  variant={step === 0 ? "ghost" : "secondary"}
+                  type="button"
+                >
+                  {step === 0 ? (
+                    t("Set up later")
+                  ) : (
+                    <>
+                      <ArrowLeft className="icon-sm" />
+                      {t("Back")}
+                    </>
+                  )}
+                </Button>
+              }
+              note={t("Changes save automatically")}
+            >
               <Button onClick={() => goTo(step + 1)} variant="primary" type="button">
                 {t("Continue")}
                 <ChevronRight className="icon-sm" />
               </Button>
-            </footer>
+            </OnboardingFooter>
           </div>
         ) : null}
         {visited.has(4) ? (
@@ -243,7 +286,6 @@ export default function OnboardingDialog({
               onBusy={setBusy}
               onImported={onImported}
               onFinish={onFinish}
-              onStartGuide={onStartGuide}
               onBack={() => goTo(3)}
               onOpenRemote={remotes.length ? () => setRemotePicker(true) : undefined}
             />
@@ -287,23 +329,44 @@ export default function OnboardingDialog({
   );
 }
 
+/** The one footer rule: the way back on the left, optional Skip plus the primary action on the right. */
+function OnboardingFooter({
+  start,
+  note,
+  children,
+}: {
+  start: ReactNode;
+  /** Muted caption beside the way back, for steps whose choices save as they change. */
+  note?: string;
+  children: ReactNode;
+}) {
+  return (
+    <footer className="onboarding-footer">
+      <div className="onboarding-footer-start">
+        {start}
+        {note ? <span className="onboarding-save-note">{note}</span> : null}
+      </div>
+      <div className="onboarding-footer-actions">{children}</div>
+    </footer>
+  );
+}
+
 function Projects({
   onBusy,
   onImported,
   onFinish,
   onBack,
   onOpenRemote,
-  onStartGuide,
 }: {
   onBusy: (busy: boolean) => void;
   onImported: () => void;
   onFinish: () => void;
   onBack: () => void;
   onOpenRemote?: () => void;
-  onStartGuide?: () => void;
 }) {
   useLocale();
   const [candidates, setCandidates] = useState<ImportCandidate[]>([]);
+  const [hiddenTemporary, setHiddenTemporary] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -322,13 +385,18 @@ function Projects({
       .then(([report, keys]) => {
         if (!alive) return;
         const stored = new Set(keys);
-        const next = report.candidates.filter(
+        const usable = report.candidates.filter(
           (item) =>
             item.kind === "interactive" &&
             isUsableProjectFolder(item) &&
             !isAlreadyImported(item, stored),
         );
+        // Scratch folders (OS temp, e2e runs) stay out of the list; nothing is deleted.
+        const next = usable.filter((item) => !isTemporaryFolder(item.cwd));
         setCandidates(next);
+        setHiddenTemporary(
+          groupByFolder(usable.filter((item) => isTemporaryFolder(item.cwd))).length,
+        );
         setSelected(new Set(groupByFolder(next).map((folder) => folder.key)));
       })
       .catch((reason) => {
@@ -390,6 +458,20 @@ function Projects({
     }
   };
   const busy = importing || adding;
+  const listing = !loading && !summary && !importing;
+  const empty = listing && !error && folders.length === 0;
+  const chooseFolders = (
+    <Button
+      disabled={busy}
+      loading={adding}
+      onClick={() => void addFolders()}
+      variant="secondary"
+      type="button"
+    >
+      <FolderPlus aria-hidden className="icon-sm" />
+      {t("Choose project folders")}
+    </Button>
+  );
   return (
     <>
       <div className="onboarding-body">
@@ -401,187 +483,212 @@ function Projects({
             )}
           </p>
         </div>
-        {error ? (
-          <Alert role="alert" tone="danger">
-            {t("Could not complete this action: ")}
-            {error}
-          </Alert>
-        ) : null}
-        {loading ? (
-          <p role="status">{t("Scanning this computer’s conversation history…")}</p>
-        ) : null}
-        {!loading && !summary ? (
-          <>
-            <div className="onboarding-selection">
-              <span>
-                {selected.size}
-                {t(" of ")}
-                {folders.length}
-                {t(" selected")}
-              </span>
-              <div>
-                <Button
+        <div className="onboarding-scroll">
+          {error ? (
+            <Alert role="alert" tone="danger">
+              {t("Could not complete this action: ")}
+              {error}
+            </Alert>
+          ) : null}
+          {loading ? (
+            <div className="onboarding-scan">
+              <p role="status">{t("Scanning this computer’s conversation history…")}</p>
+              {[0, 1, 2, 3].map((row) => (
+                <Skeleton key={row} aria-hidden className="h-9 w-full" />
+              ))}
+            </div>
+          ) : null}
+          {listing && folders.length > 0 ? (
+            <div className="onboarding-projects-frame">
+              <div className="onboarding-selection">
+                <Checkbox
+                  aria-label={t("Select all")}
                   disabled={busy}
-                  onClick={() => setSelected(new Set(folders.map((folder) => folder.key)))}
-                  variant="secondary"
-                  type="button"
-                >
-                  {t("Select all")}
-                </Button>
-                <Button
-                  disabled={busy}
-                  onClick={() => setSelected(new Set())}
-                  variant="secondary"
-                  type="button"
-                >
-                  {t("Select none")}
-                </Button>
+                  checked={selected.size === folders.length}
+                  indeterminate={selected.size > 0 && selected.size < folders.length}
+                  onChange={() =>
+                    setSelected(
+                      selected.size === folders.length
+                        ? new Set()
+                        : new Set(folders.map((folder) => folder.key)),
+                    )
+                  }
+                />
+                <span>
+                  {selected.size}
+                  {t(" of ")}
+                  {folders.length}
+                  {t(" selected")}
+                </span>
+                {hiddenTemporary > 0 ? (
+                  <small className="onboarding-selection-note">
+                    {t("{p0} temporary folders hidden", { p0: hiddenTemporary })}
+                  </small>
+                ) : null}
+              </div>
+              <div className="onboarding-projects">
+                {folders.map((folder) => {
+                  const parent = parentPath(folder.path);
+                  return (
+                    <label className="onboarding-project" key={folder.key}>
+                      <Checkbox
+                        checked={selected.has(folder.key)}
+                        disabled={busy}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setSelected((current) => {
+                            const next = new Set(current);
+                            if (checked) next.add(folder.key);
+                            else next.delete(folder.key);
+                            return next;
+                          });
+                        }}
+                      />
+                      <Folder aria-hidden className="icon-sm onboarding-project-icon" />
+                      <strong>{projectName(folder.path)}</strong>
+                      {parent && parent !== folder.path ? (
+                        <MiddleTruncate
+                          mode="path"
+                          title={folder.path}
+                          className="onboarding-project-path"
+                        >
+                          {prettyCwd(parent)}
+                        </MiddleTruncate>
+                      ) : (
+                        <span className="onboarding-project-path" />
+                      )}
+                      <span className="onboarding-provider-icons">
+                        {[...new Set(folder.items.map((item) => item.provider))].map((provider) => (
+                          <HarnessIcon key={provider} harness={provider} className="icon-sm" />
+                        ))}
+                      </span>
+                      <span className="onboarding-project-count" title={t("Conversations")}>
+                        {folder.items.length}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
-            <div className="onboarding-projects">
-              {folders.map((folder) => (
-                <label className="onboarding-project" key={folder.key}>
-                  <Checkbox
-                    checked={selected.has(folder.key)}
-                    disabled={busy}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setSelected((current) => {
-                        const next = new Set(current);
-                        if (checked) next.add(folder.key);
-                        else next.delete(folder.key);
-                        return next;
-                      });
-                    }}
-                  />
-                  <div>
-                    <strong>{projectName(folder.path)}</strong>
-                    <small title={folder.path}>{folder.path}</small>
-                  </div>
-                  <span className="onboarding-provider-icons">
-                    {[...new Set(folder.items.map((item) => item.provider))].map((provider) => (
-                      <HarnessIcon key={provider} harness={provider} className="icon-sm" />
-                    ))}
-                  </span>
-                  <span title={t("Conversations")}>{folder.items.length}</span>
-                </label>
-              ))}
-              {!folders.length ? (
-                <p>{t("No new conversation history found. Choose a project folder to start.")}</p>
+          ) : null}
+          {empty ? (
+            <EmptyState
+              context="panel"
+              icon={<FolderOpen aria-hidden width={24} height={24} strokeWidth={1.5} />}
+              description={t("No new conversation history found. Choose a project folder to start.")}
+              action={chooseFolders}
+            />
+          ) : null}
+          {importing ? (
+            <div role="status" aria-live="polite">
+              <Progress
+                label={t("Importing conversations: ")}
+                value={progress?.total ? progress.done : undefined}
+                max={progress?.total || 1}
+                compact
+              />
+              <p>
+                {t("Importing conversations: ")}
+                {progress?.done ?? 0} / {progress?.total ?? 0}
+              </p>
+              <Button onClick={() => abort.current?.abort()} variant="secondary" type="button">
+                {t("Cancel import")}
+              </Button>
+            </div>
+          ) : null}
+          {summary ? (
+            <div role="status">
+              <p>
+                {summary.imported}
+                {t(" conversations imported across ")}
+                {summary.projects} {t("projects.")}
+                {summary.cancelled ? t(" Import cancelled.") : ""}
+              </p>
+              {summary.failed.length ? (
+                <Alert role="alert" tone="danger">
+                  <p>
+                    {summary.failed.length}
+                    {t(" conversations could not be imported.")}
+                  </p>
+                  {summary.failed.map((failure, index) => (
+                    <p key={index}>
+                      {failure.candidate.cwd}: {failure.error}
+                    </p>
+                  ))}
+                </Alert>
+              ) : null}
+              {summary.readOnly || summary.truncated ? (
+                <p>
+                  {summary.readOnly}
+                  {t(" history-only conversations ·")} {summary.truncated}
+                  {t(" shortened transcripts")}
+                </p>
               ) : null}
             </div>
-          </>
-        ) : null}
-        {importing ? (
-          <div role="status" aria-live="polite">
-            <Progress
-              label={t("Importing conversations: ")}
-              value={progress?.total ? progress.done : undefined}
-              max={progress?.total || 1}
-              compact
-            />
-            <p>
-              {t("Importing conversations: ")}
-              {progress?.done ?? 0} / {progress?.total ?? 0}
-            </p>
-            <Button onClick={() => abort.current?.abort()} variant="secondary" type="button">
-              {t("Cancel import")}
-            </Button>
-          </div>
-        ) : null}
-        {summary ? (
-          <div role="status">
-            <p>
-              {summary.imported}
-              {t(" conversations imported across ")}
-              {summary.projects} {t("projects.")}
-              {summary.cancelled ? t(" Import cancelled.") : ""}
-            </p>
-            {summary.failed.length ? (
-              <Alert role="alert" tone="danger">
-                <p>
-                  {summary.failed.length}
-                  {t(" conversations could not be imported.")}
-                </p>
-                {summary.failed.map((failure, index) => (
-                  <p key={index}>
-                    {failure.candidate.cwd}: {failure.error}
-                  </p>
-                ))}
-              </Alert>
-            ) : null}
-            {summary.readOnly || summary.truncated ? (
+          ) : null}
+          {addedFolders.length ? (
+            <div role="status">
               <p>
-                {summary.readOnly}
-                {t(" history-only conversations ·")} {summary.truncated}
-                {t(" shortened transcripts")}
+                {addedFolders.length}
+                {t(" project folders added.")}
               </p>
-            ) : null}
-          </div>
-        ) : null}
-        {addedFolders.length ? (
-          <div role="status">
-            <p>
-              {addedFolders.length}
-              {t(" project folders added.")}
-            </p>
-            {addedFolders.map((path) => (
-              <div className="onboarding-project" key={path}>
-                <span>✓</span>
-                <div>
+              {addedFolders.map((path) => (
+                <div className="onboarding-project" key={path}>
+                  <Check aria-hidden className="icon-sm onboarding-project-icon" />
                   <strong>{projectName(path)}</strong>
-                  <small>{path}</small>
+                  <MiddleTruncate mode="path" className="onboarding-project-path">
+                    {path}
+                  </MiddleTruncate>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="onboarding-project-actions">
-          <Button
-            disabled={busy}
-            loading={adding}
-            onClick={() => void addFolders()}
-            variant="secondary"
-            type="button"
-          >
-            {t("+ Choose project folders")}
-          </Button>
-          {onOpenRemote ? (
-            <Button disabled={busy} onClick={onOpenRemote} variant="secondary" type="button">
-              {t("+ Open a remote project")}
-            </Button>
+              ))}
+            </div>
+          ) : null}
+          {!empty && !loading ? (
+            <div className="onboarding-actions">
+              {chooseFolders}
+              {onOpenRemote ? (
+                <Button disabled={busy} onClick={onOpenRemote} variant="secondary" type="button">
+                  <Globe aria-hidden className="icon-sm" />
+                  {t("Open a remote project")}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          {empty && onOpenRemote ? (
+            <div className="onboarding-actions">
+              <Button disabled={busy} onClick={onOpenRemote} variant="secondary" type="button">
+                <Globe aria-hidden className="icon-sm" />
+                {t("Open a remote project")}
+              </Button>
+            </div>
           ) : null}
         </div>
       </div>
-      <footer className="onboarding-footer">
-        <Button disabled={busy} onClick={onBack} variant="secondary" type="button">
-          <ArrowLeft className="icon-sm" />
-          {t("Back")}
-        </Button>
-        <div className="onboarding-footer-actions">
-          {onStartGuide && !busy ? (
-            <Button onClick={onStartGuide} variant="ghost" type="button">
-              {t("Usage guide")}
-            </Button>
-          ) : null}
-          {!summary ? (
-            <Button disabled={busy} onClick={onFinish} variant="ghost" type="button">
-              {t("Skip import")}
-            </Button>
-          ) : null}
-          <Button
-            disabled={busy}
-            loading={importing}
-            onClick={summary || !selected.size ? onFinish : () => void start()}
-            variant="primary"
-            type="button"
-          >
-            {summary || !selected.size
-              ? t("Finish setup")
-              : t("Import {p0} projects", { p0: selected.size })}
+      <OnboardingFooter
+        start={
+          <Button disabled={busy} onClick={onBack} variant="secondary" type="button">
+            <ArrowLeft className="icon-sm" />
+            {t("Back")}
           </Button>
-        </div>
-      </footer>
+        }
+      >
+        {!summary ? (
+          <Button disabled={busy} onClick={onFinish} variant="ghost" type="button">
+            {t("Skip import")}
+          </Button>
+        ) : null}
+        <Button
+          disabled={busy}
+          loading={importing}
+          onClick={summary || !selected.size ? onFinish : () => void start()}
+          variant="primary"
+          type="button"
+        >
+          {summary || !selected.size
+            ? t("Finish setup")
+            : t("Import {p0} projects", { p0: selected.size })}
+        </Button>
+      </OnboardingFooter>
     </>
   );
 }

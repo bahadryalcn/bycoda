@@ -100,7 +100,7 @@ for (const theme of ["light", "dark"]) {
       const session = page.locator("[data-server-terminal-session]:visible");
       const typography = session.getByRole("group", { name: "Terminal text size" });
       await expect(typography).toHaveCount(0);
-      await session.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
+      await session.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
       await expect(page.getByRole("button", { name: "Suggestions", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
       expect(await requests()).toHaveLength(1);
@@ -858,12 +858,12 @@ for (const theme of ["light", "dark"]) {
       .getByRole("textbox", { name: "Host", exact: true })
       .fill("windows.example.invalid");
     await dialog.getByRole("button", { name: "Connect", exact: true }).click();
-    await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
+    await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     await page.getByRole("button", { name: "About shell suggestions", exact: true }).click();
     await expect(page.getByText(/A new session starts with -NoProfile/)).toBeVisible();
     await page.keyboard.press("Escape");
     if (!(await page.getByRole("button", { name: "Shell suggestions", exact: true }).isVisible())) {
-      await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
+      await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     }
     await page.getByRole("button", { name: "Shell suggestions", exact: true }).click();
     const option = page.getByRole("menuitem", { name: /PowerShell suggestions/ });
@@ -1057,7 +1057,7 @@ for (const theme of ["light", "dark"]) {
       );
     const count = async () =>
       (await requests()).filter((r) => r.command === "ssh_terminal_suggestions_request").length;
-    await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
+    await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     await page.locator("summary").filter({ hasText: "Suggestion settings" }).click();
     const automatic = page.getByRole("switch", { name: "Show suggestions while typing" });
     await expect(automatic).toHaveAttribute("aria-checked", "true");
@@ -1068,7 +1068,7 @@ for (const theme of ["light", "dark"]) {
     await page.keyboard.type("doc");
     await page.waitForTimeout(350);
     expect(await count()).toBe(0);
-    await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
+    await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     await page.locator("summary").filter({ hasText: "Suggestion settings" }).click();
     await automatic.click();
     await page.keyboard.press("Escape");
@@ -2017,7 +2017,7 @@ for (const theme of ["light", "dark"]) {
       .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     await page.getByRole("button", { name: "Connect via SSH", exact: true }).click();
-    await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
+    await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     await page.getByRole("button", { name: "Review startup scripts", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "SSH reviews", exact: true })).toContainText(
       "No pending SSH reviews.",

@@ -5,7 +5,6 @@ import {
   getNativeOutputEventOrigin,
 } from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ProviderRetirementError } from "../../core/providerRetirement";
 
 const sent: string[] = [];
 let onLine: ((line: string) => void) | undefined;
@@ -599,7 +598,7 @@ describe("codex live turn sequence", () => {
     }
   });
 
-  it("retains a failed pending-start original across held cleanup and second Stop while a fresh owner works", async () => {
+  it("joins a held pending-start cleanup and retries retirement before a fresh start", async () => {
     const sessionId = "retirement-pending-start-original";
     let rejectOriginal!: (error: Error) => void;
     const physicalCleanup = new Promise<void>((_resolve, reject) => {
@@ -640,33 +639,34 @@ describe("codex live turn sequence", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(stopped).toBe(false);
     rejectOriginal(new Error("Original construction retirement remains unknown"));
+    // The turn keeps its original error; Stop reports unfinished retirement
+    // and retries the original construction before allowing a fresh start.
     const failure = await outcome;
-    expect(failure).toBeInstanceOf(ProviderRetirementError);
-    expect(String((failure as ProviderRetirementError).errors[0])).toContain(
-      "initialize response timed out",
-    );
-    expect(await repeatedStop).toBeInstanceOf(ProviderRetirementError);
-    await expect(stopCodexSession(sessionId)).rejects.toBeInstanceOf(ProviderRetirementError);
+    expect(String(failure)).toContain("initialize response timed out");
+    expect(String(await repeatedStop)).toContain("has not stopped");
+    await expect(stopCodexSession(sessionId)).resolves.toBeUndefined();
     expect(
       processConstructions.operations.filter((op) => op.kind === "kill" && op.handle === original),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     const spawnedBefore = processConstructions.operations.filter(
       (op) => op.kind === "spawn",
     ).length;
-    await expect(
-      sendCodexTurn({
-        sessionId,
-        cwd: "/repo",
-        model: "codex:test",
-        runtimeMode: "supervised",
-        text: "retry",
-        attachments: [],
-        onEvent: () => undefined,
-      }),
-    ).rejects.toBeInstanceOf(ProviderRetirementError);
-    expect(processConstructions.operations.filter((op) => op.kind === "spawn")).toHaveLength(
-      spawnedBefore,
-    );
+    // A retry starts a fresh process instead of replaying the cached failure.
+    const retry = sendCodexTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "codex:test",
+      runtimeMode: "supervised",
+      text: "retry",
+      attachments: [],
+      onEvent: () => undefined,
+    }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(60_001);
+    expect(String(await retry)).toContain("initialize response timed out");
+    const spawns = processConstructions.operations.filter((op) => op.kind === "spawn");
+    expect(spawns).toHaveLength(spawnedBefore + 1);
+    const retried = spawns.at(-1)!.handle;
+    expect(retried).not.toBe(original);
     vi.useRealTimers();
     sent.length = 0;
     const fresh = await startTurn("retirement-pending-start-unrelated");
@@ -684,7 +684,7 @@ describe("codex live turn sequence", () => {
     await stopCodexSession("retirement-pending-start-unrelated");
     expect(
       processConstructions.operations.filter((op) => op.kind === "kill").map((op) => op.handle),
-    ).toEqual([original, replacement]);
+    ).toEqual([original, original, retried, replacement]);
   });
 
   it("does not apply the startup deadline to an accepted long running turn", async () => {
@@ -1326,7 +1326,7 @@ describe("codex live turn sequence", () => {
     await turn;
   });
 
-  it("retains a blocking question when its response write is uncertain and prevents resend", async () => {
+  it("keeps a blocking question open when its response write is uncertain, never resending on its own", async () => {
     const { events, turn } = await startTurn("codex-live");
     onLine!(
       JSON.stringify({
@@ -1352,6 +1352,9 @@ describe("codex live turn sequence", () => {
       "uncertain question delivery",
     );
     expect(events.some((event) => event.type === "question.resolved")).toBe(false);
+    // Unknown delivery must block even explicit retries.
+    await Promise.resolve();
+    expect(writeChild.mock.calls.length).toBe(before + 1);
     respondCodexQuestion("codex-live", question.requestId, answer);
     await Promise.resolve();
     expect(writeChild.mock.calls.length).toBe(before + 1);
@@ -1470,7 +1473,7 @@ describe("codex live turn sequence", () => {
     await turn;
   });
 
-  it("marks an unaccepted continuation unknown before session failure without recording an answered transcript", async () => {
+  it("marks an unaccepted continuation unknown before session failure and retires its card without recording an answer", async () => {
     const { events, turn } = await startTurn("codex-live");
     const outcome = turn.catch(() => undefined);
     notifyAsyncQuestion("queued_failure");
@@ -1502,10 +1505,8 @@ describe("codex live turn sequence", () => {
       events.some((event) => event.type === "question.resolved" && event.decision === "answered"),
     ).toBe(false);
     const session = events.reduce(applyHarnessEvent, newSession("codex", "/repo"));
-    expect(session.pendingQuestion).toMatchObject({
-      requestId: question.requestId,
-      delivery: "unknown",
-    });
+    expect(session.pendingQuestion).toBeUndefined();
+    expect(session.submittedQuestions).toBeUndefined();
     expect(session.blocks.some((block) => block.questionAnswers?.length)).toBe(false);
   });
 

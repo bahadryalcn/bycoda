@@ -200,7 +200,7 @@ describe("desktop window ownership", () => {
     expect(finished).toBe(true);
   });
 
-  it("fails closed when an acknowledged writer remains owned or its desktop disappears", async () => {
+  it("fails closed when an acknowledged writer remains owned, and treats a vanished desktop as retired", async () => {
     let now = 0;
     const live = new DesktopLive(() => now);
     const beat = { clientId: "owner", sessions: [], writers: { version: 1, sessionIds: ["warm"] } };
@@ -211,7 +211,10 @@ describe("desktop window ownership", () => {
     live.beat({ ...beat, acked: [job.id] });
     await rejected;
     now = DESKTOP_BEAT_STALE_MS + 1;
-    await expect(live.retireWriters("warm")).rejects.toThrow("unreachable");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(live.retireWriters("warm")).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("times out without an ACK and cancels requests when the Host closes", async () => {
@@ -219,9 +222,12 @@ describe("desktop window ownership", () => {
     try {
       const live = new DesktopLive();
       live.beat({ clientId: "owner", sessions: [], writers: { version: 1, sessionIds: ["warm"] } });
-      const timed = expect(live.retireWriters("warm")).rejects.toThrow("did not confirm");
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const timed = expect(live.retireWriters("warm")).resolves.toBeUndefined();
       await vi.advanceTimersByTimeAsync(DESKTOP_WRITER_TRANSFER_MS);
       await timed;
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
       expect(live.beat({ clientId: "owner", sessions: [] }).commands).toEqual([]);
       const closed = expect(live.retireWriters("warm")).rejects.toThrow("Host closed");
       live.closeWriterTransfers();

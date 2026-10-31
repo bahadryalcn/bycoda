@@ -11,7 +11,7 @@
 }
 .field { display: grid; align-content: start; }
 .field label { margin-bottom: var(--space-2); font-size: var(--text-sm); font-weight: 500; }
-/* Same frame as Input: border-only focus owned by the field owner, and the box never changes size. */
+/* FieldControl owns the shared border and focus; the native textarea owns resizing. */
 .control { min-height: 110px; resize: vertical; border: 1px solid var(--border-strong); border-radius: var(--radius-control); padding: var(--space-3); background: var(--surface); color: var(--foreground); font: inherit; font-size: var(--text-sm); line-height: var(--leading-body); outline: none; transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
 .control::placeholder { color: var(--text-muted); }
 @media (hover: hover) and (pointer: fine) { .control:hover:not(:disabled, :focus-visible, [aria-invalid="true"]) { border-color: var(--ui-field-border-hover, var(--foreground)); } }

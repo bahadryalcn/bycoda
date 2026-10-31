@@ -161,3 +161,17 @@ one-shot secrets remain memory-only and both topic owners stay mounted.
 Test edilmedi under the nightly owner rule. Per-ID MC-01..11 delivery and morning
 checks: `temp/local/2026-10-28-settings-pages-b/tooling.json`. No real MCP/config,
 login/token/credential mutation, test/server/capture, build/install or release.
+
+## V3-010 MCP page rows (2026-10-31)
+
+Owner, 2026-10-31, with two MCP screenshots, exact quote:
+
+> mcp sayfasında Configured sağda signin Solda olsa daha iyi olacak gibi hepsinde yok çünkü kaymalar oluyor. Bazılarında da silme işareti filan yok bunlarıda toparlıyalım todoya eklyelim ekranda hala gerekszi yazılar filan var. Onlarada bak
+
+Delivered in source (uncommitted; handoff `temp/local/2026-10-31-ui-refinements-3/HANDOFF-v3-p2.md`; no runtime acceptance):
+- Fixed action, status and menu columns so `Configured` no longer shifts. Sign in shows only for needs-authentication/unknown status; otherwise `Sign in again` is in the overflow menu. Every row's overflow menu has Show config, Copy config path and Remove; an unsupported Remove is disabled with a reason and writes nothing new.
+- Claude CLI-only removal asks for the scope inside a Modal confirmation (selection retained, one pending request at a time, error/retry). Known-scope rows keep the central confirmation.
+- Provider/scope/transport are one muted metadata line; the scope explanation is behind an InfoPopover (the `setting-mcp-scopes` search target is kept); the range line shows only while more rows remain.
+- External connection examples help and refresh were kept (different functions); the token search is quiet. No grouping by name (proposal only).
+- Skills (V3-009, `SkillsPage.tsx`): editable skills offer Edit / Preview / Split; the extra "Source" mode is gone for them. Read-only and managed skills keep Preview / Source / Split.
+- Unverified: mixed Claude/Codex/Desktop alignment at 1280/800 and narrow containers, remove modal and menu keyboard focus.

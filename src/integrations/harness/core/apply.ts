@@ -1,3 +1,4 @@
+import { readableHarnessError } from "./readableError";
 import { trimAndCapText } from "../../../shared/lib/cappedText";
 import {
   approvalOccurrenceForEvent,
@@ -58,6 +59,21 @@ import {
 import { loadResumeAtReset } from "../../../features/settings/model/settings";
 import { selectedAnswerLabels } from "../../../features/sessions/model/userQuestion";
 import type { HarnessEvent } from "./types";
+import {
+  COMPACTING_TEXT,
+  COMPACTION_STATUS_KEY,
+  isRunningCompaction,
+} from "../../../features/sessions/model/compactionStatus";
+
+/** Start timing only once the provider accepts or produces this turn. */
+function startProviderDuration(session: Session): Session {
+  if (!session.busy) return session;
+  const index = executionUserIndex(session.blocks);
+  if (index < 0 || session.blocks[index].startedAt != null) return session;
+  const blocks = session.blocks.slice();
+  blocks[index] = { ...blocks[index], startedAt: Date.now() };
+  return { ...session, blocks };
+}
 
 /** Apply one delivery batch without copying the transcript for every token. */
 export function applyHarnessEvents(session: Session, events: readonly HarnessEvent[]): Session {
@@ -68,6 +84,7 @@ export function applyHarnessEvents(session: Session, events: readonly HarnessEve
       next = applyHarnessEvent(next, event);
       continue;
     }
+    next = startProviderDuration(next);
     const texts = [event.text];
     while (index + 1 < events.length) {
       const following = events[index + 1];
@@ -113,6 +130,8 @@ export function applyHarnessEvent(
   ) {
     session = { ...session, retryMessage: undefined };
   }
+  if (["turn.started", "message.delta", "reasoning.delta", "tool.started", "approval.requested", "question.asked", "image.generated"].includes(event.type))
+    session = startProviderDuration(session);
   switch (event.type) {
     case "message.delta":
       return patchStreaming(session, "assistant", event.text, true);
@@ -330,9 +349,23 @@ export function applyHarnessEvent(
       return appendBlock(failStreaming(session), {
         id: crypto.randomUUID(),
         role: "system",
-        text: event.message,
+        text: readableHarnessError(event.message),
         notice: "error",
       });
+    case "session.ended": {
+      // The provider process is gone: a card whose delivery is unconfirmed can
+      // never be confirmed, so drop it instead of holding it forever.
+      const held = session.pendingQuestion?.delivery === "unknown";
+      const submitted = session.submittedQuestions?.filter((q) => q.delivery !== "unknown");
+      if (!held && submitted?.length === session.submittedQuestions?.length) return session;
+      return {
+        ...session,
+        ...(held ? { pendingQuestion: undefined } : {}),
+        ...(session.submittedQuestions
+          ? { submittedQuestions: submitted?.length ? submitted : undefined }
+          : {}),
+      };
+    }
     case "session.providerBound": {
       const running = session.busy ? session.runningModelTarget : undefined;
       if (running && running.harness !== session.harness) {
@@ -363,10 +396,16 @@ export function applyHarnessEvent(
     case "session.configChanged": {
       const running = session.busy ? session.runningModelTarget : undefined;
       const receiver = running ?? queuedModelTarget(session);
-      if (event.model && !modelBelongsToHarness(receiver.harness, event.model)) return session;
+      // Settings still apply when only the model is foreign; ignore just that.
+      let eventModel = event.model;
+      if (eventModel && !modelBelongsToHarness(receiver.harness, eventModel)) {
+        console.warn(`[harness] ignoring foreign model "${eventModel}" for "${receiver.harness}"`);
+        eventModel = undefined;
+        if (!event.modelSettings) return session;
+      }
       const updated = {
         ...receiver,
-        model: event.model ?? receiver.model,
+        model: eventModel ?? receiver.model,
         modelSettings: { ...receiver.modelSettings, ...event.modelSettings },
       };
       // The picker can select the next target while this turn is still active.
@@ -376,7 +415,7 @@ export function applyHarnessEvent(
           ? session
           : { ...session, runningModelTarget: updated };
       if (
-        (!event.model || event.model === session.model) &&
+        (!eventModel || eventModel === session.model) &&
         (!event.modelSettings ||
           (session.modelSettings &&
             Object.entries(event.modelSettings).every(
@@ -387,8 +426,8 @@ export function applyHarnessEvent(
       return {
         ...session,
         ...(running ? { runningModelTarget: updated } : {}),
-        ...(event.model ? { model: event.model } : {}),
-        ...(event.model && event.model !== session.model
+        ...(eventModel ? { model: eventModel } : {}),
+        ...(eventModel && eventModel !== session.model
           ? { context: dropContextWindow(session.context) }
           : {}),
         ...(event.modelSettings
@@ -402,6 +441,7 @@ export function applyHarnessEvent(
       };
     }
     case "status":
+      if (event.key === COMPACTION_STATUS_KEY) return applyCompactionStatus(session, event);
       if (event.key === "provider-retry")
         return session.retryMessage === event.text
           ? session
@@ -677,7 +717,6 @@ export function appendUser(
       id: crypto.randomUUID(),
       role: "user",
       text,
-      startedAt: Date.now(),
       ...turnModelFields(session),
       ...(attachments.length > 0 ? { attachments } : {}),
       ...userTurnFields(extra),
@@ -738,7 +777,8 @@ export function stopStreaming(
     submittedQuestions: submitted,
     blocks: stampTurnDuration(
       settled.blocks
-        .filter((block) => !isBareProseStream(block))
+        // A compaction row still running when the turn stops was cut short.
+        .filter((block) => !isBareProseStream(block) && !isRunningCompaction(block))
         .map((block) =>
           stopBlockProgress(block.streaming ? endOpenAgentRun(block, endedAt) : block),
         ),
@@ -798,7 +838,8 @@ function failStreaming(session: Session): Session {
         : [];
     }),
   );
-  const stopped = stopStreaming(session, Date.now(), true);
+  // The provider failed, so an unconfirmed question card can never resolve.
+  const stopped = stopStreaming(session, Date.now(), false);
   return {
     ...stopped,
     blocks: stopped.blocks.map((block) => {
@@ -924,6 +965,39 @@ function appendStatus(session: Session, text: string): Session {
     role: "system",
     text: trimmed,
   });
+}
+
+/**
+ * Compaction is one row from start to finish: "Compacting context…" while it
+ * runs, then the same row reads "Compacted context". An empty settle closes the
+ * row (failed or cancelled); with no running row, a settle is an ordinary
+ * deduplicated status so a repeated "Compacted context" never stacks.
+ */
+function applyCompactionStatus(
+  session: Session,
+  event: Extract<HarnessEvent, { type: "status" }>,
+): Session {
+  const text = event.text.trim();
+  const index = lastMatchingBlock(session.blocks, isRunningCompaction);
+  if (event.running) {
+    if (index >= 0) return session;
+    return appendBlock(session, {
+      id: crypto.randomUUID(),
+      role: "system",
+      text: text || COMPACTING_TEXT,
+      statusKey: COMPACTION_STATUS_KEY,
+      statusRunningSince: Date.now(),
+    });
+  }
+  if (index < 0) return text ? appendStatus(session, text) : session;
+  const blocks = session.blocks.slice();
+  if (text) {
+    const { statusRunningSince: _since, ...settled } = blocks[index];
+    blocks[index] = { ...settled, text };
+  } else {
+    blocks.splice(index, 1);
+  }
+  return { ...session, blocks };
 }
 
 function upsertKeyedStatus(session: Session, key: string, text: string): Session {

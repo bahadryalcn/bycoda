@@ -5,7 +5,6 @@ import {
   getNativeOutputEventOrigin,
 } from "../../core/nativeOutputDelivery.testSupport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ProviderRetirementError } from "../../core/providerRetirement";
 
 const mocks = vi.hoisted(() => ({
   close: vi.fn(),
@@ -210,7 +209,7 @@ describe("Pi live session", () => {
   );
 
   it.each([PI_FLAVOR, OMP_FLAVOR])(
-    "%s retains original cleanup when binary resolution fails before Live publication",
+    "%s reports the primary error and retries a failed cleanup when binary resolution fails before Live publication",
     async (flavor) => {
       const primary = new Error("Original binary resolution failed");
       const cleanup = new Error("Original physical construction retirement unknown");
@@ -224,8 +223,7 @@ describe("Pi live session", () => {
         onEvent: () => undefined,
       };
       const failed = await compactContext(flavor, input).catch((error: unknown) => error);
-      expect(failed).toBeInstanceOf(ProviderRetirementError);
-      expect((failed as ProviderRetirementError).errors[0]).toBe(primary);
+      expect(failed).toBe(primary);
       const original = processConstructions.created.find(
         (handle) => handle.sessionId === input.sessionId,
       )!;
@@ -236,12 +234,10 @@ describe("Pi live session", () => {
       expect(
         processConstructions.operations.filter((op) => op.kind === "kill").map((op) => op.handle),
       ).toEqual([original]);
-      await expect(stopSession(flavor, input.sessionId)).rejects.toBeInstanceOf(
-        ProviderRetirementError,
-      );
-      await expect(compactContext(flavor, input)).rejects.toBeInstanceOf(ProviderRetirementError);
+      // Stop retries the retained physical construction.
+      await expect(stopSession(flavor, input.sessionId)).resolves.toBeUndefined();
       expect(mocks.resolveBinary).toHaveBeenCalledTimes(1);
-      expect(mocks.killChild).toHaveBeenCalledTimes(1);
+      expect(mocks.killChild).toHaveBeenCalledTimes(2);
       const other = { ...input, sessionId: `${input.sessionId}-unrelated` };
       await compactContext(flavor, other);
       const fresh = processConstructions.created.find(
@@ -253,7 +249,7 @@ describe("Pi live session", () => {
       await stopSession(flavor, other.sessionId);
       expect(
         processConstructions.operations.filter((op) => op.kind === "kill").map((op) => op.handle),
-      ).toEqual([original, fresh]);
+      ).toEqual([original, original, fresh]);
     },
   );
 

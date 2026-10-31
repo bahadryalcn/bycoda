@@ -15,6 +15,11 @@ vi.mock("../../../shared/i18n", () => ({
   useLocale: () => "en",
 }));
 const container = document.createElement("div");
+// The information button precedes the action, so find the action by its name.
+const changeButton = () =>
+  [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Change file access…",
+  )!;
 let root = createRoot(container);
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -27,7 +32,7 @@ it("shows saved access and reflects a native downgrade", async () => {
   await act(async () => root.render(createElement(FileAccessSettings)));
   expect(getFileAccessMode).toHaveBeenCalledOnce();
   expect(container.textContent).toContain("All files allowed");
-  await act(async () => container.querySelector("button")!.click());
+  await act(async () => changeButton().click());
   expect(configureFileAccess).toHaveBeenCalledWith(true);
   expect(container.textContent).toContain("Selected folders only");
 });
@@ -35,11 +40,11 @@ it("shows saved access and reflects a native downgrade", async () => {
 it("keeps the saved status and offers retry when native consent fails", async () => {
   vi.mocked(configureFileAccess).mockRejectedValueOnce(new Error("Storage unavailable"));
   await act(async () => root.render(createElement(FileAccessSettings)));
-  await act(async () => container.querySelector("button")!.click());
+  await act(async () => changeButton().click());
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Storage unavailable");
   expect(container.textContent).toContain("All files allowed");
-  expect(container.querySelector("button")!.disabled).toBe(false);
-  await act(async () => container.querySelector("button")!.click());
+  expect(changeButton().disabled).toBe(false);
+  await act(async () => changeButton().click());
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain("Selected folders only");
 });
@@ -52,7 +57,7 @@ it("reports unavailable status after an initial read failure without implying co
     "Access status unavailable",
   );
   expect(configureFileAccess).not.toHaveBeenCalled();
-  const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Change file access")!;
+  const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Change file access…")!;
   expect(change.disabled).toBe(true);
   const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Retry")!;
   await act(async () => retry.click());
@@ -65,7 +70,7 @@ it("reads back permissions after an uncertain consent failure without invoking c
   vi.mocked(getFileAccessMode).mockResolvedValueOnce("all-files").mockResolvedValueOnce("selected-folders");
   vi.mocked(configureFileAccess).mockRejectedValueOnce(new Error("Cleanup failed after saving"));
   await act(async () => root.render(createElement(FileAccessSettings)));
-  await act(async () => container.querySelector("button")!.click());
+  await act(async () => changeButton().click());
   expect(configureFileAccess).toHaveBeenCalledOnce();
   expect(getFileAccessMode).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("Selected folders only");

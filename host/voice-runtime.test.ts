@@ -6,11 +6,14 @@ import { inspectVoiceRuntime, voiceRuntimeConfig } from "./voice-runtime";
 const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock("node:child_process", () => ({ spawn }));
 vi.mock("node:fs/promises", () => ({ readdir: vi.fn(async () => []) }));
+const gpu = vi.hoisted(() => ({ value: undefined as { name: string; cuda?: string } | undefined }));
+vi.mock("./voice-gpu", () => ({ detectNvidiaGpu: async () => gpu.value }));
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
   spawn.mockReset();
+  gpu.value = undefined;
 });
 
 function child(result?: object, code = 0) {
@@ -41,6 +44,7 @@ it("accepts custom model paths as data and rejects malformed runtime options", (
     { python: "x\ncommand" },
     { ttsPath: "a".repeat(4097) },
     { natural: "true" },
+    { device: "cuda" },
   ])
     expect(() => voiceRuntimeConfig(value)).toThrow();
 });
@@ -118,3 +122,34 @@ it.skipIf(process.platform !== "win32")(
     ).toBe(true);
   },
 );
+
+it("keeps automatic processing implicit and validates explicit devices", () => {
+  expect(voiceRuntimeConfig({ device: "auto" })).toEqual({});
+  expect(voiceRuntimeConfig({ device: "gpu" })).toEqual({ device: "gpu" });
+  expect(voiceRuntimeConfig({ device: "cpu" })).toEqual({ device: "cpu" });
+});
+
+it("reports a detected GPU and requires one when GPU processing is chosen", async () => {
+  const ready = { python: "working-python", missing: [], ready: true, accelerated: false };
+  spawn.mockImplementation(() => child(ready));
+  expect(await inspectVoiceRuntime({ device: "gpu" })).toMatchObject({
+    missing: ["NVIDIA GPU"],
+    ready: false,
+  });
+  gpu.value = { name: "NVIDIA GeForce RTX 4070", cuda: "13.0" };
+  expect(await inspectVoiceRuntime({})).toMatchObject({
+    gpu: "NVIDIA GeForce RTX 4070",
+    accelerated: false,
+    ready: true,
+  });
+  expect((await inspectVoiceRuntime({ device: "cpu" })).gpu).toBeUndefined();
+});
+
+it("keeps VoxCPM2 explicit and Supertonic implicit, and rejects unknown voice engines", () => {
+  expect(voiceRuntimeConfig({ natural: true, engine: "voxcpm2" })).toEqual({
+    natural: true,
+    engine: "voxcpm2",
+  });
+  expect(voiceRuntimeConfig({ natural: true, engine: "supertonic" })).toEqual({ natural: true });
+  expect(() => voiceRuntimeConfig({ engine: "other" })).toThrow("Invalid voice engine.");
+});

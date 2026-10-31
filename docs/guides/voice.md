@@ -37,17 +37,34 @@ when moved, resized or expanded; position is saved independently of visual style
 
 The local bycoda Host runs Faster Whisper in an on-demand hidden Python process.
 It uses an already cached multilingual `Systran/faster-whisper-small`, `base` or
-`tiny` model, in that preference order. It tries CUDA and falls back to CPU int8.
+`tiny` model, in that preference order. It tries CUDA and falls back to CPU int8,
+unless **Processing** is set to **CPU**.
 Detection and voice playback never download models or use Hugging Face credentials.
 Choose **Install** in voice settings to prepare missing Python, packages and public
 models before starting voice.
 `BYCODA_VOICE_PYTHON` can select an existing Python executable. The installed host
 must include the `voice.local.v1` capability.
 
-Speech is segmented locally and transcribed after roughly 600 ms of silence.
-Recognition detects the spoken language independently of the interface language.
-Natural replies use local **VoxCPM2** with incremental PCM playback. Its model
-loads on start and stays warm during the connection. Speaking again or choosing
+Speech is segmented locally. When the installation includes Smart Turn (setup
+downloads it, 32 MB), a pause of about 0.2 s asks a small local model whether the
+sentence sounds finished: if so, the turn ends and is transcribed right away; if
+you paused mid-sentence, voice keeps listening for up to 1.3 s. Without Smart Turn
+the turn ends after roughly 600 ms of silence. Recognition detects the spoken
+language independently of the interface language and knows common coding words
+(commit, branch, pull request, TypeScript…).
+
+**Reply voice** offers three choices:
+
+- **Natural** (default): Supertonic 3. Runs on the CPU, loads in about 2 s,
+  speaks 31 languages including English and Turkish, and synthesizes a sentence in
+  about 0.4–0.8 s. Setup installs `supertonic` and downloads its model (~385 MB).
+- **High quality**: VoxCPM2. Sounds richer and streams audio, but needs an NVIDIA
+  GPU to keep up, about 6 GB of its memory and up to a minute to load.
+- **System voice**: an installed local voice of the operating system.
+
+Replies are spoken sentence by sentence: the first sentence plays while the
+provider is still writing the rest. Natural voices play at their own sample rate
+(44.1–48 kHz). The voice model loads on start and stays warm during the connection. Speaking again or choosing
 **Silence** cancels synthesis and scheduled audio. A late response cannot restart
 cancelled playback. The synthesizer is shared between desktop windows; a busy
 window reports that state instead of interrupting another window's voice.
@@ -76,30 +93,78 @@ repository's parent cache directory. Changing the engine or paths disconnects an
 connection; reconnect explicitly after checking the installation.
 
 **Install** creates a private environment under `~/.bycoda/voice`, installs
-`faster-whisper` and `huggingface-hub`, and adds `voxcpm` for natural replies. If
+`faster-whisper` and `huggingface-hub`, and adds `supertonic` (Natural) or `voxcpm`
+(High quality) for natural replies. If
 no compatible Python is found, setup downloads a checksum-pinned uv tool and uses
 it to prepare private Python 3.12, without changing system Python, PATH or registry
 entries. An explicitly selected Python path is preserved rather than replaced.
 Setup reuses complete model folders and downloads missing public
-`Systran/faster-whisper-small` and, for natural replies, `openbmb/VoxCPM2` files.
+`Systran/faster-whisper-small`, Smart Turn (`pipecat-ai/smart-turn-v3`) and, for
+natural replies, `Supertone/supertonic-3` or `openbmb/VoxCPM2` files.
 Model downloads can be several GB. Setup continues when leaving settings; return
-to see its stage or retry a failure. GPU acceleration is recommended for natural
-replies; CPU performance depends on the machine. Detection confirms discoverable
+to see its stage or retry a failure. Detection confirms discoverable
 files/packages; starting voice checks
 that the runtime can actually load them.
+
+## GPU or CPU processing
+
+**Settings → Chat → Voice companion → Processing** chooses where speech models run:
+
+- **Automatic** (default) uses a supported NVIDIA GPU when one is available and
+  otherwise runs on the CPU.
+- **GPU** requires an NVIDIA GPU with CUDA support for High quality replies. Voice does
+  not start until GPU support is installed; it never silently falls back to CPU.
+- **CPU** keeps recognition and natural replies off the GPU.
+
+High quality replies are much slower on the CPU and can sound choppy. On Windows,
+the standard `voxcpm` install brings a CPU-only PyTorch. When Automatic or GPU
+finds an NVIDIA GPU, **Install** replaces it with the newest PyTorch CUDA build
+that the installed driver supports (CUDA 12.6 or newer drivers). This download
+is about 3 GB. If an existing High quality installation is ready but still runs
+on the CPU, settings name the detected GPU and offer **Install GPU support**.
+In Automatic mode, a failed GPU install still finishes setup with the CPU voice;
+in GPU mode it reports the failure. Disconnect voice before installing.
+macOS uses the CPU path. Changing the processing choice disconnects an active
+voice connection; start voice again afterwards.
 
 If **Install** immediately reports **Couldn't check voice setup. Try again.**,
 open **Technical details**. `Unsupported remote operation` means the desktop's
 native bridge cannot forward the setup request. Update the desktop application;
 updating only the Host does not repair this desktop routing error.
 
-Initial model loading and the selected conversation provider add latency. A warm
-VoxCPM2 worker streams chunks without waiting for the entire reply, but this is
-not a guarantee of instant speech on every machine.
+When an NVIDIA GPU is found, setup also downloads Whisper large-v3-turbo (about 1.6 GB).
+It recognizes speech, notably Turkish, far more accurately than the small model
+and takes about 0.3 seconds per sentence on the GPU. On the CPU, recognition keeps
+the small model. When Whisper is unsure which language you spoke, it uses the
+app language.
+
+Spoken replies use the session's model with low reasoning effort and no extended
+thinking. Voice starts the reply provider in advance, while the models load and
+again after every reply, so a reply does not wait for the provider to start (about
+ten seconds). Measured on an RTX 4070 with recorded Turkish speech, a reply starts
+speaking about 3.5–4.5 s after you stop talking: about 0.6 s to end the turn and
+transcribe it, 2.5–4 s until the provider's first sentence and about 0.5–0.8 s to
+synthesize it. The provider's response time dominates and varies.
 
 The recognizer stays warm during a voice connection. Closing its last connection
 unloads it; abandoned connections expire after 90 seconds. Audio is held in memory
 for transcription and is not written to recordings or logs.
+
+## Dictation in the message box
+
+When voice is enabled, the message box shows a microphone button next to Send.
+Select it and speak: each time you pause, the phrase is recognized on this
+computer and inserted where the caret is, with a space between words. Select it
+again to stop; anything you were still saying is transcribed before the
+microphone closes. Nothing is sent until you press Send, so you can edit the text
+first.
+
+Dictation uses only speech recognition from your voice installation. It does not
+load the natural reply voice and does not ask a provider, so it can run while the
+voice companion is open. The first use after starting the app waits for the
+recognizer to load (a few seconds; longer on the first run). Select the button
+while it is preparing to cancel. Errors, such as a missing installation or a
+blocked microphone, appear above the message box.
 
 ## Conversation and work
 

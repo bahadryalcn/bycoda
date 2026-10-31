@@ -270,3 +270,8 @@ button.item.item:is(.destructive, [data-danger="true"]):focus-visible {
     transition: none;
   }
 }
+
+.item:is([data-highlighted="true"], [aria-expanded="true"], [aria-checked="true"]) {
+  background: var(--ui-surface-selected);
+  box-shadow: inset 0 0 0 1px var(--ui-field-border);
+}

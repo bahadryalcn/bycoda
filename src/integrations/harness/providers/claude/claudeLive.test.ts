@@ -1149,22 +1149,28 @@ describe("claude startup failures", () => {
     await retry.turn;
   });
 
-  it("preserves the missing-conversation error and existing resume binding", async () => {
+  it("starts a fresh conversation with a warning when the resume session is missing", async () => {
     bindClaudeSession("s1", "missing-session", "/repo");
     const events: HarnessEvent[] = [];
     const turn = send(events);
-    const failed = expect(turn).rejects.toThrow(
-      "No conversation found with session ID: missing-session",
-    );
     await waitFor(() => sent.length > 0, "initialize");
     onStderr!("No conversation found with session ID: missing-session");
     onExit!(1);
-    await failed;
-    expect(events.some((e) => e.type === "session.started")).toBe(false);
-    const retry = await startTurn("s1");
-    expect(spawned[1]).toEqual(expect.arrayContaining(["--resume", "missing-session"]));
-    emit({ type: "result", subtype: "success", session_id: "sess_1" });
-    await retry.turn;
+    await waitFor(() => spawned.length === 2 && sent.length >= 2, "fresh initialize");
+    expect(spawned[1]).not.toContain("--resume");
+    const initialize = parse().at(-1)!;
+    emit({ type: "system", subtype: "init", session_id: "sess_fresh" });
+    emit({
+      type: "control_response",
+      response: { subtype: "success", request_id: initialize.request_id },
+    });
+    await waitFor(() => parse().some((message) => message.type === "user"), "fresh prompt");
+    expect(events).toContainEqual({
+      type: "status",
+      text: expect.stringContaining("Starting a new session"),
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_fresh" });
+    await turn;
   });
 
   it("handles an exit before spawn resolves", async () => {
@@ -3051,6 +3057,8 @@ describe("claude manual compaction", () => {
 
     expect(events).toContainEqual({
       type: "status",
+      key: "compaction",
+      running: false,
       text: "Compacted context",
     });
     expect(events.some((event) => event.type === "message.delta")).toBe(false);

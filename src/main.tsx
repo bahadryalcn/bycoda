@@ -50,6 +50,18 @@ import { PrivacyLaunchGate } from "./features/group-lock/ui/PrivacyLaunchGate";
 
 import { startPerformanceSpan, recordPerformanceEvent } from "./shared/lib/performanceTrace";
 import { initPerformanceTracing } from "./shared/lib/performanceTraceSettings";
+import { withTimeout } from "./shared/lib/withTimeout";
+
+/** Non-data boot reads (home dir, language) must not hold the splash forever; data reads never use this. */
+const BOOT_STEP_TIMEOUT_MS = 10_000;
+function bootStep<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
+  return withTimeout(promise, BOOT_STEP_TIMEOUT_MS, label).catch((error: unknown) => {
+    // Only a timeout falls back; a real failure keeps its existing recovery path.
+    if (!(error instanceof Error) || error.name !== "TimeoutError") throw error;
+    console.warn(`[bycoda] ${label} is slow; continuing without it`, error);
+    return fallback;
+  });
+}
 
 // Opt in with VITE_REACT_SCAN=1 when starting Vite. The outer DEV guard lets
 // production builds remove both this branch and the diagnostic dependency.
@@ -166,16 +178,20 @@ recordPerformanceEvent("startup", { items: 1 });
 void bootstrap(
   () =>
     Promise.all([
-      homeDirPrimed,
+      bootStep<unknown>(homeDirPrimed, undefined, "home directory"),
       // Provider discovery is best-effort and may finish after UI hydration.
       Promise.resolve(),
       hostToolsWindow
         ? Promise.resolve({ windowTransfer: null, resumed: null, history: [], historyCwd: null })
-        : loadBootWorkspace(),
-      // Saved drafts are in the cache before the first composer mounts.
+        : // Data-bearing read: never replaced by an empty fallback, because the
+          // snapshot sync would then persist the empty workspace over the saved one.
+          // The splash stays up with its retry control while this is slow.
+          loadBootWorkspace(),
+      // Saved drafts are in the cache before the first composer mounts. An empty
+      // fallback here would let a blank draft write replace the saved draft.
       hydrateComposerDrafts(),
       surfaceLoaded,
-      languageReady,
+      bootStep(languageReady, undefined, "language load"),
     ]),
   ([, , { windowTransfer, resumed, history, historyCwd }, , surface]) => {
     performance.mark("bycoda:workspace-ready");

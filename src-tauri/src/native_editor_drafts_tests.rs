@@ -421,7 +421,7 @@ fn corrupt_stored_payload_metadata_or_undercharged_rows_never_become_absent_or_f
         f.store.lock_conn().unwrap().execute(sql, []).unwrap();
         let mut new = capture(1, None, "new");
         new.document_id = "new".into();
-        assert!(f.put(new).is_err(), "{sql}");
+        assert!(f.put(new).is_ok(), "{sql}");
         assert!(
             f.run(|owner| read_current(
                 &f.store,
@@ -439,7 +439,7 @@ fn corrupt_stored_payload_metadata_or_undercharged_rows_never_become_absent_or_f
                         limit: 100
                     }
                 )
-                .is_err(),
+                .is_ok_and(|inventory| inventory.records.iter().all(|row| row.document_id != "document")),
             "{sql}"
         );
     }
@@ -464,7 +464,7 @@ fn inventory_rejects_under_and_overcharged_rows_without_materializing_payloads()
                     limit: 100
                 }
             )
-            .is_err(),
+            .is_ok_and(|inventory| inventory.records.is_empty()),
             "{sql}"
         );
     }

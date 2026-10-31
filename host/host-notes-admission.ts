@@ -23,6 +23,20 @@ const ENTRY_POINT = "sqlite3_bycodaphysical_init";
 const MAX_DATABASES = 128;
 const MAX_ARTIFACT_BYTES = 256 * 1024 * 1024;
 const hashPattern = /^[a-f0-9]{64}$/;
+/** Filesystem hiccups that say nothing about artifact/ABI integrity: report busy, never latch. */
+const TRANSIENT_FS = new Set([
+  "EBUSY",
+  "EAGAIN",
+  "EMFILE",
+  "ENFILE",
+  "EPERM",
+  "EACCES",
+  "EIO",
+  "EINTR",
+  "ENOLCK",
+  "ENOMEM",
+  "ETIMEDOUT",
+]);
 function checkArtifactPath(path: string): void {
   if (
     extname(path) !== ".node" ||
@@ -251,6 +265,12 @@ export class HostNotesAdmission {
       };
     } catch (error) {
       this.release(held);
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      const transient = typeof code === "string" && TRANSIENT_FS.has(code);
+      if (transient) {
+        console.warn("Notes admission hit a transient filesystem error:", code);
+        throw busy();
+      }
       if (!(error instanceof HostNotesAdmissionError && error.code === "HOST_NOTES_ADMISSION_BUSY"))
         this.markFault();
       this.assertHealthy();

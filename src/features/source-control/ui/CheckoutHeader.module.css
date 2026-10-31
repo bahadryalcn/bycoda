@@ -76,21 +76,13 @@
   min-inline-size: 0;
 }
 
-.generationActions {
-  position: absolute;
-  inset-block-start: 2px;
-  inset-inline-end: 2px;
-  display: flex;
-  align-items: center;
-}
-
 .messageField textarea.message {
   display: block;
   inline-size: 100%;
   min-block-size: 32px;
   max-block-size: 160px;
   padding-block: 4px;
-  padding-inline: 8px 76px;
+  padding-inline: 8px;
   resize: none;
   overflow-y: auto;
   font-size: var(--ui-font-caption);
@@ -110,3 +102,24 @@
 .conflicts {
   color: var(--color-warning);
 }
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-inline: 6px;
+  min-block-size: 28px;
+}
+.actionSlots {
+  display: grid;
+  grid-template-columns: repeat(4, var(--control-height-sm));
+  gap: 4px;
+  align-items: center;
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}
+.actionSlot { display: flex; justify-content: flex-end; min-inline-size: 0; }
+
+.branchHeader { display: flex; min-block-size: 36px; align-items: center; gap: 4px; padding-inline: 6px; }
+.branchSlots { display: grid; grid-template-columns: repeat(3, var(--control-height-sm)); align-items: center; gap: 4px; flex-shrink: 0; }

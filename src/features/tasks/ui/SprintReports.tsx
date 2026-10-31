@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { BarChart, LineChart, type LineChartDatum } from "../../../shared/ui/Charts";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { sprintProjectKey, type SprintReport, type SprintTotals } from "../model/hostSprints";
 import type { SprintBoardController } from "../model/sprintClient";
@@ -28,7 +29,6 @@ export function SprintReports({
   projectKey,
   onChooseSprint,
   onOpenSprints,
-  onOpenBacklog,
 }: {
   board: SprintBoardController;
   sprintId: string;
@@ -37,8 +37,6 @@ export function SprintReports({
   onChooseSprint?: (sprintId: string) => void;
   /** Goes to the sprint list, where a sprint is created or started. */
   onOpenSprints?: () => void;
-  /** Goes to the backlog, where tasks are added and planned. */
-  onOpenBacklog?: () => void;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -219,6 +217,30 @@ export function SprintReports({
     axisLabel: item.sprint.name,
     value: totalsFor(item).completedPoints,
   }));
+  // Nothing to report yet: one sentence and one action, no heading or refresh.
+  if (!sprintId && board.sprints.length === 0)
+    return (
+      <section className="sprint-report" aria-label={t("Sprint reports")}>
+        <EmptyState
+          context="panel"
+          kind="empty"
+          icon={null}
+          description={t("No sprints yet. Create and start a sprint to see its progress here.")}
+          action={
+            onOpenSprints ? (
+              <Button variant="primary" onClick={onOpenSprints}>
+                {t("Go to Sprints")}
+              </Button>
+            ) : undefined
+          }
+        />
+        {error ? (
+          <p role="alert" className="sprint-errors">
+            {error}
+          </p>
+        ) : null}
+      </section>
+    );
   return (
     <section className="sprint-report" aria-label={t("Sprint reports")} aria-busy={loading}>
       <div className="sprint-heading">
@@ -235,12 +257,10 @@ export function SprintReports({
       {!sprintId ? (
         <div className="sprint-report-empty">
           <p className="sprint-muted">
-            {board.sprints.length > 0
-              ? t("Choose a sprint to inspect its progress and burndown.")
-              : t("No sprints yet. Create and start a sprint to see its progress here.")}
+            {t("Choose a sprint to inspect its progress and burndown.")}
           </p>
           <div className="sprint-actions">
-            {board.sprints.length > 0 && onChooseSprint ? (
+            {onChooseSprint ? (
               <SearchableSelect
                 label={t("Sprint")}
                 placeholder={t("Choose sprint")}
@@ -251,12 +271,7 @@ export function SprintReports({
             ) : null}
             {onOpenSprints ? (
               <Button variant="secondary" onClick={onOpenSprints}>
-                {board.sprints.length > 0 ? t("Open sprints") : t("Go to Sprints")}
-              </Button>
-            ) : null}
-            {onOpenBacklog ? (
-              <Button variant="ghost" onClick={onOpenBacklog}>
-                {t("Open backlog")}
+                {t("Open sprints")}
               </Button>
             ) : null}
           </div>

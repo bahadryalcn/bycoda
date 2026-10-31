@@ -203,7 +203,10 @@ export function ModelFlyout({
             role="tablist"
             aria-label={t("Providers")}
             aria-orientation="vertical"
-            className="flex w-11 shrink-0 flex-col items-center gap-1 overflow-y-auto overscroll-none border-r border-(--ui-tone-neutral-border) p-1.5"
+            // Width follows the tab button size (density-aware) plus padding and the 1px
+            // divider, so the rail is never narrower than its buttons. Horizontal overflow is
+            // clipped, never scrolled; only the vertical axis scrolls.
+            className="flex w-[max(2.75rem,calc(var(--ui-control-height-compact)+0.75rem+1px))] shrink-0 flex-col items-center gap-1 overflow-x-hidden overflow-y-auto overscroll-none border-r border-(--ui-tone-neutral-border) p-1.5"
           >
             <ProviderTabButton
               title={t("Favorites")}
@@ -462,7 +465,9 @@ function ProviderTabButton({
   useLocale();
   return (
     <Button
-      className="shrink-0"
+      // max-w-full: if a vertical scrollbar takes width from the rail, the tab narrows with
+      // it instead of overflowing, so its selected/hover fill stays inside the rail.
+      className="max-w-full shrink-0"
       selected={selected}
       iconOnly
       label={title}

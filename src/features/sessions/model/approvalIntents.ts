@@ -18,6 +18,7 @@ import {
   createNativeCaptureSnapshotEncoder,
   stringifyNativeCaptureJson,
 } from "../../../shared/lib/native-capture-json";
+import { liveTurnHarness } from "./messageQueue";
 import type { Block, Session } from "./session";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 
@@ -165,9 +166,10 @@ function routeFor(session: Session): Route {
         (!!source && !sourceValue),
     };
   }
-  const adapter = getHarness(session.harness);
+  const harness = liveTurnHarness(session);
+  const adapter = getHarness(harness);
   return {
-    data: { kind: "native", harness: session.harness },
+    data: { kind: "native", harness },
     adapter,
     method: adapter?.respondApproval,
     unavailable: !adapter || typeof adapter.respondApproval !== "function",
@@ -225,7 +227,7 @@ function original(session: Session, block: Block, route: Route): Record<string, 
   return copyNativeCaptureData({
     session: {
       id: session.id,
-      harness: session.harness,
+      harness: liveTurnHarness(session),
       cwd: session.cwd,
       runtimeMode: session.runtimeMode,
       model: session.model,
@@ -487,6 +489,15 @@ export function createApprovalIntentRegistry(
    * provider consumption/durability remain unproved. Replacement/absence is not it. */
   const observeResolutions = (before: Session, after: Session, events: readonly HarnessEvent[]) => {
     if (!currentModule() || before.id !== after.id) return;
+    // The turn ended: no provider can resolve its requests any more, and a later
+    // turn may reuse the same request numbers.
+    if (before.busy && !after.busy) {
+      const kept = state.records.filter((entry) => entry.sessionId !== after.id || entry.pending);
+      if (kept.length !== state.records.length) {
+        state.records = kept;
+        notify();
+      }
+    }
     for (const entry of [...state.records]) {
       if (entry.sessionId !== before.id || entry.represented) continue;
       if (entry.sourceFingerprint !== undefined) continue;
@@ -644,6 +655,28 @@ export function createApprovalIntentRegistry(
       entry.hostCursor = valid ? hostIdentity(after) : undefined;
     }
   };
+  /** Drops decision records nothing can resolve any more: the session is gone
+   * or its turn ended. In-flight decisions are never touched. */
+  const prune = (sessions: readonly Session[]) => {
+    if (!currentModule()) return;
+    const live = new Map(sessions.map((session) => [session.id, session]));
+    const kept = state.records.filter(
+      (entry) => entry.pending || live.get(entry.sessionId)?.busy === true,
+    );
+    if (kept.length === state.records.length) return;
+    state.records = kept;
+    notify();
+  };
+  /** At capacity the oldest settled record yields instead of refusing a new decision.
+   * A record whose dispatch outcome is unknown keeps blocking a repeat (double send)
+   * until the turn ends or the session goes away (prune). */
+  const evictSettled = (): boolean => {
+    const index = state.records.findIndex((entry) => !entry.pending && !entry.view.repeatBlocked);
+    if (index < 0) return false;
+    state.records = state.records.filter((_, at) => at !== index);
+    notify();
+    return true;
+  };
   const submit = (
     session: Session | undefined,
     id: number,
@@ -680,6 +713,7 @@ export function createApprovalIntentRegistry(
       )
     )
       return refuse(APPROVAL_INTENT_MESSAGES.unconfirmed);
+    while (state.records.length >= limits.records && evictSettled());
     if (state.records.length >= limits.records || state.nextId >= Number.MAX_SAFE_INTEGER)
       return refuse(APPROVAL_INTENT_MESSAGES.capacity);
     const view: ApprovalIntentView = Object.freeze({
@@ -712,9 +746,10 @@ export function createApprovalIntentRegistry(
       blockId: captured.blockId,
     };
     try {
-      const aggregate = bytes.encode(wire(snapshot([...state.records, entry]))).byteLength;
-      if (aggregate > limits.bytes - (state.records.length + 1) * OUTCOME_RESERVE)
-        return refuse(APPROVAL_INTENT_MESSAGES.capacity);
+      const fits = () =>
+        bytes.encode(wire(snapshot([...state.records, entry]))).byteLength <=
+        limits.bytes - (state.records.length + 1) * OUTCOME_RESERVE;
+      while (!fits()) if (!evictSettled()) return refuse(APPROVAL_INTENT_MESSAGES.capacity);
     } catch {
       return refuse(APPROVAL_INTENT_MESSAGES.capacity);
     }
@@ -768,7 +803,13 @@ export function createApprovalIntentRegistry(
           ]);
         } else {
           // This production wrapper deliberately returns void; no adapter thenable ACK.
-          respondHarnessApproval(current.harness, current.id, id, decision, captured.occurrenceId);
+          respondHarnessApproval(
+            liveTurnHarness(current),
+            current.id,
+            id,
+            decision,
+            captured.occurrenceId,
+          );
         }
       });
     } catch (error) {
@@ -844,6 +885,7 @@ export function createApprovalIntentRegistry(
           entry.sessionId === sessionId && entry.requestId === id && entry.view.repeatBlocked,
       ),
     submitApprovalIntent: submit,
+    pruneApprovalIntents: prune,
     observeApprovalResolutions: observeResolutions,
     observeRemoteApprovalResolutions: observeRemoteResolutions,
     observeRemoteApprovalSourceExpansion: observeRemoteExpansion,
@@ -869,6 +911,7 @@ export const captureApprovalRequest = registry.captureApprovalRequest;
 export const readApprovalIntent = registry.readApprovalIntent;
 export const isApprovalRequestBlocked = registry.isApprovalRequestBlocked;
 export const submitApprovalIntent = registry.submitApprovalIntent;
+export const pruneApprovalIntents = registry.pruneApprovalIntents;
 export const observeApprovalResolutions = registry.observeApprovalResolutions;
 export const observeRemoteApprovalResolutions = registry.observeRemoteApprovalResolutions;
 export const observeRemoteApprovalSourceExpansion = registry.observeRemoteApprovalSourceExpansion;

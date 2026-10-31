@@ -815,14 +815,147 @@ async fn serve(
     // At most two 32 MiB decoded transfers occupy memory concurrently. Waiting
     // references are bounded by the same 64 RPC slots as ordinary requests.
     let bulk_slots = Arc::new(tokio::sync::Semaphore::new(2));
-    let mut maintenance = time::interval(Duration::from_millis(20));
-    maintenance.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
     let mut heartbeat = Instant::now() + contracts.duration("heartbeatIntervalMs");
     let mut ping: Option<(Vec<u8>, Instant)> = None;
     let failure = 'serve: loop {
+        // Run maintenance before waiting: subscription handling can continue the
+        // loop after queuing an open, close or acknowledgement.
+        if shared.stopped() {
+            break ("unavailable", false);
+        }
+        let expired: Vec<_> = pending
+            .iter()
+            .filter(|(_, request)| {
+                Instant::now() >= request.deadline
+                    || !shared.active(&request.consumer)
+                    || shared.cancelled(&request.id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in expired {
+            if let Some(request) = pending.remove(&id) {
+                // Best-effort query cancellation is a separate control attempt. No
+                // mutation is undone and no durable command is replayed here.
+                if !request.mutating
+                    && request.method != "requests.cancel"
+                    && connection.methods.contains("requests.cancel")
+                {
+                    let _ = send(
+                        &mut connection.socket,
+                        contracts,
+                        json!({"jsonrpc":"2.0", "id":uuid::Uuid::new_v4().to_string(),
+                        "method":"requests.cancel","params":{"requestId":id}}),
+                    )
+                    .await;
+                }
+                settle(
+                    request,
+                    generation,
+                    true,
+                    "RPC_WS_DEADLINE",
+                    "Host request deadline elapsed or native consumer detached",
+                );
+            }
+        }
+        if let Err(failure) = subscriptions.maintenance(shared, contracts, generation) {
+            break failure;
+        }
+        for _ in 0..parked_controls.len() {
+            let request = parked_controls.pop_front().unwrap();
+            if Instant::now() >= request.admission_deadline
+                || !shared.active(&request.consumer) || shared.cancelled(&request.id) {
+                settle(request, generation, false, "RPC_WS_CANCELLED",
+                    "Native control request expired before wire admission");
+            } else {
+                parked_controls.push_back(request);
+            }
+        }
+        while ordinary_control_count(contracts, &pending) + subscriptions.pending.len()
+            < contracts.limit("maxControlJobsPerDevice")
+        {
+            let Some(mut request) = parked_controls.pop_front() else {
+                break;
+            };
+            if !shared.active(&request.consumer)
+                || shared.cancelled(&request.id)
+                || Instant::now() >= request.admission_deadline
+            {
+                settle(
+                    request,
+                    generation,
+                    false,
+                    "RPC_WS_CANCELLED",
+                    "Native control request expired before wire admission",
+                );
+                continue;
+            }
+            request.deadline = Instant::now() + request.timeout;
+            let envelope = json!({"jsonrpc":"2.0","id":request.wire_id,"method":request.method,"params":request.params});
+            if !time::timeout(
+                request.timeout,
+                send(&mut connection.socket, contracts, envelope),
+            )
+            .await
+            .unwrap_or(false)
+            {
+                settle(
+                    request,
+                    generation,
+                    true,
+                    "RPC_WS_INTERRUPTED",
+                    "Native control request could not be sent",
+                );
+                break 'serve ("unavailable", false);
+            }
+            pending.insert(request.wire_id.clone(), request);
+        }
+        if let Err(failure) = subscriptions
+            .flush(
+                shared,
+                contracts,
+                generation,
+                &mut connection,
+                ordinary_control_count(contracts, &pending),
+            )
+            .await
+        {
+            break failure;
+        }
+        if ping
+            .as_ref()
+            .is_some_and(|(_, deadline)| Instant::now() >= *deadline)
+        {
+            break ("unavailable", false);
+        }
+        if Instant::now() >= heartbeat && ping.is_none() {
+            let payload = uuid::Uuid::new_v4().as_bytes().to_vec();
+            if !matches!(
+                time::timeout(
+                    contracts.duration("heartbeatResponseTimeoutMs"),
+                    connection
+                        .socket
+                        .send(Message::Ping(payload.clone().into()))
+                )
+                .await,
+                Ok(Ok(()))
+            ) {
+                break ("unavailable", false);
+            }
+            ping = Some((
+                payload,
+                Instant::now() + contracts.duration("heartbeatResponseTimeoutMs"),
+            ));
+            heartbeat = Instant::now() + contracts.duration("heartbeatIntervalMs");
+        }
+        let wake = pending.values().map(|request| request.deadline)
+            .chain(subscriptions.waiters.values().map(|request| request.deadline))
+            .chain(subscriptions.pending.values().map(|operation| operation.deadline))
+            .chain(parked_controls.iter().map(|request| request.admission_deadline))
+            .chain(std::iter::once(ping.as_ref().map(|(_, deadline)| *deadline).unwrap_or(heartbeat)))
+            .min().unwrap_or(heartbeat);
         tokio::select! {
             _ = shared.changed.notified() => {},
-            _ = maintenance.tick() => {},
+            _ = time::sleep_until(wake.into()) => {},
             completion = bulk_rx.recv() => {
                 let Some((id, result)) = completion else { continue; };
                 let Some(request) = pending.remove(&id) else { continue; };
@@ -974,123 +1107,7 @@ async fn serve(
                 }
             },
         }
-        if shared.stopped() {
-            break ("unavailable", false);
-        }
-        let expired: Vec<_> = pending
-            .iter()
-            .filter(|(_, request)| {
-                Instant::now() >= request.deadline
-                    || !shared.active(&request.consumer)
-                    || shared.cancelled(&request.id)
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
-        for id in expired {
-            if let Some(request) = pending.remove(&id) {
-                // Best-effort query cancellation is a separate control attempt. No
-                // mutation is undone and no durable command is replayed here.
-                if !request.mutating
-                    && request.method != "requests.cancel"
-                    && connection.methods.contains("requests.cancel")
-                {
-                    let _ = send(
-                        &mut connection.socket,
-                        contracts,
-                        json!({"jsonrpc":"2.0", "id":uuid::Uuid::new_v4().to_string(),
-                        "method":"requests.cancel","params":{"requestId":id}}),
-                    )
-                    .await;
-                }
-                settle(
-                    request,
-                    generation,
-                    true,
-                    "RPC_WS_DEADLINE",
-                    "Host request deadline elapsed or native consumer detached",
-                );
-            }
-        }
-        if let Err(failure) = subscriptions.maintenance(shared, contracts, generation) {
-            break failure;
-        }
-        while ordinary_control_count(contracts, &pending) + subscriptions.pending.len()
-            < contracts.limit("maxControlJobsPerDevice")
-        {
-            let Some(mut request) = parked_controls.pop_front() else {
-                break;
-            };
-            if !shared.active(&request.consumer)
-                || shared.cancelled(&request.id)
-                || Instant::now() >= request.admission_deadline
-            {
-                settle(
-                    request,
-                    generation,
-                    false,
-                    "RPC_WS_CANCELLED",
-                    "Native control request expired before wire admission",
-                );
-                continue;
-            }
-            request.deadline = Instant::now() + request.timeout;
-            let envelope = json!({"jsonrpc":"2.0","id":request.wire_id,"method":request.method,"params":request.params});
-            if !time::timeout(
-                request.timeout,
-                send(&mut connection.socket, contracts, envelope),
-            )
-            .await
-            .unwrap_or(false)
-            {
-                settle(
-                    request,
-                    generation,
-                    true,
-                    "RPC_WS_INTERRUPTED",
-                    "Native control request could not be sent",
-                );
-                break 'serve ("unavailable", false);
-            }
-            pending.insert(request.wire_id.clone(), request);
-        }
-        if let Err(failure) = subscriptions
-            .flush(
-                shared,
-                contracts,
-                generation,
-                &mut connection,
-                ordinary_control_count(contracts, &pending),
-            )
-            .await
-        {
-            break failure;
-        }
-        if ping
-            .as_ref()
-            .is_some_and(|(_, deadline)| Instant::now() >= *deadline)
-        {
-            break ("unavailable", false);
-        }
-        if Instant::now() >= heartbeat && ping.is_none() {
-            let payload = uuid::Uuid::new_v4().as_bytes().to_vec();
-            if !matches!(
-                time::timeout(
-                    contracts.duration("heartbeatResponseTimeoutMs"),
-                    connection
-                        .socket
-                        .send(Message::Ping(payload.clone().into()))
-                )
-                .await,
-                Ok(Ok(()))
-            ) {
-                break ("unavailable", false);
-            }
-            ping = Some((
-                payload,
-                Instant::now() + contracts.duration("heartbeatResponseTimeoutMs"),
-            ));
-            heartbeat = Instant::now() + contracts.duration("heartbeatIntervalMs");
-        }
+
     };
     // Physical retirement invalidates every bulk grant. An inline reply already
     // delivered before the disconnect remains a completed RPC; explicit route,

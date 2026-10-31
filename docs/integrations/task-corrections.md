@@ -79,7 +79,7 @@ review for the same pending request.
 
 ## Total run budgets
 
-Open **Total run budget** in a Task or Goal form. Limits can cover cumulative
+Open **Advanced → Total run budget** in a Task form, or **Total run budget** in a Goal form. Limits can cover cumulative
 agent minutes, agent runs and reported tokens. Empty or zero is unlimited. A
 Goal budget includes its planner, workers, independent reviewers, correction
 turns and final reviewer. Crew task budgets include their coordinator and member
@@ -104,9 +104,9 @@ invented for unavailable cost data.
 
 ## Saved workflows and preparation
 
-Task forms offer project-and-machine-scoped workflows for bug fixes, source
-research and UI changes. Apply one explicitly to merge its procedure and checks
-with the current request. Save the current configuration to reuse its brief,
+Task forms offer project-and-machine-scoped workflows (under **Advanced → Workflow**)
+for bug fixes, source research and UI changes. Apply one explicitly to merge its procedure and checks
+with the current request. Open **Save or refresh workflows** to save the current configuration and reuse its brief,
 required sources, verification command, worker settings and reviewer profile.
 Saving or applying never starts work, enables a skill or changes permissions.
 Profiles stay in this desktop's local storage; they are not credentials or

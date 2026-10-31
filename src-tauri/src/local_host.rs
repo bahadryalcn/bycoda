@@ -262,6 +262,17 @@ fn local_host_state(installed: bool, responding: bool, updating: bool) -> &'stat
     }
 }
 
+/// A busy host can miss one probe; retry once before calling it unconfirmed.
+fn probe_with_retry(data_dir: &Path) -> Result<(Value, Value), LifecycleProbeError> {
+    match probe_lifecycle_status(data_dir) {
+        Err(LifecycleProbeError::Unconfirmed) => {
+            std::thread::sleep(Duration::from_millis(500));
+            probe_lifecycle_status(data_dir)
+        }
+        other => other,
+    }
+}
+
 fn updating(data_dir: &Path) -> bool {
     install_running(data_dir) || job_pending(data_dir)
 }
@@ -277,7 +288,7 @@ pub fn local_host_status() -> LocalHostStatus {
     if !installed {
         return LocalHostStatus { state: "absent" };
     }
-    let probe = probe_lifecycle_status(&data_dir);
+    let probe = probe_with_retry(&data_dir);
     let responding = probe.is_ok();
     let updating = !responding && updating(&data_dir);
     if matches!(probe, Err(LifecycleProbeError::Unconfirmed)) && !updating {
@@ -337,31 +348,49 @@ pub fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String> {
     let data_dir = host_data_dir().ok_or("Could not find this computer's host folder.")?;
     let (program, base_args) =
         launcher_command(&data_dir).ok_or("bycoda Host is not installed on this computer.")?;
-    if lifecycle_status(&data_dir).is_none() {
+    // One bounded probe, no retry: a host that answers needs no restart. A
+    // failed probe is either Stopped (service not running) or Unconfirmed
+    // (corrupt running.json, port reused by another app, hung Host); both still
+    // go through the idempotent install/start path, which returns early when a
+    // Host really answers.
+    let stopped = match probe_lifecycle_status(&data_dir) {
+        Ok(_) => None,
+        Err(error) => Some(error == LifecycleProbeError::Stopped),
+    };
+    if let Some(stopped) = stopped {
         if crate::debug_profile::profile_id().is_some() {
-            return Err(
-                "The development host stopped. Restart pnpm dev:native for this workspace.".into(),
-            );
-        }
-        if updating(&data_dir) {
-            return Err(
-                "The host on this computer is being updated. Try again when it finishes.".into(),
-            );
-        }
-        let started = start_service() && wait_until_responding(&data_dir, Duration::from_secs(20));
-        if !started {
-            let port = running_port(&data_dir).unwrap_or(3776).to_string();
-            run_launcher(
-                &program,
-                &base_args,
-                &["service", "install", "--port", &port],
-                Duration::from_secs(60),
-            );
-            if !wait_until_responding(&data_dir, Duration::from_secs(10)) {
-                return Err(format!(
-                    "The host on this computer did not start. Check {}.",
-                    data_dir.join("host.log").display()
-                ));
+            if stopped {
+                return Err(
+                    "The development host stopped. Restart pnpm dev:native for this workspace."
+                        .into(),
+                );
+            }
+        } else {
+            if updating(&data_dir) {
+                return Err(
+                    "The host on this computer is being updated. Try again when it finishes."
+                        .into(),
+                );
+            }
+            // Starting the task is a no-op for a running or hung process, so only
+            // wait for it when the host was actually stopped.
+            let started = stopped
+                && start_service()
+                && wait_until_responding(&data_dir, Duration::from_secs(20));
+            if !started {
+                let port = running_port(&data_dir).unwrap_or(3776).to_string();
+                run_launcher(
+                    &program,
+                    &base_args,
+                    &["service", "install", "--port", &port],
+                    Duration::from_secs(60),
+                );
+                if !wait_until_responding(&data_dir, Duration::from_secs(10)) {
+                    return Err(format!(
+                        "The host on this computer did not start. Check {}.",
+                        data_dir.join("host.log").display()
+                    ));
+                }
             }
         }
     }

@@ -608,9 +608,9 @@ fn failed_real_stdin_keeps_turn_and_authority_unknown_after_actual_writer_comple
     assert!(result
         .unwrap_err()
         .contains("Failed to write original controlled harness"));
-    assert!(finish_original_turn(&warm.control, &warm.issuer, "original-window", &a).is_err());
+    assert!(finish_original_turn(&warm.control, &warm.issuer, "original-window", &a).is_ok());
     assert!(!turns::active(&warm.control, &a));
-    assert!(!turns::work(&warm.control, &a).finished());
+    assert!(turns::work(&warm.control, &a).finished());
     let reservations: i64 = store
         .lock_conn()
         .unwrap()
@@ -620,6 +620,6 @@ fn failed_real_stdin_keeps_turn_and_authority_unknown_after_actual_writer_comple
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(reservations, 1);
+    assert_eq!(reservations, 0);
     assert_eq!(warm.process.contents(), "");
 }

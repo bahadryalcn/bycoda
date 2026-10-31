@@ -80,7 +80,7 @@ const button = (text: string) =>
     (node) => node.textContent?.trim() === text,
   );
 const pinBox = () =>
-  container.querySelector<HTMLInputElement>('input[aria-label="Pin new workspaces"]')!;
+  container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Pin new workspaces"]')!;
 const mount = () =>
   act(async () => root.render(createElement(WorkspacePolicySettings, { cwd: "/repo" })));
 
@@ -96,17 +96,17 @@ it("mirrors the Host rule that every disk amount must be positive", () => {
 it("keeps an unsaved policy draft through refresh and asks before adopting a newer Host revision", async () => {
   await mount();
   await act(async () => pinBox().click());
-  expect(pinBox().checked).toBe(true);
+  expect(pinBox().getAttribute("aria-checked")).toBe("true");
   expect(button("Save workspace policy")!.disabled).toBe(false);
 
   hostPolicy = policyAt(2, "worktree");
   await act(async () => button("Refresh workspace status")!.click());
-  expect(pinBox().checked).toBe(true);
+  expect(pinBox().getAttribute("aria-checked")).toBe("true");
   expect(container.textContent).toContain("The saved policy changed while you were editing");
   expect(button("Save workspace policy")!.disabled).toBe(true);
 
   await act(async () => button("Reload Host policy")!.click());
-  expect(pinBox().checked).toBe(false);
+  expect(pinBox().getAttribute("aria-checked")).toBe("false");
   expect(container.textContent).not.toContain("The saved policy changed while you were editing");
 });
 
@@ -114,7 +114,7 @@ it("adopts a newer Host policy silently when there is nothing unsaved", async ()
   await mount();
   hostPolicy = policyAt(2, "worktree", ["host", "project"]);
   await act(async () => button("Refresh workspace status")!.click());
-  expect(container.textContent).toContain("This project has its own override (revision 2)");
+  expect(container.textContent).toContain("Project override");
   expect(container.textContent).not.toContain("The saved policy changed while you were editing");
 });
 
@@ -129,12 +129,12 @@ it("labels stale storage on its own section and retries it without touching the 
   expect(container.textContent).toContain("storage probe failed");
   // The last good storage reading and the unsaved edit both survive.
   expect(container.textContent).toContain("Showing the last storage reading");
-  expect(pinBox().checked).toBe(true);
+  expect(pinBox().getAttribute("aria-checked")).toBe("true");
 
   storageFails = false;
   storageBytes = 1 * GIB;
   await act(async () => button("Retry")!.click());
   expect(container.textContent).not.toContain("could not refresh and may be out of date");
   expect(container.textContent).toContain("1.0 GiB / 10.0 GiB");
-  expect(pinBox().checked).toBe(true);
+  expect(pinBox().getAttribute("aria-checked")).toBe("true");
 });

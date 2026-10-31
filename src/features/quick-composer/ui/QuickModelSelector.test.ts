@@ -7,6 +7,8 @@ import {
   resetHarnessModelOverlays,
   setHarnessModels,
   saveLastModelSettings,
+  defaultModelSettings,
+  resolveModel,
   type AgentModel,
 } from "../../sessions/model/models";
 
@@ -98,14 +100,13 @@ it("browses one provider at a time and selects a model without closing settings"
 });
 
 it("updates effort inline and closes with Escape", () => {
-  const slider = container.querySelector<HTMLElement>('[role="slider"]')!;
-  act(() =>
-    slider.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }),
-    ),
-  );
-  expect(onSettingsChange).toHaveBeenCalledWith({ effort: "high" });
-  act(() => slider.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  const reasoning = container.querySelector<HTMLSelectElement>('[aria-label="Reasoning"]')!;
+  act(() => {
+    reasoning.value = "high";
+    reasoning.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(onSettingsChange).toHaveBeenCalledWith({ ...defaultModelSettings(resolveModel("claude", claude.id)), effort: "high", fast: "false" });
+  act(() => reasoning.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(onClose).toHaveBeenCalledOnce();
 });
 
@@ -119,11 +120,12 @@ it("shows saved favorites across provider tabs", () => {
   expect(container.querySelector('[role="listbox"]')?.textContent).toContain("No favorite models");
 });
 
-it("toggles fast mode from the lightning button", () => {
+it("toggles fast mode from the Fast switch", () => {
   const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast"]')!;
-  expect(fast.getAttribute("aria-pressed")).toBe("false");
+  expect(fast.getAttribute("aria-checked")).toBe("false");
   act(() => fast.click());
   expect(onSettingsChange).toHaveBeenCalledWith({
+    ...defaultModelSettings(resolveModel("claude", claude.id)),
     effort: "low",
     fast: "true",
   });
@@ -144,8 +146,7 @@ it("resets reasoning and fast mode to saved user defaults", () => {
     ),
   );
   const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast"]')!;
-  expect(fast.getAttribute("aria-pressed")).toBe("true");
-  expect(fast.querySelector("svg")?.getAttribute("fill")).toBe("currentColor");
+  expect(fast.getAttribute("aria-checked")).toBe("true");
   act(() =>
     container.querySelector<HTMLButtonElement>('[aria-label="Reset to saved defaults"]')!.click(),
   );

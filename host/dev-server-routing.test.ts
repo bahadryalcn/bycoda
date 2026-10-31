@@ -76,9 +76,12 @@ describe("development server host RPC", () => {
       };
       const response = await call(`devServers.${operation}`, params);
       expect(response.value.error).toBeUndefined();
-      expect(handle).toHaveBeenCalledWith(`devServers.${operation}`, params, [
-        { id: project.id, name: project.name, path: project.cwd },
-      ]);
+      expect(handle).toHaveBeenCalledWith(
+        `devServers.${operation}`,
+        params,
+        [{ id: project.id, name: project.name, path: project.cwd }],
+        expect.any(Function),
+      );
     },
   );
   it("opens only an endpoint returned by fresh host process details", async () => {

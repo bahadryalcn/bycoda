@@ -99,6 +99,20 @@ pub(crate) struct IdleProof {
     buffers_digest: String,
 }
 
+/// Older builds used the same kind for Grok text cleanup and legacy CLI ingress.
+/// Neither can still belong to this native process before its first store open.
+/// Preserve other kinds, current-process ingress, and all durable safety journals.
+pub(crate) fn clear_stale_cli_ingress(conn: &Connection, started_at: i64) {
+    match conn.execute(
+        "DELETE FROM native_authority_unknown_ingress WHERE kind = 'legacy-provider-cli-mutation' AND created_at < ?1",
+        [started_at],
+    ) {
+        Ok(0) => {}
+        Ok(count) => eprintln!("Removed {count} stale legacy-provider-cli-mutation ingress records older than native startup {started_at}"),
+        Err(error) => eprintln!("Could not clean stale provider CLI ingress: {error}"),
+    }
+}
+
 pub(crate) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     // Replacing persisted guards is atomic with the versioned permit shape:
     // another connection must never observe a dropped fence trigger.
@@ -367,6 +381,51 @@ fn critical<T>(
     }
 }
 
+/// Reservation kinds whose rows are transient process/request admission
+/// evidence (one per provider stdin line / HTTP call / spawn). Their rows only
+/// need to be visible to in-process quiesce checks and a native->Host migration
+/// on the same live database; WAL keeps each commit atomic, and a power loss
+/// that drops the last commits also drops the provider child they describe.
+/// They therefore commit at the connection's NORMAL synchronous level instead
+/// of paying a durable fsync per line. Every other transition (fences, heads,
+/// checkpoints, unknown ingress, long-lived event streams) stays FULL.
+fn is_transient_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "provider" | "provider-spawn" | "provider-stdin" | "provider-http"
+    )
+}
+
+/// IMMEDIATE transaction without raising `synchronous` (no fsync under WAL).
+fn transient<T>(
+    conn: &Connection,
+    write: impl FnOnce(&Transaction<'_>) -> Result<T, String>,
+) -> Result<T, String> {
+    if !conn.is_autocommit() {
+        return Err(
+            "NATIVE_AUTHORITY_STORAGE_BUSY: critical barrier requires an idle writer".into(),
+        );
+    }
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let value = write(&tx)?;
+    tx.commit()
+        .map_err(|error| format!("NATIVE_AUTHORITY_COMMIT_UNCERTAIN: {error}"))?;
+    Ok(value)
+}
+
+fn lease_write<T>(
+    conn: &Connection,
+    transient_lease: bool,
+    write: impl FnOnce(&Transaction<'_>) -> Result<T, String>,
+) -> Result<T, String> {
+    if transient_lease {
+        transient(conn, write)
+    } else {
+        critical(conn, write)
+    }
+}
+
 fn require_native(
     conn: &Connection,
     session_id: &str,
@@ -464,6 +523,8 @@ pub(crate) struct NativeLease {
     unstarted: bool,
     finished: bool,
     operation: Option<NativeOperation>,
+    /// Transient admission kinds commit without a durable fsync.
+    transient: bool,
 }
 
 impl ExecutionGate {
@@ -503,12 +564,13 @@ impl ExecutionGate {
             None => None,
         };
         let reservation_id = uuid::Uuid::new_v4().to_string();
+        let transient_lease = is_transient_kind(kind);
         let result = (|| {
             let conn = self
                 .conn
                 .lock()
-                .map_err(|_| "Native authority store is locked")?;
-            critical(&conn, |tx| {
+                .unwrap_or_else(|error| error.into_inner());
+            lease_write(&conn, transient_lease, |tx| {
                 let generation = require_native(tx, session_id, existing_control)?;
                 match read_state(tx, session_id)? {
                     Some(state) if generation > 0 => {
@@ -546,6 +608,7 @@ impl ExecutionGate {
             unstarted: true,
             finished: false,
             operation,
+            transient: transient_lease,
         })
     }
 
@@ -567,16 +630,16 @@ impl ExecutionGate {
     ) -> Result<T, String> {
         let mut lease = self.reserve_existing(session_id, kind, None, finishing)?;
         lease.begin_external()?;
-        let value = write()?;
-        lease.finish()?;
-        Ok(value)
+        let result = write();
+        if let Err(error) = lease.finish() { eprintln!("[authority] completed operation lease cleanup failed: {error}"); }
+        result
     }
 
     pub(crate) fn assert_checkpoint(&self, session_id: &str) -> Result<(), String> {
         let conn = self
             .conn
             .lock()
-            .map_err(|_| "Native authority store is locked")?;
+            .unwrap_or_else(|error| error.into_inner());
         assert_checkpoint(&conn, session_id)
     }
 
@@ -584,7 +647,7 @@ impl ExecutionGate {
         let conn = self
             .conn
             .lock()
-            .map_err(|_| "Native authority store is locked")?;
+            .unwrap_or_else(|error| error.into_inner());
         conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM native_authority_floor)",
             [],
@@ -604,7 +667,7 @@ impl ExecutionGate {
         let conn = self
             .conn
             .lock()
-            .map_err(|_| "Native authority store is locked")?;
+            .unwrap_or_else(|error| error.into_inner());
         critical(&conn, |tx| {
             let floor: bool = tx
                 .query_row(
@@ -651,7 +714,7 @@ impl ExecutionGate {
         let conn = self
             .conn
             .lock()
-            .map_err(|_| "Native authority store is locked")?;
+            .unwrap_or_else(|error| error.into_inner());
         let conflict: bool = conn
             .query_row(
                 "SELECT EXISTS(
@@ -720,8 +783,8 @@ impl NativeLease {
             .gate
             .conn
             .lock()
-            .map_err(|_| "Native authority store is locked")?;
-        critical(&conn, |tx| {
+            .unwrap_or_else(|error| error.into_inner());
+        lease_write(&conn, self.transient, |tx| {
             if require_native(tx, &self.session_id, true)? != self.generation {
                 return Err("NATIVE_AUTHORITY_STALE_GENERATION".into());
             }
@@ -742,8 +805,8 @@ impl NativeLease {
             .gate
             .conn
             .lock()
-            .map_err(|_| "Native authority store is locked")?;
-        critical(&conn, |tx| {
+            .unwrap_or_else(|error| error.into_inner());
+        lease_write(&conn, self.transient, |tx| {
             let changed=tx.execute("UPDATE native_authority_reservations SET phase='RUNNING',child_pid=?2 WHERE reservation_id=?1 AND phase='FORKING'",params![self.reservation_id,pid]).map_err(|error|error.to_string())?;
             if changed != 1 {
                 return Err("NATIVE_AUTHORITY_RESERVATION_CHANGED".into());
@@ -768,7 +831,7 @@ impl NativeLease {
                 .gate
                 .conn
                 .lock()
-                .map_err(|_| "Native authority store is locked")?;
+                .unwrap_or_else(|error| error.into_inner());
             critical(&conn, |tx| {
                 tx.execute(
                     "DELETE FROM native_authority_reservations WHERE reservation_id=?1",

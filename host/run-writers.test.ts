@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -219,7 +219,23 @@ it("keeps a real failed write sticky across finish, warm rebind and shutdown, wh
     async () => {},
   );
   await f.writers.finish(sibling);
-  await expect(f.writers.drain()).rejects.toThrow(/did not drain/);
+  // The failure was reported by finish(a); shutdown does not rethrow it forever.
+  await expect(f.writers.drain()).resolves.toBeUndefined();
+});
+
+it("ignores a late stdin EPIPE after admission closed", async () => {
+  const f = fixture();
+  const a = await f.issue(),
+    p = await f.attach(a),
+    binding = await f.writers.bind(a, p.child, p.source);
+  const write = f.writers.write(binding, p.child, p.source, async () => {
+    f.writers.closeAdmission(a);
+    throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+  });
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  await expect(write).rejects.toThrow("EPIPE");
+  await expect(f.writers.finish(a)).resolves.toBeUndefined();
+  warn.mockRestore();
 });
 
 it("refuses capacity before mutating A and frees only successfully finished run capacity", async () => {

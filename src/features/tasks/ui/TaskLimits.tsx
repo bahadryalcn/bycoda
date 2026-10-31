@@ -61,7 +61,7 @@ export function CustomDailyLimit({
   return (
     <form
       aria-label={t("Custom daily agent time on {p0}", { p0: entry.machineName })}
-      className="flex flex-wrap items-center gap-2"
+      className="task-limits-row task-limits-custom"
       aria-busy={saving}
       onSubmit={async (event) => {
         event.preventDefault();
@@ -77,8 +77,8 @@ export function CustomDailyLimit({
         }
       }}
     >
-      <label className="flex items-center gap-2">
-        {t("Hours")}
+      <label className="task-limits-custom-field" title={t("0 = no limit")}>
+        <span>{t("Hours")}</span>
         <NumberField
           hideLabel
           label=""
@@ -108,7 +108,6 @@ export function CustomDailyLimit({
           {t(changedElsewhere ? "Use machine value" : "Reset")}
         </Button>
       ) : null}
-      <span className="text-ui-micro text-(--ui-text-secondary)">{t("0 = no limit")}</span>
       {changedElsewhere ? (
         <span role="status" className="text-ui-micro text-(--ui-tone-warning-fg)">
           {t("Now {p0} h on this machine. Your edit is kept.", { p0: String(current / 60) })}
@@ -201,24 +200,27 @@ export function LimitsPanel({
         label: DAILY_LIMIT_LABELS[minutes] ?? formatAgentMinutes(minutes),
       }));
   return (
-    <ul
-      aria-label={t("Work limits")}
-      className="flex shrink-0 flex-col gap-2 border-b border-(--ui-tone-neutral-border) p-3"
-    >
+    <ul aria-label={t("Work limits")} className="task-limits">
       {limits.map((entry) => (
         <li
           key={entry.machineId}
           aria-busy={savingMachine === entry.machineId}
-          className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-ui-caption text-(--ui-text-secondary)"
+          className="task-limits-machine"
         >
-          <span className="min-w-24 font-medium text-(--ui-text-secondary)">
-            {entry.machineName}
-            {savingMachine === entry.machineId ? (
-              <LoaderCircle className="ml-1 inline icon-xs animate-spin" aria-hidden="true" />
-            ) : null}
-          </span>
-          <span className="flex items-center gap-2">
-            {t("Max concurrent tasks")}
+          <div className="task-limits-heading">
+            <span className="font-medium text-(--ui-tone-neutral-fg)">
+              {entry.machineName}
+              {savingMachine === entry.machineId ? (
+                <LoaderCircle className="ml-1 inline icon-xs animate-spin" aria-hidden="true" />
+              ) : null}
+            </span>
+            <span className="tabular-nums">
+              {t("Used today: ")}
+              {formatAgentMinutes(entry.usedMinutes)}
+            </span>
+          </div>
+          <div className="task-limits-row">
+            <span>{t("Max concurrent tasks")}</span>
             <SearchableSelect
               variant="pill"
               searchable={false}
@@ -231,9 +233,9 @@ export function LimitsPanel({
               disabled={savingMachine !== null}
               onChange={(value) => save(entry.machineId, { maxRunningTasks: Number(value) })}
             />
-          </span>
-          <span className="flex items-center gap-2">
-            {t("Daily agent time")}
+          </div>
+          <div className="task-limits-row">
+            <span>{t("Daily agent time")}</span>
             <SearchableSelect
               variant="pill"
               searchable={false}
@@ -243,12 +245,8 @@ export function LimitsPanel({
               disabled={savingMachine !== null}
               onChange={(value) => save(entry.machineId, { dailyAgentMinutes: Number(value) })}
             />
-          </span>
+          </div>
           <CustomDailyLimit key={entry.machineId} entry={entry} onChange={onChange} />
-          <span className="tabular-nums text-(--ui-text-secondary)">
-            {t("Used today: ")}
-            {formatAgentMinutes(entry.usedMinutes)}
-          </span>
         </li>
       ))}
     </ul>

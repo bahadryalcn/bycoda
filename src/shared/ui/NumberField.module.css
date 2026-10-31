@@ -14,10 +14,8 @@
   gap: 2px;
 }
 
-/* The native spin buttons are replaced by two InlineActions that live in the same trailing slot as the
-   clear and reveal actions. The extra specificity beats the field owner's single-action padding. */
+/* Native spin buttons are replaced by InlineActions in the intrinsic shared trailing slot. */
 input.stepped[type="number"] {
-  padding-inline-end: calc(2.5rem + 2px + var(--space-1) + var(--space-3));
   font-variant-numeric: tabular-nums;
   appearance: textfield;
   -moz-appearance: textfield;

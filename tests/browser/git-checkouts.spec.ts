@@ -7,7 +7,7 @@ test("Git actions show progress in place without losing focus or repeating mutat
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto("/tests/browser/git-workspace.html?action-feedback");
-  await page.locator("#root > div").evaluate((node) => {
+  await page.locator("#root > div.border-r").evaluate((node) => {
     node.style.width = "100%";
   });
   const sync = page.getByRole("button").filter({ hasText: "Sync Changes" });
@@ -34,7 +34,7 @@ test("Git actions show progress in place without losing focus or repeating mutat
         light,
       );
       expect(
-        await page.locator("#root > div").evaluate((node) => node.scrollWidth <= node.clientWidth),
+        await page.locator("#root > div.border-r").evaluate((node) => node.scrollWidth <= node.clientWidth),
       ).toBe(true);
       await page.screenshot({
         path: testInfo.outputPath(`git-pending-${width}-${light ? "light" : "dark"}.png`),
@@ -75,7 +75,7 @@ test("hunk targets retain identity and allow keyboard and pointer recovery after
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/tests/browser/git-workspace.html?diff-usability");
-  await page.locator("#root > div").evaluate((node) => {
+  await page.locator("#root > div.border-r").evaluate((node) => {
     node.style.width = "100%";
   });
   const repository = "/fixture/engineering/long-repository-name-for-working-tree-review";
@@ -153,7 +153,7 @@ test("repository overview collapses with keyboard and preserves open panels and 
   expect((await panel.locator("header").boundingBox())!.height).toBeLessThanOrEqual(40);
   for (const width of [280, 390]) {
     await page.setViewportSize({ width, height: 700 });
-    await page.locator("#root > div").evaluate((element, size) => {
+    await page.locator("#root > div.border-r").evaluate((element, size) => {
       (element as HTMLElement).style.width = `${size}px`;
     }, width);
     for (const light of [false, true]) {
@@ -252,8 +252,11 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   await expect(module.getByRole("button", { name: "Stage All Changes", exact: true })).toHaveCount(
     0,
   );
-  // A drafted message with staged changes and a pushable branch leads with Commit & Push.
-  await module.getByRole("button", { name: "Commit & Push", exact: true }).click();
+  // Commit leads; Commit & Push is one menu choice away.
+  await module.getByRole("button", { name: "Commit options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Commit & Push", exact: true }).click();
+  // The submodule is on its default branch: the push asks first in the in-app dialog.
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(message).toHaveValue("");
   await expect(parentMessage).toHaveValue("Parent draft stays here");
   const calls = await page.evaluate(
@@ -271,7 +274,7 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   }
   for (const width of [280, 390, 768]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.locator("#root > div").evaluate((element, size) => {
+    await page.locator("#root > div.border-r").evaluate((element, size) => {
       (element as HTMLElement).style.width = `${size}px`;
     }, width);
     for (const light of [false, true]) {
@@ -363,7 +366,7 @@ test("grouped commit forms retain their height and drafts after disclosure and r
   await expect(message).toHaveValue(draft);
   for (const width of [280, 390, 566]) {
     await page.setViewportSize({ width, height: 650 });
-    await page.locator("#root > div").evaluate((element, size) => {
+    await page.locator("#root > div.border-r").evaluate((element, size) => {
       (element as HTMLElement).style.width = `${size}px`;
     }, width);
     for (const light of [false, true]) {
@@ -373,7 +376,7 @@ test("grouped commit forms retain their height and drafts after disclosure and r
       );
       await expect.poll(async () => (await message.boundingBox())!.height).toBeGreaterThan(32);
       const input = (await message.boundingBox())!;
-      // One contextual primary (Commit, Commit & Push or sync) sits in a single row with its menu.
+      // One contextual primary (Commit or sync) sits in a single row with its menu.
       const primary = panel.locator('[data-split-part="primary"]').first();
       const commit = (await primary.boundingBox())!;
       const options = (await panel

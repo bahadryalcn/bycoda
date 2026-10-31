@@ -20,6 +20,8 @@ it("keeps copy feedback local, prevents duplicates, and preserves retry after fa
   const root = createRoot(container);
   try {
     await act(async () => root.render(createElement(DiagnosticsGroup)));
+    // Trace data is a sub-row that only works while the trace is on.
+    await act(async () => container.querySelector<HTMLElement>('[role="switch"]')!.click());
     const button = [...container.querySelectorAll("button")].find(
       (node) => node.textContent === "Copy trace",
     )!;
@@ -38,6 +40,7 @@ it("keeps copy feedback local, prevents duplicates, and preserves retry after fa
     expect(copy).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain("Copied");
     expect(container.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => container.querySelector<HTMLElement>('[role="switch"]')!.click());
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -51,6 +54,7 @@ it("shows only the latest operation: Clear replaces a still-visible Copied", asy
   const root = createRoot(container);
   try {
     await act(async () => root.render(createElement(DiagnosticsGroup)));
+    await act(async () => container.querySelector<HTMLElement>('[role="switch"]')!.click());
     const named = (label: string) =>
       [...container.querySelectorAll("button")].find((node) => node.textContent === label)!;
     await act(async () => named("Copy trace").click());
@@ -58,6 +62,7 @@ it("shows only the latest operation: Clear replaces a still-visible Copied", asy
     await act(async () => named("Clear").click());
     expect(container.textContent).toContain("Cleared");
     expect(container.textContent).not.toContain("Copied");
+    await act(async () => container.querySelector<HTMLElement>('[role="switch"]')!.click());
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -68,7 +73,8 @@ it("says so, with a retry, when the trace preference cannot be stored", async ()
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+  // Earlier tests stored the flag, after which the prototype spy no longer reaches the instance.
+  const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
     throw new Error("quota");
   });
   try {

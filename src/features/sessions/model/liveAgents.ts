@@ -3,6 +3,7 @@ import { executionUserIndex } from "./executionTurn";
 import { composeToolTitle } from "../../../integrations/harness/core/preview";
 import { displayPath } from "../../../shared/lib/paths";
 import {
+  hasPendingApproval,
   sessionDisplayTitle,
   sessionNeedsInput,
   type Block,
@@ -80,7 +81,9 @@ export function formatLiveElapsed(startedAt: number, now: number): string {
 
 function toLiveAgent(session: Session, unseenFinished: boolean): LiveAgent {
   const issue = sessionIssue(session);
-  const pending = session.blocks.find((block) => block.approval && !block.approval.decided);
+  const pending = hasPendingApproval(session.blocks)
+    ? session.blocks.find((block) => block.approval && !block.approval.decided)
+    : undefined;
   const pendingQuestion = session.pendingQuestion;
   const done = (unseenFinished || issue === "failed") && !isWorking(session);
   const activityBlock = pending ?? lastActivityBlock(session.blocks);

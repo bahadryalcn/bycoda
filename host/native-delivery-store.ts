@@ -344,7 +344,7 @@ export function createNativeDeliveryStore(store: HostStore) {
           );
         if (Number(changed.changes) !== 1)
           throw new Error("Native delivery failed execution disposition changed and remains held");
-      }),
+      }, "critical"),
     );
   }
   const journal = {
@@ -482,7 +482,7 @@ export function createNativeDeliveryStore(store: HostStore) {
             epoch?.sequence ?? null,
           );
         return true;
-      });
+      }, "critical");
     },
     prepareProof(
       principal: string,
@@ -506,7 +506,7 @@ export function createNativeDeliveryStore(store: HostStore) {
               identity.sha256,
               identity.byteLength,
             );
-      });
+      }, "critical");
     },
     record(
       principal: string,
@@ -556,7 +556,7 @@ export function createNativeDeliveryStore(store: HostStore) {
             identity.sha256,
             identity.byteLength,
           );
-      });
+      }, "critical");
     },
     retire(
       principal: string,
@@ -603,7 +603,7 @@ export function createNativeDeliveryStore(store: HostStore) {
             identity.sha256,
             identity.byteLength,
           );
-      });
+      }, "critical");
     },
   };
   return {

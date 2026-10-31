@@ -15,7 +15,11 @@ import {
 } from "./runtimeGuidance";
 import type { GeneratedSessionTitle } from "../../../features/sessions/model/sessionTitle";
 import type { PrContent } from "../../../features/source-control/model/gitText";
-import { hasLiveCatalog, modelBelongsToHarness } from "../../../features/sessions/model/models";
+import {
+  defaultModelId,
+  hasLiveCatalog,
+  modelBelongsToHarness,
+} from "../../../features/sessions/model/models";
 import type { UserQuestionReply } from "../../../features/sessions/model/userQuestion";
 import type { NativeCommandProvider } from "./nativeCommands";
 import { loadSkillRestrictions } from "../../../features/skills/model/skillPreferences";
@@ -27,7 +31,7 @@ import {
   nativeControlTurnReceipt,
   type ControlTurnHandle,
 } from "./controlTurn";
-import { drainProviderRetirements } from "./providerRetirement";
+import { drainProviderRetirements, retireProviderOwner } from "./providerRetirement";
 import { TurnNotReadyError } from "./types";
 import type {
   ApprovalDecision,
@@ -139,8 +143,9 @@ export type HarnessAdapter = {
     message: string,
     context?: HarnessOperationContext,
   ): Promise<string | null>;
-  /** Optional warmup for text-generation backends. */
-  warmupText?(cwd: string): Promise<void>;
+  /** Optional warmup for text-generation backends. Options match a later
+   * `runTextPrompt` so that request can reuse the warm process. */
+  warmupText?(cwd: string, options?: TextWarmupOptions): Promise<void>;
   /** Run an isolated, read-only prompt without mutating the main session. */
   runTextPrompt?(input: TextPromptInput): Promise<string>;
   /** Stop an isolated text-generation backend. */
@@ -219,6 +224,8 @@ export const HARNESS_IDLE_PARK_MS = 5 * 60_000;
 const idleParkTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const retainedWriters = new Map<string, HarnessId>();
 const sessionOperationTails = new Map<string, Promise<void>>();
+/** Idle releases the last turn left running; joined by the session's queue tail. */
+const deferredIdleReleases = new Map<string, Promise<void>>();
 const sessionSteerTails = new Map<string, Promise<void>>();
 const activeTurnSessions = new Set<string>();
 const nativeControlTurns = new Map<
@@ -261,9 +268,25 @@ type AdapterOperation = {
 // Cancelling registry preparation must not create a provider startup tombstone.
 const adapterOperations = new Map<string, AdapterOperation>();
 
+function warnCleanup(label: string, error: unknown): void {
+  console.warn(`[harness] ${label} failed`, error);
+}
+
+/** Operations are serialized per session, so an entry found here belongs to a
+ * finished turn: drop it instead of failing the new one. */
 function assertAdapterOperationReady(sessionId: string): void {
-  if (adapterOperations.has(sessionId))
-    throw new Error("The original provider operation still has unresolved cleanup.");
+  if (!adapterOperations.has(sessionId)) return;
+  warnCleanup("stale provider operation cleared", new Error(sessionId));
+  adapterOperations.delete(sessionId);
+}
+
+async function drainRetirementsBestEffort(sessionId: string): Promise<void> {
+  try {
+    await drainProviderRetirements({ ownerKey: sessionId });
+  } catch (error) {
+    warnCleanup("provider retirement drain", error);
+    throw error;
+  }
 }
 
 function beginAdapterOperation(
@@ -349,28 +372,48 @@ async function endOperationControl(
 ): Promise<void> {
   activeTurnSessions.delete(sessionId);
   if (!control) return;
-  await finishNativeControlTurn(control);
-  if (nativeControlTurns.get(sessionId)?.handle === control) nativeControlTurns.delete(sessionId);
+  try {
+    await finishNativeControlTurn(control);
+  } catch (error) {
+    warnCleanup("native control turn finish", error);
+  } finally {
+    if (nativeControlTurns.get(sessionId)?.handle === control)
+      nativeControlTurns.delete(sessionId);
+  }
 }
 
 async function finishAdapterOperation(sessionId: string, owner: AdapterOperation): Promise<void> {
   // Do not let the next turn reuse a transport while Stop is still retiring it.
   // With no accepted cancellation, relinquish routing synchronously. Yielding on
   // undefined would let a late Stop enter before deletion and then lose its work.
-  const cancellation = owner.cancellation;
-  if (cancellation) await cancellation;
-  if (adapterOperations.get(sessionId) === owner) {
-    adapterOperations.delete(sessionId);
+  try {
+    const cancellation = owner.cancellation;
+    if (cancellation) await cancellation;
+  } catch (error) {
+    warnCleanup("turn cancellation", error);
+  } finally {
+    if (adapterOperations.get(sessionId) === owner) {
+      adapterOperations.delete(sessionId);
+    }
   }
 }
 
 function queueSessionOperation<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
   const previous = sessionOperationTails.get(sessionId) ?? Promise.resolve();
   const current = previous.catch(() => undefined).then(operation);
-  const settled = current.then(
-    () => undefined,
-    () => undefined,
-  );
+  // A finished reply returns before its idle release (Codex writer stop) ends,
+  // but the next operation on this session still queues behind that release,
+  // so two writers never overlap.
+  const settled = current
+    .then(
+      () => undefined,
+      () => undefined,
+    )
+    .then(() => {
+      const release = deferredIdleReleases.get(sessionId);
+      deferredIdleReleases.delete(sessionId);
+      return release;
+    });
   sessionOperationTails.set(sessionId, settled);
   void settled.then(() => {
     if (sessionOperationTails.get(sessionId) === settled) {
@@ -418,7 +461,9 @@ function scheduleIdlePark(harness: HarnessId, sessionId: string): void {
     sessionId,
     setTimeout(() => {
       idleParkTimers.delete(sessionId);
-      void stopHarnessSession(harness, sessionId);
+      void queueSessionOperation(sessionId, () => stopHarnessSession(harness, sessionId)).catch((error: unknown) =>
+        warnCleanup("idle park", error),
+      );
     }, HARNESS_IDLE_PARK_MS),
   );
 }
@@ -428,14 +473,20 @@ async function releaseIdleHarness(
   sessionId: string,
   lightweightWorktree = false,
 ): Promise<void> {
-  // An idle Codex app-server still owns the thread's writer lock. Release it
-  // before exposing an idle desktop session that another device can resume.
-  // stopSession preserves the provider conversation identity and its history.
-  // Ordinary worktree turns retain their provider process for the next turn.
-  // Explicit ownership transfer still stops through stopHarnessSession; exact
-  // capture retains the immediate retirement path below.
-  if (harness === "codex" && !lightweightWorktree) await stopHarnessSession(harness, sessionId);
-  else scheduleIdlePark(harness, sessionId);
+  // Park Codex only while its held writer is reported to the Host. Ownership
+  // transfer and idle expiry stop it before clearing that retained writer.
+  // Untracked Codex operations still release the thread's writer immediately.
+  // Never reject: a completed turn must not fail because its cleanup did.
+  try {
+    if (
+      harness === "codex" &&
+      !lightweightWorktree &&
+      retainedWriters.get(sessionId) !== harness
+    ) await stopHarnessSession(harness, sessionId);
+    else scheduleIdlePark(harness, sessionId);
+  } catch (error) {
+    warnCleanup("idle release", error);
+  }
 }
 
 /** Test seam. */
@@ -468,11 +519,18 @@ export function listHarnesses(): HarnessAdapter[] {
   return [...adapters.values()];
 }
 
-function assertHarnessModel(harness: HarnessId, model?: string): void {
-  if (model !== undefined && !modelBelongsToHarness(harness, model))
-    throw new Error(
-      `Model "${model}" does not belong to provider "${harness}". Select a matching provider and model.`,
-    );
+/** A model left over from another provider (stale after a switch/restore) is
+ * remapped to this provider's default (empty means the CLI chooses). */
+function assertHarnessModel(
+  harness: HarnessId,
+  input: { model?: string; modelSettings?: Record<string, string> },
+): void {
+  const model = input.model;
+  if (model === undefined || modelBelongsToHarness(harness, model)) return;
+  const fallback = defaultModelId(harness);
+  console.warn(`[harness] model "${model}" is foreign to "${harness}"; using "${fallback}"`);
+  input.model = fallback;
+  input.modelSettings = undefined;
 }
 
 export function sendHarnessTurn(
@@ -482,9 +540,11 @@ export function sendHarnessTurn(
     lightweightWorktree?: boolean;
     /** Local prompt preparation after runtime and skill guidance; never sent to a provider. */
     prepareText?: (text: string, runtimeInstructions?: string) => Promise<string>;
+    /** The provider's final result arrived; before cleanup, so durations exclude it. */
+    onReplyEnded?: (endedAt: number) => void;
   },
 ) {
-  const { prepareText, lightweightWorktree, ...input } = request;
+  const { prepareText, lightweightWorktree, onReplyEnded, ...input } = request;
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   let ready!: () => void;
   const started = new Promise<void>((resolve) => {
@@ -501,23 +561,31 @@ export function sendHarnessTurn(
   turnSubmissions.set(input.sessionId, submission);
   return queueSessionOperation(input.sessionId, async () => {
     try {
-      assertHarnessModel(input.harness, input.model);
+      assertHarnessModel(input.harness, input);
       if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
         throw new Error("Turn cancelled before it started");
       const adapter = requireHarness(input.harness);
       if (!adapter.live) throw new Error(`${input.harness} is not connected yet`);
       assertAdapterOperationReady(input.sessionId);
-      if (lightweightWorktree) retainedWriters.set(input.sessionId, input.harness);
+      if (lightweightWorktree || input.harness === "codex")
+        retainedWriters.set(input.sessionId, input.harness);
       cancelIdlePark(input.sessionId);
-      await drainProviderRetirements({ ownerKey: input.sessionId });
+      await drainRetirementsBestEffort(input.sessionId);
+      const guidance = Promise.allSettled([
+        harnessRuntimeHints(input.sessionId),
+        loadSkillRestrictions(input.cwd),
+      ]);
       const { control: controlTurn, processes } = await beginOperationControl(input);
       submission.resolveControl(controlTurn);
       try {
+        const [runtime, policy] = await guidance;
+        if (runtime.status === "rejected") throw runtime.reason;
+        if (policy.status === "rejected") throw policy.reason;
         const thread = { harness: input.harness, providerAccountId: input.providerAccountId };
         const hint = pendingRuntimeHint(
           input.sessionId,
           thread,
-          await harnessRuntimeHints(input.sessionId),
+          runtime.value,
         );
         const text =
           input.harness === "codex" ? input.text : withRuntimeHint(input.harness, input.text, hint);
@@ -534,7 +602,7 @@ export function sendHarnessTurn(
           const restricted = withSkillPolicy(
             input.harness,
             input,
-            await loadSkillRestrictions(input.cwd),
+            policy.value,
           );
           if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
             throw new Error("Turn cancelled before it started");
@@ -576,12 +644,23 @@ export function sendHarnessTurn(
               owner,
             ),
           );
+          try {
+            onReplyEnded?.(Date.now());
+          } catch (error) {
+            warnCleanup("reply end observer", error);
+          }
         } finally {
           await finishAdapterOperation(input.sessionId, owner);
         }
       } finally {
         await endOperationControl(input.sessionId, controlTurn);
-        await releaseIdleHarness(input.harness, input.sessionId, lightweightWorktree);
+        // The reply is complete: do not hold the session busy while the provider
+        // writer stops. The queue tail (see queueSessionOperation) still makes
+        // the next operation wait for it. releaseIdleHarness never rejects.
+        deferredIdleReleases.set(
+          input.sessionId,
+          releaseIdleHarness(input.harness, input.sessionId, lightweightWorktree),
+        );
       }
     } finally {
       submission.resolveControl(undefined);
@@ -607,7 +686,7 @@ export function compactHarnessContext(
   };
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   return queueSessionOperation(input.sessionId, async () => {
-    assertHarnessModel(input.harness, input.model);
+    assertHarnessModel(input.harness, input);
     if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
       throw new Error("Compaction cancelled before it started");
     const adapter = requireHarness(input.harness);
@@ -619,7 +698,7 @@ export function compactHarnessContext(
     }
     cancelIdlePark(input.sessionId);
     assertAdapterOperationReady(input.sessionId);
-    await drainProviderRetirements({ ownerKey: input.sessionId });
+    await drainRetirementsBestEffort(input.sessionId);
     const { control, processes } = await beginOperationControl(input);
     try {
       const owner = beginAdapterOperation(input.sessionId, adapter, control, processes);
@@ -666,7 +745,7 @@ export function rewindHarnessLastTurn(
   };
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   return queueSessionOperation(input.sessionId, async () => {
-    assertHarnessModel(input.harness, input.model);
+    assertHarnessModel(input.harness, input);
     if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
       throw new Error("Edit cancelled before it started");
     const adapter = requireHarness(input.harness);
@@ -675,7 +754,7 @@ export function rewindHarnessLastTurn(
     }
     cancelIdlePark(input.sessionId);
     assertAdapterOperationReady(input.sessionId);
-    await drainProviderRetirements({ ownerKey: input.sessionId });
+    await drainRetirementsBestEffort(input.sessionId);
     const { control, processes } = await beginOperationControl(input);
     try {
       const owner = beginAdapterOperation(input.sessionId, adapter, control, processes);
@@ -716,7 +795,7 @@ export function steerHarnessTurn(request: SteerTurnInput & { harness: HarnessId 
   const sourceOwner = adapterOperations.get(input.sessionId);
   const sourceAdapter = adapters.get(input.harness);
   return queueSteerOperation(input.sessionId, async () => {
-    assertHarnessModel(input.harness, input.model);
+    assertHarnessModel(input.harness, input);
     if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
       throw new Error("Follow-up cancelled because the turn was stopped");
     const adapter = requireHarness(input.harness);
@@ -757,7 +836,17 @@ export function steerHarnessTurn(request: SteerTurnInput & { harness: HarnessId 
     if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
       throw new Error("Follow-up cancelled because the turn was stopped");
     assertOriginal();
-    await adapter.steerTurn(prepared);
+    try {
+      await adapter.steerTurn(prepared);
+    } catch (error) {
+      // These adapter guards run before any provider write. Do not classify
+      // transport errors or unknown acknowledgements as safe to replay.
+      if (error instanceof Error && (
+        error.message === "The previous turn has finished. Send this follow-up as a new message." ||
+        /^No active (Codex|Cursor|Hermes Agent) session$/.test(error.message)
+      )) throw new TurnNotReadyError(error.message);
+      throw error;
+    }
   });
 }
 
@@ -768,13 +857,18 @@ export async function cancelHarnessTurn(harness: HarnessId, sessionId: string): 
   cancelIdlePark(sessionId);
   if (!owner.entered) return;
   const originalContext = operationContext(owner);
-  const cancellation = (owner.cancellation ??= Promise.resolve().then(() =>
-    owner.adapter.cancelTurn(sessionId, originalContext),
-  ));
-  // A by-name retry cannot establish that it still addresses the original
-  // provider transport. Keep its actual result until exact retirement is known.
+  // A failed cancellation is warned about and not cached, so Stop can retry.
+  const cancellation: Promise<void> = (owner.cancellation ??= Promise.resolve()
+    .then(() => owner.adapter.cancelTurn(sessionId, originalContext))
+    .catch((error: unknown) => {
+      warnCleanup("turn cancellation", error);
+      if (owner.cancellation === cancellation) owner.cancellation = undefined;
+    }));
   await cancellation;
-  if (!adapterOperations.has(sessionId) || adapterOperations.get(sessionId) === owner) {
+  if (
+    owner.cancellation === cancellation &&
+    (!adapterOperations.has(sessionId) || adapterOperations.get(sessionId) === owner)
+  ) {
     scheduleIdlePark(harness, sessionId);
   }
 }
@@ -833,40 +927,51 @@ export async function stopHarnessSession(harness: HarnessId, sessionId: string):
   const owner = adapterOperations.get(sessionId);
   const adapter = owner?.adapter.id === harness ? owner.adapter : getHarness(harness);
   if (!adapter?.live) return;
-  const context = owner?.adapter === adapter ? operationContext(owner) : undefined;
-  if (context) await adapter.stopSession(sessionId, context);
-  else await adapter.stopSession(sessionId);
-  if (retainedWriters.get(sessionId) === harness) retainedWriters.delete(sessionId);
+  // Only a running operation's context is valid; otherwise stop by session.
+  const context =
+    owner?.adapter === adapter && activeTurnSessions.has(sessionId)
+      ? operationContext(owner)
+      : undefined;
+  try {
+    if (context) await adapter.stopSession(sessionId, context);
+    else await adapter.stopSession(sessionId);
+    await retireProviderOwner(sessionId);
+    if (retainedWriters.get(sessionId) === harness) retainedWriters.delete(sessionId);
+  } catch (error) {
+    warnCleanup("stop session", error);
+    throw error;
+  }
 }
 
-/** Writers held between lightweight turns, reported to the execution Host. */
+/** Writers held between turns, reported to the execution Host. */
 export function retainedHarnessWriters(): string[] {
   return [...retainedWriters.keys()];
 }
 
-/** Explicit Host ownership transfer; ordinary local turns never call this. */
+/** Explicit Host ownership transfer; ordinary local turns never call this.
+ * Clear the writer only after both provider stop and native retirement succeed. */
 export function retireHarnessWriter(sessionId: string): Promise<void> {
-  const originalHarness = retainedWriters.get(sessionId);
-  const originalProcess = captureChildProcess(sessionId);
-  // Keep an attempted transfer's original writer; a timer is not cohort retirement.
-  if (originalHarness) cancelIdlePark(sessionId);
   return queueSessionOperation(sessionId, async () => {
     if (activeTurnSessions.has(sessionId) || adapterOperations.has(sessionId))
       throw new Error("The desktop session is still running. Retry after it finishes.");
-    const currentProcess = captureChildProcess(sessionId);
-    if (
-      retainedWriters.get(sessionId) !== originalHarness ||
-      (currentProcess && currentProcess !== originalProcess)
-    )
-      throw new Error(
-        "This session's writer changed before transfer. Its current writer was retained.",
-      );
-    // A process handle does not close Native preparation, every logical alias,
-    // SSE and original managed-exit/Host-ack receipts. The session-only admin
-    // selector cannot prove this original cohort across queued IPC and awaits.
-    throw new Error(
-      "This session's complete execution cohort cannot be verified for transfer. Its original writer was retained.",
-    );
+    const harness = retainedWriters.get(sessionId);
+    if (!harness) return;
+    cancelIdlePark(sessionId);
+    try {
+      // Mute intentional exit events first; the native receipt survives kill.
+      await requireHarness(harness).stopSession(sessionId);
+    } catch (error) {
+      warnCleanup("writer stop", error);
+      throw error;
+    }
+    try {
+      await retireProviderOwner(sessionId);
+      await invoke("harness_retire", { sessionId });
+      retainedWriters.delete(sessionId);
+    } catch (error) {
+      warnCleanup("writer retire", error);
+      throw error;
+    }
   });
 }
 
@@ -876,10 +981,19 @@ export async function forgetHarnessSession(harness: HarnessId, sessionId: string
   const adapter = owner?.adapter.id === harness ? owner.adapter : getHarness(harness);
   forgetRuntimeHint(sessionId);
   if (!adapter) return;
-  const context = owner?.adapter === adapter ? operationContext(owner) : undefined;
-  if (context) await adapter.forgetSession(sessionId, context);
-  else await adapter.forgetSession(sessionId);
-  if (retainedWriters.get(sessionId) === harness) retainedWriters.delete(sessionId);
+  const context =
+    owner?.adapter === adapter && activeTurnSessions.has(sessionId)
+      ? operationContext(owner)
+      : undefined;
+  try {
+    if (context) await adapter.forgetSession(sessionId, context);
+    else await adapter.forgetSession(sessionId);
+    await retireProviderOwner(sessionId);
+    if (retainedWriters.get(sessionId) === harness) retainedWriters.delete(sessionId);
+  } catch (error) {
+    warnCleanup("forget session", error);
+    throw error;
+  }
 }
 
 export function bindHarnessSession(
@@ -975,8 +1089,22 @@ export async function generateHarnessBranchName(
     : adapter.generateBranchName(cwd, message);
 }
 
-export async function warmupHarnessText(harness: HarnessId, cwd: string): Promise<void> {
-  await getHarness(harness)?.warmupText?.(cwd);
+export type TextWarmupOptions = Pick<
+  TextPromptInput,
+  "providerAccountId" | "model" | "modelSettings"
+>;
+
+export async function warmupHarnessText(
+  harness: HarnessId,
+  cwd: string,
+  options?: TextWarmupOptions,
+): Promise<void> {
+  const adapter = getHarness(harness);
+  if (!adapter?.warmupText) return;
+  if (!options) return adapter.warmupText(cwd);
+  const input = { ...options };
+  assertHarnessModel(harness, input);
+  await adapter.warmupText(cwd, input);
 }
 
 export function canRunHarnessTextPrompt(harness: HarnessId): boolean {
@@ -1013,9 +1141,10 @@ function cancelledTextPrompt(): Error {
 }
 
 export async function runHarnessTextPrompt(
-  input: TextPromptInput & { harness: HarnessId },
+  request: TextPromptInput & { harness: HarnessId },
 ): Promise<string> {
-  assertHarnessModel(input.harness, input.model);
+  const input = { ...request };
+  assertHarnessModel(input.harness, input);
   const adapter = requireHarness(input.harness);
   if (!adapter.live) {
     throw new Error(`${input.harness} is not connected yet`);

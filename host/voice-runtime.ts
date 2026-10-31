@@ -2,19 +2,31 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readdir } from "node:fs/promises";
+import { detectNvidiaGpu } from "./voice-gpu";
 
 export type VoiceRuntimeConfig = {
   python?: string;
   whisperPath?: string;
   ttsPath?: string;
   natural?: boolean;
+  /** Natural voice model. Omitted means Supertonic 3: fast, CPU, 31 languages.
+   * VoxCPM2 sounds richer but needs a GPU to keep up and ~6 GB of its memory. */
+  engine?: VoiceEngine;
+  /** Where speech models run. Omitted means automatic: GPU when usable. */
+  device?: VoiceDevice;
 };
+export type VoiceDevice = "auto" | "gpu" | "cpu";
+export type VoiceEngine = "supertonic" | "voxcpm2";
 export type VoiceRuntimeStatus = {
   python?: string;
   whisperPath?: string;
   ttsPath?: string;
   missing: string[];
   ready: boolean;
+  /** Detected NVIDIA GPU name, when one is present. */
+  gpu?: string;
+  /** Whether the natural voice runtime has CUDA support installed. */
+  accelerated?: boolean;
 };
 export function voiceRuntimeConfig(value: unknown): VoiceRuntimeConfig {
   if (value === undefined) return {};
@@ -37,6 +49,15 @@ export function voiceRuntimeConfig(value: unknown): VoiceRuntimeConfig {
     if (typeof input.natural !== "boolean") throw new Error("Invalid voice engine.");
     result.natural = input.natural;
   }
+  if (input.engine !== undefined && input.engine !== "supertonic") {
+    if (input.engine !== "voxcpm2") throw new Error("Invalid voice engine.");
+    result.engine = input.engine;
+  }
+  if (input.device !== undefined && input.device !== "auto") {
+    if (input.device !== "gpu" && input.device !== "cpu")
+      throw new Error("Invalid voice processing device.");
+    result.device = input.device;
+  }
   return result;
 }
 
@@ -56,9 +77,12 @@ def model_path(path, repo, required):
     owned = os.path.join(os.path.expanduser('~'), '.bycoda', 'voice', 'models', 'voxcpm2' if repo == 'openbmb/VoxCPM2' else 'whisper-small')
     if all(os.path.isfile(os.path.join(owned, f)) for f in required): return owned
     try:
-        from huggingface_hub import snapshot_download
-        p = snapshot_download(repo, local_files_only=True)
-        return p if all(os.path.isfile(os.path.join(p, f)) for f in required) else None
+        # Newer huggingface_hub rejects offline snapshots that lack optional
+        # files, so look up the required files themselves.
+        from huggingface_hub import try_to_load_from_cache
+        found = try_to_load_from_cache(repo, required[0])
+        p = os.path.dirname(found) if isinstance(found, str) else None
+        return p if p and all(os.path.isfile(os.path.join(p, f)) for f in required) else None
     except Exception: return None
 if not available('faster_whisper'): missing.append('faster-whisper')
 w = None
@@ -66,12 +90,31 @@ for size in ['small', 'base', 'tiny']:
     w = model_path(c.get('whisperPath'), 'Systran/faster-whisper-' + size, ['model.bin', 'config.json', 'tokenizer.json'])
     if w: break
 if not w: missing.append('Whisper model')
+def torch_cuda():
+    # Inspect the installed wheel without importing torch, which takes seconds.
+    try:
+        spec = importlib.util.find_spec('torch')
+        if not spec or not spec.submodule_search_locations: return False
+        lib = os.path.join(list(spec.submodule_search_locations)[0], 'lib')
+        return any('c10_cuda' in f for f in os.listdir(lib))
+    except Exception: return False
 t = None
-if c.get('natural', True):
+accelerated = None
+def supertonic_path():
+    required = ['onnx/tts.json', 'onnx/text_encoder.onnx', 'onnx/duration_predictor.onnx', 'onnx/vector_estimator.onnx', 'onnx/vocoder.onnx', 'voice_styles/M1.json']
+    for folder in [os.path.join(os.path.expanduser('~'), '.bycoda', 'voice', 'models', 'supertonic3'), os.path.join(os.path.expanduser('~'), '.cache', 'supertonic3')]:
+        if all(os.path.isfile(os.path.join(folder, f)) for f in required): return folder
+    return None
+if c.get('natural', True) and c.get('engine') == 'voxcpm2':
     t = model_path(c.get('ttsPath'), 'openbmb/VoxCPM2', ['config.json', 'model.safetensors', 'audiovae.pth'])
     if not available('voxcpm'): missing.append('voxcpm')
     if not t: missing.append('VoxCPM2 model')
-print(json.dumps({**({'python': sys.executable} if (3, 10) <= sys.version_info[:2] < (3, 13) else {}), 'whisperPath': w, 'ttsPath': t, 'missing': missing, 'ready': not missing}))
+    accelerated = torch_cuda()
+    if c.get('device') == 'gpu' and available('voxcpm') and not accelerated: missing.append('GPU support (CUDA)')
+elif c.get('natural', True):
+    if not available('supertonic'): missing.append('supertonic')
+    if not supertonic_path(): missing.append('Supertonic model')
+print(json.dumps({**({'python': sys.executable} if (3, 10) <= sys.version_info[:2] < (3, 13) else {}), 'whisperPath': w, 'ttsPath': t, **({} if accelerated is None else {'accelerated': accelerated}), 'missing': missing, 'ready': not missing}))
 `;
 
 function inspect(
@@ -182,6 +225,7 @@ export async function inspectVoiceRuntime(value?: unknown): Promise<VoiceRuntime
     for (const version of ["3.12", "3.11", "3.10"])
       probes.push({ python: "py", args: [`-${version}`] });
   let best: VoiceRuntimeStatus | undefined;
+  const gpu = config.device === "cpu" ? undefined : detectNvidiaGpu().catch(() => undefined);
   const controller = new AbortController();
   // A per-interpreter timeout must not multiply into minutes of settings UI
   // waiting. Bound the entire scan and stop outstanding probes once ready.
@@ -210,15 +254,20 @@ export async function inspectVoiceRuntime(value?: unknown): Promise<VoiceRuntime
     clearTimeout(timer);
     controller.abort();
   }
-  return (
-    best ?? {
-      missing: [
-        "Python 3.10–3.12",
-        "faster-whisper",
-        "Whisper model",
-        ...(config.natural === false ? [] : ["voxcpm", "VoxCPM2 model"]),
-      ],
-      ready: false,
-    }
-  );
+  const status: VoiceRuntimeStatus = best ?? {
+    missing: [
+      "Python 3.10–3.12",
+      "faster-whisper",
+      "Whisper model",
+      ...(config.natural === false ? [] : ["voxcpm", "VoxCPM2 model"]),
+    ],
+    ready: false,
+  };
+  const found = await gpu;
+  if (found) status.gpu = found.name;
+  else if (config.device === "gpu") {
+    status.missing = [...status.missing, "NVIDIA GPU"];
+    status.ready = false;
+  }
+  return status;
 }

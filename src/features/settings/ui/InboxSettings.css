@@ -5,7 +5,8 @@
 
 .inbox-provider-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   gap: 4px;
   margin-block-end: 20px;
 }
@@ -31,13 +32,20 @@
   gap: 8px;
 }
 
-/* A checklist row: the whole row toggles, title and key stay on two quiet lines. */
+/* Compact scope rows retain the full searchable title and key. */
 .inbox-scope-row {
   cursor: pointer;
 }
-.inbox-scope-row .settings-collection-main > span {
-  display: block;
-}
+.inbox-scope-row .settings-collection-main { display: flex; align-items: baseline; gap: 8px; min-inline-size: 0; }
+.inbox-scope-row .settings-collection-title { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-scope-row .settings-collection-meta { flex: none; color: var(--ui-text-muted); }
+.inbox-settings .settings-collection-list { max-block-size: 18rem; overflow-y: auto; }
+.inbox-settings .settings-collection-row { padding-block: 6px; }
+.inbox-settings .settings-collection-toolbar { gap: 6px; }
+.inbox-provider-tabs > * { flex-shrink: 0; }
+.inbox-account-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.inbox-account-summary > :first-child { flex: 1 1 12rem; }
+.inbox-account-fields[data-state="summary"] > span:first-child { flex: 1 1 12rem; max-inline-size: none; }
 
 /*
  * Credential entry is an editing unit: it gets a quiet box and the full row width.
@@ -62,3 +70,5 @@
   align-items: center;
   justify-content: flex-start;
 }
+
+.inbox-connection-status { inline-size: 16ch; justify-content: center; }

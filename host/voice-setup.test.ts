@@ -11,10 +11,11 @@ afterEach(() => spawn.mockReset());
 
 const home = join("test-home", "owner");
 const python = join(home, ".bycoda", "voice", "Scripts/python.exe");
-function fixture(natural = true) {
+function fixture(natural = true, gpuValue?: { name: string; cuda?: string }) {
+  let venv = false;
   const inspect = vi.fn(async (value?: unknown) => {
     const config = value as VoiceRuntimeConfig;
-    if (config.python === python && !config.whisperPath)
+    if (config.python === python && !config.whisperPath && !venv)
       return { missing: ["Python 3.10–3.12"], ready: false };
     return {
       python: config.python ?? "supported-python",
@@ -22,9 +23,13 @@ function fixture(natural = true) {
       ...(natural ? { ttsPath: config.ttsPath } : {}),
       missing: config.whisperPath ? [] : ["Whisper model"],
       ready: Boolean(config.whisperPath),
+      ...(natural ? { accelerated: false } : {}),
     };
   });
   const run = vi.fn(async (_program: string, args: string[], _signal: AbortSignal) => {
+    if (args.includes("venv")) venv = true;
+    if (args.includes("index"))
+      return "torch (2.14.1+cu130)\nAvailable versions: 2.14.1+cu130, 2.14.0+cu130";
     if (args[0] !== "-c") return "";
     const config = JSON.parse(args[2]);
     return JSON.stringify({
@@ -35,6 +40,7 @@ function fixture(natural = true) {
   });
   const mkdir = vi.fn(async () => {});
   const preparePython = vi.fn(async () => "downloaded-python");
+  const gpu = vi.fn(async () => gpuValue);
   const service = new VoiceSetupService({
     inspect,
     run,
@@ -42,8 +48,9 @@ function fixture(natural = true) {
     home,
     platform: "win32",
     preparePython,
+    gpu,
   });
-  return { service, inspect, run, mkdir, preparePython };
+  return { service, inspect, run, mkdir, preparePython, gpu };
 }
 
 it("does no work until explicitly started and deduplicates concurrent install requests", async () => {
@@ -215,4 +222,69 @@ it.each([
   expect(service.status().detail).toContain(expected);
   expect(service.status().detail).not.toMatch(/private-secret|registry\.invalid|hidden/);
   expect(spawn.mock.calls[0][2].env.HF_HUB_DISABLE_XET).toBe("1");
+});
+
+const rtx = { name: "NVIDIA GeForce RTX 4070", cuda: "13.0" };
+const torchInstalls = (run: ReturnType<typeof fixture>["run"]) =>
+  run.mock.calls.filter(([, args]) => args.some((arg) => arg.startsWith("torch==")));
+
+it("installs the pinned CUDA PyTorch build when automatic processing finds an NVIDIA GPU", async () => {
+  const { service, run } = fixture(true, rtx);
+  service.start({ natural: true, engine: "voxcpm2" });
+  await vi.waitFor(() => expect(service.status().state).toBe("ready"));
+  const [install] = torchInstalls(run);
+  expect(install[0]).toBe(python);
+  expect(install[1]).toEqual(
+    expect.arrayContaining([
+      "--index-url",
+      "https://download.pytorch.org/whl/cu130",
+      "torch==2.14.1+cu130",
+    ]),
+  );
+  // Faster, more accurate recognition is downloaded only with GPU support.
+  const download = run.mock.calls.find(([, args]) => args[0] === "-c")!;
+  expect(download[1].at(-1)).toBe(
+    join(home, ".bycoda", "voice", "models", "whisper-large-v3-turbo"),
+  );
+});
+
+it("finishes automatic setup on the CPU when GPU support cannot be installed", async () => {
+  const { service, run } = fixture(true, rtx);
+  const base = run.getMockImplementation()!;
+  run.mockImplementation(async (program, args, signal) => {
+    if (args.some((arg) => arg.startsWith("torch=="))) throw new Error("network");
+    return base(program, args, signal);
+  });
+  service.start({ natural: true, engine: "voxcpm2" });
+  await vi.waitFor(() => expect(service.status().state).toBe("ready"));
+  expect(torchInstalls(run).length).toBeGreaterThan(0);
+});
+
+it("fails an explicit GPU setup without an NVIDIA GPU and never touches GPU packages for CPU", async () => {
+  const gpuSetup = fixture(true);
+  gpuSetup.service.start({ natural: true, device: "gpu" });
+  await vi.waitFor(() => expect(gpuSetup.service.status().state).toBe("error"));
+  expect(gpuSetup.service.status().detail).toContain("No NVIDIA GPU");
+
+  const cpuSetup = fixture(true, rtx);
+  cpuSetup.service.start({ natural: true, device: "cpu" });
+  await vi.waitFor(() => expect(cpuSetup.service.status().state).toBe("ready"));
+  expect(cpuSetup.gpu).not.toHaveBeenCalled();
+  expect(torchInstalls(cpuSetup.run)).toHaveLength(0);
+  const download = cpuSetup.run.mock.calls.find(([, args]) => args[0] === "-c")!;
+  expect(download[1].slice(2).join(" ")).not.toContain("large-v3-turbo");
+});
+
+it("installs Supertonic by default without PyTorch and still adds GPU recognition", async () => {
+  const { service, run } = fixture(true, rtx);
+  service.start({ natural: true });
+  await vi.waitFor(() => expect(service.status().state).toBe("ready"));
+  const pip = run.mock.calls.find(([, args]) => args.includes("pip"))!;
+  expect(pip[1]).toContain("supertonic==1.3.1");
+  expect(pip[1]).not.toContain("voxcpm");
+  expect(torchInstalls(run)).toHaveLength(0);
+  const download = run.mock.calls.find(([, args]) => args[0] === "-c")!;
+  expect(download[1].at(-1)).toBe(
+    join(home, ".bycoda", "voice", "models", "whisper-large-v3-turbo"),
+  );
 });

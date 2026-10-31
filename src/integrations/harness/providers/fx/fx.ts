@@ -205,6 +205,7 @@ export async function cancelFxTurn(
 
   const live = liveByThread.get(sessionId);
   const preparing = startingByThread.get(sessionId);
+  // A captured cancellation must not affect a newer operation.
   if (
     !ownsOperation(
       context,
@@ -214,7 +215,10 @@ export async function cancelFxTurn(
   )
     return;
   sourceEpochByThread.set(sessionId, {});
-  if (!live) return;
+  if (!live) {
+    if (preparing) await stopFxSession(sessionId, context ?? preparing.handle);
+    return;
+  }
   const acp = context
     ? await acpTurnWriter(live.handle, live.acp, context.nativeControlTurn, context, "control")
     : live.acp;
@@ -262,12 +266,14 @@ export async function forgetFxSession(
   sessionId: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
-
-  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
-  if (original && !ownsOperation(context, original.handle, original.operation)) return;
+  // Delete/switch must end the process: a context that no longer owns it falls
+  // back to a by-session stop instead of returning with the process alive.
   resumeByThread.delete(sessionId);
-  await stopFxSession(sessionId, context);
+  const queuedOnly = cancelQueuedOperation(context);
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  const owned =
+    !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  await stopFxSession(sessionId, owned ? context : undefined);
 }
 
 export function bindFxSession(threadId: string, acpSessionId: string, cwd: string): void {
@@ -414,6 +420,10 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
           );
           acpSessionId = sessionIdFromResult(setup) ?? resume.acpSessionId;
           didLoad = true;
+        } catch (error) {
+          if (!(error instanceof JsonRpcResponseError)) throw error;
+          resumeByThread.delete(input.sessionId);
+          input.onEvent({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
         } finally {
           muteGate.current = false;
         }

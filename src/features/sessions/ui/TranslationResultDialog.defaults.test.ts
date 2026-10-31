@@ -112,7 +112,7 @@ it("saves and resets reprompt settings without changing translation settings", a
   });
   expect(loadDefaultTranslationChoice()).toEqual(choice);
   const reset = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Restore defaults",
+    (button) => button.getAttribute("aria-label") === "Restore default",
   )!;
   await act(async () => reset.click());
   expect(loadDefaultRepromptChoice()).toBeUndefined();
@@ -163,7 +163,7 @@ it("saves the settings picker selection and resets it to the conversation model"
     providerAccountId: "temporary",
   });
   const reset = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Restore defaults",
+    (button) => button.getAttribute("aria-label") === "Restore default",
   )!;
   await act(async () => reset.click());
   expect(loadDefaultTranslationChoice()).toBeUndefined();

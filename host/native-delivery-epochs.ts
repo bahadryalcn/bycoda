@@ -494,7 +494,7 @@ export function createNativeDeliveryEpochs(store: HostStore) {
         );
       if (Number(deleted.changes) !== rows.length) throw failure("CAS");
       return status(principal, input);
-    });
+    }, "critical");
   }
   return {
     status,
@@ -572,7 +572,7 @@ export function createNativeDeliveryEpochs(store: HostStore) {
           .prepare(`INSERT INTO native_delivery_epochs(${columns}) VALUES (?,?,?,?,?,0,0,0)`)
           .run(store.environmentId, principal, ownerId, next, openId);
         return status(principal, { ownerId, generation: next });
-      });
+      }, "critical");
     },
     compact: (
       principal: string,

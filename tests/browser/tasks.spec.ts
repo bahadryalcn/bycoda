@@ -275,7 +275,8 @@ for (const { width, theme } of [
     await fillTask(form);
     const objective = "Keep this exact user objective while reusing the workflow.";
     await form.getByRole("textbox", { name: "Description", exact: true }).fill(objective);
-    const summary = form.locator("summary").filter({ hasText: /^Workflow and preparation$/ });
+    await openAdvanced(form);
+    const summary = form.locator("summary").filter({ hasText: /^Workflow$/ });
     await summary.focus();
     await page.keyboard.press("Enter");
     await choose(page, form.getByRole("button", { name: /^Workflow:/ }), "Source research");
@@ -316,6 +317,7 @@ for (const { width, theme } of [
     await form.getByRole("button", { name: "Check preparation", exact: true }).click();
     await expect(form).toContainText("Checked by the in-memory fixture");
     expect(await mutations(page)).toHaveLength(0);
+    await form.locator("summary").filter({ hasText: /^Save or refresh workflows$/ }).click();
     await form.getByRole("textbox", { name: "Workflow name", exact: true }).fill("My checked flow");
     await form.getByRole("button", { name: "Save workflow", exact: true }).click();
     await expect(form).toContainText("Workflow saved for this project.");
@@ -357,9 +359,10 @@ for (const { width, theme } of [
     await openTasks(page, page.url());
     await openCreate(page, "task");
     const reopened = page.getByRole("form", { name: "New task", exact: true });
+    await openAdvanced(reopened);
     await reopened
       .locator("summary")
-      .filter({ hasText: /^Workflow and preparation$/ })
+      .filter({ hasText: /^Workflow$/ })
       .click();
     await choose(page, reopened.getByRole("button", { name: /^Workflow:/ }), "My checked flow");
     await reopened.getByRole("button", { name: "Apply workflow", exact: true }).click();
@@ -763,8 +766,10 @@ test("execution mode is selectable in task and goal dialogs", async ({ page }, t
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const kind of ["task", "goal"] as const) {
     const form = await start(page, kind);
-    if (kind === "task")
+    if (kind === "task") {
+      await openAdvanced(form);
       await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
+    }
     const mode = form.getByRole("button", { name: /^Execution mode:/ });
     await expect(mode).toHaveAccessibleName("Execution mode: Automatic");
     await choose(page, mode, "Separate worktree");
@@ -931,6 +936,12 @@ type OpenedSession = {
 };
 const machine = (form: Locator) => form.getByRole("button", { name: /^Machine:/ });
 const project = (form: Locator) => form.getByRole("button", { name: /^Project:/ });
+/** Advanced starts closed: check command, working branch, workflow and budget live inside it. */
+async function openAdvanced(form: Locator) {
+  const advanced = form.locator("details.task-form-advanced");
+  if (!(await advanced.evaluate((node) => (node as HTMLDetailsElement).open)))
+    await advanced.locator(":scope > summary").click();
+}
 async function choose(page: Page, trigger: Locator, name: string) {
   await trigger.click();
   await page.getByRole("option", { name, exact: true }).click();
@@ -1446,6 +1457,7 @@ test("compact task form keeps advanced choices and long instructions manageable"
   await page.setViewportSize({ width: 390, height: 800 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   const form = await start(page, "task");
+  await expect(form.locator("details.task-form-advanced")).not.toHaveAttribute("open", "");
   const advanced = form.locator("details.task-advanced-options");
   await expect(advanced).not.toHaveAttribute("open", "");
   await expect(form.getByRole("button", { name: "Agent settings", exact: true })).toHaveAttribute(
@@ -1469,6 +1481,7 @@ test("compact task form keeps advanced choices and long instructions manageable"
     path: resolve("temp/verification/2026-10-18-tasks-redesign/form-390-dark.png"),
     animations: "disabled",
   });
+  await openAdvanced(form);
   await advanced.locator("summary").click();
   await expect(form.getByRole("button", { name: /^Execution mode:/ })).toBeVisible();
   await choose(page, form.getByRole("button", { name: /^Base branch:/ }), "main");
@@ -1489,8 +1502,10 @@ for (const width of [1280, 800]) {
           (light) => document.documentElement.classList.toggle("theme-light", light),
           theme === "light",
         );
-        if (kind === "task")
+        if (kind === "task") {
+          await openAdvanced(form);
           await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
+        }
         const mode = form.getByRole("button", { name: "Execution mode: Automatic", exact: true });
         await expect(mode).toBeVisible();
         await mode.scrollIntoViewIfNeeded();

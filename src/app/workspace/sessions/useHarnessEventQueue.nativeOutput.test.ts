@@ -8,7 +8,7 @@ import type { Session } from "../../../features/sessions/model/session";
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (value: { payload: any }) => void>(),
-  invoke: vi.fn(async () => 42),
+  invoke: vi.fn<(command: string) => Promise<unknown>>(async () => undefined),
 }));
 vi.mock("@tauri-apps/api/core", async () => ({
   ...(await vi.importActual<object>("@tauri-apps/api/core")),
@@ -65,6 +65,12 @@ async function fixture(includeSession = true) {
   root = createRoot(container);
   await act(() => root!.render(createElement(Probe)));
   release = await child.acquireHarnessBridge();
+  const handle = child.createChildProcessHandle("session");
+  const constructionId = "00000000-0000-4000-8000-000000000042";
+  mocks.invoke.mockImplementation(async (command: string) => command === "harness_spawn"
+    ? { version: 1, backend: "native", sessionId: "session", pid: 42, constructionId }
+    : undefined);
+  await child.spawnChild(handle, "fixture-agent", [], "/fixture");
   const vector = vectors.cases[0];
   const metadata = {
     version: 1,
@@ -89,15 +95,15 @@ async function fixture(includeSession = true) {
   };
   const emit = (items = vector.items, output = metadata) =>
     mocks.handlers.get("harness-stdout-lines")!({
-      payload: { sessionId: "session", lines: items, nativeOutput: output },
+      payload: { sessionId: "session", constructionId, lines: items, nativeOutput: output },
     });
-  return { child, audit, store, queue, emit, metadata, vector };
+  return { child, handle, constructionId, audit, store, queue, emit, metadata, vector };
 }
 
 it("carries original native batch lineage through the real child listener, deferred queue and actual session reducer", async () => {
   const f = await fixture();
   f.child.watchChild(
-    "session",
+    f.handle,
     (text) => f.queue.enqueueHarnessEvent("session", { type: "message.delta", text }),
     () => {},
   );
@@ -121,11 +127,10 @@ it("carries original native batch lineage through the real child listener, defer
 
 it("preserves original batch identity when owned output waits for a watcher", async () => {
   const f = await fixture();
-  await f.child.spawnChild("session", "fixture-agent", [], "/fixture");
   f.emit();
   expect(f.audit.inspectNativeOutputDelivery("session").streams[0].queuedEvents).toBe(0);
   f.child.watchChild(
-    "session",
+    f.handle,
     (text) => f.queue.enqueueHarnessEvent("session", { type: "message.delta", text }),
     () => {},
   );
@@ -144,7 +149,7 @@ it("marks a real missing session application unavailable while preserving handle
   const f = await fixture(false);
   const received: string[] = [];
   f.child.watchChild(
-    "session",
+    f.handle,
     (text) => {
       received.push(text);
       f.queue.enqueueHarnessEvent("session", { type: "message.delta", text });
@@ -163,7 +168,6 @@ it("marks a real missing session application unavailable while preserving handle
 
 it("retains legacy bounded-buffer behavior while exposing an actual native item loss", async () => {
   const f = await fixture();
-  await f.child.spawnChild("session", "fixture-agent", [], "/fixture");
   const items = Array.from({ length: 1001 }, (_, index) => `line-${index}`);
   const framed = f.audit.frameNativeOutputItems("stdout", items);
   f.emit(items, {
@@ -174,7 +178,7 @@ it("retains legacy bounded-buffer behavior while exposing an actual native item 
   });
   const received: string[] = [];
   f.child.watchChild(
-    "session",
+    f.handle,
     (text) => received.push(text),
     () => {},
   );
@@ -188,8 +192,7 @@ it("retains legacy bounded-buffer behavior while exposing an actual native item 
 it("accepts the separate post-reader state event without emitting a second legacy exit", async () => {
   const f = await fixture();
   const exit = vi.fn();
-  f.child.watchChild("session", () => {}, exit);
-  await f.child.spawnChild("session", "fixture-agent", [], "/fixture");
+  f.child.watchChild(f.handle, () => {}, exit);
   f.emit();
   const fields = [
     "version",
@@ -211,7 +214,7 @@ it("accepts the separate post-reader state event without emitting a second legac
     reason: null,
   };
   mocks.handlers.get("harness-exit")!({
-    payload: { sessionId: "session", code: 0, pid: 42, nativeOutputState: state },
+    payload: { sessionId: "session", constructionId: f.constructionId, code: 0, pid: 42, nativeOutputState: state },
   });
   expect(exit).toHaveBeenCalledExactlyOnceWith(0);
   expect(f.audit.inspectNativeOutputDelivery("session").streams[0].nativeState).toBe("unsealed");
@@ -227,7 +230,6 @@ it("accepts the separate post-reader state event without emitting a second legac
 
 it("marks already-terminal buffered output unavailable before an ordinary global reset drops it", async () => {
   const f = await fixture();
-  await f.child.spawnChild("session", "fixture-agent", [], "/fixture");
   f.emit();
   await vi.waitFor(() =>
     expect(f.audit.inspectNativeOutputDelivery("session").streams[0].receivedThrough).toBe(1),
@@ -264,9 +266,10 @@ it("marks already-terminal buffered output unavailable before an ordinary global
     unavailableReason: null,
   });
   await f.child.killAllChildren();
+  f.handle = f.child.createChildProcessHandle("session");
   const received: string[] = [];
   f.child.watchChild(
-    "session",
+    f.handle,
     (text) => received.push(text),
     () => {},
   );

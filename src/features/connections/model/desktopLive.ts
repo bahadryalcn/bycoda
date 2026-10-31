@@ -181,8 +181,15 @@ function jsonSafe<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+// Per Session object (immutable between updates); re-scanned when `blocks` changes.
+const undecidedBySession = new WeakMap<Session, { blocks: Session["blocks"]; found: Block[] }>();
 function undecidedApprovals(session: Session): Block[] {
-  return session.blocks.filter((block) => block.approval && !block.approval.decided);
+  const blocks = session.blocks;
+  const cached = undecidedBySession.get(session);
+  if (cached && cached.blocks === blocks) return cached.found;
+  const found = blocks.filter((block) => block.approval && !block.approval.decided);
+  undecidedBySession.set(session, { blocks, found });
+  return found;
 }
 
 type DesktopApprovalSource = {

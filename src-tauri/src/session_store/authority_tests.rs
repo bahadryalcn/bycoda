@@ -248,7 +248,7 @@ fn execution_release_restore_failure_keeps_native_operation_after_sql_delete_com
     let (store, barrier, _) = execution_store();
     let mut lease = store
         .authority_execution_gate()
-        .reserve("A", "provider", None)
+        .reserve("A", "provider-events", None)
         .unwrap();
     lease.begin_external().unwrap();
     let conn = store.lock_conn().unwrap();
@@ -1388,6 +1388,7 @@ fn projection_failure_never_commits_an_old_binary_write_bypass() {
     store.lock_conn().unwrap().execute_batch("CREATE TEMP TRIGGER fail_projection BEFORE INSERT ON session_blocks BEGIN SELECT RAISE(ABORT,'fault after permit insertion'); END").unwrap();
     let mut update = session("native");
     update.title = "must roll back".into();
+    update.blocks = json!([{"id":"changed","role":"assistant","text":"must roll back"}]);
     assert!(store.authority_apply_projection(&proof, &update).is_err());
     let conn = store.lock_conn().unwrap();
     assert_eq!(

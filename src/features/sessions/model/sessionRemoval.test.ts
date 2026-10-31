@@ -7,6 +7,7 @@ import {
   newTerminalFile,
   openTerminalTab,
 } from "../../workspace/model/layout";
+import { appendPreparingHandoff, isPreparingHandoff } from "./handoff";
 import { newSession, type Session } from "./session";
 import type { SessionWorkspaceRemoval } from "./sessionWorkspaceLifecycle";
 import { createSessionRemover } from "./sessionRemoval";
@@ -44,6 +45,8 @@ function fixture(mode: "archive" | "delete") {
   const confirmClose = vi.fn(async () => true);
   const stop = vi.fn(async () => {});
   const progress = vi.fn();
+  const warn = vi.fn();
+  const stoppedSessions: Session[] = [];
   const commit = vi.fn((removal: SessionWorkspaceRemoval) => {
     state = { ...state, ...removal };
   });
@@ -62,6 +65,8 @@ function fixture(mode: "archive" | "delete") {
     confirmClose,
     stop,
     progress,
+    warn,
+    stoppedSessions,
     commit,
     run: () => {
       const remover = createSessionRemover({
@@ -75,6 +80,7 @@ function fixture(mode: "archive" | "delete") {
               commit(change.removal);
               return;
             }
+            stoppedSessions.push(change.session);
             state = {
               ...state,
               sessions: state.sessions.map((session) =>
@@ -86,6 +92,7 @@ function fixture(mode: "archive" | "delete") {
         confirm: confirmClose,
         stop,
         onProgress: progress,
+        onWarning: warn,
       });
       return remover.remove(closing.id);
     },
@@ -191,6 +198,23 @@ describe.each(["archive", "delete"] as const)("%s lifecycle", (mode) => {
     });
     expect(f.read().sessions[0].blocks[1].streaming).toBeFalsy();
     expect(f.read().tabs).toHaveLength(2);
+  });
+
+  it("still removes the session when stopping its turn fails", async () => {
+    const f = fixture(mode);
+    f.stop.mockRejectedValue(new Error("cancel failed"));
+    expect(await f.run()).toBe(true);
+    expect(f.commit).toHaveBeenCalledOnce();
+    expect(f.warn).toHaveBeenCalledWith(expect.stringContaining("cancel failed"));
+  });
+
+  it("cancels a handoff that is still preparing instead of completing it", async () => {
+    const f = fixture(mode);
+    const preparing = appendPreparingHandoff(f.closing, "cursor", "claude");
+    f.write({ ...f.read(), sessions: [preparing, f.other] });
+    expect(await f.run()).toBe(true);
+    expect(isPreparingHandoff(f.stoppedSessions[0])).toBe(false);
+    expect(f.stoppedSessions[0].blocks.at(-1)?.handoff?.status).toBe("cancelled");
   });
 
   it("does not stop or write anything if confirmation is declined", async () => {

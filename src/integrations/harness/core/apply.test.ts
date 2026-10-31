@@ -77,6 +77,23 @@ it.each(["pi", "antigravity"] as const)(
   },
 );
 
+it("applies configChanged settings but ignores only a foreign model", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const original = { ...newSession("codex", "/repo"), modelSettings: { effort: "low" } };
+  const result = applyHarnessEvent(original, {
+    type: "session.configChanged",
+    model: "claude:opus",
+    modelSettings: { effort: "high" },
+  });
+  expect(result.model).toBe(original.model);
+  expect(result.modelSettings).toEqual({ effort: "high" });
+  expect(
+    applyHarnessEvent(original, { type: "session.configChanged", model: "claude:opus" }),
+  ).toBe(original);
+  expect(warn).toHaveBeenCalled();
+  warn.mockRestore();
+});
+
 it("drops model-specific context capacity on provider model changes but retains usage", () => {
   const original = {
     ...newSession("pi", "/repo"),
@@ -264,6 +281,7 @@ describe("turn duration", () => {
   it("stamps how long the agent worked when the turn ends", () => {
     now = 1_000;
     let session = appendUser(newSession("cursor", "/tmp"), "hi");
+    session = applyHarnessEvent(session, { type: "turn.started" });
     expect(session.busy).toBe(true);
     expect(session.blocks[0]?.startedAt).toBe(1_000);
     expect(session.blocks[0]?.durationMs).toBeUndefined();
@@ -277,6 +295,7 @@ describe("turn duration", () => {
   it("does not overwrite a duration already recorded", () => {
     now = 1_000;
     let session = appendUser(newSession("cursor", "/tmp"), "hi");
+    session = applyHarnessEvent(session, { type: "turn.started" });
     now = 5_000;
     session = stopStreaming(session);
     now = 90_000;
@@ -287,6 +306,7 @@ describe("turn duration", () => {
   it("records duration when the turn errors", () => {
     now = 1_000;
     let session = appendUser(newSession("cursor", "/tmp"), "hi");
+    session = applyHarnessEvent(session, { type: "turn.started" });
     now = 8_000;
     session = applyHarnessEvent(session, {
       type: "session.error",
@@ -1468,7 +1488,7 @@ describe("clarifying questions", () => {
     expect(stopStreaming(session).submittedQuestions).toBeUndefined();
   });
 
-  it("retains an uncertain answer through provider failure and automatic retirement until explicit stop or a new turn", () => {
+  it("clears an uncertain answer card once the provider process is gone, keeping it only while the process lives", () => {
     let session = applyHarnessEvent(newSession("codex", "/repo"), {
       type: "question.asked",
       requestId: 3,
@@ -1485,18 +1505,24 @@ describe("clarifying questions", () => {
       requestId: 3,
       delivery: "unknown",
     });
-    session = applyHarnessEvent(session, {
-      type: "session.error",
-      message: "Provider disconnected",
-    });
-    expect(session.busy).toBe(false);
-    expect(session.pendingQuestion).toMatchObject({ requestId: 3, delivery: "unknown" });
+    // A cancelled resolution alone cannot prove the write never arrived.
     session = applyHarnessEvent(session, {
       type: "question.resolved",
       requestId: 3,
       decision: "cancelled",
     });
     expect(session.pendingQuestion?.delivery).toBe("unknown");
+    // The provider process ending (or failing) clears the unconfirmable card.
+    const ended = applyHarnessEvent(session, { type: "session.ended", code: 1 });
+    expect(ended.pendingQuestion).toBeUndefined();
+    expect(ended.submittedQuestions).toBeUndefined();
+    const failed = applyHarnessEvent(session, {
+      type: "session.error",
+      message: "Provider disconnected",
+    });
+    expect(failed.busy).toBe(false);
+    expect(failed.pendingQuestion).toBeUndefined();
+    expect(failed.submittedQuestions).toBeUndefined();
     expect(stopStreaming(session).pendingQuestion).toBeUndefined();
     const next = appendUser(session, "Continue after inspecting the provider");
     expect(next.pendingQuestion).toBeUndefined();

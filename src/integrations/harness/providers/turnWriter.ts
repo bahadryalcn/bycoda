@@ -5,7 +5,7 @@ import {
   writeChild,
   type ChildProcessHandle,
 } from "../core/child";
-import type { HarnessOperationContext, HarnessSessionInput } from "../core/types";
+import { TurnNotReadyError, type HarnessOperationContext, type HarnessSessionInput } from "../core/types";
 import type { ControlTurnHandle } from "../core/controlTurn";
 import type { HostRunHandle } from "../core/hostRun";
 import type { JsonRpcClient } from "../core/jsonRpc";
@@ -359,7 +359,7 @@ export function assertProviderOperation(context?: HarnessOperationContext): void
   if (context?.operation && cancelledOperations.has(context.operation))
     throw new Error("Provider operation cancelled");
   if (context?.operation && finishedOperations.has(context.operation))
-    throw new Error("Provider turn admission is closed");
+    throw new TurnNotReadyError("The previous turn has finished. Send this follow-up as a new message.");
 }
 function assertWriterOperation(
   context: HarnessOperationContext | undefined,
@@ -372,7 +372,7 @@ function assertWriterOperation(
       ? operationsByProcess.get(handle)?.records.get(context.operation)
       : undefined;
     if (context?.operation && (!record || record.phase === "closed" || record.phase === "queued"))
-      throw new Error("Provider turn admission is closed");
+      throw new TurnNotReadyError("The previous turn has finished. Send this follow-up as a new message.");
   }
   if (!ownsOperation(context, handle)) throw new Error("Provider operation replaced before write");
 }

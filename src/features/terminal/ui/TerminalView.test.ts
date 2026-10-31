@@ -339,7 +339,7 @@ it("opens opt-in integration through a new-tab callback without injecting into t
       ),
     );
     await act(async () =>
-      host.querySelector<HTMLButtonElement>('[aria-label="Terminal · More actions"]')!.click(),
+      host.querySelector<HTMLButtonElement>('[aria-label="Terminal pane actions"]')!.click(),
     );
     const button = Array.from(document.querySelectorAll("button")).find((element) =>
       element.textContent?.startsWith("Bash suggestions"),

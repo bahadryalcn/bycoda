@@ -408,45 +408,66 @@ html.theme-light .project-sigil {
   padding-inline: 6px;
   background: var(--bycoda-panel);
 }
+.bycoda-workspace-tabs {
+  container: workspace-tabs / inline-size;
+}
 .bycoda-workspace-tabs .workspace-tab {
   container: workspace-tab / inline-size;
 }
+/* The same icon at every width keeps the tabs recognisable; only what sits beside it steps
+   down: icon + label + churn + badge, then icon + label + badge, then icon + badge, then
+   icon + a presence dot. The label is dropped before it could need an ellipsis, and every
+   tab steps together (the steps follow the bar, not each tab). */
 .workspace-tab-icon {
-  display: none;
+  display: block;
   flex: none;
   inline-size: 1.25em;
   block-size: 1.25em;
 }
-/* Switch before labels and diff totals become unreadably truncated. */
-@container workspace-tab (inline-size < 64px) {
-  .workspace-tab-content {
-    display: none;
-  }
-  .workspace-tab-icon {
-    display: block;
-  }
-  [data-workspace-working-count] {
-    margin-inline-start: 0.25em;
-  }
+.workspace-tab-badge {
+  display: contents;
+}
+.workspace-tab-dot {
+  display: none;
+  flex: none;
+  inline-size: 0.4rem;
+  block-size: 0.4rem;
+  border-radius: 9999px;
+  background: var(--ui-text-secondary);
+}
+.workspace-tab-dot[data-tone="working"] {
+  background: var(--color-accent);
 }
 .workspace-tab-stats {
   display: none;
 }
-@container workspace-tab (inline-size < 88px) {
-  [data-workspace-tab-counted] .workspace-tab-content {
+/* Tabs with a count need room for icon + label + badge; plain tabs only icon + label. */
+@container workspace-tabs (inline-size < 236px) {
+  .workspace-tab-content {
     display: none;
   }
-  [data-workspace-tab-counted] .workspace-tab-icon {
-    display: block;
+}
+@container workspace-tabs (inline-size < 340px) {
+  .bycoda-workspace-tabs:has([data-workspace-tab-counted]) .workspace-tab-content {
+    display: none;
   }
 }
-@container workspace-tab (inline-size >= 140px) {
+/* Narrowest: the count becomes a dot that only says "there is something here". */
+@container workspace-tabs (inline-size < 190px) {
+  .workspace-tab-badge {
+    display: none;
+  }
+  .workspace-tab-dot {
+    display: inline-block;
+  }
+}
+/* The +/- churn only returns once the tab itself has room for it. */
+@container workspace-tab (inline-size >= 170px) {
   .workspace-tab-stats {
     display: inline-flex;
   }
 }
-/* Narrow tabs keep a compact changed-file count (not churn) so Changes never
-   disappears; the full +/- churn returns once the tab has room for it. */
+/* Churn without a file count (binary, mode-only) is a presence dot until the churn fits. */
 .workspace-tab-stats-compact {
   display: inline-flex;
   flex: none;
@@ -455,7 +476,7 @@ html.theme-light .project-sigil {
   font-variant-numeric: tabular-nums;
   color: var(--ui-text-secondary);
 }
-@container workspace-tab (inline-size >= 140px) {
+@container workspace-tab (inline-size >= 170px) {
   .workspace-tab-stats-compact {
     display: none;
   }

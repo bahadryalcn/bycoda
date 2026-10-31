@@ -498,8 +498,8 @@ describe("Settings skill preview", () => {
       "Tests",
       "Passed",
     ]);
-    await click("Source");
-    expect(panel.querySelector("pre")?.textContent).toBe(source);
+    await click("Edit");
+    expect(EditorView.findFromDOM(panel.querySelector<HTMLElement>(".cm-editor")!)?.state.doc.toString()).toBe(source);
     await click("Preview");
   });
 
@@ -584,8 +584,9 @@ describe("Settings skill preview", () => {
     expect(tab.defaultPrevented).toBe(false);
     await openPreview("Other guide");
     expect(document.activeElement).toBe(button("Other guide"));
-    await click("Source");
-    expect(document.querySelector<HTMLElement>('[aria-label="Markdown source"]')?.tabIndex).toBe(0);
+    await click("Edit");
+    // The editor is a contenteditable surface, so it is focusable and scrolls with the keyboard.
+    expect(document.querySelector<HTMLElement>(".cm-content")?.getAttribute("contenteditable")).toBe("true");
     await click("Preview");
   });
 
@@ -697,9 +698,9 @@ describe("Settings skill preview", () => {
     expect(invoke).toHaveBeenCalledWith("read_text_file", {
       path: skills[1].path,
     });
-    await click("Source");
-    expect(dialog.querySelector("pre")?.textContent).toBe(markdown);
-    expect(button("Source").getAttribute("aria-checked")).toBe("true");
+    await click("Edit");
+    expect(EditorView.findFromDOM(dialog.querySelector<HTMLElement>(".cm-editor")!)?.state.doc.toString()).toBe(markdown);
+    expect(button("Edit").getAttribute("aria-checked")).toBe("true");
     expect(loadDisabledSkillPaths()).toEqual([skills[1].path]);
     expect(
       container

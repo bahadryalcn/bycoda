@@ -74,3 +74,14 @@ it("holds negative zero instead of normalizing an opaque value to positive zero"
   expect(() => stringifyNativeCaptureJson({ value: -0 })).toThrow(NativeCaptureJsonError);
   expect(stringifyNativeCaptureJson({ value: 0 })).toBe('{"value":0}');
 });
+
+it("charges large plain-ASCII (base64) strings like the exact per-character count", () => {
+  const base64 = "QUJD".repeat(2_000);
+  const quoted = `a"b\c\n${"x".repeat(40)}`;
+  expect(stringifyNativeCaptureJson({ data: base64, quoted })).toBe(
+    JSON.stringify({ data: base64, quoted }),
+  );
+  expect(() => copyNativeCaptureData({ lone: `${"x".repeat(40)}\ud800` })).toThrow(
+    NativeCaptureJsonError,
+  );
+});

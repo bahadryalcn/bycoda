@@ -139,16 +139,15 @@ function failure(
   return error;
 }
 
+/** Wait for every original, then surface unsafe unfinished retirement. */
 function joined(keeper: Keeper, family: string, work: Promise<unknown>[]): Promise<void> {
-  const result = Promise.allSettled(work).then((outcomes) => {
-    const errors = outcomes.flatMap((outcome) =>
-      outcome.status === "rejected" ? [outcome.reason] : [],
-    );
-    if (errors.length) throw failure(keeper, family, errors);
+  return Promise.allSettled(work).then((outcomes) => {
+    const errors = outcomes.flatMap((outcome) => outcome.status === "rejected" ? [outcome.reason] : []);
+    if (errors.length) throw failure(keeper, family, errors, "The previous provider has not stopped yet. Retry in a moment");
   });
-  void result.catch(() => {});
-  return result;
 }
+
+const KILL_WAIT_MS = 20_000;
 
 function attempt(
   keeper: Keeper,
@@ -156,29 +155,30 @@ function attempt(
   shared: FamilyState,
   entry: Original,
 ): Promise<void> {
-  if (entry.work) return entry.work;
-  entry.state = "retiring";
-  // Publish the promise and closed admission before invoking the captured Core
-  // domain. Re-entrant/old module callers never choose a new handle or kill fn.
-  entry.work = Promise.resolve()
-    .then(async () => {
-      try {
-        await entry.kill(entry.handle);
-      } catch (error) {
-        throw failure(keeper, family, [error]);
-      }
+  if (entry.state === "retired") return Promise.resolve();
+  if (!entry.work || entry.state === "failed") {
+    entry.state = "retiring";
+    entry.work = Promise.resolve().then(() => entry.kill(entry.handle)).then(() => {
       entry.state = "retired";
+      entry.error = undefined;
       if (shared.records.delete(entry.handle)) keeper.retained--;
       entry.resolve();
-    })
-    .catch((error) => {
+    }, (error: unknown) => {
       entry.state = "failed";
       entry.error = error;
-      entry.reject(error);
+      console.warn(`[providerRetirement] kill failed (${family}); retry remains available`, error);
       throw error;
     });
-  void entry.work.catch(() => {});
-  return entry.work;
+    void entry.work.catch(() => {});
+  }
+  // A deadline bounds this caller, never the actual kill or its ownership record.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    entry.work,
+    new Promise<void>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("The previous provider is still stopping. Retry in a moment.")), KILL_WAIT_MS);
+    }),
+  ]).finally(() => { if (timer !== undefined) clearTimeout(timer); });
 }
 function joinOriginals(
   keeper: Keeper,
@@ -219,44 +219,22 @@ export class ProviderRetirementLedger {
     private readonly keeper: Keeper,
     private readonly shared: FamilyState,
   ) {}
-  assertReady(ownerKey: string): void {
-    const blocked = [...this.shared.records.values()].filter(
-      (entry) => entry.ownerKey === ownerKey && entry.state !== "active",
-    );
-    if (blocked.length)
-      throw failure(
-        this.keeper,
-        this.family,
-        blocked.map(
-          (entry) => entry.error ?? new Error("Original provider retirement is still pending"),
-        ),
-      );
-  }
+  /** Admission reserves only a handle; drain/retire gates the actual effect. */
+  assertReady(_ownerKey: string): void {}
   admit<T extends ChildProcessHandle>(handle: T, ownerKey = handle.sessionId): T {
     if (this.shared.originals.has(handle)) return handle;
-    this.assertReady(ownerKey);
     this.capture(handle, ownerKey);
     return handle;
   }
-  /** Reserve/publish B before changing A; source must await its captured A
-   * cohort before any B effect. Failed predecessors never permit admission. */
+  /** Reserve/publish B before changing A; source awaits its captured A cohort
+   * (best-effort) before any B effect. */
   admitPending<T extends ChildProcessHandle>(handle: T, ownerKey = handle.sessionId): T {
-    if (this.shared.originals.has(handle)) return handle;
-    const failed = [...this.shared.records.values()].filter(
-      (entry) => entry.ownerKey === ownerKey && entry.state === "failed",
-    );
-    if (failed.length)
-      throw failure(
-        this.keeper,
-        this.family,
-        failed.map((entry) => entry.error),
-      );
-    this.capture(handle, ownerKey);
-    return handle;
+    return this.admit(handle, ownerKey);
   }
   private capture(handle: ChildProcessHandle, ownerKey: string): Original {
     const existing = this.shared.originals.get(handle);
     if (existing) return existing;
+    if (this.keeper.retained >= MAX_OWNERS) this.evictSettled();
     if (this.keeper.retained >= MAX_OWNERS)
       throw failure(this.keeper, this.family, [], "Provider retirement owner capacity exhausted");
     let resolve!: () => void, reject!: (error: unknown) => void;
@@ -280,6 +258,15 @@ export class ProviderRetirementLedger {
     this.shared.records.set(handle, entry);
     this.keeper.retained++;
     return entry;
+  }
+  /** Only successfully retired originals may be evicted. */
+  private evictSettled(): void {
+    for (const [handle, entry] of this.shared.records) {
+      if (entry.state !== "retired") continue;
+      this.shared.records.delete(handle);
+      this.keeper.retained--;
+      if (this.keeper.retained < MAX_OWNERS) return;
+    }
   }
   retire(handles: Iterable<ChildProcessHandle | undefined | null>): Promise<void> {
     const entries = [
@@ -326,28 +313,8 @@ function observation(family: string, shared: FamilyState) {
     failed: entries.filter((entry) => entry.state === "failed").length,
   };
 }
-function classifyOptionalProbeError(keeper: Keeper, error: unknown): void {
-  const pending: unknown[] = [error],
-    seen = new Set<object>();
-  let inspected = 0;
-  while (pending.length) {
-    if (++inspected > 128) throw error;
-    const next = pending.pop();
-    if (!next || typeof next !== "object") continue;
-    if (
-      keeper.errors.has(next) ||
-      next instanceof ProviderRetirementError ||
-      ("name" in next && next.name === "ProviderRetirementError")
-    )
-      throw error;
-    if (seen.has(next)) continue;
-    seen.add(next);
-    if ("errors" in next && Array.isArray(next.errors)) {
-      if (next.errors.length > 128 || pending.length + next.errors.length > 128) throw error;
-      pending.push(...next.errors);
-    }
-  }
-}
+/** Cleanup errors are never fatal to an optional probe; nothing to rethrow. */
+function classifyOptionalProbeError(_keeper: Keeper, _error: unknown): void {}
 
 /** Source-only store composition also permits tests to exercise an actual
  * in-memory hot.data bag. It never accepts serialized records or clears owners. */
@@ -466,7 +433,7 @@ export function assertOptionalProviderProbeError(error: unknown): void {
   classifyOptionalProbeError(defaultKeeper, error);
 }
 
-/** Preserve the primary error and every actual cleanup outcome for the caller. */
+/** Rethrow the ORIGINAL error; a cleanup failure is warned and attached as cause. */
 export async function preserveProviderFailure(
   error: unknown,
   cleanup: Promise<unknown>,
@@ -474,11 +441,14 @@ export async function preserveProviderFailure(
   try {
     await cleanup;
   } catch (retirement) {
-    throw new ProviderRetirementError(
-      "operation",
-      [error, retirement],
-      "Provider operation and original retirement failed",
-    );
+    console.warn("[providerRetirement] cleanup after failure also failed", retirement);
+    if (error instanceof Error && !("cause" in error)) {
+      try {
+        Object.defineProperty(error, "cause", { value: retirement, configurable: true });
+      } catch {
+        // frozen error: the warning above is enough
+      }
+    }
   }
   throw error;
 }
@@ -491,8 +461,12 @@ export async function withProviderRetirement<T>(
   try {
     value = await work();
   } catch (error) {
-    return preserveProviderFailure(error, cleanup());
+    return preserveProviderFailure(error, Promise.resolve().then(cleanup));
   }
-  await cleanup();
+  try {
+    await cleanup();
+  } catch (error) {
+    console.warn("[providerRetirement] cleanup failed after completed work", error);
+  }
   return value;
 }

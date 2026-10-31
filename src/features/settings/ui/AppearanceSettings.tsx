@@ -1,9 +1,8 @@
-import { SettingsFeedback } from "./settingsControls";
 import { themePalette } from "../../../shared/theme/palette";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { ChevronLeft, ChevronRight, ImagePlus } from "../../../shared/ui/icons";
-import { CrewSettings, TabMotionSettings } from "./AppearanceBehaviorSettings";
+import { ImagePlus } from "../../../shared/ui/icons";
+import { CrewSettings, MotionSettings } from "./AppearanceBehaviorSettings";
 import { AccentReadabilityControl } from "./AccentReadabilityControl";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -11,22 +10,18 @@ import {
   AppearanceStudio,
   AppearanceInterface,
   AppearanceTypography,
-  accentSourceLabel,
+  isDefaultAccent,
 } from "./AppearancePreviews";
 
 import { ColorPickerPopover, ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Popover } from "../../../shared/ui/Popover";
 import { Button } from "../../../shared/ui/Button";
 
 import { GradientBlurBackground } from "./GradientBlurBackground";
-import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
-import { LiveBackgroundPicker, stepLiveBackground } from "./LiveBackgroundPicker";
+import { LiveBackgroundPicker } from "./LiveBackgroundPicker";
 import { SessionListSettings } from "./SessionListSettings";
-import {
-  COLLAPSED_PROJECT_RAIL_MODE_DEFAULT,
-  TAB_ANIMATIONS_ENABLED_DEFAULT,
-  saveTabAnimationsEnabled,
-} from "../model/settings";
+import { COLLAPSED_PROJECT_RAIL_MODE_DEFAULT } from "../model/settings";
 
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { IS_LINUX, IS_MAC } from "../../../platform/tauri/platform";
@@ -53,10 +48,13 @@ import {
   MAIN_OPACITY_MIN,
   SIDEBAR_OPACITY_MAX,
   SIDEBAR_OPACITY_MIN,
+  THEME_DARK_LIGHTNESS_DEFAULT,
   THEME_DARK_LIGHTNESS_MAX,
   THEME_DARK_LIGHTNESS_MIN,
+  THEME_HUE_DEFAULT,
   THEME_HUE_MAX,
   THEME_HUE_MIN,
+  THEME_SATURATION_DEFAULT,
   THEME_SATURATION_MAX,
   THEME_SATURATION_MIN,
   NEW_THREAD_BACKGROUND_EFFECTS,
@@ -76,161 +74,134 @@ import {
   useLiveBackground,
   useLiveBackgroundIntensity,
 } from "../model/liveBackground";
-import {
-  DECORATIVE_MOTION_DEFAULT,
-  saveDecorativeMotionEnabled,
-  useDecorativeMotionPreference,
-  usePrefersReducedMotion,
-} from "../model/decorativeMotion";
 
-import { AdvancedSettings, Group, Row, Segmented, Slider, Toggle } from "./settingsControls";
+import {
+  AdvancedSettings,
+  Group,
+  Row,
+  Segmented,
+  SettingsFeedback,
+  Slider,
+  Toggle,
+} from "./settingsControls";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "./useAppearanceSettings";
 import "./AppearanceSettings.css";
 
+/**
+ * One page: topics are sections with a titled, framed group each. There is no tab strip; the
+ * settings shell owns the scroll and the single "Restore defaults" confirmation for this page
+ * (`appearance.restoreDefaults`), while each group shows its own reset icon only when modified.
+ */
 export function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
   const percent = Math.round(appearance.opacity * 100);
   const mainPercent = Math.round(appearance.mainOpacity * 100);
-  const glassDisabled = useColorScheme() === "light";
+  const light = useColorScheme() === "light";
   // Off on Windows/macOS means an opaque window: the translucency values do not apply.
-  const translucencyOff = glassDisabled || (!IS_LINUX && !appearance.windowGlass);
-  const accentIsDefault =
-    !appearance.accentColor ||
-    appearance.accentColor.toLowerCase() === ACCENT_COLOR_DEFAULT.toLowerCase();
-  const decorativeMotion = useDecorativeMotionPreference();
-  const reducedMotion = usePrefersReducedMotion();
-  const topics = [
-    ["colors", "Theme and colors"],
-    ["reading", "Text and readability"],
-    ["layout", "Layout"],
-    ["translucency", "Translucency"],
-    ["backgrounds", "Backgrounds"],
-    ["motion", "Motion and crew"],
-  ] as const;
+  const translucencyOff = light || (!IS_LINUX && !appearance.windowGlass);
+  const accentIsDefault = isDefaultAccent(appearance.accentColor);
 
-  const [currentTopic, setCurrentTopic] = useState<(typeof topics)[number][0]>("colors");
-  const settingsRoot = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const root = settingsRoot.current;
-    if (!root || typeof IntersectionObserver === "undefined") return;
-    const visible = new Set<string>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const id = entry.target.id.replace("appearance-topic-", "");
-          if (entry.isIntersecting) visible.add(id);
-          else visible.delete(id);
-        }
-        const first = topics.find(([id]) => visible.has(id));
-        if (first) setCurrentTopic(first[0]);
-      },
-      // The topic under the top edge of the scroller is the current one.
-      {
-        root: root.closest("[data-settings-scroller]"),
-        rootMargin: "0px 0px -70% 0px",
-      },
-    );
-    root.querySelectorAll(".appearance-section").forEach((section) => observer.observe(section));
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Dependent translucency rows are indented sub-rows of Window glass; Linux has no such switch,
+  // so there they are plain rows that only the light-mode policy disables. Reasons are tooltips.
+  const lightReason = t("Light mode always uses an opaque window.");
+  const windowReason = light ? lightReason : t("Turn on Window glass first");
+  const dependent = (active: boolean, reason: string) =>
+    IS_LINUX
+      ? { disabled: !active, disabledReason: reason }
+      : { dependsOn: active, disabledReason: reason };
+  const defaultSidebarPercent = Math.round(SIDEBAR_OPACITY_DEFAULT * 100);
+  const defaultMainPercent = Math.round(MAIN_OPACITY_DEFAULT * 100);
+  const translucencyModified =
+    percent !== defaultSidebarPercent ||
+    mainPercent !== defaultMainPercent ||
+    appearance.blur !== SIDEBAR_BLUR_DEFAULT ||
+    appearance.bodyGlass !== BODY_GLASS_DEFAULT ||
+    appearance.windowGlass !== WINDOW_GLASS_DEFAULT;
 
   return (
-    <div className="appearance-settings" ref={settingsRoot}>
-      <nav aria-label={t("Appearance")} className="appearance-topic-nav">
-        {topics.map(([id, title]) => (
-          <Button
-            key={id}
-            variant="tab"
-            size="sm"
-            selected={currentTopic === id}
-            aria-current={currentTopic === id ? "location" : undefined}
-            onClick={() => {
-              setCurrentTopic(id);
-              const topic = document.getElementById(`appearance-topic-${id}`);
-              topic?.focus({ preventScroll: true });
-              topic?.scrollIntoView({ block: "start" });
-            }}
-          >
-            {t(title)}
-          </Button>
-        ))}
-      </nav>
-      <AppearanceSection id="colors" title={t("Theme and colors")} layout="colors">
+    <div className="appearance-settings">
+      <AppearanceSection id="colors" title={t("Theme and colors")}>
         <AppearanceStudio appearance={appearance}>
           <Row
             id="accent-color"
             label={t("Accent color")}
-            description={t("Used for the composer send button, selected text and accent actions.")}
-            scope={accentIsDefault ? undefined : accentSourceLabel(appearance)}
+            description={t("Send button, selected text and accent actions.")}
+            modified={!accentIsDefault}
+            onReset={() => appearance.onAccentColor(ACCENT_COLOR_DEFAULT)}
           >
             <AccentColorPicker value={appearance.accentColor} onChange={appearance.onAccentColor} />
           </Row>
           <AccentReadabilityControl />
-        </AppearanceStudio>
-        <AppearancePreview />
-        <AdvancedSettings
-          title={t("Custom surface colors")}
-          settingIds={["hue", "saturation", "dark-lightness"]}
-        >
-          <Row
-            id="hue"
-            label={t("Hue")}
-            description={t("Hue and saturation tint every surface. Lightness only moves the dark theme.")}
+          <Row stacked label={t("Preview")}>
+            <AppearancePreview />
+          </Row>
+          <AdvancedSettings
+            title={t("Custom surface colors")}
+            defaultOpen={false}
+            settingIds={["hue", "saturation", "dark-lightness"]}
           >
-            <Slider
+            <Row
+              id="hue"
               label={t("Hue")}
-              value={appearance.themeHue}
-              display={`${appearance.themeHue}°`}
-              min={THEME_HUE_MIN}
-              max={THEME_HUE_MAX}
-              onChange={(value) => appearance.onTint(value, appearance.themeSaturation)}
-            />
-          </Row>
-          <Row
-            id="saturation"
-            label={t("Saturation")}
-            description={t("How strongly the hue tints the interface. Zero keeps it neutral.")}
-          >
-            <Slider
+              description={t(
+                "Hue and saturation tint every surface. Lightness only moves the dark theme.",
+              )}
+              modified={appearance.themeHue !== THEME_HUE_DEFAULT}
+              onReset={() => appearance.onTint(THEME_HUE_DEFAULT, appearance.themeSaturation)}
+            >
+              <Slider
+                label={t("Hue")}
+                value={appearance.themeHue}
+                display={`${appearance.themeHue}°`}
+                min={THEME_HUE_MIN}
+                max={THEME_HUE_MAX}
+                onChange={(value) => appearance.onTint(value, appearance.themeSaturation)}
+              />
+            </Row>
+            <Row
+              id="saturation"
               label={t("Saturation")}
-              value={appearance.themeSaturation}
-              display={`${appearance.themeSaturation}%`}
-              min={THEME_SATURATION_MIN}
-              max={THEME_SATURATION_MAX}
-              onChange={(value) => appearance.onTint(appearance.themeHue, value)}
-            />
-          </Row>
-          <Row
-            id="dark-lightness"
-            label={t("Dark-mode lightness")}
-            description={
-              glassDisabled
-                ? t("This only affects dark mode. Your dark-mode value is preserved.")
-                : t(
-                    "Base brightness of the dark theme. Lower values are darker; zero is true black.",
-                  )
-            }
-          >
-            <Slider
+              description={t("How strongly the hue tints the interface. Zero keeps it neutral.")}
+              modified={appearance.themeSaturation !== THEME_SATURATION_DEFAULT}
+              onReset={() => appearance.onTint(appearance.themeHue, THEME_SATURATION_DEFAULT)}
+            >
+              <Slider
+                label={t("Saturation")}
+                value={appearance.themeSaturation}
+                display={`${appearance.themeSaturation}%`}
+                min={THEME_SATURATION_MIN}
+                max={THEME_SATURATION_MAX}
+                onChange={(value) => appearance.onTint(appearance.themeHue, value)}
+              />
+            </Row>
+            <Row
+              id="dark-lightness"
               label={t("Dark-mode lightness")}
-              value={appearance.themeDarkLightness}
-              display={`${appearance.themeDarkLightness}%`}
-              min={THEME_DARK_LIGHTNESS_MIN}
-              max={THEME_DARK_LIGHTNESS_MAX}
-              onChange={appearance.onDarkLightness}
-              disabled={glassDisabled}
-            />
-          </Row>
-        </AdvancedSettings>
+              description={t(
+                "Base brightness of the dark theme. Lower values are darker; zero is true black.",
+              )}
+              disabled={light}
+              disabledReason={t("Only affects dark mode.")}
+              modified={appearance.themeDarkLightness !== THEME_DARK_LIGHTNESS_DEFAULT}
+              onReset={() => appearance.onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT)}
+            >
+              <Slider
+                label={t("Dark-mode lightness")}
+                value={appearance.themeDarkLightness}
+                display={`${appearance.themeDarkLightness}%`}
+                min={THEME_DARK_LIGHTNESS_MIN}
+                max={THEME_DARK_LIGHTNESS_MAX}
+                onChange={appearance.onDarkLightness}
+                disabled={light}
+              />
+            </Row>
+          </AdvancedSettings>
+        </AppearanceStudio>
         <AppearanceSaveFeedback
           settingIds={["theme", "accent-color", "hue", "saturation", "dark-lightness"]}
         />
       </AppearanceSection>
-      <AppearanceSection
-        id="reading"
-        title={t("Text and readability")}
-      >
+      <AppearanceSection id="reading" title={t("Text and readability")}>
         {appearance.preferencesUnavailable ? (
           <SettingsFeedback
             state="warning"
@@ -257,29 +228,18 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
         <AppearanceTypography appearance={appearance} />
         <AppearanceSaveFeedback settingIds={["ui-scale", "diff-palette"]} />
       </AppearanceSection>
-      <AppearanceSection
-        id="layout"
-        title={t("Layout")}
-      >
-        <Group
-          title={t("Project rail")}
-          action={
-            <Button
-              variant="ghost"
-              onClick={() =>
-                appearance.onCollapsedProjectRailMode(COLLAPSED_PROJECT_RAIL_MODE_DEFAULT)
-              }
-            >
-              {t("Reset")}: {t("Collapsed project rail")}
-            </Button>
-          }
-        >
+      <AppearanceSection id="layout" title={t("Layout")}>
+        <Group title={t("Layout")}>
           <Row
             id="collapsed-project-rail"
             label={t("Collapsed project rail")}
             description={t(
               "Keep project navigation available as a compact icon rail, or hide the rail completely.",
             )}
+            modified={appearance.collapsedProjectRailMode !== COLLAPSED_PROJECT_RAIL_MODE_DEFAULT}
+            onReset={() =>
+              appearance.onCollapsedProjectRailMode(COLLAPSED_PROJECT_RAIL_MODE_DEFAULT)
+            }
           >
             <Segmented
               label={t("Collapsed project rail")}
@@ -304,61 +264,38 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
         </Group>
         <SessionListSettings />
       </AppearanceSection>
-      <AppearanceSection
-        id="translucency"
-        title={t("Translucency")}
-      >
+      <AppearanceSection id="translucency" title={t("Translucency")}>
         <Group
-          title={t("Opacity and blur")}
-          dependency={
-            glassDisabled
-              ? t(
-                  "Light mode always uses an opaque window, so these are off. Your dark-mode values are preserved.",
-                )
-              : !IS_LINUX && !appearance.windowGlass
-                ? t(
-                    "Let the desktop show through in dark mode. Off draws an opaque window, which is lighter on the GPU.",
-                  )
-                : undefined
-          }
-          action={
-            <Button
-              variant="ghost"
-              onClick={() => {
-                appearance.onOpacity(Math.round(SIDEBAR_OPACITY_DEFAULT * 100));
-                appearance.onMainOpacity(Math.round(MAIN_OPACITY_DEFAULT * 100));
-                appearance.onBlur(SIDEBAR_BLUR_DEFAULT);
-                appearance.onBodyGlass(BODY_GLASS_DEFAULT);
-                appearance.onWindowGlass(WINDOW_GLASS_DEFAULT);
-              }}
-            >
-              {t("Reset translucency")}
-            </Button>
-          }
-          description={
-            glassDisabled
-              ? t(
-                  "Light mode always uses an opaque window, so these are off. Your dark-mode values are preserved.",
-                )
-              : t(
-                  "How much of the desktop shows through {p0}. Blur costs more to composite the higher it goes.",
-                  { p0: PRODUCT_IDENTITY.displayName },
-                )
-          }
+          title={t("Translucency")}
+          description={t("How much of the desktop shows through. Higher blur costs more GPU.")}
+          modified={translucencyModified}
+          resetLabel={t("Reset translucency")}
+          onReset={() => {
+            appearance.onOpacity(defaultSidebarPercent);
+            appearance.onMainOpacity(defaultMainPercent);
+            appearance.onBlur(SIDEBAR_BLUR_DEFAULT);
+            appearance.onBodyGlass(BODY_GLASS_DEFAULT);
+            appearance.onWindowGlass(WINDOW_GLASS_DEFAULT);
+          }}
         >
           {IS_LINUX ? null : (
             <Row
               id="window-glass"
               label={t("Window glass")}
-              description={t(
-                "Let the desktop show through in dark mode. Off draws an opaque window, which is lighter on the GPU.",
-              )}
+              description={t("Let the desktop show through in dark mode.")}
+              info={
+                <InfoPopover className="shrink-0">
+                  <p>{t("Off draws an opaque window, which is lighter on the GPU.")}</p>
+                </InfoPopover>
+              }
+              disabled={light}
+              disabledReason={lightReason}
             >
               <Toggle
                 label={t("Window glass")}
                 on={appearance.windowGlass}
                 onChange={appearance.onWindowGlass}
-                disabled={glassDisabled}
+                disabled={light}
               />
             </Row>
           )}
@@ -366,6 +303,7 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
             id="sidebar-opacity"
             label={t("Sidebar opacity")}
             description={t("Applies to the project rail and the session sidebar.")}
+            {...dependent(!translucencyOff, windowReason)}
           >
             <Slider
               label={t("Sidebar opacity")}
@@ -381,12 +319,11 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
           <Row
             id="blur"
             label={t("Blur radius")}
-            dependency={
-              !IS_MAC
-                ? t("Blur radius can be adjusted on macOS. Your saved value is preserved.")
-                : undefined
-            }
             description={t("Background blur behind the window.")}
+            {...dependent(
+              !translucencyOff && IS_MAC,
+              IS_MAC ? windowReason : t("Blur radius can only be adjusted on macOS."),
+            )}
           >
             <Slider
               label={t("Blur radius")}
@@ -405,6 +342,8 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
             description={t(
               "Extend the translucent treatment to the main pane behind sessions and editors.",
             )}
+            disabled={translucencyOff}
+            disabledReason={windowReason}
           >
             <Toggle
               label={t("Main pane glass")}
@@ -415,13 +354,10 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
           </Row>
           <Row
             id="main-pane-opacity"
-            dependency={
-              !translucencyOff && !appearance.bodyGlass
-                ? t("Enable Main pane glass to adjust its opacity. Your value is preserved.")
-                : undefined
-            }
             label={t("Main pane opacity")}
-            description={t("Applies to the main pane when main pane glass is on.")}
+            description={t("How much of the desktop shows through the main pane.")}
+            dependsOn={!translucencyOff && appearance.bodyGlass}
+            disabledReason={translucencyOff ? windowReason : t("Turn on Main pane glass first")}
           >
             <Slider
               label={t("Main pane opacity")}
@@ -444,68 +380,27 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
           ]}
         />
       </AppearanceSection>
-      <AppearanceSection
-        id="backgrounds"
-        title={t("Backgrounds")}
-      >
+      <AppearanceSection id="backgrounds" title={t("Backgrounds")}>
         <ChatBackgroundCard appearance={appearance} />
         <LiveBackgroundCard />
         <AppearanceSaveFeedback settingIds={["chat-background", "live-background"]} />
       </AppearanceSection>
-      <AppearanceSection
-        id="motion"
-        title={t("Motion and crew")}
-      >
-        <Group
-          title={t("Motion")}
-          action={
-            <Button
-              variant="ghost"
-              onClick={() => {
-                saveTabAnimationsEnabled(TAB_ANIMATIONS_ENABLED_DEFAULT);
-                saveDecorativeMotionEnabled(DECORATIVE_MOTION_DEFAULT);
-              }}
-            >
-              {t("Reset motion")}
-            </Button>
-          }
-        >
-          <TabMotionSettings />
-          <Row
-            id="decorative-motion"
-            label={t("Decorative animations")}
-            description={
-              reducedMotion
-                ? t(
-                    "Your system requests reduced motion, so decorative animations stay still. Your saved choice is preserved.",
-                  )
-                : t("Animate project sigils, chat transitions and the agent crew scene.")
-            }
-          >
-            <Toggle
-              label={t("Decorative animations")}
-              on={decorativeMotion}
-              onChange={saveDecorativeMotionEnabled}
-            />
-          </Row>
-        </Group>
+      <AppearanceSection id="motion" title={t("Motion and crew")}>
+        <MotionSettings />
         <CrewSettings />
       </AppearanceSection>
     </div>
   );
 }
 
-/** Open topics preserve search targets and keep every preference directly available. */
+/** A topic: a labelled landmark that keeps search targets; its groups carry the visible titles. */
 function AppearanceSection({
   id,
   title,
-  layout,
   children,
 }: {
   id: string;
   title: string;
-  /** `colors` places the live preview beside the controls when the page is wide enough. */
-  layout?: "colors";
   children: ReactNode;
 }) {
   return (
@@ -515,9 +410,7 @@ function AppearanceSection({
       className="appearance-section"
       aria-label={title}
     >
-      <div className="appearance-section-body settings-topics" data-appearance-layout={layout}>
-        {children}
-      </div>
+      <div className="appearance-section-body settings-topics">{children}</div>
     </section>
   );
 }
@@ -533,73 +426,43 @@ function LiveBackgroundCard() {
       id="live-background"
       title={t("Live background")}
       description={t("Subtle full-pane motion that responds while the AI works.")}
-      action={
-        <Button
-          variant="ghost"
-          onClick={() => {
-            saveLiveBackground(LIVE_BACKGROUND_DEFAULT);
-            saveLiveBackgroundIntensity(LIVE_BACKGROUND_INTENSITY_DEFAULT);
-          }}
-        >
-          {t("Reset live background")}
-        </Button>
+      modified={
+        effect !== LIVE_BACKGROUND_DEFAULT || intensity !== LIVE_BACKGROUND_INTENSITY_DEFAULT
       }
+      resetLabel={t("Reset live background")}
+      onReset={() => {
+        saveLiveBackground(LIVE_BACKGROUND_DEFAULT);
+        saveLiveBackgroundIntensity(LIVE_BACKGROUND_INTENSITY_DEFAULT);
+      }}
     >
-      <div className="appearance-live-preview">
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Previous scene")}
-          onClick={() => saveLiveBackground(stepLiveBackground(effect, -1))}
-        >
-          <ChevronLeft className="icon-sm" aria-hidden />
-        </Button>
-        <div className="appearance-live-stage">
-          {effect !== "none" ? (
-            <LiveBackgroundCanvas
-              effect={effect}
-              intensity={intensity}
-              demoSpeech
-              className="absolute inset-0"
-            />
-          ) : null}
-        </div>
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Next scene")}
-          onClick={() => saveLiveBackground(stepLiveBackground(effect, 1))}
-        >
-          <ChevronRight className="icon-sm" aria-hidden />
-        </Button>
-        <div className="appearance-live-caption">
-          <p className="text-ui-secondary font-medium text-content">
-            {liveBackgroundLabel(effect)}
-          </p>
-          <p className="text-ui-caption leading-relaxed text-(--ui-text-secondary)">
-            {liveBackgroundDescription(effect)}
-          </p>
-        </div>
-      </div>
-      <div className="appearance-live-picker">
+      {/* One picker: a grid of even thumbnails, the selected scene plays live and is named below. */}
+      <Row
+        stacked
+        label={liveBackgroundLabel(effect)}
+        description={liveBackgroundDescription(effect)}
+      >
         <LiveBackgroundPicker
           value={effect}
           onChange={saveLiveBackground}
           label={t("Live background scene")}
         />
-      </div>
-      {effect !== "none" ? (
-        <Row label={t("Visibility")} description={t("Strength of the animated layer.")}>
-          <Slider
-            label={t("Live background visibility")}
-            value={strength}
-            display={`${strength}%`}
-            min={Math.round(LIVE_BACKGROUND_INTENSITY_MIN * 100)}
-            max={Math.round(LIVE_BACKGROUND_INTENSITY_MAX * 100)}
-            onChange={(value) => saveLiveBackgroundIntensity(value / 100)}
-          />
-        </Row>
-      ) : null}
+      </Row>
+      <Row
+        label={t("Visibility")}
+        description={t("Strength of the animated layer.")}
+        dependsOn={effect !== "none"}
+        disabledReason={t("Choose a scene first")}
+      >
+        <Slider
+          label={t("Live background visibility")}
+          value={strength}
+          display={`${strength}%`}
+          min={Math.round(LIVE_BACKGROUND_INTENSITY_MIN * 100)}
+          max={Math.round(LIVE_BACKGROUND_INTENSITY_MAX * 100)}
+          onChange={(value) => saveLiveBackgroundIntensity(value / 100)}
+          disabled={effect === "none"}
+        />
+      </Row>
     </Group>
   );
 }
@@ -631,36 +494,130 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
     };
   }, [src]);
   const imageState = decoded?.src === src ? decoded.state : "loading";
+  const modified =
+    Math.round(appearance.chatBackgroundEmptyOpacity * 100) !==
+      Math.round(CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT * 100) ||
+    Math.round(appearance.chatBackgroundSessionOpacity * 100) !==
+      Math.round(CHAT_BACKGROUND_SESSION_OPACITY_DEFAULT * 100) ||
+    appearance.chatBackgroundScope !== CHAT_BACKGROUND_SCOPE_DEFAULT ||
+    appearance.chatBackgroundBlur !== CHAT_BACKGROUND_BLUR_DEFAULT ||
+    appearance.newThreadBackgroundEffect !== NEW_THREAD_BACKGROUND_EFFECT_DEFAULT;
 
   return (
     <Group
       id="chat-background"
       title={t("Chat background")}
-      action={
-        <Button
-          variant="ghost"
-          disabled={busy}
-          onClick={() => {
-            appearance.onChatBackgroundEmptyOpacity(
-              Math.round(CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT * 100),
-            );
-            appearance.onChatBackgroundSessionOpacity(
-              Math.round(CHAT_BACKGROUND_SESSION_OPACITY_DEFAULT * 100),
-            );
-            appearance.onChatBackgroundScope(CHAT_BACKGROUND_SCOPE_DEFAULT);
-            appearance.onChatBackgroundBlur(CHAT_BACKGROUND_BLUR_DEFAULT);
-            appearance.onNewThreadBackgroundEffect(NEW_THREAD_BACKGROUND_EFFECT_DEFAULT);
-          }}
-        >
-          {t("Reset background settings")}
-        </Button>
-      }
       description={t("An image behind your chat panes. It stays on this device.")}
+      modified={modified}
+      resetLabel={t("Reset background settings")}
+      onReset={() => {
+        appearance.onChatBackgroundEmptyOpacity(
+          Math.round(CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT * 100),
+        );
+        appearance.onChatBackgroundSessionOpacity(
+          Math.round(CHAT_BACKGROUND_SESSION_OPACITY_DEFAULT * 100),
+        );
+        appearance.onChatBackgroundScope(CHAT_BACKGROUND_SCOPE_DEFAULT);
+        appearance.onChatBackgroundBlur(CHAT_BACKGROUND_BLUR_DEFAULT);
+        appearance.onNewThreadBackgroundEffect(NEW_THREAD_BACKGROUND_EFFECT_DEFAULT);
+      }}
     >
-      <div className="appearance-bg-block">
-        {hasImage ? (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-ui-caption text-(--ui-text-secondary)">{t("Preview")}</span>
+      <Row
+        label={t("Image")}
+        info={
+          <InfoPopover className="shrink-0">
+            <p>{t("Preview only. Project backgrounds can override this image.")}</p>
+          </InfoPopover>
+        }
+        feedback={
+          <>
+            {hasImage && imageState === "error" ? (
+              <SettingsFeedback state="error">
+                {t("Image could not be loaded. Choose another image or remove it.")}
+              </SettingsFeedback>
+            ) : null}
+            {appearance.chatBackgroundError ? (
+              <SettingsFeedback state="error">{appearance.chatBackgroundError}</SettingsFeedback>
+            ) : null}
+          </>
+        }
+      >
+        <div className="appearance-bg-picker">
+          <div className="appearance-bg-thumb" data-empty={!hasImage || undefined}>
+            {hasImage ? (
+              <div
+                className={`relative isolate h-full overflow-hidden ${imageState === "ready" ? "chat-pane-background" : ""}`}
+                data-project-chat-background="false"
+                data-session-empty={preview === "empty"}
+              >
+                {imageState === "loading" ? (
+                  <div className="p-2">
+                    <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+                  </div>
+                ) : imageState === "ready" &&
+                  appearance.newThreadBackgroundEffect === "gradient-blur" ? (
+                  <GradientBlurBackground className="gradient-blur-preview absolute inset-0" />
+                ) : null}
+                {imageState === "ready" && preview === "conversation" ? (
+                  <div
+                    className="relative flex h-full flex-col items-end justify-center gap-1 p-2"
+                    aria-hidden
+                  >
+                    <span className="max-w-[80%] rounded-sm bg-(--ui-surface-selected) px-2 py-0.5 text-ui-micro text-content">
+                      {t("Conversation")}
+                    </span>
+                    <span className="self-start rounded-sm bg-(--ui-surface) px-2 py-0.5 text-ui-micro text-(--ui-text-secondary)">
+                      {PRODUCT_IDENTITY.displayName}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <ImagePlus className="icon-md text-(--ui-text-secondary)" aria-hidden />
+            )}
+          </div>
+          <div className="appearance-bg-actions">
+            {hasImage ? (
+              <>
+                <Button
+                  className="shrink-0"
+                  onClick={() => void appearance.onChooseChatBackground()}
+                  disabled={busy}
+                  loading={appearance.chatBackgroundOperation === "choose"}
+                  loadingLabel={t("Loading…")}
+                  stableWidth
+                >
+                  {t("Change")}
+                </Button>
+                <Button
+                  className="shrink-0"
+                  onClick={() => void appearance.onClearChatBackground()}
+                  disabled={busy}
+                  variant="danger"
+                  loading={appearance.chatBackgroundOperation === "remove"}
+                  loadingLabel={t("Loading…")}
+                  stableWidth
+                >
+                  {t("Remove")}
+                </Button>
+              </>
+            ) : (
+              <Button
+                onClick={() => void appearance.onChooseChatBackground()}
+                loading={busy}
+                loadingLabel={t("Loading…")}
+                startIcon={<ImagePlus className="icon-sm" aria-hidden />}
+                stableWidth
+              >
+                {t("Choose an image")}
+              </Button>
+            )}
+          </div>
+        </div>
+      </Row>
+      {hasImage ? (
+        <>
+          <Row label={t("Preview")}>
             <Segmented
               label={t("Preview")}
               value={preview}
@@ -670,87 +627,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                 { value: "conversation", label: t("Conversation") },
               ]}
             />
-          </div>
-        ) : null}
-        <div className="appearance-bg-frame">
-          {hasImage ? (
-            <div
-              className={`relative isolate h-24 overflow-hidden ${imageState === "ready" ? "chat-pane-background" : ""}`}
-              data-project-chat-background="false"
-              data-session-empty={preview === "empty"}
-            >
-              {imageState === "loading" ? (
-                <div className="p-4">
-                  <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
-                </div>
-              ) : imageState === "error" ? (
-                <div className="p-4">
-                  <SettingsFeedback state="error">
-                    {t("Image could not be loaded. Choose another image or remove it.")}
-                  </SettingsFeedback>
-                </div>
-              ) : appearance.newThreadBackgroundEffect === "gradient-blur" ? (
-                <GradientBlurBackground className="gradient-blur-preview absolute inset-0" />
-              ) : null}
-              {imageState === "ready" && preview === "conversation" ? (
-                <div
-                  className="relative flex h-full flex-col items-end justify-center gap-2 p-4"
-                  aria-hidden
-                >
-                  <span className="max-w-[80%] rounded-md bg-(--ui-surface-selected) px-3 py-2 text-ui-secondary text-content">
-                    {t("Conversation")}
-                  </span>
-                  <span className="self-start rounded-md bg-(--ui-surface) px-3 py-2 text-ui-secondary text-(--ui-text-secondary)">
-                    {PRODUCT_IDENTITY.displayName}
-                  </span>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="appearance-background-empty">
-              <Button
-                onClick={() => void appearance.onChooseChatBackground()}
-                loading={busy}
-                loadingLabel={t("Loading…")}
-                startIcon={<ImagePlus className="icon-md" aria-hidden />}
-              >
-                {t("Choose an image")}
-              </Button>
-            </div>
-          )}
-        </div>
-        <p className="mt-2 text-ui-caption text-(--ui-text-secondary)">
-          {t("Preview only. Project backgrounds can override this image.")}
-        </p>
-        {hasImage ? (
-          <div className="mt-3 flex items-center justify-end gap-2">
-            <Button
-              className="shrink-0"
-              onClick={() => void appearance.onChooseChatBackground()}
-              disabled={busy}
-              loading={appearance.chatBackgroundOperation === "choose"}
-              loadingLabel={t("Loading…")}
-            >
-              {t("Change")}
-            </Button>
-            <Button
-              className="shrink-0"
-              onClick={() => void appearance.onClearChatBackground()}
-              disabled={busy}
-              variant="danger"
-              loading={appearance.chatBackgroundOperation === "remove"}
-              loadingLabel={t("Loading…")}
-            >
-              {t("Remove")}
-            </Button>
-          </div>
-        ) : null}
-        {appearance.chatBackgroundError ? (
-          <SettingsFeedback state="error">{appearance.chatBackgroundError}</SettingsFeedback>
-        ) : null}
-      </div>
-      {hasImage ? (
-        <>
+          </Row>
           <Row
             label={t("Background effect")}
             description={
@@ -819,9 +696,16 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
       ) : null}
       <Row
         label={t("Background blur")}
-        scope={t(
-          "Blurs the image behind chat panes, including project images. Haze keeps its own blur.",
-        )}
+        description={t("Applies to global and project images.")}
+        info={
+          <InfoPopover className="shrink-0">
+            <p>
+              {t(
+                "Blurs the image behind chat panes, including project images. Haze keeps its own blur.",
+              )}
+            </p>
+          </InfoPopover>
+        }
       >
         <Slider
           label={t("Chat background blur")}
@@ -866,7 +750,7 @@ export function AccentColorPicker({
         : -1;
 
   return (
-    <div ref={root} className="w-48">
+    <div ref={root} className="appearance-accent">
       <ColorSwatchRow
         colors={[ACCENT_COLOR_DEFAULT, ...ACCENT_COLOR_PRESETS]}
         labels={[

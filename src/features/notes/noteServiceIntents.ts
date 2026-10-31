@@ -73,7 +73,6 @@ type Keeper = {
   nextId: number;
   bytes: number;
   records: Map<number, RecordEntry>;
-  observationUnavailable: boolean;
   read: () => NativeInputRead;
   register?: typeof registerNoteInput;
   registration?: NativeInputRegistration;
@@ -85,7 +84,6 @@ const keeper = (existing ?? {
   nextId: 0,
   bytes: 0,
   records: new Map(),
-  observationUnavailable: false,
 }) as Keeper;
 if (existing === undefined) globals[KEY] = keeper;
 
@@ -116,7 +114,7 @@ function snapshot(
       origin: "local-native",
       surface: "service-intents",
       coverage: "unknown",
-      observation: state.observationUnavailable ? "unavailable" : "observed",
+      observation: "observed",
       retainedBytes: state.bytes,
       records: rows.map((row) => row.data),
     },
@@ -126,9 +124,6 @@ function snapshot(
       ...(rows.some((row) => row.data.status === "unverified")
         ? ["notes-service-outcome-unverified"]
         : []),
-      ...(state.observationUnavailable
-        ? ["notes-service-intent-observation-unavailable"]
-        : []),
     ],
   };
 }
@@ -136,8 +131,9 @@ function notify(state: Keeper): boolean {
   try {
     state.registration!.changed();
     return true;
-  } catch {
-    state.observationUnavailable = true;
+  } catch (error) {
+    // Observation loss never refuses a save; the next change retries the notification.
+    console.warn("[notes] service intent observation could not be notified", error);
     return false;
   }
 }
@@ -154,8 +150,8 @@ try {
       close: () => {},
     });
   } else notify(keeper);
-} catch {
-  keeper.observationUnavailable = true;
+} catch (error) {
+  console.warn("[notes] service intent observation is unavailable", error);
 }
 
 function diagnostic(error: unknown): string {
@@ -191,8 +187,57 @@ export type NoteServiceIntent = {
   ): Promise<T>;
 };
 
-/** Conserve one exact original call before its effect. No replay/clear API. */
+/** Drops the oldest unverified record; pending ones own a live Native call and stay. */
+function evictOldestUnverified(state: Keeper): boolean {
+  for (const [id, entry] of state.records) {
+    if (entry.pending) continue;
+    state.records.delete(id);
+    state.bytes -= entry.weight;
+    return true;
+  }
+  return false;
+}
+
+/** Best-effort stand-in when conservation cannot admit a call: run it unrecorded. */
+function passthrough(reason: unknown): NoteServiceIntent {
+  console.warn("[notes] service intent conservation unavailable; running unrecorded", reason);
+  let executed = false;
+  return Object.freeze({
+    async execute<T>(
+      native: () => Promise<T>,
+      bookkeeping?: (result: T) => void | Promise<void>,
+    ): Promise<T> {
+      if (executed) throw new NoteServiceIntentError("already-executed");
+      executed = true;
+      const value = await native();
+      try {
+        if (bookkeeping) await bookkeeping(value);
+      } catch (error) {
+        // Native success remains success even if local bookkeeping failed.
+        console.warn("[notes] result bookkeeping failed", error);
+      }
+      return value;
+    },
+  }) as NoteServiceIntent;
+}
+
+/**
+ * Conserve one exact original call before its effect. No replay/clear API.
+ * Admission is best-effort: when it cannot be granted the call still runs.
+ */
 export function beginNoteServiceIntent(
+  command: NoteServiceCommand,
+  exactArgs: Record<string, unknown>,
+  original: NoteInputWork,
+): NoteServiceIntent {
+  try {
+    return admitNoteServiceIntent(command, exactArgs, original);
+  } catch (error) {
+    return passthrough(error);
+  }
+}
+
+function admitNoteServiceIntent(
   command: NoteServiceCommand,
   exactArgs: Record<string, unknown>,
   original: NoteInputWork,
@@ -207,14 +252,11 @@ export function beginNoteServiceIntent(
   let state!: Keeper;
   try {
     state = available();
-    if (state.observationUnavailable || !state.registration)
+    if (!state.registration)
       throw new NoteServiceIntentError("registry-unavailable");
     if (!commands.has(command) || !isNativeCaptureObject(exactArgs))
       throw new NoteServiceIntentError("invalid-request");
-    if (
-      state.nextId >= Number.MAX_SAFE_INTEGER ||
-      state.records.size >= NOTE_SERVICE_INTENT_LIMITS.records
-    )
+    if (state.nextId >= Number.MAX_SAFE_INTEGER)
       throw new NoteServiceIntentError("capacity");
     let args: Record<string, unknown>, requestBytes: number;
     try {
@@ -227,8 +269,6 @@ export function beginNoteServiceIntent(
       throw new NoteServiceIntentError("invalid-request");
     }
     const weight = requestBytes + OVERHEAD;
-    if (weight > NOTE_SERVICE_INTENT_LIMITS.bytes - state.bytes)
-      throw new NoteServiceIntentError("capacity");
     row = {
       pending: true,
       weight,
@@ -243,73 +283,110 @@ export function beginNoteServiceIntent(
       }),
     };
     // Share the same bounded JSON/depth/node codec as the eventual Notes raw
-    // producer. A request too large for its own aggregate is refused pre-effect.
-    try {
-      const rows = [...state.records.values(), row];
-      const aggregate = createNativeCaptureSnapshotEncoder()(
-        snapshot(state, rows).snapshot,
-      );
-      const bytes = encoder.encode(
-        stringifyNativeCaptureJson(aggregate),
-      ).byteLength;
-      // Generated undefined-path metadata shares the aggregate budget too.
-      // Reserve the bounded future diagnostic before invoking Native.
-      if (bytes > NOTE_SERVICE_INTENT_LIMITS.bytes - rows.length * OVERHEAD)
+    // producer. Evict the oldest unverified originals until this one fits; only
+    // when nothing evictable remains is admission refused (the call still runs).
+    const fits = () => {
+      if (
+        state.records.size >= NOTE_SERVICE_INTENT_LIMITS.records ||
+        weight > NOTE_SERVICE_INTENT_LIMITS.bytes - state.bytes
+      )
+        return false;
+      try {
+        const rows = [...state.records.values(), row];
+        const aggregate = createNativeCaptureSnapshotEncoder()(
+          snapshot(state, rows).snapshot,
+        );
+        const bytes = encoder.encode(
+          stringifyNativeCaptureJson(aggregate),
+        ).byteLength;
+        // Generated undefined-path metadata shares the aggregate budget too.
+        // Reserve the bounded future diagnostic before invoking Native.
+        return bytes <= NOTE_SERVICE_INTENT_LIMITS.bytes - rows.length * OVERHEAD;
+      } catch {
+        return false;
+      }
+    };
+    while (!fits())
+      if (!evictOldestUnverified(state))
         throw new NoteServiceIntentError("capacity");
-    } catch {
-      throw new NoteServiceIntentError("capacity");
-    }
     work.apply(() => {
       state.records.set(row.data.id, row);
       state.bytes += weight;
       state.nextId++;
-      if (!notify(state))
-        throw new NoteServiceIntentError("registry-unavailable");
+      notify(state);
     });
   } catch (error) {
     if (row && state?.records.get(row.data.id) === row) {
-      row.pending = false;
-      row.data = Object.freeze({
-        ...row.data,
-        status: "unverified",
-        phase: "native-outcome-unverified",
-        error: diagnostic(error),
-      });
+      state.records.delete(row.data.id);
+      state.bytes -= row.weight;
     }
     try {
       work();
-    } catch {
-      if (state) state.observationUnavailable = true;
+    } catch (finishError) {
+      console.warn("[notes] service intent work could not be finished", finishError);
     }
     throw error;
   }
   let executed = false;
-  const retain = (
+  const mark = (
     phase: "native-outcome-unverified" | "result-application-unverified",
     error: unknown,
   ) => {
+    row.pending = false;
+    row.data = Object.freeze({
+      ...row.data,
+      status: "unverified",
+      phase,
+      error: diagnostic(error),
+    });
+    notify(state);
+  };
+  // Native definitely rejected: the caller owns the failure, so nothing is conserved.
+  const drop = () => {
     const update = () => {
       row.pending = false;
-      row.data = Object.freeze({
-        ...row.data,
-        status: "unverified",
-        phase,
-        error: diagnostic(error),
-      });
+      if (state.records.get(row.data.id) === row) {
+        state.records.delete(row.data.id);
+        state.bytes -= row.weight;
+      }
       notify(state);
     };
     try {
       work.apply(update);
     } catch {
-      state.observationUnavailable = true;
       update();
+    }
+  };
+  // Only an error Native itself returned (a string or plain object from the command) proves the
+  // effect did not happen. A thrown Error (transport, closure, unknown) leaves the outcome
+  // unverified, so the original stays conserved instead of being retried blindly.
+  const rejectedByNative = (error: unknown) =>
+    typeof error === "string" ||
+    (typeof error === "object" && error !== null && !(error instanceof Error));
+  const settleRejected = (error: unknown) => {
+    if (rejectedByNative(error)) {
+      drop();
+      return;
+    }
+    try {
+      work.apply(() => mark("native-outcome-unverified", error));
+    } catch {
+      mark("native-outcome-unverified", error);
+    }
+  };
+  // Native succeeded but local application is unverified: keep it evictable.
+  const retain = (error: unknown) => {
+    try {
+      work.apply(() => mark("result-application-unverified", error));
+    } catch {
+      mark("result-application-unverified", error);
     }
   };
   const finish = () => {
     try {
       work();
-    } catch {
-      state.observationUnavailable = true;
+    } catch (error) {
+      console.warn("[notes] service intent work could not be finished", error);
       notify(state);
     }
   };
@@ -321,18 +398,31 @@ export function beginNoteServiceIntent(
       if (executed)
         return Promise.reject(new NoteServiceIntentError("already-executed"));
       executed = true;
+      if (noteWorkOwner(work) !== owner) {
+        // Ownership moved before Native ran: the original call must not run for
+        // someone else. Nothing was sent, so releasing the record loses nothing.
+        drop();
+        finish();
+        const rejected = Promise.reject<T>(new NoteServiceIntentError("work-unavailable"));
+        void rejected.catch(() => {});
+        return rejected;
+      }
+      if (state.records.get(row.data.id) !== row) {
+        // Only the record was lost: same owner, so run unrecorded.
+        drop();
+        finish();
+        return passthrough(new NoteServiceIntentError("registry-unavailable")).execute(
+          native,
+          bookkeeping,
+        );
+      }
       let actual: Promise<T>;
       try {
-        if (
-          noteWorkOwner(work) !== owner ||
-          state.records.get(row.data.id) !== row
-        )
-          throw new NoteServiceIntentError("work-unavailable");
         // Call immediately, before execute returns. No deferred microtask can
         // turn a formerly open invocation into a fresh closed-window request.
         actual = work.apply(native);
       } catch (error) {
-        retain("native-outcome-unverified", error);
+        settleRejected(error);
         finish();
         const rejected = Promise.reject<T>(error);
         void rejected.catch(() => {});
@@ -343,7 +433,7 @@ export function beginNoteServiceIntent(
         try {
           value = await actual;
         } catch (error) {
-          retain("native-outcome-unverified", error);
+          settleRejected(error);
           throw error;
         }
         try {
@@ -359,12 +449,9 @@ export function beginNoteServiceIntent(
           if (bookkeeping) await work.apply(() => bookkeeping(value));
           work.apply(() => {
             available();
-            if (
-              state.observationUnavailable ||
-              state.records.get(row.data.id) !== row ||
-              !notify(state)
-            )
+            if (state.records.get(row.data.id) !== row)
               throw new NoteServiceIntentError("registry-unavailable");
+            notify(state);
             // Complete the actual child before retiring its request. A failure
             // here keeps the original charged row rather than losing evidence.
             work();
@@ -372,7 +459,7 @@ export function beginNoteServiceIntent(
             state.bytes -= row.weight;
           });
         } catch (error) {
-          retain("result-application-unverified", error);
+          retain(error);
         }
         // Native success remains Native success, even if local application or
         // capture bookkeeping could not be verified. Never retry the effect.

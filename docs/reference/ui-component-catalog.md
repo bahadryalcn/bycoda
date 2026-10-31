@@ -109,7 +109,7 @@ fallbacks. A different animation or icon size does not justify another button AP
 | `slider`            | Integrated: shared Slider + settings facade             | Approximate bounded adjustment; precise values retain a labeled numeric alternative.                                                                                                                                                                                                                   |
 | `elastic-slider`    | Integrated: opt-in ElasticSlider                        | Approximate drag-to-taste values such as an Appearance preview; clamped truthful values and reduced motion required. Dense or precise settings use Slider/NumberField.                                                                                                                                 |
 | `inline-edit`       | Integrated: InlineEdit                                  | Independently saved value with pending/error recovery, not one field in a grouped save.                                                                                                                                                                                                                |
-| `expanding-search`  | Integrated: shared ExpandingSearch                      | Settings quick jump preserves external ranked results, controlled query and the existing overlay/focus owner. Filtering and form selection retain their separate controls.                                                                                                                             |
+| `expanding-search`  | Integrated: shared ExpandingSearch                      | Settings quick jump preserves external ranked results, controlled query and the existing overlay/focus owner. Sessions sidebar header uses `inline`: the field filters the session list (no result panel, Escape clears and folds, a dot marks the folded icon while a query applies, `ref.expand()` opens it from `/` or Ctrl+F). Other filtering and form selection retain their separate controls.                                                                                                                             |
 | `chip-group`        | Reuse: SegmentedControl / RadioGroup / SearchableSelect | Stable single choices use shared radio/segmented composition; multiple growing values use SearchableSelect multiple. No separate chip control or independent selection API.                                                                                                                            |
 | `password-strength` | Conditional: account creation                           | Show only when setting a new password, never for API tokens or provider credentials.                                                                                                                                                                                                                   |
 | `signature-pad`     | Exclude                                                 | No current signing workflow; do not introduce canvas and export behavior without a requirement.                                                                                                                                                                                                        |
@@ -122,6 +122,34 @@ fallbacks. A different animation or icon size does not justify another button AP
 | `rich-text-editor`  | Conditional: shared prose editor                        | Rich prose editing; code editors, terminals and agent composer semantics retain their owners.                                                                                                                                                                                                          |
 | `billing-toggle`    | Exclude                                                 | No monthly/annual purchase choice in the desktop workbench.                                                                                                                                                                                                                                            |
 | `radio-cards`       | Reuse: RadioGroup descriptions                          | Shared RadioGroup supports descriptive native radio choices with name/default/required/ref/reset; no separate card selection state or registry radio-cards integration.                                                                                                                                |
+
+### Field frame and action slots (V3)
+
+- App-facing `Combobox` (`src/shared/ui/Combobox.tsx`) supports opt-in `allowCustomValue`.
+  It filters suggestions while typing and offers a localized Use option for unmatched values.
+  Enter selects the active suggestion or commits the draft; blur/Tab commits the typed value;
+  Escape restores the committed value. Empty input is accepted; domain validation remains with
+  the consumer. `hideLabel` retains the accessible label. Editable mode uses the existing
+  Popover/overlay routing; closed-value consumers and SearchableSelect retain their defaults.
+
+- `TextField` accepts `appearance="default" | "quiet"`, `fieldSize="sm" | "md"`, and
+  `startAdornment` / `endAdornment`. `fieldVariant` still controls label/message composition.
+  `TextareaField` supports the same appearance and adornments, retaining native multiline resizing.
+- `SearchInput` / `SearchInputGroup` expose `appearance="quiet"` for navigation search;
+  `field` is the normal filled frame and `bare` delegates its frame/focus to its composite owner.
+- Shared `--ui-field-height-sm|md` roles give approximately 28/32px at compact density;
+  comfortable and touch preferences scale them. Textarea height follows its multiline content.
+- Frames use a faint 1px boundary and an 8px radius. Focus uses adjusted accent ink and
+  `--ui-focus-ring`; forced colors keep a real outline. Invalid fields retain the error boundary.
+- `FieldControl` owns one frame and intrinsic leading/trailing action columns. Use `InlineAction`
+  inside slots for clear/reveal/step/generate actions; do not absolutely overlay buttons or guess
+  padding from action counts. Slot buttons keep their hover fill inset and keyboard focus visible.
+- Select menus align at the start below the trigger, at least trigger width (viewport bounds win).
+  Choice rows use text and a rounded soft selected highlight. Existing menu keyboard/native routing
+  stays with its controller. Searchable choices keep their search header and multiple-value semantics.
+- Async `Button` labels retain their widest measured width when `loading` is supplied; opt in with
+  `stableWidth` for other changing labels. `Badge minWidth` reserves a caller-chosen state slot.
+  These are source contracts; V3 runtime and visual acceptance is deferred to the coordinating agent.
 
 ## Disclosure and overlays
 

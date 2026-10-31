@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -120,108 +121,140 @@ export function SprintManagement({
       setBusy(null);
     }
   };
+  // Several Hosts can plan; with one, the choice would only be noise.
+  const hostChoices = [...new Set(board.machines.map((machine) => machine.environmentId))];
+  const showHost =
+    hostChoices.length > 1 || (!board.coordinator && !!board.coordinatorEnvironmentId);
+  const distinctStates = new Set(rows.map((sprint) => sprint.state)).size;
+  const nothing = !selected && !rows.length && !board.loading;
+  const hostControl = showHost ? (
+    <>
+      <span>{t("Planning Host")}</span>
+      <div className="sprint-source">
+        <SearchableSelect
+          label={t("Planning Host")}
+          value={board.coordinatorEnvironmentId}
+          options={[
+            ...(!board.coordinator && board.coordinatorEnvironmentId
+              ? [
+                  {
+                    value: board.coordinatorEnvironmentId,
+                    label: t("Selected Host is unavailable"),
+                    disabled: true,
+                  },
+                ]
+              : []),
+            ...[
+              ...new Map(board.machines.map((machine) => [machine.environmentId, machine])).values(),
+            ].map((machine) => ({ value: machine.environmentId, label: machine.name })),
+          ]}
+          onChange={board.setCoordinatorEnvironmentId}
+          disabled={!!busy}
+        />
+      </div>
+    </>
+  ) : null;
+  const newSprint = (
+    <Button
+      variant="primary"
+      disabled={!board.supported || !!busy || !projects.length}
+      onClick={() => setEditing("new")}
+    >
+      {t("New sprint")}
+    </Button>
+  );
   return (
     <section className="sprint-management" aria-label={t("Sprints")}>
-      <div className="sprint-heading">
-        <h2 title={selected?.name}>{selected?.name ?? t("Sprints")}</h2>
-        <div className="sprint-actions">
-          {selected && fullyAccessible(selected) ? (
-            <>
-              {selected.state === "planned" || selected.state === "active" ? (
-                <Button disabled={!!busy} onClick={() => setEditing(selected)}>
-                  {t("Edit sprint")}
-                </Button>
-              ) : null}
-              {selected.state === "planned" ? (
-                <Button
-                  loading={busy === "start"}
-                  disabled={!!busy || !!board.lifecycleIssue(selected)}
-                  onClick={() => void act("start", () => board.command(selected, "start"))}
-                >
-                  {t("Start sprint")}
-                </Button>
-              ) : null}
-              {selected.state === "active" ? (
-                <Button
-                  loading={busy === "complete"}
-                  disabled={!!busy || !!board.lifecycleIssue(selected)}
-                  onClick={() =>
-                    void act("complete", async () => setCompleting(await board.report(selected.id)))
-                  }
-                >
-                  {t("Complete sprint")}
-                </Button>
-              ) : null}
-              {selected.state === "completed" ? (
-                <Button
-                  loading={busy === "archive"}
-                  disabled={!!busy}
-                  onClick={() => void act("archive", () => board.command(selected, "archive"))}
-                >
-                  {t("Archive sprint")}
-                </Button>
-              ) : null}
-            </>
-          ) : null}
-          <Button
-            variant="primary"
-            disabled={!board.supported || !!busy || !projects.length}
-            onClick={() => setEditing("new")}
-          >
-            {t("New sprint")}
-          </Button>
-        </div>
-      </div>
-      <div className="sprint-context">
-        <span>{t("Planning Host")}</span>
-        <div className="sprint-source">
-          <SearchableSelect
-            label={t("Planning Host")}
-            value={board.coordinatorEnvironmentId}
-            options={[
-              ...(!board.coordinator && board.coordinatorEnvironmentId
-                ? [
-                    {
-                      value: board.coordinatorEnvironmentId,
-                      label: t("Selected Host is unavailable"),
-                      disabled: true,
-                    },
-                  ]
-                : []),
-              ...[
-                ...new Map(
-                  board.machines.map((machine) => [machine.environmentId, machine]),
-                ).values(),
-              ].map((machine) => ({ value: machine.environmentId, label: machine.name })),
-            ]}
-            onChange={board.setCoordinatorEnvironmentId}
-            disabled={!!busy}
+      {nothing ? (
+        <>
+          <EmptyState
+            context="panel"
+            kind="empty"
+            icon={null}
+            title={t("Plan several tasks together as a sprint")}
+            description={t(
+              "Choose the projects and the tasks to work on together, then follow the progress.",
+            )}
+            action={newSprint}
           />
-        </div>
-        <Button variant="ghost" loading={board.loading} onClick={() => void board.refresh()}>
-          {t("Refresh")}
-        </Button>
-        {selected ? (
-          <>
-            <span>
-              {t(
-                {
-                  planned: "Planned",
-                  active: "Active",
-                  completed: "Completed",
-                  archived: "Archived",
-                }[selected.state],
-              )}
-            </span>
-            {selected.startsAt || selected.endsAt ? (
-              <span>
-                {dateValue(selected.startsAt) || t("No start date")} ·{" "}
-                {dateValue(selected.endsAt) || t("No end date")}
-              </span>
+          {hostControl ? <div className="sprint-context">{hostControl}</div> : null}
+        </>
+      ) : (
+        <>
+          <div className="sprint-heading">
+            <h2 title={selected?.name}>{selected?.name ?? t("Sprints")}</h2>
+            <div className="sprint-actions">
+              {selected && fullyAccessible(selected) ? (
+                <>
+                  {selected.state === "planned" || selected.state === "active" ? (
+                    <Button disabled={!!busy} onClick={() => setEditing(selected)}>
+                      {t("Edit sprint")}
+                    </Button>
+                  ) : null}
+                  {selected.state === "planned" ? (
+                    <Button
+                      loading={busy === "start"}
+                      disabled={!!busy || !!board.lifecycleIssue(selected)}
+                      onClick={() => void act("start", () => board.command(selected, "start"))}
+                    >
+                      {t("Start sprint")}
+                    </Button>
+                  ) : null}
+                  {selected.state === "active" ? (
+                    <Button
+                      loading={busy === "complete"}
+                      disabled={!!busy || !!board.lifecycleIssue(selected)}
+                      onClick={() =>
+                        void act("complete", async () =>
+                          setCompleting(await board.report(selected.id)),
+                        )
+                      }
+                    >
+                      {t("Complete sprint")}
+                    </Button>
+                  ) : null}
+                  {selected.state === "completed" ? (
+                    <Button
+                      loading={busy === "archive"}
+                      disabled={!!busy}
+                      onClick={() => void act("archive", () => board.command(selected, "archive"))}
+                    >
+                      {t("Archive sprint")}
+                    </Button>
+                  ) : null}
+                </>
+              ) : null}
+              {newSprint}
+            </div>
+          </div>
+          <div className="sprint-context">
+            {hostControl}
+            <Button variant="ghost" loading={board.loading} onClick={() => void board.refresh()}>
+              {t("Refresh")}
+            </Button>
+            {selected ? (
+              <>
+                <span>
+                  {t(
+                    {
+                      planned: "Planned",
+                      active: "Active",
+                      completed: "Completed",
+                      archived: "Archived",
+                    }[selected.state],
+                  )}
+                </span>
+                {selected.startsAt || selected.endsAt ? (
+                  <span>
+                    {dateValue(selected.startsAt) || t("No start date")} ·{" "}
+                    {dateValue(selected.endsAt) || t("No end date")}
+                  </span>
+                ) : null}
+              </>
             ) : null}
-          </>
-        ) : null}
-      </div>
+          </div>
+        </>
+      )}
       {selected?.goal ? <SprintGoalDescription goal={selected.goal} /> : null}
       {selected && summary ? (
         <dl className="sprint-summary">
@@ -261,26 +294,31 @@ export function SprintManagement({
           </ul>
         </details>
       ) : null}
-      {!selected ? (
+      {!selected && !nothing ? (
         <>
-          <div className="sprint-context">
-            <SearchableSelect
-              label={t("Sprint status")}
-              searchable={false}
-              value={stateFilter}
-              onChange={setStateFilter}
-              options={[
-                { value: "all", label: t("All") },
-                { value: "planned", label: t("Planned") },
-                { value: "active", label: t("Active") },
-                { value: "completed", label: t("Completed") },
-                { value: "archived", label: t("Archived") },
-              ]}
-            />
-          </div>
+          {distinctStates > 1 ? (
+            <div className="sprint-context">
+              <SearchableSelect
+                label={t("Sprint status")}
+                searchable={false}
+                value={stateFilter}
+                onChange={setStateFilter}
+                options={[
+                  { value: "all", label: t("All") },
+                  { value: "planned", label: t("Planned") },
+                  { value: "active", label: t("Active") },
+                  { value: "completed", label: t("Completed") },
+                  { value: "archived", label: t("Archived") },
+                ]}
+              />
+            </div>
+          ) : null}
           <ul className="sprint-collection">
             {rows
-              .filter((sprint) => stateFilter === "all" || sprint.state === stateFilter)
+              .filter(
+                (sprint) =>
+                  distinctStates < 2 || stateFilter === "all" || sprint.state === stateFilter,
+              )
               .map((sprint) => (
                 <li className="sprint-row" key={sprint.id}>
                   <div>
@@ -308,11 +346,6 @@ export function SprintManagement({
               ))}
           </ul>
         </>
-      ) : null}
-      {!selected && !rows.length && !board.loading ? (
-        <p className="sprint-muted">
-          {t("Create a sprint and choose the projects you want to plan together.")}
-        </p>
       ) : null}
       {editing ? (
         <SprintEditor

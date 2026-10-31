@@ -6,11 +6,20 @@ export class VoiceVad {
   private voiced = 0;
   private quiet = 0;
   private talking = false;
+  /** Changes whenever speech starts or resumes, so a stale pause cannot end the turn. */
+  private pauseId = 0;
+  private paused = false;
   constructor(
     private rate: number,
     private start: () => void,
     private end: (audio: Int16Array) => void,
     private discard?: () => void,
+    /** With `pause`, a short silence (0.2 s) asks the owner whether the sentence is
+     * finished (`commit`); `endSilence` is then only the fallback. */
+    private options: {
+      pause?: (audio: Int16Array, pauseId: number) => void;
+      endSilence?: number;
+    } = {},
   ) {}
   push(samples: Int16Array) {
     let energy = 0;
@@ -32,22 +41,45 @@ export class VoiceVad {
     this.chunks.push(samples);
     this.count += samples.length;
     this.quiet = voice ? 0 : this.quiet + samples.length;
-    if (voice) this.voiced += samples.length;
-    if (this.quiet >= this.rate * 0.6 || this.count >= this.rate * 20) {
-      const chunks = this.chunks,
-        size = this.count,
-        enough = this.voiced >= this.rate * 0.2;
-      this.reset();
-      if (enough) {
-        const result = new Int16Array(size);
-        let offset = 0;
-        for (const chunk of chunks) {
-          result.set(chunk, offset);
-          offset += chunk.length;
-        }
-        this.end(result);
-      } else this.discard?.();
+    if (voice) {
+      this.voiced += samples.length;
+      if (this.paused) this.pauseId++;
+      this.paused = false;
     }
+    const end = this.options.endSilence ?? 0.6;
+    if (this.quiet >= this.rate * end || this.count >= this.rate * 20) return this.flush();
+    if (
+      this.options.pause &&
+      !this.paused &&
+      this.quiet >= this.rate * 0.2 &&
+      this.voiced >= this.rate * 0.2
+    ) {
+      this.paused = true;
+      this.options.pause(this.audio(), this.pauseId);
+    }
+  }
+  /** Ends the turn at the pause `pauseId` if the speaker has not continued since. */
+  commit(pauseId: number): boolean {
+    if (!this.talking || !this.paused || pauseId !== this.pauseId) return false;
+    this.reset();
+    return true;
+  }
+  private audio() {
+    const result = new Int16Array(this.count);
+    let offset = 0;
+    for (const chunk of this.chunks) {
+      result.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return result;
+  }
+  /** Ends the current utterance now, e.g. when dictation stops mid-sentence. */
+  flush() {
+    if (!this.talking) return this.reset();
+    const result = this.voiced >= this.rate * 0.2 ? this.audio() : undefined;
+    this.reset();
+    if (result) this.end(result);
+    else this.discard?.();
   }
   reset() {
     this.chunks = [];
@@ -56,6 +88,8 @@ export class VoiceVad {
     this.voiced = 0;
     this.quiet = 0;
     this.talking = false;
+    this.paused = false;
+    this.pauseId++;
   }
 }
 

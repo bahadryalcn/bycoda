@@ -157,10 +157,15 @@ type Captured = {
 type Ack = { capture: Captured; record: NativeEditorDraftMetadata };
 type Job = {
   sequence: number;
+  rearm(): void;
   implementation: number;
   promise: Promise<Ack>;
   wake(): void;
   capture: Captured;
+  /** Woken by a save/quit/unload flush: the write must verify every digest. */
+  urgent?: boolean;
+  /** Superseded by an oversized capture: it must not write an older copy over it. */
+  cancelled?: boolean;
 };
 type DocumentState = {
   id: string;
@@ -186,6 +191,13 @@ type DocumentState = {
   bindings: number;
   restoreBoundary?: number;
   failureSequence: number;
+  validBaseline?: string;
+  digestsVerified?: boolean;
+  verifiedBaseline?: string;
+  verifiedBaselineDigest?: string;
+  verifiedText?: string;
+  verifiedTextDigest?: string;
+  emitted?: NativeCaptureState;
   ready: Promise<NativeCaptureState>;
   handle: EditorDraftDocument & {
     captureAt(input: EditorDraftCaptureInput, path: string): EditorDraftCapture;
@@ -215,7 +227,14 @@ function stale(value: unknown): boolean {
   return String(value).includes("STALE_OWNER") || String(value).includes("OWNER_CHANGED");
 }
 function samePayload(a: Payload, b: Payload): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return (
+    a.documentId === b.documentId &&
+    a.path === b.path &&
+    a.text === b.text &&
+    a.eol === b.eol &&
+    a.diskBaseline === b.diskBaseline &&
+    a.revision === b.revision
+  );
 }
 function freezeRecord(record: z.infer<typeof recordSchema>): NativeEditorDraftRecord {
   return Object.freeze({
@@ -223,24 +242,61 @@ function freezeRecord(record: z.infer<typeof recordSchema>): NativeEditorDraftRe
     payload: Object.freeze(record.payload),
   });
 }
+/** Below this size hashing the text costs less than trusting the Host's digest. */
+const QUICK_CHECK_MIN_CHARS = 64 * 1024;
 async function checkMetadata(
   value: NativeEditorDraftMetadata,
   payload: Payload,
   epoch: string,
+  doc?: DocumentState,
+  strict = false,
 ): Promise<NativeEditorDraftMetadata> {
   if (
     value.ownerId !== epoch ||
     value.documentId !== payload.documentId ||
     value.path !== payload.path ||
     value.revision !== payload.revision ||
-    value.payloadDigest !== (await sha(JSON.stringify(payload))) ||
-    value.textDigest !== (await sha(payload.text)) ||
-    value.serializedTextDigest !== (await sha(serialized(payload.text, payload.eol))) ||
-    value.baselineDigest !== (await sha(payload.diskBaseline)) ||
     (value.state === "retained" ? value.saveAckId !== null : !value.saveAckId)
   )
     throw new EditorDraftPersistenceError("invalid-response");
+  // Digests are hashed on the first write, a new baseline, or a cheap-check mismatch.
+  // The quick path only covers large intermediate writes; a save/quit flush and any small text
+  // are fully hashed. Even quick, a text digest that contradicts the last verified text is invalid.
+  const quick =
+    !strict &&
+    payload.text.length >= QUICK_CHECK_MIN_CHARS &&
+    !!doc?.digestsVerified &&
+    doc.verifiedBaseline === payload.diskBaseline &&
+    value.baselineDigest === doc.verifiedBaselineDigest;
+  if (quick && doc?.verifiedText !== undefined) {
+    const sameText = payload.text === doc.verifiedText;
+    if (sameText !== (value.textDigest === doc.verifiedTextDigest))
+      throw new EditorDraftPersistenceError("invalid-response");
+  }
+  if (!quick) {
+    if (
+      value.payloadDigest !== (await sha(JSON.stringify(payload))) ||
+      value.textDigest !== (await sha(payload.text)) ||
+      value.serializedTextDigest !== (await sha(serialized(payload.text, payload.eol))) ||
+      value.baselineDigest !== (await sha(payload.diskBaseline))
+    )
+      throw new EditorDraftPersistenceError("invalid-response");
+    if (doc) {
+      doc.digestsVerified = true;
+      doc.verifiedBaseline = payload.diskBaseline;
+      doc.verifiedBaselineDigest = value.baselineDigest;
+      doc.verifiedText = payload.text;
+      doc.verifiedTextDigest = value.textDigest;
+    }
+  }
   return Object.freeze(value);
+}
+/** Baseline validity is a property of the string; cache it per baseline identity. */
+function baselineValid(doc: DocumentState, baseline: string): boolean {
+  if (doc.validBaseline === baseline) return true;
+  if (!validText(baseline)) return false;
+  doc.validBaseline = baseline;
+  return true;
 }
 
 type ManagerOptions = {
@@ -248,6 +304,8 @@ type ManagerOptions = {
   available?: () => boolean;
   registry?: PersistenceDrainRegistry;
   debounceMs?: number;
+  /** Upper bound on how long continuous edits can postpone the first write. */
+  maxWaitMs?: number;
   operationTimeoutMs?: number;
 };
 type RetainedState = {
@@ -283,7 +341,8 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
   const { documents, captures } = state;
   let producer: PersistenceProducer | undefined;
   let wakeBoundary = 0;
-  const delay = options.debounceMs ?? 300;
+  const delay = options.debounceMs ?? 1500;
+  const maxWait = Math.max(delay, options.maxWaitMs ?? 5000);
   const operationTimeout = options.operationTimeoutMs ?? 10_000;
   function snapshot(doc: DocumentState): NativeCaptureState {
     return Object.freeze({
@@ -301,8 +360,27 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
       ...(doc.error ? { error: doc.error } : {}),
     });
   }
-  function emit(doc: DocumentState) {
+  // Listeners only need a new snapshot when something they render changed; the
+  // per-keystroke captureId value is readable through observe().
+  function sameView(a: NativeCaptureState | undefined, b: NativeCaptureState): boolean {
+    return (
+      !!a &&
+      a.phase === b.phase &&
+      a.pending === b.pending &&
+      a.error === b.error &&
+      a.disposed === b.disposed &&
+      a.path === b.path &&
+      a.ownerEpoch === b.ownerEpoch &&
+      a.currentDraft === b.currentDraft &&
+      a.acknowledgedDraft === b.acknowledgedDraft &&
+      a.initializationDecisionRequired === b.initializationDecisionRequired &&
+      (a.captureId === undefined) === (b.captureId === undefined)
+    );
+  }
+  function emit(doc: DocumentState, force = false) {
     const state = snapshot(doc);
+    if (!force && sameView(doc.emitted, state)) return;
+    doc.emitted = state;
     // Snapshot the notification boundary: a callback can subscribe/unsubscribe.
     // oxlint-disable-next-line unicorn/no-useless-spread
     for (const listener of [...doc.listeners]) {
@@ -316,6 +394,7 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
   function failed(doc: DocumentState, value: unknown, failedSequence = doc.latest?.sequence ?? 0) {
     doc.failureSequence = Math.max(doc.failureSequence, failedSequence);
     doc.error = asError(value);
+    doc.digestsVerified = false;
     doc.phase = stale(value) ? "stale-owner" : "error";
     emit(doc);
   }
@@ -400,6 +479,7 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
     doc: DocumentState,
     capture: Captured,
     work?: PersistenceWork,
+    strict = false,
   ): Promise<Ack> {
     await doc.ready;
     if (doc.phase === "stale-owner") throw new EditorDraftPersistenceError("stale-owner");
@@ -436,12 +516,13 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
         },
       }),
     );
-    const record = await checkMetadata(result.record, payload, doc.epoch);
+    const record = await checkMetadata(result.record, payload, doc.epoch, doc, strict);
     return acknowledge(doc, capture, record, work);
   }
   function enqueue(doc: DocumentState, value: Captured): Job {
     if (doc.pending?.implementation === implementation) {
       doc.pending.capture = value;
+      doc.pending.rearm();
       return doc.pending;
     }
     let start!: () => void;
@@ -455,8 +536,17 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
       capture: value,
       promise: Promise.resolve(null as unknown as Ack),
       wake: () => {},
+      rearm: () => {},
     };
-    const timer = setTimeout(() => job.wake(), delay);
+    // Debounce: each coalesced edit restarts the timer, bounded by maxWait.
+    const startedAt = Date.now();
+    let timer = setTimeout(() => job.wake(), Math.min(delay, maxWait));
+    job.rearm = () => {
+      if (awake) return;
+      clearTimeout(timer);
+      const left = Math.max(0, maxWait - (Date.now() - startedAt));
+      timer = setTimeout(() => job.wake(), Math.min(delay, left));
+    };
     job.wake = () => {
       if (awake) return;
       awake = true;
@@ -469,13 +559,14 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
     job.promise = run(doc, async (work) => {
       await gate;
       await previous;
+      if (job.cancelled) throw new EditorDraftPersistenceError("capacity");
       // Keep the one unsent slot coalescible while an actual Native operation
       // is still settling. A fired debounce is not another queue allocation.
       if (doc.pending === job) doc.pending = undefined;
-      return write(doc, job.capture, work);
+      return write(doc, job.capture, work, job.urgent);
     })
       .catch((error) => {
-        failed(doc, error, job.capture.sequence);
+        if (!job.cancelled) failed(doc, error, job.capture.sequence);
         throw error;
       })
       .finally(() => {
@@ -492,8 +583,11 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
   async function flushJobs(boundary = state.sequence): Promise<void> {
     const jobs = [...documents.values()]
       .flatMap((doc) => [...doc.jobs])
-      .filter((job) => job.sequence <= boundary);
-    for (const job of jobs) job.wake();
+      .filter((job) => job.sequence <= boundary && !job.cancelled);
+    for (const job of jobs) {
+      job.urgent = true;
+      job.wake();
+    }
     const results = await Promise.allSettled(jobs.map((job) => job.promise));
     const failure = results.find((result) => result.status === "rejected");
     if (failure?.status === "rejected") throw failure.reason;
@@ -503,7 +597,11 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
       wake: () => {
         wakeBoundary = state.sequence;
         for (const doc of documents.values())
-          for (const job of doc.jobs) if (job.sequence <= wakeBoundary) job.wake();
+          for (const job of doc.jobs)
+            if (job.sequence <= wakeBoundary && !job.cancelled) {
+              job.urgent = true;
+              job.wake();
+            }
       },
       flush: async () => {
         await flushJobs(wakeBoundary);
@@ -622,7 +720,7 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
               !raw.captureId ||
               !Number.isSafeInteger(raw.text.length) ||
               raw.text.length > MAX_TEXT ||
-              !validText(raw.diskBaseline) ||
+              !baselineValid(doc, raw.diskBaseline) ||
               !["lf", "crlf", "cr"].includes(raw.eol)
             ? new EditorDraftPersistenceError("invalid-capture")
             : undefined;
@@ -644,7 +742,23 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
         if (doc.restoreBoundary !== undefined && value.sequence > doc.restoreBoundary)
           doc.restoreBoundary = undefined;
         let job: Job | undefined;
-        if (invalid) failed(doc, invalid, value.sequence);
+        // Size/capacity limits disable draft capture for this edit without the red
+        // banner; only a real Native write failure (see failed()) warns the user.
+        const oversize =
+          invalid?.code === "capacity" ||
+          (Number.isSafeInteger(raw.text.length) && raw.text.length > MAX_TEXT);
+        if (invalid && oversize) {
+          console.warn(`[editor-draft] capture skipped (${invalid.code}); recovery copy is not kept`);
+          // The unsent older capture would otherwise be stored as if it were this document.
+          const older = doc.pending;
+          if (older) {
+            older.cancelled = true;
+            doc.pending = undefined;
+            older.wake();
+            if (doc.phase === "queued") doc.phase = doc.error ? "error" : (doc.known?.state ?? "ready");
+          }
+        }
+        else if (invalid) failed(doc, invalid, value.sequence);
         else {
           doc.phase = "queued";
           job = enqueue(doc, value);
@@ -917,7 +1031,7 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
   for (const doc of documents.values()) {
     doc.pending?.wake();
     installDocument(doc);
-    emit(doc);
+    emit(doc, true);
   }
   return {
     bindDocument,
@@ -943,5 +1057,21 @@ const globalKey = Symbol.for("bycoda.native-editor-draft-state.v1");
 const globals = globalThis as typeof globalThis & { [globalKey]?: RetainedState };
 const defaultManager = implementManager({}, (globals[globalKey] ??= retainedState()));
 defaultManager.attachRegistry(rendererPersistenceDrain);
+// A reload or window close bypasses the quit coordinator, so wake the debounced writes here.
+// The previous module instance's listeners are removed first (hot reload).
+if (typeof window !== "undefined") {
+  const pageKey = Symbol.for("bycoda.native-editor-draft-pagehide.v1");
+  const holder = globalThis as typeof globalThis & { [pageKey]?: () => void };
+  holder[pageKey]?.();
+  const onPageHide = () => {
+    void defaultManager.flush().catch(() => {});
+  };
+  window.addEventListener("pagehide", onPageHide);
+  window.addEventListener("beforeunload", onPageHide);
+  holder[pageKey] = () => {
+    window.removeEventListener("pagehide", onPageHide);
+    window.removeEventListener("beforeunload", onPageHide);
+  };
+}
 export const bindEditorDraftDocument = defaultManager.bindDocument;
 export const flushEditorDraftPersistence = defaultManager.flush;

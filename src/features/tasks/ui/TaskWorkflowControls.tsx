@@ -5,6 +5,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Badge } from "../../../shared/ui/Badge";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import {
   applyTaskWorkflow,
   BUILTIN_TASK_WORKFLOWS,
@@ -52,6 +53,8 @@ function ScopedTaskWorkflowControls({
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  // The preparation state is only worth showing once a workflow, a resource or a check exists.
+  const [picked, setPicked] = useState(false);
   const [activeOperation, setActiveOperation] = useState<string | null>(null);
   const working = activeOperation !== null;
   const operationGate = useRef(false);
@@ -101,9 +104,9 @@ function ScopedTaskWorkflowControls({
     });
   return (
     <details className="task-form-section">
-      <summary>{t("Workflow and preparation")}</summary>
+      <summary>{t("Workflow")}</summary>
       <div className="task-form-section-body">
-        <div className="flex min-w-0 flex-wrap items-end gap-2">
+        <div className="task-workflow-pick">
           <div className="min-w-0 flex-1">
             <SearchableSelect
               label={t("Workflow")}
@@ -115,140 +118,149 @@ function ScopedTaskWorkflowControls({
               disabled={blocked}
               onChange={(value) => {
                 setSelected(value);
+                setPicked(true);
                 setName(profiles.find((profile) => profile.id === value)?.name ?? "");
                 setMessage("");
               }}
             />
           </div>
+          <InfoPopover label={t("About workflows")} className="shrink-0">
+            <p>
+              {t(
+                "Keeps your current objective. Applying a workflow does not start work or authorize publication.",
+              )}
+            </p>
+          </InfoPopover>
           <Button
             disabled={blocked || !chosen}
             loading={activeOperation === "apply"}
             onClick={() =>
               void run("apply", async () => {
                 if (chosen) await onApply(applyTaskWorkflow(chosen, draft), chosen);
+                setPicked(true);
                 setMessage(t("Workflow applied to this draft."));
               })
             }
           >
             {t("Apply workflow")}
           </Button>
-          <Button
-            variant="ghost"
-            disabled={blocked || !scope.machineId || !scope.projectId}
-            loading={activeOperation === "refresh"}
-            onClick={() =>
-              void run("refresh", () => {
-                let latest: TaskWorkflowProfile[];
-                try {
-                  latest = loadTaskWorkflows(scope);
-                } catch {
-                  throw new Error(
-                    t("Saved workflows could not be read. Existing saved data was preserved."),
-                  );
-                }
-                setProfiles(latest);
-                if (
-                  !BUILTIN_TASK_WORKFLOWS.some((profile) => profile.id === selected) &&
-                  !latest.some((profile) => profile.id === selected)
-                ) {
-                  setSelected(BUILTIN_TASK_WORKFLOWS[0].id);
-                  setName("");
-                }
-                setMessage(t("Workflows refreshed."));
-              })
-            }
-          >
-            {t("Refresh workflows")}
-          </Button>
         </div>
-        <p className="text-ui-micro text-(--ui-text-secondary)">
-          {t(
-            "Keeps your current objective. Applying a workflow does not start work or authorize publication.",
-          )}
-        </p>
-        <div className="flex min-w-0 flex-wrap items-end gap-2">
-          <div className="min-w-0 flex-1">
-            <TextField
-              label={t("Workflow name")}
-              value={name}
-              disabled={blocked}
-              maxLength={120}
-              onChange={(event) => setName(event.target.value)}
-            />
+        <details className="task-workflow-manage">
+          <summary>{t("Save or refresh workflows")}</summary>
+          <div className="task-form-section-body">
+            <div className="flex min-w-0 flex-wrap items-end gap-2">
+              <div className="min-w-0 flex-1">
+                <TextField
+                  label={t("Workflow name")}
+                  value={name}
+                  disabled={blocked}
+                  maxLength={120}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </div>
+              <Button
+                disabled={blocked || !name.trim() || !scope.machineId || !scope.projectId}
+                loading={activeOperation === "save"}
+                onClick={() =>
+                  void run("save", () => {
+                    const now = Date.now();
+                    const createdAt = custom?.createdAt ?? now;
+                    const updatedAt = Math.max(now, createdAt, custom ? custom.updatedAt + 1 : now);
+                    if (
+                      !Number.isSafeInteger(now) ||
+                      now < 0 ||
+                      !Number.isSafeInteger(updatedAt) ||
+                      updatedAt > 8_640_000_000_000_000
+                    )
+                      throw new Error(t("The workflow could not be updated."));
+                    const profile: TaskWorkflowProfile = {
+                      schema: "bycoda.task-workflow.v1",
+                      id: custom?.id ?? crypto.randomUUID(),
+                      name: name.trim(),
+                      draft,
+                      createdAt,
+                      updatedAt,
+                    };
+                    const latest = loadTaskWorkflows(scope);
+                    if (
+                      custom &&
+                      JSON.stringify(latest.find((entry) => entry.id === custom.id)) !==
+                        JSON.stringify(custom)
+                    )
+                      throw new Error(
+                        t("This workflow changed in another window. Reopen it before saving."),
+                      );
+                    const next = custom
+                      ? latest.map((entry) => (entry.id === custom.id ? profile : entry))
+                      : [...latest, profile];
+                    saveTaskWorkflows(scope, next);
+                    setProfiles(next);
+                    setSelected(profile.id);
+                    setMessage(t("Workflow saved for this project."));
+                  })
+                }
+              >
+                {t("Save workflow")}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={blocked || !scope.machineId || !scope.projectId}
+                loading={activeOperation === "refresh"}
+                onClick={() =>
+                  void run("refresh", () => {
+                    let latest: TaskWorkflowProfile[];
+                    try {
+                      latest = loadTaskWorkflows(scope);
+                    } catch {
+                      throw new Error(
+                        t("Saved workflows could not be read. Existing saved data was preserved."),
+                      );
+                    }
+                    setProfiles(latest);
+                    if (
+                      !BUILTIN_TASK_WORKFLOWS.some((profile) => profile.id === selected) &&
+                      !latest.some((profile) => profile.id === selected)
+                    ) {
+                      setSelected(BUILTIN_TASK_WORKFLOWS[0].id);
+                      setName("");
+                    }
+                    setMessage(t("Workflows refreshed."));
+                  })
+                }
+              >
+                {t("Refresh workflows")}
+              </Button>
+              {custom ? (
+                <Button
+                  tone="danger"
+                  variant="ghost"
+                  disabled={blocked}
+                  loading={activeOperation === "remove"}
+                  onClick={() =>
+                    void run("remove", () => {
+                      const latest = loadTaskWorkflows(scope);
+                      if (
+                        JSON.stringify(latest.find((entry) => entry.id === custom.id)) !==
+                        JSON.stringify(custom)
+                      )
+                        throw new Error(
+                          t("This workflow changed in another window. Reopen it before saving."),
+                        );
+                      const next = latest.filter((profile) => profile.id !== custom.id);
+                      saveTaskWorkflows(scope, next);
+                      setProfiles(next);
+                      setSelected(BUILTIN_TASK_WORKFLOWS[0].id);
+                      setName("");
+                      setMessage(t("Saved workflow removed."));
+                    })
+                  }
+                >
+                  {t("Remove workflow")}
+                </Button>
+              ) : null}
+            </div>
           </div>
-          <Button
-            disabled={blocked || !name.trim() || !scope.machineId || !scope.projectId}
-            loading={activeOperation === "save"}
-            onClick={() =>
-              void run("save", () => {
-                const now = Date.now();
-                const createdAt = custom?.createdAt ?? now;
-                const updatedAt = Math.max(now, createdAt, custom ? custom.updatedAt + 1 : now);
-                if (
-                  !Number.isSafeInteger(now) ||
-                  now < 0 ||
-                  !Number.isSafeInteger(updatedAt) ||
-                  updatedAt > 8_640_000_000_000_000
-                )
-                  throw new Error(t("The workflow could not be updated."));
-                const profile: TaskWorkflowProfile = {
-                  schema: "bycoda.task-workflow.v1",
-                  id: custom?.id ?? crypto.randomUUID(),
-                  name: name.trim(),
-                  draft,
-                  createdAt,
-                  updatedAt,
-                };
-                const latest = loadTaskWorkflows(scope);
-                if (
-                  custom &&
-                  JSON.stringify(latest.find((entry) => entry.id === custom.id)) !==
-                    JSON.stringify(custom)
-                )
-                  throw new Error(
-                    t("This workflow changed in another window. Reopen it before saving."),
-                  );
-                const next = custom
-                  ? latest.map((entry) => (entry.id === custom.id ? profile : entry))
-                  : [...latest, profile];
-                saveTaskWorkflows(scope, next);
-                setProfiles(next);
-                setSelected(profile.id);
-                setMessage(t("Workflow saved for this project."));
-              })
-            }
-          >
-            {t("Save workflow")}
-          </Button>
-          {custom ? (
-            <Button
-              tone="danger"
-              variant="ghost"
-              disabled={blocked}
-              loading={activeOperation === "remove"}
-              onClick={() =>
-                void run("remove", () => {
-                  const latest = loadTaskWorkflows(scope);
-                  if (
-                    JSON.stringify(latest.find((entry) => entry.id === custom.id)) !==
-                    JSON.stringify(custom)
-                  )
-                    throw new Error(
-                      t("This workflow changed in another window. Reopen it before saving."),
-                    );
-                  const next = latest.filter((profile) => profile.id !== custom.id);
-                  saveTaskWorkflows(scope, next);
-                  setProfiles(next);
-                  setSelected(BUILTIN_TASK_WORKFLOWS[0].id);
-                  setName("");
-                  setMessage(t("Saved workflow removed."));
-                })
-              }
-            >
-              {t("Remove workflow")}
-            </Button>
-          ) : null}
-        </div>
+        </details>
         <details className="min-w-0 space-y-2">
           <summary className="cursor-pointer text-ui-caption">
             {t("Required resources")}
@@ -318,23 +330,28 @@ function ScopedTaskWorkflowControls({
           </Button>
         </details>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Badge
-            tone={
-              preflight?.state === "ready"
-                ? "success"
+          {picked || requirements.length > 0 || preflight ? (
+            <Badge
+              tone={
+                preflight?.state === "ready"
+                  ? "success"
+                  : preflight?.state === "blocked"
+                    ? "danger"
+                    : "neutral"
+              }
+            >
+              {preflight?.state === "ready"
+                ? t("Ready")
                 : preflight?.state === "blocked"
-                  ? "danger"
-                  : "warning"
-            }
-          >
-            {preflight?.state === "ready"
-              ? t("Ready")
-              : preflight?.state === "blocked"
-                ? t("Preparation blocked")
-                : t("Preparation not verified")}
-          </Badge>
+                  ? t("Preparation blocked")
+                  : t("Preparation not verified")}
+            </Badge>
+          ) : (
+            <span />
+          )}
           {onCheck ? (
             <Button
+              variant="ghost"
               disabled={blocked}
               loading={activeOperation === "check"}
               onClick={() => void run("check", onCheck)}

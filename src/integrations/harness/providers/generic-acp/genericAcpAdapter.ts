@@ -36,6 +36,7 @@ import {
   trackNativeOutputWork,
   type NativeOutputWork,
 } from "../../core/nativeOutputDelivery";
+import { JsonRpcResponseError } from "../../core/jsonRpc";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { spawnChild, watchChild, invokeProviderCommand } from "../../core/child";
@@ -157,6 +158,7 @@ async function cancel(sessionId: string, context?: HarnessOperationContext): Pro
 
   const live = lives.get(sessionId);
   const original = live ?? starting.get(sessionId);
+  // A captured cancellation must not affect a newer operation.
   if (!ownsOperation(context, original?.handle, original?.operation)) return;
   if (!live) {
     const startup = starting.get(sessionId);
@@ -389,19 +391,25 @@ export async function sendGenericAcpTurn(
                 initialized.agentCapabilities?.loadSession
               ) {
                 state.replaying = true;
-                const loaded = await startupAcp.request<{ modes?: Live["modes"] }>(
-                  "session/load",
-                  { sessionId: resume.providerId, cwd: input.cwd, mcpServers: [] },
-                  30_000,
-                );
-                state.modes = loaded.modes;
-                state.providerId = resume.providerId;
-                state.replaying = false;
-              } else {
-                if (resume)
-                  throw new Error(
-                    "This ACP agent cannot resume its stored session; start a new conversation or hand off explicitly",
+                try {
+                  const loaded = await startupAcp.request<{ modes?: Live["modes"] }>(
+                    "session/load",
+                    { sessionId: resume.providerId, cwd: input.cwd, mcpServers: [] },
+                    30_000,
                   );
+                  state.modes = loaded.modes;
+                  state.providerId = resume.providerId;
+                } catch (error) {
+                  if (!(error instanceof JsonRpcResponseError)) throw error;
+                } finally {
+                  state.replaying = false;
+                }
+              }
+              if (!state.providerId) {
+                if (resume) {
+                  resumes.delete(input.sessionId);
+                  emitNative({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
+                }
                 const setup = await startupAcp.request<{
                   sessionId?: string;
                   modes?: Live["modes"];
@@ -533,11 +541,14 @@ export const genericAcpAdapter: HarnessAdapter = {
   cancelTurn: cancel,
   stopSession: stop,
   forgetSession: async (id, context) => {
-    if (cancelQueuedOperation(context)) return;
-    const original = lives.get(id) ?? starting.get(id);
-    if (original && !ownsOperation(context, original.handle, original.operation)) return;
+    // Delete/switch must end the process: clear resume state first and stop by
+    // session when the context no longer owns it.
     resumes.delete(id);
-    await stop(id, context);
+    const queuedOnly = cancelQueuedOperation(context);
+    const original = lives.get(id) ?? starting.get(id);
+    const owned =
+      !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+    await stop(id, owned ? context : undefined);
   },
   bindSession: (id, providerId, cwd) => {
     resumes.set(id, { providerId, cwd });

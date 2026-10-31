@@ -36,7 +36,7 @@ export function cachedSkillPolicy(): SkillPolicy {
   };
 }
 
-export function cacheSkillPolicy(policy: SkillPolicy): void {
+function persistSkillPolicy(policy: SkillPolicy): void {
   try {
     const remoteLegacy = cachedSkillPolicy().disabledPaths.filter((path) =>
       path.startsWith("remote://"),
@@ -52,16 +52,48 @@ export function cacheSkillPolicy(policy: SkillPolicy): void {
   }
 }
 
-/** Load afresh at every send; the host, other windows and Settings share one machine file. */
+const restrictions = new Map<string, { policy: SkillPolicy; expires: number; storage: string }>();
+let policyRevision = 0;
+function invalidateRestrictions(): void {
+  policyRevision++;
+  restrictions.clear();
+}
+
+export function cacheSkillPolicy(policy: SkillPolicy): void {
+  invalidateRestrictions();
+  persistSkillPolicy(policy);
+}
+
+// Keep this event name in sync with SKILLS_CHANGE_EVENT in skills.ts; importing
+// that module here would introduce a cycle through its policy loader.
+if (typeof window !== "undefined") {
+  window.addEventListener("bycoda:skills-change", invalidateRestrictions);
+  window.addEventListener("storage", (event) => {
+    if (!event.key || event.key === DISABLED_SKILL_PATHS_KEY || event.key === DISABLED_SKILL_NAMES_KEY)
+      invalidateRestrictions();
+  });
+}
+
+/** Short-lived per-checkout policy; settings writes invalidate it immediately. */
 export async function loadSkillRestrictions(cwd = ""): Promise<SkillPolicy> {
   if (!cwd.startsWith("remote://") && !(typeof isTauri === "function" && isTauri()))
     return cachedSkillPolicy();
+  const storage = JSON.stringify(cachedSkillPolicy());
+  const cached = restrictions.get(cwd);
+  if (cached && cached.expires > Date.now() && cached.storage === storage) return cached.policy;
+  restrictions.delete(cwd);
+  const revision = policyRevision;
   let policy: SkillPolicy;
   try {
     policy = parseSkillPolicy(await getSkillPolicy(cwd, cachedSkillPolicy().disabledPaths));
   } catch (error) {
     throw new Error(`Could not load skill restrictions: ${String(error)}`);
   }
-  if (!cwd.startsWith("remote://")) cacheSkillPolicy(policy);
+  // An in-flight read must not restore a policy superseded by Settings.
+  if (revision !== policyRevision) return loadSkillRestrictions(cwd);
+  if (!cwd.startsWith("remote://")) persistSkillPolicy(policy);
+  for (const [key, entry] of restrictions) if (entry.expires <= Date.now()) restrictions.delete(key);
+  if (restrictions.size >= 128) restrictions.delete(restrictions.keys().next().value!);
+  restrictions.set(cwd, { policy, expires: Date.now() + 30_000, storage: JSON.stringify(cachedSkillPolicy()) });
   return policy;
 }

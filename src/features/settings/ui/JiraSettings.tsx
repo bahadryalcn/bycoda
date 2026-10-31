@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Row } from "./settingsControls";
 import {
+  InboxAccountActions,
   InboxConnectionStatus,
   InboxConnectionError,
   useConnectionVerification,
@@ -253,8 +254,8 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
         onCheck={() => void checkStatus()}
       />
       <Row
-        label={t("Account configuration")}
-        description={t(
+        label={t("Account")}
+        info={t(
           "Connect your Jira Cloud site using your Atlassian email and an API token without scopes. Disconnect deletes the saved credentials.",
         )}
         persistence={{
@@ -271,14 +272,14 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               {t("Checking Jira connection…")}
             </p>
           ) : status?.connected && !editing ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inbox-account-summary">
               <div className="min-w-0 text-ui-caption text-(--ui-text-secondary)">
                 <p className="break-all">{status.site}</p>
                 <p className="flex min-w-0">
                   <PrivateEmail key={status.email} email={status.email} />
                 </p>
               </div>
-              <Button
+              <Button stableWidth
                 disabled={busy}
                 onClick={() => {
                   setSite(status.site);
@@ -288,14 +289,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               >
                 {t("Edit")}
               </Button>
-              <Button
-                className="shrink-0"
-                onClick={() => void disconnect()}
-                loading={operation === "disconnect"}
-                disabled={busy}
-              >
-                {operation === "disconnect" ? t("Disconnecting") : t("Disconnect")}
-              </Button>
+              <InboxAccountActions onDisconnect={() => void disconnect()} loading={operation === "disconnect"} disabled={busy} />
             </div>
           ) : (
             <form
@@ -358,7 +352,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               ))}
               <div className="flex items-center gap-3">
                 {status?.connected ? (
-                  <Button
+                  <Button stableWidth
                     type="button"
                     disabled={busy}
                     onClick={() => {
@@ -369,11 +363,12 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                     {t("Cancel")}
                   </Button>
                 ) : null}
-                <Button
+                <Button stableWidth
                   className="shrink-0"
                   type="submit"
                   loading={operation === "save"}
                   disabled={busy || !site.trim() || !email.trim() || !token.trim()}
+                  reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
                 >
                   {busy
                     ? t("Saving and testing…")
@@ -381,7 +376,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                       ? t("Retry save and test")
                       : t("Save and test connection")}
                 </Button>
-                <Button
+                <Button stableWidth
                   variant="link"
                   type="button"
                   onClick={() =>
@@ -403,8 +398,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
           <Row
             stacked
             label={t("Projects")}
-            description={t("Unchecked projects stay out of the inbox.")}
-            descriptionVisible
+            info={t("Unchecked projects stay out of the inbox.")}
             persistence={{ mode: "automatic" }}
           >
             <div className="inbox-scope">
@@ -412,7 +406,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               {projectScope.error ? (
                 <SettingsFeedback
                   state="error"
-                  action={<Button onClick={projectScope.retry}>{t("Retry")}</Button>}
+                  action={<Button stableWidth onClick={projectScope.retry}>{t("Retry")}</Button>}
                 >
                   {t("Saved Inbox scope is unavailable. Retry before changing it.")}
                 </SettingsFeedback>
@@ -438,7 +432,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   emptyLabel={t("No projects available. Refresh projects to try again.")}
                   noMatchLabel={t("No matching projects")}
                   actions={
-                    <Button
+                    <Button stableWidth
                       className="shrink-0"
                       size="sm"
                       loading={projectsLoading}
@@ -455,8 +449,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
           <Row
             stacked
             label={t("Boards")}
-            description={t("Only checked boards from selected projects appear in the inbox.")}
-            descriptionVisible
+            info={t("Only checked boards from selected projects appear in the inbox.")}
             persistence={{ mode: "automatic" }}
           >
             <div className="inbox-scope">
@@ -466,7 +459,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               {boardScope.error ? (
                 <SettingsFeedback
                   state="error"
-                  action={<Button onClick={boardScope.retry}>{t("Retry")}</Button>}
+                  action={<Button stableWidth onClick={boardScope.retry}>{t("Retry")}</Button>}
                 >
                   {t("Saved Inbox scope is unavailable. Retry before changing it.")}
                 </SettingsFeedback>
@@ -492,7 +485,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   emptyLabel={t("No boards available. Select projects and refresh boards.")}
                   noMatchLabel={t("No matching boards")}
                   actions={
-                    <Button
+                    <Button stableWidth
                       className="shrink-0"
                       size="sm"
                       loading={boardsLoading}
@@ -515,7 +508,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       {status?.connected ? (
         <Row
           label={t("Automatically refresh Jira in the background")}
-          description={t(
+          info={t(
             "Off by default. Jira loads when opened or refreshed manually. Background notifications and Jira triggers require this option.",
           )}
           persistence={{ mode: "automatic" }}
@@ -524,7 +517,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               <SettingsFeedback
                 state="error"
                 action={
-                  <Button onClick={() => setBackgroundState(readBackgroundSync())}>
+                  <Button stableWidth onClick={() => setBackgroundState(readBackgroundSync())}>
                     {t("Retry")}
                   </Button>
                 }

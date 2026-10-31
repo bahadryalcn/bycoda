@@ -261,3 +261,17 @@ Compact task sections, searchable model management, explicit scopes/inheritance,
 truthful local async feedback and attention-first CLI rows. A supported custom-ID
 path or explicit zero-model policy needs coherent model/adapter/downstream
 implementation and acceptance, not an entitlement or permission bypass.
+
+## V3-008 Providers screen reorganization (2026-10-31)
+
+Owner, 2026-10-31, with a reference screenshot from another app and two current screenshots, exact quote:
+
+> bu şekilde providers ekranını daha iyi yönetebileceğimizi düşünüyordum fakat şuanda bu şekilde gözüküyor. bence burası toparlanabilir. Daha iyi bir anlayışla düzenliyebiliriz.
+
+Delivered in source (uncommitted; H3 work continued, not redone; Host/native capabilities unchanged):
+- Page top: one "Providers and model defaults" group with the scope selector (`Apply defaults to`; project scope states that CLI paths stay global) and a CLI updates row with the attention count, `Check all` and `Update all`.
+- Provider list (`ProviderList.tsx`): installed providers first with version, sign-in state (`providerStatus.ts`: Signed in / Running low / Exhausted / Signed out), default marker and a Show-in-picker switch; uninstalled providers sit in a quiet "Available to install" group with a Set up action instead of yellow badges. Narrow screens keep the selector.
+- Detail sections in task order: status (`ProviderStatusGroup.tsx`: sign-in, plan/limit, CLI version, update, checked time), Accounts (add/rename/remove/login kept; actions in an `Account actions` overflow menu, Remove account… confirms), New conversation defaults (compact Model/Effort/Permissions rows with per-row `Use global default` / `Reset to automatic`), Models (enabled count, `Enable all` / `Only default`, search, last-model guard, no inner scroll) and Runtime (CLI path, installation help, hooks).
+- Exhausted accounts say which limit window is used up and when it returns.
+- Not added (needs a separate owner decision): display name, launch arguments, environment variables, shadow home.
+- Unverified: 1280/800 light/dark screenshots (installed, uninstalled, exhausted, models, narrow selector).

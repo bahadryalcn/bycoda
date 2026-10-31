@@ -27,6 +27,8 @@ import {
   saveNotificationsEnabled,
   type NotificationPermission,
 } from "../../notifications/model/notifications";
+import { RefreshCw } from "../../../shared/ui/icons";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
 import { Group, Row, Select, Toggle, SettingsFeedback } from "./settingsControls";
@@ -123,53 +125,42 @@ export function NotificationAlerts() {
       if (next) void checkPermission(true);
     });
   };
+  const permissionText = permissionError
+    ? t("Status unavailable")
+    : permissionPending === "request"
+      ? t("Waiting for approval…")
+      : permissionPending
+        ? t("Loading…")
+        : notificationPermission === "granted"
+          ? t("Allowed by system")
+          : notificationPermission === "unsupported"
+            ? t("Not available on this platform")
+            : notificationPermission === "prompt"
+              ? t("System permission not granted")
+              : t("Status unavailable");
   const permissionStatus = (
-    <div className="notification-permission-status">
-      {!permissionError && !permissionPending && notificationPermission === "granted" ? (
-        <div className="notification-permission-message">
-          <p>{t("System permission granted")}</p>
-          <Button variant="ghost" onClick={() => void checkPermission()}>{t("Refresh")}</Button>
-        </div>
-      ) : (
-        <SettingsFeedback
-          state={
-            permissionError
-              ? "error"
-              : permissionPending
-                ? "loading"
-                : notificationPermission === "granted"
-                  ? "success"
-                  : "warning"
-          }
-          action={
-            <div className="flex flex-wrap items-center gap-2">
-              <Button loading={permissionPending === "probe"} disabled={permissionPending !== null} onClick={() => void checkPermission()}>{t("Refresh")}</Button>
-              {notificationsEnabled && notificationPermission === "prompt" ? (
-                <Button loading={permissionPending === "request"} disabled={permissionPending !== null} onClick={() => void checkPermission(true)}>{t("Request permission")}</Button>
-              ) : null}
-            </div>
-          }
-        >
-          {permissionError ? (
-            t("Status unavailable")
-          ) : permissionPending ? (
-            permissionPending === "request" ? t("Waiting for approval…") : t("Loading…")
-          ) : (
-            <>
-              {notificationPermission === "denied" ? <NotificationsBlocked /> : null}
-              {notificationPermission === "unsupported"
-                ? t("Not available on this platform")
-                : null}
-              {notificationPermission === "unavailable" ? t("Status unavailable") : null}
-              {notificationPermission === "prompt"
-                ? t(
-                    "System permission has not been granted yet. Enabling notifications requests permission.",
-                  )
-                : null}
-            </>
-          )}
-        </SettingsFeedback>
-      )}
+    <div className="notification-permission-message" role={permissionError ? "alert" : "status"}>
+      <div className={notificationPermission === "denied" ? "text-(--ui-tone-warning-fg)" : undefined}>
+        {!permissionError && !permissionPending && notificationPermission === "denied"
+          ? <NotificationsBlocked />
+          : permissionText}
+      </div>
+      <Button
+        variant="ghost"
+        iconOnly
+        label={t("Refresh permission status")}
+        tooltip={t("Refresh permission status")}
+        loading={permissionPending === "probe"}
+        disabled={permissionPending !== null}
+        onClick={() => void checkPermission()}
+      >
+        <RefreshCw aria-hidden className="icon-sm" />
+      </Button>
+      {notificationsEnabled && notificationPermission === "prompt" ? (
+        <Button loading={permissionPending === "request"} disabled={permissionPending !== null} onClick={() => void checkPermission(true)}>
+          {t("Request permission")}
+        </Button>
+      ) : null}
     </div>
   );
   return (
@@ -177,12 +168,10 @@ export function NotificationAlerts() {
       <Group
         title={t("Application alerts")}
         persistence={{ mode: "automatic" }}
-        description={t("Delivery preferences for all projects on this computer.")}
       >
         <Row
           id="sounds"
           label={t("Sounds")}
-          description={t("Play short sounds for project activity and updates.")}
           feedback={saveFeedback("sounds")}
         >
           <Toggle label={t("Sounds")} on={soundsEnabled} onChange={onSoundsEnabled} />
@@ -190,15 +179,12 @@ export function NotificationAlerts() {
         <Row
           id="notifications"
           label={t("Desktop notifications")}
+          descriptionVisible={false}
           description={t("Show alerts from other sessions or while {p0} is in the background.", {
             p0: PRODUCT_IDENTITY.displayName,
           })}
-          feedback={
-            <>
-              {saveFeedback("notifications")}
-              {permissionStatus}
-            </>
-          }
+          scope={permissionStatus}
+          feedback={saveFeedback("notifications")}
         >
           <Toggle
             label={t("Desktop notifications")}
@@ -207,34 +193,18 @@ export function NotificationAlerts() {
             disabled={permissionPending !== null}
           />
         </Row>
-      </Group>
-      <Group
-        title={t("Desktop alert events")}
-        description={t(
-          "Choose which agent events reach your desktop. Click an alert to open its session.",
-        )}
-        dependency={
-          !notificationsEnabled
-            ? t("Enable Notifications to deliver these alerts. Your choices are preserved.")
-            : notificationPermission === "denied" || notificationPermission === "unsupported"
-              ? t(
-                  "You can choose events now, but desktop delivery requires system notification access.",
-                )
-              : undefined
-        }
-      >
         {NOTIFICATION_EVENT_SETTINGS.map((event) => (
           <Row
             key={event.id}
             id={`notification-event-${event.id}`}
             label={event.label}
-            description={event.description}
+            dependsOn={notificationsEnabled}
+            disabledReason={t("Enable Desktop notifications first")}
             feedback={saveFeedback(event.id)}
-            dependency={
+            disabled={event.id === "taskbar" && !IS_WIN}
+            info={
               event.id === "taskbar" && !IS_WIN
-                ? t(
-                    "Taskbar badges and flashing are available only on Windows. Your choice is preserved.",
-                  )
+                ? <InfoPopover>{t("Taskbar badges and flashing are available only on Windows. Your choice is preserved.")}</InfoPopover>
                 : undefined
             }
           >
@@ -248,27 +218,12 @@ export function NotificationAlerts() {
             />
           </Row>
         ))}
-      </Group>
-      <Group
-        title={t("Daily summary")}
-        scope={t("Uses this computer’s local clock.")}
-        description={t(
-          "One daily notification summarizes background tasks and goals across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
-        )}
-        dependency={
-          !notificationsEnabled
-            ? t("Enable Notifications to deliver the daily summary. Your schedule is preserved.")
-            : notificationPermission === "denied" || notificationPermission === "unsupported"
-              ? t(
-                  "The summary schedule is saved, but desktop delivery requires system notification access.",
-                )
-              : undefined
-        }
-      >
         <Row
           id="daily-summary"
           label={t("Daily summary")}
-          description={t("A daily overview of background tasks and goals across machines.")}
+          dependsOn={notificationsEnabled}
+          disabledReason={t("Enable Desktop notifications first")}
+          info={<InfoPopover>{t("One daily notification summarizes background tasks and goals across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.")}</InfoPopover>}
           feedback={saveFeedback("summary-enabled")}
         >
           <Toggle
@@ -283,7 +238,9 @@ export function NotificationAlerts() {
         {/* No row id: search indexes the delivery time under the "daily-summary" entry above. */}
         <Row
           label={t("Delivery time")}
-          description={t("Local time when the summary is sent.")}
+          description={t("Uses this computer’s local clock.")}
+          dependsOn={notificationsEnabled && summaryEnabled}
+          disabledReason={t("Enable Daily summary first")}
           feedback={saveFeedback("summary-time")}
         >
           <Select

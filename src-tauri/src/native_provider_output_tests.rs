@@ -119,26 +119,27 @@ impl InputFixture {
             receiver.take();
         }
         let mut claim = None;
-        self.stream.emit(OutputChannel::Sse, items, |metadata| {
-            let raw = metadata.unwrap();
-            let enqueued = sent.send(()).is_ok();
-            self.stream.observe_recipient_delivery(
-                Some(&raw),
-                known.then(|| self.recipient.clone()),
-                items,
-                enqueued,
-            );
-            let mut batch = raw;
-            batch.owner_epoch = known.then(|| self.recipient.epoch());
-            claim = Some(NativeInputClaim {
-                version: 1,
-                qualified: false,
-                kind: "native-output-item-comparison".into(),
-                batch,
-                item_index: 0,
+        self.stream
+            .emit_prepared(OutputChannel::Sse, items, |metadata, prepared| {
+                let raw = metadata.unwrap();
+                let enqueued = sent.send(()).is_ok();
+                self.stream.observe_prepared_delivery(
+                    Some(&raw),
+                    known.then(|| self.recipient.clone()),
+                    prepared.as_ref(),
+                    enqueued,
+                );
+                let mut batch = raw;
+                batch.owner_epoch = known.then(|| self.recipient.epoch());
+                claim = Some(NativeInputClaim {
+                    version: 1,
+                    qualified: false,
+                    kind: "native-output-item-comparison".into(),
+                    batch,
+                    item_index: 0,
+                });
+                enqueued
             });
-            enqueued
-        });
         claim.unwrap()
     }
     fn seal(&self) {

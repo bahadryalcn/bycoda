@@ -360,7 +360,7 @@ describe("incremental project summaries", () => {
           );
           expect((await store.summaries(project.id))[0].title).toBe("uncommitted");
           throw new Error("rollback");
-        }))(),
+        }, "critical"))(),
     ).rejects.toThrow("rollback");
     expect((await store.summaries(project.id))[0].title).toBe(title);
     const writer = new DatabaseSync(path);
@@ -486,7 +486,7 @@ describe("sparse journal checkpoints", () => {
         await await await await await store.transaction(async () => {
           await flush(store);
           throw new Error("rollback");
-        }))(),
+        }, "critical"))(),
     ).rejects.toThrow("rollback");
     expect((await store.db.prepare("SELECT revision FROM session_journal").get())!.revision).toBe(
       2,
@@ -628,12 +628,12 @@ describe("sparse journal checkpoints", () => {
         await await await await await store.transaction(async () => {
           await save();
           throw new Error("rollback");
-        }))(),
+        }, "critical"))(),
     ).rejects.toThrow("rollback");
     expect(await store.receiptStatus("settle")).toBeUndefined();
     expect((await store.db.prepare("SELECT revision FROM sessions").get())!.revision).toBe(1);
     expect((await store.session("sparse")).revision).toBe(3);
-    await store.transaction(save);
+    await store.transaction(save, "critical");
     expect(await store.receipt("settle", "signature")).toEqual(accepted);
     expect(await store.db.prepare("SELECT * FROM session_journal").all()).toEqual([]);
     const snapshot = JSON.parse(
@@ -1109,7 +1109,7 @@ describe("HostStore device credentials", () => {
     expect(await store.authenticated(second.token)).toBe(false);
     expect(await store.authenticated("unknown")).toBe(false);
   });
-  it("sees a revocation committed by another connection on the next check", async () => {
+  it("sees an external revocation when the authentication cache expires", async () => {
     const directory = open();
     const path = join(directory, "host.db");
     const store = new HostStore(path);
@@ -1123,7 +1123,12 @@ describe("HostStore device credentials", () => {
     } finally {
       await other.close();
     }
-    expect(await store.authenticated(device.token)).toBe(false);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1501);
+    try {
+      expect(await store.authenticated(device.token)).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 describe("HostStore receipts", () => {

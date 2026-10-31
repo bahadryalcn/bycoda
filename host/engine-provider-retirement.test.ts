@@ -165,20 +165,23 @@ it("keeps the actual Host activity and running SQL row until both original clean
   expect((await f.store.session(f.id)).status).toBe("idle");
 });
 
-it("retains failed original stop/lease and reports it on close without retrying a replacement", async () => {
+it("settles the session despite a failed original stop/lease, still reports it on close and never retries a replacement", async () => {
   const f = await fixture();
   vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
   const receipt = await f.send();
   const stopA = vi.mocked(f.provider.stop).mockRejectedValue(new Error("original stop unknown"));
   f.starts[0].finished.resolve();
-  await expect(f.engine.waitForRun(f.id, receipt.runId)).rejects.toThrow("retirement failed");
+  await f.engine.waitForRun(f.id, receipt.runId);
   expect(f.releases[0]).not.toHaveBeenCalled();
-  expect((await f.store.session(f.id)).status).toBe("running");
+  expect((await f.store.session(f.id)).status).toBe("idle");
   const stopB = vi.fn(async () => {});
   f.provider.stop = stopB;
   await expect(f.engine.close()).rejects.toThrow("Host session shutdown failed");
+  // The failed original stop is never repeated; shutdown stops the still-retained provider once
+  // through its current stop method (a best-effort, idempotent release, not a replacement turn).
   expect(stopA).toHaveBeenCalledOnce();
-  expect(stopB).not.toHaveBeenCalled();
+  expect(stopB).toHaveBeenCalledOnce();
   expect(f.kill).toHaveBeenCalledOnce();
 });
 
@@ -266,10 +269,12 @@ it("preserves a release callback failure and its exact public cleanup error duri
   const f = await fixture();
   vi.spyOn(console, "error").mockImplementation(() => {});
   const receipt = await f.send();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
   const error = new Error("original activity release failed");
   f.releases[0].mockRejectedValue(error);
   f.starts[0].finished.resolve();
-  await expect(f.engine.waitForRun(f.id, receipt.runId)).rejects.toThrow();
+  await f.engine.waitForRun(f.id, receipt.runId);
+  expect((await f.store.session(f.id)).status).toBe("idle");
   await expect(f.engine.close()).rejects.toThrow("Host session shutdown failed");
   expect(f.releases[0]).toHaveBeenCalledOnce();
 });

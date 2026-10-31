@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
-import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Switch } from "../../../shared/ui/Switch";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { MoreHorizontal, FolderTree } from "../../../shared/ui/icons";
+import { revealPath } from "../../../platform/tauri/fs";
+import type { Session } from "../../sessions/model/session";
+import worktreeStyles from "../../source-control/ui/WorktreesPage.module.css";
 import { WorkspaceDirectoryRemoval } from "./WorkspaceDirectoryRemoval";
 import { WorkspaceReview } from "./WorkspaceReview";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -72,7 +78,17 @@ export function WorkspacePolicySettings({
   cwd,
   environmentId,
   onInventory,
+  renderWorktrees,
+  hasWorktreeMatches,
+  liveSessions = [],
+  policyCollapsed = false,
+  renderHeader,
 }: {
+  renderHeader?: (refresh: () => Promise<void>, busy: boolean, disabled: boolean) => ReactNode;
+  hasWorktreeMatches?: (query: string) => boolean;
+  renderWorktrees?: (query: string) => ReactNode;
+  liveSessions?: Session[];
+  policyCollapsed?: boolean;
   cwd: string;
   environmentId?: string;
   onInventory?: (workspaces: ManagedWorkspace[] | null) => void;
@@ -98,6 +114,13 @@ export function WorkspacePolicySettings({
   const [pinning, setPinning] = useState<string>();
   const [pinError, setPinError] = useState<{ id: string; message: string }>();
   const [query, setQuery] = useState("");
+  const [menu, setMenu] = useState<{ workspace: ManagedWorkspace; anchor: HTMLElement }>();
+  const [revealError, setRevealError] = useState<string>();
+  const workspaceTitle = (workspace: ManagedWorkspace) =>
+    liveSessions.find((session) => session.id === workspace.owner.id)?.title ||
+    (workspace.branchRef.startsWith("refs/heads/bycoda/") || workspace.branchRef.startsWith("bycoda/")
+      ? t("{p0} workspace", { p0: workspace.owner.kind })
+      : workspace.branchRef.replace(/^refs\/heads\//, ""));
   const removing = !!cleanup;
   const epoch = useRef(0);
   const saveAttempt = useRef<{ fingerprint: string; key: string } | undefined>(undefined);
@@ -309,6 +332,7 @@ export function WorkspacePolicySettings({
   const visibleWorkspaces = search
     ? workspaces.filter((workspace) =>
         [
+          workspaceTitle(workspace),
           workspace.branchRef,
           workspace.path,
           lifecycleLabel(workspace.state),
@@ -320,7 +344,7 @@ export function WorkspacePolicySettings({
       )
     : workspaces;
   const showRoster =
-    !!workspaces.length || (inventoryLoaded && !!capabilities?.includes("workspaces.managed.v1"));
+    !!renderWorktrees || !!workspaces.length || (inventoryLoaded && !!capabilities?.includes("workspaces.managed.v1"));
   /** A failed read keeps the last good data visible, labelled stale, with a local retry. */
   const stageNotice = (stage: Stage, label: string, hasData: boolean) =>
     stageError[stage] ? (
@@ -346,7 +370,7 @@ export function WorkspacePolicySettings({
           : t("{p0} could not be read: {p1}", { p0: label, p1: stageError[stage] })}
       </SettingsFeedback>
     ) : null;
-  if (!cwd || cwd === "~") return null;
+  if (!cwd || cwd === "~") return renderHeader?.(async () => {}, false, true) ?? null;
 
   return (
     <div
@@ -355,7 +379,7 @@ export function WorkspacePolicySettings({
       className="flex min-w-0 flex-col gap-4 [&>.settings-group]:pt-0"
       data-testid="workspace-policy-settings"
     >
-      <div className="flex justify-end">
+      {renderHeader ? renderHeader(refresh, loading, saving || removing) : <div className="flex justify-end">
         <Button
           variant="ghost"
           loading={loading}
@@ -365,30 +389,134 @@ export function WorkspacePolicySettings({
         >
           {t("Refresh workspace status")}
         </Button>
-      </div>
+      </div>}
       {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+      {stageNotice("inventory", t("Managed workspace directories"), inventoryLoaded)}
+      {showRoster && (
+        <section
+          aria-label={t("Worktrees")}
+          className="flex min-w-0 flex-col gap-2"
+        >
+          {!renderHeader && <h3 className="text-ui-secondary font-medium">{t("Worktrees")}</h3>}
+          {capabilities && !capabilities.includes(WORKSPACE_PINNING_CAPABILITY) && (
+            <SettingsFeedback state="warning">
+              {t("Update the execution Host to pin or unpin individual workspaces.")}
+            </SettingsFeedback>
+          )}
+          {!workspaces.length && !renderWorktrees ? (
+            <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
+              {t("No managed workspace directories yet. Workspaces created by sessions appear here.")}
+            </p>
+          ) : (
+            <div className="settings-collection">
+              <CollectionToolbar
+                label={t("Search worktrees")}
+                query={query}
+                onQueryChange={setQuery}
+                count={renderWorktrees ? undefined : t("Showing {p0} of {p1} workspaces", {
+                  p0: visibleWorkspaces.length,
+                  p1: workspaces.length,
+                })}
+              />
+              {!visibleWorkspaces.length && !(hasWorktreeMatches?.(query) ?? !!renderWorktrees) ? (
+                <div className="settings-collection-empty" role="status">
+                  <p>{t("No results")}</p>
+                  <Button size="sm" variant="ghost" onClick={() => setQuery("")}>
+                    {t("Clear search")}
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  role="list"
+                  aria-label={t("Worktrees")}
+                  className="settings-collection-list"
+                >
+                  {visibleWorkspaces.map((workspace) => (
+                    <div
+                      key={workspace.id}
+                      role="listitem"
+                      className={`settings-collection-row ${worktreeStyles.row}`}
+                    >
+                      <FolderTree aria-hidden="true" className={worktreeStyles.treeIcon} />
+                      <div className={`settings-collection-main ${worktreeStyles.identity}`}>
+                        <p className={worktreeStyles.name}>
+                          {workspaceTitle(workspace)}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
+                          <Badge size="sm">{lifecycleLabel(workspace.state)}</Badge>
+                          {workspace.pinned && <Badge size="sm">{t("Pinned")}</Badge>}
+                          {workspace.directoryState === "blocked" && (
+                            <Badge size="sm" tone="warning">
+                              {t("Cleanup blocked")}
+                            </Badge>
+                          )}
+                          {workspace.directoryState === "removed" && (
+                            <Badge size="sm">{t("Directory removed")}</Badge>
+                          )}
+                          {workspace.directoryState === "pendingRemoval" ||
+                          workspace.directoryState === "removing" ? (
+                            <Badge size="sm">{t("Removing directory…")}</Badge>
+                          ) : null}
+                        </div>
+                        <details className="text-ui-caption text-(--ui-text-secondary)">
+                          <summary>{t("Details")}</summary>
+                          <p className="break-all">{workspace.path}</p>
+                          <p>{workspace.branchRef} · {workspace.id}</p>
+                          <p>
+                            {t("Owner: {p0}", {
+                              p0: `${workspace.owner.kind} ${workspace.owner.id}`,
+                            })}
+                          </p>
+                        </details>
+                        {pinError?.id === workspace.id && (
+                          <p role="alert" className="break-words text-ui-caption text-status-error">
+                            {pinError.message}
+                          </p>
+                        )}
+                      </div>
+                      <div className={`settings-collection-actions ${worktreeStyles.rowActions}`}>
+                        <Button
+                          size="sm"
+                          disabled={
+                            !capabilities?.includes("workspaces.delivery.v1") || loading || removing
+                          }
+                          onClick={() => setReview(workspace)}
+                        >
+                          {t("Review changes")}
+                        </Button>
+                        <Button size="sm" variant="ghost" iconOnly
+                          label={t("More actions")} title={t("More actions")}
+                          loading={pinning === workspace.id} aria-haspopup="menu"
+                          aria-expanded={menu?.workspace.id === workspace.id}
+                          onClick={(event) => setMenu({ workspace, anchor: event.currentTarget })}>
+                          <MoreHorizontal className="icon-sm" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {renderWorktrees?.(query)}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+      {stageNotice("policy", t("Workspace policy"), !!policy)}
+      {stageNotice("storage", t("Workspace storage"), !!storage)}
+      <AdvancedSettings title={t("Workspace policy")} defaultOpen={!policyCollapsed}
+        settingIds={["workspace-policy", "default-workspace-mode", "workspace-pinning", "workspace-retention", "workspace-disk-policy", "workspace-storage-status"]}>
       {capabilities && !capabilities.includes("workspaces.policy.v1") && (
         <SettingsFeedback state="warning">
           {t("Update the execution Host to configure worktree defaults and retention.")}
         </SettingsFeedback>
       )}
-      {stageNotice("policy", t("Workspace policy"), !!policy)}
       {draft && policy && (
         <Group
-          title={t("Workspace policy")}
+          title={<span className="flex flex-wrap items-center gap-2">{t("Workspace policy")}<Badge size="sm">{hasProjectOverride ? t("Project override") : t("Following Host defaults")}</Badge></span>}
           layout="full"
           id="workspace-policy"
-          scope={
-            hasProjectOverride
-              ? t(
-                  "This project has its own override (revision {p0}). Saving stores every value below as the project override, so values you did not edit also stop following Host defaults.",
-                  { p0: policy.revision },
-                )
-              : t(
-                  "This project follows Host defaults (revision {p0}). Saving stores every value below as a project override, so later Host default changes no longer reach this project.",
-                  { p0: policy.revision },
-                )
-          }
+
+          info={<InfoPopover><p>{t("Saving stores every value as a project override. Reset removes the whole override immediately.")}</p></InfoPopover>}
           persistence={{
             mode: "explicit",
             state: saving ? "saving" : saved ? "saved" : dirty ? "dirty" : "idle",
@@ -400,7 +528,7 @@ export function WorkspacePolicySettings({
                   {t("Discard changes")}
                 </Button>
               ) : null}
-              <Button
+              {dirty && <Button
                 variant="primary"
                 loading={saving}
                 loadingLabel={t("Saving…")}
@@ -408,7 +536,7 @@ export function WorkspacePolicySettings({
                 onClick={() => void save()}
               >
                 {t("Save workspace policy")}
-              </Button>
+              </Button>}
             </div>
           }
         >
@@ -450,17 +578,18 @@ export function WorkspacePolicySettings({
             id="workspace-pinning"
             label={t("Pin new workspaces")}
             description={t("Pinned workspaces are excluded from automatic directory cleanup.")}
+            descriptionVisible={false}
           >
-            <Checkbox
+            <Switch
               aria-label={t("Pin new workspaces")}
               checked={draft.pinned}
               disabled={saving}
-              onChange={(event) => update({ ...draft, pinned: event.target.checked })}
+              onCheckedChange={(pinned) => update({ ...draft, pinned })}
             />
           </Row>
           <AdvancedSettings
             id="workspace-retention"
-            title={t("Directory retention")}
+            title={<span>{t("Directory retention")} · <span className="text-(--ui-text-secondary)">{retentionStates.map((state) => `${lifecycleLabel(state)}: ${draft.retention[state] === "never" ? t("Never") : t("{p0} days", { p0: Number(draft.retention[state]) / DAY })}`).join(" · ")}</span></span>}
             defaultOpen={false}
           >
             <Row label={t("Active")}>
@@ -472,6 +601,7 @@ export function WorkspacePolicySettings({
               return (
                 <Row key={state} label={lifecycleLabel(state)}>
                   <Select
+                    className="w-36"
                     label={t("{p0} retention", { p0: lifecycleLabel(state) })}
                     value={String(period)}
                     disabled={saving}
@@ -510,11 +640,12 @@ export function WorkspacePolicySettings({
           </AdvancedSettings>
           <AdvancedSettings
             id="workspace-disk-policy"
-            title={t("Storage limits")}
+            title={<span>{t("Storage limits")} · {workspaceStorageSize(draft.disk.budgetBytes)}</span>}
             defaultOpen={false}
           >
             <Row label={t("Directory budget (GiB)")}>
               <NumberField
+                className="w-36"
                 label={t("Directory budget (GiB)")}
                 hideLabel
                 aria-label={t("Directory budget (GiB)")}
@@ -533,6 +664,7 @@ export function WorkspacePolicySettings({
             </Row>
             <Row label={t("Warn at (%)")}>
               <NumberField
+                className="w-36"
                 label={t("Warn at (%)")}
                 hideLabel
                 aria-label={t("Warn at (%)")}
@@ -552,6 +684,7 @@ export function WorkspacePolicySettings({
             </Row>
             <Row label={t("Minimum free space (GiB)")}>
               <NumberField
+                className="w-36"
                 label={t("Minimum free space (GiB)")}
                 hideLabel
                 aria-label={t("Minimum free space (GiB)")}
@@ -569,8 +702,9 @@ export function WorkspacePolicySettings({
               />
             </Row>
           </AdvancedSettings>
-          <Row
-            label={t("Use Host defaults")}
+          {hasProjectOverride && <Row
+            label={t("Reset to Host defaults")}
+            descriptionVisible={false}
             description={t(
               "Removes this project's whole override, including values you did not edit. This saves immediately.",
             )}
@@ -580,9 +714,9 @@ export function WorkspacePolicySettings({
               disabled={saving || loading}
               onClick={() => void save({})}
             >
-              {t("Use Host defaults")}
+              {t("Reset to Host defaults")}
             </Button>
-          </Row>
+          </Row>}
         </Group>
       )}
       {capabilities &&
@@ -594,7 +728,6 @@ export function WorkspacePolicySettings({
             )}
           </SettingsFeedback>
         )}
-      {stageNotice("storage", t("Workspace storage"), !!storage)}
       {storage && (
         <Group
           id="workspace-storage-status"
@@ -649,139 +782,22 @@ export function WorkspacePolicySettings({
           )}
         </Group>
       )}
-      {stageNotice("inventory", t("Managed workspace directories"), inventoryLoaded)}
-      {showRoster && (
-        <section
-          aria-label={t("Managed workspace directories")}
-          className="flex min-w-0 flex-col gap-2"
-        >
-          <h3 className="text-ui-secondary font-medium">{t("Managed workspace directories")}</h3>
-          {!capabilities?.includes(WORKSPACE_PINNING_CAPABILITY) && (
-            <SettingsFeedback state="warning">
-              {t("Update the execution Host to pin or unpin individual workspaces.")}
-            </SettingsFeedback>
-          )}
-          {!workspaces.length ? (
-            <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
-              {t("No managed workspace directories yet. Workspaces created by sessions appear here.")}
-            </p>
-          ) : (
-            <div className="settings-collection">
-              <CollectionToolbar
-                label={t("Search managed workspaces")}
-                query={query}
-                onQueryChange={setQuery}
-                count={t("Showing {p0} of {p1} workspaces", {
-                  p0: visibleWorkspaces.length,
-                  p1: workspaces.length,
-                })}
-              />
-              {!visibleWorkspaces.length ? (
-                <div className="settings-collection-empty" role="status">
-                  <p>{t("No results")}</p>
-                  <Button size="sm" variant="ghost" onClick={() => setQuery("")}>
-                    {t("Clear search")}
-                  </Button>
-                </div>
-              ) : (
-                <div
-                  role="list"
-                  aria-label={t("Managed workspace directories")}
-                  className="settings-collection-list"
-                >
-                  {visibleWorkspaces.map((workspace) => (
-                    <div
-                      key={workspace.id}
-                      role="listitem"
-                      className="settings-collection-row items-start"
-                    >
-                      <div className="min-w-0 flex-1 basis-60">
-                        <p className="break-all text-ui-secondary">
-                          {workspace.branchRef.replace(/^refs\/heads\//, "")}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
-                          <span>{lifecycleLabel(workspace.state)}</span>
-                          {workspace.pinned && <Badge size="sm">{t("Pinned")}</Badge>}
-                          {workspace.directoryState === "blocked" && (
-                            <Badge size="sm" tone="warning">
-                              {t("Cleanup blocked")}
-                            </Badge>
-                          )}
-                          {workspace.directoryState === "removed" && (
-                            <Badge size="sm">{t("Directory removed")}</Badge>
-                          )}
-                          {workspace.directoryState === "pendingRemoval" ||
-                          workspace.directoryState === "removing" ? (
-                            <Badge size="sm">{t("Removing directory…")}</Badge>
-                          ) : null}
-                        </div>
-                        <details className="text-ui-caption text-(--ui-text-secondary)">
-                          <summary>{t("Details")}</summary>
-                          <p className="break-all">{workspace.path}</p>
-                          <p>
-                            {t("Owner: {p0}", {
-                              p0: `${workspace.owner.kind} ${workspace.owner.id}`,
-                            })}
-                          </p>
-                        </details>
-                        {pinError?.id === workspace.id && (
-                          <p role="alert" className="break-words text-ui-caption text-status-error">
-                            {pinError.message}
-                          </p>
-                        )}
-                      </div>
-                      <div className="settings-collection-actions">
-                        <Button
-                          size="sm"
-                          disabled={
-                            !capabilities?.includes("workspaces.delivery.v1") || loading || removing
-                          }
-                          onClick={() => setReview(workspace)}
-                        >
-                          {t("Review changes")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          loading={pinning === workspace.id}
-                          loadingLabel={t("Saving…")}
-                          disabled={
-                            !capabilities?.includes(WORKSPACE_PINNING_CAPABILITY) ||
-                            loading ||
-                            removing ||
-                            (!!pinning && pinning !== workspace.id)
-                          }
-                          onClick={() => void pinWorkspace(workspace)}
-                        >
-                          {workspace.pinned ? t("Unpin workspace") : t("Pin workspace")}
-                        </Button>
-                        {workspace.directoryState !== "removed" && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={
-                              !capabilities?.includes("workspaces.lifecycle.v1") ||
-                              workspace.state === "active" ||
-                              removing ||
-                              workspace.directoryState === "removing" ||
-                              workspace.directoryState === "pendingRemoval"
-                            }
-                            onClick={() => setCleanup(workspace)}
-                          >
-                            {workspace.directoryState === "blocked"
-                              ? t("Review blocked cleanup")
-                              : t("Delete directory")}
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-      )}
+      </AdvancedSettings>
+      {revealError && <SettingsFeedback state="error">{revealError}</SettingsFeedback>}
+      {menu && <DropdownMenu anchor={menu.anchor} label={t("More actions")}
+        onClose={() => setMenu(undefined)}
+        items={[
+          { kind: "item", id: "pin", label: menu.workspace.pinned ? t("Unpin workspace") : t("Pin workspace"), disabled: !capabilities?.includes(WORKSPACE_PINNING_CAPABILITY) || loading || removing || !!pinning },
+          { kind: "item", id: "reveal", label: t("Reveal folder"), disabled: menu.workspace.directoryState === "removed" },
+          { kind: "item", id: "delete", label: menu.workspace.directoryState === "blocked" ? t("Review blocked cleanup") : t("Delete directory"), danger: true, disabled: !capabilities?.includes("workspaces.lifecycle.v1") || menu.workspace.state === "active" || removing || ["removed", "removing", "pendingRemoval"].includes(menu.workspace.directoryState) },
+        ]}
+        onPick={(id) => {
+          const workspace = menu.workspace;
+          setMenu(undefined);
+          if (id === "pin") void pinWorkspace(workspace);
+          if (id === "delete") setCleanup(workspace);
+          if (id === "reveal") { setRevealError(undefined); void revealPath(workspace.path).catch((failure) => setRevealError(String(failure))); }
+        }} />}
       {cleanup && (
         <WorkspaceDirectoryRemoval
           workspace={cleanup}

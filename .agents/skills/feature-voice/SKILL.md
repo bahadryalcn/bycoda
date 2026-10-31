@@ -131,6 +131,123 @@ Browser files: `tests/browser/voice-visual-styles.html`,
 The owner chooses among four prototype visuals. The prototype supplies visual
 intent, not permission to copy literal colors or its fake window.
 
+2026-10-31, source: owner chat session (voice companion "Local voice could not start"
+investigation), after the agent proposed CUDA PyTorch installation:
+
+> tamam yapalım kullanıcı kendide seçebilsin
+
+The owner wants GPU acceleration installed automatically where possible and a
+user-selectable processing device.
+
+## Processing device and start errors (2026-10-31, uncommitted)
+
+- `voiceSettings.ts`: `device` is `auto` (default, omitted from runtime config so
+  existing runtime keys stay stable), `gpu` or `cpu`.
+- `VoiceSettings.tsx`: **Processing** segmented row (Automatic/GPU/CPU); a ready
+  CPU-only natural install with a detected NVIDIA GPU shows **Install GPU support**,
+  which runs the existing setup job. New setup stage label `gpu`.
+- `host/voice-gpu.ts`: `nvidia-smi` detection (name, `CUDA Version` or newer
+  `CUDA UMD Version`), cached 5 min, none on macOS; CUDA wheel index selection.
+- `host/voice-runtime.ts`: validates `device`; probe reports `accelerated` from the
+  installed torch wheel without importing it; status reports `gpu`; GPU mode adds
+  `GPU support (CUDA)` / `NVIDIA GPU` to missing items.
+- `host/voice-setup.ts`: after packages, Automatic/GPU with an NVIDIA GPU and a
+  CPU-only torch pins the newest `torch==X+cuNNN` from the newest supported index.
+  Automatic tolerates failure (CPU voice); GPU mode fails setup.
+- `host/voice-python.ts` / `voice-speech-python.ts`: CPU choice keeps Whisper and
+  VoxCPM2 on CPU; GPU choice fails VoxCPM2 start visibly without CUDA.
+- `VoiceCompanion.tsx` / `localVoice.ts`: string RPC rejections now display the
+  Host's reason instead of the generic "Local voice could not start." fallback.
+
+Checks: `vitest run src/features/voice` (62), host `vitest --config
+host/vitest.config.ts host/voice` (45), `tsc-rs --noEmit --fast` web and host,
+oxlint, oxfmt, `check-locales.mjs` (8 catalogs verified), repository hygiene.
+
+## Response latency and recognition (2026-10-31, uncommitted)
+
+Owner report, same session: "Ne sesimi iyi tanıdı ne yanıt verdi Çok yavaş
+çalışıyor bana nerdeyse 2 3 saniye içinde yanıt verebilmesi gerekiyor."
+
+Measured causes and changes:
+- Every side reply spawned a new provider CLI (`claudeText.ts` drops its live
+  process after each prompt): 12–18 s per reply cold vs 2.2–3.6 s warm. Voice now
+  warms with identical options (`warmVoiceReply` → `warmupHarnessText(harness,
+  cwd, {providerAccountId, model, modelSettings})`) on start, at speech onset and
+  after each reply. `voiceModelSettings` keeps the session model, sets
+  `effort`/`reasoningEffort` to `low` and drops `thinking` (Opus low was fastest warm).
+- Newer `huggingface_hub` raises `IncompleteSnapshotError` for offline snapshots
+  lacking optional files, so the worker silently fell back to Whisper base. Worker
+  and runtime probe now use `try_to_load_from_cache` on required files.
+- The app language was never sent; it is now a hint used when Whisper's language
+  probability is below 0.75.
+- On CUDA, a cached `mobiuslabsgmbh/faster-whisper-large-v3-turbo` (owned folder
+  `~/.bycoda/voice/models/whisper-large-v3-turbo` or HF cache) replaces a stock
+  small/base/tiny model; GPU-accelerated setup downloads it. CPU keeps the configured model.
+- VoxCPM2 runs one discarded generation during start: first chunk 1.84 s → 0.22 s.
+
+Evidence: `temp/verification/2026-10-31-voice-latency/README.md`.
+
+## Composer dictation (2026-10-31, uncommitted)
+
+Owner request, same session: "sesi anlık yakalayıp yazıya çeviren bir butondamı
+koysak claude codedeki gibi chat yazdığımız yere yazsa otomatik"
+
+- `src/features/voice/model/dictation.ts`: mic → `VoiceVad` phrases → ordered
+  `voice.local.transcribe` with the app-language hint; `stop()` flushes the open
+  phrase (`VoiceVad.flush`) and waits before releasing; `cancel()` discards.
+- `voice.local.start` gained `recognitionOnly` (`host/voice-local.ts`,
+  `host/server.ts`, `localVoiceClient.ts`): same runtime key as the companion, so
+  both share one recognizer; natural speech is not started for that lease.
+- `src/features/voice/ui/DictationButton.tsx`: ghost icon toggle before Send,
+  shown only when voice is enabled; pressed while preparing/listening (clickable to
+  cancel), loading while finishing. Errors use the composer's existing alert.
+- `Composer.tsx` inserts through `insertAtCaret` (`composerTextareaEdit.ts`),
+  which dispatches `input` like typing. New `Mic` icon in `src/shared/ui/icons.tsx`.
+Evidence: `temp/verification/2026-10-31-composer-dictation/` (fixture built with a
+HEAD copy of a concurrently broken `NotificationsSettings.tsx`).
+
+## Voice stack evaluation and changes (2026-10-31, uncommitted)
+
+Owner request, same session: "NVIDIA Nemotron-3.5 Streaming (0,6B) ve
+Qwen3-ASR-1.7B yı yı da deniyelim. smart turn ü de kurabilelim claude cli da
+halleldelim en iyi yapıyı en iyi kombinasyonu bulmaya çalış sadece türkçe değil
+odağımız hız accurancy ve max dil desteği ingilizce ve türkçe öncelikli tabiki.
+Ses sentezi içinde aynı şekilde başka şeyler de deniyebilrisin."
+
+Measured (RTX 4070; FLEURS en/tr/de/fr/es; details and scripts under
+`temp/local/voice-bench/`, summary `temp/verification/2026-10-31-voice-stack/README.md`):
+- ASR: Whisper large-v3-turbo kept (WER en 5.0 / tr 6.0, 0.24 s). large-v3 slightly
+  better, 2× slower. Qwen3-ASR-1.7B best English (3.8) but tr 9.3 and 3–4× slower.
+  Nemotron-3.5 streaming fastest final text (0.09 s) but ~2× Whisper's errors.
+- Smart Turn v3.2 fp32 (BSD-2, 23 languages): ~20–40 ms CPU; on synthetic FLEURS
+  cuts, ~30–38% of mid-sentence pauses still judged complete at threshold 0.7.
+- TTS: Supertonic 3 best Whisper-CER (tr ~1%), RTF ~0.15 CPU, 2 s load; VoxCPM2
+  RTF ~0.9 GPU; OmniVoice weights CC-BY-NC; Chatterbox slower/worse Turkish.
+- Local LLM (Ollama qwen3.5 2b/4b/9b): first token 0.25–0.30 s, SUBMIT/REPLY 7/8,
+  but invents facts in answers. Proposal only: local decision + Claude content.
+
+Delivered:
+- `host/voice-python.ts`: Smart Turn endpoint checks (`endpoint: true` on
+  `voice.local.transcribe`, threshold 0.7; `{complete:false}` without text),
+  numpy log-mel matching the reference (max diff 6e-8), coding `hotwords`
+  (FLEURS en 5.0→5.4, tr 6.0→5.7: neutral). Ready message reports `turn`.
+- `voiceVad.ts`: optional `pause` callback at 0.2 s + `commit(pauseId)`; fallback
+  `endSilence` 1.3 s with Smart Turn, 0.6 s without. `localVoice.ts` wires it.
+- Engine choice: `engine` runtime key (`supertonic` default/omitted, `voxcpm2`);
+  probe, setup (`supertonic==1.3.1`, model rev `724fb5ab…`, Smart Turn rev
+  `f766f81d…`, turbo gated on an NVIDIA GPU rather than CUDA PyTorch), speech worker
+  branch, `language` on `voice.local.speak`; worker exits on stdin EOF.
+  Settings: Reply voice Natural / High quality / System voice; GPU offer only for
+  High quality; VoxCPM2 folder picker only for High quality.
+- Playback uses its own device-rate AudioContext (was the 16 kHz capture context);
+  Supertonic plays with 0.05 s lead, VoxCPM2 keeps 0.35 s.
+- `claudeText.ts`: no 8 s wait for `init` (CLI emits it only after the first
+  message; stdin is buffered). Streaming replies (`REPLY:`/`SUBMIT` protocol,
+  sentence queue) were added by a forked session in `voiceConversation.ts`,
+  `voicePrompt.ts`, `localVoice.ts`, `VoiceCompanion.tsx`.
+- End to end (recorded speech, real workers, warm Claude Opus low): turn+ASR 0.6 s,
+  first Claude sentence 2.6–4.4 s, Supertonic +0.7 s → first audio ~4 s.
+
 ## Behavior to preserve
 
 - Voice stays opt-in/off by default; request microphone only on explicit start.

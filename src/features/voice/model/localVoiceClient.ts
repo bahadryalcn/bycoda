@@ -1,24 +1,33 @@
 import { hostToolRequest } from "../../connections/model/hostFeatureClient";
 
 export type LocalVoiceTranscript = { text: string; language: string; inferenceMs: number };
-export type LocalVoiceInfo = { lease: string; model: string; device: string };
+/** `turn`: the recognizer can judge from a pause whether the sentence is finished. */
+export type LocalVoiceInfo = { lease: string; model: string; device: string; turn?: boolean };
 export type VoiceRuntimeConfig = {
   python?: string;
   whisperPath?: string;
   ttsPath?: string;
   natural?: boolean;
+  /** Natural voice model; omitted means Supertonic 3. */
+  engine?: VoiceEngine;
+  device?: VoiceDevice;
 };
+export type VoiceEngine = "supertonic" | "voxcpm2";
+/** Where speech models run; "auto" uses a supported NVIDIA GPU when available. */
+export type VoiceDevice = "auto" | "gpu" | "cpu";
 export type VoiceRuntimeStatus = {
   python?: string;
   whisperPath?: string;
   ttsPath?: string;
   missing: string[];
   ready: boolean;
+  gpu?: string;
+  accelerated?: boolean;
 };
 export type VoiceChunk = { audio?: string; sampleRate?: number; done?: boolean; error?: string };
 export type VoiceSetupStatus = {
   state: "idle" | "installing" | "ready" | "error";
-  stage?: "environment" | "packages" | "models" | "checking";
+  stage?: "environment" | "packages" | "gpu" | "models" | "checking";
   requestedConfig?: VoiceRuntimeConfig;
   config?: VoiceRuntimeConfig;
   error?: "python_missing" | "install_failed";
@@ -46,12 +55,21 @@ export const localVoiceBackend = {
       {},
       { kind: "local" },
     ),
-  start: (config?: VoiceRuntimeConfig) =>
-    request<LocalVoiceInfo>("voice.local.start", config ? { config } : {}),
+  /** `recognitionOnly` shares the recognizer without loading natural speech (dictation). */
+  start: (config?: VoiceRuntimeConfig, recognitionOnly = false) =>
+    request<LocalVoiceInfo>("voice.local.start", {
+      ...(config ? { config } : {}),
+      ...(recognitionOnly ? { recognitionOnly } : {}),
+    }),
   inspect: (config: VoiceRuntimeConfig) =>
     request<VoiceRuntimeStatus>("voice.local.inspect", { config }),
-  speak: (lease: string, text: string) =>
-    request<{ id: string }>("voice.local.speak", { lease, text }),
+  /** `language` picks the pronunciation for multilingual voices. */
+  speak: (lease: string, text: string, language?: string) =>
+    request<{ id: string }>("voice.local.speak", {
+      lease,
+      text,
+      ...(language ? { language } : {}),
+    }),
   speechNext: (lease: string, id: string) =>
     request<VoiceChunk>("voice.local.speechNext", { lease, id }),
   speechCancel: (lease: string, id: string) => request("voice.local.speechCancel", { lease, id }),
@@ -60,6 +78,14 @@ export const localVoiceBackend = {
       lease,
       audio,
       ...(language ? { language } : {}),
+    }),
+  /** At a pause: text only when the sentence sounds finished, else `complete: false`. */
+  endpoint: (lease: string, audio: string, language?: string) =>
+    request<LocalVoiceTranscript | { complete: false }>("voice.local.transcribe", {
+      lease,
+      audio,
+      ...(language ? { language } : {}),
+      endpoint: true,
     }),
   keepAlive: (lease: string) => request<{ ready: boolean }>("voice.local.keepAlive", { lease }),
   release: (lease: string) => request("voice.local.release", { lease }),

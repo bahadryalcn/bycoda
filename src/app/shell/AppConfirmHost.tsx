@@ -1,7 +1,12 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, type KeyboardEvent } from "react";
-import { registerAppConfirmHost, type AppConfirmRequest } from "../../shared/model/appConfirm";
+import {
+  isAppConfirmAbandoned,
+  markAppConfirmShown,
+  registerAppConfirmHost,
+  type AppConfirmRequest,
+} from "../../shared/model/appConfirm";
 import { useConfirm } from "../../shared/ui/ConfirmDialog";
 import { restoreWindowFocus } from "../model/windowFocus";
 
@@ -47,15 +52,20 @@ export function AppConfirmHost() {
     () =>
       registerAppConfirmHost(async (request: AppConfirmRequest) => {
         if (request.reveal) await revealWindow();
+        if (isAppConfirmAbandoned(request)) return false;
         await afterNativeMenuClose();
+        // The platform dialog already took this request over: opening here would ask twice.
+        if (isAppConfirmAbandoned(request)) return false;
         openedAt.current = performance.now();
-        return confirm({
+        const answer = confirm({
           title: request.title,
           message: <span className="whitespace-pre-line">{request.message}</span>,
           confirmLabel: request.confirmLabel,
           danger: request.tone === "danger",
           onConfirm: request.onConfirm,
         });
+        markAppConfirmShown(request);
+        return answer;
       }),
     [confirm],
   );

@@ -209,6 +209,7 @@ export function ModelPicker({
   }, [favorites]);
   const recentMenuId = useId();
   const button = useRef<HTMLButtonElement>(null);
+  const modelRow = useRef<HTMLButtonElement | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   const openRef = useRef(open);
@@ -261,22 +262,22 @@ export function ModelPicker({
     // menu lists models only.
     if (hideSettings || inheritSelected) return [];
     const offered = source.modelsFor(harness);
-    // Model options first, then the rarer Context and Advisor/subagent groups.
+    // Delegation and Context lead; Fast and Reasoning stay near Model.
     return groupSettings(
       pickerSettings(current).map((setting) =>
         offeredDelegationSetting(setting, offered, settingValue(setting, values)),
       ),
     ).flatMap((group) => group.settings);
   }, [catalogVersion, current, harness, hideSettings, inheritSelected, source, values]);
-  // Model leads the menu, then Reasoning and Fast; the order never changes between opens.
+  // Model ends the upward-opening menu, directly below Reasoning and Fast.
   const entries = useMemo<MenuEntry[]>(
     () => [
       ...(inherit ? [{ kind: "inherit" as const }] : []),
-      { kind: "model" as const },
       ...settings.map((setting) => ({
         kind: "setting" as const,
         setting,
       })),
+      { kind: "model" as const },
     ],
     [inherit, settings],
   );
@@ -531,7 +532,18 @@ export function ModelPicker({
       return;
     if (item.accountId) onChange(item.harness, item.id, item.accountId);
     else onChange(item.harness, item.id);
-    dismiss(true);
+    if (hideSettings || recentOpen) {
+      dismiss(true);
+    } else {
+      setSubmenu(null);
+      setQuery("");
+      requestAnimationFrame(() => {
+        const row = modelRow.current;
+        if (!row) return;
+        setActive(Number(row.dataset.modelControlIndex));
+        row.focus({ preventScroll: true });
+      });
+    }
   };
 
   useEffect(() => {
@@ -591,7 +603,11 @@ export function ModelPicker({
       return;
     }
     if (entry.kind === "model") {
-      if (submenu?.kind !== "models") setActiveModelKey(null);
+      if (submenu?.kind !== "models") {
+        setActiveModelKey(null);
+        setQuery("");
+        setTab(coerceModelPickerTab(current.harness, (id) => pickerHarnesses.includes(id)));
+      }
       setSubmenu({ kind: "models" });
       return;
     }
@@ -852,7 +868,7 @@ export function ModelPicker({
                   </Button>
                 );
               }
-              // Rarer groups sit below the Model/Reasoning/Fast block under a quiet caption.
+              // Delegation and Context precede Fast, Reasoning and the final Model row.
               const caption =
                 group !== "model" && group !== previousGroup ? (
                   <div
@@ -872,7 +888,10 @@ export function ModelPicker({
                     selected={highlighted}
                     variant="item"
                     key="model"
-                    ref={highlighted ? setActiveRow : undefined}
+                    ref={(node) => {
+                      modelRow.current = node;
+                      if (highlighted) setActiveRow(node);
+                    }}
                     data-model-control-index={index}
                     type="button"
                     role="menuitem"

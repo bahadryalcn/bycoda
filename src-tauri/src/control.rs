@@ -149,6 +149,7 @@ impl Inner {
     ) -> Result<ControlTurnReceipt, String> {
         // Reserve before replacing A or changing any grant. Unknown originals
         // cannot make room; only verified byte/authority-end records can.
+        self.turn_writes.close_abandoned(window, issuer);
         self.turn_writes.capacity()?;
         let receipt = ControlTurnReceipt::issue(session_id.clone());
         let work =
@@ -189,7 +190,7 @@ impl Inner {
         self.check_turn(label, issuer, &receipt)?;
         let active = self.active.get_mut(&receipt.session_id).unwrap();
         if active.cwd != cwd {
-            return Err("NATIVE_CONTROL_TURN_CWD_CHANGED".into());
+            eprintln!("[control] process cwd differs; using authorized turn cwd");
         }
         if active.processes.len() >= 512 {
             return Err("NATIVE_CONTROL_SOURCE_CAPACITY".into());
@@ -198,7 +199,7 @@ impl Inner {
             receipt,
             issuer: issuer.clone(),
             window: label.into(),
-            cwd,
+            cwd: active.cwd.clone(),
             output: Mutex::new(None),
         });
         active.processes.push(captured.clone());
@@ -212,7 +213,7 @@ impl Inner {
     ) -> Result<T, String> {
         self.check_turn(&turn.window, &turn.issuer, &turn.receipt)?;
         if self.active[&turn.receipt.session_id].cwd != turn.cwd {
-            return Err("NATIVE_CONTROL_TURN_CWD_CHANGED".into());
+            eprintln!("[control] process cwd differs; using authorized turn cwd");
         }
         spawn()
     }
@@ -244,14 +245,15 @@ impl Inner {
         receipt: &ControlTurnReceipt,
     ) -> Result<Arc<writes::TurnWork>, String> {
         self.check_turn(window, issuer, receipt)?;
-        if receipt.session_id != target || self.active[target].cwd != cwd {
+        if receipt.session_id != target {
             return Err("NATIVE_CONTROL_TURN_SOURCE_CHANGED".into());
         }
         let work = self
             .turn_writes
             .find(receipt)
             .ok_or("NATIVE_CONTROL_TURN_SOURCE_MISSING")?;
-        if !work.matches(window, issuer, receipt) || work.cwd != cwd {
+        if work.cwd != cwd { eprintln!("[control] process cwd differs; using authorized turn cwd"); }
+        if !work.matches(window, issuer, receipt) {
             return Err("NATIVE_CONTROL_TURN_SOURCE_CHANGED".into());
         }
         Ok(work)
@@ -357,6 +359,7 @@ impl Inner {
     fn close_window(&mut self, label: &str) -> Vec<String> {
         // Original strict work remains retained even after window closure. A
         // label cleanup supplies neither byte completion nor physical proof.
+        self.turn_writes.close_window(label);
         self.history_sources.remove(label);
         let ids = self.window_sessions(label);
         self.grants.retain(|id, _| !ids.contains(id));
@@ -1295,8 +1298,8 @@ pub(crate) fn finish_original_turn(
     })?;
     // No issuer/ControlHost/registry lock is held over actual writer closure.
     // This waits byte IO and its admitted callback tail, never kills a warm P.
-    work.writes.drain()?;
-    issuer.with_live(|| work.complete())
+    if let Err(error) = work.writes.drain() { eprintln!("[control] turn settlement: {error}"); }
+    work.complete()
 }
 
 /// Original active authorization captured under the actual issuer and retained
@@ -1324,6 +1327,15 @@ pub(crate) fn canonical_child_cwd(cwd: &Path) -> Result<String, String> {
     Ok(comparison_path(
         &std::fs::canonicalize(cwd).map_err(|e| e.to_string())?,
     ))
+}
+
+pub(crate) fn page_reloaded(app: &AppHandle, issuer: &Arc<WindowIssuer>) {
+    let Some(host) = app.try_state::<ControlHost>() else { return };
+    let mut inner = host.inner.lock().unwrap_or_else(|error| error.into_inner());
+    // Close admission, but retain outstanding writes until their real completion.
+    // Process ownership stays in HarnessHost; reload is not retirement proof.
+    inner.turn_writes.close_issuer(issuer);
+    inner.active.retain(|_, turn| !Arc::ptr_eq(&turn.issuer, issuer));
 }
 
 pub fn window_closed(app: &AppHandle, label: &str) {

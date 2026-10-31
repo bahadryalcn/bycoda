@@ -148,9 +148,9 @@ export const ChangeRow = memo(function ChangeRow({
         >
           {tree ? <span className="size-4 shrink-0" /> : null}
           <FileTypeIcon name={name} isDir={false} size={16} />
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="grid min-w-0 flex-1 grid-cols-2 items-center gap-1.5">
             <span
-              className={`min-w-0 truncate ${collision && dir ? "max-w-[40%] shrink text-ui-caption text-(--ui-text-secondary)" : "max-w-full shrink text-ui-secondary font-medium"} ${
+              className={`min-w-0 truncate ${collision && dir ? "text-ui-caption text-(--ui-text-secondary)" : "max-w-full shrink text-ui-secondary font-medium"} ${
                 file.status === "deleted" ? "line-through" : ""
               }`}
             >
@@ -163,18 +163,18 @@ export const ChangeRow = memo(function ChangeRow({
             ) : null}
           </span>
         </Button>
-        {file.additions > 0 || file.deletions > 0 ? (
+        {(
           <span
-            className="hidden shrink-0 items-center gap-1 text-ui-micro font-medium tabular-nums @min-[22rem]/changes:flex"
+            className="hidden w-[12ch] shrink-0 grid-cols-2 items-center gap-1 text-right text-ui-micro font-medium tabular-nums @min-[22rem]/changes:grid"
             title={t("{p0} lines added, {p1} lines removed", {
               p0: file.additions,
               p1: file.deletions,
             })}
           >
-            {file.additions > 0 ? <span className="text-diff-add-fg">+{file.additions}</span> : null}
-            {file.deletions > 0 ? <span className="text-diff-del-fg">-{file.deletions}</span> : null}
+            <span className="text-diff-add-fg">{file.additions > 0 ? `+${file.additions}` : ""}</span>
+            <span className="text-diff-del-fg">{file.deletions > 0 ? `-${file.deletions}` : ""}</span>
           </span>
-        ) : null}
+        )}
         <span
           title={statusLabel(file.status)}
           className={`w-3.5 shrink-0 text-center font-mono text-ui-micro font-semibold ${statusColor(file.status)}`}

@@ -14,6 +14,7 @@ afterEach(() => {
 });
 
 it("returns native credits exactly once after the controlled parser completes and protects replacement subscribers", async () => {
+  vi.useFakeTimers();
   const callbacks = new Map<string, (event: { payload: unknown }) => void>();
   listen.mockImplementation(async (name, callback) => {
     callbacks.set(name, callback);
@@ -37,6 +38,9 @@ it("returns native credits exactly once after the controlled parser completes an
   expect(invoke).not.toHaveBeenCalled();
   consumed!();
   consumed!();
+  // Acks are cumulative and batched: nothing is sent until the 32 ms window ends.
+  expect(invoke).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(32);
   expect(invoke).toHaveBeenCalledExactlyOnceWith("pty_output_ack", {
     id: "flow",
     generation: 7,
@@ -47,6 +51,41 @@ it("returns native credits exactly once after the controlled parser completes an
   expect(invoke).toHaveBeenCalledTimes(1);
   replacement();
   expect(invoke).toHaveBeenLastCalledWith("pty_output_flow", { id: "flow", enabled: false });
+});
+
+it("acknowledges the highest consumed sequence cumulatively and flushes at 16 chunks", async () => {
+  vi.useFakeTimers();
+  const callbacks = new Map<string, (event: { payload: unknown }) => void>();
+  listen.mockImplementation(async (name, callback) => {
+    callbacks.set(name, callback);
+    return vi.fn();
+  });
+  invoke.mockResolvedValue(undefined);
+  const { subscribePty, readyPtyBridge } = await import("./pty");
+  const done: (() => void)[] = [];
+  const stop = subscribePty("batch", (_data, finish) => void done.push(finish), vi.fn(), true);
+  await readyPtyBridge();
+  for (let sequence = 1; sequence <= 18; sequence++)
+    callbacks.get("pty-data")!({
+      payload: { id: "batch", data: btoa("x"), flow: { generation: 3, sequence } },
+    });
+  // The highest consumed sequence is acknowledged: the backend drains everything up to it, so
+  // an earlier chunk whose callback never runs cannot hold back the later acknowledgements.
+  done[1]();
+  await vi.advanceTimersByTimeAsync(64);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("pty_output_ack", {
+    id: "batch",
+    generation: 3,
+    sequence: 2,
+  });
+  for (const finish of done.slice(2)) finish();
+  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(invoke).toHaveBeenLastCalledWith("pty_output_ack", {
+    id: "batch",
+    generation: 3,
+    sequence: 18,
+  });
+  stop();
 });
 
 it.each([0, 1])(

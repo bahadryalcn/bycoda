@@ -1,4 +1,11 @@
-import { memo, type ComponentProps, type Dispatch, type SetStateAction } from "react";
+import {
+  memo,
+  useEffect,
+  useRef,
+  type ComponentProps,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useHeldValue } from "../helpers/stableProps";
 import { SessionRecoveryPanel } from "../../shell/SessionRecoveryPanel";
@@ -77,6 +84,13 @@ function WorkspaceRecoveryDialogsComponent({
   sessionDeleteDialog,
   setSessionDeleteDialog,
 }: WorkspaceRecoveryDialogsProps) {
+  // An unmount cannot answer the open confirmation; cancelling it releases the delete lock.
+  const deleteResolveRef = useRef(sessionDeleteDialog?.resolve);
+  deleteResolveRef.current = sessionDeleteDialog?.resolve;
+  useEffect(
+    () => () => deleteResolveRef.current?.({ confirmed: false, deleteWorktree: false }),
+    [],
+  );
   return (
     <>
       {recoveryOpen && (sessionRecovery || editorDraftRecovery?.available) ? (

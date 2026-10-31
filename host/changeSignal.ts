@@ -20,9 +20,11 @@ export class ChangeSignal {
     version = this.version,
     signal?: AbortSignal,
   ): Promise<void> {
+    const cancellation = cancelled();
+    const isCancelled = typeof cancellation === "boolean" ? cancellation : await cancellation;
     if (
       signal?.aborted ||
-      (await cancelled()) ||
+      isCancelled ||
       signal?.aborted ||
       version !== this.version ||
       deadline <= Date.now()

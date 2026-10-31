@@ -364,8 +364,9 @@ it("joins the other accepted turns before reporting a provider shutdown failure"
     const error = await outcome;
     expect(error).toBeInstanceOf(AggregateError);
     expect(errorLeaves(error)).toContain(stopFailure);
-    // The failed original is conserved; the other original still actually drains.
-    expect((await store.session(ids[0])).status).toBe("running");
+    // A failed provider stop is a warning plus a recorded failure, not a reason to keep the
+    // session "running": both originals settle, and the close still reports the failure.
+    expect((await store.session(ids[0])).status).toBe("interrupted");
     expect((await store.session(ids[1])).status).toBe("interrupted");
   } finally {
     release();

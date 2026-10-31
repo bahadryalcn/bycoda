@@ -167,7 +167,7 @@ it("stale generation provider callbacks cannot publish transcript output or stop
   expect(f.provider.stop).toHaveBeenCalledTimes(stops);
 });
 
-it("disk-full Stop reaches the exact running provider and reports its missing durable receipt honestly", async () => {
+it("disk-full Stop reaches the exact running provider and returns a non-durable receipt with a warning", async () => {
   const f = await fixture();
   const receipt = await f.engine.command(f.send);
   await vi.waitFor(() => expect(f.provider.send).toHaveBeenCalledTimes(1), { timeout: 5_000 });
@@ -191,10 +191,14 @@ it("disk-full Stop reaches the exact running provider and reports its missing du
     "verified current",
   );
   expect(f.provider.cancel).not.toHaveBeenCalled();
-  await expect(f.engine.command(stop)).rejects.toMatchObject({
-    code: "HOST_CONTROL_RECEIPT_UNCONFIRMED",
-    controlApplied: true,
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  await expect(f.engine.command(stop)).resolves.toMatchObject({
+    commandId: "emergency-stop",
+    sessionId: "migrated",
+    runId: receipt.runId,
   });
+  expect(warn).toHaveBeenCalled();
+  warn.mockRestore();
   expect(f.provider.cancel).toHaveBeenCalledWith("migrated");
   expect(await f.store.receiptStatus("emergency-stop")).toBeUndefined();
 });

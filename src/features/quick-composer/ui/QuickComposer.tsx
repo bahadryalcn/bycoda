@@ -184,8 +184,12 @@ export function QuickComposer({
     workspace.mode,
     workspace.base,
   );
+  // Pending is bounded by the policy-read timeout; only an explicit worktree choice
+  // makes a failed read a hard stop. Automatic falls back to the current checkout.
   const workspaceBlocked =
-    !workspace.tree && (workspaceCreation.pending || !!workspaceCreation.error);
+    !workspace.tree &&
+    (workspaceCreation.pending ||
+      (!!workspaceCreation.error && workspace.mode === "worktree"));
   const [gitOpen, setGitOpen] = useState(false);
   // Re-render when a workspace window's live catalog lands.
   const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot);

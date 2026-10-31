@@ -1,3 +1,5 @@
+import { terminalText } from "../../../shared/lib/terminalText";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Alert } from "../../../shared/ui/Alert";
@@ -445,13 +447,15 @@ export function SearchView({
   const projectScope = looksLikeProject(cwd) ? `${projectDisplayName(cwd)} · ${prettyCwd(cwd)}` : t("No project folder");
   const scopeCopy = scope === "files" ? `${t("Files")}: ${projectScope}`
     : scope === "projects" ? t("Recent projects")
-      : chatMode ? `${t("Conversations")}: ${t(filters.scope === "everywhere" ? "Everywhere" : filters.scope === "group" ? "This group" : "This project")}${filters.scope === "everywhere" ? "" : ` · ${projectScope}`}`
+      : chatMode ? `${t(filters.scope === "everywhere" ? "Everywhere" : filters.scope === "group" ? "This group" : "This project")}${filters.scope === "everywhere" ? "" : ` · ${projectDisplayName(cwd)}`}`
         : `${t("Files")}: ${projectScope} · ${t("Conversations")}: ${t("Everywhere")} · ${t("Recent projects")}`;
-  const limitNotice = truncated || (!chatMode && grouped.omitted > 0) ? (
-    <p className="px-2.5 py-1 text-ui-micro text-(--ui-text-muted)">
-      {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
-      {!chatMode && grouped.omitted > 0 ? ` · ${grouped.omitted} ${t("more loaded matches")}` : ""}
-    </p>
+  const limitNotice = !empty && (truncated || (!chatMode && grouped.omitted > 0)) ? (
+    <InfoPopover label={t("Search result limits")}>
+      <p>
+        {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
+        {!chatMode && grouped.omitted > 0 ? ` · ${grouped.omitted} ${t("more loaded matches")}` : ""}
+      </p>
+    </InfoPopover>
   ) : null;
   const indexNotice =
     pendingIndex > 0 && !conversationError && conversationMode ? (
@@ -552,8 +556,8 @@ export function SearchView({
           </div>
         </div>
 
-        <div className="col-span-3 flex min-h-9 flex-wrap items-center">
-          <div className="min-w-0 flex-1 overflow-x-auto px-3 py-1">
+        <div className="app-search-mode-band col-span-3">
+          <div className="min-w-0 flex-1 overflow-x-auto">
             <SegmentedControl
               label={t("Search in")}
               value={scope}
@@ -571,9 +575,10 @@ export function SearchView({
         </div>
       </div>
 
-      <p id={scopeId} className="shrink-0 px-3 py-1.5 text-ui-caption text-(--ui-text-secondary) [overflow-wrap:anywhere]">
-        {scopeCopy}
-      </p>
+      <div className="app-search-scope-summary">
+        <p id={scopeId}>{scopeCopy}</p>
+        {limitNotice}
+      </div>
 
       {!empty && (error || conversationError) ? (
         <Alert tone="danger" role="alert" className="mx-2 mt-2 max-h-40 shrink-0 overflow-auto break-words">
@@ -629,12 +634,10 @@ export function SearchView({
           <>
             <p role="status" className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">{t(indexing ? "No indexed matches yet" : "No results")}</p>
             {indexNotice}
-            {limitNotice}
           </>
         ) : chatMode ? (
           <>
             {indexNotice}
-            {limitNotice}
             <ChatSearchResults
               listId={listId}
               groups={chatGroups}
@@ -647,7 +650,6 @@ export function SearchView({
         ) : (
           <>
             {indexNotice}
-            {limitNotice}
             <ResultList
               listId={listId}
               counts={grouped.counts}
@@ -740,7 +742,7 @@ function ResultList({
           : hit.kind === "file" ? t("Files") : hit.kind === "content" ? t("File content") : t("Projects");
         const count = counts[hit.kind === "conversation" ? "conversations" : hit.kind === "message" ? "messages" : hit.kind === "file" ? "files" : hit.kind === "project" ? "projects" : "content"];
         const fullIdentity = hit.kind === "file" ? hit.path : hit.kind === "content" ? `${hit.path}:${hit.line}:${hit.column}`
-          : hit.kind === "project" ? hit.path : `${hit.title}\n${hit.cwd}`;
+          : hit.kind === "project" ? hit.path : `${terminalText(hit.title).text}\n${hit.cwd}`;
         return (
           <div key={hit.id} role="presentation">
           {index === 0 || hits[index - 1].kind !== hit.kind ? (
@@ -751,6 +753,7 @@ function ResultList({
           ) : null}
           <Button
             variant="item"
+            tone="accent"
             motion="none"
             fullWidth
             selected={highlighted}
@@ -760,7 +763,6 @@ function ResultList({
             type="button"
             role="option"
             aria-selected={highlighted}
-            title={fullIdentity}
             tabIndex={-1}
             onMouseDown={(event) => event.preventDefault()}
             onMouseEnter={() => onRowEnter(index)}
@@ -801,14 +803,14 @@ function rowCopy(
   if (hit.kind === "conversation") {
     return {
       icon: <HarnessIcon harness={hit.harness} className="icon-sm" />,
-      title: <MatchText text={hit.title} positions={hit.positions} active />,
+      title: <MatchText {...terminalText(hit.title, hit.positions)} active />,
       meta: projectDisplayName(hit.cwd),
     };
   }
   if (hit.kind === "message") {
     return {
       icon: <MessageSquare className="icon-sm text-(--ui-text-secondary)" strokeWidth={1.75} />,
-      title: hit.title,
+      title: terminalText(hit.title).text,
       preview: <Highlight text={hit.preview || hit.title} query={query} />,
       meta: projectDisplayName(hit.cwd),
     };
@@ -837,8 +839,9 @@ function rowCopy(
 
 function Highlight({ text, query }: { text: string; query: string }) {
   useLocale();
-  const positions = matchPositions(text, query);
-  return <MatchText text={text} positions={positions} active={positions.length > 0} />;
+  const clean = terminalText(text).text;
+  const positions = matchPositions(clean, terminalText(query).text);
+  return <MatchText text={clean} positions={positions} active={positions.length > 0} />;
 }
 
 function namePositions(hit: { name: string; relative: string; positions: number[] }) {

@@ -6,6 +6,7 @@ import {
   type VoiceRuntimeConfig,
 } from "./localVoiceClient";
 import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
+import { errorText } from "../../../shared/lib/errors";
 
 export type SpeechBinding = { sessionId?: string; sequence: number };
 type Callbacks = {
@@ -20,6 +21,9 @@ type Callbacks = {
 export class LocalVoice {
   private stream?: MediaStream;
   private audio?: AudioContext;
+  /** Playback runs at the device rate; the 16 kHz capture context would turn
+   * 44–48 kHz speech into telephone quality. */
+  private output?: AudioContext;
   private source?: MediaStreamAudioSourceNode;
   private capture?: AudioWorkletNode;
   private vad?: VoiceVad;
@@ -35,13 +39,21 @@ export class LocalVoice {
   private playback = new Set<AudioBufferSourceNode>();
   private playbackStarts = new Map<AudioBufferSourceNode, ReturnType<typeof setTimeout>>();
   private playbackActive = false;
+  /** Natural sentences are synthesized one after another (the Host speaks one at a time). */
+  private naturalQueue: Promise<void> = Promise.resolve();
+  /** Audio clock time where the next natural chunk starts, shared by queued sentences. */
+  private nextTime?: number;
+  /** App language: Whisper uses it when its own language guess is uncertain. */
+  private readonly hint: string;
   constructor(
     private callbacks: Callbacks,
     private language: string,
     private config?: VoiceRuntimeConfig,
     /** Shared with the decorative visualizer; capture never causes React renders. */
     readonly level = { current: 0 },
-  ) {}
+  ) {
+    this.hint = language;
+  }
 
   async connect() {
     try {
@@ -76,6 +88,17 @@ export class LocalVoice {
           if (this.binding) void this.transcribe(audio, this.binding, this.speechEpoch);
         },
         () => this.callbacks.state("listening"),
+        // With Smart Turn, a finished sentence ends after ~0.2 s instead of 0.6 s,
+        // and a mid-sentence pause keeps listening up to 1.3 s.
+        this.info.turn
+          ? {
+              endSilence: 1.3,
+              pause: (audio, pauseId) => {
+                if (this.binding)
+                  void this.endpoint(audio, pauseId, this.binding, this.speechEpoch);
+              },
+            }
+          : {},
       );
       this.source = this.audio.createMediaStreamSource(this.stream);
       this.capture = new AudioWorkletNode(this.audio, "bycoda-voice-capture");
@@ -122,6 +145,7 @@ export class LocalVoice {
       const result = await localVoiceBackend.transcribe(
         this.info.lease,
         pcmBase64(resamplePcm(audio, this.audio!.sampleRate)),
+        /^[a-z]{2}$/.test(this.hint) ? this.hint : undefined,
       );
       // A correction spoken while ASR is running supersedes its older result.
       if (!this.closed && epoch === this.speechEpoch && result.text.trim()) {
@@ -137,19 +161,62 @@ export class LocalVoice {
     }
   }
 
-  speak(text: string): boolean {
+  /** Asks at a pause whether the sentence is finished; if so, its text ends the turn. */
+  private async endpoint(
+    audio: Int16Array,
+    pauseId: number,
+    binding: SpeechBinding,
+    epoch: number,
+  ) {
+    // A busy recognizer simply leaves the decision to the fallback silence.
+    if (!this.info || this.closed || this.requests >= 2) return;
+    this.requests++;
+    let ended = false;
+    try {
+      const result = await localVoiceBackend.endpoint(
+        this.info.lease,
+        pcmBase64(resamplePcm(audio, this.audio!.sampleRate)),
+        /^[a-z]{2}$/.test(this.hint) ? this.hint : undefined,
+      );
+      if (this.closed || epoch !== this.speechEpoch || !("text" in result)) return;
+      // The speaker may have continued while the check ran; then the turn goes on.
+      if (!this.vad?.commit(pauseId)) return;
+      ended = true;
+      if (!result.text.trim()) return;
+      if (/^[a-z]{2}$/.test(result.language)) this.language = result.language;
+      this.callbacks.transcript(result, binding);
+    } catch {
+      // The fallback silence still transcribes the turn.
+    } finally {
+      this.requests--;
+      if (ended && !this.closed && !this.requests) this.callbacks.state("listening");
+    }
+  }
+
+  /** Speaks `text`, replacing current speech, or after it with `append` (streamed replies). */
+  speak(text: string, append = false): boolean {
     if (this.closed) return false;
     if (this.config?.natural) {
       if (!this.info || !this.audio || this.audio.state === "closed") return false;
-      this.silence();
-      void this.speakNatural(text.slice(0, 700), this.playbackEpoch);
+      if (!append) {
+        this.silence();
+        this.naturalQueue = this.speakNatural(text.slice(0, 700), this.playbackEpoch);
+        return true;
+      }
+      const epoch = this.playbackEpoch;
+      this.naturalQueue = this.naturalQueue.then(() =>
+        this.closed || epoch !== this.playbackEpoch
+          ? undefined
+          : this.speakNatural(text.slice(0, 700), epoch),
+      );
       return true;
     }
     if (this.closed || !globalThis.speechSynthesis) return false;
     const voices = speechSynthesis.getVoices().filter((voice) => voice.localService);
     const voice = voices.find((voice) => voice.lang.toLowerCase().split("-")[0] === this.language);
     if (!voice) return false; // Never silently send speech to a network voice.
-    this.silence();
+    // Queued utterances play in order; a new reply replaces them.
+    if (!append) this.silence();
     const utterance = new SpeechSynthesisUtterance(text.slice(0, 700));
     utterance.voice = voice;
     utterance.lang = voice.lang;
@@ -168,27 +235,31 @@ export class LocalVoice {
     const lease = this.info!.lease;
     let id: string | undefined;
     try {
-      ({ id } = await localVoiceBackend.speak(lease, text));
+      ({ id } = await localVoiceBackend.speak(
+        lease,
+        text,
+        /^[a-z]{2}$/.test(this.language) ? this.language : undefined,
+      ));
       if (this.closed || epoch !== this.playbackEpoch) {
         await localVoiceBackend.speechCancel(lease, id);
         return;
       }
       this.speechId = id;
-      const context = this.audio!;
+      const context = (this.output ??= new AudioContext());
       await context.resume();
-      let nextTime: number | undefined;
       while (!this.closed && epoch === this.playbackEpoch) {
         const chunk = await localVoiceBackend.speechNext(lease, id);
         if (this.closed || epoch !== this.playbackEpoch) break;
         if (chunk.error) throw new Error(chunk.error);
         if (chunk.done) break;
         if (!chunk.audio) continue;
-        if (chunk.sampleRate !== 48000 || chunk.audio.length > 262144)
+        const rate = chunk.sampleRate ?? 0;
+        if (!Number.isInteger(rate) || rate < 16000 || rate > 48000 || chunk.audio.length > 262144)
           throw new Error("Invalid local speech audio.");
         const bytes = Uint8Array.from(atob(chunk.audio), (value) => value.charCodeAt(0));
         if (!bytes.length || bytes.length % 2) throw new Error("Invalid local speech audio.");
         const samples = new DataView(bytes.buffer);
-        const buffer = context.createBuffer(1, bytes.length / 2, 48000);
+        const buffer = context.createBuffer(1, bytes.length / 2, rate);
         const channel = buffer.getChannelData(0);
         for (let i = 0; i < channel.length; i++) channel[i] = samples.getInt16(i * 2, true) / 32768;
         const source = context.createBufferSource();
@@ -203,20 +274,22 @@ export class LocalVoice {
           this.playback.delete(source);
           if (epoch === this.playbackEpoch && !this.playback.size) this.setPlayback(false);
         };
-        nextTime =
-          nextTime === undefined
-            ? context.currentTime + 0.35
-            : Math.max(context.currentTime + 0.02, nextTime);
-        source.start(nextTime);
-        this.watchPlaybackStart(source, context, nextTime, epoch);
-        nextTime += buffer.duration;
+        // Continue right after queued audio; after a gap, buffer again against
+        // underruns. Only streamed VoxCPM2 audio needs that buffer: Supertonic
+        // delivers each sentence complete.
+        const lead = this.config?.engine === "voxcpm2" ? 0.35 : 0.05;
+        const start =
+          this.nextTime !== undefined && this.nextTime > context.currentTime
+            ? this.nextTime
+            : context.currentTime + lead;
+        source.start(start);
+        this.watchPlaybackStart(source, context, start, epoch);
+        this.nextTime = start + buffer.duration;
       }
     } catch (cause) {
       if (!this.closed && epoch === this.playbackEpoch) {
         this.silence();
-        this.callbacks.error(
-          cause instanceof Error ? cause.message : "Local voice playback failed.",
-        );
+        this.callbacks.error(errorText(cause).trim() || "Local voice playback failed.");
       }
     } finally {
       if (this.speechId === id) this.speechId = undefined;
@@ -262,6 +335,8 @@ export class LocalVoice {
   }
   silence() {
     this.playbackEpoch++;
+    this.naturalQueue = Promise.resolve();
+    this.nextTime = undefined;
     for (const timer of this.playbackStarts.values()) clearTimeout(timer);
     this.playbackStarts.clear();
     this.setPlayback(false);
@@ -287,6 +362,7 @@ export class LocalVoice {
     this.capture?.disconnect();
     if (this.capture) this.capture.port.onmessage = null;
     if (this.audio && this.audio.state !== "closed") void this.audio.close();
+    if (this.output && this.output.state !== "closed") void this.output.close();
     if (this.info) void localVoiceBackend.release(this.info.lease).catch(() => {});
   }
 }

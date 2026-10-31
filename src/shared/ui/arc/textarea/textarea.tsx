@@ -1,8 +1,9 @@
 "use client";
 import { forwardRef, useId } from "react";
-import type { TextareaHTMLAttributes } from "react";
+import type { TextareaHTMLAttributes, ReactNode } from "react";
 import { FieldMessage } from "../lib/field-message";
 import { fieldDescribedBy, fieldMessageIds } from "../lib/field-ids";
+import { FieldControl } from "../../Field";
 import styles from "./textarea.module.css";
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label: string;
@@ -12,6 +13,9 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
   /** `form` (default) is comfortable; `compact` is the toolbar/inline composition. */
   fieldVariant?: "form" | "compact";
   hideLabel?: boolean;
+  endAdornment?: ReactNode;
+  startAdornment?: ReactNode;
+  appearance?: "default" | "quiet";
 }
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
   {
@@ -23,6 +27,9 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     fieldClassName,
     fieldVariant = "form",
     hideLabel = false,
+    endAdornment,
+    startAdornment,
+    appearance = "default",
     ...props
   },
   ref,
@@ -36,6 +43,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       data-variant={fieldVariant}
     >
       {!hideLabel && <label htmlFor={controlId}>{label}</label>}
+      <FieldControl startAdornment={startAdornment} endAdornment={endAdornment} appearance={appearance}>
       <textarea
         {...props}
         aria-label={props["aria-label"] ?? (hideLabel ? label : undefined)}
@@ -49,6 +57,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
           props["aria-describedby"],
         )}
       />
+      </FieldControl>
       <FieldMessage id={errorId} text={error} className={styles.error} alert />
       <FieldMessage id={hintId} text={description} className={styles.hint} />
     </div>

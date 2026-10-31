@@ -207,6 +207,7 @@ type ChildProcessState = {
   exited: boolean;
   order: number;
   receipt?: HarnessProcessReceipt;
+  spawnReturned?: boolean;
   kill?: Promise<void>;
   handlers?: { line: LineHandler; exit: ExitHandler; stderr?: LineHandler };
   early: ProcessFrame[];
@@ -519,9 +520,7 @@ function deliverProcessFrame(state: ChildProcessState, frame: ProcessFrame): voi
       if (body.reason) state.handlers?.exit(body.code, body.reason);
       else state.handlers?.exit(body.code);
     } finally {
-      // This observes the retained source-owned retirement obligation. A catch
-      // here prevents an unhandled rejection; the ledger keeps the original
-      // failed record and all explicit teardown/cut callers still reject.
+      // The process is already gone; retirement just clears the ledger record.
       void retireProviderProcess(state.handle).catch(() => {});
     }
     return;
@@ -972,6 +971,7 @@ export async function spawnChild(
       // Functions are in-process restrictions, never desktop IPC/wire arguments.
       ...(state.backend === "host" && beforeSpawn ? { beforeSpawn } : {}),
     });
+    state.spawnReturned = true;
     const receipt = requireHarnessProcessReceipt(raw, sessionId, state.backend);
     state.receipt = receipt;
     state.phase = "bound";
@@ -1102,14 +1102,36 @@ export function killChild(handle: ChildProcessHandle): Promise<void> {
   if (state.kill) return state.kill;
   const beforeInvoke = state.phase === "new" || state.phase === "preparing";
   unwatchChild(handle);
-  if (beforeInvoke) return (state.kill = Promise.resolve());
+  // Nothing to kill when the spawn failed or the process already exited.
+  if (beforeInvoke || (state.phase === "failed" && !state.spawnReturned) || state.exited)
+    return (state.kill = Promise.resolve());
   const kill = (receipt: HarnessProcessReceipt) =>
     state.invoke<void>("harness_kill", {
       sessionId: handle.sessionId,
       constructionId: receipt.constructionId,
     });
-  state.kill = state.receipt ? kill(state.receipt) : state.ready.then(kill);
-  return state.kill;
+  const run: Promise<void> = (
+    state.receipt
+      ? kill(state.receipt)
+      : state.ready.then(kill, (error: unknown) => {
+          if (state.spawnReturned) {
+            // Native accepted the spawn but returned an invalid receipt. Ask it
+            // to stop the original session instead of treating validation as exit.
+            return state.invoke<void>("harness_kill", { sessionId: handle.sessionId });
+          }
+          console.warn("[child] kill skipped, spawn invoke rejected", error);
+        })
+  ).catch((error: unknown) => {
+    // Do not cache a rejection; unknown/exited constructions are already gone.
+    if (state.kill === run) state.kill = undefined;
+    if (state.exited || /^NATIVE_PROCESS_CONSTRUCTION_STALE$/.test(error instanceof Error ? error.message : String(error))) {
+      console.warn("[child] kill target already gone", error);
+      return;
+    }
+    throw error;
+  });
+  state.kill = run;
+  return run;
 }
 
 export function killAllChildren(): Promise<void> {

@@ -133,6 +133,7 @@ export function withHarnessChoice(
       : {
           providerSessionId: undefined,
           providerAccountId: undefined,
+          nextProviderAccountId: undefined,
           // The limit belongs to the provider being left.
           usageLimit: undefined,
         }),

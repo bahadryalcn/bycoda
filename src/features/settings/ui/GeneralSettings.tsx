@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "./settingsControls";
 import {
   installPendingUpdate,
@@ -13,14 +14,23 @@ import {
   type UpdaterSnapshot,
 } from "../../../app/model/updater";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
-import { t, useLocale } from "../../../shared/i18n";
+import {
+  setDomainLanguagePreference,
+  setLanguagePreference,
+  t,
+  useLocale,
+} from "../../../shared/i18n";
 import { MorphSelect } from "../../../shared/ui/MorphSelect";
 import { Progress } from "../../../shared/ui/Progress";
-import { ArrowDownCircle, RefreshCw } from "../../../shared/ui/icons";
+import { ArrowDownCircle, Check, Copy, RefreshCw } from "../../../shared/ui/icons";
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
+import { getTourSnapshot, startTour, subscribeTour } from "../../onboarding/model/tourState";
 import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/import/importModel";
 import {
+  CLOSE_TO_TRAY_DEFAULT,
+  KEEP_AWAKE_DEFAULT,
+  KEEP_AWAKE_SCREEN_DEFAULT,
   KEEP_AWAKE_HOLD_AFTER,
   KEEP_AWAKE_HOLD_AFTER_DEFAULT,
   isKeepAwakeHoldAfter,
@@ -39,13 +49,14 @@ import {
 } from "../model/settings";
 import { LanguageSettings } from "./LanguageSettings";
 import { BuildIdentityDetails } from "./BuildIdentityDetails";
-import { buildIdentityLabel } from "../../../shared/model/build-info";
-import { DiagnosticsGroup } from "./DiagnosticsSettings";
-import { AdvancedSettings, Group, Row, Toggle } from "./settingsControls";
+import { DiagnosticsGroup, restorePerformanceTraceDefault } from "./DiagnosticsSettings";
+import { Group, Row, Toggle, useSettingsPageReset } from "./settingsControls";
 import "./GeneralSettings.css";
 
 export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string) => void }) {
   useLocale();
+  // A tour left part-way is resumed from where it stopped.
+  const tourState = useSyncExternalStore(subscribeTour, getTourSnapshot, () => "");
   const [closeToTray, setCloseToTray] = useStoredPreferenceState(
     loadCloseToTray,
     subscribeCloseToTray,
@@ -78,12 +89,36 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
   const onKeepAwakeScreen = (next: boolean) => {
     saveKeepAwakeScreen(next);
   };
+  // The shell confirms first; this restores only the settings on this page.
+  useSettingsPageReset(async () => {
+    if (IS_WIN) onCloseToTray(CLOSE_TO_TRAY_DEFAULT);
+    saveKeepAwakeEnabled(KEEP_AWAKE_DEFAULT);
+    saveKeepAwakeHoldAfter(KEEP_AWAKE_HOLD_AFTER_DEFAULT);
+    saveKeepAwakeScreen(KEEP_AWAKE_SCREEN_DEFAULT);
+    restorePerformanceTraceDefault();
+    await Promise.allSettled([
+      setLanguagePreference("system"),
+      setDomainLanguagePreference("git", "app"),
+      setDomainLanguagePreference("technical", "app"),
+    ]);
+  });
+  const sleepBehavior = IS_WIN
+    ? t(
+        "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works. On battery-powered Modern Standby PCs, Windows may stop the request five minutes after the sleep timeout.",
+      )
+    : IS_MAC
+      ? t(
+          "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works.",
+        )
+      : t(
+          "Prevent idle sleep during agent work, and optionally after the last agent finishes. Automatic screen locking remains available. On GNOME, choosing Sleep may be blocked while this is active.",
+        );
   return (
     <div className="general-settings settings-topics">
       {/* Daily preferences first: language, app behavior, sleep. */}
       <LanguageSettings />
       {IS_WIN && (
-        <Group title={t("Application behavior")} scope={t("Applies to this Windows computer.")}>
+        <Group title={t("Application behavior")}>
           <Row
             id="close-to-tray"
             label={t("Close to tray")}
@@ -97,12 +132,17 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       )}
       <Group
         title={t("Sleep")}
-        scope={t("Applies to this computer, not remote computers running agents.")}
+        description={t("Applies to this computer, not remote computers running agents.")}
       >
         <Row
           id="keep-awake"
           label={t("Prevent sleep while agents work")}
           description={t("Keep this computer awake while an agent is working.")}
+          info={
+            <InfoPopover className="shrink-0" label={t("Sleep behavior")}>
+              <p>{sleepBehavior}</p>
+            </InfoPopover>
+          }
         >
           <Toggle
             label={t("Prevent sleep while agents work")}
@@ -110,68 +150,35 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             onChange={onKeepAwake}
           />
         </Row>
-        <div
-          className="general-sleep-options"
-          role="group"
-          aria-label={t("Sleep")}
-          aria-describedby={!keepAwake ? "general-sleep-dependency" : undefined}
+        <Row
+          id="keep-awake-duration"
+          label={t("After agents finish")}
+          description={t("Choose when this computer can sleep again after the last agent finishes.")}
+          dependsOn={keepAwake}
+          disabledReason={t("Turn on Prevent sleep while agents work first")}
         >
-          {!keepAwake ? (
-            <p className="general-dependency" id="general-sleep-dependency">
-              {t(
-                "Enable Prevent sleep while agents work to use these options. Your choices are preserved.",
-              )}
-            </p>
-          ) : null}
-          <Row
-            id="keep-awake-duration"
-            label={t("After agents finish")}
-            description={t("Choose when this computer can sleep again after the last agent finishes.")}
-          >
-            <MorphSelect
-              label={t("Stay awake after an agent ends")}
-              value={keepAwakeHoldAfter}
-              options={[...KEEP_AWAKE_HOLD_AFTER]}
-              onChange={onKeepAwakeHoldAfter}
-              disabled={!keepAwake}
-            />
-          </Row>
-          <Row
-            id="keep-awake-screen"
+          <MorphSelect
+            label={t("Stay awake after an agent ends")}
+            value={keepAwakeHoldAfter}
+            options={[...KEEP_AWAKE_HOLD_AFTER]}
+            onChange={onKeepAwakeHoldAfter}
+            disabled={!keepAwake}
+          />
+        </Row>
+        <Row
+          id="keep-awake-screen"
+          label={t("Keep the screen on")}
+          description={t("Keep the display awake while sleep prevention is active.")}
+          dependsOn={keepAwake}
+          disabledReason={t("Turn on Prevent sleep while agents work first")}
+        >
+          <Toggle
             label={t("Keep the screen on")}
-            description={
-              IS_WIN || IS_MAC
-                ? t(
-                    "Keep the display awake while the sleep setting is active. Closing the lid or choosing Sleep still works.",
-                  )
-                : t(
-                    "Keep the display awake while the sleep setting is active. Automatic screen locking may be prevented.",
-                  )
-            }
-          >
-            <Toggle
-              label={t("Keep the screen on")}
-              on={keepAwakeScreen}
-              onChange={onKeepAwakeScreen}
-              disabled={!keepAwake}
-            />
-          </Row>
-        </div>
-        <AdvancedSettings title={t("Sleep behavior")}>
-          <p className="general-detail">
-            {IS_WIN
-              ? t(
-                  "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works. On battery-powered Modern Standby PCs, Windows may stop the request five minutes after the sleep timeout.",
-                )
-              : IS_MAC
-                ? t(
-                    "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works.",
-                  )
-                : t(
-                    "Prevent idle sleep during agent work, and optionally after the last agent finishes. Automatic screen locking remains available. On GNOME, choosing Sleep may be blocked while this is active.",
-                  )}
-          </p>
-        </AdvancedSettings>
+            on={keepAwakeScreen}
+            onChange={onKeepAwakeScreen}
+            disabled={!keepAwake}
+          />
+        </Row>
       </Group>
 
       {/* Updates: version, check/install/restart state and progress share one compact action area. */}
@@ -189,7 +196,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           )}
         >
           <Button
-            className="shrink-0"
+            className="general-action shrink-0"
             onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}
           >
             {t("Import…")}
@@ -198,14 +205,20 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         <Row
           id="getting-started"
           label={t("Getting started")}
-          description={t("Connect computers, set up agents, and choose your projects.")}
+          description={t("Take a one-minute tour, or connect computers, set up agents and choose your projects.")}
         >
-          <Button
-            className="shrink-0"
-            onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}
-          >
-            {t("Open setup…")}
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* The tour request closes Settings and points at the workspace controls. */}
+            <Button className="general-action shrink-0" onClick={() => startTour("first-run")}>
+              {tourState.startsWith("paused:") ? t("Resume tour") : t("Take the tour")}
+            </Button>
+            <Button
+              className="general-action shrink-0"
+              onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}
+            >
+              {t("Open setup…")}
+            </Button>
+          </div>
         </Row>
         <Row
           id="usage-guide"
@@ -213,8 +226,8 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           description={t("Learn chat, queue, stop and essential shortcuts.")}
         >
           {/* The guide request closes Settings and walks through the workspace. */}
-          <Button className="shrink-0" onClick={openUsageGuide}>
-            {t("Open guide")}
+          <Button className="general-action shrink-0" onClick={openUsageGuide}>
+            {t("Open guide…")}
           </Button>
         </Row>
       </Group>
@@ -231,7 +244,7 @@ function ProductDetails() {
   return (
     <>
       <Row label={t("Developed by")}>
-        <span>{PRODUCT_IDENTITY.developerName}</span>
+        <span className="general-about-value">{PRODUCT_IDENTITY.developerName}</span>
       </Row>
       <ProductLink
         label={t("Website")}
@@ -345,16 +358,13 @@ function ProductLink({
             </p>
             <span className="select-text break-all">{address}</span>
           </SettingsFeedback>
-        ) : copied ? (
-          <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
-            {t("Copied")}
-          </span>
         ) : undefined
       }
     >
       <Button
         ref={linkControl}
         variant="link"
+        className="general-about-link"
         loading={pending === "open"}
         loadingLabel={t("Opening…")}
         disabled={pending !== null}
@@ -363,6 +373,27 @@ function ProductLink({
       >
         {displayAddress}
       </Button>
+      {failure ? null : (
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={`${t("Copy")}: ${address}`}
+          tooltip={copied ? t("Copied") : t("Copy")}
+          disabled={pending !== null}
+          loading={pending === "copy"}
+          onClick={() => void run("copy")}
+        >
+          {copied ? (
+            <Check aria-hidden className="icon-xs" strokeWidth={1.75} />
+          ) : (
+            <Copy aria-hidden className="icon-xs" strokeWidth={1.75} />
+          )}
+        </Button>
+      )}
+      <span role="status" className="sr-only">
+        {copied ? t("Copied") : ""}
+      </span>
     </Row>
   );
 }
@@ -429,9 +460,7 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
                 ? t("You're on the latest version.")
                 : snapshot.phase === "error"
                   ? (snapshot.error ?? t("Update check failed."))
-                  : t(
-                      "Check the release feed for an update. Installation requires confirmation and restarts the app.",
-                    );
+                  : t("Check for a newer version.");
 
   return (
     <Row
@@ -440,9 +469,6 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
         <span className="flex min-w-0 flex-wrap items-baseline gap-2">
           {t("Version")}
           <span className="general-version">{snapshot.currentVersion}</span>
-          <span className="break-all text-ui-caption text-(--ui-text-secondary)">
-            {t(buildIdentityLabel())}
-          </span>
         </span>
       }
       description={snapshot.phase === "idle" && updatesEnabled === true ? status : undefined}
@@ -478,6 +504,7 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
         {updatesEnabled === false ? null : (
           <Button
             className="shrink-0"
+            stableWidth
             onClick={() => void onClick()}
             disabled={busy || updatesEnabled !== true}
             loading={busy}

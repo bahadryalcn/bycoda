@@ -163,7 +163,7 @@ export function WorkspaceSourceControl({
       data-workspace-source-control={cwd}
     >
       {showHeader ? (
-        <div className="flex shrink-0 items-center gap-1 px-2 pt-1 pb-0.5">
+        <div className="flex shrink-0 items-center gap-1 px-1.5 pt-1 pb-0.5">
           {!checkouts ? (
             <Button
               variant="item"

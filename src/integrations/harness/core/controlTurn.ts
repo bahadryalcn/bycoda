@@ -55,8 +55,7 @@ function available(): Keeper {
     Object.keys(keeper).length !== 3 ||
     keeper.version !== 1 ||
     !(keeper.handles instanceof WeakMap) ||
-    !(keeper.active instanceof Set) ||
-    keeper.active.size > NATIVE_CONTROL_TURN_CAPACITY
+    !(keeper.active instanceof Set)
   )
     throw new Error("Native control turn ownership is unavailable.");
   return keeper;
@@ -72,7 +71,7 @@ function originalFor(state: Keeper, handle: ControlTurnHandle): Original {
     !["authorizing", "unknown", "ready", "finishing", "failed", "finished"].includes(
       original.phase,
     ) ||
-    state.active.has(original) !== (original.phase !== "finished") ||
+    state.active.has(original) !== ["authorizing", "ready", "finishing"].includes(original.phase) ||
     (original.receipt &&
       (!Object.isFrozen(original.receipt) || original.receipt.sessionId !== handle.sessionId))
   )
@@ -143,11 +142,13 @@ export async function beginNativeControlTurn(
   )
     throw new Error("Native control turn input is invalid.");
   const state = available();
+  for (const entry of state.active)
+    if (["unknown", "failed", "finished"].includes(entry.phase)) state.active.delete(entry);
   if (state.active.size >= NATIVE_CONTROL_TURN_CAPACITY)
     throw new Error("Native control turn capacity is held by unfinished or unconfirmed work.");
   const handle = Object.freeze({ sessionId }) as ControlTurnHandle;
   const original: Original = { handle, invoke: invokeFn, phase: "authorizing" };
-  // Reserve before any effect. Lost replies/invalid identities never free this slot.
+  // Reserve before any effect; terminal failures release the local slot.
   state.handles.set(handle, original);
   state.active.add(original);
   const args = Object.freeze({ sessionId, cwd, appAccess });
@@ -158,6 +159,7 @@ export async function beginNativeControlTurn(
     return handle;
   } catch (error) {
     original.phase = "unknown";
+    state.active.delete(original);
     throw error;
   }
 }
@@ -174,8 +176,10 @@ function finishOriginal(state: Keeper, original: Original): Promise<void> {
   // Install the exact result before dispatch, including synchronous reentrant callers.
   original.finish = result;
   original.phase = "finishing";
+  state.active.add(original);
   const failed = (error: unknown) => {
     original.phase = "failed";
+    state.active.delete(original);
     reject(error);
   };
   try {

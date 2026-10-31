@@ -108,6 +108,7 @@ type Stream = {
   causalPending: number;
   causalFinished: number;
   additionalInputs: number;
+  diagnosticsTruncated?: boolean;
 };
 type EventOrigin = { origin: NativeOutputEventOrigin; sessionId: string; applied: boolean };
 type Runtime = {
@@ -460,8 +461,13 @@ export function observeNativeOutputBatch(
       outcomeReason: null,
     };
     runtime.items.set(token, owned);
-    if (runtime.outcomes.size >= MAX_RETAINED_OUTCOMES) unavailable(stream, "outcome-capacity");
-    else runtime.outcomes.set(token, owned);
+    // Bounded diagnostic history; private token ownership lives in the WeakMap.
+    if (runtime.outcomes.size >= MAX_RETAINED_OUTCOMES) {
+      const oldest = runtime.outcomes.keys().next().value!;
+      runtime.outcomes.get(oldest)!.batch.stream.diagnosticsTruncated = true;
+      runtime.outcomes.delete(oldest);
+    }
+    runtime.outcomes.set(token, owned);
     return token;
   });
   runtime.hashJobs++;
@@ -562,7 +568,8 @@ export function captureNativeOutputEvent(sessionId: string, event: object): void
   }
   runtime.events.set(event, { origin: current, sessionId, applied: false });
   for (const item of items) if (item.outcome === "pending-parser") item.outcome = "emitted";
-  for (const stream of new Set(items.map((item) => item.batch.stream))) {
+  const streams = items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
+  for (const stream of streams) {
     if (stream.queuedEvents < Number.MAX_SAFE_INTEGER) stream.queuedEvents++;
     else unavailable(stream, "event-count-capacity");
   }
@@ -732,8 +739,8 @@ export function retainNativeOutputEventOrigin(
     failOrigin(origin, "causal-session-changed");
     return null;
   }
-  const batches = new Set(items.map((item) => item.batch));
-  const streams = new Set(items.map((item) => item.batch.stream));
+  const batches = items.length === 1 ? [items[0].batch] : [...new Set(items.map((item) => item.batch))];
+  const streams = items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
   for (const batch of batches) batch.causalPending ??= 0;
   for (const stream of streams) {
     stream.causalPending ??= 0;
@@ -741,7 +748,7 @@ export function retainNativeOutputEventOrigin(
   }
   if (
     runtime.workJobs >= MAX_CAUSAL_WORK ||
-    [...batches].some((batch) => batch.causalPending >= MAX_BATCH_WORK)
+    batches.some((batch) => batch.causalPending >= MAX_BATCH_WORK)
   ) {
     failOrigin(origin, "causal-work-capacity");
     return null;
@@ -797,7 +804,7 @@ export function joinNativeOutputWorks(
     }
     for (const token of members) {
       const item = runtime.items.get(token);
-      if (!item || !runtime.outcomes.has(token)) {
+      if (!item) {
         reason ??= "causal-join-invalid-item";
         continue;
       }
@@ -966,7 +973,8 @@ export function markNativeOutputEventsApplied(sessionId: string, events: readonl
       continue;
     }
     origin.applied = true;
-    for (const stream of new Set(items.map((item) => item.batch.stream))) {
+    const streams = items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
+    for (const stream of streams) {
       if (stream.appliedEvents < Number.MAX_SAFE_INTEGER) stream.appliedEvents++;
       else unavailable(stream, "event-count-capacity");
     }
@@ -1031,6 +1039,7 @@ export function inspectNativeOutputDelivery(sessionId: string) {
                   }),
                 ),
             ),
+            diagnosticsTruncated: stream.diagnosticsTruncated === true,
             unavailableReason: stream.unavailable,
           }),
         ),

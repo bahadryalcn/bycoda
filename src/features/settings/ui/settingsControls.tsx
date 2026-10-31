@@ -5,7 +5,9 @@ import {
   useId,
   useRef,
   useState,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 
 import { Select as SharedSelect, type SelectProps } from "../../../shared/ui/Select";
@@ -17,7 +19,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { ChevronRight } from "../../../shared/ui/icons";
+import { ChevronRight, RotateCcw } from "../../../shared/ui/icons";
 
 import { playCue } from "../model/sounds";
 import { useDecorativeMotionPreference } from "../model/decorativeMotion";
@@ -34,12 +36,77 @@ export const RevealedSetting = createContext<string | null>(null);
 /** The page already explains automatic saving; keep operation feedback local. */
 export const PageAutomaticSaveHint = createContext(false);
 
+/**
+ * Page-level "Restore defaults". A page opts in by calling `useSettingsPageReset(handler)`;
+ * the settings shell then shows one header action behind a confirmation. Pages that do not
+ * call it show nothing. The handler restores only that page's settings.
+ */
+export type SettingsPageResetRegistration = { run: () => void | Promise<void> };
+export const SettingsPageResetRegistry = createContext<Dispatch<
+  SetStateAction<SettingsPageResetRegistration | null>
+> | null>(null);
+
+/** Register (non-null) or withdraw (null) this page's reset handler for the shell header. */
+export function useSettingsPageReset(onReset: (() => void | Promise<void>) | null) {
+  const register = useContext(SettingsPageResetRegistry);
+  const latest = useRef(onReset);
+  useEffect(() => {
+    latest.current = onReset;
+  });
+  const enabled = onReset != null;
+  useEffect(() => {
+    if (!register || !enabled) return;
+    register({ run: () => latest.current?.() });
+    return () => register(null);
+  }, [register, enabled]);
+}
+
+/**
+ * Small reset icon shown next to a title only while a setting differs from its default.
+ * Rows and groups render it from `modified` + `onReset`; use it directly for custom headers.
+ */
+export function SettingResetButton({
+  onReset,
+  label,
+}: {
+  onReset: () => void;
+  /** Accessible name and tooltip. Defaults to "Restore default". */
+  label?: string;
+}) {
+  useLocale();
+  const name = label ?? t("Restore default");
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      iconOnly
+      label={name}
+      tooltip={name}
+      className="settings-reset shrink-0"
+      onClick={onReset}
+    >
+      <RotateCcw aria-hidden className="icon-xs" strokeWidth={1.75} />
+    </Button>
+  );
+}
+
 export type SettingsSaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 export type SettingsPersistence = {
   mode: "automatic" | "explicit";
   /** Supplied by the owning persistence operation, never inferred from input. */
   state?: SettingsSaveState;
   error?: ReactNode;
+};
+
+/** Optional per-row/per-group reset affordance: shown only while `modified` is true. */
+type SettingReset = {
+  /** True when the current value differs from the default. */
+  modified?: boolean;
+  /** Restores this row's (or group's) default. The reset icon renders only with `modified`. */
+  onReset?: () => void;
+  /** Accessible name and tooltip of the reset icon. Defaults to "Restore default". */
+  resetLabel?: string;
 };
 
 type SettingDetails = {
@@ -207,8 +274,11 @@ function useControlDescriptions(descriptionId: string | undefined) {
 }
 
 /**
- * Secondary settings. Open unless `defaultOpen={false}`; a search/reveal landing on this
- * section or one of its `settingIds` opens it.
+ * Secondary settings as one disclosure row: the title sits on the same x as row titles, the
+ * chevron on the right, and a hairline separates it from the rows above. Put it last in a Group.
+ * Opens by default for compatibility; new pages pass `defaultOpen={false}` so Advanced is closed.
+ * A search/reveal landing on this section or one of its `settingIds` opens it. Keep children to
+ * Rows; never use it to hold only a paragraph (use `info` on the related row instead).
  */
 export function AdvancedSettings({
   children,
@@ -237,6 +307,7 @@ export function AdvancedSettings({
     <section
       id={id ? settingDomId(id) : undefined}
       data-setting-id={id}
+      data-open={open || undefined}
       className="settings-advanced"
       aria-labelledby={headingId}
       tabIndex={-1}
@@ -247,6 +318,7 @@ export function AdvancedSettings({
           variant="ghost"
           size="sm"
           align="start"
+          fullWidth
           motion="none"
           className="settings-advanced-toggle"
           aria-expanded={open}
@@ -307,12 +379,15 @@ export function SettingsPageHelp({
 }
 
 /**
- * A titled topic of related settings. Everything on a page lives in one, so a page
- * reads as a handful of topics instead of one long list of switches.
+ * A titled topic of related settings: a heading above a thin-bordered, rounded frame whose
+ * rows are separated by hairline dividers (owner decision 2026-10-31, V3-013; no gray fill).
+ * Children should be `Row`s and a closing `AdvancedSettings`; wrap other content in a stacked Row.
  *
- * `variant="open"` (default) has no frame, row dividers or heading rule; topics are
- * separated by spacing. `variant="box"` is for ownership/editing units only (credential
- * forms, repeated list editors, danger zones): `--ui-surface` + hairline editor border.
+ * - `description`: one short muted line under the title (default). Long detail goes in `info`.
+ *   `descriptionVisible={false}` keeps the old behavior of hiding it behind an info popover.
+ * - `modified` + `onReset`: small reset icon next to the title while the group differs from default.
+ * - `variant`: kept for existing callers; `"box"` hints an ownership/editing unit and uses the
+ *   same frame.
  */
 export function Group({
   id,
@@ -321,8 +396,11 @@ export function Group({
   action,
   layout = "columns",
   variant = "open",
-  descriptionVisible = false,
+  descriptionVisible = true,
   info,
+  modified,
+  onReset,
+  resetLabel,
   scope,
   dependency,
   persistence,
@@ -337,12 +415,13 @@ export function Group({
   /** Kept for existing callers; the frame no longer changes with it. */
   layout?: "columns" | "full";
   variant?: "open" | "box";
-  /** Show the description as secondary text under the title instead of an info popover. */
+  /** One short muted line under the title (default `true`); `false` moves it into an info popover. */
   descriptionVisible?: boolean;
   /** Longer explanation for an information popover beside the title. */
   info?: ReactNode;
   children: ReactNode;
-} & SettingDetails) {
+} & SettingReset &
+  SettingDetails) {
   const revealed = useContext(RevealedSetting);
   const flash = id != null && revealed === id;
   const headingId = useId();
@@ -375,6 +454,9 @@ export function Group({
               </InfoPopover>
             ) : null}
             {info}
+            {modified && onReset ? (
+              <SettingResetButton onReset={onReset} label={resetLabel} />
+            ) : null}
           </div>
           <div id={descriptionId}>
             {hasInfo ? (
@@ -401,6 +483,21 @@ export function Group({
   );
 }
 
+/**
+ * One setting: title + one short muted `description` on the left, control on the right at one
+ * compact height and one right edge. Put long or rare detail in `info` (ⓘ), not in `description`.
+ *
+ * - `descriptionVisible={false}`: old behavior, hide `description` behind an info popover.
+ * - `modified` + `onReset`: small reset icon next to the title while the value differs from its
+ *   default, e.g. `<Row modified={size !== 14} onReset={() => setSize(14)} …>`.
+ * - `dependsOn`: marks a dependent sub-row (indented). Pass the parent's state, e.g.
+ *   `<Row dependsOn={glassOn} disabledReason={t("Turn on Main pane glass first")} …>`.
+ *   `false` dims the row and makes its controls inert; `disabledReason` shows as a tooltip (and is
+ *   read by assistive technology) instead of a repeated sentence. Do not also write
+ *   "your choice is preserved" text.
+ * - `disabled`: the same dimmed, inert state without the indent (e.g. while an operation runs).
+ * - `stacked`: wide controls (fields, editors, lists) sit under the label at full width.
+ */
 export function Row({
   id,
   label,
@@ -411,8 +508,14 @@ export function Row({
   feedback,
   controlId,
   stacked = false,
-  descriptionVisible = false,
+  descriptionVisible = true,
   info,
+  dependsOn,
+  disabled = false,
+  disabledReason,
+  modified,
+  onReset,
+  resetLabel,
   children,
 }: {
   /** Matches a `SETTINGS_INDEX` id so search can scroll here. */
@@ -424,17 +527,27 @@ export function Row({
   controlId?: string;
   /** Wide controls (text fields, editors, lists) sit under the label at full width. */
   stacked?: boolean;
-  /** Show the description as secondary text under the label instead of an info popover. */
+  /** One short muted line under the label (default `true`); `false` moves it into an info popover. */
   descriptionVisible?: boolean;
   /** Longer explanation for an information popover beside the label. */
   info?: ReactNode;
-} & SettingDetails) {
+  /** Dependent sub-row: indented; `false` (the parent is off) disables it. Omit for a normal row. */
+  dependsOn?: boolean;
+  /** Dim the row and make its controls inert without making it a sub-row. */
+  disabled?: boolean;
+  /** Why the row is disabled; shown as a tooltip and read by assistive technology. */
+  disabledReason?: string;
+} & SettingReset &
+  SettingDetails) {
   const revealed = useContext(RevealedSetting);
   const flash = id != null && revealed === id;
   const labelId = useId();
   const descriptionId = useId();
+  const inactive = disabled || dependsOn === false;
   const hasInfo = Boolean(description) && !descriptionVisible;
-  const hasDescription = Boolean(description || scope || dependency || persistence);
+  const hasDescription = Boolean(
+    description || scope || dependency || persistence || (inactive && disabledReason),
+  );
   const controls = useControlDescriptions(hasDescription ? descriptionId : undefined);
 
   return (
@@ -443,6 +556,9 @@ export function Row({
       data-setting-id={id}
       data-revealed={flash || undefined}
       data-stacked={stacked || undefined}
+      data-dependent={dependsOn !== undefined || undefined}
+      data-disabled={inactive || undefined}
+      title={inactive ? disabledReason : undefined}
       tabIndex={-1}
       className="settings-row"
     >
@@ -467,6 +583,9 @@ export function Row({
             </InfoPopover>
           ) : null}
           {info}
+          {modified && onReset ? (
+            <SettingResetButton onReset={onReset} label={resetLabel} />
+          ) : null}
         </div>
         <div id={descriptionId}>
           {hasInfo ? (
@@ -476,6 +595,7 @@ export function Row({
             <p className="settings-description settings-help-text">{description}</p>
           ) : null}
           <SettingContext scope={scope} dependency={dependency} />
+          {inactive && disabledReason ? <span className="sr-only">{disabledReason}</span> : null}
           <SettingDescriptionText persistence={persistence} />
           <SettingStatus persistence={persistence} />
         </div>
@@ -485,6 +605,8 @@ export function Row({
         role={children ? "group" : undefined}
         aria-labelledby={children ? labelId : undefined}
         aria-describedby={hasDescription ? descriptionId : undefined}
+        aria-disabled={inactive || undefined}
+        inert={inactive || undefined}
         className="settings-row-control"
       >
         {children}

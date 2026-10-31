@@ -16,8 +16,9 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
+import { errorText } from "../../../shared/lib/errors";
 import { LocalVoice, type SpeechBinding } from "../model/localVoice";
-import { converseWithSession } from "../model/voiceConversation";
+import { converseWithSession, warmVoiceReply } from "../model/voiceConversation";
 import { clampVoicePosition, voiceContext, voiceTarget } from "../model/voiceSession";
 import styles from "./VoiceCompanion.module.css";
 import {
@@ -28,6 +29,12 @@ import {
 } from "../model/voiceSettings";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { voiceVisualState } from "../model/voiceVisualState";
+
+/** Host RPC rejections arrive as strings; keep their reason instead of a generic fallback. */
+function voiceError(cause: unknown, fallback: string): string {
+  const message = cause == null ? "" : errorText(cause).trim();
+  return t(message && message !== "[object Object]" ? message : fallback);
+}
 export type VoiceCompanionProps = {
   activeId?: string;
   sessions: Session[];
@@ -120,11 +127,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     },
     [],
   );
-  function reply(text: string, session?: Session) {
+  /** `append` continues a streamed reply after the sentences already shown and queued. */
+  function reply(text: string, session?: Session, append = false) {
     const spoken =
-      session && currentTarget()?.id !== session.id ? `${session.title}: ${text}` : text;
-    setMessage(spoken);
-    if (!client.current?.speak(spoken))
+      !append && session && currentTarget()?.id !== session.id ? `${session.title}: ${text}` : text;
+    setMessage((current) => (append && current ? `${current} ${spoken}` : spoken));
+    if (!client.current?.speak(spoken, append) && !append)
       setError(t("No local voice is available for this language. The reply is shown here."));
   }
   useEffect(() => {
@@ -203,7 +211,19 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     sideRequest.current = controller;
     try {
       const exchanges = history.current.get(session.id) ?? [];
-      const decision = await converseWithSession(session, text, exchanges, controller.signal);
+      let streamed = false;
+      const decision = await converseWithSession(
+        session,
+        text,
+        exchanges,
+        controller.signal,
+        (sentence) => {
+          // Speak from the first finished sentence; a newer utterance aborts the rest.
+          if (generation.current !== epoch || binding.sequence !== sequence.current) return;
+          reply(sentence, session, streamed);
+          streamed = true;
+        },
+      );
       if (
         controller.signal.aborted ||
         generation.current !== epoch ||
@@ -247,16 +267,19 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             -6,
           ),
         );
-        reply(decision.reply, session);
+        // A streamed reply is already shown and queued for speech.
+        if (!streamed) reply(decision.reply, session);
       }
     } catch (cause) {
       if (!controller.signal.aborted && generation.current === epoch)
-        setError(cause instanceof Error ? cause.message : t("The voice request failed."));
+        setError(voiceError(cause, "The voice request failed."));
     } finally {
       if (sideRequest.current === controller) {
         sideRequest.current = null;
         if (generation.current === epoch) setPhase("listening");
       }
+      // A reply consumes the warm provider process; prepare the next one now.
+      if (generation.current === epoch) void warmVoiceReply(session);
     }
   }
   async function start() {
@@ -266,6 +289,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     setError("");
     // Prime native voice enumeration before the first response.
     globalThis.speechSynthesis?.getVoices();
+    // The reply provider starts in parallel with the local models.
+    void warmVoiceReply(currentTarget()!);
     const voice = new LocalVoice(
       {
         start: () => {
@@ -273,7 +298,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           sideRequest.current?.abort();
           sideRequest.current = null;
           setMessage("");
-          return { sessionId: currentTarget()?.id, sequence: sequence.current };
+          const session = currentTarget();
+          // No-op when already warm; otherwise the provider starts while the user talks.
+          if (session) void warmVoiceReply(session);
+          return { sessionId: session?.id, sequence: sequence.current };
         },
         transcript: (result, binding) => {
           void onSpeech(result.text, binding, epoch);
@@ -302,7 +330,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     } catch (cause) {
       if (generation.current !== epoch) return;
       close();
-      setError(cause instanceof Error ? cause.message : t("Local voice could not start."));
+      setError(voiceError(cause, "Local voice could not start."));
     }
   }
   const visualState = voiceVisualState({ status, phase, muted, playback, error });

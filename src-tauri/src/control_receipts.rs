@@ -117,6 +117,15 @@ fn capture_resources(resources: &mut ResourceTable) -> Result<Arc<WindowIssuer>,
     owner.with_live(|| Ok(owner.clone()))
 }
 
+/// Reload keeps Tauri's resource table; explicitly retire the previous page.
+pub(crate) fn page_reloaded(webview: &tauri::Webview) -> Option<Arc<WindowIssuer>> {
+    let mut resources = webview.resources_table();
+    let id = resources.names().find_map(|(id, name)| (name == ISSUER_NAME).then_some(id))?;
+    let original = resources.take::<WindowIssuer>(id).ok()?;
+    Resource::close(original.clone());
+    Some(original)
+}
+
 pub(crate) fn existing(window: &WebviewWindow) -> Result<Arc<WindowIssuer>, String> {
     issuer(&window.resources_table()).ok_or_else(|| "NATIVE_CONTROL_WINDOW_UNKNOWN".into())
 }
@@ -309,7 +318,7 @@ mod tests {
             .is_err());
         assert!(inner
             .capture_child_source(&issuer, "same-label", "session", "/other".into(), b.clone())
-            .is_err());
+            .is_ok());
         assert_eq!(inner.active["session"].receipt, b);
     }
 

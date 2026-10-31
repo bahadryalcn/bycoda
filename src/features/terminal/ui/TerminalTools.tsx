@@ -6,6 +6,7 @@ import { Switch } from "../../../shared/ui/Switch";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Popover } from "../../../shared/ui/Popover";
+import { MenuRow } from "../../../shared/ui/MenuRow";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import {
   ChevronDown,
@@ -42,6 +43,7 @@ export function TerminalTools({
   fontSize,
   savedFontSize,
   onResetFontSize,
+  onFontSizeChange,
   searchDecorations,
 }: {
   terminalId?: string;
@@ -58,6 +60,7 @@ export function TerminalTools({
   fontSize?: number;
   savedFontSize?: number;
   onResetFontSize?: () => void;
+  onFontSizeChange?: (size: number) => void;
   /** Resolved shared semantic colors; the terminal owner refreshes these with its theme. */
   searchDecorations?: ISearchOptions["decorations"];
 }) {
@@ -200,6 +203,7 @@ export function TerminalTools({
               size="sm"
               iconOnly
               label={t("Previous match")}
+              tooltip={t("Previous match")}
               disabled={!query}
               onClick={() => find(true)}
             >
@@ -210,6 +214,7 @@ export function TerminalTools({
               size="sm"
               iconOnly
               label={t("Next match")}
+              tooltip={t("Next match")}
               disabled={!query}
               onClick={() => find(false)}
             >
@@ -268,7 +273,7 @@ export function TerminalTools({
             {t("Saved commands")}
           </Button>
         ) : null}
-        {onEnableShellIntegration ? (
+        {mode !== "search" && onEnableShellIntegration ? (
           <SplitButton
             variant="ghost"
             size="sm"
@@ -293,7 +298,7 @@ export function TerminalTools({
             onClick={() => onEnableShellIntegration("bash")}
           />
         ) : null}
-        {onStartupReview ? (
+        {mode !== "search" && onStartupReview ? (
           <Button
             variant="ghost"
             size="sm"
@@ -316,19 +321,20 @@ export function TerminalTools({
             <CheckList size={14} />
           </Button>
         ) : null}
-        {mode && (
+        {(mode === "search" || mode === "remote") && (
           <Button
             variant="ghost"
             size="sm"
             iconOnly
             label={t("Close")}
+            tooltip={t("Close")}
             onClick={close}
           >
             <X size={14} />
           </Button>
         )}
       </div>
-      {remoteShell ? (
+      {mode !== "search" && remoteShell ? (
         <details className="px-2 py-1 text-xs text-(--ui-text-muted)">
           <summary className="cursor-pointer">{t("Suggestion settings")}</summary>
           <div className="flex flex-wrap items-center gap-2 py-1">
@@ -382,34 +388,18 @@ export function TerminalTools({
           !!preview?.suggestions.length)));
   return (
     <>
+      <div className={styles.overlay} data-open={mode === "search" || menuOpen || helpOpen || undefined}
+        onMouseDown={(event) => event.stopPropagation()}>
       {mode === "search" ? (
         controls
       ) : (
         <div className={styles.menuTrigger}>
-          {terminal && fontSize !== undefined && savedFontSize !== undefined && fontSize !== savedFontSize ? (
-            <div className={styles.zoom} role="status" data-terminal-zoom="">
-              <span className={styles.zoomValue}>
-                {t("Terminal font size")}: {fontSize}px
-              </span>
-              {onResetFontSize ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    onResetFontSize();
-                    terminal.focus();
-                  }}
-                >
-                  {t("Reset text size")}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
           <Button
             variant="ghost"
             size="sm"
             iconOnly
             label={t("Find in terminal")}
+            tooltip={t("Find in terminal")}
             shortcut="Ctrl/Cmd+F"
             disabled={!terminal}
             onClick={() => changeMode("search")}
@@ -440,6 +430,7 @@ export function TerminalTools({
             size="sm"
             iconOnly
             label={t("About shell suggestions")}
+            tooltip={t("About shell suggestions")}
             aria-expanded={helpOpen}
             aria-haspopup="dialog"
             onClick={() => setHelpOpen(!helpOpen)}
@@ -454,7 +445,8 @@ export function TerminalTools({
                 variant="ghost"
                 size="sm"
                 iconOnly
-                label={`${t("Terminal")} · ${t("More actions")}`}
+                label={t("Terminal pane actions")}
+                tooltip={t("Terminal pane actions")}
                 aria-expanded={menuOpen}
                 aria-haspopup="dialog"
                 onClick={() => setMenuOpen(!menuOpen)}
@@ -465,56 +457,58 @@ export function TerminalTools({
                 <Popover
                   anchor={menuAnchor}
                   align="end"
-                  width={360}
+                  width={300}
+                  autoFocus
+                  solid
                   role="dialog"
-                  aria-label={`${t("Terminal")} · ${t("More actions")}`}
+                  aria-label={t("Terminal pane actions")}
+                  tabIndex={-1}
                   onDismiss={() => setMenuOpen(false)}
                 >
-                  <div className={styles.popoverBody}>{controls}</div>
-                  {fontSize !== undefined ? (
-                    <div className={styles.row}>
-                      <span className={styles.hint} role="status">
-                        {t("Terminal font size")}: {fontSize}px
-                      </span>
-                      {onResetFontSize ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={savedFontSize === undefined || fontSize === savedFontSize}
-                          onClick={() => {
-                            onResetFontSize();
-                            terminal.focus();
-                          }}
-                        >
-                          {t("Reset text size")}
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className={styles.row}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        terminal.scrollToBottom();
-                        setMenuOpen(false);
-                        terminal.focus();
-                      }}
-                    >
-                      {t("Scroll to bottom")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={alternate}
-                      onClick={() => {
-                        terminal.clear();
-                        setMenuOpen(false);
-                        terminal.focus();
-                      }}
-                    >
-                      {t("Clear terminal")}
-                    </Button>
+                  <div className={styles.menuBody}>
+                    <MenuRow type="button" onClick={() => {
+                      terminal.scrollToBottom();
+                      setMenuOpen(false);
+                      terminal.focus();
+                    }}>{t("Scroll to bottom")}</MenuRow>
+                    <MenuRow type="button" disabled={alternate} onClick={() => {
+                      terminal.clear();
+                      setMenuOpen(false);
+                      terminal.focus();
+                    }}>{t("Clear terminal")}</MenuRow>
+                    {fontSize !== undefined ? (
+                      <>
+                        <div role="separator" className={styles.separator} />
+                        <div className={styles.fontRow} role="group" aria-label={t("Terminal font size")}>
+                          <Button variant="ghost" size="sm" iconOnly
+                            label={t("Decrease terminal text size")} tooltip={t("Decrease terminal text size")}
+                            disabled={!onFontSizeChange || fontSize <= 8}
+                            onClick={() => onFontSizeChange?.(fontSize - 1)}>−</Button>
+                          <span className={styles.fontValue} role="status" aria-label={t("Terminal font size")}>
+                            {fontSize}px
+                          </span>
+                          <Button variant="ghost" size="sm" iconOnly
+                            label={t("Increase terminal text size")} tooltip={t("Increase terminal text size")}
+                            disabled={!onFontSizeChange || fontSize >= 40}
+                            onClick={() => onFontSizeChange?.(fontSize + 1)}>+</Button>
+                          {onResetFontSize ? (
+                            <Button variant="ghost" size="sm" label={t("Reset text size")}
+                              disabled={savedFontSize === undefined || fontSize === savedFontSize}
+                              onClick={() => {
+                                onResetFontSize();
+                                setMenuOpen(false);
+                                terminal.focus();
+                              }}>{t("Reset")}</Button>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : null}
+                    {remoteShell || onSavedCommands || onEnableShellIntegration || onStartupReview ? (
+                      <div className={styles.popoverBody}>
+                        <div role="separator" className={styles.separator} />
+                        {controls}
+                      </div>
+                    ) : null}
                   </div>
                 </Popover>
               ) : null}
@@ -522,6 +516,7 @@ export function TerminalTools({
           ) : null}
         </div>
       )}
+      </div>
       {onEnableShellIntegration && helpOpen ? (
         <Popover
           anchor={helpAnchor}

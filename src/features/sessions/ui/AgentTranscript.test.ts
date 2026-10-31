@@ -1,7 +1,7 @@
-import { createElement, type ReactNode } from "react";
+import { createElement, type ReactNode, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { Block } from "../model/session";
+import { newSession, type Block } from "../model/session";
 import { AgentTranscript } from "./AgentTranscript";
 
 function tool(id: string, approval?: Block["approval"]): Block {
@@ -199,9 +199,17 @@ describe("AgentTranscript collapsed work", () => {
   });
 
   it("shows the full command before approving a Bycoda CLI call", () => {
+    const approvalTranscript = (props: ComponentProps<typeof AgentTranscript>) =>
+      createElement(AgentTranscript, {
+        ...props,
+        approvalContext: {
+          session: { ...newSession("codex", "/repo"), blocks: props.blocks },
+          dispatch: () => {},
+        },
+      });
     const command = 'bycoda app sessions.send --json \'{"prompt":"private-marker"}\'';
     const markup = renderToStaticMarkup(
-      createElement(AgentTranscript, {
+      approvalTranscript({
         blocks: [
           { id: "user", role: "user", text: "Send a follow-up" },
           {
@@ -221,7 +229,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain("Allow");
 
     const compound = renderToStaticMarkup(
-      createElement(AgentTranscript, {
+      approvalTranscript({
         blocks: [
           { id: "user", role: "user", text: "List notes" },
           {

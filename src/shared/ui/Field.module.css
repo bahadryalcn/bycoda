@@ -40,3 +40,63 @@
 .field[data-variant="compact"] :is(.description, .error) {
   padding-block-start: var(--space-1);
 }
+
+.control {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  border: 1px solid var(--ui-field-border);
+  border-radius: var(--ui-field-radius);
+  background: var(--ui-surface-muted);
+}
+.editor { display: flex; align-items: center; flex: 1; min-inline-size: 0; }
+.editor > :is(input, textarea) { flex: 1; min-inline-size: 0; }
+/* The frame owns focus; the native editor keeps its ref, events and resize behavior. */
+.control.control[data-field-control] :is(input, textarea) {
+  border: 0;
+  border-radius: var(--ui-field-radius);
+  background: transparent;
+  padding-inline: var(--space-3, 0.625rem);
+  outline: none;
+  box-shadow: none;
+}
+.control.control[data-field-control] :is(input, textarea):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.control:hover { border-color: var(--ui-field-border-hover); }
+.control:focus-within {
+  border-color: var(--ui-field-border-focus);
+  box-shadow: var(--ui-focus-ring);
+}
+.control:has([aria-invalid="true"]) { border-color: var(--ui-field-border-invalid); }
+.control:has(:is(input, textarea):disabled) { border-color: var(--ui-control-disabled-border); }
+.control:has(:is(input, textarea):disabled) { background: var(--ui-control-disabled-surface); }
+.adornment {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+  padding: 3px;
+}
+.control:has(textarea) { align-items: flex-start; }
+.control[data-field-appearance="quiet"]:not(:focus-within):not(:has([aria-invalid="true"])) {
+  border-color: transparent;
+  background: transparent;
+}
+.control[data-field-appearance="quiet"]:hover:not(:focus-within) { background: var(--ui-surface-hover); }
+@media (forced-colors: active) {
+  .control:focus-within { outline: 1px solid Highlight; outline-offset: 2px; }
+  .control.control[data-field-control] :is(input, textarea):focus-visible { outline: none !important; }
+}
+
+.control { --field-slot-height: var(--ui-field-height-md); }
+.control[data-field-size="sm"] { --field-slot-height: var(--ui-field-height-sm); }
+.control.control[data-field-control] input { min-block-size: calc(var(--field-slot-height) - 2px); }
+.control.control[data-field-control] input:disabled { background: transparent; }
+.control:has(:is(input, textarea)[readonly]):not(:focus-within) { background: transparent; }
+
+.control.control[data-field-control] input[data-search-appearance] { block-size: calc(var(--field-slot-height) - 2px); }
+.control.control[data-field-control] :is(input, textarea):disabled { opacity: 1; }
+
+.control:has(:is(input, textarea)[readonly]) { --ui-field-border-hover: var(--ui-field-border); }

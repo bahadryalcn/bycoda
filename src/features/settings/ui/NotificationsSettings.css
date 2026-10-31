@@ -2,7 +2,7 @@
 .notification-alert-settings {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 16px;
   min-inline-size: 0;
 }
 .notification-permission-status {
@@ -18,4 +18,12 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
+}
+
+.project-notification-settings .project-notification-list {
+  max-block-size: none;
+  overflow: visible;
+}
+.project-notification-settings .project-notification-categories {
+  background: var(--ui-surface);
 }

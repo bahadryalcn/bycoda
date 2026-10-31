@@ -36,17 +36,22 @@ import {
   workspaceRequest,
 } from "../../../../features/workspaces/model/workspaceClient";
 
-vi.mock("../../../../features/workspaces/model/workspaceClient", () => ({
-  getWorkspaceCapabilities: vi.fn(),
-  resolveWorkspaceContext: vi.fn(async () => ({
-    cwd: "/repo",
-    projectId: "project",
-    environmentId: "environment",
-    machineId: "machine",
-  })),
-  requireWorkspaceCapability: vi.fn(async () => {}),
-  workspaceRequest: vi.fn(),
-}));
+vi.mock("../../../../features/workspaces/model/workspaceClient", () => {
+  const getWorkspaceCapabilities = vi.fn();
+  return {
+    getWorkspaceCapabilities,
+    // The per-send memoized lookup delegates, so each test controls the answer.
+    getSendWorkspaceCapabilities: (context: unknown) => getWorkspaceCapabilities(context),
+    resolveWorkspaceContext: vi.fn(async () => ({
+      cwd: "/repo",
+      projectId: "project",
+      environmentId: "environment",
+      machineId: "machine",
+    })),
+    requireWorkspaceCapability: vi.fn(async () => {}),
+    workspaceRequest: vi.fn(),
+  };
+});
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 const fileHistory = vi.hoisted(() => ({
@@ -431,7 +436,9 @@ it.each([true, false])(
     resetSessionsStore([{ ...original, workspaceId: "managed", worktreeCwd: "/owned/worktree" }]);
     await submit("completed", {}, "Continue this isolated worktree");
     expect(sends).toHaveLength(1);
-    expect(stoppedSessions.filter((id) => id === original.id)).toHaveLength(supported ? 0 : 1);
+    // A Codex writer stays warm between turns (idle-parked) whatever the Host support;
+    // it is stopped on transfer or idle expiry, not after every reply.
+    expect(stoppedSessions.filter((id) => id === original.id)).toHaveLength(0);
     expect(fileHistory.begin).toHaveBeenCalledOnce();
   },
 );
@@ -454,6 +461,8 @@ it("does not invoke a managed provider when native admission has an unknown outc
 });
 
 it("refuses opaque managed edited-resend before native capture or provider rewind", async () => {
+  // Only exact Git rewind captures files an edited resend could desync.
+  vi.mocked(getExactGitRewindEnabled).mockResolvedValue(true);
   const original = {
     ...getSessions()[0],
     workspaceId: "managed",

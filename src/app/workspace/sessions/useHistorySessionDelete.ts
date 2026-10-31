@@ -1,5 +1,11 @@
 import { message } from "@tauri-apps/plugin-dialog";
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { confirmSessionDelete } from "../../../features/sessions/model/confirmSessionDelete";
 import { createSessionRemover } from "../../../features/sessions/model/sessionRemoval";
 import {
@@ -123,6 +129,14 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
     onRemoveWorktree,
   } = deps.removal;
 
+  // A confirmation left open by an unmounting dialog must not lock later deletes.
+  useEffect(
+    () => () => {
+      deleteConfirmationPendingRef.current = false;
+    },
+    [],
+  );
+
   const onRemoveHistorySession = useCallback(
     async (
       sessionId: string,
@@ -131,12 +145,24 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
       // A bulk caller collects errors itself instead of one dialog each.
       onError?: (detail: string) => void,
     ): Promise<boolean> => {
-      if (
-        removingSessionIds.current.has(sessionId) ||
-        switchingWorktrees.current.has(sessionId) ||
-        deleteConfirmationPendingRef.current
-      )
+      if (removingSessionIds.current.has(sessionId)) return false;
+      if (switchingWorktrees.current.has(sessionId) || deleteConfirmationPendingRef.current) {
+        const reason = switchingWorktrees.current.has(sessionId)
+          ? "This conversation's checkout is being switched."
+          : "Another conversation delete is waiting for confirmation.";
+        if (onError) onError(reason);
+        else
+          void message(
+            `Could not ${mode} this conversation.
+
+${reason}`,
+            {
+              title: appName(),
+              kind: "warning",
+            },
+          );
         return false;
+      }
       const open = sessionsRef.current.find((session) => session.id === sessionId);
       const summary = history.find((entry) => entry.id === sessionId);
       const seed = open ?? summary;
@@ -160,6 +186,8 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
       progress("preparing");
       let deleteWorktreePath: string | undefined;
       let ownsDeleteConfirmation = false;
+      // Provider/run cleanup that could not be confirmed (the delete still went ahead).
+      const cleanup: { warning?: string } = {};
       try {
         if (mode === "delete" && !skipDeleteConfirm) {
           deleteConfirmationPendingRef.current = true;
@@ -204,6 +232,9 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
         const remover = createSessionRemover({
           mode,
           onProgress: progress,
+          onWarning: (detail) => {
+            cleanup.warning ??= detail;
+          },
           scope: tabCloseScope,
           worktreeOf: tabWorktreeOf,
           // The blank replacement stays in the tab's worktree, unless that
@@ -349,7 +380,10 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
         });
         const removed = await remover.remove(sessionId);
         let worktreeError: string | undefined;
-        if (removed && deleteWorktreePath && seed) {
+        if (removed && deleteWorktreePath && seed && cleanup.warning) {
+          // A process may still run in that checkout: removing it would be unsafe.
+          worktreeError = `Worktree kept because cleanup was not confirmed. ${cleanup.warning}`;
+        } else if (removed && deleteWorktreePath && seed) {
           progress("worktree");
           try {
             await onRemoveWorktree(seed.cwd, deleteWorktreePath, false);
@@ -362,7 +396,11 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
           }
         }
         if (removed && deletionStatus) {
-          deletionStatus = { ...deletionStatus, outcome: "deleted", error: worktreeError };
+          deletionStatus = {
+            ...deletionStatus,
+            outcome: "deleted",
+            error: worktreeError ?? cleanup.warning,
+          };
           setSessionDeletionStatus(deletionStatus);
         }
         return removed;

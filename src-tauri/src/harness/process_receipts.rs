@@ -19,15 +19,15 @@ pub(super) struct ProcessReceipts {
 
 impl ProcessReceipts {
     /// Called under HarnessInner before lease admission or OS process creation.
-    /// Only a fully settled original may make room. Pending/failed/unknown owners
-    /// are never evicted to admit a new process. Evicted successes become missing,
-    /// hence fail closed on a later retry; no persisted/public tombstone is proof.
+    /// Any settled original (succeeded or failed) may make room; only still-pending
+    /// owners are kept, so failed cleanups cannot exhaust capacity and block spawns.
     pub(super) fn capacity(&mut self) -> Result<(), String> {
+        self.records.retain(|record| !record.exit.succeeded());
         if self.records.len() >= MAX_CONSTRUCTIONS {
             let settled = self
                 .records
                 .iter()
-                .position(|record| record.exit.succeeded())
+                .position(|record| record.exit.settled())
                 .ok_or("NATIVE_PROCESS_RECEIPT_CAPACITY")?;
             self.records.remove(settled);
         }
@@ -113,7 +113,12 @@ mod tests {
         );
         assert_eq!(receipts.records.len(), MAX_CONSTRUCTIONS);
         held.finish(Err("actual original drain unknown".into()));
-        assert!(receipts.capacity().is_err());
-        assert!(receipts.records.iter().all(|r| Arc::ptr_eq(&r.exit, &held)));
+        receipts.capacity().unwrap();
+        assert_eq!(receipts.records.len(), MAX_CONSTRUCTIONS - 1);
+        let pending = Arc::new(ManagedProviderExit::default());
+        receipts.reserve("new-route", pending.clone());
+        receipts.capacity().unwrap();
+        assert!(receipts.records.iter().any(|r| Arc::ptr_eq(&r.exit, &pending)));
+        assert_eq!(receipts.records.len(), MAX_CONSTRUCTIONS - 1);
     }
 }

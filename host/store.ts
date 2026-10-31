@@ -226,7 +226,15 @@ export class HostStore {
   >();
   private receiptWrites = 0;
   // token -> data_version at the moment its device row was last seen.
-  private authCache = new Map<string, number>();
+  private authCache = new Map<string, { version: number; expires: number }>();
+  private pendingBefore?: Map<string, PendingWrite | undefined>;
+  private snapshotPending(id: string): void {
+    if (!this.pendingBefore || this.pendingBefore.has(id)) return;
+    const entry = this.pending.get(id);
+    this.pendingBefore.set(id, entry ? {
+      ...entry, events: [...entry.events], changed: new Map(entry.changed), timer: undefined,
+    } : undefined);
+  }
   // Write-behind state, consulted before the cache and SQLite by every read.
   // Kept apart from the LRU cache so eviction can never drop unwritten data.
   private pending = new Map<string, PendingWrite>();
@@ -286,6 +294,17 @@ export class HostStore {
       }
     });
   }
+  private clearAuthCache(): void {
+    this.authCache.clear();
+    this.afterCommit(() => {
+      for (const listener of this.authorizationListeners) listener();
+    });
+  }
+  private authorizationListeners = new Set<() => void>();
+  subscribeAuthorizationChanges(listener: () => void): () => void {
+    this.authorizationListeners.add(listener);
+    return () => { this.authorizationListeners.delete(listener); };
+  }
   private changeWakeQueued = false;
   /** Commit wake only; consumers must reload an authorized authoritative view. */
   subscribeChanges(listener: () => void): () => void {
@@ -311,6 +330,7 @@ export class HostStore {
       }
     });
   }
+  get unattributedChangeVersion(): number { return this.db.unattributedMutationVersion; }
   private projectVersions = new Map<string, number>();
   private summaryRows = new Map<
     string,
@@ -369,6 +389,10 @@ export class HostStore {
     this.attachmentDir = join(dirname(path), "attachments");
     this.db = new StoreDatabase(path);
     this.db.onMutation = (sql) => this.externalMutation(sql);
+    this.db.onMutationFault = () => {
+      this.clearAuthCache();
+      this.dropCaches();
+    };
     this.db.onCommit = (effect) => this.afterCommit(effect);
     this.ready = this.db
       .storeScope(async () => {
@@ -386,14 +410,19 @@ export class HostStore {
       /\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+TABLE|REPLACE\s+INTO)\s+["`\[]?devices\b/i.test(
         sql,
       )
-    )
-      this.authCache.clear();
+    ) {
+      this.clearAuthCache();
+    }
     if (
       !/\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+TABLE|REPLACE\s+INTO)\s+["`\[]?(?:sessions|session_state|session_journal|session_journal_blocks)\b/i.test(
         sql,
       )
     )
       return;
+    this.dropCaches();
+  }
+  /** Cache publication failed or the data changed underneath: rebuild from SQLite. */
+  private dropCaches(): void {
     this.cache.clear();
     this.cacheWeights.clear();
     this.summaryRows.clear();
@@ -571,27 +600,19 @@ export class HostStore {
   }
   async transaction<T>(
     fn: () => T | Promise<T>,
-    durability: "critical" | "checkpoint" = "critical",
+    durability?: "critical" | "checkpoint",
   ): Promise<T> {
     return this.db.scope(() => {
       if (this.inTransaction) {
+        // Unspecified nested calls inherit the outer durability; explicit critical stays strict.
         if (durability === "critical") this.db.assertCriticalScope();
         return Promise.resolve().then(fn);
       }
       const run = async () => {
         await this.db.exec("BEGIN IMMEDIATE");
         const mutationVersion = this.db.dataMutationVersion;
-        const pendingBefore = new Map(
-          [...this.pending].map(([id, entry]) => [
-            id,
-            {
-              ...entry,
-              events: [...entry.events],
-              changed: new Map(entry.changed),
-              timer: undefined,
-            },
-          ]),
-        );
+        const pendingBefore = new Map<string, PendingWrite | undefined>();
+        this.pendingBefore = pendingBefore;
         this.inTransaction = true;
         this.transactionChanges = 0;
         this.transactionProjectChanges.clear();
@@ -603,6 +624,7 @@ export class HostStore {
           for (const [id, count] of this.transactionProjectChanges)
             this.projectVersions.set(id, (this.projectVersions.get(id) ?? 0) + count);
           const changed = this.transactionProjectChanges.size > 0;
+          this.pendingBefore = undefined;
           this.inTransaction = false;
           this.transactionChanges = 0;
           this.transactionProjectChanges.clear();
@@ -627,6 +649,7 @@ export class HostStore {
           });
           return value;
         } catch (error) {
+          this.pendingBefore = undefined;
           this.inTransaction = false;
           this.transactionChanges = 0;
           this.transactionProjectChanges.clear();
@@ -634,12 +657,14 @@ export class HostStore {
           this.summaryRows.clear();
           this.cacheWeights.clear();
           this.stateMetadata.clear();
-          this.authCache.clear();
+          this.clearAuthCache();
           this.commitEffects = [];
           this.flushedInTransaction = [];
-          for (const entry of this.pending.values()) clearTimeout(entry.timer);
-          this.pending.clear();
-          for (const entry of pendingBefore.values()) this.restore(entry);
+          for (const [id, entry] of pendingBefore) {
+            clearTimeout(this.pending.get(id)?.timer);
+            this.pending.delete(id);
+            if (entry) this.restore(entry);
+          }
           try {
             await this.db.exec("ROLLBACK");
           } catch (rollbackError) {
@@ -648,7 +673,7 @@ export class HostStore {
           throw error;
         }
       };
-      return durability === "critical" ? this.db.durableScope(run) : run();
+      return durability !== "checkpoint" ? this.db.durableScope(run) : run();
     });
   }
   /** Derived readers may use uncommitted rows, but must not publish them in a
@@ -1683,6 +1708,7 @@ export class HostStore {
                   value.session.blocks,
                   changes,
                 );
+                this.snapshotPending(id);
                 const entry = this.pending.get(id) ?? {
                   value,
                   events: [],
@@ -1717,7 +1743,7 @@ export class HostStore {
             },
             false,
           ),
-        options.deferred || options.journal ? "checkpoint" : "critical",
+        options.deferred || options.journal ? "checkpoint" : undefined,
       ),
     );
   }
@@ -1753,6 +1779,7 @@ export class HostStore {
     this.remember(entry.value, weight);
   }
   private take(id: string): PendingWrite | undefined {
+    this.snapshotPending(id);
     const entry = this.pending.get(id);
     if (!entry) return undefined;
     clearTimeout(entry.timer);
@@ -1764,6 +1791,7 @@ export class HostStore {
   /** Puts back state whose write failed or was rolled back. */
   private restore(entry: PendingWrite): void {
     const id = entry.value.session.id;
+    this.snapshotPending(id);
     const newer = this.pending.get(id);
     if (newer === entry) return;
     if (newer) {
@@ -1839,8 +1867,7 @@ export class HostStore {
           value.session.blocks.some((block) => block.shell?.running) ? 1 : 0,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
-      for (const row of rows)
-        await insert.run(value.session.id, row.revision, JSON.stringify(row.event));
+      await insert.runMany(rows.map((row) => [value.session.id, row.revision, JSON.stringify(row.event)]));
       await this.db
         .prepare("DELETE FROM events WHERE session_id=? AND revision<?")
         .run(value.session.id, value.revision - 2000);
@@ -1919,7 +1946,7 @@ export class HostStore {
           id,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
-      for (const row of rows) await insert.run(id, row.revision, JSON.stringify(row.event));
+      await insert.runMany(rows.map((row) => [id, row.revision, JSON.stringify(row.event)]));
       await this.db
         .prepare("DELETE FROM events WHERE session_id=? AND revision<?")
         .run(id, value.revision - 2000);
@@ -1963,11 +1990,23 @@ export class HostStore {
       });
     });
   }
-  async deleteSession(id: string, authorityGeneration?: number): Promise<void> {
+  /** The committed fence generation when Host owns the session (to repair a stale caller value). */
+  async currentAuthorityGeneration(id: string): Promise<number | undefined> {
     return this.db.storeScope(async () => {
-      await this.withAuthorityGeneration(id, authorityGeneration, async () => {
-        const current = await this.session(id);
-        if (current.status === "running") throw new Error("Stop this session before deleting it");
+      const head = await this.db
+        .prepare("SELECT generation,phase FROM host_authority_heads WHERE session_id=?")
+        .get(id);
+      return head?.phase === "host-active" ? Number(head.generation) : undefined;
+    });
+  }
+  /** `staleRunning`: the caller verified no Host run exists, so a stored "running" is stale. */
+  async deleteSession(
+    id: string,
+    authorityGeneration?: number,
+    options: { staleRunning?: boolean } = {},
+  ): Promise<void> {
+    return this.db.storeScope(async () => {
+      const purge = async (projectId: string) => {
         this.take(id);
         await this.db.prepare("DELETE FROM events WHERE session_id=?").run(id);
         await this.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
@@ -1976,7 +2015,23 @@ export class HostStore {
           this.stateMetadata.delete(id);
         });
         this.bumpChangeVersion();
-        this.touchProject(current.projectId);
+        this.touchProject(projectId);
+      };
+      const head = await this.db
+        .prepare("SELECT phase FROM host_authority_heads WHERE session_id=?")
+        .get(id);
+      // A native-owned head cannot be fenced; deleting only drops the Host's copy.
+      if (head?.phase === "native-aborted" || head?.phase === "native-fenced") {
+        const row = await this.db.prepare("SELECT project_id FROM session_state WHERE id=?").get(id);
+        if (!row) throw new Error("Session not found on this machine");
+        await this.transaction(() => purge(String(row.project_id)));
+        return;
+      }
+      await this.withAuthorityGeneration(id, authorityGeneration, async () => {
+        const current = await this.session(id);
+        if (current.status === "running" && !options.staleRunning)
+          throw new Error("Stop this session before deleting it");
+        await purge(current.projectId);
       });
     });
   }
@@ -2003,7 +2058,7 @@ export class HostStore {
           .prepare("INSERT INTO receipts (id, signature, receipt, created_at) VALUES (?, ?, ?, ?)")
           .run(receipt.commandId, signature, JSON.stringify(receipt), Date.now());
         if (++this.receiptWrites % RECEIPT_PRUNE_EVERY === 0) await this.pruneReceipts();
-      }),
+      }, "critical"),
     );
   }
   /** Clients retry a command for seconds to minutes, never days. */
@@ -2065,7 +2120,7 @@ export class HostStore {
   }
   async revokeDevice(id: string): Promise<boolean> {
     return this.db.storeScope(async () => {
-      this.authCache.clear();
+      this.clearAuthCache();
       return Number((await this.db.prepare("DELETE FROM devices WHERE id=?").run(id)).changes) > 0;
     });
   }
@@ -2108,7 +2163,7 @@ export class HostStore {
       const caller = await this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash);
       if (!caller) throw new Error("Device authorization was revoked");
       if (caller.id === id) throw new Error("Use the revoke-self action for this device");
-      this.authCache.clear();
+      this.clearAuthCache();
       return (
         Number(
           (
@@ -2125,7 +2180,7 @@ export class HostStore {
   /** Lets a desktop revoke only the credential it is using. */
   async revokeToken(token: string): Promise<boolean> {
     return this.db.storeScope(async () => {
-      this.authCache.clear();
+      this.clearAuthCache();
       return (
         Number(
           (await this.db.prepare("DELETE FROM devices WHERE hash=?").run(this.hash(token))).changes,
@@ -2133,21 +2188,24 @@ export class HostStore {
       );
     });
   }
-  /** Long polls re-check the credential on every tick, so a positive answer
-   * is remembered. It is dropped at once by a revocation through this store,
-   * and by any commit from another connection (the CLI revoking from its own
-   * process) via SQLite's data_version, which this host's own writes never
-   * move. */
+  /** Positive credentials are cached for 1.5s. Local authorization changes
+   * invalidate immediately; external SQLite changes are checked at expiry. */
   async authenticated(token: string): Promise<boolean> {
+    const cached = this.authCache.get(token);
+    if (cached && cached.expires > Date.now()) return true;
     return this.db.storeScope(async () => {
       const version = await this.dataVersion();
-      if (this.authCache.get(token) === version) return true;
+      const current = this.authCache.get(token);
+      if (current?.version === version) {
+        current.expires = Date.now() + 1500;
+        return true;
+      }
       this.authCache.delete(token);
       const known = !!(await this.db
         .prepare("SELECT id FROM devices WHERE hash=?")
         .get(this.hash(token)));
       if (known) {
-        this.authCache.set(token, version);
+        this.authCache.set(token, { version, expires: Date.now() + 1500 });
         while (this.authCache.size > 256)
           this.authCache.delete(this.authCache.keys().next().value!);
       }
@@ -2166,6 +2224,8 @@ export class HostStore {
     if (this.closePromise) return this.closePromise;
     this.changeListeners.clear();
     this.authorityListeners.clear();
+    this.authorizationListeners.clear();
+    this.authCache.clear();
     const closing = this.db.close(() => this.flushAll());
     if (this.db.ownsScope) return closing;
     this.closePromise = closing.finally(() => {

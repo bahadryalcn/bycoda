@@ -3,6 +3,11 @@ import type { HostRunBinding, HostRunHandle } from "../src/integrations/harness/
 import type { ProviderChild } from "./provider-child";
 import { canonicalWorkspacePath, workspacePathKey } from "./workspace-paths";
 
+function isBrokenPipe(error: unknown): boolean {
+  const code = (error as { code?: unknown } | undefined)?.code;
+  return code === "EPIPE" || code === "ERR_STREAM_DESTROYED" || code === "ERR_STREAM_WRITE_AFTER_END";
+}
+
 export type HostRunSource = Readonly<{
   owner: object;
   sessionId: string;
@@ -527,11 +532,12 @@ export class HostRunWriters {
     run.controlAccepting = false;
     for (const group of run.bindings.values())
       for (const binding of group) binding.accepting = false;
-    run.finish = (async () => {
+    const finishing = (async () => {
       while (run.work.size) await Promise.allSettled([...run.work]);
       if (run.errors.length)
         throw new AggregateError(
-          [...run.errors],
+          // Reported once; the same failure must not poison every later finish.
+          run.errors.splice(0),
           "Original Host run work did not settle successfully.",
         );
       run.finished = true;
@@ -540,8 +546,11 @@ export class HostRunWriters {
       run.sources.clear();
       run.bindings.clear();
     })();
-    void run.finish.catch(() => {});
-    return run.finish;
+    run.finish = finishing;
+    void finishing.catch(() => {
+      if (run.finish === finishing) run.finish = undefined;
+    });
+    return finishing;
   }
 
   drain(): Promise<void> {
@@ -585,7 +594,10 @@ export class HostRunWriters {
       (error: unknown) => {
         run.work.delete(work);
         binding?.work.delete(work);
-        const started = effectful();
+        // A stdin EPIPE after admission closed (final event) is not a run error.
+        const late = !run.accepting && isBrokenPipe(error);
+        if (late) console.warn("Ignoring late provider stdin close after the run ended:", error);
+        const started = effectful() && !late;
         if (started) run.errors.push(error);
         run.accepting = false;
         if (this.controls.has(scopeHandle)) run.controlAccepting = false;

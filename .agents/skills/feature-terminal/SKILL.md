@@ -246,3 +246,22 @@ User guide: `docs/guides/terminal.md`. Morning matrices include actual light/dar
 motion, retained scrollback, exact bytes and typography without replacing PTYs.
 Installed/native/live SSH/source inclusion remains UNKNOWN; no build/install,
 commit, branch change, release or canonical TODO update. REVIEW is not closure.
+
+
+## V3-030 terminal chrome refinement, 2026-10-31
+
+Owner, `temp/local/2026-10-31-ui-refinements-3/TODO.md`, V3-030:
+“birde terminal ekranı böyle gözüküyor 2 tane alt alta arama terminal suggestion ve ... butonunu olduğu panelden var ve bence bu baya kötü duruyor bununda düzeltilmesi gerektiğini düşünüyorum”
+
+T1 source delivery: TerminalTools uses a hover/focus pane overlay (persistent on
+touch) instead of consuming a second toolbar band. Find remains on demand through
+Ctrl/Cmd+F with match navigation and Escape-to-terminal. Dock and pane actions have
+explicit scope labels. Pane actions compose shared Popover/MenuRow with scroll,
+clear and a single − / size / + / Reset row; optional SSH controls remain available.
+The existing typography controller owns both wheel and menu zoom (8–40), in place.
+Terminal list, profiles, split state, PTYs and shell input authority are unchanged.
+
+Existing terminal UI and SSH browser expectations updated; no new test cases.
+Only `node scripts/i18n/check-locales.mjs` ran: eight catalogs verified.
+Tests, compiler, light/dark single/split/find/menu captures and native acceptance
+are deferred to the main agent by BRIEF-V3.md. No build/install/release evidence.

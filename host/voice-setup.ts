@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ensureVoicePython } from "./voice-python-install";
+import { cudaTorchIndexes, detectNvidiaGpu, type NvidiaGpu } from "./voice-gpu";
 import {
   inspectVoiceRuntime,
   voiceRuntimeConfig,
@@ -12,7 +13,7 @@ import {
 
 export type VoiceSetupStatus = {
   state: "idle" | "installing" | "ready" | "error";
-  stage?: "environment" | "packages" | "models" | "checking";
+  stage?: "environment" | "packages" | "gpu" | "models" | "checking";
   requestedConfig?: VoiceRuntimeConfig;
   config?: VoiceRuntimeConfig;
   error?: "python_missing" | "install_failed";
@@ -27,17 +28,35 @@ type Dependencies = {
   home: string;
   platform: NodeJS.Platform;
   preparePython: typeof ensureVoicePython;
+  gpu: () => Promise<NvidiaGpu | undefined>;
 };
 
 /** Only invoked by the owner's explicit Install action, never by detection. */
 const downloadModels = String.raw`
 import json, sys
-from huggingface_hub import snapshot_download
+import os
+from huggingface_hub import hf_hub_download, snapshot_download
 c = json.loads(sys.argv[1])
+try:
+    # Smart Turn (BSD-2, 32 MB): ends a finished sentence after a short pause.
+    # Optional: without it, voice keeps the fixed pause.
+    hf_hub_download('pipecat-ai/smart-turn-v3', 'smart-turn-v3.2-gpu.onnx', revision='f766f81d3cfdf7737ac64aad813d91bbfd56bf93', local_dir=os.path.join(os.path.dirname(sys.argv[2]), 'smart-turn'), token=False)
+except Exception:
+    pass
 if not c.get('whisperPath'):
     c['whisperPath'] = snapshot_download('Systran/faster-whisper-small', local_dir=sys.argv[2], token=False)
-if c.get('natural', True) and not c.get('ttsPath'):
+if c.get('natural', True) and c.get('engine') == 'voxcpm2' and not c.get('ttsPath'):
     c['ttsPath'] = snapshot_download('openbmb/VoxCPM2', local_dir=sys.argv[3], token=False)
+if c.get('natural', True) and c.get('engine') != 'voxcpm2':
+    # Supertonic 3 (31 languages, CPU). Pinned to the revision supertonic 1.3.1 was tested with.
+    snapshot_download('Supertone/supertonic-3', revision='724fb5abbf5502583fb520898d45929e62f02c0b', local_dir=os.path.join(os.path.dirname(sys.argv[3]), 'supertonic3'), token=False)
+if len(sys.argv) > 4:
+    # GPU only: faster, more accurate recognition. The worker finds it by folder;
+    # without it, recognition keeps the small model.
+    try:
+        snapshot_download('mobiuslabsgmbh/faster-whisper-large-v3-turbo', local_dir=sys.argv[4], token=False)
+    except Exception:
+        pass
 print(json.dumps(c))
 `;
 
@@ -71,6 +90,56 @@ function installationFailure(stderr: string): string {
   )
     return "A voice dependency could not be built. Check the Python build prerequisites or choose another supported Python installation.";
   return "Installation failed. Check your connection and available disk space, then try again.";
+}
+
+const GPU_INSTALL_FAILED =
+  "GPU support could not be installed. Choose CPU or Automatic in voice settings, or try again.";
+
+/** Replaces the CPU-only PyTorch wheel with the newest CUDA build this driver supports. */
+async function installCudaTorch(python: string, gpu: NvidiaGpu, run: Run, signal: AbortSignal) {
+  for (const index of cudaTorchIndexes(gpu.cuda)) {
+    signal.throwIfAborted();
+    try {
+      const listed = await run(
+        python,
+        [
+          "-m",
+          "pip",
+          "index",
+          "versions",
+          "torch",
+          "--index-url",
+          index,
+          "--disable-pip-version-check",
+        ],
+        signal,
+      );
+      const version = listed.match(/Available versions:\s*([0-9][\w.+-]*)/)?.[1];
+      if (!version) continue;
+      // Pin the exact CUDA build; an unpinned request would keep a newer CPU wheel.
+      await run(
+        python,
+        [
+          "-m",
+          "pip",
+          "install",
+          "--disable-pip-version-check",
+          "--no-input",
+          "--index-url",
+          index,
+          "--extra-index-url",
+          "https://pypi.org/simple",
+          `torch==${version}`,
+        ],
+        signal,
+      );
+      return;
+    } catch {
+      // Try an older CUDA index; the next one may carry a build for this driver.
+      signal.throwIfAborted();
+    }
+  }
+  throw new Error(GPU_INSTALL_FAILED);
 }
 
 /** Shell-free, bounded, cancellable child commands. Pip never targets system Python. */
@@ -151,6 +220,7 @@ export class VoiceSetupService {
       home: homedir(),
       platform: process.platform,
       preparePython: ensureVoicePython,
+      gpu: detectNvidiaGpu,
       ...dependencies,
     };
   }
@@ -237,10 +307,37 @@ export class VoiceSetupService {
         "--no-input",
         "faster-whisper",
         "huggingface-hub",
-        ...(config.natural === false ? [] : ["voxcpm"]),
+        ...(config.natural === false
+          ? []
+          : config.engine === "voxcpm2"
+            ? ["voxcpm"]
+            : // The worker loads this exact version's pinned model revision.
+              ["supertonic==1.3.1"]),
       ],
       signal,
     );
+    // Recognition uses the GPU through CTranslate2, independent of the voice engine.
+    let gpuFound = false;
+    if (config.device !== "cpu" && platform !== "darwin") {
+      const gpu = await this.dependencies.gpu().catch(() => undefined);
+      signal.throwIfAborted();
+      gpuFound = Boolean(gpu);
+      // Only VoxCPM2 needs PyTorch with CUDA.
+      if (gpu && config.natural !== false && config.engine === "voxcpm2") {
+        const current = await inspect({ ...config, python });
+        signal.throwIfAborted();
+        if (current.accelerated === false) {
+          stage("gpu");
+          try {
+            await installCudaTorch(python, gpu, run, signal);
+          } catch (cause) {
+            // Automatic mode still finishes with a working CPU voice.
+            if (config.device === "gpu" || signal.aborted) throw cause;
+          }
+        }
+      } else if (!gpu && config.device === "gpu")
+        throw new Error("No NVIDIA GPU was found. Choose CPU or Automatic in voice settings.");
+    }
     stage("models");
     const resolved: VoiceRuntimeConfig = {
       ...config,
@@ -256,6 +353,7 @@ export class VoiceSetupService {
         JSON.stringify(resolved),
         join(directory, "models", "whisper-small"),
         join(directory, "models", "voxcpm2"),
+        ...(gpuFound ? [join(directory, "models", "whisper-large-v3-turbo")] : []),
       ],
       signal,
     );

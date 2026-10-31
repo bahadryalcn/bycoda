@@ -438,3 +438,21 @@ it("makes progress during unrelated commits instead of repeatedly discarding pen
   expect(a.events.map((event) => event.params.revision)).toEqual([1, 2]);
   expect(load).toHaveBeenCalledTimes(2);
 });
+
+
+it("coalesces targeted invalidations for at least 250ms without loading another stream", async () => {
+  const { hub, load } = fixture();
+  const a = client("coalesced"), b = client("unrelated");
+  subscribe(hub, a.owner);
+  subscribe(hub, b.owner, "other", { kind: "session", sessionId: "other" });
+  await expectSnapshots(a.events, 1);
+  await expectSnapshots(b.events, 1);
+  load.mockClear();
+  const authorize = vi.spyOn(a.owner, "authorized");
+  for (let i = 0; i < 100; i++) hub.invalidate(target);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(load).not.toHaveBeenCalled();
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+  expect(load.mock.calls[0][0]).toEqual(target);
+  expect(authorize).toHaveBeenCalledTimes(1);
+});

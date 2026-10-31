@@ -38,6 +38,8 @@ import {
 } from "../../core/nativeOutputDelivery";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
+import { JsonRpcResponseError } from "../../core/jsonRpc";
+import { DeliveryUnknownError } from "../../../../shared/lib/deliveryUnknown";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { AcpSubagents } from "../../core/acpSubagents";
@@ -217,7 +219,13 @@ export async function steerHermesTurn(input: SteerTurnInput): Promise<void> {
     "session/prompt",
     { sessionId: live.acpSessionId, prompt: blocks },
     CONTROL_TIMEOUT_MS,
-  );
+  ).catch((error: unknown) => {
+    if (error instanceof JsonRpcResponseError || error instanceof DeliveryUnknownError) throw error;
+    throw new DeliveryUnknownError(
+      "The follow-up may have been delivered. Wait for the provider before retrying.",
+      Promise.resolve("unknown"),
+    );
+  });
 }
 
 export function respondHermesApproval(
@@ -249,6 +257,7 @@ export async function cancelHermesTurn(
 
   const live = liveByThread.get(sessionId);
   const preparing = startingByThread.get(sessionId);
+  // A captured cancellation must not affect a newer operation.
   if (
     !ownsOperation(
       context,
@@ -258,7 +267,10 @@ export async function cancelHermesTurn(
   )
     return;
   sourceEpochByThread.set(sessionId, {});
-  if (!live) return;
+  if (!live) {
+    if (preparing) await stopHermesSession(sessionId, context ?? preparing.handle);
+    return;
+  }
   const acp = context
     ? await acpTurnWriter(live.handle, live.acp, context.nativeControlTurn, context, "control")
     : live.acp;
@@ -313,12 +325,14 @@ export async function forgetHermesSession(
   sessionId: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-  if (cancelQueuedOperation(context)) return;
-
-  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
-  if (original && !ownsOperation(context, original.handle, original.operation)) return;
+  // Delete/switch must end the process: a context that no longer owns it falls
+  // back to a by-session stop instead of returning with the process alive.
   resumeByThread.delete(sessionId);
-  await stopHermesSession(sessionId, context);
+  const queuedOnly = cancelQueuedOperation(context);
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  const owned =
+    !queuedOnly && (!original || ownsOperation(context, original.handle, original.operation));
+  await stopHermesSession(sessionId, owned ? context : undefined);
 }
 
 export function bindHermesSession(threadId: string, acpSessionId: string, cwd: string): void {
@@ -452,6 +466,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         );
         acpSessionId = hermesSessionId(setup) ?? resume.acpSessionId;
         didLoad = true;
+      } catch (error) {
+        if (!(error instanceof JsonRpcResponseError)) throw error;
+        resumeByThread.delete(input.sessionId);
+        input.onEvent({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
       } finally {
         muteGate.current = false;
       }
@@ -514,12 +532,17 @@ async function applyModelSelection(
 ): Promise<void> {
   const modelId = nativeModelId(input.model).trim();
   if (!modelId || modelId === "default" || modelId === live.modelId) return;
-  await acp.request(
-    "session/set_model",
-    { sessionId: live.acpSessionId, modelId },
-    CONTROL_TIMEOUT_MS,
-  );
-  live.modelId = modelId;
+  try {
+    await acp.request(
+      "session/set_model",
+      { sessionId: live.acpSessionId, modelId },
+      CONTROL_TIMEOUT_MS,
+    );
+    live.modelId = modelId;
+  } catch (error) {
+    if (!(error instanceof JsonRpcResponseError)) throw error;
+    live.onEvent({ type: "status", text: "Hermes could not apply the selected model; continuing with its current setting." });
+  }
 }
 
 async function applyRuntimeMode(
@@ -530,12 +553,17 @@ async function applyRuntimeMode(
 ): Promise<void> {
   const modeId = hermesModeId(runtimeMode, planning);
   if (modeId === live.modeId) return;
-  await acp.request(
-    "session/set_mode",
-    { sessionId: live.acpSessionId, modeId },
-    CONTROL_TIMEOUT_MS,
-  );
-  live.modeId = modeId;
+  try {
+    await acp.request(
+      "session/set_mode",
+      { sessionId: live.acpSessionId, modeId },
+      CONTROL_TIMEOUT_MS,
+    );
+    live.modeId = modeId;
+  } catch (error) {
+    if (!(error instanceof JsonRpcResponseError)) throw error;
+    live.onEvent({ type: "status", text: "Hermes could not apply the selected mode; continuing with its current setting." });
+  }
 }
 
 async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Promise<void> {

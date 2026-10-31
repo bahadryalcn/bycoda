@@ -228,7 +228,12 @@ export const processConstructions = {
           };
         }
         const value: unknown = Reflect.apply(original, undefined, [sessionId, ...adapted]);
-        if (kind === "kill") kills.set(handle, value);
+        if (kind === "kill") {
+          kills.set(handle, value);
+          void Promise.resolve(value).catch(() => {
+            if (kills.get(handle) === value) kills.delete(handle);
+          });
+        }
         if (kind !== "spawn") return value;
         return Promise.resolve(value).then((accepted) => {
           const prior = current.get(sessionId);

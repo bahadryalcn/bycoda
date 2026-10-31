@@ -91,7 +91,7 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
   };
 
   return (
-    <div ref={root} className="relative">
+    <div ref={root} className="relative" data-usage-guide="access-mode">
       <Button
         size="sm"
         className="max-w-52"

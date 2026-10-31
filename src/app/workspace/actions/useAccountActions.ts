@@ -13,6 +13,7 @@ import {
   providerAccountExists,
   providerAccountLabel,
 } from "../../../features/providers/model/providerAccounts";
+import { repairStaleHandoff } from "../../../features/sessions/model/activeSubmits";
 import { switchSessionAccount } from "../../../features/sessions/model/accountSwitch";
 import { transferProviderSession } from "../../../platform/tauri/providerSessionTransfer";
 import {
@@ -85,6 +86,7 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
       const ownsRequest = () => accountRequests.current.get(sessionId) === request;
       if (isMovingPane(sessionId)) return false;
       if (!providerAccountExists(provider, accountId)) return false;
+      repairStaleHandoff(sessionId);
       const result = await switchSessionAccount(sessionId, provider, accountId, {
         transfer: transferProviderSession,
         forget: forgetHarnessSession,
@@ -102,6 +104,13 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
       if (result.kind === "refused") {
         say(result.status);
         return false;
+      }
+      if (result.kind === "deferred") {
+        // A running turn keeps its account; the pick applies to the next send.
+        setSessions((prev) => prev.map((s) => (s.id === sessionId ? result.update(s) : s)));
+        if (result.status) say(result.status);
+        promptProviderAccountSignIn(sessionId, provider, accountId);
+        return true;
       }
       if (result.kind !== "switched") {
         if (result.kind === "noop") {

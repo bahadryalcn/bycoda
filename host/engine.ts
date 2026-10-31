@@ -575,6 +575,8 @@ type ActiveHostTurn = {
   provider: HostProvider;
   providerEntered: boolean;
   activity?: ProviderActivityRetirement;
+  /** Provider admission was refused before anything was acquired or entered. */
+  admissionRefused?: boolean;
   cleanup?: Promise<void>;
   failureStage: "provider" | "retirement" | "delivery" | "persistence" | "callback";
   failure?: unknown;
@@ -586,6 +588,8 @@ export class HostEngine {
   private readonly operations = new EngineOperations();
   private switchingProjects = new Set<string>();
   private running = new Map<string, ActiveHostTurn>();
+  /** Accepted turns whose provider dispatch has not yet installed their active run. */
+  private dispatching = new Map<string, { runId: string | undefined; settled: Promise<void> }>();
   private readonly providerActivities = new ProviderActivityRetirements();
   private readonly activityProviders = new Map<
     ProviderActivityRetirement,
@@ -1152,14 +1156,19 @@ export class HostEngine {
     return provider;
   }
 
+  /** Whether this engine still owns a live turn for the session (a stored "running" may be stale). */
+  hasActiveRun(sessionId: string): boolean {
+    return this.running.has(sessionId) || this.dispatching.has(sessionId);
+  }
+
   supportsItemStop(harness: RemoteProvider): boolean {
     return typeof this.providers[harness]?.stopItem === "function";
   }
 
-  /** Best-effort live control has no fabricated durable receipt when storage is blocked. */
+  /** Best-effort live control: the control was applied, so reply with a non-durable receipt. */
   private async emergencyControl(
     command: Extract<HostCommand, { type: "cancel" | "stopItem" }>,
-  ): Promise<never> {
+  ): Promise<CommandReceipt> {
     await this.store.db.checkAuthorization();
     await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
     const value =
@@ -1195,12 +1204,18 @@ export class HostEngine {
       await this.store.assertAuthority(command.sessionId, command.authorityGeneration);
       await provider.stopItem(command.sessionId, command.callId);
     }
-    throw Object.assign(
-      new Error(
-        "Live Stop control was sent, but its durable receipt could not be recorded. Inspect the current run before retrying.",
-      ),
-      { code: "HOST_CONTROL_RECEIPT_UNCONFIRMED", controlApplied: true, runId: command.runId },
+    console.warn(
+      "Live Stop control was sent, but its durable receipt could not be recorded (storage is blocked).",
     );
+    return {
+      commandId: command.commandId,
+      sessionId: command.sessionId,
+      revision: value.revision,
+      ...(value.authorityGeneration === undefined
+        ? {}
+        : { authorityGeneration: value.authorityGeneration }),
+      runId: command.runId,
+    };
   }
 
   async previewContextual(raw: Record<string, unknown>, source?: HostSession) {
@@ -1315,7 +1330,7 @@ export class HostEngine {
       const receipt = { ...result, commandId: command.commandId };
       await this.store.recordReceipt(signature, receipt);
       return receipt;
-    });
+    }, "critical");
   }
 
   private async save(
@@ -1789,7 +1804,7 @@ export class HostEngine {
               const receipt = { ...sent, commandId: create.commandId };
               await this.store.recordReceipt(signature, receipt);
               return receipt;
-            });
+            }, "critical");
           }
           if (this.closing) throw new Error("Host is stopping");
           const command = parseCommand(raw);
@@ -2731,7 +2746,7 @@ export class HostEngine {
             };
             await this.store.recordReceipt(signature, result);
             return { receipt: result, saved };
-          });
+          }, "critical");
           if (command.type === "cancel") {
             const active = this.running.get(saved.session.id);
             if (active?.runId === command.runId) active.cancelled = true;
@@ -2739,15 +2754,80 @@ export class HostEngine {
           const live = this.live.get(saved.session.id);
           if (live) live.value = saved;
           // A receipt means durable host acceptance, not provider completion.
-          if (effect)
-            this.store.afterCommit(async () => {
-              await this.store.assertAuthority(saved.session.id, saved.authorityGeneration);
-              return effect!(saved);
-            });
+          if (effect) {
+            const dispatch = async () => {
+              try {
+                await this.store.assertAuthority(saved.session.id, saved.authorityGeneration);
+                await effect!(saved);
+              } catch (error) {
+                await this.settleUnstarted(saved.session.id, saved.runId);
+                throw error;
+              }
+            };
+            this.store.afterCommit(() =>
+              command.type === "send" || command.type === "compact"
+                ? this.trackDispatch(saved.session.id, saved.runId, dispatch)
+                : dispatch(),
+            );
+          }
           return receipt;
         },
       ),
     );
+  }
+
+  /** Registers an accepted turn's dispatch so waitForRun can wait for it to start. */
+  private trackDispatch(
+    sessionId: string,
+    runId: string | undefined,
+    dispatch: () => Promise<void>,
+  ): Promise<void> {
+    const work = dispatch();
+    const entry = {
+      runId,
+      settled: work.then(
+        () => {},
+        () => {},
+      ),
+    };
+    this.dispatching.set(sessionId, entry);
+    void entry.settled.then(() => {
+      if (this.dispatching.get(sessionId) === entry) this.dispatching.delete(sessionId);
+    });
+    return work.catch(async (error) => {
+      if (this.dispatching.get(sessionId) === entry) this.dispatching.delete(sessionId);
+      await this.settleUnstarted(sessionId, runId);
+      throw error;
+    });
+  }
+
+  /** An accepted send whose dispatch failed must not stay "running" with no active run. */
+  private async settleUnstarted(id: string, runId: string | undefined): Promise<void> {
+    if (!runId) return;
+    try {
+      await this.store.db.outsideScope(() =>
+        this.store.db.scope(() =>
+          this.operations.enqueue(id, async () => {
+            if (this.hasActiveRun(id)) return;
+            const latest = await this.store.session(id);
+            if (latest.runId !== runId || latest.status !== "running") return;
+            this.live.delete(id);
+            await this.save(
+              this.settled(
+                latest,
+                "interrupted",
+                "Interrupted: the turn could not start. Send it again.",
+                Date.now(),
+                "error",
+              ),
+              { type: "interrupted", reason: "could not start" },
+            );
+          }),
+        ),
+      );
+    } catch (error) {
+      console.warn("Could not settle a turn whose dispatch failed:", error);
+    }
   }
 
   /** /clear uses the existing send transport but never dispatches a model turn. */
@@ -2809,7 +2889,7 @@ export class HostEngine {
         };
         await this.store.recordReceipt(signature, receipt);
         return receipt;
-      });
+      }, "critical");
     } finally {
       this.rewinding.delete(command.sessionId);
       this.onUnblocked?.();
@@ -2925,7 +3005,7 @@ export class HostEngine {
         };
         await this.store.recordReceipt(signature, receipt);
         return { receipt, saved: value };
-      });
+      }, "critical");
       const live = this.live.get(saved.session.id);
       if (live) live.value = saved;
       await this.checkpoints
@@ -3188,7 +3268,17 @@ export class HostEngine {
       owned = false;
       void activity.retainWarm().catch((error) => activity.recordFailure(error));
       if (failed) throw failure;
-      if (executed) await apply(result as T);
+      if (executed) {
+        try {
+          await apply(result as T);
+        } catch (error) {
+          // A conversation deleted while its hint ran has no target left: the discarded
+          // hint is not cleanup uncertainty and must not fail a later shutdown.
+          if (await this.store.sessionAuthority(parentId).then((found) => !!found, () => true))
+            throw error;
+          console.debug("[bycoda] retained provider hint", error);
+        }
+      }
     })()
       .then(() => activity.bookkeepingFinished())
       .catch((error) => {
@@ -3416,7 +3506,12 @@ export class HostEngine {
           await this.store.assertAuthority(session.id, active.authorityGeneration);
           if (!this.closing && !active.cancelled) {
             active.activity = this.reserveProviderActivity(session.id, provider);
-            await active.activity.start(() => this.executionActivity(value, "provider"));
+            try {
+              await active.activity.start(() => this.executionActivity(value, "provider"));
+            } catch (reason) {
+              active.admissionRefused = true;
+              throw reason;
+            }
             const workspace = await this.managedWorkspace(value);
             active.managed = !!workspace;
             if (workspace?.path)
@@ -3569,22 +3664,47 @@ export class HostEngine {
           active.cancelled ||
           active.persistenceFailed ||
           error;
+        // Cleanup is best effort: a failure is a warning plus a recorded failure on the
+        // activity, never a reason to leave the session "running" or lose the reply.
+        let cleanupFailed = false;
+        const soft = async (stage: ActiveHostTurn["failureStage"], work: () => unknown) => {
+          active.failureStage = stage;
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            const pending = work();
+            if (stage === "retirement") {
+              await Promise.race([pending, new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error("Provider retirement is still pending; replacement remains guarded.")), 20_000);
+              })]);
+            } else await pending;
+          } catch (reason) {
+            cleanupFailed = true;
+            console.warn(`Session ${stage} cleanup failed; settling anyway:`, reason);
+            active.activity?.recordFailure(reason);
+          } finally { clearTimeout(timer); }
+        };
         active.failureStage = "retirement";
-        if (cold) {
+        if (cold && active.admissionRefused && active.activity) {
+          // A refused admission acquired nothing and never entered the provider: there is
+          // nothing to stop or release. Warn and discard the record instead of letting it
+          // fail every later shutdown.
+          if (active.hostRun) this.runWriters.closeAdmission(active.hostRun);
+          console.warn(`Provider admission refused for session ${session.id}:`, error);
+          active.cleanup = Promise.resolve();
+          active.activity.evict();
+        } else if (cold) {
           if (active.hostRun) this.runWriters.closeAdmission(active.hostRun);
           if (active.activity) this.retainProvider(session.id, provider);
-          await this.stopOriginalTurn(session.id, active);
+          await soft("retirement", () => this.stopOriginalTurn(session.id, active));
         } else {
           this.retainProvider(session.id, provider);
         }
         active.failureStage = "persistence";
         await this.store.assertAuthority(session.id, active.authorityGeneration);
         // Retire outstanding delivery work before exposing an idle session.
-        active.failureStage = "delivery";
-        await active.steers;
-        await active.controls;
-        active.failureStage = "retirement";
-        if (active.hostRun) await this.runWriters.finish(active.hostRun);
+        await soft("delivery", () => active.steers);
+        await soft("delivery", () => active.controls);
+        if (active.hostRun) await soft("retirement", () => this.runWriters.finish(active.hostRun!));
         if (!cold)
           void active.activity?.retainWarm().catch((reason) => {
             active.activity?.recordFailure(reason);
@@ -3654,35 +3774,39 @@ export class HostEngine {
                 { type: "settled", error, cancelled: active.cancelled },
               );
             }
-            active.failureStage = "retirement";
-            if (cold) await active.activity?.release();
-            active.failureStage = "callback";
-            await this.onSettled?.(session.id, {
-              ...(active.cancelled ? { cancelled: true } : {}),
-              ...(this.closing || active.persistenceFailed
-                ? {
-                    interrupted: true,
-                    reason: this.closing
-                      ? "Host stopped. This turn was interrupted."
-                      : "Session storage failed during this turn. Inspect its work before continuing.",
-                  }
-                : {}),
-              ...(!active.cancelled && !this.closing && error ? { error } : {}),
-            });
-            // stop/forget releases callbacks and native resources; bind only retained
-            // provider conversation identity for an explicit future follow-up.
-            const persisted = (await this.store.session(session.id)).session;
-            if (persisted.providerSessionId)
-              provider.bind(
-                session.id,
-                persisted.providerSessionId,
-                persisted.cwd,
-                persisted.providerAccountId,
-              );
-            active.activity?.bookkeepingFinished();
-            if (this.running.get(session.id) === active) {
-              if (cold && active.activity) this.retainedProviders.get(session.id)?.delete(provider);
-              this.running.delete(session.id);
+            // The settled state is saved: whatever happens next, drop the running entry.
+            try {
+              if (cold) await soft("retirement", () => active.activity?.release());
+              active.failureStage = "callback";
+              await this.onSettled?.(session.id, {
+                ...(active.cancelled ? { cancelled: true } : {}),
+                ...(this.closing || active.persistenceFailed
+                  ? {
+                      interrupted: true,
+                      reason: this.closing
+                        ? "Host stopped. This turn was interrupted."
+                        : "Session storage failed during this turn. Inspect its work before continuing.",
+                    }
+                  : {}),
+                ...(!active.cancelled && !this.closing && error ? { error } : {}),
+              });
+              // stop/forget releases callbacks and native resources; bind only retained
+              // provider conversation identity for an explicit future follow-up.
+              const persisted = (await this.store.session(session.id)).session;
+              if (persisted.providerSessionId)
+                provider.bind(
+                  session.id,
+                  persisted.providerSessionId,
+                  persisted.cwd,
+                  persisted.providerAccountId,
+                );
+              if (!cleanupFailed) active.activity?.bookkeepingFinished();
+            } finally {
+              if (this.running.get(session.id) === active) {
+                if (cold && active.activity && !cleanupFailed)
+                  this.retainedProviders.get(session.id)?.delete(provider);
+                this.running.delete(session.id);
+              }
             }
           }),
         );
@@ -3854,6 +3978,9 @@ export class HostEngine {
   /** Wait only for the owned turn, including provider and checkpoint cleanup. */
   async waitForRun(sessionId: string, runId: string | undefined): Promise<void> {
     await this.ready;
+    // An accepted turn may not have installed its active run yet; its receipt names it.
+    const dispatch = this.dispatching.get(sessionId);
+    if (dispatch && runId !== undefined && dispatch.runId === runId) await dispatch.settled;
     const active = this.running.get(sessionId);
     if (!active) return;
     if (active.runId !== runId) throw new Error("The session has a different active turn.");

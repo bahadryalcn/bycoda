@@ -61,7 +61,7 @@ afterEach(() => {
 });
 
 describe("live session persistence", () => {
-  it("durably writes every live delta and checkpoints only after 256 deltas", async () => {
+  it("durably writes live deltas and checkpoints after 256 once the turn is idle", async () => {
     let revision = 0;
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === "session_upsert" || command === "session_apply_delta") {
@@ -73,6 +73,7 @@ describe("live session persistence", () => {
     for (let index = 0; index < 258; index++) {
       await upsertSessionLive({
         ...session("checkpoint"),
+        busy: index < 257,
         blocks: [
           { id: "user", role: "user", text: "hello" },
           { id: "answer", role: "assistant", text: `durable ${index}` },

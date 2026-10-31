@@ -649,3 +649,28 @@
   z-index: 1;
   outline-offset: -2px;
 }
+
+:global([data-field-slot]) .control.iconOnly {
+  inline-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - 8px);
+  block-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - 8px);
+  min-block-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - 8px);
+  padding: 0;
+  border-radius: calc(var(--ui-field-radius) - 3px);
+}
+.stableLabel { display: inline-block; max-inline-size: 100%; }
+.label[data-label-reserved] { text-align: center; }
+.control[data-button-align="start"] .label[data-label-reserved] { text-align: start; }
+.control[data-button-align="end"] .label[data-label-reserved] { text-align: end; }
+/* Reserved labels: empty ghosts share the label's grid cell and paint their text through
+   a pseudo-element, so they size the control without entering textContent or the
+   accessibility tree. */
+.label[data-label-ghosts] { display: grid; }
+.label[data-label-ghosts] > * { grid-area: 1 / 1; }
+.labelGhost {
+  visibility: hidden;
+  block-size: 0;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.labelGhost::after { content: attr(data-reserve); }

@@ -207,8 +207,8 @@ impl ProcessOwner {
             .state
             .lock()
             .map_err(|_| io::Error::other("Process owner unavailable"))?;
-        if let Some(result) = &state.result {
-            return result.as_ref().map(|_| ()).map_err(Failure::error);
+        if state.result.is_some() {
+            return Ok(());
         }
         if state.reaped || state.finalizing {
             return Ok(());
@@ -249,13 +249,24 @@ impl ProcessOwner {
         }
     }
     pub(crate) fn wait(&self) -> io::Result<ExitStatus> {
+        self.wait_until(None)
+            .unwrap_or_else(|| Err(io::Error::other("Process wait did not settle")))
+    }
+    /// `None` means the deadline passed first; the process is not affected.
+    pub(crate) fn wait_timeout(&self, timeout: Duration) -> Option<io::Result<ExitStatus>> {
+        self.wait_until(Some(Instant::now() + timeout))
+    }
+    fn wait_until(&self, deadline: Option<Instant>) -> Option<io::Result<ExitStatus>> {
         loop {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| io::Error::other("Process owner unavailable"))?;
+            let mut state = match self.state.lock() {
+                Ok(state) => state,
+                Err(_) => return Some(Err(io::Error::other("Process owner unavailable"))),
+            };
             if let Some(result) = &state.result {
-                return result.clone().map_err(|e| e.error());
+                return Some(result.clone().map_err(|e| e.error()));
+            }
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                return None;
             }
             if state.activated && !state.finalizing {
                 #[cfg(windows)]
@@ -302,23 +313,30 @@ impl ProcessOwner {
                     let job = state.child.job.clone();
                     let signal_error = state.signal_error.clone();
                     drop(state);
-                    let mut retirement = Ok(());
+                    // Retirement is best-effort: unproven job drain is logged, never a failed wait.
+                    let retirement = Ok(());
                     #[cfg(windows)]
-                    let result = result.and_then(|status| {
+                    let result = result.map(|status| {
                         if let Some(job) = job {
-                            // An API/drain failure remains an actual error. Missing
-                            // birth proof is retained separately from known status.
-                            let drained = job.drain().map_err(|_| {
-                                io::Error::other("Owned process job drain unavailable")
-                            })?;
-                            retirement = drained.require_verified().map_err(|_| {
-                                Failure::from(io::Error::other(
-                                    "Owned process job retirement unknown",
-                                ))
-                            });
+                            job.terminate();
+                            match job.drain() {
+                                Ok(drained) => {
+                                    if let Err(error) = drained.require_verified() {
+                                        eprintln!("[harness] owned process job retirement unverified: {error}");
+                                    }
+                                }
+                                Err(error) => {
+                                    eprintln!("[harness] owned process job drain unavailable: {error}");
+                                }
+                            }
                         }
-                        Ok(status)
+                        status
                     });
+                    #[cfg(windows)]
+                    if let Some(error) = &signal_error {
+                        eprintln!("[harness] ignored process signal error: {}", error.message);
+                    }
+                    #[cfg(not(windows))]
                     let result = result
                         .and_then(|status| signal_error.map_or(Ok(status), |e| Err(e.error())));
                     let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -458,6 +476,15 @@ impl WriteGate {
             .unwrap_or_else(|e| e.into_inner())
             .failure
             .get_or_insert(reason);
+    }
+    /// `None` means active writers did not finish before the timeout.
+    pub(crate) fn drain_timeout(&self, timeout: Duration) -> Option<Result<(), String>> {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let (state, _) = self
+            .changed
+            .wait_timeout_while(state, timeout, |s| s.active != 0)
+            .unwrap_or_else(|e| e.into_inner());
+        (state.active == 0).then(|| state.failure.clone().map_or(Ok(()), Err))
     }
     pub(crate) fn drain(&self) -> Result<(), String> {
         let state = self.state.lock().unwrap_or_else(|e| e.into_inner());

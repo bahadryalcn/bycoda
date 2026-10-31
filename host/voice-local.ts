@@ -5,8 +5,12 @@ import { localVoicePython } from "./voice-python";
 import { inspectVoiceRuntime, voiceRuntimeConfig, type VoiceRuntimeConfig } from "./voice-runtime";
 import { VoiceSpeechService } from "./voice-speech";
 
-export type LocalVoiceInfo = { lease: string; model: string; device: string };
-export type LocalVoiceTranscript = { text: string; language: string; inferenceMs: number };
+/** `turn`: the recognizer can judge from a pause whether the sentence is finished. */
+export type LocalVoiceInfo = { lease: string; model: string; device: string; turn?: boolean };
+/** `complete: false` (endpoint checks only): the speaker paused mid-sentence; no text. */
+export type LocalVoiceTranscript =
+  | { text: string; language: string; inferenceMs: number; complete?: true }
+  | { complete: false };
 
 export function validateVoiceAudio(audio: unknown, language: unknown) {
   if (
@@ -35,7 +39,7 @@ export class LocalVoiceService {
   private runtime: VoiceRuntimeConfig = {};
   private runtimeKey = "";
   private child?: ChildProcessWithoutNullStreams;
-  private loading?: Promise<{ model: string; device: string }>;
+  private loading?: Promise<{ model: string; device: string; turn: boolean }>;
   private leases = new Map<string, number>();
   private requests = new Map<
     string,
@@ -53,16 +57,17 @@ export class LocalVoiceService {
     return this.starting > 0 || Boolean(this.loading || this.child) || this.leases.size > 0;
   }
 
-  async start(value?: unknown): Promise<LocalVoiceInfo> {
+  /** `recognitionOnly` (dictation) shares the recognizer without loading natural speech. */
+  async start(value?: unknown, recognitionOnly = false): Promise<LocalVoiceInfo> {
     this.starting++;
     try {
-      return await this.startRuntime(value);
+      return await this.startRuntime(value, recognitionOnly);
     } finally {
       this.starting--;
     }
   }
 
-  private async startRuntime(value?: unknown): Promise<LocalVoiceInfo> {
+  private async startRuntime(value: unknown, recognitionOnly: boolean): Promise<LocalVoiceInfo> {
     const config = voiceRuntimeConfig(value);
     const key = JSON.stringify(config);
     if (this.loading && this.runtimeKey !== key)
@@ -90,7 +95,7 @@ export class LocalVoiceService {
       this.runtimeKey = key;
     }
     const info = await this.ensureWorker();
-    if (this.runtime.natural) {
+    if (this.runtime.natural && !recognitionOnly) {
       try {
         await this.speech.start(this.runtime);
       } catch (error) {
@@ -126,9 +131,9 @@ export class LocalVoiceService {
     return { released: true };
   }
 
-  speak(lease: unknown, text: unknown) {
+  speak(lease: unknown, text: unknown, language?: unknown) {
     this.checkLease(lease);
-    return this.speech.speak(String(lease), text);
+    return this.speech.speak(String(lease), text, language);
   }
   nextSpeech(lease: unknown, id: unknown) {
     this.checkLease(lease);
@@ -144,9 +149,13 @@ export class LocalVoiceService {
     lease: unknown,
     audio: unknown,
     language?: unknown,
+    endpoint?: unknown,
   ): Promise<LocalVoiceTranscript> {
     this.checkLease(lease);
-    const data = validateVoiceAudio(audio, language);
+    const data = {
+      ...validateVoiceAudio(audio, language),
+      ...(endpoint === true ? { endpoint } : {}),
+    };
     if (this.requests.size >= 2)
       throw new Error("Speech recognition is busy. Please speak again after transcription.");
     await this.ensureWorker();
@@ -178,68 +187,76 @@ export class LocalVoiceService {
       this.runtime.python ||
       process.env.BYCODA_VOICE_PYTHON ||
       (process.platform === "win32" ? "python" : "python3");
-    this.loading = new Promise<{ model: string; device: string }>((resolve, reject) => {
-      const child = (this.child = spawn(python, ["-u", "-c", localVoicePython], {
-        windowsHide: true,
-        stdio: ["pipe", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          PYTHONIOENCODING: "utf-8",
-          BYCODA_VOICE_CONFIG: JSON.stringify(this.runtime),
-        },
-      }));
-      const timer = setTimeout(() => {
-        reject(new Error("Local voice startup timed out."));
-        this.close();
-      }, 45_000);
-      child.stderr.on("data", () => {}); // Never forward Python paths or diagnostics into transcripts.
-      createInterface({ input: child.stdout }).on("line", (line) => {
-        if (line.length > 32000) {
+    this.loading = new Promise<{ model: string; device: string; turn: boolean }>(
+      (resolve, reject) => {
+        const child = (this.child = spawn(python, ["-u", "-c", localVoicePython], {
+          windowsHide: true,
+          stdio: ["pipe", "pipe", "pipe"],
+          env: {
+            ...process.env,
+            PYTHONIOENCODING: "utf-8",
+            BYCODA_VOICE_CONFIG: JSON.stringify(this.runtime),
+          },
+        }));
+        const timer = setTimeout(() => {
+          reject(new Error("Local voice startup timed out."));
           this.close();
-          return;
-        }
-        try {
-          const message = JSON.parse(line);
-          if (
-            message.ready &&
-            typeof message.model === "string" &&
-            typeof message.device === "string"
-          ) {
-            clearTimeout(timer);
-            resolve(message);
-          } else if (!message.id && message.error) {
-            clearTimeout(timer);
-            reject(new Error(String(message.error)));
+        }, 45_000);
+        child.stderr.on("data", () => {}); // Never forward Python paths or diagnostics into transcripts.
+        createInterface({ input: child.stdout }).on("line", (line) => {
+          if (line.length > 32000) {
             this.close();
-          } else {
-            const pending = this.requests.get(message.id);
-            if (!pending) return;
-            clearTimeout(pending.timer);
-            this.requests.delete(message.id);
-            if (typeof message.text === "string" && message.text.length <= 16000)
-              pending.resolve({
-                text: message.text,
-                language: String(message.language),
-                inferenceMs: Number(message.inferenceMs),
-              });
-            else pending.reject(new Error("Local speech recognition failed."));
+            return;
           }
-        } catch {
-          this.close();
-        }
-      });
-      const failed = () => {
-        clearTimeout(timer);
-        reject(
-          new Error(
-            "Local voice needs Python, faster-whisper and a cached Whisper model on this computer.",
-          ),
-        );
-        if (this.child === child) this.close();
-      };
-      child.on("error", failed);
-      child.on("exit", failed);
-    });
+          try {
+            const message = JSON.parse(line);
+            if (
+              message.ready &&
+              typeof message.model === "string" &&
+              typeof message.device === "string"
+            ) {
+              clearTimeout(timer);
+              resolve({
+                model: message.model,
+                device: message.device,
+                turn: message.turn === true,
+              });
+            } else if (!message.id && message.error) {
+              clearTimeout(timer);
+              reject(new Error(String(message.error)));
+              this.close();
+            } else {
+              const pending = this.requests.get(message.id);
+              if (!pending) return;
+              clearTimeout(pending.timer);
+              this.requests.delete(message.id);
+              if (message.complete === false) pending.resolve({ complete: false });
+              else if (typeof message.text === "string" && message.text.length <= 16000)
+                pending.resolve({
+                  text: message.text,
+                  language: String(message.language),
+                  inferenceMs: Number(message.inferenceMs),
+                  ...(message.complete === true ? { complete: true as const } : {}),
+                });
+              else pending.reject(new Error("Local speech recognition failed."));
+            }
+          } catch {
+            this.close();
+          }
+        });
+        const failed = () => {
+          clearTimeout(timer);
+          reject(
+            new Error(
+              "Local voice needs Python, faster-whisper and a cached Whisper model on this computer.",
+            ),
+          );
+          if (this.child === child) this.close();
+        };
+        child.on("error", failed);
+        child.on("exit", failed);
+      },
+    );
     return this.loading;
   }
 

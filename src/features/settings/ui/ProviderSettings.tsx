@@ -1,11 +1,20 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { SettingsFeedback } from "./settingsControls";
+import {
+  Group,
+  RevealedSetting,
+  Row,
+  Select,
+  SettingsFeedback,
+  Toggle,
+  settingDomId,
+  useSettingsPageReset,
+} from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { ArrowDownCircle, Check, Globe, RefreshCw } from "../../../shared/ui/icons";
+import { ArrowDownCircle, Globe, RefreshCw } from "../../../shared/ui/icons";
 import {
   useContext,
   useEffect,
@@ -15,7 +24,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { RelativeSessionTime, useMinuteNow } from "../../../app/shell/RelativeSessionTime";
 import "./ProviderSettings.css";
 
 import { Button } from "../../../shared/ui/Button";
@@ -28,7 +37,6 @@ import {
   probeHarnessAvailability,
   subscribeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
-
 
 import {
   catalogModelsFor,
@@ -50,6 +58,7 @@ import {
   savePickerProviderVisible,
   subscribeModels,
   subscribePickerVisibility,
+  type AgentModel,
 } from "../../sessions/model/models";
 import { offeredDelegationSetting } from "../../sessions/model/claudeAdvisor";
 import { pickerSettings } from "../../sessions/model/modelPickerData";
@@ -77,6 +86,7 @@ import {
   subscribeProjectProviders,
   setProjectSessionDefaults,
   resetProjectSessionPreferences,
+  type ProjectProviderSettings,
   type ProviderSessionDefaults,
 } from "../../sessions/model/projectProviders";
 import {
@@ -91,18 +101,24 @@ import { refreshProviderCatalog } from "../../providers/model/catalogReceipts";
 import { persistProviderPreference } from "../../providers/model/providerPreferenceOutcome";
 import { CatalogReceiptStatus } from "../../providers/ui/CatalogReceiptStatus";
 import {
+  ProviderList,
+  providerMetaLine,
+  type ProviderListEntry,
+} from "../../providers/ui/ProviderList";
+import { ProviderDetailHeader, ProviderStatusGroup } from "../../providers/ui/ProviderStatusGroup";
+import { providerAuthState } from "../../providers/ui/providerStatus";
+import {
   checkInstalledHarnessVersions,
   getHarnessUpdateSnapshot,
   runHarnessUpdate,
   subscribeHarnessUpdates,
-  type HarnessUpdateRun,
 } from "../../providers/model/harnessUpdateActions";
+import { onHarnessUpdated, pendingHarnessUpdates } from "../../providers/model/harnessUpdates";
 import {
-  onHarnessUpdated,
-  pendingHarnessUpdates,
-  type HarnessUpdate,
-  type HarnessVersionCheck,
-} from "../../providers/model/harnessUpdates";
+  defaultProviderAccountId,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
+import { getAllRateLimits, subscribeRateLimits } from "../../providers/model/rateLimitsCache";
 
 import {
   loadTabGroupColors,
@@ -117,7 +133,6 @@ import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { loadClaudeHooks, saveClaudeHooks, subscribeClaudeHooks } from "../model/settings";
 
-import { AdvancedSettings, Group, RevealedSetting, Row, Toggle, Select } from "./settingsControls";
 import { GLOBAL_PROVIDER_SCOPE, ProviderBinaryControl } from "./ProviderBinarySettings";
 import { ProviderAccountsSettings } from "./ProviderAccountsSettings";
 import { GenericAcpSettings } from "../../providers/ui/GenericAcpSettings";
@@ -142,6 +157,8 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     providerSessionDefaultsSnapshot,
     providerSessionDefaultsSnapshot,
   );
+  const rateLimits = useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
+  const now = useMinuteNow();
   const [choice, setChoice] = useState(loadLastModelChoice);
   const [defaultModels, setDefaultModels] = useState(loadDefaultModels);
   const [claudeHooks, setClaudeHooks] = useStoredPreferenceState(
@@ -157,6 +174,8 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     () => loadLastModelChoice()?.harness ?? null,
   );
   const [accountBusy, setAccountBusy] = useState(false);
+  // When this window last finished a version check; the snapshot itself carries no time.
+  const [checkedAt, setCheckedAt] = useState<number | null>(null);
   // Defaults are written to browser storage that can refuse the write. The
   // chosen value stays on screen, so say plainly when it will not survive.
   const [saveOutcome, setSaveOutcome] = useState<
@@ -209,6 +228,18 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
 
   useEffect(() => {
     void probeHarnessAvailability();
+  }, []);
+
+  useEffect(() => {
+    // Another window's update leaves this window's versions stale.
+    const unlisten = onHarnessUpdated(() => {
+      if (getHarnessUpdateSnapshot().checks) {
+        void checkInstalledHarnessVersions().catch(() => undefined);
+      }
+    }).catch(() => undefined);
+    return () => {
+      void unlisten.then((stop) => stop?.());
+    };
   }, []);
 
   const onClaudeHooks = (next: boolean) => {
@@ -307,6 +338,14 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     );
   };
 
+  const resetToGlobalDefaults = () => {
+    if (!project) return;
+    persist(() => resetProjectSessionPreferences(project), projectProviderSettingsPersisted);
+  };
+  // The settings shell offers "Restore defaults" for a project; visibility and accounts stay.
+  useSettingsPageReset(project ? resetToGlobalDefaults : null);
+  const projectOverridden = project != null && hasProjectOverrides(projectSettings);
+
   // Installed CLIs come first. Stable sorting keeps Claude before Codex and
   // preserves the catalog order within each availability group.
   const orderedHarnesses = [...HARNESSES].sort(
@@ -364,28 +403,68 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     }
   }, [revealedSetting, modelsVersion, activeProvider, accountBusy]);
 
-  const scopeControl = (
-    <div className="provider-cli-scope">
-      <span className="text-ui-micro text-(--ui-text-secondary)">{t("Apply defaults to")}</span>
-      <SearchableSelect
-        label={t("Provider defaults scope")}
-        searchPlaceholder={t("Search projects")}
-        value={scope}
-        options={scopeOptions}
-        onChange={setScope}
-      />
-      {project ? (
-        <Button
-          variant="ghost"
-          onClick={() =>
-            persist(() => resetProjectSessionPreferences(project), projectProviderSettingsPersisted)
-          }
-        >
-          {t("Use global defaults")}
-        </Button>
-      ) : null}
-    </div>
+  const inPickerFor = (harness: HarnessId) =>
+    !hiddenGlobally.includes(harness) &&
+    (!project || !(projectSettings.hidden ?? []).includes(harness));
+  const isDefaultFor = (harness: HarnessId) =>
+    project ? effectiveDefaultHarness === harness : choice?.harness === harness;
+  const probed = hasProbedHarnessAvailability();
+  const entryFor = (harness: HarnessId): ProviderListEntry => {
+    const check = updateSnapshot.checks?.find((entry) => entry.harness === harness);
+    const accountKey = supportsProviderAccounts(harness)
+      ? `${harness}:${defaultProviderAccountId(harness)}`
+      : null;
+    return {
+      harness,
+      available: isHarnessAvailable(harness),
+      isDefault: isDefaultFor(harness),
+      inPicker: inPickerFor(harness),
+      // A globally hidden provider stays out of every project's picker, so the
+      // project toggle is shown locked rather than appearing to work.
+      pickerLocked: project != null && hiddenGlobally.includes(harness),
+      version: check && check.status !== "unknown" ? check.installed : undefined,
+      updateAvailable: check?.status === "behind",
+      auth: accountKey ? providerAuthState(rateLimits[accountKey], now) : null,
+    };
+  };
+  const entries = orderedHarnesses.map(entryFor);
+
+  // Update summary for the whole page; each provider's own state lives in its Status group.
+  const { checks, checking, runs, error: checkError } = updateSnapshot;
+  const pending = pendingHarnessUpdates(checks ?? []).filter(
+    (update) => runs[update.harness]?.status !== "updating",
   );
+  const attention = checks
+    ? checks.filter(
+        (check) => check.status !== "current" || runs[check.harness]?.status === "failed",
+      ).length
+    : 0;
+  const runCheck = () => {
+    void checkInstalledHarnessVersions({ force: true })
+      .then(() => setCheckedAt(Date.now()))
+      .catch(() => undefined);
+  };
+  const updatesSummary = checking
+    ? t("Checking installed CLIs…")
+    : checks === null
+      ? t("Not checked yet")
+      : checks.length === 0
+        ? t("None of the CLIs with a release feed are installed.")
+        : attention > 0
+          ? attention === 1
+            ? t("1 CLI needs attention")
+            : t("{p0} CLIs need attention", { p0: attention })
+          : t("All CLIs are up to date");
+
+  const setupProvider = (harness: HarnessId) => {
+    setSelectedProvider(harness);
+    // The Runtime section holds the CLI path and setup for this provider.
+    requestAnimationFrame(() =>
+      document
+        .getElementById(settingDomId(`cli-path-${harness}`))
+        ?.scrollIntoView?.({ block: "center" }),
+    );
+  };
 
   return (
     <div className="settings-topics grid min-w-0 gap-6">
@@ -398,217 +477,214 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
           state: saveOutcome?.state === "unsaved" ? "error" : saveOutcome ? "saved" : "idle",
           error: saveOutcome?.state === "unsaved" ? saveOutcome.message : undefined,
         }}
-        scope={
-          project
-            ? t("Defaults for {p0} only. CLI paths stay global.", {
-                p0: projectDisplayName(project),
-              })
-            : t("This machine · all projects")
-        }
-        description={
-          project
-            ? t("Defaults for {p0} only. CLI paths stay global.", {
-                p0: projectDisplayName(project),
-              })
-            : undefined
+        feedback={
+          saveOutcome?.state === "unsaved" ? (
+            <SettingsFeedback
+              state="error"
+              action={
+                <Button size="sm" variant="ghost" onClick={saveOutcome.retry}>
+                  {t("Retry")}
+                </Button>
+              }
+            >
+              {t("Not saved. The choice applies until this window closes. {p0}", {
+                p0: saveOutcome.message,
+              })}
+            </SettingsFeedback>
+          ) : undefined
         }
       >
-        {saveOutcome?.state === "unsaved" ? (
-          <SettingsFeedback
-            state="error"
-            action={
-              <Button size="sm" variant="ghost" onClick={saveOutcome.retry}>
-                {t("Retry")}
-              </Button>
-            }
-          >
-            {t("Not saved. The choice applies until this window closes. {p0}", {
-              p0: saveOutcome.message,
-            })}
-          </SettingsFeedback>
-        ) : null}
-        <div className="provider-cli-container">
-          <div className="provider-cli-workspace">
-            <div className="provider-cli-select">
-              <SearchableSelect
-                label={t("Providers")}
-                value={activeProvider ?? ""}
-                disabled={accountBusy}
-                searchPlaceholder={t("Search providers…")}
-                options={orderedHarnesses.map((harness) => {
-                  const available = isHarnessAvailable(harness);
-                  const inPicker =
-                    !hiddenGlobally.includes(harness) &&
-                    (!project || !(projectSettings.hidden ?? []).includes(harness));
-                  const isDefault = project
-                    ? effectiveDefaultHarness === harness
-                    : choice?.harness === harness;
-                  return {
-                    value: harness,
-                    label: HARNESS_TITLE[harness],
-                    description: [
-                      available
-                        ? t("CLI detected")
-                        : hasProbedHarnessAvailability()
-                          ? t("CLI not found")
-                          : t("Checking CLI…"),
-                      isDefault ? t("Default provider") : !inPicker ? t("Hidden") : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" · "),
-                  };
-                })}
-                onChange={(value) => {
-                  const provider = orderedHarnesses.find((harness) => harness === value);
-                  if (provider) setSelectedProvider(provider);
-                }}
-              />
-            </div>
-            <nav className="provider-cli-selector" aria-label={t("Providers")}>
-              {orderedHarnesses.map((harness) => {
-                const available = isHarnessAvailable(harness);
-                const inPicker = project
-                  ? !(projectSettings.hidden ?? []).includes(harness) &&
-                    !hiddenGlobally.includes(harness)
-                  : !hiddenGlobally.includes(harness);
-                const isDefault = project
-                  ? effectiveDefaultHarness === harness
-                  : choice?.harness === harness;
-                const selected = activeProvider === harness;
-                const updateAvailable = updateSnapshot.checks?.some(
-                  (check) => check.harness === harness && check.status === "behind",
-                );
-                return (
-                  <Button
-                    key={harness}
-                    variant="item"
-                    selected={selected}
-                    disabled={accountBusy}
-                    className="provider-cli-option"
-                    title={HARNESS_TITLE[harness]}
-                    aria-current={selected ? "true" : undefined}
-                    aria-label={[
-                      HARNESS_TITLE[harness],
-                      available
-                        ? t("CLI detected")
-                        : hasProbedHarnessAvailability()
-                          ? t("CLI not found")
-                          : t("Checking CLI…"),
-                      isDefault ? t("Default provider") : !inPicker ? t("Hidden") : "",
-                      updateAvailable ? t("Update available") : "",
-                    ]
-                      .filter(Boolean)
-                      .join(", ")}
-                    onClick={() => setSelectedProvider(harness)}
-                  >
-                    <HarnessIcon harness={harness} className="icon-md shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{HARNESS_TITLE[harness]}</span>
-                    {updateAvailable ? (
-                      <ArrowDownCircle
-                        className="icon-sm shrink-0 text-accent"
-                        aria-hidden
-                        strokeWidth={1.75}
-                      />
-                    ) : null}
-                    {isDefault ? (
-                      <Badge size="sm" className="shrink-0">
-                        {t("Default")}
-                      </Badge>
-                    ) : !inPicker ? (
-                      <Badge size="sm" className="shrink-0">
-                        {t("Hidden")}
-                      </Badge>
-                    ) : !available && hasProbedHarnessAvailability() ? (
-                      <Badge size="sm" tone="warning" className="shrink-0">
-                        {t("Not installed")}
-                      </Badge>
-                    ) : null}
-                  </Button>
-                );
-              })}
-            </nav>
-            <div className="provider-cli-detail">
-              {activeProvider ? <ProviderCliHeader harness={activeProvider} /> : null}
-              {accountBusy ? (
-                <p role="status" className="mb-3 text-ui-caption text-(--ui-text-secondary)">
-                  {t("Finish or cancel the account operation before switching providers.")}
-                </p>
-              ) : null}
-              <ProviderAccountsSettings
-                harness={activeProvider ?? undefined}
-                onBusyChange={setAccountBusy}
-              />
-              {orderedHarnesses.map((harness) => {
-                const inPicker = project
-                  ? !(projectSettings.hidden ?? []).includes(harness) &&
-                    !hiddenGlobally.includes(harness)
-                  : !hiddenGlobally.includes(harness);
-                // A globally hidden provider stays out of every project's picker, so
-                // the project toggle is shown locked rather than appearing to work.
-                const pickerLocked = project != null && hiddenGlobally.includes(harness);
-                const selectedModel = project
-                  ? (projectSettings.models?.[harness] ??
-                    (projectSettings.defaultHarness === harness
-                      ? projectSettings.defaultModel
-                      : undefined) ??
-                    defaultModels[harness] ??
-                    (choice?.harness === harness ? choice.model : defaultModelId(harness)))
-                  : (defaultModels[harness] ??
-                    (choice?.harness === harness ? choice.model : defaultModelId(harness)));
-                const isDefault = project
-                  ? effectiveDefaultHarness === harness
-                  : choice?.harness === harness;
-                return (
-                  <div
-                    key={harness}
-                    className="provider-cli-panel"
-                    hidden={activeProvider !== harness}
-                  >
-                    <ProviderRow
-                      hideHeader={activeProvider === harness}
-                      harness={harness}
-                      selectedModel={selectedModel}
-                      isDefault={isDefault}
-                      inPicker={inPicker}
-                      pickerLocked={pickerLocked}
-                      inheritedDefaults={project ? providerSessionDefaults(harness) : undefined}
-                      scopeDefaults={
-                        project
-                          ? projectSettings.defaults?.[harness]
-                          : providerSessionDefaults(harness)
-                      }
-                      onSessionDefaultsChange={(next) => onSessionDefaults(harness, next)}
-                      modelOverride={
-                        project ? projectModelOverride(projectSettings, harness) : undefined
-                      }
-                      globalModel={
-                        project
-                          ? (defaultModels[harness] ??
-                            (choice?.harness === harness ? choice.model : defaultModelId(harness)))
-                          : undefined
-                      }
-                      onModelReset={project ? () => onModelReset(harness) : undefined}
-                      onDefault={onDefault}
-                      onModelChange={onModelChange}
-                      onPickerVisible={(visible) => onPickerVisible(harness, visible)}
-                      isSelected={activeProvider === harness}
-                      claudeHooks={claudeHooks}
-                      onClaudeHooksChange={onClaudeHooks}
-                      scopeLabel={project ? projectDisplayName(project) : t("Global")}
-                      scopeControl={activeProvider === harness ? scopeControl : undefined}
-                      projectScope={project != null}
-                    />
-                    {harness === "acp" ? <GenericAcpSettings cwd={cwd} embedded /> : null}
-                  </div>
-                );
-              })}
-            </div>
+        <Row
+          label={t("Apply defaults to")}
+          description={
+            project
+              ? t("Defaults for {p0} only. CLI paths stay global.", {
+                  p0: projectDisplayName(project),
+                })
+              : t(
+                  "CLI paths, accounts and model lists are shared by every project on this machine.",
+                )
+          }
+          modified={projectOverridden}
+          onReset={resetToGlobalDefaults}
+          resetLabel={t("Use global defaults")}
+        >
+          <SearchableSelect
+            label={t("Provider defaults scope")}
+            searchPlaceholder={t("Search projects")}
+            value={scope}
+            options={scopeOptions}
+            onChange={setScope}
+          />
+        </Row>
+        <Row
+          id="harness-updates"
+          label={t("CLI updates")}
+          description={updatesSummary}
+          feedback={
+            checkError ? (
+              <SettingsFeedback state="error">
+                {t("Could not check CLI updates: ")}
+                {checkError}
+              </SettingsFeedback>
+            ) : undefined
+          }
+        >
+          <div className="provider-updates-actions">
+            {checkedAt != null && !checking ? (
+              <span className="provider-status-checked">
+                {t("Checked")} <RelativeSessionTime at={checkedAt} />
+              </span>
+            ) : null}
+            <Button
+              size="sm"
+              stableWidth
+              onClick={runCheck}
+              disabled={checking}
+              loading={checking}
+              startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />}
+            >
+              {t("Check all")}
+            </Button>
+            <Button
+              size="sm"
+              stableWidth
+              onClick={() => {
+                for (const update of pending) void runHarnessUpdate(update);
+              }}
+              disabled={pending.length === 0}
+              tooltip={pending.length === 0 ? t("Nothing to update") : undefined}
+              startIcon={<ArrowDownCircle className="icon-sm text-accent" aria-hidden />}
+            >
+              {t("Update all")}
+            </Button>
           </div>
-        </div>
+        </Row>
       </Group>
 
-      <HarnessUpdatesGroup />
+      <div className="provider-cli-container">
+        <div className="provider-cli-workspace">
+          <div className="provider-cli-select">
+            <SearchableSelect
+              label={t("Providers")}
+              value={activeProvider ?? ""}
+              disabled={accountBusy}
+              searchPlaceholder={t("Search providers…")}
+              options={entries.map((entry) => ({
+                value: entry.harness,
+                label: HARNESS_TITLE[entry.harness],
+                description: [
+                  providerMetaLine(entry, probed),
+                  entry.isDefault ? t("Default provider") : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+              }))}
+              onChange={(value) => {
+                const provider = orderedHarnesses.find((harness) => harness === value);
+                if (provider) setSelectedProvider(provider);
+              }}
+            />
+          </div>
+          <ProviderList
+            entries={entries}
+            active={activeProvider}
+            probed={probed}
+            disabled={accountBusy}
+            onSelect={setSelectedProvider}
+            onPickerVisible={onPickerVisible}
+            onSetup={setupProvider}
+          />
+          <div className="provider-cli-detail">
+            {activeProvider ? (
+              <>
+                <ProviderDetailHeader
+                  harness={activeProvider}
+                  available={isHarnessAvailable(activeProvider)}
+                />
+                <ProviderStatusGroup
+                  harness={activeProvider}
+                  available={isHarnessAvailable(activeProvider)}
+                  checkedAt={checkedAt}
+                  onCheck={runCheck}
+                  onSetup={() => setupProvider(activeProvider)}
+                />
+              </>
+            ) : null}
+            {accountBusy ? (
+              <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
+                {t("Finish or cancel the account operation before switching providers.")}
+              </p>
+            ) : null}
+            <ProviderAccountsSettings
+              harness={activeProvider ?? undefined}
+              onBusyChange={setAccountBusy}
+            />
+            {orderedHarnesses.map((harness) => {
+              const selectedModel = project
+                ? (projectSettings.models?.[harness] ??
+                  (projectSettings.defaultHarness === harness
+                    ? projectSettings.defaultModel
+                    : undefined) ??
+                  defaultModels[harness] ??
+                  (choice?.harness === harness ? choice.model : defaultModelId(harness)))
+                : (defaultModels[harness] ??
+                  (choice?.harness === harness ? choice.model : defaultModelId(harness)));
+              return (
+                <div
+                  key={harness}
+                  className="provider-cli-panel"
+                  hidden={activeProvider !== harness}
+                >
+                  <ProviderRow
+                    harness={harness}
+                    selectedModel={selectedModel}
+                    isDefault={isDefaultFor(harness)}
+                    inPicker={inPickerFor(harness)}
+                    pickerLocked={project != null && hiddenGlobally.includes(harness)}
+                    inheritedDefaults={project ? providerSessionDefaults(harness) : undefined}
+                    scopeDefaults={
+                      project
+                        ? projectSettings.defaults?.[harness]
+                        : providerSessionDefaults(harness)
+                    }
+                    onSessionDefaultsChange={(next) => onSessionDefaults(harness, next)}
+                    modelOverride={
+                      project ? projectModelOverride(projectSettings, harness) : undefined
+                    }
+                    globalModel={
+                      project
+                        ? (defaultModels[harness] ??
+                          (choice?.harness === harness ? choice.model : defaultModelId(harness)))
+                        : undefined
+                    }
+                    onModelReset={project ? () => onModelReset(harness) : undefined}
+                    onDefault={onDefault}
+                    onModelChange={onModelChange}
+                    onPickerVisible={(visible) => onPickerVisible(harness, visible)}
+                    isSelected={activeProvider === harness}
+                    claudeHooks={claudeHooks}
+                    onClaudeHooksChange={onClaudeHooks}
+                    projectScope={project != null}
+                  />
+                  {harness === "acp" ? <GenericAcpSettings cwd={cwd} embedded /> : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
+  );
+}
+
+/** True when a project stores anything that "Use global defaults" would clear. */
+function hasProjectOverrides(settings: ProjectProviderSettings): boolean {
+  return Boolean(
+    settings.defaultHarness ||
+    settings.defaultModel ||
+    Object.keys(settings.models ?? {}).length > 0 ||
+    Object.keys(settings.defaults ?? {}).length > 0,
   );
 }
 
@@ -628,20 +704,52 @@ function modelDisplayName(harness: HarnessId, id: string | undefined): string {
   return resolveModel(harness, id).name;
 }
 
+/** "200K context", with the upstream provider first for multi-provider harnesses. */
+function modelMeta(model: AgentModel): string | undefined {
+  const size = model.contextWindow;
+  const context =
+    size == null
+      ? undefined
+      : t("{p0} context", {
+          p0:
+            size >= 1_000_000
+              ? `${+(size / 1_000_000).toFixed(1)}M`
+              : `${Math.round(size / 1000)}K`,
+        });
+  const parts = [model.provider?.name, context].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
 /** Per-model switches: a model turned off is never offered or picked by default. */
 export function EnabledModelsGroup({ harness }: { harness: HarnessId }) {
   useLocale();
   const models = catalogModelsFor(harness);
   const enabledCount = models.filter((model) => isModelEnabled(model.id)).length;
   const [query, setQuery] = useState("");
+  const needle = query.trim().toLocaleLowerCase();
   const filtered = models.filter((model) =>
-    `${model.name} ${model.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+    `${model.name} ${model.id}`.toLocaleLowerCase().includes(needle),
   );
+  const defaultId = defaultModelId(harness);
+  const guard = t("Keep one model enabled. Hide the provider to remove it from the picker.");
+
+  // Bulk actions keep at least one model on, the same guard each switch applies.
+  const enableAll = () => {
+    for (const model of models) if (!isModelEnabled(model.id)) saveModelEnabled(model.id, true);
+  };
+  const onlyDefault = () => {
+    const keep = models.find((model) => model.id === defaultId) ?? models[0];
+    if (!keep) return;
+    saveModelEnabled(keep.id, true);
+    for (const model of models) {
+      if (model.id !== keep.id && isModelEnabled(model.id)) saveModelEnabled(model.id, false);
+    }
+  };
 
   return (
-    <AdvancedSettings
+    <Group
       id="enabled-models"
-      settingIds={["enabled-models"]}
+      layout="full"
       title={
         <span className="provider-cli-model-heading">
           {t("Models")}{" "}
@@ -650,259 +758,81 @@ export function EnabledModelsGroup({ harness }: { harness: HarnessId }) {
           </Badge>
         </span>
       }
-    >
-      <p className="mb-2 text-ui-caption text-(--ui-text-secondary)">
-        {t("This machine · all projects")}
-      </p>
-      <SearchInput
-        aria-label={t("Search models…")}
-        appearance="field"
-        placeholder={t("Search models…")}
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        containerClassName="mb-2"
-      />
-      {models.length > 0 && filtered.length === 0 ? (
-        <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
-          {t("No matching models")}
-        </p>
-      ) : null}
-      <div className="provider-cli-model-list">
-        {models.length > 0 ? (
-          filtered.map((model) => {
-            const on = isModelEnabled(model.id);
-            return (
-              <Row
-                key={model.id}
-                label={model.name}
-                dependency={
-                  on && enabledCount <= 1
-                    ? t("Keep one model enabled. Hide the provider to remove it from the picker.")
-                    : undefined
-                }
-              >
-                <Toggle
-                  label={t("Use {p0}", { p0: model.name })}
-                  on={on}
-                  onChange={(next) => saveModelEnabled(model.id, next)}
-                  // The last model stays on so the provider keeps a default.
-                  disabled={on && enabledCount <= 1}
-                />
-              </Row>
-            );
-          })
-        ) : (
-          <Row
-            label={
-              isHarnessAvailable(harness) ? t("Loading models…") : t("Available after CLI setup")
-            }
-          />
-        )}
-      </div>
-    </AdvancedSettings>
-  );
-}
-
-/**
- * Lists every installed CLI with a release feed. The launch toast offers only
- * harnesses shown in the model picker and is gone once dismissed. Opening the
- * page runs no CLI: it shows the last check, and the button runs a new one.
- */
-export function HarnessUpdatesGroup() {
-  useLocale();
-  const { checks, checking, runs, error } = useSyncExternalStore(
-    subscribeHarnessUpdates,
-    getHarnessUpdateSnapshot,
-    getHarnessUpdateSnapshot,
-  );
-
-  useEffect(() => {
-    // Another window's update leaves this window's versions stale.
-    const unlisten = onHarnessUpdated(() => {
-      if (getHarnessUpdateSnapshot().checks) {
-        void checkInstalledHarnessVersions().catch(() => undefined);
-      }
-    }).catch(() => undefined);
-    return () => {
-      void unlisten.then((stop) => stop?.());
-    };
-  }, []);
-
-  const stateOf = (harness: HarnessId): HarnessUpdateRun => runs[harness] ?? { status: "idle" };
-  // A harness updated earlier in this session can fall behind again when a
-  // newer release ships, so only a running update is left out.
-  const pending = pendingHarnessUpdates(checks ?? []).filter(
-    (update) => stateOf(update.harness).status !== "updating",
-  );
-  const start = (targets: HarnessUpdate[]) => {
-    for (const update of targets) void runHarnessUpdate(update);
-  };
-
-  return (
-    <Group
-      id="harness-updates"
-      layout="full"
-      title={t("CLI updates")}
+      description={t("Models turned off stay out of every model picker.")}
+      dependency={models.length > 0 && enabledCount <= 1 ? guard : undefined}
       action={
-        <div className="flex items-center gap-2">
-          {pending.length > 1 ? (
-            <Button className="shrink-0" onClick={() => start(pending)}>
-              <ArrowDownCircle className="icon-sm text-accent" aria-hidden />
-              {t("Update all")}
+        models.length > 1 ? (
+          <div className="provider-models-actions">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={enableAll}
+              disabled={enabledCount === models.length}
+            >
+              {t("Enable all")}
             </Button>
-          ) : null}
-          <Button
-            className="shrink-0"
-            onClick={() =>
-              void checkInstalledHarnessVersions({ force: true }).catch(() => undefined)
-            }
-            disabled={checking}
-            loading={checking}
-            startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />}
-          >
-            {t("Check for updates")}
-          </Button>
-        </div>
+            <Button size="sm" variant="ghost" onClick={onlyDefault} disabled={enabledCount <= 1}>
+              {t("Only default")}
+            </Button>
+          </div>
+        ) : undefined
       }
     >
-      {error ? (
-        <SettingsFeedback state="error">
-          {t("Could not check CLI updates: ")}
-          {error}
-        </SettingsFeedback>
+      {models.length > 5 ? (
+        <div className="provider-models-search">
+          <SearchInput
+            aria-label={t("Search models…")}
+            appearance="field"
+            placeholder={t("Search models…")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
       ) : null}
-      {checking ? (
-        <SettingsFeedback state="loading">{t("Checking installed CLIs…")}</SettingsFeedback>
-      ) : null}
-      {checks === null ? (
+      {models.length === 0 ? (
         <Row
-          label={checking ? t("Checking installed CLIs…") : t("Not checked yet")}
-          description={t(
-            "Runs each installed CLI to read its version, then looks up the newest release.",
-          )}
-        />
-      ) : checks.length === 0 && !error && !checking ? (
-        <SettingsFeedback state="empty">
-          {t("No CLIs to check")}. {t("None of the CLIs with a release feed are installed.")}
-        </SettingsFeedback>
-      ) : (
-        <div className="provider-cli-updates">
-          {[...checks]
-            .sort(
-              (a, b) =>
-                Number(
-                  b.status !== "current" ||
-                    stateOf(b.harness).status === "failed" ||
-                    stateOf(b.harness).status === "updating",
-                ) -
-                Number(
-                  a.status !== "current" ||
-                    stateOf(a.harness).status === "failed" ||
-                    stateOf(a.harness).status === "updating",
-                ),
-            )
-            .map((entry) => (
-              <HarnessUpdateSettingsRow
-                key={entry.harness}
-                check={entry}
-                state={stateOf(entry.harness)}
-                onUpdate={(update) => start([update])}
-              />
-            ))}
-        </div>
-      )}
-    </Group>
-  );
-}
-
-export function HarnessUpdateSettingsRow({
-  check,
-  state,
-  onUpdate,
-}: {
-  check: HarnessVersionCheck;
-  state: HarnessUpdateRun;
-  onUpdate: (update: HarnessUpdate) => void;
-}) {
-  useLocale();
-  const title = HARNESS_TITLE[check.harness];
-  const description =
-    state.status === "failed"
-      ? state.error
-      : state.status === "updating"
-        ? t("Updating…")
-        : check.status === "behind"
-          ? t("Version {p0} is available.", { p0: check.latest })
-          : check.status === "unknown"
-            ? t("Could not check: {p0}", { p0: check.error })
-            : state.status === "updated"
-              ? state.catalogRefresh === "failed"
-                ? t("CLI updated to {p0}. Model refresh failed. Retry it in Providers.", {
-                    p0: state.version,
-                  })
-                : state.catalogRefresh === "unchanged"
-                  ? t(
-                      "CLI updated to {p0}. The model list did not change, so it may be out of date.",
-                      { p0: state.version },
-                    )
-                  : t("Updated to {p0}.", { p0: state.version })
-              : t("Up to date.");
-
-  return (
-    <Row
-      label={
-        <span className="flex items-center gap-2">
-          <HarnessIcon harness={check.harness} className="icon-md shrink-0" />
-          {title}
-          {check.status !== "unknown" ? (
-            <span className="font-mono text-ui-caption text-(--ui-text-muted)">
-              {check.installed}
-            </span>
-          ) : null}
-        </span>
-      }
-      feedback={
-        check.status === "current" && state.status === "idle" ? undefined : (
-          <SettingsFeedback
-            state={
-              state.status === "failed"
-                ? "error"
-                : state.status === "updating"
-                  ? "loading"
-                  : state.status === "updated" &&
-                      check.status === "current" &&
-                      state.catalogRefresh === "fresh"
-                    ? "success"
-                    : "warning"
-            }
-          >
-            {description}
-          </SettingsFeedback>
-        )
-      }
-    >
-      {check.status === "behind" ? (
-        <Button
-          className="shrink-0"
-          onClick={() => onUpdate(check)}
-          disabled={state.status === "updating"}
-          loading={state.status === "updating"}
-          startIcon={<ArrowDownCircle className="icon-sm text-accent" aria-hidden />}
-          aria-label={
-            state.status === "failed"
-              ? t("Retry updating {p0}", { p0: title })
-              : t("Update {p0} to {p1}", { p0: title, p1: check.latest })
+          label={
+            isHarnessAvailable(harness) ? t("Loading models…") : t("Available after CLI setup")
           }
-        >
-          {state.status === "failed" ? t("Retry") : t("Update")}
-        </Button>
-      ) : check.status === "current" && state.status === "idle" ? (
-        <span className="inline-flex items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
-          <Check className="icon-md text-success" aria-hidden />
-          {description}
-        </span>
-      ) : null}
-    </Row>
+        />
+      ) : filtered.length === 0 ? (
+        <Row label={t("No matching models")} />
+      ) : (
+        filtered.map((model) => {
+          const on = isModelEnabled(model.id);
+          const last = on && enabledCount <= 1;
+          return (
+            <Row
+              key={model.id}
+              label={
+                <span className="provider-model-name">
+                  <span className="truncate">{model.name}</span>
+                  {model.id === defaultId ? (
+                    <Badge size="sm" className="shrink-0">
+                      {t("Default")}
+                    </Badge>
+                  ) : null}
+                </span>
+              }
+              description={modelMeta(model)}
+              disabled={last}
+              disabledReason={guard}
+            >
+              <Toggle
+                label={t("Use {p0}", { p0: model.name })}
+                on={on}
+                onChange={(next) => saveModelEnabled(model.id, next)}
+                // The last model stays on so the provider keeps a default.
+                disabled={last}
+              />
+            </Row>
+          );
+        })
+      )}
+      <div className="provider-models-source">
+        <CatalogReceiptStatus harness={harness} available={isHarnessAvailable(harness)} />
+      </div>
+    </Group>
   );
 }
 
@@ -931,111 +861,55 @@ export function ProjectScopeIcon({ path }: { path: string }) {
   );
 }
 
-/** Installed version and update action for the selected provider, on the identity row. */
-function ProviderUpdateInline({ harness }: { harness: HarnessId }) {
+/** CLI path, setup and installation help; for Claude Code also its hooks switch. */
+function ProviderRuntimeGroup({
+  harness,
+  isSelected,
+  claudeHooks,
+  onClaudeHooksChange,
+}: {
+  harness: HarnessId;
+  isSelected: boolean;
+  claudeHooks: boolean;
+  onClaudeHooksChange?: (next: boolean) => void;
+}) {
   useLocale();
-  const { checks, runs } = useSyncExternalStore(
-    subscribeHarnessUpdates,
-    getHarnessUpdateSnapshot,
-    getHarnessUpdateSnapshot,
-  );
-  const check = checks?.find((entry) => entry.harness === harness);
-  if (!check || check.status === "unknown") return null;
-  const run: HarnessUpdateRun = runs[harness] ?? { status: "idle" };
-  const title = HARNESS_TITLE[harness];
-  if (check.status === "current" && run.status !== "failed" && run.status !== "updating") {
-    return <span className="provider-cli-version font-mono">{check.installed}</span>;
-  }
+  const missing = hasProbedHarnessAvailability() && !isHarnessAvailable(harness);
   return (
-    <span className="provider-cli-update">
-      <span className="provider-cli-version font-mono">{check.installed}</span>
-      {check.status === "behind" ? (
-        <>
-          <span className="provider-cli-update-text" role={run.status === "failed" ? "alert" : undefined}>
-            {run.status === "failed"
-              ? run.error
-              : run.status === "updating"
-                ? t("Updating…")
-                : t("Version {p0} is available.", { p0: check.latest })}
-          </span>
-          <Button
-            size="sm"
-            onClick={() => void runHarnessUpdate(check)}
-            disabled={run.status === "updating"}
-            loading={run.status === "updating"}
-            startIcon={<ArrowDownCircle className="icon-sm text-accent" aria-hidden />}
-            aria-label={
-              run.status === "failed"
-                ? t("Retry updating {p0}", { p0: title })
-                : t("Update {p0} to {p1}", { p0: title, p1: check.latest })
-            }
-          >
-            {run.status === "failed" ? t("Retry") : t("Update")}
-          </Button>
-        </>
+    <Group id={`cli-path-${harness}`} layout="full" title={t("Runtime")}>
+      <Row label={t("{p0} CLI path and installation", { p0: HARNESS_TITLE[harness] })}>
+        <ProviderBinaryControl
+          key={harness}
+          provider={harness}
+          showLabel
+          triggerVariant="secondary"
+        />
+      </Row>
+      {missing ? (
+        <Row label={t("Installation help")} description={harnessUnavailableHint(harness)} />
       ) : null}
-    </span>
+      {isSelected && harness === "claude" && onClaudeHooksChange ? (
+        <Row
+          id="claude-hooks"
+          label={t("Claude Code hooks")}
+          description={t("Configured hooks run on the next turn.")}
+        >
+          <Toggle label={t("Claude Code hooks")} on={claudeHooks} onChange={onClaudeHooksChange} />
+        </Row>
+      ) : null}
+    </Group>
   );
 }
 
-function ProviderCliHeader({ harness }: { harness: HarnessId }) {
-  const available = isHarnessAvailable(harness);
-  const models = modelsFor(harness);
-  return (
-    <div className="provider-cli-header">
-      <div className="provider-cli-header-main">
-        <HarnessIcon harness={harness} className="icon-md shrink-0" />
-        <div className="provider-cli-header-copy">
-          <div className="provider-cli-title-line">
-            <h3>{HARNESS_TITLE[harness]}</h3>
-            <span className="provider-cli-status">
-              <span
-                className={`size-1.5 rounded-full ${available ? "bg-success" : "bg-(--ui-text-muted)"}`}
-                aria-hidden
-              />
-              {available
-                ? t("CLI detected")
-                : hasProbedHarnessAvailability()
-                  ? t("CLI not found")
-                  : t("Checking CLI…")}
-              {available ? (
-                <span className="text-(--ui-text-muted)">
-                  · {models.length} {models.length === 1 ? t("model") : t("models")}
-                </span>
-              ) : null}
-              <span
-                className="provider-cli-machine"
-                title={t(
-                  "This machine · shared across projects. CLI detection does not confirm account sign-in.",
-                )}
-              >
-                · {t("This machine · all projects")}
-              </span>
-            </span>
-            {available ? <ProviderUpdateInline harness={harness} /> : null}
-          </div>
-        </div>
-      </div>
-      <AdvancedSettings
-        id={`cli-path-${harness}`}
-        settingIds={[`cli-path-${harness}`]}
-        title={t("CLI path and installation")}
-      >
-        <ProviderBinaryControl key={harness} provider={harness} showLabel />
-        {!available && hasProbedHarnessAvailability() ? (
-          <section className="provider-cli-install">
-            <h3>{t("Installation help")}</h3>
-            <p>{harnessUnavailableHint(harness)}</p>
-          </section>
-        ) : null}
-      </AdvancedSettings>
-    </div>
-  );
+/** Label of the "follow the scope above" choice, naming the value it inherits. */
+function inheritedChoiceLabel(inherited: string | undefined, valid: boolean): string {
+  return inherited
+    ? `${t("Global")} (${inherited}${valid ? "" : ` · ${t("Unavailable")}`})`
+    : t("Automatic");
 }
 
 export function ProviderRow({
   harness,
-  hideHeader = false,
   isSelected = false,
   claudeHooks = false,
   onClaudeHooksChange,
@@ -1049,15 +923,12 @@ export function ProviderRow({
   inheritedDefaults,
   scopeDefaults = {},
   onSessionDefaultsChange,
-  scopeLabel,
-  scopeControl,
   projectScope = false,
   modelOverride,
   globalModel,
   onModelReset,
 }: {
   harness: HarnessId;
-  hideHeader?: boolean;
   isSelected?: boolean;
   claudeHooks?: boolean;
   onClaudeHooksChange?: (next: boolean) => void;
@@ -1072,10 +943,6 @@ export function ProviderRow({
   inheritedDefaults?: ProviderSessionDefaults;
   scopeDefaults?: ProviderSessionDefaults;
   onSessionDefaultsChange?: (next: ProviderSessionDefaults) => void;
-  /** Name of the scope the defaults below are written to (Global or a project). */
-  scopeLabel?: string;
-  /** Scope picker and reset action, shown with the defaults it controls. */
-  scopeControl?: ReactNode;
   projectScope?: boolean;
   /** Project scope: the model this project stores for the provider, if any. */
   modelOverride?: string;
@@ -1115,6 +982,8 @@ export function ProviderRow({
           ),
         )
     : [];
+  // Inheritance is shown per row: a row that holds its own value offers a way back.
+  const resetLabel = projectScope ? t("Use global default") : t("Reset to automatic");
 
   useEffect(() => {
     if (!isSelected || !available || hasLiveCatalog(harness)) return;
@@ -1122,231 +991,228 @@ export function ProviderRow({
   }, [available, harness, isSelected]);
 
   return (
-    <>
-      <article
-        className="provider-cli-card"
-        aria-label={t("{p0} CLI settings", { p0: HARNESS_TITLE[harness] })}
-        data-default={isDefault || undefined}
+    <article
+      className="provider-cli-card"
+      aria-label={t("{p0} CLI settings", { p0: HARNESS_TITLE[harness] })}
+      data-default={isDefault || undefined}
+    >
+      <Group
+        layout="full"
+        title={t("New conversation defaults")}
+        description={
+          projectScope
+            ? t(
+                "Fields left on Global follow the global defaults. Existing conversations keep their settings.",
+              )
+            : t("Applies to new conversations. Existing conversations keep their settings.")
+        }
       >
-        {!hideHeader ? <ProviderCliHeader harness={harness} /> : null}
-        <section className="provider-cli-defaults" aria-label={t("New conversation defaults")}>
-          <div className="provider-cli-defaults-heading">
-            <div className="provider-cli-defaults-title">
-              <h4>{t("New conversation defaults")}</h4>
-              {scopeLabel ? (
-                <span className="provider-cli-defaults-scope">{scopeLabel}</span>
-              ) : null}
-            </div>
-            {scopeControl}
-            <p className="provider-cli-defaults-help">
-              {projectScope
-                ? t("Fields left on Global follow the global defaults. Existing conversations keep their settings.")
-                : t("Applies to new conversations. Existing conversations keep their settings.")}
-            </p>
-          </div>
-          <div className="provider-cli-fields">
-            {current ? (
-              <div className="provider-cli-field">
-                <span>{t("Model")}</span>
-                <SearchableSelect
-                  label={t("{p0} model", { p0: HARNESS_TITLE[harness] })}
-                  triggerProps={{
-                    onClick: (event) => {
-                      if (event.currentTarget.getAttribute("aria-expanded") !== "true")
-                        void refreshProviderCatalog(harness, { force: true });
-                    },
-                  }}
-                  value={current.id}
-                  onChange={(next) => onModelChange(harness, next)}
-                  options={models.map((item) => ({
-                    value: item.id,
-                    label: item.name,
-                    description: item.id,
-                  }))}
-                />
-                {projectScope ? (
-                  <p className="provider-cli-model-scope text-ui-micro text-(--ui-text-muted)">
-                    {modelOverride ? (
-                      <>
-                        {t("Project override. Global: {p0}", {
-                          p0: modelDisplayName(harness, globalModel),
-                        })}
-                        {onModelReset ? (
-                          <Button size="sm" variant="ghost" onClick={onModelReset}>
-                            {t("Use global model")}
-                          </Button>
-                        ) : null}
-                      </>
-                    ) : (
-                      t("Follows the global model")
-                    )}
-                  </p>
-                ) : null}
-              </div>
-            ) : (
-              <div className="provider-cli-field">
-                <span>{t("Model")}</span>
-                <p className="py-1 text-ui-caption text-(--ui-text-muted)">
-                  {available ? t("Loading models…") : t("Available after CLI setup")}
-                </p>
-              </div>
-            )}
-            {effort ? (
-              <div className="provider-cli-field">
-                <span>{t("Effort")}</span>
-                <Select
-                  label={t("{p0} default effort", { p0: HARNESS_TITLE[harness] })}
-                  value={scopeDefaults.effort && validEffort ? scopeDefaults.effort : ""}
-                  options={[
-                    {
-                      value: "",
-                      label: inheritedDefaults?.effort
-                        ? `${t("Global")} (${t(effort.options.find((option) => option.value === inheritedDefaults.effort)?.label ?? inheritedDefaults.effort)}${validInheritedEffort ? "" : ` · ${t("Unavailable")}`})`
-                        : t("Automatic"),
-                    },
-                    ...(scopeDefaults.effort && !validEffort
-                      ? [
-                          {
-                            value: scopeDefaults.effort,
-                            label: `${scopeDefaults.effort} (${t("Unavailable")})`,
-                          },
-                        ]
-                      : []),
-                    ...effort.options.map((option) => ({ ...option, label: t(option.label) })),
-                  ]}
-                  onChange={(next) =>
-                    onSessionDefaultsChange?.({ ...scopeDefaults, effort: next || undefined })
-                  }
-                />
-              </div>
-            ) : null}
-            <div className="provider-cli-field">
-              <span>{t("Permissions")}</span>
-              <Select
-                label={t("{p0} default permissions", { p0: HARNESS_TITLE[harness] })}
-                value={scopeDefaults.runtimeMode ?? ""}
-                options={[
-                  {
-                    value: "",
-                    label: inheritedRuntimeMode
-                      ? `${t("Global")} (${t(RUNTIME_MODE_LABEL[inheritedRuntimeMode])}${validInheritedRuntimeMode ? "" : ` · ${t("Unavailable")}`})`
-                      : t("Automatic"),
-                  },
-                  ...(scopeDefaults.runtimeMode &&
-                  runtimeModeUnavailableReason(harness, scopeDefaults.runtimeMode)
-                    ? [
-                        {
-                          value: scopeDefaults.runtimeMode,
-                          label: `${t(RUNTIME_MODE_LABEL[scopeDefaults.runtimeMode])} (${t("Unavailable")})`,
-                        },
-                      ]
-                    : []),
-                  ...RUNTIME_MODES.filter(
-                    (mode) => !runtimeModeUnavailableReason(harness, mode),
-                  ).map((mode) => ({ value: mode, label: t(RUNTIME_MODE_LABEL[mode]) })),
-                ]}
-                onChange={(next) =>
-                  onSessionDefaultsChange?.({
-                    ...scopeDefaults,
-                    runtimeMode: (next || undefined) as RuntimeMode | undefined,
-                  })
-                }
-              />
-            </div>
-            {onSessionDefaultsChange ? (
-              <>
-                {extras.map((setting) => {
-                  const saved = scopeDefaults.extras?.[setting.id];
-                  const inherited = inheritedDefaults?.extras?.[setting.id];
-                  const inheritedOption = setting.options.find(
-                    (option) => option.value === inherited,
-                  );
-                  const inheritedLabel = inheritedOption?.label ?? inherited;
-                  const savedIsUnavailable =
-                    Boolean(saved) && !setting.options.some((option) => option.value === saved);
-                  return (
-                    <div key={setting.id} className="provider-cli-field">
-                      <span>{t(setting.label)}</span>
-                      <Select
-                        label={t("{p0} default {p1}", {
-                          p0: HARNESS_TITLE[harness],
-                          p1: t(setting.label),
-                        })}
-                        value={saved ?? ""}
-                        options={[
-                          {
-                            value: "",
-                            label: inheritedLabel
-                              ? `${t("Global")} (${t(inheritedLabel)}${inheritedOption ? "" : ` · ${t("Unavailable")}`})`
-                              : t("Automatic"),
-                          },
-                          ...(savedIsUnavailable
-                            ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }]
-                            : []),
-                          ...setting.options.map((option) => ({
-                            value: option.value,
-                            label: t(option.label),
-                          })),
-                        ]}
-                        onChange={(next) => {
-                          const nextExtras = { ...scopeDefaults.extras };
-                          if (next) nextExtras[setting.id] = next;
-                          else delete nextExtras[setting.id];
-                          onSessionDefaultsChange({
-                            ...scopeDefaults,
-                            extras: nextExtras,
-                          });
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </>
-            ) : null}
-          </div>
-          <CatalogReceiptStatus harness={harness} available={available} />
-        </section>
-        <div className="provider-cli-footer">
-          <Button
-            className="shrink-0"
-            aria-label={
-              isDefault
-                ? t("{p0} is the default provider", { p0: HARNESS_TITLE[harness] })
-                : t("Use {p0} by default", { p0: HARNESS_TITLE[harness] })
-            }
-            onClick={() => current && onDefault(harness, current.id)}
-            disabled={isDefault || !current}
-          >
-            {isDefault ? <Check className="icon-sm" /> : null}
-            {isDefault ? t("Default provider") : t("Use by default")}
-          </Button>
-          {available ? (
-            <div className="flex items-center gap-2">
-              <span className="text-ui-micro text-(--ui-text-secondary)">
-                {pickerLocked ? t("Hidden globally") : t("Show in picker")}
-              </span>
+        {available ? (
+          <div className="provider-picker-narrow">
+            <Row label={pickerLocked ? t("Hidden globally") : t("Show in picker")}>
               <Toggle
                 label={t("Show {p0} in the model picker", { p0: HARNESS_TITLE[harness] })}
                 on={inPicker}
                 onChange={onPickerVisible}
                 disabled={pickerLocked}
               />
-            </div>
-          ) : (
-            <span className="text-ui-micro text-(--ui-text-muted)">{t("Not in picker")}</span>
-          )}
-        </div>
-      </article>
-      {isSelected ? <EnabledModelsGroup harness={harness} /> : null}
-      {isSelected && harness === "claude" && onClaudeHooksChange ? (
+            </Row>
+          </div>
+        ) : null}
+        {current ? (
+          <Row
+            label={t("Model")}
+            description={
+              projectScope
+                ? modelOverride
+                  ? t("Project override. Global: {p0}", {
+                      p0: modelDisplayName(harness, globalModel),
+                    })
+                  : t("Follows the global model")
+                : undefined
+            }
+            modified={projectScope && Boolean(modelOverride)}
+            onReset={onModelReset}
+            resetLabel={t("Use global model")}
+          >
+            <SearchableSelect
+              label={t("{p0} model", { p0: HARNESS_TITLE[harness] })}
+              triggerProps={{
+                onClick: (event) => {
+                  if (event.currentTarget.getAttribute("aria-expanded") !== "true")
+                    void refreshProviderCatalog(harness, { force: true });
+                },
+              }}
+              value={current.id}
+              onChange={(next) => onModelChange(harness, next)}
+              options={models.map((item) => ({
+                value: item.id,
+                label: item.name,
+                description: item.id,
+              }))}
+            />
+          </Row>
+        ) : (
+          <Row label={t("Model")}>
+            <span className="text-ui-caption text-(--ui-text-muted)">
+              {available ? t("Loading models…") : t("Available after CLI setup")}
+            </span>
+          </Row>
+        )}
+        {effort ? (
+          <Row
+            label={t("Effort")}
+            modified={Boolean(scopeDefaults.effort)}
+            onReset={() => onSessionDefaultsChange?.({ ...scopeDefaults, effort: undefined })}
+            resetLabel={resetLabel}
+          >
+            <Select
+              label={t("{p0} default effort", { p0: HARNESS_TITLE[harness] })}
+              value={scopeDefaults.effort && validEffort ? scopeDefaults.effort : ""}
+              options={[
+                {
+                  value: "",
+                  label: inheritedChoiceLabel(
+                    inheritedDefaults?.effort
+                      ? t(
+                          effort.options.find((option) => option.value === inheritedDefaults.effort)
+                            ?.label ?? inheritedDefaults.effort,
+                        )
+                      : undefined,
+                    Boolean(validInheritedEffort),
+                  ),
+                },
+                ...(scopeDefaults.effort && !validEffort
+                  ? [
+                      {
+                        value: scopeDefaults.effort,
+                        label: `${scopeDefaults.effort} (${t("Unavailable")})`,
+                      },
+                    ]
+                  : []),
+                ...effort.options.map((option) => ({ ...option, label: t(option.label) })),
+              ]}
+              onChange={(next) =>
+                onSessionDefaultsChange?.({ ...scopeDefaults, effort: next || undefined })
+              }
+            />
+          </Row>
+        ) : null}
         <Row
-          id="claude-hooks"
-          label={t("Claude Code hooks")}
-          description={t("Configured hooks run on the next turn.")}
+          label={t("Permissions")}
+          modified={Boolean(scopeDefaults.runtimeMode)}
+          onReset={() => onSessionDefaultsChange?.({ ...scopeDefaults, runtimeMode: undefined })}
+          resetLabel={resetLabel}
         >
-          <Toggle label={t("Claude Code hooks")} on={claudeHooks} onChange={onClaudeHooksChange} />
+          <Select
+            label={t("{p0} default permissions", { p0: HARNESS_TITLE[harness] })}
+            value={scopeDefaults.runtimeMode ?? ""}
+            options={[
+              {
+                value: "",
+                label: inheritedChoiceLabel(
+                  inheritedRuntimeMode ? t(RUNTIME_MODE_LABEL[inheritedRuntimeMode]) : undefined,
+                  validInheritedRuntimeMode,
+                ),
+              },
+              ...(scopeDefaults.runtimeMode &&
+              runtimeModeUnavailableReason(harness, scopeDefaults.runtimeMode)
+                ? [
+                    {
+                      value: scopeDefaults.runtimeMode,
+                      label: `${t(RUNTIME_MODE_LABEL[scopeDefaults.runtimeMode])} (${t("Unavailable")})`,
+                    },
+                  ]
+                : []),
+              ...RUNTIME_MODES.filter((mode) => !runtimeModeUnavailableReason(harness, mode)).map(
+                (mode) => ({ value: mode, label: t(RUNTIME_MODE_LABEL[mode]) }),
+              ),
+            ]}
+            onChange={(next) =>
+              onSessionDefaultsChange?.({
+                ...scopeDefaults,
+                runtimeMode: (next || undefined) as RuntimeMode | undefined,
+              })
+            }
+          />
         </Row>
-      ) : null}
-    </>
+        {onSessionDefaultsChange
+          ? extras.map((setting) => {
+              const saved = scopeDefaults.extras?.[setting.id];
+              const inherited = inheritedDefaults?.extras?.[setting.id];
+              const inheritedOption = setting.options.find((option) => option.value === inherited);
+              const inheritedLabel = inheritedOption?.label ?? inherited;
+              const savedIsUnavailable =
+                Boolean(saved) && !setting.options.some((option) => option.value === saved);
+              return (
+                <Row
+                  key={setting.id}
+                  label={t(setting.label)}
+                  modified={Boolean(saved)}
+                  onReset={() => {
+                    const nextExtras = { ...scopeDefaults.extras };
+                    delete nextExtras[setting.id];
+                    onSessionDefaultsChange({ ...scopeDefaults, extras: nextExtras });
+                  }}
+                  resetLabel={resetLabel}
+                >
+                  <Select
+                    label={t("{p0} default {p1}", {
+                      p0: HARNESS_TITLE[harness],
+                      p1: t(setting.label),
+                    })}
+                    value={saved ?? ""}
+                    options={[
+                      {
+                        value: "",
+                        label: inheritedChoiceLabel(
+                          inheritedLabel ? t(inheritedLabel) : undefined,
+                          Boolean(inheritedOption),
+                        ),
+                      },
+                      ...(savedIsUnavailable
+                        ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }]
+                        : []),
+                      ...setting.options.map((option) => ({
+                        value: option.value,
+                        label: t(option.label),
+                      })),
+                    ]}
+                    onChange={(next) => {
+                      const nextExtras = { ...scopeDefaults.extras };
+                      if (next) nextExtras[setting.id] = next;
+                      else delete nextExtras[setting.id];
+                      onSessionDefaultsChange({
+                        ...scopeDefaults,
+                        extras: nextExtras,
+                      });
+                    }}
+                  />
+                </Row>
+              );
+            })
+          : null}
+        <Row label={t("Default provider")}>
+          <Toggle
+            label={
+              isDefault
+                ? t("{p0} is the default provider", { p0: HARNESS_TITLE[harness] })
+                : t("Use {p0} by default", { p0: HARNESS_TITLE[harness] })
+            }
+            on={isDefault}
+            onChange={() => current && onDefault(harness, current.id)}
+            // The default provider is replaced by choosing another one, never switched off.
+            disabled={isDefault || !current}
+          />
+        </Row>
+      </Group>
+      {isSelected ? <EnabledModelsGroup harness={harness} /> : null}
+      <ProviderRuntimeGroup
+        harness={harness}
+        isSelected={isSelected}
+        claudeHooks={claudeHooks}
+        onClaudeHooksChange={onClaudeHooksChange}
+      />
+    </article>
   );
 }

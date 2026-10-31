@@ -3,9 +3,11 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Button } from "../../../shared/ui/Button";
+import { Badge } from "../../../shared/ui/Badge";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { Plus } from "../../../shared/ui/icons";
-import { AdvancedSettings, Group, SettingsFeedback } from "./settingsControls";
+import { Group, Row, SettingsFeedback } from "./settingsControls";
 import {
   CURSOR_PLACEHOLDER, loadPromptTemplates, MAX_TEMPLATE_BODY, MAX_TEMPLATES,
   savePromptTemplates, subscribePromptTemplates, TRIGGER_PREFIX,
@@ -88,19 +90,27 @@ export function TemplatesSettings() {
       setRows([...current]); setBaseline(current); setError(null); setSavedMessage(true); retainedDraft = null;
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   };
+  const addTemplate = () => {
+    const row = { id: crypto.randomUUID(), name: "", body: "" };
+    setRows((current) => [...current, row]); setSelectedId(row.id); setQuery(""); setError(null); setSavedMessage(false);
+  };
+  const addButton = (
+    <Button variant="ghost" disabled={!available || rows.length >= MAX_TEMPLATES} onClick={addTemplate}>
+      <Plus strokeWidth={1.75} />{t("Add template")}
+    </Button>
+  );
+  const empty = rows.length === 0;
+  const showPanel = !empty || dirty || changedElsewhere || !available || error != null;
   return <Group id="prompt-templates" title={t("Prompt templates")} layout="full"
-    persistence={{ mode: "explicit", state: error ? "error" : dirty ? "dirty" : savedMessage ? "saved" : "idle", error }}
-    action={<Button variant="ghost" disabled={!available || rows.length >= MAX_TEMPLATES} onClick={() => {
-      const row = { id: crypto.randomUUID(), name: "", body: "" };
-      setRows((current) => [...current, row]); setSelectedId(row.id); setQuery(""); setError(null); setSavedMessage(false);
-    }}><Plus strokeWidth={1.75} />{t("Add template")}</Button>}>
-    <div className="settings-templates">
+    info={<InfoPopover className="shrink-0" label={t("How to use templates")}>
+      <p>{t("Pick a template from the / menu, or type {p0} followed by a space. Use {p1} to set the caret position.", { p0: TRIGGER_PREFIX + "trigger", p1: CURSOR_PLACEHOLDER })}</p>
+      <p>{t("Name and text are required. The trigger is optional. Up to {p0} templates, with {p1} characters each.", { p0: String(MAX_TEMPLATES), p1: String(MAX_TEMPLATE_BODY) })}</p>
+    </InfoPopover>}
+    action={empty ? undefined : addButton}>
+    {empty ? <Row label={t("No templates yet")}>{addButton}</Row> : null}
+    {showPanel ? <div className="settings-templates">
       {!available ? <SettingsFeedback state="error" action={<Button onClick={() => { if (templateStorageAvailable()) setError(null); reread((value) => value + 1); }}>{t("Retry")}</Button>}>{t("Template storage is unavailable. Retry reading before saving.")}</SettingsFeedback> : null}
-      <AdvancedSettings defaultOpen={false} title={t("How to use templates")}>
-        <p className="chat-detail">{t("Pick a template from the / menu, or type {p0} followed by a space. Use {p1} to set the caret position.", { p0: TRIGGER_PREFIX + "trigger", p1: CURSOR_PLACEHOLDER })}</p>
-        <p className="chat-detail">{t("Name and text are required. The trigger is optional. Up to {p0} templates, with {p1} characters each.", { p0: String(MAX_TEMPLATES), p1: String(MAX_TEMPLATE_BODY) })}</p>
-      </AdvancedSettings>
-      <div className="template-manager">
+      {!empty ? <div className="template-manager">
         <div className="template-manager-nav">
           <SearchInput appearance="field" aria-label={t("Search prompt templates")} placeholder={t("Search prompt templates")} value={query} onChange={(event) => setQuery(event.target.value)} />
           <p className="template-manager-count" aria-live="polite">
@@ -115,7 +125,7 @@ export function TemplatesSettings() {
                 {row.trigger ? <span className="template-manager-item-trigger">{TRIGGER_PREFIX}{normalizeTrigger(row.trigger)}</span> : null}
               </span>
             </Button>)}
-            {!matches.length && available ? <SettingsFeedback state="empty" presentation="inset">{rows.length ? t("No matching templates") : t("No templates yet")}</SettingsFeedback> : null}
+            {!matches.length && available ? <SettingsFeedback state="empty" presentation="inset">{t("No matching templates")}</SettingsFeedback> : null}
           </div>
         </div>
         {selected ? <div className="template-manager-editor">
@@ -124,14 +134,17 @@ export function TemplatesSettings() {
           <TextareaField ref={bodyRef} label={t("Template text")} aria-label={t("Template text")} error={fieldError?.id === selected.id && fieldError.field === "body" ? error ?? undefined : undefined} value={selected.body} onChange={(event) => update(selected.id, { body: event.target.value })} rows={8} maxLength={MAX_TEMPLATE_BODY} spellCheck={false} />
           <Button variant="ghost" tone="danger" onClick={() => { setRows((current) => current.filter((row) => row.id !== selected.id)); setError(null); setSavedMessage(false); }}>{t("Delete template")}</Button>
         </div> : null}
-      </div>
+      </div> : null}
       <div className="template-manager-actions">
         <Button variant="primary" disabled={!available || !dirty || changedElsewhere} onClick={save}>{t("Save templates")}</Button>
         {dirty || changedElsewhere ? <Button onClick={reload}>{t("Discard changes and reload")}</Button> : null}
+        {error || dirty || savedMessage ? <Badge className="template-manager-state" role="status" aria-live="polite" aria-atomic="true" tone={error ? "danger" : dirty ? "warning" : "success"}>
+          {error ? error : dirty ? t("Unsaved changes") : t("Saved")}
+        </Badge> : null}
       </div>
       {/* A validation error is already announced on its field; do not announce it twice. */}
       {error && !(selected && fieldError?.id === selected.id) ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       {changedElsewhere && dirty ? <SettingsFeedback state="warning">{t("Templates changed in another window. Reload before saving to avoid overwriting those changes.")}</SettingsFeedback> : null}
-    </div>
+    </div> : null}
   </Group>;
 }

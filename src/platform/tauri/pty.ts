@@ -94,21 +94,68 @@ function clearBuffered(id: string) {
   dataBufferBytes.delete(id);
 }
 
+type AckSlot = {
+  generation: number;
+  chunks: { sequence: number; consumed: boolean }[];
+  sequence?: number;
+  count: number;
+  timer?: ReturnType<typeof setTimeout>;
+};
+const ackSlots = new Map<string, AckSlot>();
+
+function flushAck(id: string, slot: AckSlot) {
+  clearTimeout(slot.timer);
+  slot.timer = undefined;
+  const sequence = slot.sequence;
+  slot.sequence = undefined;
+  slot.count = 0;
+  if (slot.chunks.length === 0 && ackSlots.get(id) === slot) ackSlots.delete(id);
+  if (sequence !== undefined) {
+    void invoke("pty_output_ack", { id, generation: slot.generation, sequence }).catch(() => {});
+  }
+}
+
+function pendingAck(id: string, flow: DataPayload["flow"]): () => void {
+  if (!flow) return () => {};
+  let slot = ackSlots.get(id);
+  if (!slot || slot.generation !== flow.generation) {
+    if (slot) flushAck(id, slot);
+    slot = { generation: flow.generation, chunks: [], count: 0 };
+    ackSlots.set(id, slot);
+  }
+  const current = slot;
+  const chunk = { sequence: flow.sequence, consumed: false };
+  current.chunks.push(chunk);
+  return () => {
+    if (chunk.consumed || ackSlots.get(id) !== current) return;
+    chunk.consumed = true;
+    // Acknowledge the highest consumed sequence: the backend drains everything up to it, so one
+    // chunk whose callback never runs cannot hold back every later acknowledgement.
+    const highest = Math.max(
+      ...current.chunks.filter((entry) => entry.consumed).map((entry) => entry.sequence),
+    );
+    while (current.chunks[0] && current.chunks[0].sequence <= highest) {
+      const settled = current.chunks.shift()!;
+      settled.consumed = true;
+      current.count += 1;
+    }
+    if (current.sequence === undefined || highest > current.sequence) current.sequence = highest;
+    if (current.sequence === undefined) return;
+    if (current.count >= 16) flushAck(id, current);
+    else current.timer ??= setTimeout(() => flushAck(id, current), 32);
+  };
+}
+
+function flushAcks() {
+  for (const [id, slot] of ackSlots) flushAck(id, slot);
+}
+
 function ensureBridge() {
   if (bridge) return bridge;
   const pending = Promise.allSettled([
     listen<DataPayload>("pty-data", (event) => {
       const { id, data, flow } = event.payload;
-      let consumed = false;
-      const acknowledge = () => {
-        if (consumed || !flow) return;
-        consumed = true;
-        void invoke("pty_output_ack", {
-          id,
-          generation: flow.generation,
-          sequence: flow.sequence,
-        }).catch(() => {});
-      };
+      const acknowledge = pendingAck(id, flow);
       const handler = dataHandlers.get(id);
       if (!handler && !openedPtys.has(id)) {
         acknowledge();
@@ -128,6 +175,8 @@ function ensureBridge() {
     }),
     listen<ExitPayload>("pty-exit", (event) => {
       const { id, code } = event.payload;
+      const slot = ackSlots.get(id);
+      if (slot) flushAck(id, slot);
       // The process is gone: nothing more arrives for this id, so stop tracking it
       // and drop any unmounted replay. A mounted view keeps its handlers and gets
       // the exit callback below.
@@ -180,6 +229,7 @@ function release() {
   teardownTimer = setTimeout(() => {
     teardownTimer = undefined;
     if (users > 0) return;
+    flushAcks();
     bridge = null;
     void pending.then((fns) => fns.forEach((fn) => fn())).catch(() => undefined);
   }, 500);
@@ -255,6 +305,9 @@ export async function killPty(id: string): Promise<void> {
   openedPtys.delete(id);
   flowControlled.delete(id);
   clearBuffered(id);
+  const slot = ackSlots.get(id);
+  if (slot) flushAck(id, slot);
+  ackSlots.delete(id);
   await invoke("pty_kill", { id }).catch(() => undefined);
 }
 
@@ -265,6 +318,8 @@ export async function killAllPtys(): Promise<void> {
   flowControlled.clear();
   dataBuffer.clear();
   dataBufferBytes.clear();
+  flushAcks();
+  ackSlots.clear();
   await invoke("pty_kill_all").catch(() => undefined);
 }
 

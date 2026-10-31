@@ -387,6 +387,7 @@ export function UsageFooter({
               className="size-7"
               aria-label={terminalLabel}
               aria-pressed={projectTerminalVisible}
+              data-usage-guide="terminal-toggle"
               title={terminalUnavailableReason ?? terminalLabel}
               disabled={!!terminalUnavailableReason}
               aria-description={terminalUnavailableReason}

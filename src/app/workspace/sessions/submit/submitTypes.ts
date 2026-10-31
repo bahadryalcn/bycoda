@@ -79,6 +79,10 @@ export interface SubmitTurn {
   checkpointRetirementUncertain: boolean;
   sawProviderEvent: boolean;
   contextReplayAccepted: boolean;
+  /** The provider answered in full; later cleanup trouble must not fail the reply. */
+  replyCompleted: boolean;
+  /** When the provider's final result (or failure) arrived, before any cleanup. */
+  replyEndedAt?: number;
 }
 
 /** Values computed before the busy/project/turn branches, read-only afterwards. */

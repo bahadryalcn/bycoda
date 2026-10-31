@@ -311,7 +311,7 @@ describe("original Native control turn client (controlled Native replies)", () =
     expect(issued).toBe(api.NATIVE_CONTROL_TURN_CAPACITY + 1);
   });
 
-  it("unknown authorize outcomes and invalid receipts are retained rather than evicted for new work", async () => {
+  it("failed authorize outcomes release capacity for new work", async () => {
     const api = await client();
     let effects = 0;
     const native = source(() =>
@@ -323,8 +323,8 @@ describe("original Native control turn client (controlled Native replies)", () =
       ).rejects.toThrow();
     await expect(
       api.beginNativeControlTurn("new", "/workspace", false, native.invoke),
-    ).rejects.toThrow("capacity is held");
-    expect(effects).toBe(api.NATIVE_CONTROL_TURN_CAPACITY);
+    ).rejects.toThrow("reply lost");
+    expect(effects).toBe(api.NATIVE_CONTROL_TURN_CAPACITY + 1);
     expect(native.calls.every((call) => call.command === "control_authorize_turn")).toBe(true);
   });
 

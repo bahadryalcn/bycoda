@@ -7,6 +7,7 @@ import {
   type ComponentPropsWithoutRef,
 } from "react";
 import { useT } from "../i18n";
+import { FieldControl } from "./Field";
 import { InlineAction } from "./ActionHost";
 import { X } from "./icons";
 import styles from "./SearchInput.module.css";
@@ -20,7 +21,7 @@ type SearchInputProps = ComponentPropsWithoutRef<"input"> & {
    *  Defaults to the input only when it draws its own frame (`field` or `standalone`). */
   focusOwner?: "input" | "group" | "menu";
   /** A bordered common field, or an unframed input inside a composite/menu owner. */
-  appearance?: "bare" | "field";
+  appearance?: "bare" | "field" | "quiet";
   /** Field height: `sm` is the compact toolbar/filter height (default), `md` matches form
    *  controls and `size="md"` Buttons. The native `size` attribute keeps its meaning. */
   fieldSize?: SearchFieldSize;
@@ -32,7 +33,7 @@ export type SearchFieldSize = "sm" | "md";
 export const SearchInputGroup = forwardRef<
   HTMLDivElement,
   ComponentPropsWithoutRef<"div"> & {
-    appearance?: "bare" | "field";
+    appearance?: "bare" | "field" | "quiet";
     /** Same heights as `SearchInput.fieldSize`; the group owns the frame. */
     size?: SearchFieldSize;
   }
@@ -48,6 +49,22 @@ export const SearchInputGroup = forwardRef<
     />
   );
 });
+
+/** Looks like the search text but is a button that opens a search surface elsewhere.
+ *  Place it inside a `SearchInputGroup`: the group frame is the single hover/focus surface. */
+export const SearchInputTrigger = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<"button">>(
+  function SearchInputTrigger({ className, type = "button", ...props }, ref) {
+    return (
+      <button
+        {...props}
+        ref={ref}
+        type={type}
+        data-ui-focus="group"
+        className={[styles.trigger, className].filter(Boolean).join(" ")}
+      />
+    );
+  },
+);
 
 /** Preserves the caller's input events, ref and keyboard navigation when cleared. */
 export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(function SearchInput(
@@ -70,7 +87,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
   const [uncontrolledValue, setUncontrolledValue] = useState(props.defaultValue ?? "");
   const hasValue = String(props.value ?? uncontrolledValue).length > 0;
   const canClear = clearable && hasValue && !props.disabled && !props.readOnly;
-  const insetClear = standalone || appearance === "field";
+  const insetClear = standalone || appearance !== "bare";
   // An unframed input lives inside a header, row or menu; a ring around the bare
   // text box would draw a second rectangle inside that owner.
   const focus = focusOwner ?? (insetClear ? "input" : "menu");
@@ -93,8 +110,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
       window.clearTimeout(timer);
     };
   }, [props.value, props.form]);
-  const control = (
-    <>
+  const editor = (
       <input
         {...props}
         data-ui-focus={focus}
@@ -110,7 +126,8 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
           .join(" ")}
         data-search-filled={canClear || undefined}
       />
-      {canClear ? (
+  );
+  const clearAction = canClear ? (
         <InlineAction
           reveal="always"
           label={t("Clear search")}
@@ -135,12 +152,13 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         >
           <X aria-hidden="true" />
         </InlineAction>
-      ) : null}
-    </>
-  );
+      ) : null;
+  const control = <>{editor}{clearAction}</>;
   return insetClear ? (
     <span className={[styles.standalone, containerClassName].filter(Boolean).join(" ")}>
-      {control}
+      <FieldControl size={fieldSize ?? "sm"} appearance={appearance === "quiet" ? "quiet" : "default"} endAdornment={clearAction}>
+        {editor}
+      </FieldControl>
     </span>
   ) : (
     control

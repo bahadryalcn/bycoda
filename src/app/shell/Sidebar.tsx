@@ -16,6 +16,13 @@ import {
 import { RelativeSessionTime, useMinuteNow } from "./RelativeSessionTime";
 import { SIDE_BY_SIDE_LIMIT } from "../../features/workspace/model/workspaceTabGroups";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
+import {
+  ExpandingSearch,
+  type ExpandingSearchHandle,
+  type ExpandingSearchItem,
+} from "../../shared/ui/ExpandingSearch";
+import { MatchText } from "../../shared/ui/MatchText";
+import { fuzzyMatch, prepareFuzzyQuery } from "../../shared/lib/fuzzy";
 import { themePalette } from "../../shared/theme/palette";
 import { motion as layoutMotion } from "motion/react";
 import { sessionStatusOrder } from "../../features/sessions/model/sessionStatusOrder";
@@ -173,7 +180,6 @@ import {
   dissolveFolder,
   folderAccent,
   folderContaining,
-  folderShellFill,
   loadPinnedSessionsCollapsed,
   loadReminderSessionsCollapsed,
   loadSessionFolders,
@@ -261,6 +267,7 @@ import { ProjectRail } from "./ProjectRail";
 import { RailAction } from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
+import { Tooltip, useTooltip } from "../../shared/ui/Tooltip";
 import { DevModeIndicator, IconButton, TabVisitNav } from "./TitleBar";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { Popover } from "../../shared/ui/Popover";
@@ -528,7 +535,6 @@ function SidebarComponent({
   onOpenServers,
   onOpenAutomations,
   onOpenTasks,
-  onGoToFile,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
@@ -733,15 +739,13 @@ function SidebarComponent({
         size="sm"
         tone="accent"
         appearance="subtle"
+        max={99}
         data-workspace-working-count
         aria-live="polite"
         aria-label={t(
           workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions",
           { p0: workingSessionCount },
         )}
-        title={t(workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions", {
-          p0: workingSessionCount,
-        })}
         className="shrink-0"
       >
         {workingSessionCount}
@@ -816,7 +820,7 @@ function SidebarComponent({
   const [sessionFilters, setSessionFilters] = useState(loadSessionSidebarFilters);
   const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const sessionSearchRef = useRef<ExpandingSearchHandle>(null);
   const pendingFolderSessionIds = useRef(new Set<string>());
   const busyIdsRef = useRef(busySessionIds);
   const focusedSessionIdRef = useRef(activeSessionId);
@@ -882,25 +886,35 @@ function SidebarComponent({
         !(crewManaged.cwd === cwd && crewManaged.ids.has(session.id)) &&
         inWorktreeFocus(session, focusedWorktree),
     );
-    const visibleSessions = [
-      ...filterSessionsByQuery(
-        filterSessionsByStatus(
-          filterSessionsByTime(
-            filterSessionsByHarness(
-              filterSessionsByArchive(listedSessions, sessionFilters.showArchived),
-              sessionFilters.hiddenHarnesses,
-            ),
-            sessionFilters.time,
-            now,
-          ),
-          sessionFilters.status,
-          listedBusySessionIds,
-          listedApprovalSessionIds,
-          unseenFinishedIds,
+    const filteredSessions = filterSessionsByStatus(
+      filterSessionsByTime(
+        filterSessionsByHarness(
+          filterSessionsByArchive(listedSessions, sessionFilters.showArchived),
+          sessionFilters.hiddenHarnesses,
         ),
-        deferredSearchQuery,
+        sessionFilters.time,
+        now,
       ),
-    ].sort(compareSessionSummaries);
+      sessionFilters.status,
+      listedBusySessionIds,
+      listedApprovalSessionIds,
+      unseenFinishedIds,
+    );
+    // The inline filter matches title, model, branch and the names of the groups holding a session.
+    const textMatches = filterSessionsByQuery(filteredSessions, deferredSearchQuery);
+    const groupMatches = deferredSearchQuery.trim()
+      ? sessionIdsInMatchingFolders(sessionFolders, deferredSearchQuery)
+      : null;
+    const textMatched = new Set(textMatches);
+    const visibleSessions = (
+      groupMatches
+        ? filteredSessions.filter(
+            (session) => groupMatches.has(session.id) || textMatched.has(session),
+          )
+        : textMatches
+    )
+      .slice()
+      .sort(compareSessionSummaries);
     return { listedSessions, visibleSessions };
   }, [
     projectSessions,
@@ -1292,6 +1306,17 @@ function SidebarComponent({
   const folderMenuItems: ExplorerMenuItem[] = !folderMenu
     ? EMPTY_MENU_ITEMS
     : [
+        ...(onNew
+          ? [
+              {
+                kind: "item" as const,
+                id: "new-session",
+                get label() {
+                  return t("New session");
+                },
+              },
+            ]
+          : []),
         {
           kind: "item",
           id: "rename",
@@ -1680,6 +1705,10 @@ function SidebarComponent({
     if (!folderMenu) return;
     const folderId = folderMenu.folderId;
     setFolderMenu(null);
+    if (id === "new-session") {
+      onNewInFolder(folderId);
+      return;
+    }
     if (id === "rename") {
       setRenamingFolderId(folderId);
       return;
@@ -1932,7 +1961,7 @@ function SidebarComponent({
     [liveAgents],
   );
 
-  const renderSessionCard = (session: SessionSummary) =>
+  const renderSessionCard = (session: SessionSummary, inPinnedSection = false) =>
     renamingSessionId === session.id && onRenameSession ? (
       <SessionRenameRow
         session={session}
@@ -1965,13 +1994,14 @@ function SidebarComponent({
         density={listDisplay.density}
         showModel={listDisplay.showModel}
         showBranch={listDisplay.showBranch}
+        inPinnedSection={inPinnedSection}
         onSelect={cardActions.select}
         onLongPress={cardActions.longPress}
         onOpenWorkItem={onOpenInboxItem && !remoteProject ? cardActions.openWorkItem : undefined}
         onPrefetch={onPrefetchSession ? cardActions.prefetch : undefined}
         onPlaceOnPane={onPlaceSessionOnPane ? cardActions.placeOnPane : undefined}
         onPopOut={onPopOutSession ? cardActions.popOut : undefined}
-        onListDrop={reminderIds.has(session.id) ? undefined : cardActions.listDrop}
+        onListDrop={reminderIds.has(session.id) || searchNarrowed ? undefined : cardActions.listDrop}
         onListDropTargetChange={setSessionDrop}
         onContextMenu={cardActions.contextMenu}
         onArchive={onArchiveSession ? cardActions.archive : undefined}
@@ -2117,27 +2147,20 @@ function SidebarComponent({
         </Button>
       </li>
     ) : null;
-  const renderFolderEntry = (
-    entry: FolderEntry,
-    depth: number,
-    beforeUngrouped = false,
-  ): ReactNode => {
+  const renderFolderEntry = (entry: FolderEntry, depth: number): ReactNode => {
     const expanded = searchNarrowed || !entry.folder.collapsed;
-    const shellFill = folderShellFill(entry.folder.colorIndex, entry.folder.customColor);
+    // A folder's own colour marks its indent guide; the group itself has no filled box.
+    const guideColor = folderAccent(entry.folder.colorIndex, entry.folder.customColor);
     const topLevel = depth === 0 && !entry.folder.pinned;
     return (
       <li
         key={entry.folder.id}
         data-session-folder={entry.folder.id}
         data-folder-collapsed={expanded ? undefined : "true"}
-        className={`relative ${styles.folder} ${
-          topLevel && (expanded || beforeUngrouped) ? "mb-1.5" : ""
-        }`}
+        data-section-divided={topLevel ? "" : undefined}
+        className={`relative ${styles.folder}`}
       >
-        <div
-          className="overflow-hidden rounded-md"
-          style={shellFill ? { background: shellFill } : undefined}
-        >
+        <div className="overflow-hidden rounded-md">
           {renamingFolderId === entry.folder.id ? (
             <FolderRenameRow
               folder={entry.folder}
@@ -2158,7 +2181,7 @@ function SidebarComponent({
               needsApproval={entry.allSessions.some((session) =>
                 listedApprovalSessionIds.has(session.id),
               )}
-              onPointerDown={(event) => startFolderDrag(entry.folder.id, event)}
+              onPointerDown={searchNarrowed ? undefined : (event) => startFolderDrag(entry.folder.id, event)}
               onToggle={() => {
                 if (performance.now() < skipFolderClickUntil.current) return;
                 if (searchNarrowed) return;
@@ -2168,16 +2191,22 @@ function SidebarComponent({
               }}
               onContextMenu={(event) => onFolderContextMenu(entry.folder.id, event)}
               onRename={() => setRenamingFolderId(entry.folder.id)}
+              onNewSession={onNew ? () => onNewInFolder(entry.folder.id) : undefined}
             />
           )}
-          {expanded ? (
-            <>
+          {expanded && (entry.folders.length > 0 || entry.sessions.length > 0) ? (
+            // Subgroups and sessions sit indented under the header, on one quiet guide line.
+            <div
+              data-folder-children=""
+              className="ms-4 border-s border-(--ui-pane-border) ps-1 pt-0.5 pb-1"
+              style={guideColor ? { borderColor: guideColor } : undefined}
+            >
               {entry.folders.length > 0 ? (
-                <ul className="flex flex-col gap-1 px-1 pt-1">
+                <ul className="flex flex-col gap-1 pb-1">
                   {entry.folders.map((child) => renderFolderEntry(child, depth + 1))}
                 </ul>
               ) : null}
-              <ul className={`flex flex-col gap-px p-1 ${entry.sessions.length ? "" : "hidden"}`}>
+              <ul className={`flex flex-col gap-px ${entry.sessions.length ? "" : "hidden"}`}>
                 {folderRows(entry.sessions, entry.folder.id).map((session) => (
                   <SessionListItem
                     key={session.id}
@@ -2190,27 +2219,7 @@ function SidebarComponent({
                 ))}
                 {moreFolderRows(entry.sessions, entry.folder.id)}
               </ul>
-              {onNew ? (
-                <div className="border-t border-stroke p-1">
-                  <Button
-                    variant="ghost"
-                    motion="none"
-                    type="button"
-                    data-no-drag
-                    data-tauri-drag-region="false"
-                    title={t("New session")}
-                    aria-label={t("New session")}
-                    onClick={() => onNewInFolder(entry.folder.id)}
-                    className="relative flex w-full items-center gap-1"
-                  >
-                    <Plus className="icon-xs shrink-0" strokeWidth={1.75} />
-                    <span className="text-ui-secondary font-semibold leading-snug">
-                      {t("New session")}
-                    </span>
-                  </Button>
-                </div>
-              ) : null}
-            </>
+            </div>
           ) : null}
         </div>
       </li>
@@ -2236,45 +2245,71 @@ function SidebarComponent({
     });
   };
 
-  const sessionSearchInput = onSearchConversations ? (
-    <Button
-      variant="ghost"
-      motion="none"
-      align="start"
-      fullWidth
-      aria-label={t("Search conversations")}
-      aria-haspopup="dialog"
-      onClick={() => onSearchConversations(searchQuery || undefined)}
-      className="min-w-0"
+  // The session list's own tools sit in the Workspace header row: an inline filter that opens from
+  // its icon, bulk select and the filter popover. The global search stays the top-left Search.
+  const showSessionTools = tab === "sessions" && Boolean(cwd) && cwd !== "~";
+  const sessionToolbar = showSessionTools ? (
+    <div
+      data-session-selection-keep
+      data-session-tools=""
+      className="flex shrink-0 items-center gap-0.5"
+      data-tauri-drag-region="false"
     >
-      <span className="min-w-0 flex-1 truncate text-ui-body text-(--ui-text-secondary)">
-        {t("Search conversations...")}
-      </span>
-    </Button>
-  ) : (
-    <SearchInput
-      focusOwner="group"
-      ref={searchInputRef}
-      type="text"
-      value={searchQuery}
-      placeholder={t("Search conversations...")}
-      aria-label={t("Search conversations")}
-      spellCheck={false}
-      autoComplete="off"
-      autoCorrect="off"
-      autoCapitalize="off"
-      onChange={(event) => setSearchQuery(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (searchQuery) {
-          setSearchQuery("");
-        }
-      }}
-      className="w-full min-w-0"
-    />
-  );
+      {remoteProject ? (
+        <RemoteDataStatus
+          presentation="indicator"
+          state={remote.dataState}
+          connectionIssueHandled={remoteConnectionIssue}
+          label={
+            remote.machine
+              ? t("sessions from {p0}", { p0: remote.machine.name })
+              : t("sessions")
+          }
+          onRefresh={remote.refresh}
+          disabled={!remote.machine && !remote.dataState.error}
+        />
+      ) : null}
+      <div className="w-(--control-height-sm) shrink-0">
+        <ExpandingSearch
+          ref={sessionSearchRef}
+          inline
+          anchor="end"
+          expandedWidth={248}
+          items={NO_SEARCH_ITEMS}
+          label={t("Search conversations")}
+          activeLabel={t("Search conversations, filtering by “{p0}”", {
+            p0: searchQuery.trim(),
+          })}
+          placeholder={t("Search conversations...")}
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+        />
+      </div>
+      <SessionsHeaderButton
+        label={selectionMode ? t("Stop selecting") : t("Select conversations")}
+        active={selectionMode}
+        onClick={() => {
+          if (selectionMode) {
+            clearSessionSelection();
+            return;
+          }
+          setSessionMenu(null);
+          selection.enterMode();
+        }}
+      >
+        <CheckList className="icon-xs" strokeWidth={1.75} />
+      </SessionsHeaderButton>
+      <SessionsHeaderButton
+        label={t("Filter sessions")}
+        active={filtersActive}
+        open={!!filterMenu}
+        hasPopup
+        onClick={onFilterButtonClick}
+      >
+        <ListFilter className="icon-xs" strokeWidth={1.75} />
+      </SessionsHeaderButton>
+    </div>
+  ) : null;
 
   const onTabPick = (itemId: SidebarTab) => {
     onTabChange(itemId);
@@ -2344,7 +2379,6 @@ function SidebarComponent({
   ]
     .filter(Boolean)
     .join(" · ");
-  const changeSummaryTitle = [changeScopeLabel, changeSummary].filter(Boolean).join(" · ");
   const changesLabel = [TAB_LABELS.changes, changeScopeLabel, changedFilesText, changeChurnText]
     .filter(Boolean)
     .join(", ");
@@ -2365,9 +2399,22 @@ function SidebarComponent({
       : itemId === "sessions"
         ? sessionsLabel
         : TAB_LABELS[itemId];
+    const tabDetails =
+      isChangesTab && changeFileCount + changeAdditions + changeDeletions > 0
+        ? [changeScopeLabel, changeSummary]
+        : isChangesTab
+          ? [changeScopeLabel]
+          : itemId === "sessions" && workingSessionCount > 0
+            ? [
+                t(
+                  workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions",
+                  { p0: workingSessionCount },
+                ),
+              ]
+            : [];
     return (
+      <Tooltip key={itemId} label={TAB_LABELS[itemId]} details={tabDetails} wide>
       <div
-        key={itemId}
         ref={(el) => sortable.setItemRef(itemId, el)}
         className={`reorder-item workspace-tab relative flex min-w-0 touch-none items-stretch ${itemId === "sessions" && workingSessionsBadge ? "flex-[1.4]" : "flex-1"}`}
         onPointerDown={(event) => {
@@ -2391,11 +2438,16 @@ function SidebarComponent({
             sortable.onItemKeyDown(itemId, event);
           }}
           data-workspace-tab-counted={
-            itemId === "sessions" && workingSessionsBadge ? "" : undefined
+            (itemId === "sessions" && workingSessionsBadge) ||
+            (isChangesTab && (changeFileCount > 0 || hasChangeStats))
+              ? ""
+              : undefined
           }
           aria-label={label}
-          title={label}
-          data-usage-guide={isChangesTab ? "changes" : undefined}
+          title=""
+          data-usage-guide={
+            isChangesTab ? "changes" : itemId === "files" ? "files-tab" : undefined
+          }
           data-tauri-drag-region="false"
           onClick={() => {
             if (sortable.consumeClick()) return;
@@ -2406,32 +2458,45 @@ function SidebarComponent({
         >
           <Icon className="workspace-tab-icon" aria-hidden="true" />
           <span className="workspace-tab-content flex min-w-0 items-center justify-center">
-            <span className="block truncate leading-label">{TAB_LABELS[itemId]}</span>
+            {/* The label is never clipped: the container steps in bycoda.css drop it, then the
+                churn, then the badge before any of them would need an ellipsis. */}
+            <span className="workspace-tab-label block whitespace-nowrap leading-label">
+              {TAB_LABELS[itemId]}
+            </span>
             {isChangesTab && hasChangeStats ? (
-              <span className="workspace-tab-stats ms-1.5" title={changeSummaryTitle}>
+              <span className="workspace-tab-stats ms-1.5">
                 <DiffStat additions={changeAdditions} deletions={changeDeletions} />
               </span>
             ) : null}
           </span>
-          {/* Outside .workspace-tab-content so it survives the icon-only width. */}
-          {/* The file count is its own measure and stays at every width, with or without line churn
-              (binary, mode-only, conflict and count-only changes have no +/-). */}
+          {/* Outside .workspace-tab-content so they survive the icon-only widths. Wide and medium
+              tabs show the badge, narrow tabs a smaller one, the narrowest only a presence dot.
+              The file count is its own measure, with or without line churn (binary, mode-only,
+              conflict and count-only changes have no +/-). */}
           {isChangesTab && changeFileCount > 0 ? (
-            <span
-              className="ms-1 inline-flex flex-none text-ui-micro tabular-nums text-(--ui-text-secondary)"
-              data-workspace-tab-file-count=""
-              role="img"
-              aria-label={[changeScopeLabel, changedFilesText].filter(Boolean).join(", ")}
-              title={changeSummaryTitle}
-            >
-              {changeFileCount > 99 ? "99+" : changeFileCount}
-            </span>
+            <>
+              <span className="workspace-tab-badge">
+                <Badge
+                  variant="count"
+                  size="sm"
+                  tone="neutral"
+                  appearance="subtle"
+                  max={99}
+                  data-workspace-tab-file-count=""
+                  role="img"
+                  label={[changeScopeLabel, changedFilesText].filter(Boolean).join(", ")}
+                  className="ms-1 shrink-0"
+                >
+                  {changeFileCount}
+                </Badge>
+              </span>
+              <span aria-hidden className="workspace-tab-dot" />
+            </>
           ) : isChangesTab && hasChangeStats ? (
             <span
               className="workspace-tab-stats-compact"
               role="img"
               aria-label={[changeScopeLabel, changeChurnText].filter(Boolean).join(", ")}
-              title={changeSummaryTitle}
             >
               <span
                 aria-hidden
@@ -2439,9 +2504,15 @@ function SidebarComponent({
               />
             </span>
           ) : null}
-          {itemId === "sessions" ? workingSessionsBadge : null}
+          {itemId === "sessions" && workingSessionsBadge ? (
+            <>
+              <span className="workspace-tab-badge">{workingSessionsBadge}</span>
+              <span aria-hidden className="workspace-tab-dot" data-tone="working" />
+            </>
+          ) : null}
         </Button>
       </div>
+      </Tooltip>
     );
   });
 
@@ -2478,7 +2549,8 @@ function SidebarComponent({
           </span>
         )}
       </div>
-      <WorkspaceTitleActions onSearch={onSearch ?? onGoToFile} onNew={onNew} />
+      {sessionToolbar}
+      <WorkspaceTitleActions onNew={onNew} />
     </div>
   );
 
@@ -2490,6 +2562,22 @@ function SidebarComponent({
       onFocusCapture={() => {
         void preloadSidebarSurfaces().catch(() => {});
       }}
+      onKeyDown={(event) => {
+        // "/" and Ctrl/Cmd+F open the session filter while focus is in the Sessions panel.
+        if (!showSessionTools || event.defaultPrevented) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest("input,textarea,select,[contenteditable],[role='dialog'],[role='menu']"))
+          return;
+        const find =
+          (event.ctrlKey || event.metaKey) &&
+          !event.altKey &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === "f";
+        const slash = event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey;
+        if (!find && !slash) return;
+        event.preventDefault();
+        sessionSearchRef.current?.expand();
+      }}
       ref={resize.setPaneRef}
       data-side-pane="workspace"
       className={`bycoda-sidebar body-glass sidebar-pane ${styles.pane} relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) pe-1.5`}
@@ -2500,6 +2588,7 @@ function SidebarComponent({
           <div
             role="tablist"
             aria-label={t("Workspace")}
+            data-usage-guide="sidebar-tabs"
             className="bycoda-workspace-tabs flex shrink-0 items-center gap-px border-b border-(--ui-pane-border)"
           >
             {workspaceTabItems}
@@ -2553,6 +2642,7 @@ function SidebarComponent({
           <div
             role="tablist"
             aria-label={t("Workspace")}
+            data-usage-guide="sidebar-tabs"
             className="bycoda-workspace-tabs flex shrink-0 items-center gap-px overflow-visible border-b border-(--ui-pane-border)"
           >
             {workspaceTabItems}
@@ -2605,54 +2695,10 @@ function SidebarComponent({
             </p>
           )}
         </div>
-        {tab === "sessions" && cwd && cwd !== "~" ? (
-          <div
-            data-session-list-panel
-            className="flex min-h-9 shrink-0 items-center gap-1 border-b border-(--ui-pane-border) px-2"
-          >
-            <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-              <Search className="icon-xs shrink-0" />
-              {sessionSearchInput}
-            </SearchInputGroup>
-            {remoteProject ? (
-              <RemoteDataStatus
-                presentation="indicator"
-                state={remote.dataState}
-                connectionIssueHandled={remoteConnectionIssue}
-                label={
-                  remote.machine
-                    ? t("sessions from {p0}", { p0: remote.machine.name })
-                    : t("sessions")
-                }
-                onRefresh={remote.refresh}
-                disabled={!remote.machine && !remote.dataState.error}
-              />
-            ) : null}
-            <span data-session-selection-keep className="contents">
-              <SessionsHeaderButton
-                label={selectionMode ? t("Stop selecting") : t("Select conversations")}
-                active={selectionMode}
-                onClick={() => {
-                  if (selectionMode) {
-                    clearSessionSelection();
-                    return;
-                  }
-                  setSessionMenu(null);
-                  selection.enterMode();
-                }}
-              >
-                <CheckList className="icon-xs" strokeWidth={1.75} />
-              </SessionsHeaderButton>
-            </span>
-            <SessionsHeaderButton
-              label={t("Filter sessions")}
-              active={filtersActive}
-              open={!!filterMenu}
-              hasPopup
-              onClick={onFilterButtonClick}
-            >
-              <ListFilter className="icon-xs" strokeWidth={1.75} />
-            </SessionsHeaderButton>
+        {/* The tools live in the Workspace header row; without that row they get their own slim one. */}
+        {sessionToolbar && !railVisible && !compactRailVisible ? (
+          <div className="flex min-h-9 shrink-0 items-center justify-end border-b border-(--ui-pane-border) px-2">
+            {sessionToolbar}
           </div>
         ) : null}
         {tab === "sessions" && cwd && cwd !== "~" && showBulkBar ? (
@@ -2811,6 +2857,7 @@ function SidebarComponent({
               {t("No project folder")}
             </p>
           ) : (
+            <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
             <div>
               {onOpenCrewSession && (
                 <CrewSidebar
@@ -2868,11 +2915,34 @@ function SidebarComponent({
                 // "this project has nothing in it" case earns the illustration.
                 narrowedByUser ? (
                   <div className="flex flex-col items-start gap-1.5 px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
-                    <p>
+                    <p role="status">
                       {searchNarrowed
                         ? t("No matching sessions")
                         : t("No sessions match these filters")}
                     </p>
+                    {searchNarrowed && (onSearchConversations || onSearch) ? (
+                      <Button
+                        variant="ghost"
+                        motion="none"
+                        type="button"
+                        onClick={() => {
+                          if (onSearchConversations) onSearchConversations(searchQuery.trim());
+                          else onSearch?.();
+                        }}
+                      >
+                        {t("Search all conversations ({p0})", { p0: `${MOD}K` })}
+                      </Button>
+                    ) : null}
+                    {searchNarrowed ? (
+                      <Button
+                        variant="ghost"
+                        motion="none"
+                        type="button"
+                        onClick={() => setSearchQuery("")}
+                      >
+                        {t("Clear search")}
+                      </Button>
+                    ) : null}
                     {filtersActive && listedSessions.length > 0 ? (
                       <Button
                         variant="ghost"
@@ -2896,7 +2966,7 @@ function SidebarComponent({
                 )
               ) : (
                 <ul data-session-list className="flex flex-col gap-0.5 p-1.5 pb-10">
-                  {sessionListEntries.map((entry, index) => {
+                  {sessionListEntries.map((entry) => {
                     if (entry.kind === "pinned" || entry.kind === "reminders") {
                       const isReminders = entry.kind === "reminders";
                       const groupSessions =
@@ -2907,13 +2977,13 @@ function SidebarComponent({
                             ]
                           : entry.sessions;
                       const expanded = searchNarrowed || !entry.collapsed;
-                      const beforeUngrouped = sessionListEntries[index + 1]?.kind === "session";
                       return (
                         <li
                           key={`${entry.kind}-sessions`}
                           data-pinned-sessions={isReminders ? undefined : ""}
                           data-reminder-sessions={isReminders ? "" : undefined}
-                          className={`relative ${styles.folder} ${expanded || beforeUngrouped ? "mb-1.5" : ""}`}
+                          data-section-divided=""
+                          className={`relative ${styles.folder}`}
                         >
                           <div className="overflow-hidden rounded-md">
                             <FolderRow
@@ -2923,7 +2993,7 @@ function SidebarComponent({
                                       name: "Reminders",
                                       customColor: REMINDERS_COLOR,
                                     }
-                                  : { name: "Pinned" }
+                                  : { name: t("Pinned") }
                               }
                               sessions={groupSessions}
                               expanded={expanded}
@@ -2955,36 +3025,41 @@ function SidebarComponent({
                                 savePinnedSessionsCollapsed(cwd, collapsed);
                               }}
                             />
-                            {expanded && entry.kind === "pinned" && entry.folders.length > 0 ? (
-                              <ul className="flex flex-col gap-1 px-1 pt-1">
-                                {entry.folders.map((child) => renderFolderEntry(child, 0))}
-                              </ul>
-                            ) : null}
-                            {expanded && entry.sessions.length > 0 ? (
-                              <ul className="flex flex-col gap-px p-1">
-                                {folderRows(entry.sessions, entry.kind).map((session) => (
-                                  <SessionListItem
-                                    key={session.id}
-                                    session={session}
-                                    cwd={cwd}
-                                    motion={sessionInsertMotion}
-                                  >
-                                    {renderSessionCard(session)}
-                                  </SessionListItem>
-                                ))}
-                                {moreFolderRows(entry.sessions, entry.kind)}
-                              </ul>
+                            {expanded &&
+                            ((entry.kind === "pinned" && entry.folders.length > 0) ||
+                              entry.sessions.length > 0) ? (
+                              <div
+                                data-folder-children=""
+                                className="ms-4 border-s border-(--ui-pane-border) ps-1 pt-0.5 pb-1"
+                              >
+                                {entry.kind === "pinned" && entry.folders.length > 0 ? (
+                                  <ul className="flex flex-col gap-1 pb-1">
+                                    {entry.folders.map((child) => renderFolderEntry(child, 0))}
+                                  </ul>
+                                ) : null}
+                                {entry.sessions.length > 0 ? (
+                                  <ul className="flex flex-col gap-px">
+                                    {folderRows(entry.sessions, entry.kind).map((session) => (
+                                      <SessionListItem
+                                        key={session.id}
+                                        session={session}
+                                        cwd={cwd}
+                                        motion={sessionInsertMotion}
+                                      >
+                                        {renderSessionCard(session, !isReminders)}
+                                      </SessionListItem>
+                                    ))}
+                                    {moreFolderRows(entry.sessions, entry.kind)}
+                                  </ul>
+                                ) : null}
+                              </div>
                             ) : null}
                           </div>
                         </li>
                       );
                     }
                     if (entry.kind === "folder") {
-                      return renderFolderEntry(
-                        entry,
-                        0,
-                        sessionListEntries[index + 1]?.kind === "session",
-                      );
+                      return renderFolderEntry(entry, 0);
                     }
                     return (
                       <SessionListItem
@@ -3003,6 +3078,7 @@ function SidebarComponent({
                 </ul>
               )}
             </div>
+            </SessionSearchQueryContext.Provider>
           )}
         </layoutMotion.div>
         {tab === "changes" ? (
@@ -3423,26 +3499,30 @@ function ProjectsFlyoutChrome({
           <span className="min-w-0 flex-1 truncate text-ui-body font-medium">
             {t("Projects and groups")}
           </span>
-          <Button
-            variant="ghost"
-            motion="none"
-            iconOnly
-            label={t("New project")}
-            title={t("New project")}
-            onClick={onNewProject}
-          >
-            <Plus className="size-4" aria-hidden />
-          </Button>
-          <Button
-            variant="ghost"
-            motion="none"
-            iconOnly
-            label={t("Expand projects")}
-            title={t("Expand projects")}
-            onClick={onExpand}
-          >
-            <PanelLeft className="size-4" aria-hidden />
-          </Button>
+          <Tooltip label={t("New project")}>
+            <Button
+              variant="ghost"
+              motion="none"
+              iconOnly
+              label={t("New project")}
+              title=""
+              onClick={onNewProject}
+            >
+              <Plus className="size-4" aria-hidden />
+            </Button>
+          </Tooltip>
+          <Tooltip label={t("Expand projects")}>
+            <Button
+              variant="ghost"
+              motion="none"
+              iconOnly
+              label={t("Expand projects")}
+              title=""
+              onClick={onExpand}
+            >
+              <PanelLeft className="size-4" aria-hidden />
+            </Button>
+          </Tooltip>
         </div>
         <SearchInputGroup appearance="field" className="min-w-0">
           <Search className="icon-xs shrink-0" />
@@ -3776,31 +3856,38 @@ function CompactProjectRail({
       >
         {titleBarAbove ? <CompactRailLogo /> : null}
         {recoveryControl}
-        <Button
-          variant="ghost"
-          motion="none"
-          iconOnly
+        <Tooltip
           label={t("Expand projects")}
-          title={t("Expand projects")}
-          shortcut={toggleShortcut}
-          onClick={onTogglePanel}
+          details={[toggleShortcut]}
+          side="right"
         >
-          <PanelLeft className="size-4" aria-hidden />
-        </Button>
-        {onOpenProjectNavigation ? (
           <Button
             variant="ghost"
             motion="none"
             iconOnly
-            label={t("Projects and groups")}
-            title={t("Projects and groups")}
-            aria-haspopup="dialog"
-            aria-expanded={projectNavigationOpen}
-            selected={projectNavigationOpen}
-            onClick={(event) => onOpenProjectNavigation(event.currentTarget)}
+            label={t("Expand projects")}
+            title=""
+            onClick={onTogglePanel}
           >
-            <FolderTree className="size-4" aria-hidden />
+            <PanelLeft className="size-4" aria-hidden />
           </Button>
+        </Tooltip>
+        {onOpenProjectNavigation ? (
+          <Tooltip label={t("Projects and groups")} side="right">
+            <Button
+              variant="ghost"
+              motion="none"
+              iconOnly
+              label={t("Projects and groups")}
+              title=""
+              aria-haspopup="dialog"
+              aria-expanded={projectNavigationOpen}
+              selected={projectNavigationOpen}
+              onClick={(event) => onOpenProjectNavigation(event.currentTarget)}
+            >
+              <FolderTree className="size-4" aria-hidden />
+            </Button>
+          </Tooltip>
         ) : null}
         {recentSessions && onSelectProject ? (
           <CompactLastSessionsAction
@@ -3919,19 +4006,21 @@ function CompactRailTools({ active, children }: { active: boolean; children: Rea
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   return (
     <>
-      <Button
-        variant="ghost"
-        motion="none"
-        iconOnly
-        label={t("Tools")}
-        aria-haspopup="dialog"
-        aria-expanded={Boolean(anchor)}
-        selected={Boolean(anchor) || active}
-        title={t("Tools")}
-        onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
-      >
-        <DashboardSquare className="size-4" aria-hidden />
-      </Button>
+      <Tooltip label={t("Tools")} side="right">
+        <Button
+          variant="ghost"
+          motion="none"
+          iconOnly
+          label={t("Tools")}
+          aria-haspopup="dialog"
+          aria-expanded={Boolean(anchor)}
+          selected={Boolean(anchor) || active}
+          title=""
+          onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
+        >
+          <DashboardSquare className="size-4" aria-hidden />
+        </Button>
+      </Tooltip>
       {anchor ? (
         <Popover
           anchor={anchor}
@@ -3992,8 +4081,7 @@ function CompactRailAction({
     motion: "none" as const,
     ref,
     type: "button" as const,
-    title: label,
-    shortcut,
+    title: "",
     "aria-label": label,
     "aria-pressed": active,
     disabled: !onClick,
@@ -4033,23 +4121,30 @@ function CompactRailAction({
   // and shortcut live in the tooltip and the accessible name. Flyout rows keep their text.
   if (!row)
     return (
-      <Button {...sharedProps} iconOnly label={label} className="relative shrink-0">
-        <Icon
-          className={`size-4 ${dot ? "compact-rail-icon-with-dot" : ""}`}
-          strokeWidth={1.75}
-          aria-hidden
-        />
-        {marks}
-      </Button>
+      <Tooltip label={label} details={[shortcut]} side="right">
+        <Button {...sharedProps} iconOnly label={label} className="relative shrink-0">
+          <Icon
+            className={`size-4 ${dot ? "compact-rail-icon-with-dot" : ""}`}
+            strokeWidth={1.75}
+            aria-hidden
+          />
+          {marks}
+        </Button>
+      </Tooltip>
     );
   return (
-    <Button {...sharedProps} fullWidth align="start" className="relative shrink-0">
-      <span className="flex w-full min-w-0 items-center gap-2">
-        <Icon className={`size-4 ${dot ? "compact-rail-icon-with-dot" : ""}`} strokeWidth={1.75} />
-        <span className="max-w-full truncate text-ui-body">{caption ?? label}</span>
-      </span>
-      {marks}
-    </Button>
+    <Tooltip label={label} details={[shortcut]}>
+      <Button {...sharedProps} fullWidth align="start" className="relative shrink-0">
+        <span className="flex w-full min-w-0 items-center gap-2">
+          <Icon
+            className={`size-4 ${dot ? "compact-rail-icon-with-dot" : ""}`}
+            strokeWidth={1.75}
+          />
+          <span className="max-w-full truncate text-ui-body">{caption ?? label}</span>
+        </span>
+        {marks}
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -4154,20 +4249,18 @@ function CompactLastSessionsAction({
   );
 }
 
-function WorkspaceTitleActions({ onSearch, onNew }: { onSearch?: () => void; onNew?: () => void }) {
+/** The header's one remaining global action; the global Search is the top-left control. */
+function WorkspaceTitleActions({ onNew }: { onNew?: () => void }) {
   const t = useT();
-  if (!onSearch && !onNew) return null;
+  if (!onNew) return null;
   return (
     <div className="flex shrink-0 items-center gap-0.5" data-tauri-drag-region="false">
-      {onSearch ? (
-        <IconButton label={t("Search")} command="App: Search" onClick={onSearch}>
-          <Search className="icon-sm" strokeWidth={1.75} />
-        </IconButton>
-      ) : null}
       {onNew ? (
-        <IconButton label={t("New session")} command="Tab: New" onClick={onNew}>
-          <Plus className="icon-sm" strokeWidth={1.75} />
-        </IconButton>
+        <span className="inline-flex" data-usage-guide="new-session">
+          <IconButton label={t("New session")} command="Tab: New" onClick={onNew}>
+            <Plus className="icon-sm" strokeWidth={1.75} />
+          </IconButton>
+        </span>
       ) : null}
     </div>
   );
@@ -4188,21 +4281,23 @@ function BulkBarAction({
 }) {
   const t = useT();
   return (
-    <Button
-      tone={danger ? "danger" : "neutral"}
-      iconOnly
-      label={t("{p0} selected", { p0: label })}
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={t("{p0} selected", { p0: label })}
-      aria-label={t("{p0} selected", { p0: label })}
-      disabled={disabled}
-      onClick={onClick}
-      className={`grid place-items-center disabled:pointer-events-none `}
-    >
-      {children}
-    </Button>
+    <Tooltip label={t("{p0} selected", { p0: label })}>
+      <Button
+        tone={danger ? "danger" : "neutral"}
+        iconOnly
+        label={t("{p0} selected", { p0: label })}
+        variant="ghost"
+        motion="none"
+        type="button"
+        title=""
+        aria-label={t("{p0} selected", { p0: label })}
+        disabled={disabled}
+        onClick={onClick}
+        className={`grid place-items-center disabled:pointer-events-none `}
+      >
+        {children}
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -4223,23 +4318,25 @@ function SessionsHeaderButton({
 }) {
   useLocale();
   return (
-    <Button
-      iconOnly
-      label={label}
-      selected={open || active}
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-expanded={open}
-      aria-haspopup={hasPopup ? "menu" : undefined}
-      onPointerDown={(event) => event.stopPropagation()}
-      onClick={onClick}
-      className={`relative z-50 grid place-items-center `}
-    >
-      {children}
-    </Button>
+    <Tooltip label={label}>
+      <Button
+        iconOnly
+        label={label}
+        selected={open || active}
+        variant="ghost"
+        motion="none"
+        type="button"
+        title=""
+        aria-label={label}
+        aria-expanded={open}
+        aria-haspopup={hasPopup ? "menu" : undefined}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={onClick}
+        className={`relative z-50 grid place-items-center `}
+      >
+        {children}
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -4472,6 +4569,7 @@ function FolderRow({
   onToggle,
   onContextMenu,
   onRename,
+  onNewSession,
 }: {
   folder: Pick<SessionFolder, "name" | "colorIndex" | "customColor">;
   sessions: SessionSummary[];
@@ -4484,23 +4582,39 @@ function FolderRow({
   onToggle: () => void;
   onContextMenu?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onRename?: () => void;
+  /** Starts a session inside this group: a `+` in the header, shown on hover and focus. */
+  onNewSession?: () => void;
 }) {
   const t = useT();
   const count = sessions.length;
   const accent = folderAccent(folder.colorIndex, folder.customColor);
-  return (
+  const nameTip = useTooltip({
+    label: folder.name,
+    details: [busy ? t("Working") : null, needsApproval ? t("Needs input") : null],
+    wide: true,
+  });
+  const header = (
+    <>
     <Button
       variant="item"
       motion="none"
       type="button"
-      title={folder.name}
+      title=""
       data-folder-row=""
       aria-expanded={expanded}
       data-tauri-drag-region="false"
-      onPointerDown={onPointerDown}
+      onPointerEnter={nameTip.trigger.onPointerEnter}
+      onPointerLeave={nameTip.trigger.onPointerLeave}
+      onFocus={nameTip.trigger.onFocus}
+      onBlur={nameTip.trigger.onBlur}
+      onPointerDown={(event) => {
+        nameTip.trigger.onPointerDown();
+        onPointerDown?.(event);
+      }}
       onClick={onToggle}
       onContextMenu={onContextMenu}
       onKeyDown={(event) => {
+        nameTip.trigger.onKeyDown(event);
         if (event.key === "F2" && onRename) {
           event.preventDefault();
           onRename();
@@ -4539,24 +4653,50 @@ function FolderRow({
         )}
       </span>
       <span className="relative min-w-0 flex-1 truncate text-ui-secondary font-medium leading-snug text-content">
-        {folder.name}
+        <SessionSearchText text={folder.name} />
       </span>
       <span className="relative flex shrink-0 items-center gap-1 text-ui-caption tabular-nums text-(--ui-text-secondary)">
         {busy ? (
-          <span role="img" aria-label={t("Working")} title={t("Working")}>
+          <span role="img" aria-label={t("Working")}>
             <TerminalSpinner />
           </span>
         ) : null}
         {needsApproval ? (
-          <span role="img" aria-label={t("Needs input")} title={t("Needs input")}>
+          <span role="img" aria-label={t("Needs input")}>
             <CircleAlert className="icon-xs text-warning" strokeWidth={1.75} />
           </span>
         ) : !expanded && !busy && done ? (
           <Check className="icon-xs text-success" strokeWidth={2.25} />
         ) : null}
-        <span>{count}</span>
+        <span data-action-yield="">{count}</span>
       </span>
     </Button>
+    {nameTip.tooltip}
+    </>
+  );
+  if (!onNewSession) return header;
+  const newSessionLabel = t("New session");
+  return (
+    <ActionHost className="w-full">
+      {header}
+      <span data-action-slot="collapse" className="flex shrink-0 items-center">
+        <Tooltip label={newSessionLabel} details={[folder.name]}>
+          <InlineAction
+            reveal="always"
+            label={newSessionLabel}
+            motion="none"
+            type="button"
+            data-no-drag
+            data-tauri-drag-region="false"
+            title=""
+            aria-label={`${newSessionLabel}: ${folder.name}`}
+            onClick={onNewSession}
+          >
+            <Plus className="icon-xs shrink-0" strokeWidth={1.75} />
+          </InlineAction>
+        </Tooltip>
+      </span>
+    </ActionHost>
   );
 }
 
@@ -4724,6 +4864,41 @@ function SessionListItem({
   return <li ref={ref}>{children}</li>;
 }
 
+/** The folder-less list search: the session filter owns the matches, rows only draw them. */
+const NO_SEARCH_ITEMS: ExpandingSearchItem[] = [];
+
+/** The inline filter text, so rows can highlight what matched without threading a prop through every group. */
+const SessionSearchQueryContext = createContext("");
+
+/** Every session inside a group (or a subgroup of one) whose name matches the filter. */
+function sessionIdsInMatchingFolders(folders: SessionFolder[], query: string): Set<string> {
+  const ids = new Set<string>();
+  const prepared = prepareFuzzyQuery(query);
+  const childrenOf = new Map<string, SessionFolder[]>();
+  for (const folder of folders) {
+    if (folder.parentId) {
+      childrenOf.set(folder.parentId, [...(childrenOf.get(folder.parentId) ?? []), folder]);
+    }
+  }
+  const addAll = (folder: SessionFolder, seen: Set<string>) => {
+    if (seen.has(folder.id)) return;
+    seen.add(folder.id);
+    for (const id of folder.sessionIds) ids.add(id);
+    for (const child of childrenOf.get(folder.id) ?? []) addAll(child, seen);
+  };
+  for (const folder of folders) {
+    if (fuzzyMatch(prepared, folder.name)) addAll(folder, new Set());
+  }
+  return ids;
+}
+
+/** Plain text with the characters the inline session filter matched accented. */
+function SessionSearchText({ text }: { text: string }) {
+  const query = useContext(SessionSearchQueryContext);
+  const hit = query.trim() ? fuzzyMatch(query, text) : null;
+  return <MatchText text={text} positions={hit?.positions ?? []} active={hit !== null} />;
+}
+
 /** How long a still press takes to start selecting. */
 const LONG_PRESS_MS = 450;
 
@@ -4745,6 +4920,7 @@ const SessionCard = memo(function SessionCard({
   density,
   showModel,
   showBranch,
+  inPinnedSection = false,
   onSelect,
   onLongPress,
   onOpenWorkItem,
@@ -4778,6 +4954,8 @@ const SessionCard = memo(function SessionCard({
   density: SessionListDensity;
   showModel: boolean;
   showBranch: boolean;
+  /** Listed directly under the Pinned header, which already says it is pinned. */
+  inPinnedSection?: boolean;
   onSelect: (
     sessionId: string,
     event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
@@ -4825,6 +5003,8 @@ const SessionCard = memo(function SessionCard({
   const orchestrationDone =
     orchestration?.tasks.filter((task) => task.status === "completed").length ?? 0;
   const title = sessionDisplayTitle(session.title, session.harness);
+  const highlightQuery = useContext(SessionSearchQueryContext);
+  const titleHit = highlightQuery.trim() ? fuzzyMatch(highlightQuery, title) : null;
   const gitLabel = session.worktreeRemoved
     ? NO_BRANCH_LABEL
     : formatGitLabel(session.repo, session.branch);
@@ -4896,29 +5076,35 @@ const SessionCard = memo(function SessionCard({
 
   const linkedWorkItem = session.linkedWorkItem;
   const linkedUpdateDot = linkedUpdate ? (
-    <span
-      title={t(
+    <Tooltip
+      label={t(
         linkedWorkItem?.kind === "pr"
           ? "Linked PR updated since this session"
           : "Linked issue updated since this session",
       )}
-      aria-label={t("Linked work item updated")}
-      className="size-1.5 shrink-0 rounded-full bg-accent"
-    />
+    >
+      <span
+        aria-label={t("Linked work item updated")}
+        className="size-1.5 shrink-0 rounded-full bg-accent"
+      />
+    </Tooltip>
   ) : null;
   const workItemBadge = linkedWorkItem ? (
+    <Tooltip
+      label={t(
+        linkedWorkItem.kind === "pr"
+          ? "Open PR #{p1} beside this session ({p2}-click for GitHub)"
+          : "Open issue #{p1} beside this session ({p2}-click for GitHub)",
+        { p1: linkedWorkItem.number, p2: MOD },
+      )}
+    >
     <Button
       variant="ghost"
       motion="none"
       type="button"
       data-no-drag
       data-tauri-drag-region="false"
-      title={t(
-        linkedWorkItem.kind === "pr"
-          ? "Open PR #{p1} beside this session ({p2}-click for GitHub)"
-          : "Open issue #{p1} beside this session ({p2}-click for GitHub)",
-        { p1: linkedWorkItem.number, p2: MOD },
-      )}
+      title=""
       aria-label={t(linkedWorkItem.kind === "pr" ? "Open PR #{p1}" : "Open issue #{p1}", {
         p1: linkedWorkItem.number,
       })}
@@ -4954,6 +5140,7 @@ const SessionCard = memo(function SessionCard({
       )}
       <span>#{linkedWorkItem.number}</span>
     </Button>
+    </Tooltip>
   ) : null;
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -5335,11 +5522,14 @@ const SessionCard = memo(function SessionCard({
   const modelLabel = showModel ? (
     <span
       data-session-row-model
-      title={model}
       className="flex min-w-0 shrink items-center gap-1 text-ui-caption font-medium text-(--ui-text-secondary)"
     >
       <HarnessIcon harness={session.harness} className="size-3 shrink-0" />
-      {compact ? null : <span className="session-row-model-full min-w-0 truncate">{model}</span>}
+      {compact ? null : (
+        <span className="session-row-model-full min-w-0 truncate">
+          <SessionSearchText text={model} />
+        </span>
+      )}
       <span
         className={`min-w-0 truncate ${compact ? "session-row-compact-model" : "session-row-model-short"}`}
       >
@@ -5353,58 +5543,64 @@ const SessionCard = memo(function SessionCard({
       <span
         data-session-row-branch
         className="session-row-branch flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)"
-        title={session.worktreeCwd ? `${gitLabel}\n${session.worktreeCwd}` : gitLabel}
       >
         <BranchIcon className="size-3 shrink-0" strokeWidth={1.75} />
-        <span className="min-w-0 truncate">{branchText}</span>
+        <span className="min-w-0 truncate">
+          <SessionSearchText text={branchText} />
+        </span>
       </span>
     ) : null;
   const actions = (
     <span data-session-row-actions className="relative flex shrink-0 items-center gap-px">
       {onArchive ? (
-        <InlineAction
-          label={`${archiveLabel} ${title}`}
-          motion="none"
-          type="button"
-          data-no-drag
-          data-tauri-drag-region="false"
-          title={archiveLabel}
-          aria-label={`${archiveLabel} ${title}`}
-          onClick={() => {
-            onArchive(session.id, !session.archived);
-          }}
-        >
-          <Archive className="icon-xs shrink-0" strokeWidth={1.75} />
-        </InlineAction>
+        <Tooltip label={archiveLabel} details={[title]}>
+          <InlineAction
+            label={`${archiveLabel} ${title}`}
+            motion="none"
+            type="button"
+            data-no-drag
+            data-tauri-drag-region="false"
+            title=""
+            aria-label={`${archiveLabel} ${title}`}
+            onClick={() => {
+              onArchive(session.id, !session.archived);
+            }}
+          >
+            <Archive className="icon-xs shrink-0" strokeWidth={1.75} />
+          </InlineAction>
+        </Tooltip>
       ) : null}
       {onDelete ? (
-        <InlineAction
-          label={`Delete ${title}`}
-          tone="danger"
-          motion="none"
-          type="button"
-          data-no-drag
-          data-tauri-drag-region="false"
-          title={t("Delete")}
-          aria-label={`Delete ${title}`}
-          onClick={() => {
-            onDelete(session.id);
-          }}
-        >
-          <Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />
-        </InlineAction>
+        <Tooltip label={t("Delete")} details={[title]}>
+          <InlineAction
+            label={`Delete ${title}`}
+            tone="danger"
+            motion="none"
+            type="button"
+            data-no-drag
+            data-tauri-drag-region="false"
+            title=""
+            aria-label={`Delete ${title}`}
+            onClick={() => {
+              onDelete(session.id);
+            }}
+          >
+            <Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />
+          </InlineAction>
+        </Tooltip>
       ) : null}
       {workItemBadge}
       {session.automationId ? (
-        <span
-          data-automation-icon
-          role="img"
-          title={t("Started by an automation")}
-          aria-label={t("Started by an automation")}
-          className="grid size-5 -mr-1 shrink-0 place-items-center text-warning"
-        >
-          <Zap className="icon-xs" strokeWidth={1.75} />
-        </span>
+        <Tooltip label={t("Started by an automation")}>
+          <span
+            data-automation-icon
+            role="img"
+            aria-label={t("Started by an automation")}
+            className="grid size-5 -mr-1 shrink-0 place-items-center text-warning"
+          >
+            <Zap className="icon-xs" strokeWidth={1.75} />
+          </span>
+        </Tooltip>
       ) : null}
       {orchestration ? (
         <div
@@ -5456,7 +5652,6 @@ const SessionCard = memo(function SessionCard({
     <div ref={detailRootRef} className="group relative">
       <ActionHost
         selected={isSelected || isActive}
-        title={detailVisible ? undefined : title}
         data-session-card={session.id}
         data-session-density={density}
         data-orchestration-card={orchestration ? "true" : undefined}
@@ -5563,13 +5758,19 @@ const SessionCard = memo(function SessionCard({
                 {isSelected ? <Check className="size-2.5" strokeWidth={2.5} /> : null}
               </span>
             ) : null}
-            {session.pinned ? (
+            {session.pinned && !inPinnedSection ? (
               <Pin className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
             ) : null}
-            <ParticleText
-              text={title}
-              className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content"
-            />
+            {titleHit ? (
+              <span className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content">
+                <MatchText text={title} positions={titleHit.positions} active />
+              </span>
+            ) : (
+              <ParticleText
+                text={title}
+                className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content"
+              />
+            )}
             {compact ? modelLabel : null}
             {density === "detailed" ? null : (
               <span className="flex shrink-0 items-center gap-1.5">
@@ -5827,19 +6028,10 @@ function SessionRenameRow({
 }
 
 function DiffStat({ additions, deletions }: { additions: number; deletions: number }) {
-  const t = useT();
   if (additions <= 0 && deletions <= 0) return null;
-
-  const label = [
-    additions > 0 ? `+${formatInteger(additions)}` : "",
-    deletions > 0 ? `-${formatInteger(deletions)}` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
 
   return (
     <span
-      title={t("{p0} uncommitted", { p0: label })}
       className="scrollbar-none flex h-full w-full min-w-0 items-center [justify-content:safe_center] overflow-x-auto overflow-y-hidden overscroll-contain"
     >
       <span className="flex shrink-0 items-center gap-[0.55em] whitespace-nowrap font-sans text-ui-micro font-semibold tabular-nums">

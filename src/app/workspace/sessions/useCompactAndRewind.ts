@@ -9,6 +9,11 @@ import {
 } from "../../../features/sessions/model/session";
 import { type setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
+  COMPACTED_TEXT,
+  COMPACTING_TEXT,
+  COMPACTION_STATUS_KEY,
+} from "../../../features/sessions/model/compactionStatus";
+import {
   applyHarnessEvent,
   canCompactHarnessContext,
   compactHarnessContext,
@@ -118,7 +123,12 @@ export function useCompactAndRewind({
         session.id === sessionId
           ? applyHarnessEvent(
               { ...session, busy: true },
-              { type: "status", text: "Compacting context…" },
+              {
+                type: "status",
+                key: COMPACTION_STATUS_KEY,
+                running: true,
+                text: COMPACTING_TEXT,
+              },
             )
           : session,
       );
@@ -150,7 +160,9 @@ export function useCompactAndRewind({
           if (turnGen.current.get(sessionId) !== gen) return;
           enqueueHarnessEvent(sessionId, {
             type: "status",
-            text: "Compacted context",
+            key: COMPACTION_STATUS_KEY,
+            running: false,
+            text: COMPACTED_TEXT,
           });
         } catch (error: unknown) {
           if (turnGen.current.get(sessionId) !== gen) return;
@@ -250,8 +262,14 @@ export function useCompactAndRewind({
         movingSessionIds.current.has(sessionId) ||
         retiringTurns.current.has(sessionId) ||
         editedResends.isActive(sessionId)
-      )
+      ) {
+        enqueueHarnessEvent(sessionId, {
+          type: "status",
+          text: "Another change to this conversation is still finishing. Try again in a moment.",
+        });
+        flushHarnessEvents();
         return false;
+      }
       flushHarnessEvents();
       const snapshot = sessionsRef.current.find((session) => session.id === sessionId);
       if (
@@ -331,7 +349,7 @@ export function useCompactAndRewind({
         editedResends.finish(sessionId);
       }
     },
-    [editedResends, flushHarnessEvents, persistSession],
+    [editedResends, enqueueHarnessEvent, flushHarnessEvents, persistSession],
   );
   return { onCompactContext, onRewindMessage };
 }

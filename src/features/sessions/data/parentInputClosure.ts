@@ -172,6 +172,29 @@ function equal(a: unknown, b: unknown): boolean {
   );
 }
 
+/** `equal` against a validated copy, also rejecting shapes copy would refuse. */
+function sameAsObserved(observed: unknown, raw: unknown): boolean {
+  if (typeof raw === "number") return Object.is(observed, raw) && Number.isFinite(raw);
+  if (!observed || !raw || typeof observed !== "object" || typeof raw !== "object")
+    return Object.is(observed, raw);
+  const array = Array.isArray(observed);
+  if (array !== Array.isArray(raw)) return false;
+  if (array ? Object.getPrototypeOf(raw) !== Array.prototype : !isNativeCaptureObject(raw))
+    return false;
+  const keys = Object.keys(observed);
+  const rawKeys = Object.keys(raw);
+  if (keys.length !== rawKeys.length) return false;
+  if (Reflect.ownKeys(raw).length !== keys.length + (array ? 1 : 0)) return false;
+  return keys.every(
+    (key, index) =>
+      key === rawKeys[index] &&
+      sameAsObserved(
+        (observed as Record<string, unknown>)[key],
+        (raw as Record<string, unknown>)[key],
+      ),
+  );
+}
+
 export class ParentInputRegistry {
   private epoch = 0;
   private nextId = 0;
@@ -583,6 +606,9 @@ export class ParentInputRegistry {
         // mutable alias as the value of an already-notified producer mutation.
         const snapshot = adapter.snapshot();
         if (!isNativeCaptureObject(snapshot)) throw new NativeCaptureJsonError("invalid");
+        // Cheap path: raw snapshot already equals the validated copy; skip charge/copy.
+        if (entry.observed && !entry.observationFailed && sameAsObserved(entry.observed, snapshot))
+          return;
         const copied = this.copy(snapshot, "observedBytes");
         const different = !entry.observed || !equal(entry.observed, copied.data);
         this.observedBytes -= entry.observedCharge ?? 0;
@@ -1000,8 +1026,14 @@ export function useParentInputClosure(
   useLayoutEffect(() => {
     binding.current?.observe();
   });
-  useLayoutEffect(() => {
-    const node = element?.current;
+  // Listeners attach once per node; the element ref may fill after first commit,
+  // so a cheap per-render check re-syncs without re-adding listeners.
+  const attached = useRef<{ node: HTMLElement; detach: () => void } | null>(null);
+  const syncListeners = useCallback(() => {
+    const node = element?.current ?? null;
+    if (attached.current?.node === node) return;
+    attached.current?.detach();
+    attached.current = null;
     if (!node) return;
     const start = () => {
       composing.current = true;
@@ -1013,26 +1045,39 @@ export function useParentInputClosure(
         event.stopImmediatePropagation();
       }
     };
-    node.addEventListener("beforeinput", beforeInput, true);
-    node.addEventListener("paste", beforeInput, true);
-    node.addEventListener("drop", beforeInput, true);
     const end = () => {
       composing.current = false;
       changed();
     };
+    node.addEventListener("beforeinput", beforeInput, true);
+    node.addEventListener("paste", beforeInput, true);
+    node.addEventListener("drop", beforeInput, true);
     node.addEventListener("input", changed, true);
     node.addEventListener("change", changed, true);
     node.addEventListener("compositionstart", start, true);
     node.addEventListener("compositionend", end, true);
-    return () => {
-      node.removeEventListener("beforeinput", beforeInput, true);
-      node.removeEventListener("paste", beforeInput, true);
-      node.removeEventListener("drop", beforeInput, true);
-      node.removeEventListener("input", changed, true);
-      node.removeEventListener("change", changed, true);
-      node.removeEventListener("compositionstart", start, true);
-      node.removeEventListener("compositionend", end, true);
+    attached.current = {
+      node,
+      detach: () => {
+        node.removeEventListener("beforeinput", beforeInput, true);
+        node.removeEventListener("paste", beforeInput, true);
+        node.removeEventListener("drop", beforeInput, true);
+        node.removeEventListener("input", changed, true);
+        node.removeEventListener("change", changed, true);
+        node.removeEventListener("compositionstart", start, true);
+        node.removeEventListener("compositionend", end, true);
+      },
     };
+  }, [element, changed]);
+  useLayoutEffect(() => {
+    syncListeners();
+    return () => {
+      attached.current?.detach();
+      attached.current = null;
+    };
+  }, [syncListeners]);
+  useLayoutEffect(() => {
+    syncListeners();
   });
   return useMemo(
     () =>

@@ -46,6 +46,8 @@ export interface PersistenceProducer {
   noteMutation(scope: PersistenceScope, parent?: PersistenceWork): void;
   assertSuccessful(scope: PersistenceScope): void;
   settle(scope: PersistenceScope, current?: PersistenceWork): Promise<void>;
+  /** Drops recorded failures that concern only these sessions (they were deleted). */
+  forget?(sessionIds: readonly string[]): void;
   retire(): Promise<void>;
 }
 
@@ -133,6 +135,8 @@ export class PersistenceDrainRegistry {
   private readonly attempts = new Set<AttemptState>();
   private readonly work = new WeakMap<PersistenceWork, WorkState>();
   private overflow = false;
+  private failureOverflow = false;
+  private moduleOverflow = false;
 
   registerProducer(
     id: string,
@@ -204,6 +208,7 @@ export class PersistenceDrainRegistry {
       // Ordinary jobs and timers still run. Losing coverage is an explicit
       // qualification failure, never permission to discard their data.
       this.overflow = true;
+      this.moduleOverflow = true;
       this.invalidateAll("capacity", "Too many retiring persistence modules");
       return;
     }
@@ -220,6 +225,7 @@ export class PersistenceDrainRegistry {
       if (producer.module!.current !== module) this.retainModuleHook(producer, module);
     };
     return {
+      forget: (sessionIds) => this.forgetFailures(producer, sessionIds),
       run: <T>(
         scope: PersistenceScope,
         key: string,
@@ -481,6 +487,21 @@ export class PersistenceDrainRegistry {
     );
   }
 
+  private forgetFailures(producer: ProducerState, sessionIds: readonly string[]): void {
+    for (const [key, failure] of [...producer.failures]) {
+      const { scope } = failure;
+      if (scope !== "profile" && scope.length && scope.every((id) => sessionIds.includes(id)))
+        producer.failures.delete(key);
+    }
+    if (
+      this.failureOverflow &&
+      [...this.producers.values()].every((entry) => entry.failures.size < 1024)
+    ) {
+      this.failureOverflow = false;
+      this.overflow = this.moduleOverflow;
+    }
+  }
+
   private finish(state: WorkState): void {
     state.settled = true;
     state.producer.active.delete(state);
@@ -490,8 +511,10 @@ export class PersistenceDrainRegistry {
     if (state.accounting) return;
     if (state.failed) {
       if (!previous || previous.sequence < state.sequence) {
-        if (state.producer.failures.size >= 1024 && !previous) this.overflow = true;
-        else
+        if (state.producer.failures.size >= 1024 && !previous) {
+          this.overflow = true;
+          this.failureOverflow = true;
+        } else
           state.producer.failures.set(key, {
             scope: state.scope,
             sequence: state.sequence,

@@ -781,9 +781,10 @@ describe("original process construction handles", () => {
       mocks.invoke.mockResolvedValueOnce(invalid);
       await expect(child.spawnChild(original, "agent", [], "/fixture")).rejects.toThrow();
       await expect(child.writeChild(original, "never")).rejects.toThrow();
-      await expect(child.killChild(original)).rejects.toThrow();
+      await expect(child.killChild(original)).resolves.toBeUndefined();
       expect(child.captureChildProcess("invalid")).toBeUndefined();
-      expect(mocks.invoke).toHaveBeenCalledTimes(1);
+      expect(mocks.invoke).toHaveBeenCalledTimes(2);
+      expect(mocks.invoke).toHaveBeenLastCalledWith("harness_kill", { sessionId: "invalid" });
     },
   );
 

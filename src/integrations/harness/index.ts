@@ -182,6 +182,7 @@ export {
   canRunHarnessTextPrompt,
   runHarnessTextPrompt,
   stopHarnessTextPrompts,
+  warmupHarnessText,
 } from "./core/registry";
 export type {
   ApprovalDecision,

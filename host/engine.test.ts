@@ -2023,8 +2023,10 @@ describe("managed turn boundaries", () => {
     });
     await bothOriginalAttempts;
     expect(adapter.startActivity).toHaveBeenCalledTimes(2);
-    await expect(engine.waitForRun(id, receipt.runId)).rejects.toThrow();
-    expect((await store.session(id)).status).toBe("running");
+    // The refused start still settles the session (idle, never stuck "running").
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await engine.waitForRun(id, receipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     expect(provider.send).not.toHaveBeenCalled();
     expect(provider.generateTitle).not.toHaveBeenCalled();
     expect(adapter.history.begin).not.toHaveBeenCalled();
