@@ -92,7 +92,8 @@ describe("AgentTranscript collapsed work", () => {
       { canRewindMessage: (id) => id !== "unavailable", onRewindMessage: () => {} },
     );
     expect(markup.match(/aria-label="Edit from here"/g)).toHaveLength(2);
-    expect(markup).toContain("This conversation can no longer be rewound.");
+    // The reason rides in the shared tooltip (hover/focus), not a native title in the markup.
+    expect(markup).not.toContain('title="This conversation can no longer be rewound."');
     expect(markup.match(/disabled=""/g)).toHaveLength(1);
   });
 
@@ -679,9 +680,10 @@ describe("AgentTranscript collapsed work", () => {
     // Tool details collapse; the stack and every assistant update stay visible.
     expect(markup).not.toContain("hidden-detail-t1");
     expect(markup).toContain("Splitting the review in two.");
-    // A row-length name is capped, and the whole brief stays on the hover.
+    // A row-length name is capped; the whole brief rides in the shared hover tooltip,
+    // which static markup cannot show.
     expect(markup).toContain("Independently review the current repository&#x27;s recent…");
-    expect(markup).toContain("Inspect the uncommitted diff.");
+    expect(markup).not.toContain("Inspect the uncommitted diff.");
   });
 
   it("groups an opened subagent's trail the way the main transcript does", () => {

@@ -31,10 +31,11 @@ button.model-picker-field-trigger[data-model-picker-presentation="field"]:active
   border-color: var(--ui-field-border-hover);
   background: var(--ui-surface-muted);
 }
+/* The shared field focus contract (arc.css): focus border plus the soft accent ring, no outline. */
 button.model-picker-field-trigger[data-model-picker-presentation="field"]:focus-visible {
   border-color: var(--ui-field-border-focus);
-  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
-  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
+  outline: none;
+  box-shadow: var(--ui-focus-ring);
 }
 button.model-picker-field-trigger[data-model-picker-presentation="field"]:disabled {
   color: var(--ui-control-disabled-fg);

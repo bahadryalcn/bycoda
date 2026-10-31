@@ -4,6 +4,19 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { QuickPermissions } from "./QuickPermissions";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 let container: HTMLDivElement;
 let root: Root;
 const onChange = vi.fn();
@@ -58,7 +71,7 @@ it("dismisses on Escape without changing permissions", () => {
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-it("disables modes the transport cannot honour and skips them with the keys", () => {
+it("disables modes the transport cannot honour and skips them with the keys", async () => {
   const reason = "Headless agy cannot ask before editing files.";
   act(() =>
     root.render(
@@ -72,7 +85,8 @@ it("disables modes the transport cannot honour and skips them with the keys", ()
   );
   const options = container.querySelectorAll<HTMLButtonElement>('[role="option"]');
   expect(options[0].getAttribute("aria-disabled")).toBe("true");
-  expect(options[0].title).toBe(reason);
+  expect(options[0].title).toBe("");
+  expect(await tooltipText(options[0])).toBe(reason);
   expect(options[0].textContent).toContain(`Unavailable: ${reason}`);
   expect(options[1].hasAttribute("aria-disabled")).toBe(false);
   act(() => options[0].click());

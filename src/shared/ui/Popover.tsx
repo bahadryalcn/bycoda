@@ -64,6 +64,31 @@ export type PopoverDismissReason = "outside" | "escape";
  */
 export type PopoverFlow = "auto" | "intrinsic" | "scroll";
 
+/**
+ * What the popover is, for assistive tech.
+ *
+ * - `"dialog"`: a non-modal dialog (a filter panel, a form, a details card). Sets
+ *   `role="dialog"`, moves focus to its first control on open (or the surface when there is
+ *   none) and returns focus to the trigger on close. Name it with `aria-labelledby` (a visible
+ *   title) or `aria-label`. Replaces a hand-set `role="dialog"`.
+ * - Menus are not a Popover kind: use `DropdownMenu` (role="menu", roving focus, typeahead,
+ *   submenus) or `ContextMenu`. A `Popover role="menu"` is a hand-rolled menu.
+ * - Omitted: no role; the content supplies its own (a listbox, a tooltip, a preview).
+ */
+export type PopoverKind = "dialog";
+
+const FOCUSABLE =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], summary, [tabindex]:not([tabindex="-1"])';
+
+/** Dialog popovers take focus on open, unless a descendant already autofocused itself. */
+function focusDialog(surface: HTMLElement | null) {
+  if (!surface || surface.contains(document.activeElement)) return;
+  const first = [...surface.querySelectorAll<HTMLElement>(FOCUSABLE)].find(
+    (el) => el.getAttribute("aria-disabled") !== "true" && !el.closest("[inert]"),
+  );
+  (first ?? surface).focus({ preventScroll: true });
+}
+
 type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   anchor: PopoverAnchor;
   side?: PopoverSide;
@@ -95,6 +120,8 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   solid?: boolean;
   style?: CSSProperties;
   autoFocus?: boolean;
+  /** See {@link PopoverKind}. `"dialog"` sets the role and the focus contract. */
+  kind?: PopoverKind;
   /** Wiring this in hands Popover the outside-click and Escape handling. */
   onDismiss?: (reason: PopoverDismissReason) => void;
   dismissOnEscape?: boolean;
@@ -203,6 +230,7 @@ function NativePopover({
   restoreFocus = true,
   passive = false,
   flow = "auto",
+  kind,
   ...props
 }: Props & { host: HTMLElement }) {
   const surface = useRef<HTMLDivElement | null>(null);
@@ -216,9 +244,11 @@ function NativePopover({
     restoreFocus,
     passive,
   );
+  const dialog = kind === "dialog";
   useEffect(() => {
-    if (autoFocus) surface.current?.focus({ preventScroll: true });
-  }, [autoFocus]);
+    if (dialog && autoFocus !== false) focusDialog(surface.current);
+    else if (autoFocus) surface.current?.focus({ preventScroll: true });
+  }, [autoFocus, dialog]);
   useEffect(() => {
     if (!onDismiss) return;
     const outside = (event: PointerEvent) => {
@@ -254,6 +284,7 @@ function NativePopover({
   } = props;
   return createPortal(
     <div
+      {...(dialog ? { role: "dialog", tabIndex: -1 } : null)}
       {...rest}
       ref={(el) => {
         surface.current = el;
@@ -290,7 +321,8 @@ function WebPopover({
   solid = false,
   className,
   style,
-  autoFocus = false,
+  autoFocus,
+  kind,
   onDismiss,
   dismissOnEscape = true,
   restoreFocus = true,
@@ -301,6 +333,7 @@ function WebPopover({
   children,
   ...rest
 }: Props) {
+  const dialog = kind === "dialog";
   const menuLayer = useContext(OverlayMenuLayer);
   // Preserve the submenu offset while lifting menus above their owning dialog.
   const effectiveLayer = Math.max(layer, menuLayer + (layer === LAYER.submenu ? 1 : 0));
@@ -401,8 +434,10 @@ function WebPopover({
   const positioned = position != null;
   useEffect(() => {
     // The measuring frame is hidden and cannot receive browser focus.
-    if (autoFocus && positioned) surface.current?.focus({ preventScroll: true });
-  }, [autoFocus, positioned]);
+    if (!positioned) return;
+    if (dialog && autoFocus !== false) focusDialog(surface.current);
+    else if (autoFocus) surface.current?.focus({ preventScroll: true });
+  }, [autoFocus, positioned, dialog]);
 
   useEffect(() => {
     if (!onDismiss) return;
@@ -469,6 +504,7 @@ function WebPopover({
         <GlassBackdrop />
       )}
       <div
+        {...(dialog ? { role: "dialog", tabIndex: -1 } : null)}
         {...rest}
         ref={(el) => {
           surface.current = el;

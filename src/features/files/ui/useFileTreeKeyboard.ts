@@ -11,6 +11,11 @@ import type { OpenFileFn } from "../../search/model/search";
 import type { TreeSelectionModifiers } from "../model/treeSelection";
 import { isDirAt, type Clip, type MenuTarget } from "./fileTreeSupport";
 
+/** A visible row's path. Tree items carry it as their native title; the root row is a shared
+ *  Button, which renders no native title (its hint is the shared tooltip), so it carries
+ *  `data-path` instead. */
+export const rowPath = (row: HTMLElement) => row.dataset.path ?? row.title;
+
 /** Non-Latin layouts put the local letter in `key`, so fall back to the physical key. */
 function shortcutLetter(e: ReactKeyboardEvent): string {
   const key = e.key.toLowerCase();
@@ -79,8 +84,8 @@ export function useFileTreeKeyboard({
   ) => {
     if (!row) return;
     if (focusOnly) {
-      commitSelectedPath(row.title);
-    } else onSelect(row.title, modifiers);
+      commitSelectedPath(rowPath(row));
+    } else onSelect(rowPath(row), modifiers);
     row.focus({ preventScroll: true });
     row.scrollIntoView?.({ block: "nearest" });
   };
@@ -102,7 +107,7 @@ export function useFileTreeKeyboard({
       return false;
     }
     const rows = visibleRows();
-    const index = rows.findIndex((row) => row.title === path);
+    const index = rows.findIndex((row) => rowPath(row) === path);
     const open = path === cwd ? rootOpen : expanded.has(path);
     const pageSize = () => {
       const scroller = rootRef.current?.querySelector(".overflow-y-auto");
@@ -111,7 +116,9 @@ export function useFileTreeKeyboard({
     };
     const navigate = (row: HTMLElement | undefined) =>
       focusRow(
-        e.shiftKey && row?.title === cwd ? rows.find((value) => value.title !== cwd) : row,
+        e.shiftKey && (row ? rowPath(row) : undefined) === cwd
+          ? rows.find((value) => rowPath(value) !== cwd)
+          : row,
         e,
         (e.ctrlKey || e.metaKey) && !e.shiftKey,
       );
@@ -165,12 +172,12 @@ export function useFileTreeKeyboard({
       case "ArrowRight":
         if (!isDir) return true;
         if (!open) toggle(path);
-        else if (rows[index + 1] && parentPath(rows[index + 1].title) === path)
+        else if (rows[index + 1] && parentPath(rowPath(rows[index + 1])) === path)
           focusRow(rows[index + 1]);
         return true;
       case "ArrowLeft":
         if (isDir && open) toggle(path);
-        else if (path !== cwd) focusRow(rows.find((row) => row.title === parentPath(path)));
+        else if (path !== cwd) focusRow(rows.find((row) => rowPath(row) === parentPath(path)));
         return true;
       case "Enter":
         activate(false);
@@ -193,7 +200,7 @@ export function useFileTreeKeyboard({
     const start = cycling ? index + 1 : Math.max(index, 0);
     const ordered = [...rows.slice(start), ...rows.slice(0, start)];
     const match = ordered.find(
-      (row) => row.title !== cwd && basename(row.title).toLowerCase().startsWith(needle),
+      (row) => rowPath(row) !== cwd && basename(rowPath(row)).toLowerCase().startsWith(needle),
     );
     if (match) focusRow(match);
     return true;
@@ -212,7 +219,7 @@ export function useFileTreeKeyboard({
     const isDir = isDirAt(cwd, path);
     if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
       e.preventDefault();
-      const row = visibleRows().find((value) => value.title === path);
+      const row = visibleRows().find((value) => rowPath(value) === path);
       const bounds = row?.getBoundingClientRect();
       openMenu({ path, isDir, isRoot }, bounds?.left ?? 0, bounds?.bottom ?? 0);
       return;
@@ -226,7 +233,7 @@ export function useFileTreeKeyboard({
     if (mod && !e.altKey && !e.shiftKey && key === "a") {
       e.preventDefault();
       const paths = visibleRows()
-        .map((row) => row.title)
+        .map((row) => rowPath(row))
         .filter((value) => value !== cwd);
       setSelectedPaths(new Set(paths));
       if (!selectedPath || selectedPath === cwd) {

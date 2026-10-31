@@ -133,7 +133,6 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
     var(--color-content) var(--selection-emphasis-strength),
     transparent
   );
-  --color-accent: var(--palette-accent);
   /* One hue for every "on / running / working" state (switches, Working labels, spinners). */
   --color-active: var(--palette-active);
   --color-skill: var(--palette-hexb0b8c4);
@@ -156,6 +155,39 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --color-diff-del-fg: var(--palette-hexfda4af);
   --color-diff-del-bg: color-mix(in srgb, var(--color-diff-del) 15%, transparent);
   --color-diff-del-gutter: color-mix(in srgb, var(--color-diff-del) 25%, transparent);
+}
+
+/* Status and accent utilities resolve to the semantic roles, not the raw hues:
+   text-/border-/outline-/fill-/stroke-/ring-danger|warning|success|info|accent use the
+   status-ink-adjusted --ui-tone-<tone>-fg (readable on bright custom dark canvases and in light
+   mode; accent follows the user's accent and readability setting), and bg-<tone> uses the solid
+   fill role --ui-tone-<tone>-solid (paired with --ui-tone-<tone>-on-solid ink). Opacity modifiers
+   (bg-warning/15, text-danger/70) mix from the same roles.
+   `inline reference` keeps these keys out of the emitted theme, so the raw CSS variables
+   --color-danger|warning|success|info|accent below stay the plain palette hues that the tone
+   roles, editor themes and feature CSS derive from (no cycle). */
+@theme inline reference {
+  --color-danger: var(--ui-tone-danger-fg);
+  --color-warning: var(--ui-tone-warning-fg);
+  --color-success: var(--ui-tone-success-fg);
+  --color-info: var(--ui-tone-info-fg);
+  --color-accent: var(--ui-tone-accent-fg);
+  --background-color-danger: var(--ui-tone-danger-solid);
+  --background-color-warning: var(--ui-tone-warning-solid);
+  --background-color-success: var(--ui-tone-success-solid);
+  --background-color-info: var(--ui-tone-info-solid);
+  --background-color-accent: var(--ui-tone-accent-solid);
+}
+
+/* Raw status and accent hues. palette.css (generated) declares the status hues in @theme, but the
+   utility re-keying above suppresses that emission, so the dark values are declared here and
+   palette.css html.theme-light still overrides them. */
+:root {
+  --color-danger: var(--palette-dangerDark);
+  --color-warning: var(--palette-warningDark);
+  --color-success: var(--palette-successDark);
+  --color-info: var(--palette-infoDark);
+  --color-accent: var(--palette-accent);
 }
 
 /* Shared action tones: hierarchy is selected by the adapter, intent by these roles.
@@ -481,6 +513,13 @@ html.theme-light {
   --ui-control-height-lg: 2.5rem;
   --ui-control-radius: 0.375rem;
   --ui-control-checkbox-size: 1rem;
+  /* Disabled model (one per control family, never both on one element):
+     - Fields, rows, list items and composite surfaces dim as a whole with --ui-disabled-opacity,
+       so their text, icons and frame keep their relative steps.
+     - Buttons, segmented options and other filled actions recolour with the tone roles
+       --ui-tone-<tone>-disabled-fg / -surface / -border (shared --ui-control-disabled-* below),
+       so a disabled primary never reads as a translucent enabled one.
+     Pair a disabled action with its reason through the shared Tooltip, not opacity alone. */
   --ui-disabled-opacity: 0.5;
   --ui-overlay-backdrop: var(--palette-oklch_0_08_0_none_0_68);
   /* Modal focus layer. The blur softens the work beneath, so it carries a lighter dim than the
@@ -490,20 +529,64 @@ html.theme-light {
   --ui-overlay-backdrop-blur: min(4px, var(--glass-blur));
   --ui-overlay-backdrop-soft: color-mix(in oklab, var(--ui-overlay-backdrop) 60%, transparent);
   --ui-overlay-backdrop-nested: color-mix(in oklab, var(--ui-overlay-backdrop) 24%, transparent);
-  --ui-focus-ring-color: var(--ui-interaction-ink);
-  --ui-focus-width: 2px;
-  --ui-focus-offset: 2px;
-  --ui-field-border-hover: color-mix(in oklab, var(--color-content) 60%, var(--ui-surface-muted));
-  /* One measured focus tone for every field frame: the user's tint at near-content strength,
-     never the accent, so focus is clear (about 10:1 on the field) without recolouring the control.
-     The 2px frame sits inside the field edge (offset = -width): no layout shift, nothing clipped. */
-  --ui-field-border-focus: color-mix(in oklab, var(--color-content) 88%, var(--ui-surface-muted));
-  --ui-field-focus-width: 2px;
-  --motion-reorder-duration: 160ms;
+  /* Field and focus tokens (--ui-field-*, --ui-focus-*) have one owner: the contract at the top
+     of arc.css. Do not redeclare them here. */
+  /* Global motion scale. Arc's --duration-* / --ease-* (arc.css) point at these; use them in
+     feature CSS instead of literal milliseconds or curves. Reduced motion is handled per surface
+     (and globally for Tailwind animate-spin/pulse below), not by zeroing these roles. */
+  --motion-duration-instant: 80ms;
+  --motion-duration-fast: 120ms;
+  --motion-duration-standard: 160ms;
+  --motion-duration-slow: 260ms;
+  --motion-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-enter: var(--motion-ease-standard);
+  --motion-ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  /* Purpose aliases read by motion.ts / useComposerDockMotion.ts; they follow the scale. */
+  --motion-reorder-duration: var(--motion-duration-standard);
   --motion-tab-close-duration: 200ms;
-  --motion-feedback-duration: 120ms;
-  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-feedback-duration: var(--motion-duration-fast);
+  --motion-ease-out: var(--motion-ease-standard);
   --motion-tab-ease-out: cubic-bezier(0.3333, 0.6667, 0.6667, 1);
+  /* Stacking layers. Keep in sync with LAYER in src/shared/lib/layers.ts (TS sets zIndex inline,
+     CSS uses these); values and names must match one to one. */
+  --layer-hover-card: 60;
+  --layer-popover: 80;
+  --layer-submenu: 81;
+  --layer-dialog: 90;
+  --layer-dialog-popover: 91;
+  --layer-toast: 100;
+  --layer-drag: 2147483647;
+  /* Arc scale aliases for surfaces outside a .bycoda-arc root (inbox, host tools, onboarding,
+     chat controls). Same values as the .bycoda-arc block in arc.css, which still re-declares them
+     for Arc roots and their density/card overrides. Density- and scope-specific Arc roles
+     (--control-height-*, --surface*, --border*) are intentionally NOT global: outside Arc they
+     must use the --ui-* roles. */
+  --radius-control: var(--ui-control-radius);
+  --radius-panel: 0.75rem;
+  --radius-surface: 0.75rem;
+  --radius-pill: 9999px;
+  --space-1: 0.25rem;
+  --space-2: 0.375rem;
+  --space-3: 0.625rem;
+  --space-4: 0.875rem;
+  --space-5: 1rem;
+  --space-6: 1.25rem;
+  --space-8: 1.5rem;
+  --space-10: 2rem;
+  --space-12: 2.5rem;
+  --space-16: 3rem;
+  --accent: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
+  /* Radius names used by features before the scale settled; aliases of the owned roles. */
+  --ui-radius-control: var(--ui-control-radius);
+  --ui-radius-panel: var(--ui-radius-card);
+  --control-radius: var(--ui-control-radius);
+  /* Neutral ink fills over whatever lies beneath (transparent base): hairlines, quiet wells,
+     inline chips and dividers that must stay translucent over images and glass. Opaque steps use
+     --ui-surface-*; text uses --ui-text-*. */
+  --ui-fill-faint: color-mix(in srgb, var(--color-content) 4%, transparent);
+  --ui-fill-subtle: color-mix(in srgb, var(--color-content) 8%, transparent);
+  --ui-fill-muted: color-mix(in srgb, var(--color-content) 10%, transparent);
+  --ui-fill-strong: color-mix(in srgb, var(--color-content) 12%, transparent);
   --theme-hue: 216;
   --theme-saturation: 24%;
   --theme-dark-lightness: 4%;
@@ -878,7 +961,7 @@ html.has-native-glass:not(.theme-light) #root {
 .workspace-tab[data-dragging] > button:not([aria-selected="true"]),
 .project-reorder-item:not([data-reordering], [data-selected]):hover,
 .project-reorder-item[data-dragging]:not([data-selected]) {
-  background: color-mix(in srgb, var(--color-content) 5%, transparent);
+  background: var(--ui-fill-faint);
   color: var(--color-content);
 }
 
@@ -1243,7 +1326,7 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
     right: 0;
     z-index: 1;
     opacity: 0;
-    transition: opacity 120ms ease;
+    transition: opacity var(--motion-duration-fast) ease;
   }
 
   .user-message-row:hover .user-message-actions,
@@ -1833,7 +1916,7 @@ html.theme-light .orchestrator-constellation {
 }
 
 .user-message-bubble[data-draft="true"] {
-  background: color-mix(in srgb, var(--color-content) 4%, transparent);
+  background: var(--ui-fill-faint);
 }
 
 html.has-user-accent .user-message-bubble[data-draft="true"] {
@@ -1942,7 +2025,7 @@ input,
 
 .cm-mergeView .cm-merge-revert .cm-split-hunk button:hover {
   color: var(--color-content);
-  background: color-mix(in srgb, var(--color-content) 12%, transparent);
+  background: var(--ui-fill-strong);
 }
 
 .cm-mergeView .cm-merge-revert .cm-split-hunk button:focus-visible {
@@ -2020,7 +2103,7 @@ html.is-explorer-file-dragging {
 .explorer-file-drag-preview {
   position: fixed !important;
   inset: 0 auto auto 0 !important;
-  z-index: 2147483647;
+  z-index: var(--layer-drag);
   display: flex !important;
   width: max-content !important;
   max-width: min(280px, calc(100vw - 16px));
@@ -2031,7 +2114,7 @@ html.is-explorer-file-dragging {
   padding: 0 9px 0 7px !important;
   overflow: hidden;
   pointer-events: none !important;
-  border: 1px solid color-mix(in srgb, var(--color-content) 12%, transparent);
+  border: 1px solid var(--ui-fill-strong);
   border-radius: 5px;
   background: color-mix(
     in srgb,
@@ -2105,50 +2188,6 @@ html.is-resizing {
   [data-access-picker-trigger] > svg:last-child {
     display: none;
   }
-}
-
-/* Solid primary actions share the composer submit treatment. */
-.primary-action:not(:disabled) {
-  background: var(--color-content);
-  color: var(--color-background-base);
-}
-
-.primary-action:not(:disabled):hover {
-  background: var(--ui-primary-hover);
-}
-
-.primary-action:disabled {
-  background: var(--color-selection);
-  color: var(--ui-text-disabled);
-}
-
-html.theme-light .primary-action:not(:disabled) {
-  background: var(--color-content);
-  color: var(--color-background-base);
-}
-
-html.theme-light .primary-action:not(:disabled):hover {
-  background: var(--ui-primary-hover);
-}
-
-html.theme-light .primary-action:disabled {
-  background: var(--color-selection);
-  color: var(--ui-text-disabled);
-}
-
-html.has-user-accent .primary-action:not(:disabled) {
-  background: var(--ui-tone-accent-solid);
-  color: var(--ui-tone-accent-on-solid);
-}
-
-/* The ink was chosen for this exact fill; hover keeps it. */
-html.has-user-accent .primary-action:not(:disabled):hover {
-  background: var(--ui-tone-accent-solid-hover);
-}
-
-html.has-user-accent .primary-action:disabled {
-  background: color-mix(in srgb, var(--user-accent-color) 28%, transparent);
-  color: color-mix(in srgb, var(--color-content) 35%, transparent);
 }
 
 .composer-field {
@@ -2342,7 +2381,7 @@ html.is-grabbing {
 /* The one cursor badge: what is moving and what releasing does. Targets never repeat it. */
 .pointer-drop-hint {
   position: fixed;
-  z-index: 2147483647;
+  z-index: var(--layer-drag);
   pointer-events: none;
   display: flex;
   align-items: baseline;
@@ -2374,7 +2413,7 @@ html.is-grabbing {
    shows where it will land by opening a gap, so only the states that need words carry a label,
    attached to the copy. Attribute selectors keep these above the copied utility classes. */
 .pointer-drag-preview[data-drag-preview] {
-  z-index: 2147483647;
+  z-index: var(--layer-drag);
   pointer-events: none;
   background: var(--ui-surface-raised);
   border-color: var(--ui-drop-frame);
@@ -2502,12 +2541,12 @@ html.is-grabbing {
   box-shadow: none;
   color: color-mix(in srgb, var(--color-content) 45%, transparent);
   transition:
-    color 160ms ease,
-    background-color 160ms ease;
+    color var(--motion-duration-standard) ease,
+    background-color var(--motion-duration-standard) ease;
 }
 
 .agent-markdown .markdown-code-copy:hover {
-  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+  background: var(--ui-fill-muted);
   color: var(--color-content);
 }
 
@@ -2518,7 +2557,7 @@ html.is-grabbing {
 
 .agent-markdown .markdown-code-copy:focus-visible {
   outline-color: var(--ui-focus-ring-color);
-  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+  background: var(--ui-fill-muted);
   color: var(--color-content);
 }
 
@@ -2626,8 +2665,8 @@ html.is-grabbing {
 
 .agent-markdown .markdown-code-copy-pages {
   transition:
-    opacity 120ms ease 100ms,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--motion-duration-fast) ease 100ms,
+    transform var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .agent-markdown .markdown-code-copy-check {
@@ -2636,17 +2675,17 @@ html.is-grabbing {
   stroke-dashoffset: 16;
   transform: scale(0.65) rotate(-12deg);
   transition:
-    opacity 80ms ease 180ms,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    stroke-dashoffset 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--motion-duration-instant) ease 180ms,
+    transform var(--motion-duration-slow) var(--motion-ease-standard),
+    stroke-dashoffset var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .agent-markdown .markdown-code-copy.is-copied .markdown-code-copy-pages {
   opacity: 0;
   transform: scale(0.55) rotate(12deg);
   transition:
-    opacity 120ms ease,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--motion-duration-fast) ease,
+    transform var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .agent-markdown .markdown-code-copy.is-copied .markdown-code-copy-check {
@@ -2654,9 +2693,9 @@ html.is-grabbing {
   stroke-dashoffset: 0;
   transform: scale(1) rotate(0);
   transition:
-    opacity 80ms ease,
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    stroke-dashoffset 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--motion-duration-instant) ease,
+    transform var(--motion-duration-slow) var(--motion-ease-standard),
+    stroke-dashoffset var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 .agent-markdown .markdown-code-icon {
@@ -2821,7 +2860,7 @@ html.is-grabbing {
 .agent-markdown [data-streamdown="code-block-body"] {
   padding: 10px 8px 10px 0;
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+  border-top: 1px solid var(--ui-fill-muted);
   border-radius: 0;
   background: transparent;
   font-size: 12px;
@@ -2906,9 +2945,9 @@ html:not(.theme-light) .markdown-code-token {
   .agent-markdown .markdown-table-shell > .markdown-code-copy:not(.is-copied, .is-failed) {
     opacity: 0;
     transition:
-      opacity 120ms ease,
-      color 160ms ease,
-      background-color 160ms ease;
+      opacity var(--motion-duration-fast) ease,
+      color var(--motion-duration-standard) ease,
+      background-color var(--motion-duration-standard) ease;
   }
 
   .agent-markdown
@@ -2920,7 +2959,7 @@ html:not(.theme-light) .markdown-code-token {
 
 .agent-markdown [data-streamdown="table"] > :not(:last-child),
 .agent-markdown [data-streamdown="table-body"] > :not(:last-child) {
-  border-color: color-mix(in srgb, var(--color-content) 5%, transparent);
+  border-color: var(--ui-fill-faint);
 }
 
 .agent-markdown [data-streamdown="table-header-cell"],
@@ -2933,7 +2972,7 @@ html:not(.theme-light) .markdown-code-token {
 
 .agent-markdown [data-streamdown="horizontal-rule"] {
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+  border-top: 1px solid var(--ui-fill-muted);
 }
 
 .agent-markdown p,
@@ -3086,7 +3125,7 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .activity-dock-done {
-  animation: activity-dock-done 1200ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: activity-dock-done 1200ms var(--motion-ease-standard);
 }
 
 .activity-dock-check {
@@ -3116,7 +3155,7 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .linked-panel-slide {
-  animation: linked-panel-slide 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: linked-panel-slide var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 /* New split panes; same motion as the linked panel's slide. */
@@ -3132,7 +3171,7 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 [data-pane-enter] {
-  animation: pane-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: pane-enter var(--motion-duration-slow) var(--motion-ease-standard);
 }
 
 [data-pane-enter="right"] {
@@ -3167,7 +3206,7 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .linked-panel-reveal {
-  animation: linked-panel-reveal 240ms cubic-bezier(0.22, 1, 0.36, 1) 90ms both;
+  animation: linked-panel-reveal 240ms var(--motion-ease-standard) 90ms both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3315,7 +3354,7 @@ html:not(.theme-light) .markdown-code-token {
   display: grid;
   grid-template-rows: 1fr;
   transition:
-    grid-template-rows 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    grid-template-rows 320ms var(--motion-ease-standard),
     opacity 220ms ease;
 }
 
@@ -3519,8 +3558,8 @@ html:not(.theme-light) .markdown-code-token {
 
 .zen-fold-prose .agent-markdown [data-streamdown="code-block"],
 .zen-fold-prose .agent-markdown [data-streamdown="table-wrapper"] {
-  border-color: color-mix(in srgb, var(--color-content) 8%, transparent);
-  background: color-mix(in srgb, var(--color-content) 4%, transparent);
+  border-color: var(--ui-fill-subtle);
+  background: var(--ui-fill-faint);
 }
 
 .zen-fold-prose .agent-markdown [data-streamdown="table-header-cell"],
@@ -3556,13 +3595,13 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .zen-fold-item[data-fold-state="opening"] {
-  animation: zen-fold-open 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: zen-fold-open 340ms var(--motion-ease-standard) both;
 }
 
 .zen-fold-item[data-fold-state="closing"] {
   pointer-events: none;
   user-select: none;
-  animation: zen-fold-close 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: zen-fold-close 340ms var(--motion-ease-standard) both;
 }
 
 .zen-fold-item:is([data-fold-state="opening"], [data-fold-state="closing"]) > *,
@@ -3671,7 +3710,7 @@ html:not(.theme-light) .markdown-code-token {
 .zen-phase-step[data-entering] {
   display: grid;
   overflow: clip;
-  animation: zen-step-open calc(var(--step-ms) * 0.4) cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: zen-step-open calc(var(--step-ms) * 0.4) var(--motion-ease-standard) both;
 }
 
 .zen-phase-step[data-entering]:is(:last-child, :has(+ .zen-phase-step[data-waiting]))::before {
@@ -3861,9 +3900,9 @@ html.theme-light .popover-backdrop {
   height: 0;
   opacity: 0;
   pointer-events: none;
-  border: 1px solid color-mix(in srgb, var(--color-content) 12%, transparent);
+  border: 1px solid var(--ui-fill-strong);
   border-radius: var(--radius-lg, 0.5rem);
-  background: color-mix(in srgb, var(--color-content) 3%, transparent);
+  background: var(--ui-fill-faint);
 }
 
 html.theme-light .btw-morph-frame {
@@ -4016,7 +4055,7 @@ html.theme-light .btw-burst {
 
 /* Match the composer box it morphs out of. */
 .btw-sheet-glass {
-  border: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+  border: 1px solid var(--ui-fill-muted);
   border-bottom: 0;
   border-radius: var(--radius-lg, 0.5rem) var(--radius-lg, 0.5rem) 0 0;
   box-shadow:
@@ -4384,7 +4423,7 @@ html[data-performance-no-blur] .modal-backdrop {
 /* Subagent panel: a right-hand sheet over the session pane, as the side
    conversation sheet is a bottom one. */
 .subagent-sheet-glass {
-  border-left: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+  border-left: 1px solid var(--ui-fill-muted);
   border-radius: var(--radius-lg, 0.5rem) 0 0 var(--radius-lg, 0.5rem);
   box-shadow:
     0 20px 25px -5px var(--palette-rgb_0_0_0_0_1),
@@ -4416,10 +4455,10 @@ html[data-performance-no-blur] .modal-backdrop {
    editor's own theme scope, because the gutter clips its children. */
 .cm-blameCard {
   position: fixed;
-  z-index: 60;
+  z-index: var(--layer-hover-card);
   max-width: 320px;
   padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--color-content) 12%, transparent);
+  border: 1px solid var(--ui-fill-strong);
   border-radius: 6px;
   background: var(--color-background-base);
   color: var(--color-content);
@@ -4456,7 +4495,7 @@ html[data-performance-no-blur] .modal-backdrop {
 }
 
 .rail-reorder-block[data-dragging] {
-  background: color-mix(in srgb, var(--color-content) 8%, transparent);
+  background: var(--ui-fill-subtle);
 }
 
 @keyframes linked-work-item-slide-in {
@@ -4522,6 +4561,17 @@ html[data-decorative-motion="off"]
 @media (prefers-reduced-motion: reduce) {
   :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active) {
     animation-play-state: paused !important;
+  }
+  /* Tailwind spinners and pulses: no rotation; the pending state stays visible as the same slow
+     opacity pulse Spinner.module.css uses. Elements that chose their own motion-reduce: variant
+     (motion-reduce:animate-none) keep it. Unlayered, so it outranks the utility itself. */
+  :is(.animate-spin, .animate-pulse):not([class*="motion-reduce:"]) {
+    animation: ui-reduced-pending 1.6s ease-in-out infinite;
+  }
+}
+@keyframes ui-reduced-pending {
+  50% {
+    opacity: 0.35;
   }
 }
 /* A terminal mark is live only inside its existing active terminal control. */

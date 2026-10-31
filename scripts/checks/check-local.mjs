@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { classifyChanges, detectChanges, repositoryRoot } from "./ci-changes.mjs";
+import { scopeOf } from "./check-ui-drift.mjs";
 
 export function scriptTestFiles(root = repositoryRoot) {
   const walk = (directory) =>
@@ -88,6 +89,15 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
   if (supported.length)
     steps.push(node("Changed-file formatting", tool("oxfmt", ["--check", ...supported])));
   if (code.length) steps.push(node("Changed-file lint", tool("oxlint", [...code])));
+  const ui = files.filter((file) => scopeOf(file));
+  if (ui.length)
+    steps.push(
+      node("Changed-file UI drift ratchet", [
+        path.join(root, "scripts/checks/check-ui-drift.mjs"),
+        "--files",
+        ...ui,
+      ]),
+    );
   const hooks = code.filter((file) => file.startsWith("src/"));
   if (hooks.length)
     steps.push(

@@ -1,0 +1,11 @@
+/* Presentation hints for TextField. Doubled classes outrank the Arc input's single-class rules
+   regardless of stylesheet order; they change type only, never the frame, focus or validation roles. */
+.monospace.monospace {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+/* Short numeric values (ports, counts, limits) without steppers: aligned digits in a narrow box.
+   Use NumberField when the value needs min/max/step steppers. */
+.numeric.numeric {
+  font-variant-numeric: tabular-nums;
+}

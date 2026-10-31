@@ -304,7 +304,14 @@ export const ListBullet = wrap(LucideListBullet, "ListBullet");
 export const LayoutGrid = wrap(LucideLayoutGrid, "LayoutGrid");
 export const ListEnd = wrap(LucideListEnd, "ListEnd");
 export const ListFilter = wrap(LucideListFilter, "ListFilter");
+/**
+ * @deprecated Pending state uses `Spinner` (`./Spinner`): token sizes, `currentColor` and a
+ * reduced-motion fallback. A spinning icon with `animate-spin` ignores reduced motion.
+ */
 export const Loader = wrap(LucideLoader, "Loader");
+/**
+ * @deprecated Pending state uses `Spinner` (`./Spinner`), or `LoadingText` for a status line.
+ */
 export const LoaderCircle = wrap(LucideLoaderCircle, "LoaderCircle");
 export const Lock = wrap(LucideLock, "Lock");
 export const LockOpen = wrap(LucideLockOpen, "LockOpen");

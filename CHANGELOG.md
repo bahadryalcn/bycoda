@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Sounds
+
+- Replace the six interface sounds with CC0 recordings from Openverse/Freesound; credits are in CREDITS.md.
+
 ## [0.7.0]
 
 ### Reliability

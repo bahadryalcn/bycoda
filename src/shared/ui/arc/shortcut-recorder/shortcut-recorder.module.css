@@ -84,6 +84,15 @@
   align-items: center;
   gap: var(--space-1);
 }
+/* A sequence ("Esc Esc") steps apart a little more than the keys of one chord. */
+.keys > .kbd[data-sequence-start] {
+  margin-inline-start: var(--space-1);
+}
+.keysSeparator {
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  line-height: 1;
+}
 
 /* ---------------------------------------------- Recorder ---------------------------------------------- */
 

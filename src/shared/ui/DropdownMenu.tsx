@@ -3,6 +3,7 @@ import { ContextMenuRow, contextMenuSlotClassName as slot } from "./arc/context-
 import { Popover, type PopoverAnchor } from "./Popover";
 import { Check } from "./icons";
 import { Badge } from "./Badge";
+import { formatShortcutLabel, usePlatform } from "./shortcut";
 import styles from "./DropdownMenu.module.css";
 
 export type DropdownMenuAction = {
@@ -51,6 +52,7 @@ export function DropdownMenu({
   width = 228,
   ...dataAttributes
 }: DropdownMenuProps) {
+  const platform = usePlatform();
   const surface = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const closed = useRef(false);
@@ -187,7 +189,8 @@ export function DropdownMenu({
         </span>
       ) : item.shortcut ? (
         <span className={`${slot.trailing} ${slot.shortcut}`} aria-hidden="true">
-          {item.shortcut}
+          {/* The one shortcut formatter: platform spelling, sequences and alternatives kept. */}
+          {formatShortcutLabel(item.shortcut, platform).text || item.shortcut}
         </span>
       ) : null}
     </ContextMenuRow>

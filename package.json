@@ -44,6 +44,7 @@
     "lint:hooks": "oxlint --config .oxlint-hooks.json src",
     "lint:baseline": "node scripts/checks/check-lint-baseline.mjs",
     "check:colors": "node scripts/checks/check-theme-colors.mjs",
+    "check:ui-drift": "node scripts/checks/check-ui-drift.mjs",
     "check:host-contracts": "node scripts/checks/check-host-contracts.mjs",
     "check:host-contracts:write": "node scripts/checks/check-host-contracts.mjs --write",
     "check:host-boundaries": "node scripts/checks/check-host-runtime-boundaries.mjs",

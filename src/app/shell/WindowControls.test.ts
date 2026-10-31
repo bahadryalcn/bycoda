@@ -48,6 +48,19 @@ vi.mock("../../shared/i18n", () => ({
 import { WindowControls, WindowControlsVisible } from "./WindowControls";
 import { FullscreenButton } from "./FullscreenButton";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 beforeEach(() => {
   vi.clearAllMocks();
@@ -160,7 +173,8 @@ it("toggles fullscreen from the footer and switches to the inward restore icon",
   await mounted(async (host) => {
     const button = host.querySelector<HTMLButtonElement>("button")!;
     const expandPath = button.querySelector("path")!.getAttribute("d");
-    expect(button.title).toContain("F11");
+    // The hint and its F11 key cap ride in the shared tooltip, not a native title.
+    expect(await tooltipText(button)).toContain("F11");
     await act(async () => button.click());
     expect(native.window.setFullscreen).toHaveBeenLastCalledWith(true);
     expect(button.getAttribute("aria-label")).toBe("Restore window");

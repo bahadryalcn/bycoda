@@ -1,4 +1,3 @@
-import { SearchInput } from "./SearchInput";
 import { t, useT } from "../i18n";
 import {
   useEffect,
@@ -12,10 +11,14 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ComponentPropsWithRef,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactElement,
   type ReactNode,
+  type Ref,
   type RefObject,
 } from "react";
-import { ChevronDown, Search, X } from "./icons";
+import { ChevronDown, X } from "./icons";
 import { Spinner } from "./Spinner";
 import { Field, fieldDescribedBy, type FieldVariant } from "./Field";
 import { MatchText, matchPositions } from "./MatchText";
@@ -31,9 +34,10 @@ import {
   ComboboxChoice,
   ComboboxItem,
   ComboboxList,
-  ComboboxSearch,
   ComboboxStatus,
 } from "./arc/combobox/combobox";
+import { PopoverSearchHeader } from "./PopoverSearchHeader";
+import { PickerFooter } from "./picker/PickerList";
 
 export type SearchableSelectOption = {
   value: string;
@@ -41,6 +45,38 @@ export type SearchableSelectOption = {
   keywords?: string;
   description?: string;
   disabled?: boolean;
+  /** Leading glyph, logo or avatar (icon-sm/icon-md); also shown in the trigger for the selected value. */
+  icon?: ReactNode;
+  /** Short end-aligned secondary text on the row (path, account, count). A string is also searched. */
+  meta?: ReactNode;
+  /** Consecutive options with the same group render under one heading. */
+  group?: string;
+};
+
+/** What a custom trigger receives: spread `props` on a button, read the rest for its content. */
+export type SearchableSelectTriggerRender = {
+  props: {
+    ref: Ref<HTMLButtonElement>;
+    id?: string;
+    type: "button" | "submit" | "reset";
+    disabled: boolean;
+    "aria-label": string;
+    "aria-expanded": boolean;
+    "aria-haspopup": "dialog";
+    "aria-controls"?: string;
+    "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling";
+    "aria-describedby"?: string;
+    "aria-busy"?: boolean | "true" | "false";
+    "data-state": "open" | "closed";
+    onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
+  };
+  open: boolean;
+  /** The selected label (or a summary for several values); undefined means the placeholder shows. */
+  selectedLabel?: string;
+  placeholder: string;
+  selected: readonly SearchableSelectOption[];
+  loading: boolean;
 };
 
 type SingleSelectProps = {
@@ -104,6 +140,13 @@ type SelectionOptions = AsyncOptions & FieldOptions & {
     clear?: string;
     done?: string;
   };
+  /**
+   * Replaces the default trigger. Spread `trigger.props` on a Button (or another button element) so the
+   * open state, keyboard opening, labelling and field wiring stay intact.
+   */
+  renderTrigger?: (trigger: SearchableSelectTriggerRender) => ReactElement;
+  /** Actions below the list ("Manage…", "New…"); `close` closes the menu and returns focus to the trigger. */
+  footer?: ReactNode | ((menu: { close: () => void }) => ReactNode);
 };
 
 export function SearchableSelect(
@@ -148,6 +191,8 @@ export function SearchableSelect(
     description,
     fieldError,
     fieldVariant,
+    renderTrigger,
+    footer,
   } = props;
   return (
     <SearchableSelectMenu
@@ -177,6 +222,8 @@ export function SearchableSelect(
         description,
         fieldError,
         fieldVariant,
+        renderTrigger,
+        footer,
       }}
       values={props.multiple ? props.value : [props.value]}
       multiple={!!props.multiple}
@@ -252,6 +299,11 @@ const OptionRow = memo(function OptionRow({
         option.description ? "min-h-8 py-1.5" : compact ? "h-7" : "h-8"
       }`}
     >
+      {option.icon != null ? (
+        <span className={styles.optionIcon} aria-hidden>
+          {option.icon}
+        </span>
+      ) : null}
       <ComboboxChoice
         selected={selected}
         label={
@@ -265,9 +317,21 @@ const OptionRow = memo(function OptionRow({
         descriptionId={`${listId}-description-${index}`}
         title={title}
       />
+      {option.meta != null ? <span className={styles.optionMeta}>{option.meta}</span> : null}
     </ComboboxItem>
   );
 });
+
+/** Consecutive options sharing a group; ungrouped lists stay one flat section. */
+function optionSections(options: readonly SearchableSelectOption[]) {
+  const sections: { group?: string; start: number; options: SearchableSelectOption[] }[] = [];
+  options.forEach((option, index) => {
+    const current = sections[sections.length - 1];
+    if (current && current.group === option.group) current.options.push(option);
+    else sections.push({ group: option.group, start: index, options: [option] });
+  });
+  return sections;
+}
 
 function SearchableSelectMenu({
   label,
@@ -300,6 +364,8 @@ function SearchableSelectMenu({
   fieldError,
   fieldVariant = "form",
   onRemove,
+  renderTrigger,
+  footer,
 }: {
   label: string;
   values: readonly string[];
@@ -353,7 +419,7 @@ function SearchableSelectMenu({
     () =>
       normalizedQuery
         ? options.filter((option) =>
-            `${option.label}\n${option.description ?? ""}\n${option.keywords ?? ""}`
+            `${option.label}\n${option.description ?? ""}\n${option.keywords ?? ""}\n${typeof option.meta === "string" ? option.meta : ""}\n${option.group ?? ""}`
               .toLocaleLowerCase(searchLocale)
               .includes(normalizedQuery),
           )
@@ -483,6 +549,42 @@ function SearchableSelectMenu({
   const resultsCopy =
     options.length === 0 && !normalizedQuery ? (noOptionsLabel ?? emptyLabel) : emptyLabel;
 
+  const selectedOption = optionLookup.get(values[0] ?? "");
+  // The trigger's state, labelling, field wiring and opening keys; shared by the default and a custom trigger.
+  const triggerWiring: SearchableSelectTriggerRender["props"] = {
+    id: composed ? triggerId : triggerProps?.id,
+    ref: trigger,
+    type: triggerProps?.type ?? "button",
+    disabled,
+    "aria-invalid": fieldError ? true : triggerProps?.["aria-invalid"],
+    "aria-describedby": composed
+      ? fieldDescribedBy(
+          triggerId,
+          { description, error: fieldError },
+          triggerProps?.["aria-describedby"],
+        )
+      : triggerProps?.["aria-describedby"],
+    "aria-label": triggerProps?.["aria-label"] ?? `${label}: ${selectedLabel ?? placeholder}`,
+    "aria-busy": loading || triggerProps?.["aria-busy"],
+    "aria-expanded": open,
+    "aria-haspopup": "dialog",
+    "aria-controls": open ? `${listId}-menu` : undefined,
+    "data-state": open ? "open" : "closed",
+    onClick: (event) => {
+      triggerProps?.onClick?.(event);
+      if (event.defaultPrevented) return;
+      if (open) close();
+      else openMenu();
+    },
+    onKeyDown: (event) => {
+      triggerProps?.onKeyDown?.(event);
+      if (event.defaultPrevented || isImeComposition(event.nativeEvent)) return;
+      if (open || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
+      event.preventDefault();
+      openMenu();
+    },
+  };
+
   const picker = (
     <div
       ref={root}
@@ -492,44 +594,22 @@ function SearchableSelectMenu({
           : "relative min-w-0"
       }
     >
+      {renderTrigger ? (
+        renderTrigger({
+          props: triggerWiring,
+          open,
+          selectedLabel,
+          placeholder,
+          selected: values.flatMap((item) => optionLookup.get(item) ?? []),
+          loading,
+        })
+      ) : (
       <SelectTrigger
         {...triggerProps}
-        id={composed ? triggerId : triggerProps?.id}
-        ref={trigger}
-        aria-invalid={fieldError ? true : triggerProps?.["aria-invalid"]}
-        aria-describedby={
-          composed
-            ? fieldDescribedBy(
-                triggerId,
-                { description, error: fieldError },
-                triggerProps?.["aria-describedby"],
-              )
-            : triggerProps?.["aria-describedby"]
-        }
+        {...triggerWiring}
         data-select-variant={variant}
-        data-state={open ? "open" : "closed"}
         data-disabled={disabled || undefined}
         data-loading={loading || undefined}
-        type={triggerProps?.type ?? "button"}
-        disabled={disabled}
-        aria-label={triggerProps?.["aria-label"] ?? `${label}: ${selectedLabel ?? placeholder}`}
-        aria-busy={loading || triggerProps?.["aria-busy"]}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-controls={open ? `${listId}-menu` : undefined}
-        onClick={(event) => {
-          triggerProps?.onClick?.(event);
-          if (event.defaultPrevented) return;
-          if (open) close();
-          else openMenu();
-        }}
-        onKeyDown={(event) => {
-          triggerProps?.onKeyDown?.(event);
-          if (event.defaultPrevented || isImeComposition(event.nativeEvent)) return;
-          if (open || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
-          event.preventDefault();
-          openMenu();
-        }}
         className={[
           triggerProps?.className,
           // Field and transparent triggers share the Select frame (border, surface, height, hover, focus, invalid and
@@ -545,6 +625,11 @@ function SearchableSelectMenu({
           .filter(Boolean)
           .join(" ")}
       >
+        {!multiple && selectedOption?.icon != null ? (
+          <span className={styles.triggerIcon} aria-hidden>
+            {selectedOption.icon}
+          </span>
+        ) : null}
         <span
           className={`min-w-0 truncate ${variant === "panel" ? "flex-1 text-right" : compact ? "" : "flex-1"} ${framed || !selectedLabel ? "" : "text-content"}`}
           data-placeholder={selectedLabel ? undefined : ""}
@@ -566,6 +651,7 @@ function SearchableSelectMenu({
           />
         )}
       </SelectTrigger>
+      )}
       {showSelectedValues && multiple && values.length ? (
         <div
           className={`bycoda-selection-values ${styles.values} ${disabled ? styles.valuesDisabled : ""}`}
@@ -615,30 +701,21 @@ function SearchableSelectMenu({
           className="bycoda-arc bycoda-arc-menu flex flex-col overflow-hidden"
         >
           {searchable ? (
-            <ComboboxSearch className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke px-2.5 text-(--ui-text-secondary) focus-within:text-(--ui-text-secondary)">
-              <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
-              <span className="sr-only">{searchPlaceholder}</span>
-              <SearchInput
-                focusOwner="menu"
-                ref={search}
-                role="combobox"
-                aria-label={searchPlaceholder}
-                aria-expanded="true"
-                aria-autocomplete="list"
-                aria-controls={listId}
-                aria-activedescendant={activeId}
-                value={query}
-                placeholder={searchPlaceholder}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  setActive(0);
-                }}
-                onKeyDown={onSearchKeyDown}
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-content placeholder:text-(--ui-text-muted)"
-              />
-            </ComboboxSearch>
+            <PopoverSearchHeader
+              ref={search}
+              label={searchPlaceholder}
+              placeholder={searchPlaceholder}
+              // The menu focuses the field itself once it has been placed.
+              autoFocus={false}
+              listId={listId}
+              activeOptionId={activeId}
+              value={query}
+              onValueChange={(next) => {
+                setQuery(next);
+                setActive(0);
+              }}
+              onKeyDown={onSearchKeyDown}
+            />
           ) : null}
           {failed ? (
             <ComboboxStatus
@@ -677,28 +754,48 @@ function SearchableSelectMenu({
             className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1 focus-visible:outline-2 focus-visible:outline-accent"
           >
             {filtered.length > 0 ? (
-              filtered.map((option, index) => (
-                <OptionRow
-                  key={option.value}
-                  option={option}
-                  index={index}
-                  listId={listId}
-                  highlighted={index === activeIndex}
-                  selected={values.includes(option.value)}
-                  compact={compact}
-                  query={normalizedQuery ? query : ""}
-                  rowRef={index === activeIndex ? activeOption : undefined}
-                  controlDisabled={disabled}
-                  onPick={pickLatest}
-                  onHover={setActive}
-                />
-              ))
+              optionSections(filtered).map((section) => {
+                const rows = section.options.map((option, offset) => {
+                  const index = section.start + offset;
+                  return (
+                    <OptionRow
+                      key={option.value}
+                      option={option}
+                      index={index}
+                      listId={listId}
+                      highlighted={index === activeIndex}
+                      selected={values.includes(option.value)}
+                      compact={compact}
+                      query={normalizedQuery ? query : ""}
+                      rowRef={index === activeIndex ? activeOption : undefined}
+                      controlDisabled={disabled}
+                      onPick={pickLatest}
+                      onHover={setActive}
+                    />
+                  );
+                });
+                if (!section.group) return rows;
+                const headingId = `${listId}-group-${section.start}`;
+                return (
+                  <div
+                    key={headingId}
+                    role="group"
+                    aria-labelledby={headingId}
+                    className={styles.group}
+                  >
+                    <div id={headingId} role="presentation" className={styles.groupHeading}>
+                      {section.group}
+                    </div>
+                    {rows}
+                  </div>
+                );
+              })
             ) : noResults ? (
               <ComboboxStatus empty>{resultsCopy}</ComboboxStatus>
             ) : null}
           </ComboboxList>
           {onClear && (values.length > 0 || selectionLabels?.done) ? (
-            <div className="flex shrink-0 justify-end border-t border-stroke p-1">
+            <PickerFooter>
               <Button
                 variant="ghost"
                 size="sm"
@@ -715,7 +812,12 @@ function SearchableSelectMenu({
                   {selectionLabels.done}
                 </Button>
               ) : null}
-            </div>
+            </PickerFooter>
+          ) : null}
+          {footer != null ? (
+            <PickerFooter>
+              {typeof footer === "function" ? footer({ close: () => close(true) }) : footer}
+            </PickerFooter>
           ) : null}
         </Popover>
       ) : null}

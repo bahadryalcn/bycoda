@@ -63,7 +63,8 @@ describe("UsageFooter terminal control", () => {
     );
     expect(markup.match(/<button/g)).toHaveLength(1);
     expect(markup).toContain('disabled=""');
-    expect(markup).toContain(`title="${reason}"`);
+    // The reason rides in the shared tooltip on hover, never a native title bubble.
+    expect(markup).not.toContain("title=");
     expect(markup).toContain('aria-label="Terminal"');
   });
 

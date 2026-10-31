@@ -62,7 +62,10 @@ const press = async (key: string, target: HTMLElement = search()) => {
     target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })),
   );
 };
-const createButton = () => document.querySelector<HTMLButtonElement>('[title^="Create worktree "]');
+const createButton = () =>
+  [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.startsWith("Create worktree "),
+  ) ?? null;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

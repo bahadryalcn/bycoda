@@ -1,5 +1,4 @@
 import { SplitButton, type SplitButtonAction } from "../../../shared/ui/SplitButton";
-import { Badge } from "../../../shared/ui/Badge";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
@@ -144,6 +143,7 @@ import {
 } from "../model/gitRefreshPolicy";
 import { GitGenerationSettings } from "./GitGenerationSettings";
 import { Button } from "../../../shared/ui/Button";
+import { Spinner } from "../../../shared/ui/Spinner";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
@@ -210,6 +210,8 @@ type Props = {
   onOpenCommit: (commit: GitHistoryCommit, pin?: boolean) => void;
   /** The target header above already offers refresh: keep one refresh control. */
   refreshInTarget?: boolean;
+  /** The target header above already offers worktree management. */
+  worktreesInTarget?: boolean;
 };
 
 export function GitChangesPanel({
@@ -226,6 +228,7 @@ export function GitChangesPanel({
   onOpenAllChanges,
   onOpenCommit,
   refreshInTarget = false,
+  worktreesInTarget = false,
 }: Props) {
   "use memo";
   const t = useT();
@@ -236,6 +239,7 @@ export function GitChangesPanel({
     showOptimistic,
     error: loadError,
     loading,
+    checking,
   } = useDiffIndex(cwd, enabled, !repository || repository.expanded === true, paneRef);
   // Fetch, and the merge status of a host that predates conflict info, need
   // this computer or a host with `git.actions`.
@@ -523,58 +527,68 @@ export function GitChangesPanel({
               ) : null}
             </span>
           ) : null}
-          {detailsOpen && !refreshInTarget ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              label={t("Refresh source control")}
-              aria-label={t("Refresh source control")}
-              title={t("Refresh source control")}
-              disabled={!enabled || !!busy}
-              loading={loading}
-              loadingLabel={t("Refreshing…")}
-              onClick={() => {
-                onMutated();
-                changesRef.current?.refreshPr?.();
-              }}
-            >
-              <RefreshCw aria-hidden className="size-3.5" strokeWidth={1.75} />
-            </Button>
-          ) : null}
           {repository ? branchControl : null}
+          {/* Fixed icon columns keep these actions aligned with the section
+              actions below; controls owned by the header above leave their
+              column empty so the menu stays at the trailing edge. */}
           <div className={styles.branchSlots}>
-          <Button
-            size="sm"
-            variant="ghost"
-            iconOnly
-            label={t("Manage worktrees…")}
-            disabled={!enabled || !!busy}
-            onClick={() => requestWorktreeManagement(cwd)}
-          >
-            <FolderTree aria-hidden className="size-3.5" />
-          </Button>
-          {index ? (
-            <GitActionsMenu
-              cwd={cwd}
-              index={index}
-              busy={busy}
-              setBusy={setBusy}
-              autoFetch={autoFetch}
-              onToggleAutoFetch={() => {
-                saveAutoFetch(!autoFetch);
-                setAutoFetch(!autoFetch);
-              }}
-              changes={changesRef}
-              onStatus={setStatus}
-              onPending={setPending}
-              onMutated={onMutated}
-              onOpenCommit={onOpenCommit}
-              toolbar={false}
-              onRevealChanges={repository ? () => repository.onToggle(true) : undefined}
-            />
-          ) : null}
-          <span aria-hidden="true" />
+            <span className={styles.branchSlot}>
+              {detailsOpen && !refreshInTarget ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t("Refresh source control")}
+                  aria-label={t("Refresh source control")}
+                  title={t("Refresh source control")}
+                  disabled={!enabled || !!busy}
+                  loading={loading}
+                  loadingLabel={t("Refreshing…")}
+                  onClick={() => {
+                    onMutated();
+                    changesRef.current?.refreshPr?.();
+                  }}
+                >
+                  <RefreshCw aria-hidden className="size-3.5" strokeWidth={1.75} />
+                </Button>
+              ) : null}
+            </span>
+            <span className={styles.branchSlot}>
+              {worktreesInTarget ? null : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  iconOnly
+                  label={t("Manage worktrees…")}
+                  disabled={!enabled || !!busy}
+                  onClick={() => requestWorktreeManagement(cwd)}
+                >
+                  <FolderTree aria-hidden className="size-3.5" />
+                </Button>
+              )}
+            </span>
+            <span className={styles.branchSlot}>
+              {index ? (
+                <GitActionsMenu
+                  cwd={cwd}
+                  index={index}
+                  busy={busy}
+                  setBusy={setBusy}
+                  autoFetch={autoFetch}
+                  onToggleAutoFetch={() => {
+                    saveAutoFetch(!autoFetch);
+                    setAutoFetch(!autoFetch);
+                  }}
+                  changes={changesRef}
+                  onStatus={setStatus}
+                  onPending={setPending}
+                  onMutated={onMutated}
+                  onOpenCommit={onOpenCommit}
+                  toolbar={false}
+                  onRevealChanges={repository ? () => repository.onToggle(true) : undefined}
+                />
+              ) : null}
+            </span>
           </div>
         </div>
       </header>
@@ -635,6 +649,7 @@ export function GitChangesPanel({
           index={index}
           loadError={loadError}
           loading={loading}
+          checking={checking}
           files={files}
           conflicts={conflicts}
           selected={selectedPath}
@@ -712,6 +727,7 @@ function ChangedFiles({
   index,
   loadError,
   loading,
+  checking,
   files,
   conflicts,
   selected,
@@ -736,6 +752,8 @@ function ChangedFiles({
   index: GitDiffIndex | null;
   loadError: string | null;
   loading: boolean;
+  /** The entry read is still running; an empty cached list may not be final. */
+  checking: boolean;
   files: GitChangedFile[];
   /** Unmerged files, listed first and never as ordinary changes. */
   conflicts: ConflictRow[];
@@ -1473,7 +1491,21 @@ function ChangedFiles({
         ref={fill ? lockOverscroll : undefined}
         className={`min-h-0 py-1 ${fill ? "flex-1 overflow-y-auto overscroll-none" : "shrink-0"} ${failure ? "opacity-60" : ""}`}
       >
-        {files.length === 0 && conflicts.length === 0 ? (
+        {files.length === 0 &&
+        conflicts.length === 0 &&
+        index?.repository !== false &&
+        !failure &&
+        !loadError &&
+        (!index || checking) ? (
+          // A cached empty list may be stale until the entry read answers.
+          <div
+            role="status"
+            className={`${styles.changesLoading} ${fill ? "h-full" : ""}`}
+          >
+            <Spinner size="md" />
+            <span>{t("Loading changes…")}</span>
+          </div>
+        ) : files.length === 0 && conflicts.length === 0 ? (
           <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">
             {index?.repository === false
               ? ""
@@ -1481,9 +1513,7 @@ function ChangedFiles({
                 ? diverged
                   ? t("Diverged from {p0}", { p0: index.upstream ?? "upstream" })
                   : t("No uncommitted changes")
-                : failure || loadError
-                  ? ""
-                  : t("Loading changes…")}
+                : ""}
           </p>
         ) : (
           <>
@@ -1782,33 +1812,45 @@ function GitCommitActions({
             : "commit";
   const commitLabel = amend ? t("Amend Commit") : t("Commit");
 
-  const syncBadges = canPublish ? null : (
-    <>
-      {behind > 0 ? (
-        <Badge
-          size="sm"
-          className="shrink-0 tabular-nums"
-          icon={<ArrowDown strokeWidth={2} />}
-          aria-label={t(behind === 1 ? "{p0} incoming commit" : "{p0} incoming commits", {
-            p0: behind,
-          })}
-        >
-          {behind}
-        </Badge>
-      ) : null}
-      {ahead > 0 ? (
-        <Badge
-          size="sm"
-          className="shrink-0 tabular-nums"
-          icon={<ArrowUp strokeWidth={2} />}
-          aria-label={t(ahead === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", {
-            p0: ahead,
-          })}
-        >
-          {ahead}
-        </Badge>
-      ) : null}
-    </>
+  // Commit counts read as part of the button label, not as separate chips:
+  // the leading icon names a one-way direction, so only a two-way sync repeats arrows.
+  const twoWay = ahead > 0 && behind > 0;
+  const countLabel = (count: number, incoming: boolean) =>
+    t(
+      incoming
+        ? count === 1
+          ? "{p0} incoming commit"
+          : "{p0} incoming commits"
+        : count === 1
+          ? "{p0} unpushed commit"
+          : "{p0} unpushed commits",
+      { p0: count },
+    );
+  const syncCounts =
+    canPublish || (ahead === 0 && behind === 0) ? null : (
+      <span className="flex shrink-0 items-center gap-1.5 font-normal tabular-nums text-(--ui-text-secondary)">
+        {behind > 0 ? (
+          <span className="flex items-center" aria-label={countLabel(behind, true)}>
+            {twoWay ? <ArrowDown aria-hidden className="size-3" strokeWidth={2} /> : null}
+            {behind}
+          </span>
+        ) : null}
+        {ahead > 0 ? (
+          <span className="flex items-center" aria-label={countLabel(ahead, false)}>
+            {twoWay ? <ArrowUp aria-hidden className="size-3" strokeWidth={2} /> : null}
+            {ahead}
+          </span>
+        ) : null}
+      </span>
+    );
+  const syncIcon = canPublish ? (
+    <CloudUpload className="size-3.5 shrink-0" strokeWidth={1.75} />
+  ) : twoWay || (ahead === 0 && behind === 0) ? (
+    <RefreshCw className="size-3.5 shrink-0" strokeWidth={1.75} />
+  ) : behind > 0 ? (
+    <ArrowDown className="size-3.5 shrink-0" strokeWidth={1.75} />
+  ) : (
+    <ArrowUp className="size-3.5 shrink-0" strokeWidth={1.75} />
   );
 
   const lead =
@@ -1820,12 +1862,8 @@ function GitCommitActions({
           disabled: syncDisabled,
           loading: syncing,
           loadingLabel: t("Syncing…"),
-          icon: canPublish ? (
-            <CloudUpload className="size-3.5 shrink-0" strokeWidth={1.75} />
-          ) : (
-            <RefreshCw className="size-3.5 shrink-0" strokeWidth={1.75} />
-          ),
-          trailing: syncBadges,
+          icon: syncIcon,
+          trailing: syncCounts,
           onClick: onSync,
         }
       : primary === "create-pr"
@@ -1956,17 +1994,11 @@ function GitCommitActions({
         disabled={syncDisabled}
         loading={syncing}
         loadingLabel={t("Syncing…")}
-        startIcon={
-          canPublish ? (
-            <CloudUpload className="size-3.5 shrink-0" strokeWidth={1.75} />
-          ) : (
-            <RefreshCw className="size-3.5 shrink-0" strokeWidth={1.75} />
-          )
-        }
+        startIcon={syncIcon}
         onClick={onSync}
       >
         <span className="min-w-0 truncate">{syncLabel}</span>
-        {syncBadges}
+        {syncCounts}
       </Button>
     </div>
   );

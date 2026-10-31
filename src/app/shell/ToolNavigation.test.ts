@@ -167,7 +167,9 @@ it("opens a separate tool or a combined tool window with the current project", a
     grouped: false,
   });
   await act(() =>
-    container.querySelector<HTMLButtonElement>('[title="Open all tools in one window"]')!.click(),
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Open all tools in one window"]')!
+      .click(),
   );
   expect(invoke).toHaveBeenLastCalledWith("open_tool_window", {
     tool: "tasks",
@@ -221,7 +223,9 @@ it("reveals the existing combined tools window instead of opening a duplicate", 
   vi.mocked(routeWindowDestination).mockResolvedValueOnce(true);
   const { container } = await mount();
   await act(() =>
-    container.querySelector<HTMLButtonElement>('[title="Open all tools in one window"]')!.click(),
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Open all tools in one window"]')!
+      .click(),
   );
   expect(routeWindowDestination).toHaveBeenCalledWith({
     kind: "tool",
@@ -266,7 +270,10 @@ it("includes and selects all added tools in a grouped window", async () => {
   const { container, onSelect } = await mount(true, true, "inbox", true, true);
   expect(container.querySelectorAll('[role="tab"]')).toHaveLength(8);
   for (const label of ["Servers", "Conversation tools", "Terminal"]) {
-    const tab = container.querySelector<HTMLButtonElement>(`[title="${label}"]`)!;
+    // Tabs are named by their visible label; the hint rides in the shared tooltip.
+    const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((item) =>
+      [...item.querySelectorAll("span")].some((span) => span.textContent === label),
+    )!;
     expect(tab).not.toBeNull();
     await act(() => tab.click());
   }

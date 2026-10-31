@@ -1,19 +1,31 @@
 import { translateAt, useLocale, type LanguageDomain } from "../i18n";
 import { NativePopupHost } from "./NativePopupHost";
 import { PanelHeader } from "./PanelHeader";
-import { useContext, useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import {
+  useContext,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { useLockOverscroll } from "../hooks/useLockOverscroll";
 import { LAYER } from "../lib/layers";
 import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
 import { OverlayMenuLayer, OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
+import { Button } from "./Button";
+import { Maximize2, Minimize2 } from "./icons";
 
-export type ModalSize = "sm" | "md" | "lg" | "full";
+export type ModalSize = "sm" | "md" | "lg" | "xl" | "full";
 
 const WIDTH: Record<ModalSize, string> = {
   sm: "w-[min(420px,calc(100vw-24px))]",
   md: "w-[min(560px,calc(100vw-24px))]",
   lg: "w-[min(880px,calc(100vw-24px))]",
+  /** Wide workbench views (a full graph, a large table) that are not the whole window. */
+  xl: "w-[min(1100px,calc(100vw-48px))]",
   full: "w-[calc(100vw-24px)]",
 };
 
@@ -33,8 +45,24 @@ const TOP: Record<ModalSize, string> = {
   sm: "top-[22%]",
   md: "top-[10%]",
   lg: "top-[8%]",
+  xl: "top-[6%]",
   full: "inset-bs-4",
 };
+
+const PRIMARY_ACTION =
+  '[data-button-hierarchy="primary"]:not([aria-disabled="true"]):not([aria-busy="true"])';
+
+/** Escape inside a text field belongs to the field (a search clears itself) with `fieldEscape="field"`. */
+function inTextField(event: KeyboardEvent) {
+  const target = event.target;
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof HTMLInputElement &&
+        !/^(button|checkbox|radio|submit|reset|range|color|file|image)$/.test(target.type)))
+  );
+}
 
 type Props = {
   languageDomain?: LanguageDomain;
@@ -50,12 +78,38 @@ type Props = {
   className?: string;
   /** Keep taller dialogs inside the viewport, scrolling their content. */
   fitViewport?: boolean;
-  /** Side detail surface with the same overlay, focus and native popup owner. */
-  placement?: "center" | "end";
+  /**
+   * Side detail surface with the same overlay, focus and native popup owner. `bottom` is a
+   * bottom sheet. Prefer `Sheet`, which wraps both sheet placements.
+   */
+  placement?: "center" | "end" | "bottom";
+  /** Inline size overrides on the panel box (a sheet width, a fixed dialog height). */
+  panelStyle?: CSSProperties;
+  /**
+   * Selector for the control that receives focus on open. Defaults to the enabled primary
+   * action, else the first focusable control. A destructive confirmation points at Cancel.
+   */
+  initialFocus?: string;
+  /** Controls beside the title (view buttons, a search field), placed before expand and close. */
+  toolbar?: ReactNode;
+  /** Adds a Full screen / Restore toggle to the header; expanded, the dialog fills the window. */
+  expandable?: boolean;
+  /** Starts expanded (with `expandable`). */
+  defaultExpanded?: boolean;
+  /**
+   * `close` (default): Escape closes from anywhere inside. `field`: Escape inside a text field
+   * is left to the field (a search clears itself) and does not close the dialog.
+   */
+  fieldEscape?: "close" | "field";
   /** Frequent keyboard surfaces open immediately without frame/backdrop motion. */
   motion?: "auto" | "none";
-  /** Actions kept visible below the scrolling content. */
+  /**
+   * Actions kept visible below the scrolling content. Prefer `<ModalActions>`: Cancel (ghost)
+   * before the primary. A submit button outside the form body uses `form={formId}`.
+   */
   footer?: ReactNode;
+  /** Leading footer actions (a secondary destructive "Delete", a "Reset"), held at the start edge. */
+  footerStart?: ReactNode;
   /** Horizontal alignment of footer actions. Defaults to `end`; use `between` for a leading secondary action. */
   footerAlign?: "start" | "end" | "between";
   /** `auto` (default): the modal owns the one vertical scroll region. `none`: the content owns its own
@@ -63,6 +117,8 @@ type Props = {
   scroll?: "auto" | "none";
   children: ReactNode;
 };
+
+export type ModalProps = Props;
 
 export function ModalPanel({
   languageDomain,
@@ -75,8 +131,15 @@ export function ModalPanel({
   className,
   fitViewport = true,
   placement = "center",
+  panelStyle,
+  initialFocus,
+  toolbar,
+  expandable = false,
+  defaultExpanded = false,
+  fieldEscape = "close",
   motion = "auto",
   footer,
+  footerStart,
   footerAlign = "end",
   scroll = "auto",
   children,
@@ -86,12 +149,17 @@ export function ModalPanel({
   const popupHost = useContext(NativePopupHost);
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [expandedState, setExpanded] = useState(defaultExpanded);
+  const expanded = expandable && expandedState;
   const overlayId = useOverlay(
     dialogRef,
     true,
     onClose,
     true,
-    '[data-button-hierarchy="primary"]:not([aria-disabled="true"]):not([aria-busy="true"])',
+    initialFocus ?? PRIMARY_ACTION,
+    true,
+    false,
+    fieldEscape === "field" ? inTextField : undefined,
   );
   // React appends portals bottom-up when a dialog and its nested dialog mount in one commit, which
   // leaves the nested dialog's layer below its parent. Parent layout effects run after the
@@ -112,7 +180,33 @@ export function ModalPanel({
   const titleId = `${uid}-title`;
   const descriptionId = description ? `${uid}-desc` : undefined;
   const sheet = placement === "end";
-  const level = sheet || size === "sm" ? "compact" : "task";
+  const bottom = placement === "bottom";
+  const level = sheet || bottom || size === "sm" ? "compact" : "task";
+  const expandLabel = t(expanded ? "Restore window" : "Full screen");
+  const headerActions =
+    toolbar || expandable ? (
+      <>
+        {toolbar}
+        {expandable ? (
+          <Button
+            type="button"
+            iconOnly
+            size="sm"
+            variant="ghost"
+            label={expandLabel}
+            tooltip={expandLabel}
+            aria-pressed={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? (
+              <Minimize2 className="icon-sm" aria-hidden />
+            ) : (
+              <Maximize2 className="icon-sm" aria-hidden />
+            )}
+          </Button>
+        ) : null}
+      </>
+    ) : undefined;
 
   return (
     <OverlayMenuLayer.Provider value={LAYER.dialogPopover}>
@@ -121,24 +215,34 @@ export function ModalPanel({
           className={
             popupHost
               ? "relative z-[1] w-full"
-              : placement === "end"
-                ? "relative z-[1] ms-auto h-full w-[min(880px,100vw)]"
-                : fitViewport
-                  ? `relative z-[1] ${WIDTH[size]}`
-                  : `absolute z-[1] left-1/2 ${TOP[size]} ${WIDTH[size]} -translate-x-1/2`
+              : expanded
+                ? "relative z-[1] h-full w-full"
+                : sheet
+                  ? "relative z-[1] ms-auto h-full w-[min(880px,100vw)]"
+                  : bottom
+                    ? "relative z-[1] mx-auto w-full max-w-4xl"
+                    : fitViewport
+                      ? `relative z-[1] ${WIDTH[size]}`
+                      : `absolute z-[1] left-1/2 ${TOP[size]} ${WIDTH[size]} -translate-x-1/2`
           }
+          style={expanded || popupHost ? undefined : panelStyle}
         >
           <div
             ref={dialogRef}
             tabIndex={-1}
             role="dialog"
             data-modal-placement={placement}
-            style={motion === "none" ? { animation: "none" } : undefined}
+            data-modal-expanded={expanded || undefined}
+            style={{
+              ...(motion === "none" ? { animation: "none" } : null),
+              // Expanded wins over a caller's fixed height class.
+              ...(expanded ? { blockSize: "100%", maxBlockSize: "none" } : null),
+            }}
             aria-modal="true"
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
             onMouseDown={(event) => event.stopPropagation()}
-            className={`relative isolate flex flex-col overflow-hidden border-(color:--ui-pane-border) shadow-(--ui-elevation-floating) ${sheet ? "h-full rounded-none border-s" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
+            className={`relative isolate flex flex-col overflow-hidden border-(color:--ui-pane-border) shadow-(--ui-elevation-floating) ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
           >
             {/* The shared raised popup surface, so the dialog reads apart from the work beneath. */}
             <GlassBackdrop />
@@ -147,7 +251,7 @@ export function ModalPanel({
                 className={
                   minimalHeader
                     ? "absolute top-3 right-3 z-[2]"
-                    : sheet
+                    : sheet || bottom
                       ? "border-b border-(--ui-tone-neutral-border) px-4 py-2.5"
                       : "px-4 pt-3"
                 }
@@ -161,6 +265,7 @@ export function ModalPanel({
                 closeRef={closeRef}
                 closeLabel={t("Close")}
                 onClose={onClose}
+                actions={minimalHeader ? undefined : headerActions}
               />
               <div
                 ref={lockOverscroll}
@@ -169,11 +274,20 @@ export function ModalPanel({
               >
                 {children}
               </div>
-              {footer ? (
+              {footer || footerStart ? (
                 <footer
-                  className={`flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3 ${FOOTER_ALIGN[footerAlign]}`}
+                  className={`flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3 ${FOOTER_ALIGN[footerStart ? "between" : footerAlign]}`}
                 >
-                  {footer}
+                  {footerStart ? (
+                    <>
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">{footerStart}</div>
+                      <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+                        {footer}
+                      </div>
+                    </>
+                  ) : (
+                    footer
+                  )}
                 </footer>
               ) : null}
             </div>
@@ -188,10 +302,18 @@ export function Modal(props: Props) {
   useLocale();
   const host = useContext(NativePopupHost);
   if (host) return createPortal(<ModalPanel {...props} />, host);
+  const layout =
+    props.placement === "end"
+      ? "flex justify-end"
+      : props.placement === "bottom"
+        ? "flex items-end justify-center"
+        : props.fitViewport !== false || props.expandable
+          ? "grid place-items-center"
+          : "";
   return createPortal(
     <div
       data-modal-layer=""
-      className={`fixed inset-0 ${props.placement === "end" ? "flex justify-end" : props.fitViewport !== false ? "grid place-items-center" : ""}`}
+      className={`fixed inset-0 ${layout}`}
       style={{ zIndex: LAYER.dialog }}
       onMouseDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -208,5 +330,56 @@ export function Modal(props: Props) {
       <ModalPanel {...props} />
     </div>,
     document.body,
+  );
+}
+
+/**
+ * The standard dialog action row, for `footer` or the end of a form body (`inline`).
+ * `start` holds a leading secondary or destructive action ("Delete", "Reset") at the start
+ * edge; children are the closing actions at the end edge, Cancel (ghost) before the primary.
+ * The final irreversible confirm is filled danger: `variant="primary" tone="danger"`.
+ *
+ * ```tsx
+ * <Modal title={t("Edit crew")} onClose={close} footer={
+ *   <ModalActions start={<Button variant="ghost" tone="danger" onClick={remove}>{t("Delete")}</Button>}>
+ *     <Button variant="ghost" onClick={close}>{t("Cancel")}</Button>
+ *     <Button variant="primary" type="submit" form={formId}>{t("Save")}</Button>
+ *   </ModalActions>
+ * }>…</Modal>
+ * ```
+ */
+export function ModalActions({
+  start,
+  align = "end",
+  inline = false,
+  className,
+  children,
+}: {
+  start?: ReactNode;
+  /** Alignment of the closing actions when there is no `start` group. */
+  align?: "start" | "end";
+  /** Inside a form body instead of the Modal footer: adds the spacing above the row. */
+  inline?: boolean;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      data-modal-actions=""
+      className={[
+        "flex min-w-0 flex-1 flex-wrap items-center gap-2",
+        inline ? "pt-1" : "",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {start ? <div className="flex min-w-0 flex-wrap items-center gap-2">{start}</div> : null}
+      <div
+        className={`flex min-w-0 flex-wrap items-center gap-2 ${start || align === "end" ? "ms-auto justify-end" : "justify-start"}`}
+      >
+        {children}
+      </div>
+    </div>
   );
 }

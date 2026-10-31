@@ -14,10 +14,15 @@
   animation: rotate 0.7s linear infinite;
 }
 .spinner[data-size="xs"] {
-  --spinner-size: 0.75rem;
+  --spinner-size: var(--ui-icon-xs, 0.75rem);
 }
 .spinner[data-size="md"] {
   --spinner-size: var(--ui-icon-md, 1rem);
+}
+/* Inside text: follows the font size and sits on the text line. */
+.spinner[data-size="inline"] {
+  --spinner-size: 1em;
+  vertical-align: -0.125em;
 }
 @keyframes rotate {
   to {

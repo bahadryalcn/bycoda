@@ -1,0 +1,149 @@
+@layer theme, base, components, utilities;
+/* Placement belongs to the caller (layered below utilities); presentation stays unlayered. */
+@layer components {
+  .frame,
+  .bare {
+    position: relative;
+    min-inline-size: 0;
+  }
+}
+
+/* The frame is the one boundary and focus owner (data-ui-focus-group); the focus ring comes from the
+   shared contract in arc.css, and data-ui-focus-quiet (composer look) suppresses it there. */
+.frame {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+  color: var(--color-content);
+}
+.frame[data-surface="raised"] {
+  background: var(--ui-surface-raised);
+}
+.frame[data-disabled] {
+  border-color: var(--ui-control-disabled-border);
+  background: var(--ui-control-disabled-surface);
+}
+.frame:has(.input[aria-invalid="true"]) {
+  border-color: var(--ui-field-border-invalid);
+}
+.bare {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Editor and mirror share one box: padding, type and wrapping are defined once here.
+   Owners can tune the inset through --prompt-pad-block / --prompt-pad-inline (e.g. room for a close button). */
+.editor {
+  --prompt-pad-block-start: var(--prompt-pad-block, 0.75rem);
+  --prompt-pad-block-end: var(--prompt-pad-block, 0.75rem);
+  --prompt-pad-inline-start: var(--prompt-pad-inline, 0.75rem);
+  --prompt-pad-inline-end: var(--prompt-pad-inline, 0.75rem);
+  position: relative;
+  min-inline-size: 0;
+  font-family: var(--font-sans);
+  font-size: var(--ui-font-body);
+  line-height: 1.375rem;
+}
+.editor[data-text-size="title"] {
+  font-size: var(--ui-font-title);
+  line-height: 1.5rem;
+}
+.editor[data-monospace] {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+.input,
+.mirror {
+  box-sizing: border-box;
+  padding-block: var(--prompt-pad-block-start) var(--prompt-pad-block-end);
+  padding-inline: var(--prompt-pad-inline-start) var(--prompt-pad-inline-end);
+  font: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.input {
+  position: relative;
+  display: block;
+  inline-size: 100%;
+  min-block-size: calc(var(--prompt-min-rows, 3) * 1lh + var(--prompt-pad-block-start) + var(--prompt-pad-block-end));
+  margin: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--color-content);
+  outline: none;
+  box-shadow: none;
+  resize: none;
+}
+.input[data-max-rows] {
+  max-block-size: calc(var(--prompt-max-rows) * 1lh + var(--prompt-pad-block-start) + var(--prompt-pad-block-end));
+}
+.input[data-autosize] {
+  overflow-y: hidden;
+}
+.input::placeholder {
+  overflow: hidden;
+  color: var(--ui-text-muted);
+  -webkit-text-fill-color: var(--ui-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.input:disabled {
+  cursor: not-allowed;
+  color: var(--ui-control-disabled-fg);
+}
+/* A mirrored editor hides its own glyphs; the mirror draws them with highlighting. The caret and the
+   selection fill stay on the editor. */
+.input[data-prompt-mirrored] {
+  color: transparent;
+  caret-color: var(--color-content);
+  -webkit-text-fill-color: transparent;
+}
+.input[data-prompt-mirrored]::selection {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: var(--ui-overlay-selection-background);
+}
+.mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--color-content);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-inline-size: 0;
+  padding: 0 0.5rem 0.5rem;
+}
+.toolbarLeading {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.25rem;
+  min-inline-size: 0;
+  overflow-x: auto;
+}
+.toolbarTrailing {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+@media (forced-colors: active) {
+  .input[data-prompt-mirrored] {
+    color: CanvasText;
+    -webkit-text-fill-color: CanvasText;
+  }
+  .mirror {
+    visibility: hidden;
+  }
+}

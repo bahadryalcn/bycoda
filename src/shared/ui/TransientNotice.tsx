@@ -1,13 +1,8 @@
-import { useT } from "../i18n";
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../lib/layers";
-import { Button } from "./Button";
-import { X } from "./icons";
-import { Alert, type AlertTone } from "./Alert";
-import { Progress } from "./Progress";
-
-const VISIBLE_MS = 7000;
+import type { AlertTone } from "./Alert";
+import { ToastCard, ToastSlot } from "./ToastRegion";
 
 export type TransientNoticeTone = AlertTone;
 
@@ -33,105 +28,67 @@ export interface TransientNoticeProps {
   dismissDisabled?: boolean;
   /** Auto-dismiss delay. `null` keeps the notice until dismissed. Danger notices default to `null` so a failure and its diagnostic are never lost to a timer. */
   durationMs?: number | null;
-  /** Corner stack. `top-end` honours `offset` (px) for sibling banners. */
+  /**
+   * Corner stack. Viewport notices without `offset`/`onHeightChange` join the shared corner
+   * stack (see `ToastRegion`) and offset themselves by layout.
+   */
   placement?: "bottom-end" | "top-end";
+  /**
+   * @deprecated Legacy manual offset (px) from the corner for sibling banners. A viewport notice
+   * without it stacks automatically; remove it when the sibling also stacks.
+   */
   offset?: number;
   width?: "md" | "lg";
   /** `viewport` portals to the body; `container` positions inside the nearest positioned parent. */
   anchor?: "viewport" | "container";
-  /** Reports the rendered height (0 on unmount), so stacked notices can avoid overlap. */
+  /**
+   * @deprecated Reports the rendered height (0 on unmount) for manual stacking. Stacked notices
+   * need no coordination; passing this keeps the legacy fixed position.
+   */
   onHeightChange?: (height: number) => void;
   "aria-label"?: string;
 }
 
 /**
  * A corner notice with tone, optional action, progress and dismiss. Expires after
- * `durationMs` unless it is `null`. Resting elevation is the shared floating shadow.
+ * `durationMs` unless it is `null`. The card is the shared `ToastCard`; a viewport notice
+ * stacks in its corner with every other toast.
  */
 export function TransientNotice({
-  message,
-  title,
-  tone = "info",
-  children,
-  action,
-  actions,
-  progress,
-  onDismiss,
-  dismissDisabled,
-  durationMs: durationOption,
   placement = "bottom-end",
   offset,
-  width = "md",
   anchor = "viewport",
   onHeightChange,
-  "aria-label": ariaLabel,
+  ...props
 }: TransientNoticeProps) {
-  const t = useT();
-  const durationMs =
-    durationOption === undefined ? (tone === "danger" ? null : VISIBLE_MS) : durationOption;
-  const dismiss = useRef(onDismiss);
-  dismiss.current = onDismiss;
-  const surface = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const node = surface.current;
-    if (!node || durationMs === null || dismissDisabled) return;
-    let remaining = durationMs;
-    let started = 0;
-    let timer: number | undefined;
-    let hovered = node.matches(":hover");
-    let focused = node.contains(document.activeElement);
-    const pause = () => {
-      if (timer === undefined) return;
-      window.clearTimeout(timer);
-      timer = undefined;
-      remaining = Math.max(0, remaining - (Date.now() - started));
-    };
-    const resume = () => {
-      if (timer !== undefined || hovered || focused || document.hidden) return;
-      started = Date.now();
-      timer = window.setTimeout(() => {
-        timer = undefined;
-        dismiss.current();
-      }, remaining);
-    };
-    const enter = () => {
-      hovered = true;
-      pause();
-    };
-    const leave = () => {
-      hovered = false;
-      resume();
-    };
-    const focus = () => {
-      focused = true;
-      pause();
-    };
-    const blur = (event: FocusEvent) => {
-      if (event.relatedTarget instanceof Node && node.contains(event.relatedTarget)) return;
-      focused = false;
-      resume();
-    };
-    const visibility = () => {
-      if (document.hidden) pause();
-      else resume();
-    };
-    node.addEventListener("pointerenter", enter);
-    node.addEventListener("pointerleave", leave);
-    node.addEventListener("focusin", focus);
-    node.addEventListener("focusout", blur);
-    document.addEventListener("visibilitychange", visibility);
-    resume();
-    return () => {
-      pause();
-      node.removeEventListener("pointerenter", enter);
-      node.removeEventListener("pointerleave", leave);
-      node.removeEventListener("focusin", focus);
-      node.removeEventListener("focusout", blur);
-      document.removeEventListener("visibilitychange", visibility);
-    };
-  }, [message, title, durationMs, dismissDisabled]);
+  if (anchor === "viewport" && offset === undefined && !onHeightChange)
+    return (
+      <ToastSlot placement={placement}>
+        <ToastCard {...props} />
+      </ToastSlot>
+    );
+  return (
+    <PositionedNotice
+      {...props}
+      placement={placement}
+      offset={offset}
+      anchor={anchor}
+      onHeightChange={onHeightChange}
+    />
+  );
+}
+
+/** The legacy self-positioned notice, kept for callers that still coordinate offsets. */
+function PositionedNotice({
+  placement = "bottom-end",
+  offset,
+  anchor = "viewport",
+  onHeightChange,
+  ...props
+}: TransientNoticeProps) {
+  const frame = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const node = surface.current;
+    const node = frame.current;
     if (!node || !onHeightChange) return;
     const measure = () => onHeightChange(node.offsetHeight);
     measure();
@@ -143,73 +100,16 @@ export function TransientNotice({
       onHeightChange(0);
     };
   }, [onHeightChange]);
-
   const inset = offset ?? 12;
   const position = placement === "top-end" ? { insetBlockStart: inset } : { insetBlockEnd: inset };
-  const widthClass =
-    width === "lg" ? "w-[min(360px,calc(100vw-24px))]" : "w-[min(340px,calc(100vw-24px))]";
-  const actionButton = action ? (
-    <Button
-      variant="secondary"
-      size="sm"
-      disabled={action.disabled}
-      loading={action.pending}
-      onClick={action.onClick}
-    >
-      {action.label}
-    </Button>
-  ) : null;
   const notice = (
-    <Alert
-      ref={surface}
-      tone={tone}
-      aria-label={ariaLabel}
-      style={{
-        zIndex: anchor === "viewport" ? LAYER.toast : undefined,
-        boxShadow: "var(--shadow-floating)",
-        ...position,
-      }}
-      className={`${anchor === "viewport" ? "fixed" : "absolute"} end-3 ${widthClass}`}
-    >
-      <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-w-0 items-start gap-2">
-          <div className="min-w-0 flex-1 select-text self-center break-words">
-            {title ? <strong className="text-ui-secondary font-medium">{title}</strong> : message}
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            iconOnly
-            label={t("Dismiss notice")}
-            tooltip={t("Dismiss notice")}
-            disabled={dismissDisabled}
-            onClick={onDismiss}
-          >
-            <X className="size-3.5" aria-hidden />
-          </Button>
-        </div>
-        {actions ? (
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            {actions}
-            {actionButton}
-          </div>
-        ) : null}
-        {children || progress || (title && message) ? (
-          <div className="min-w-0 select-text break-words">
-            {title ? message : null}
-            {children}
-            {progress ? (
-              <Progress compact value={progress.value * 100} max={100} label={progress.label} />
-            ) : null}
-          </div>
-        ) : null}
-        {!actions && actionButton ? (
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            {actionButton}
-          </div>
-        ) : null}
-      </div>
-    </Alert>
+    <ToastCard
+      {...props}
+      frameRef={frame}
+      style={{ zIndex: anchor === "viewport" ? LAYER.toast : undefined, ...position }}
+      position={anchor === "viewport" ? "fixed" : "absolute"}
+      className="end-3"
+    />
   );
   return anchor === "viewport" ? createPortal(notice, document.body) : notice;
 }

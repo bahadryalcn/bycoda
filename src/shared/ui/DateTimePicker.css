@@ -154,7 +154,8 @@
   text-align: center;
 }
 /* State contract: disabled dims the whole picker; read-only keeps full ink and has no hover or pressed cue. */
-.bycoda-date-time-picker[data-disabled] :is(.date-time-weekday, .date-time-title, .date-time-time-label) {
+.bycoda-date-time-picker[data-disabled]
+  :is(.date-time-weekday, .date-time-title, .date-time-time-label) {
   color: var(--ui-text-disabled);
 }
 .bycoda-date-time-picker[data-readonly] .date-time-day {
@@ -183,4 +184,41 @@
   .date-time-day {
     transition: none;
   }
+}
+
+/* A standalone time keeps the field alone: no divider above it. */
+.bycoda-date-time-picker[data-mode="time"] .date-time-footer {
+  margin-block-start: 0;
+  padding-block-start: 0;
+  border-block-start: 0;
+}
+
+/* DateTimeField: the Select field frame with the value, then the clock glyph at the end. */
+.date-time-field-value {
+  min-inline-size: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.date-time-field-value[data-placeholder] {
+  color: var(--ui-text-muted);
+}
+.date-time-field-icon {
+  flex: none;
+  color: var(--ui-text-secondary);
+}
+.date-time-field-popover {
+  padding: 0.75rem;
+}
+.date-time-field-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-start: 0.5rem;
+  padding-block-start: 0.5rem;
+  border-block-start: 1px solid var(--color-stroke);
+}
+.date-time-field-time {
+  text-align: start;
 }

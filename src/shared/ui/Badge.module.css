@@ -1,0 +1,21 @@
+/* xs: metadata inside triggers, rows and tab labels. Doubled classes outrank the Arc badge's size rules
+   regardless of stylesheet order; tone, border and fill roles stay with the Arc badge. */
+.xs.xs {
+  min-block-size: 1rem;
+  padding-block: 0;
+  padding-inline: 0.25rem;
+  font-size: var(--ui-font-micro);
+  line-height: 1rem;
+  vertical-align: middle;
+}
+.xs.xs[data-variant="count"] {
+  min-inline-size: 0.875rem;
+  min-block-size: 0.875rem;
+  padding-inline: 0.1875rem;
+}
+.xs.xs[data-variant="dot"] {
+  padding-inline: 0;
+}
+.status {
+  flex: none;
+}

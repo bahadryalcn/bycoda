@@ -3,10 +3,29 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { listCachedDir, loadExpanded, loadSelected, saveExpanded, saveSelected } from "../model/fileTree";
+import {
+  listCachedDir,
+  loadExpanded,
+  loadSelected,
+  saveExpanded,
+  saveSelected,
+} from "../model/fileTree";
 import type { FsEntry } from "../../../platform/tauri/fs";
 import { FileTree } from "./FileTree";
 import { reportRemoteLoad, resetRemoteHealth } from "../../connections/model/remoteHealth";
+
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
 
 const { directories, created, gate } = vi.hoisted(() => ({
   directories: new Map<string, FsEntry[]>(),
@@ -155,9 +174,7 @@ describe("Explorer create target", () => {
     expect(container.querySelector("[data-name-row]")?.getAttribute("data-name-row")).toBe(
       "folder",
     );
-    expect(container.querySelector("[data-name-caption]")?.textContent).toBe(
-      "New folder in dest",
-    );
+    expect(container.querySelector("[data-name-caption]")?.textContent).toBe("New folder in dest");
     type("inner");
     await enter();
     expect(created).toEqual([{ parent: `${cwd}/dest`, name: "inner", isDir: true }]);
@@ -317,7 +334,8 @@ describe("Explorer create availability", () => {
     for (const action of ["new-file", "new-folder"]) {
       expect(header(action).disabled).toBe(true);
       expect(header(action).getAttribute("aria-label")).toContain("This machine is unreachable");
-      expect(header(action).getAttribute("title")).toContain("This machine is unreachable");
+      expect(header(action).getAttribute("title")).toBeNull();
+      expect(await tooltipText(header(action))).toContain("This machine is unreachable");
     }
     await act(async () => header("new-file").click());
     expect(nameInput()).toBeNull();

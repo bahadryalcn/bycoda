@@ -6,6 +6,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
 import { ActivityDock } from "./ActivityDock";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -200,7 +213,7 @@ describe("ActivityDock", () => {
       });
       expand();
       const [button] = stopButtons();
-      expect(button.title).toBe("Stop this subagent");
+      expect(await tooltipText(button)).toBe("Stop this subagent");
       await act(async () => button.click());
       expect(onStopAgent).toHaveBeenCalledWith(expect.objectContaining({ callId: "a1" }));
       expect(stopButtons()[0].disabled).toBe(true);
@@ -220,10 +233,10 @@ describe("ActivityDock", () => {
       await act(async () => stopButtons()[0].click());
       const [button] = stopButtons();
       expect(button.disabled).toBe(false);
-      expect(button.title).toBe("Could not stop it. Try again.");
+      expect(await tooltipText(button)).toBe("Could not stop it. Try again.");
     });
 
-    it("has no per-agent button when only the whole turn can be interrupted", () => {
+    it("has no per-agent button when only the whole turn can be interrupted", async () => {
       const onStopAll = vi.fn(async () => {});
       render({
         busy: true,
@@ -238,7 +251,7 @@ describe("ActivityDock", () => {
       const all = [...container.querySelectorAll("button")].find(
         (button) => visibleSessionTestText(button) === "Stop all",
       );
-      expect(all?.title).toContain("Interrupt the whole turn");
+      expect(await tooltipText(all!)).toContain("Interrupt the whole turn");
       act(() => all?.click());
       expect(onStopAll).toHaveBeenCalled();
     });

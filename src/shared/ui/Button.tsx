@@ -1,7 +1,6 @@
 import {
   useEffect,
   useLayoutEffect,
-  useId,
   useRef,
   useState,
   type ComponentPropsWithRef,
@@ -12,7 +11,8 @@ import {
   type ReactNode,
   type SyntheticEvent,
 } from "react";
-import { Popover } from "./Popover";
+import type { PopoverAlign, PopoverSide } from "../lib/popover";
+import { useTooltip } from "./Tooltip";
 import {
   Button as ArcButton,
   type ButtonSize,
@@ -42,9 +42,22 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
    *  up front by invisible ghosts that add no DOM text, so the control never grows when its
    *  label changes. The current label stays the only text content and accessible name. */
   reserveLabels?: readonly string[];
+  /** Translated hint shown in the shared Tooltip on hover and keyboard focus (never a native
+   *  `title`). An explicit `title` takes precedence; `title=""` means no tooltip at all, for a
+   *  Button that an outer `Tooltip` already describes. Icon-only buttons fall back to `label`. */
   tooltip?: string;
-  /** Display only: the owner resolves the current binding and handles the keys. */
+  /** Muted lines under the tooltip title (path, counts, state). */
+  tooltipDetails?: readonly ReactNode[];
+  /** Tooltip placement. Default `bottom`. */
+  tooltipSide?: PopoverSide;
+  tooltipAlign?: PopoverAlign;
+  /** Display only, shown as key caps in the tooltip: the owner resolves the current binding
+   *  (`useKeybindingShortcut`) and handles the keys. Accepts `Mod+K`, `Ctrl+Shift+P`, `⌘⇧P`,
+   *  `Esc Esc` and `A / B` alternatives. */
   shortcut?: string | null;
+  /** With `disabled`: keep the control focusable (`aria-disabled`, presses swallowed) and show
+   *  this reason in its tooltip, so pointer and keyboard users both learn why it is off. */
+  disabledReason?: string;
   startIcon?: ReactNode;
   endIcon?: ReactNode;
   fullWidth?: boolean;
@@ -114,7 +127,11 @@ export function Button({
   iconOnly = false,
   label,
   tooltip,
+  tooltipDetails,
+  tooltipSide = "bottom",
+  tooltipAlign,
   shortcut,
+  disabledReason,
   startIcon,
   endIcon,
   fullWidth = false,
@@ -168,8 +185,6 @@ export function Button({
   };
   useEffect(() => () => void clearLongPress(), []);
   const insetText = inset === "text";
-  const hintId = useId();
-  const [hintAnchor, setHintAnchor] = useState<HTMLButtonElement | null>(null);
   // Keep legacy aliases at this boundary; render one hierarchy/tone implementation.
   const hierarchy = variant === "danger" ? "secondary" : variant;
   const resolvedTone: ButtonTone =
@@ -199,6 +214,8 @@ export function Button({
       props.onDragOver ||
       props.onDrop
     );
+  // A disabled control with a reason stays focusable so keyboard users reach the reason.
+  const explained = !!disabled && !!disabledReason;
   const blocked = !!disabled || loading || isTrue(props["aria-disabled"]);
   const active =
     selected ??
@@ -232,8 +249,34 @@ export function Button({
       }
       handler?.(event);
     };
+  // Tooltip: one shared hint for `title`, `tooltip`, the icon-only `label` and `shortcut`.
+  // `title=""` is an explicit "no tooltip" (an outer Tooltip owns the hint).
+  const suppressed = props.title === "";
+  const tooltipText = suppressed
+    ? undefined
+    : props.title || tooltip || (iconOnly || shortcut ? label : undefined);
+  const reason = explained && !suppressed ? disabledReason : undefined;
+  const hintLabel = tooltipText ?? reason;
+  const hintDetails = suppressed
+    ? undefined
+    : reason && tooltipText
+      ? [...(tooltipDetails ?? []), reason]
+      : tooltipDetails;
+  const hintShortcut = suppressed ? null : shortcut;
+  const hint = useTooltip({
+    label: hintLabel,
+    details: hintDetails,
+    shortcut: hintShortcut,
+    side: tooltipSide,
+    align: tooltipAlign,
+    describe: false,
+  });
+  const accessibleName = loading && loadingLabel ? loadingLabel : (props["aria-label"] ?? label);
+  // Do not describe a control with a hint that only repeats its accessible name.
+  const describes =
+    hint.open && !(hintLabel === accessibleName && !hintShortcut && !hintDetails?.length);
   const guardKey = (handler: typeof onKeyDown) => (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === "Escape") setHintAnchor(null);
+    if (event.key === "Escape") hint.hide();
     if (blocked && (event.key === "Enter" || event.key === " " || event.key === "Spacebar")) {
       event.preventDefault();
       event.stopPropagation();
@@ -241,23 +284,25 @@ export function Button({
     }
     handler?.(event);
   };
-  const tooltipText = props.title ?? tooltip ?? (iconOnly || shortcut ? label : undefined);
-  const hintText = shortcut && tooltipText ? `${tooltipText} (${shortcut})` : tooltipText;
-  const hintVisible = !!hintAnchor && !!hintText;
   const attributes = {
     ...props,
     type,
     // Pending is already guarded and aria-disabled. Keep the initiating control
-    // focusable even when its owner also passes disabled={pending}.
-    disabled: loading ? undefined : disabled,
-    title: hintText,
+    // focusable even when its owner also passes disabled={pending}; the same holds for a
+    // disabled control that explains why (`disabledReason`).
+    disabled: loading || explained ? undefined : disabled,
+    // Never the native OS bubble: the shared Tooltip shows this text.
+    title: undefined,
     "aria-describedby":
-      [props["aria-describedby"], hintVisible ? hintId : undefined].filter(Boolean).join(" ") ||
+      [props["aria-describedby"], describes ? hint.id : undefined].filter(Boolean).join(" ") ||
       undefined,
-    "aria-label": loading && loadingLabel ? loadingLabel : (props["aria-label"] ?? label),
+    // The reason stays announced while the hint is closed.
+    "aria-description": props["aria-description"] ?? (reason && !describes ? reason : undefined),
+    "aria-label": accessibleName,
     "aria-busy": loading || props["aria-busy"] || undefined,
     "aria-pressed": props["aria-pressed"] ?? pressed,
     "aria-disabled": blocked || props["aria-disabled"] || undefined,
+    "data-disabled": explained || undefined,
     "data-button-variant": variant,
     "data-button-hierarchy": hierarchy,
     "data-button-tone": resolvedTone,
@@ -273,7 +318,7 @@ export function Button({
     // Controls that do not scale on press (native renderer, popup anchors) step their tone instead.
     "data-button-press": native ? "tone" : undefined,
     onClick: guard((event: MouseEvent<HTMLButtonElement>) => {
-      setHintAnchor(null);
+      hint.hide();
       onClick?.(event);
     }),
     onClickCapture: guard((event: MouseEvent<HTMLButtonElement>) => {
@@ -286,8 +331,15 @@ export function Button({
       }
       onClickCapture?.(event);
     }),
+    onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => {
+      props.onPointerEnter?.(event);
+      hint.trigger.onPointerEnter(event);
+    },
+    onPointerLeave: (event: PointerEvent<HTMLButtonElement>) => {
+      props.onPointerLeave?.(event);
+      hint.trigger.onPointerLeave();
+    },
     onPointerDown: guard((event: PointerEvent<HTMLButtonElement>) => {
-      setHintAnchor(null);
       clearLongPress();
       longPress.current = null;
       if (onLongPress && event.isPrimary && event.button === 0) {
@@ -338,19 +390,18 @@ export function Button({
     },
     onFocus: (event: FocusEvent<HTMLButtonElement>) => {
       props.onFocus?.(event);
-      if (
-        !event.defaultPrevented &&
-        (iconOnly || shortcut || tooltip) &&
-        hintText &&
-        event.currentTarget.matches(":focus-visible")
-      )
-        setHintAnchor(event.currentTarget);
+      if (!event.defaultPrevented && event.target === event.currentTarget)
+        hint.trigger.onFocus(event);
     },
     onBlur: (event: FocusEvent<HTMLButtonElement>) => {
-      setHintAnchor(null);
+      hint.hide();
       props.onBlur?.(event);
     },
-    onPointerDownCapture: guard(onPointerDownCapture),
+    onPointerDownCapture: (event: PointerEvent<HTMLButtonElement>) => {
+      // A press closes the hint even when the control is blocked and swallows the press.
+      hint.hide();
+      guard(onPointerDownCapture)(event);
+    },
     onMouseDown: guard(onMouseDown),
     onKeyDown: guardKey(onKeyDown),
     onKeyDownCapture: guardKey(onKeyDownCapture),
@@ -392,9 +443,16 @@ export function Button({
           data-label-ghosts={reserveLabels?.length ? "" : undefined}
           style={reserveLabel ? { minInlineSize: labelWidth } : undefined}
         >
-          <span ref={labelMeasure} className={styles.stableLabel}>{children}</span>
+          <span ref={labelMeasure} className={styles.stableLabel}>
+            {children}
+          </span>
           {reserveLabels?.map((text, index) => (
-            <span key={index} className={styles.labelGhost} data-reserve={text} aria-hidden="true" />
+            <span
+              key={index}
+              className={styles.labelGhost}
+              data-reserve={text}
+              aria-hidden="true"
+            />
           ))}
         </span>
       ) : (
@@ -410,21 +468,7 @@ export function Button({
   const withHint = (control: ReactNode) => (
     <>
       {control}
-      {hintVisible ? (
-        <Popover
-          anchor={hintAnchor}
-          role="tooltip"
-          id={hintId}
-          side="bottom"
-          restoreFocus={false}
-          passive
-          motion="none"
-          onDismiss={() => setHintAnchor(null)}
-          className="pointer-events-none max-w-60 break-words p-2 text-(length:--ui-font-caption) text-content"
-        >
-          {hintText}
-        </Popover>
-      ) : null}
+      {hint.tooltip}
     </>
   );
   if (native) {

@@ -1399,7 +1399,7 @@ it("retains the original queue save after a callback dispatches then throws with
     ),
   );
   const button = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(
-    (item) => item.title === "Save (Ctrl/Cmd+Enter)",
+    (item) => item.textContent?.trim() === "Save",
   )!;
   await act(async () => button.click());
   expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(

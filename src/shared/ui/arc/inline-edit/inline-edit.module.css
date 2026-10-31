@@ -136,16 +136,16 @@
   overflow: hidden;
   caret-color: var(--foreground);
 }
-/* The frame carries the focus indication for the field (border and inset outline, as in TextField), so the field itself never draws a second one. */
+/* The frame carries the focus indication for the field (focus border and the soft accent ring, as in TextField), so the field itself never draws a second one. */
 .root .control:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 .root:has(.control:focus-visible) .frame {
-  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
-  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
+  box-shadow: var(--ui-focus-ring);
 }
 .root[data-invalid]:has(.control:focus-visible) .frame {
-  outline-color: var(--ui-tone-danger-fg);
+  box-shadow: var(--ui-focus-ring-invalid);
 }
 .control::placeholder {
   color: var(--text-muted);

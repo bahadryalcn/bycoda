@@ -171,6 +171,13 @@ async function accountAction(account: string, item: string) {
   );
 }
 
+/** The General page's About link that shows `address` (its full address is only a tooltip). */
+function productLink(address: string): HTMLButtonElement {
+  return Array.from(
+    container.querySelectorAll<HTMLButtonElement>("button.general-about-link"),
+  ).find((button) => button.textContent?.trim() === address)!;
+}
+
 function renderedSettingIds(): string[] {
   return Array.from(
     document.querySelectorAll<HTMLElement>("[data-setting-id]"),
@@ -333,8 +340,20 @@ describe("settings pages", () => {
       next: "0",
       selector: '[data-setting-id="close-to-tray"] [role="switch"]',
     },
-    { section: "chat", key: "bycoda.resumeAtReset", initial: "1", next: "0", selector: '[data-setting-id="resume-at-reset"] [role="switch"]' },
-    { section: "chat", key: "bycoda.autoContinueInterrupted", initial: "1", next: "0", selector: '[data-setting-id="auto-continue-interrupted"] [role="switch"]' },
+    {
+      section: "chat",
+      key: "bycoda.resumeAtReset",
+      initial: "1",
+      next: "0",
+      selector: '[data-setting-id="resume-at-reset"] [role="switch"]',
+    },
+    {
+      section: "chat",
+      key: "bycoda.autoContinueInterrupted",
+      initial: "1",
+      next: "0",
+      selector: '[data-setting-id="auto-continue-interrupted"] [role="switch"]',
+    },
   ])(
     "refreshes mounted $section controls after sibling storage changes to $key",
     async ({ section, key, initial, next, selector, index = 0 }) => {
@@ -346,7 +365,9 @@ describe("settings pages", () => {
       localStorage.setItem(key, initial);
       await render(section as SettingsSectionId);
       if (section === "chat") {
-        const advanced = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Advanced conversation settings");
+        const advanced = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+          (button) => button.textContent === "Advanced conversation settings",
+        );
         await act(async () => advanced?.click());
       }
       const control = () => container.querySelectorAll(selector)[index];
@@ -474,14 +495,13 @@ describe("settings pages", () => {
     const opening = new Promise<void>((_resolve, reject) => {
       rejectOpen = reject;
     });
-    vi.mocked(openUrl).mockReset().mockImplementationOnce(() => opening).mockResolvedValue(undefined);
+    vi.mocked(openUrl)
+      .mockReset()
+      .mockImplementationOnce(() => opening)
+      .mockResolvedValue(undefined);
     await render("general");
-    const website = container.querySelector<HTMLButtonElement>(
-      `button[title="${PRODUCT_IDENTITY.websiteUrl}"]`,
-    )!;
-    const contact = container.querySelector<HTMLButtonElement>(
-      `button[title="${PRODUCT_IDENTITY.contactEmail}"]`,
-    )!;
+    const website = productLink(PRODUCT_IDENTITY.websiteUrl.replace("https://", ""));
+    const contact = productLink(PRODUCT_IDENTITY.contactEmail);
     const websiteRow = website.closest(".settings-row")!;
     const contactRow = contact.closest(".settings-row")!;
 
@@ -520,13 +540,13 @@ describe("settings pages", () => {
       .mockRejectedValueOnce(new Error("Clipboard unavailable"))
       .mockResolvedValue(undefined);
     await render("general");
-    const contact = container.querySelector<HTMLButtonElement>(
-      `button[title="${PRODUCT_IDENTITY.contactEmail}"]`,
-    )!;
+    const contact = productLink(PRODUCT_IDENTITY.contactEmail);
     const row = contact.closest(".settings-row")!;
     await act(async () => contact.click());
     const copyButton = () =>
-      row.querySelector<HTMLButtonElement>(`[aria-label="Copy: ${PRODUCT_IDENTITY.contactEmail}"]`)!;
+      row.querySelector<HTMLButtonElement>(
+        `[aria-label="Copy: ${PRODUCT_IDENTITY.contactEmail}"]`,
+      )!;
 
     await act(async () => copyButton().click());
     expect(copy).toHaveBeenCalledWith(PRODUCT_IDENTITY.contactEmail);
@@ -659,7 +679,9 @@ describe("settings pages", () => {
     expect(container.querySelector(".bycoda-settings-titlebar")).toBeNull();
     expect(container.querySelector('[aria-label="Back to workspace"]')).toBeNull();
     // No page-type presentation: every page shares one width.
-    expect(container.querySelector("[data-settings-presentation], [data-settings-width]")).toBeNull();
+    expect(
+      container.querySelector("[data-settings-presentation], [data-settings-width]"),
+    ).toBeNull();
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     });
@@ -674,9 +696,9 @@ describe("settings pages", () => {
     const search = container.querySelector<HTMLElement>(".settings-page-title")!;
     await render("general", { embedded: true, onToggleMaximize: vi.fn(), maximized: true });
     expect(container.querySelector<HTMLElement>(".settings-page-title")).toBe(search);
-    expect(container.querySelector("[data-app-settings]")?.hasAttribute("data-settings-maximized")).toBe(
-      true,
-    );
+    expect(
+      container.querySelector("[data-app-settings]")?.hasAttribute("data-settings-maximized"),
+    ).toBe(true);
     expect(container.querySelector('button[aria-label="Restore size"]')).not.toBeNull();
   });
 
@@ -744,7 +766,9 @@ describe("settings pages", () => {
       .closest(".settings-row")!
       .querySelector<HTMLButtonElement>('button[aria-label="Sleep behavior"]')!;
     await act(async () => info.click());
-    const help = document.querySelector('[role="dialog"][aria-label="Sleep behavior"]')?.textContent;
+    const help = document.querySelector(
+      '[role="dialog"][aria-label="Sleep behavior"]',
+    )?.textContent;
     expect(help).toContain("Prevent idle sleep during agent work");
     expect(help).not.toContain("battery-powered Modern Standby");
     expect(help).toContain("Automatic screen locking remains available");
@@ -827,7 +851,11 @@ describe("settings pages", () => {
     expect(emails[0].getAttribute("aria-label")).toBe("Reveal email");
 
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('nav[aria-label="Providers"] button[title="Codex"]')!.click(),
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Providers"] button'),
+      )
+        .find((button) => button.getAttribute("aria-label")?.split(", ")[0] === "Codex")!
+        .click(),
     );
     const codexEmails = revealButtons();
     expect(codexEmails).toHaveLength(1);
@@ -933,7 +961,9 @@ describe("settings pages", () => {
       );
       expect(
         document
-          .querySelector(`[role="menuitemradio"][aria-label="${color}"], [role="menuitemcheckbox"][aria-label="${color}"]`)
+          .querySelector(
+            `[role="menuitemradio"][aria-label="${color}"], [role="menuitemcheckbox"][aria-label="${color}"]`,
+          )
           ?.getAttribute("aria-checked"),
       ).toBe("true");
       await act(async () =>
@@ -1387,7 +1417,9 @@ describe("settings pages", () => {
       notificationProjectPath: "/repo",
     });
     const section = container.querySelector('[data-setting-id="project-notifications"]')!;
-    const project = section.querySelector('button[aria-label="Notification categories for repo (github.com)"]')!;
+    const project = section.querySelector(
+      'button[aria-label="Notification categories for repo (github.com)"]',
+    )!;
     expect(section.querySelector("[data-highlighted]")).not.toBeNull();
     expect(project.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(project.closest("fieldset"));

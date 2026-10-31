@@ -19,6 +19,19 @@ import { setHarnessModeLimits, type ComposerTurnOptions } from "../model/session
 import { submitAfterProjectSync } from "../../../app/model/submissionAcceptance";
 import { savePromptTemplates, type PromptTemplate } from "../model/promptTemplates";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -297,7 +310,8 @@ describe("ComposerAction queue entry", () => {
   it("offers Queue with its shortcut next to Send while busy", () => {
     const html = render(vi.fn());
     expect(html).toContain('aria-label="Queue message"');
-    expect(html).toContain("(Shift+Tab)");
+    // The shortcut hint lives in the shared tooltip, which static markup cannot open.
+    expect(html).not.toContain(" title=");
     expect(html).toContain('aria-label="Send"');
     expect(html).toContain('aria-label="Stop"');
   });
@@ -320,7 +334,7 @@ describe("ComposerAction queue entry", () => {
       }),
     );
     expect(html).toContain('aria-label="Stop"');
-    expect(html).toContain('title="Stop (Ctrl+.)"');
+    expect(html).not.toContain(" title=");
     expect(html).not.toContain('aria-label="Send"');
     expect(html).not.toContain('aria-label="Queue message"');
     expect(html).not.toContain("disabled");
@@ -581,7 +595,7 @@ describe("reordering queued messages", () => {
   it("labels the handle and moves a row with Alt+Arrow", async () => {
     const onReorder = await renderReorder();
     expect(handle("q2").getAttribute("aria-label")).toBe("Reorder queued message");
-    expect(handle("q2").title).toBe("Drag to reorder (Alt+↑ / Alt+↓)");
+    expect(await tooltipText(handle("q2"))).toBe("Drag to reorderAlt↑/Alt↓");
 
     expect(key("q2", { key: "ArrowUp", altKey: true }).defaultPrevented).toBe(true);
     expect(onReorder).toHaveBeenLastCalledWith(["q2", "q1", "q3"]);

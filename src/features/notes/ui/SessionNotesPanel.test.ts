@@ -14,6 +14,16 @@ import { SessionNotesPanel } from "./SessionNotesPanel";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+/** A note row in the switch-note dropdown, found by its visible title (the title is a shared
+ *  tooltip now, not a native title attribute). */
+function noteRow(title: string): HTMLButtonElement | null {
+  return (
+    [...document.querySelectorAll<HTMLButtonElement>("li button")].find(
+      (button) => button.querySelector("span.truncate")?.textContent === title,
+    ) ?? null
+  );
+}
+
 let root: Root;
 let container: HTMLDivElement;
 let stored: Note[];
@@ -206,9 +216,7 @@ it("opens this session's document and resets selection when the session changes"
 it("links a chosen project note and remembers it after reopening", async () => {
   await render();
   await click("Switch note");
-  await act(async () =>
-    document.querySelector<HTMLButtonElement>('button[title="Project plan"]')!.click(),
-  );
+  await act(async () => noteRow("Project plan")!.click());
   expect(body().value).toBe("Project text");
   await click("Link to this session");
   expect(stored.find((note) => note.id === projectNote.id)?.sourceSessionId).toBe(sessionId);
@@ -220,9 +228,7 @@ it("links a chosen project note and remembers it after reopening", async () => {
 it("remembers an explicitly chosen project note without linking it or creating a blank note", async () => {
   await render(sessionId, false, false);
   await click("Switch note");
-  await act(async () =>
-    document.querySelector<HTMLButtonElement>('button[title="Project plan"]')!.click(),
-  );
+  await act(async () => noteRow("Project plan")!.click());
   await act(async () => root.render(null));
   await render(sessionId, false, false);
   expect(body().value).toBe("Project text");
@@ -292,7 +298,7 @@ it("opens the dropdown without waiting for a pending save or fetching the list a
   ).length;
   await click("Switch note");
   expect(button("Switch note").getAttribute("aria-expanded")).toBe("true");
-  expect(document.querySelector('button[title="Project plan"]')).not.toBeNull();
+  expect(noteRow("Project plan")).not.toBeNull();
   expect(
     invoke.mock.calls.filter(
       ([command]) => command === "notes_list" || command === "notes_list_summaries",
@@ -319,7 +325,7 @@ it("bounds dropdown rendering and finds notes beyond the first page", async () =
     "Plan 0",
   );
   expect(document.querySelectorAll("li")).toHaveLength(1);
-  expect(document.querySelector('button[title="Plan 0"]')).not.toBeNull();
+  expect(noteRow("Plan 0")).not.toBeNull();
 });
 
 it("shows a load error without creating an empty document on failed reads", async () => {

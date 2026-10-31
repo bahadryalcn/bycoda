@@ -37,7 +37,16 @@ async function render(props: { label?: string; width?: number } = {}) {
 it("names the icon-only trigger, announces it as a dialog opener and keeps help closed", async () => {
   await render({ label: "About limits" });
   expect(trigger().getAttribute("aria-label")).toBe("About limits");
-  expect(trigger().getAttribute("title")).toBe("About limits");
+  // The name doubles as the shared tooltip on hover/focus; no native title bubble.
+  expect(trigger().hasAttribute("title")).toBe(false);
+  await act(async () => {
+    trigger().dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("About limits");
+  await act(async () => {
+    trigger().dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
   expect(trigger().getAttribute("aria-haspopup")).toBe("dialog");
   expect(trigger().getAttribute("aria-expanded")).toBe("false");
   expect(trigger().hasAttribute("aria-controls")).toBe(false);

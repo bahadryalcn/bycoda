@@ -255,7 +255,7 @@ it("discards a status response from a previously displayed session", async () =>
 });
 
 function row() {
-  return container.querySelector<HTMLButtonElement>("[data-session-review] ul button[title]")!;
+  return container.querySelector<HTMLButtonElement>("[data-session-review] ul li button")!;
 }
 function openMenu() {
   const event = new MouseEvent("contextmenu", {

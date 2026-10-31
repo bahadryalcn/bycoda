@@ -31,7 +31,18 @@ function panelAlignment(root: HTMLElement | null): "start" | "end" {
   return bounds.left + panel <= window.innerWidth - 16 ? "start" : "end";
 }
 
-/** A compact, inline property picker; large/search-driven lists use SearchableSelect. */
+/**
+ * A compact, inline property picker: one known scalar property in a settings/detail row, a short
+ * stable option set (groups, icons, opt-in local search), the trigger morphing into the list.
+ *
+ * Where it stops:
+ * - SearchableSelect: form/field choices with a visible label, help and validation; long, growing or
+ *   remote lists; async loading/failure; multiple values; option icon/meta/group and footer actions.
+ * - Picker kit (`picker/`: PickerPopover + PopoverSearchHeader + PickerList): toolbar/composer pickers
+ *   with a custom trigger and rich rows (description, trailing status, disabled reason, action rows),
+ *   a caller-owned search, footer actions or an embedded list.
+ * - DropdownMenu: commands without a persistent selection.
+ */
 export function MorphSelect({
   label,
   value,

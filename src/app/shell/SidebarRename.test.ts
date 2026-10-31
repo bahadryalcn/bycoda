@@ -54,6 +54,16 @@ function folderButton(name: string, scope: ParentNode = container): HTMLButtonEl
   )!;
 }
 
+/** A project picker row by its path (shown as name then parent folder); the full path rides
+ *  in the shared tooltip, not a native title. */
+function pickerRow(path: string, name?: string): HTMLButtonElement {
+  const cut = path.lastIndexOf("/");
+  const shown = `${name ?? path.slice(cut + 1)}${path.slice(0, cut)}`;
+  return [
+    ...document.querySelectorAll<HTMLButtonElement>('[aria-label="Project picker"] button'),
+  ].find((button) => button.textContent?.trim().endsWith(shown))!;
+}
+
 /** Hovers a control until the shared tooltip opens and returns its text. */
 async function tooltipText(element: HTMLElement): Promise<string> {
   await act(async () => {
@@ -770,7 +780,9 @@ describe("sidebar session bulk actions", () => {
         tone: "danger",
       });
       expect(request.mock.calls[0]![0].message).toContain("permanently deleted");
-      expect(request.mock.calls[0]![0].message).toContain("1 running conversation will be skipped.");
+      expect(request.mock.calls[0]![0].message).toContain(
+        "1 running conversation will be skipped.",
+      );
       // Declining deletes nothing and keeps the selection.
       expect(props.onDeleteSessionNow).not.toHaveBeenCalled();
       expect(selectedIds()).toEqual(["session-1", "session-2", "session-3"]);
@@ -1246,7 +1258,7 @@ describe("sidebar pinned sessions", () => {
 });
 
 describe("sidebar orchestration card", () => {
-  it.each([false, true])("keeps agents inside a distinct lead card (pinned=%s)", (pinned) => {
+  it.each([false, true])("keeps agents inside a distinct lead card (pinned=%s)", async (pinned) => {
     props.onArchiveSession = vi.fn();
     props.linkedSessionUpdateIds = new Set(["session-1"]);
     const lead = {
@@ -1310,7 +1322,8 @@ describe("sidebar orchestration card", () => {
     expect(orchestrationIcon?.tagName).toBe("BUTTON");
     expect(orchestrationIcon?.classList.contains("opacity-0")).toBe(false);
     expect(orchestrationIcon?.querySelector("svg")?.classList.contains("icon-xs")).toBe(true);
-    expect(orchestrationIcon?.getAttribute("title")).toBe("");
+    // An outer shared tooltip names it; the Button adds no native title of its own.
+    expect(orchestrationIcon?.hasAttribute("title")).toBe(false);
     expect(card().querySelector("[data-session-select] [data-orchestration-icon]")).toBeNull();
     expect(card().textContent).toContain("3 agents");
     expect(card().textContent).toContain("1/3 done");
@@ -1333,7 +1346,9 @@ describe("sidebar orchestration card", () => {
     expect(props.onSelectSession).not.toHaveBeenCalled();
     // A collapsed row stays one line; the model rides along in the tooltip.
     expect(
-      card().querySelector('[data-orchestration-agent="worker-a"] button')?.getAttribute("title"),
+      await tooltipText(
+        card().querySelector<HTMLElement>('[data-orchestration-agent="worker-a"] button')!,
+      ),
     ).toContain("codex:worker-a");
     expect(card().querySelectorAll("[data-orchestration-agent]")).toHaveLength(3);
     const normal = container.querySelector<HTMLElement>('[data-session-card="unrelated"]')!;
@@ -1913,9 +1928,7 @@ describe("collapsed rail Inbox actions", () => {
         button.getAttribute("aria-label"),
       ),
     ).toEqual(["Sessions, 1 working session", "Explorer", "Changes"]);
-    const sessionsTab = workspaceTabs.querySelector<HTMLButtonElement>(
-      '[aria-label^="Sessions"]',
-    )!;
+    const sessionsTab = workspaceTabs.querySelector<HTMLButtonElement>('[aria-label^="Sessions"]')!;
     expect(sessionsTab.getAttribute("aria-selected")).toBe("true");
     expect(sessionsTab.textContent).toContain("Sessions");
     expect(sessionsTab.querySelector("[data-workspace-working-count]")?.textContent).toBe("1");
@@ -2071,7 +2084,7 @@ describe("collapsed rail Inbox actions", () => {
     await act(async () => render());
 
     await openProjectPicker();
-    const row = document.querySelector<HTMLButtonElement>('button[title="/workspace/other"]')!;
+    const row = pickerRow("/workspace/other");
     await act(async () => {
       row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     });
@@ -2132,7 +2145,7 @@ describe("collapsed rail Inbox actions", () => {
     await act(async () => render());
 
     await openProjectPicker();
-    const row = document.querySelector<HTMLButtonElement>('button[title="/workspace/other"]')!;
+    const row = pickerRow("/workspace/other");
     row.focus();
     await act(async () => {
       row.dispatchEvent(
@@ -2158,8 +2171,7 @@ describe("collapsed rail Inbox actions", () => {
     await act(async () => render());
 
     await openProjectPicker();
-    const row = () =>
-      document.querySelector<HTMLButtonElement>('button[title="/workspace/other"]')!;
+    const row = () => pickerRow("/workspace/other");
     await act(async () => {
       row().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     });
@@ -2168,7 +2180,7 @@ describe("collapsed rail Inbox actions", () => {
     pressKey(name, "Enter");
 
     expect(document.querySelector('input[aria-label="Group name"]')).toBeNull();
-    expect(row().textContent).toContain("Client site");
+    expect(pickerRow("/workspace/other", "Client site").textContent).toContain("Client site");
   });
 
   it("keeps Changes labeled in the horizontal row with full working-tree totals", async () => {

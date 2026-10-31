@@ -41,6 +41,20 @@ vi.mock("@tauri-apps/api/window", () => ({
   }),
 }));
 
+/** Project picker rows with the path each stands for. Rows show the name then the parent folder;
+ *  the full path rides in the shared tooltip, not a native title. */
+function pickerRows(scope: ParentNode = document): { button: HTMLButtonElement; path: string }[] {
+  const picker = scope.querySelector('[aria-label="Project picker"]') ?? scope;
+  return [...picker.querySelectorAll<HTMLButtonElement>("button")].flatMap((button) => {
+    const [name, parent] = [...button.querySelectorAll("span.truncate")].map(
+      (span) => span.textContent ?? "",
+    );
+    return name !== undefined && parent !== undefined
+      ? [{ button, path: `${parent}/${name}` }]
+      : [];
+  });
+}
+
 let root: Root;
 let container: HTMLDivElement;
 let stored: Note;
@@ -350,8 +364,8 @@ it("uses the searchable rail project picker when moving a note", async () => {
   await render(projects, "/work/Active");
   await act(async () => projectButton()!.click());
   const menu = document.querySelector('[aria-label="Project picker"]')!;
-  const items = [...menu.querySelectorAll<HTMLButtonElement>("button[title]")];
-  expect(items.map((item) => item.title)).toEqual([
+  const items = pickerRows(menu);
+  expect(items.map((item) => item.path)).toEqual([
     "/work/Edefyn",
     "/work/Seventh",
     "/work/Fourth",
@@ -371,9 +385,9 @@ it("uses the searchable rail project picker when moving a note", async () => {
     );
     search!.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const filteredItems = [...menu.querySelectorAll<HTMLButtonElement>('button[title^="/work/"]')];
-  expect(filteredItems.map((item) => item.title)).toEqual(["/work/Active"]);
-  await act(async () => filteredItems[0]!.click());
+  const filteredItems = pickerRows(menu);
+  expect(filteredItems.map((item) => item.path)).toEqual(["/work/Active"]);
+  await act(async () => filteredItems[0]!.button.click());
   expect(stored.sourceCwd).toBe("/work/Active");
 });
 
@@ -731,9 +745,7 @@ async function chooseProject() {
   const button = projectButton();
   expect(button, "The note header should offer a project picker").not.toBeNull();
   await act(async () => button!.click());
-  const item = [
-    ...document.querySelectorAll<HTMLButtonElement>('[aria-label="Project picker"] button[title]'),
-  ].find((element) => element.title === "/work/portognjeeen");
+  const item = pickerRows().find((row) => row.path === "/work/portognjeeen")?.button;
   expect(item).toBeDefined();
   await act(async () => item!.click());
 }
@@ -1042,9 +1054,7 @@ it("clears a failed move error when the saved project is selected again", async 
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk full");
 
   await act(async () => projectButton()!.click());
-  const original = [
-    ...document.querySelectorAll<HTMLButtonElement>('[aria-label="Project picker"] button[title]'),
-  ].find((item) => item.title === "/work/Edefyn");
+  const original = pickerRows().find((row) => row.path === "/work/Edefyn")?.button;
   expect(original).toBeDefined();
   await act(async () => original!.click());
 

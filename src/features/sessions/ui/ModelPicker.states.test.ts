@@ -351,7 +351,7 @@ describe("model picker catalog states", () => {
     await act(async () => trigger().click());
     const tabs = [
       ...container.querySelectorAll('[role="tablist"][aria-label="Providers"] [role="tab"]'),
-    ].map((tab) => tab.getAttribute("title"));
+    ].map((tab) => tab.getAttribute("aria-label"));
     expect(tabs).toContain("Claude Code");
     expect(tabs).not.toContain("Cursor");
   });

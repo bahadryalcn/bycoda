@@ -141,6 +141,31 @@ function index(overrides: Partial<GitDiffIndex> = {}): GitDiffIndex {
 let container: HTMLDivElement;
 let root: Root;
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    vi.advanceTimersByTime(520);
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
+/** Tree folder toggles are named by their visible folder name; find one by path through its stage action. */
+function folderToggle(path: string): HTMLButtonElement | null {
+  return (
+    container
+      .querySelector(
+        `[aria-label="Stage Changes in ${path}"], [aria-label="Unstage Changes in ${path}"]`,
+      )
+      ?.closest("[data-action-host]")
+      ?.querySelector<HTMLButtonElement>(":scope > button[aria-expanded]") ?? null
+  );
+}
+
 describe("changed file context menus", () => {
   it.each(["list", "tree"] as const)("offers file and index actions in %s view", async (view) => {
     const onOpenFile = vi.fn();
@@ -164,7 +189,7 @@ describe("changed file context menus", () => {
         ),
       ),
     );
-    const row = container.querySelector<HTMLButtonElement>('button[title="src/app.ts"]')!;
+    const row = container.querySelector<HTMLButtonElement>('button[aria-label="src/app.ts"]')!;
     const openMenu = () => {
       const event = new MouseEvent("contextmenu", {
         bubbles: true,
@@ -219,7 +244,7 @@ describe("changed file context menus", () => {
     );
     act(() =>
       container
-        .querySelector('button[title="app.ts"]')!
+        .querySelector('button[aria-label="app.ts"]')!
         .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
     );
     const items = Array.from(
@@ -354,23 +379,34 @@ describe("GitChangesPanel branch switching", () => {
 describe("GitChangesPanel commit message generation", () => {
   it("blocks deferred generation commits from the header while staging stays usable and preserves the draft after index changes", async () => {
     vi.mocked(gitCommit).mockClear();
-    vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [
-      { ...changedFile("src/app.ts"), staged: true, unstaged: true },
-    ] }));
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({ files: [{ ...changedFile("src/app.ts"), staged: true, unstaged: true }] }),
+    );
     let finish!: (message: string) => void;
-    vi.mocked(generateCommitMessage).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    vi.mocked(generateCommitMessage).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
     await renderPanel("/generation-header-race");
     await fillCommitMessage("Retained draft");
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Generate commit message"]')!.click());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Generate commit message"]')!.click(),
+    );
     await openBranchMenu();
-    const commitMenu = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
-      .find(button => button.textContent?.trim() === "Commit")!;
+    const commitMenu = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (button) => button.textContent?.trim() === "Commit",
+    )!;
     await act(async () => commitMenu.click());
-    const stagedCommit = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
-      .find(button => button.textContent?.trim() === "Commit Staged")!;
+    const stagedCommit = [
+      ...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ].find((button) => button.textContent?.trim() === "Commit Staged")!;
     expect(stagedCommit.disabled).toBe(true);
     expect(gitCommit).not.toHaveBeenCalled();
-    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await act(async () =>
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
     const stage = container.querySelector<HTMLButtonElement>('[aria-label="Stage Changes"]')!;
     expect(stage.disabled).toBe(false);
     await act(async () => stage.click());
@@ -606,7 +642,11 @@ it("retains stash action feedback across checkout switches and recovers after fa
   );
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [changedFile("keep.ts")] }));
   await renderPanel("/stash-feedback");
-  const action = () => container.querySelector<HTMLButtonElement>('[title^="Stash all changes"]')!;
+  // While it runs, the action is named by its loading label.
+  const action = () =>
+    container.querySelector<HTMLButtonElement>(
+      '[aria-label="Stash all changes"], [aria-label="Working…"]',
+    )!;
   await act(async () => {
     action().click();
     action().click();
@@ -765,7 +805,7 @@ it("shows live detached HEAD instead of a stale worktree branch label", async ()
   expect(header.textContent).toContain("Detached · 1234567");
   expect(header.textContent).not.toContain("old-branch");
   expect(header.textContent).toContain("Current");
-  expect(header.querySelector("button")?.title).toContain("/repo-detached");
+  expect(await tooltipText(header.querySelector("button")!)).toContain("/repo-detached");
 });
 
 async function openBranchMenu() {
@@ -1387,8 +1427,8 @@ describe("GitChangesPanel loading and publication recovery", () => {
         enter();
       });
       expect(gitDiffIndex).toHaveBeenCalledTimes(reads + 1);
-      expect(container.querySelector('button[title="after.ts"]')).not.toBeNull();
-      expect(container.querySelector('button[title="before.ts"]')).toBeNull();
+      expect(container.querySelector('button[aria-label="after.ts"]')).not.toBeNull();
+      expect(container.querySelector('button[aria-label="before.ts"]')).toBeNull();
       await act(async () => enter());
       expect(gitDiffIndex).toHaveBeenCalledTimes(reads + 1);
     },
@@ -1429,10 +1469,10 @@ describe("GitChangesPanel loading and publication recovery", () => {
       target.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     });
     expect(gitDiffIndex).toHaveBeenCalledTimes(reads + 1);
-    expect(container.querySelector('button[title="before.ts"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="before.ts"]')).not.toBeNull();
     await act(async () => finish(index({ files: [changedFile("after.ts")] })));
     expect(gitDiffIndex).toHaveBeenCalledTimes(reads + 1);
-    expect(container.querySelector('button[title="after.ts"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="after.ts"]')).not.toBeNull();
   });
 
   it("refreshes local changes and PR status explicitly, without polling every two seconds", async () => {
@@ -1585,6 +1625,29 @@ describe("GitChangesPanel loading and publication recovery", () => {
         .click(),
     );
     expect(container.textContent).not.toContain("Couldn’t load Git changes");
+    expect(container.textContent).toContain("No uncommitted changes");
+  });
+
+  it("shows loading instead of a stale empty list while a refresh reads", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(index());
+    await renderPanel("/repo-slow-refresh");
+    expect(container.textContent).toContain("No uncommitted changes");
+    let finish!: (value: ReturnType<typeof index>) => void;
+    vi.mocked(gitDiffIndex).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Refresh source control"]')!
+        .click(),
+    );
+    expect(container.textContent).toContain("Loading changes…");
+    expect(container.textContent).not.toContain("No uncommitted changes");
+    await act(async () => finish(index()));
+    expect(container.textContent).not.toContain("Loading changes…");
     expect(container.textContent).toContain("No uncommitted changes");
   });
 
@@ -1822,7 +1885,9 @@ async function showTree() {
   if (toggle) await act(async () => toggle.click());
   let collapsed: HTMLButtonElement | null;
   while (
-    (collapsed = container.querySelector<HTMLButtonElement>('button[title][aria-expanded="false"]'))
+    (collapsed = container.querySelector<HTMLButtonElement>(
+      '[data-action-host] > button[aria-expanded="false"]:not([aria-haspopup])',
+    ))
   ) {
     const folder = collapsed;
     await act(async () => folder.click());
@@ -1845,10 +1910,10 @@ describe("GitChangesPanel folder actions", () => {
       vi.mocked(gitDiffIndex).mockResolvedValue(index({ files }));
       await renderPanel(cwd);
       await showTree();
-      const folder = container.querySelector<HTMLButtonElement>('button[title="src"]')!;
+      const folder = folderToggle("src")!;
       await act(async () => folder.click());
       expect(folder.getAttribute("aria-expanded")).toBe("false");
-      expect(container.querySelector('button[title="src/app.ts"]')).toBeNull();
+      expect(container.querySelector('button[aria-label="src/app.ts"]')).toBeNull();
 
       invalidateWatchedFiles.mockClear();
       vi.mocked(notifyGitChanged).mockClear();
@@ -1882,7 +1947,7 @@ describe("GitChangesPanel folder actions", () => {
     );
     await renderPanel();
     await showTree();
-    const folder = container.querySelector<HTMLButtonElement>('button[title="src/nested"]')!;
+    const folder = folderToggle("src/nested")!;
     invalidateWatchedFiles.mockClear();
     await act(async () => {
       container
@@ -1951,7 +2016,9 @@ describe("GitChangesPanel folder actions", () => {
     expect(fileRows).toHaveLength(2);
     for (const row of fileRows) {
       expect(row.querySelector('[role="status"]')?.textContent).toBe("Working");
-      expect(row.querySelector('button[aria-label^="Stage"], button[aria-label^="Unstage"]')).toBeNull();
+      expect(
+        row.querySelector('button[aria-label^="Stage"], button[aria-label^="Unstage"]'),
+      ).toBeNull();
     }
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Stage Changes in docs"]')!.click();
@@ -1995,7 +2062,7 @@ describe("GitChangesPanel folder actions", () => {
 
 describe("Git changed file multiple selection", () => {
   const fileRow = (relative: string) =>
-    container.querySelector<HTMLButtonElement>(`button[data-git-file][title="${relative}"]`)!;
+    container.querySelector<HTMLButtonElement>(`button[data-git-file][aria-label="${relative}"]`)!;
   async function click(relative: string, modifiers: MouseEventInit = {}) {
     await act(async () =>
       fileRow(relative).dispatchEvent(new MouseEvent("click", { bubbles: true, ...modifiers })),
@@ -2011,7 +2078,7 @@ describe("Git changed file multiple selection", () => {
       ...container.querySelectorAll<HTMLElement>(
         '[role="option"][aria-selected="true"] [data-git-file]',
       ),
-    ].map((row) => row.title);
+    ].map((row) => row.getAttribute("aria-label"));
   }
   it.each(["list", "tree"] as const)(
     "keeps focus and previews files during unmodified keyboard navigation in %s view",
@@ -2092,8 +2159,8 @@ describe("Git changed file multiple selection", () => {
         ),
       );
       // Earlier folder-action cases may leave the remembered tree folder closed.
-      const folder = container.querySelector<HTMLButtonElement>('button[title="src"][aria-expanded="false"]');
-      if (folder) await act(async () => folder.click());
+      const folder = folderToggle("src");
+      if (folder?.getAttribute("aria-expanded") === "false") await act(async () => folder.click());
       await click("src/a.ts");
       onOpenFile.mockClear();
       await click("src/c.ts", { ctrlKey: true });

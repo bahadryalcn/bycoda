@@ -106,7 +106,9 @@ it("keeps MCP progress on the exact action and server even when providers share 
   expect(signIns).toHaveLength(1);
   await act(async () => signIns[0].click());
   expect(signIns[0].getAttribute("aria-busy")).toBe("true");
-  expect(container.querySelector('[aria-label="Actions for shared-name"][aria-busy="true"]')).toBeNull();
+  expect(
+    container.querySelector('[aria-label="Actions for shared-name"][aria-busy="true"]'),
+  ).toBeNull();
   await act(async () => signIns[0].click());
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(1);
   await act(async () => finishLogin());
@@ -118,10 +120,14 @@ it("keeps MCP progress on the exact action and server even when providers share 
         finishConfirm = resolve;
       }),
   );
-  const remove = container.querySelector<HTMLButtonElement>('button[aria-label="Actions for shared-name"]')!;
+  const remove = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Actions for shared-name"]',
+  )!;
   await act(async () => remove.click());
   await act(async () => {
-    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === "Remove")!.click();
+    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((item) => item.textContent === "Remove")!
+      .click();
   });
   expect(remove.getAttribute("aria-busy")).toBe("true");
   expect([...container.querySelectorAll<HTMLButtonElement>('button[aria-busy="true"]')]).toEqual([
@@ -160,7 +166,7 @@ it("shows unsupported remote targets without local discovery or Add and permits 
   )!;
   await act(async () => picker.click());
   const options = Array.from(
-    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[title]'),
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
   );
   expect(options.some((option) => option.textContent?.includes("other-remote"))).toBe(false);
   const local = options.find((option) => option.textContent?.includes("local-project"))!;
@@ -175,9 +181,14 @@ async function selectProject(path: string) {
     container.querySelector<HTMLButtonElement>('[aria-label^="Switch project"]')!.click(),
   );
   expect(document.querySelector('input[placeholder="Search projects..."]')).not.toBeNull();
-  await act(async () =>
-    document.querySelector<HTMLButtonElement>(`[role="dialog"] button[title="${path}"]`)!.click(),
-  );
+  // Each project option names the project's folder (its full path shows only as a tooltip).
+  const name = path.split("/").pop()!;
+  const option = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ).find((button) =>
+    Array.from(button.querySelectorAll("span")).some((span) => span.textContent === name),
+  )!;
+  await act(async () => option.click());
 }
 
 async function openFilters() {
@@ -213,7 +224,9 @@ it("filters connections by provider", async () => {
   await act(async () => codex.click());
   expect(container.textContent).toContain("docs");
   expect(container.textContent).not.toContain("sentry");
-  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Actions for docs"]')!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Actions for docs"]')!.click(),
+  );
   const signIn = [...document.querySelectorAll("button")].find(
     (button) => button.textContent === "Sign in again",
   )!;

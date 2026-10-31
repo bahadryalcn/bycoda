@@ -5,6 +5,19 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
 import { AgentTranscript } from "./AgentTranscript";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 let root: ReturnType<typeof createRoot>;
 let host: HTMLDivElement;
 beforeEach(() => {
@@ -155,7 +168,7 @@ it("holds pending follow-ups and prevents send or removal while delivery is acti
   const remove = host.querySelector<HTMLButtonElement>('[aria-label="Remove draft"]')!;
   expect(send.disabled).toBe(true);
   expect(remove.disabled).toBe(true);
-  expect(send.title).toContain("still being delivered");
+  expect(await tooltipText(send)).toContain("still being delivered");
   expect(host.querySelector('[role="status"]')?.textContent).toContain("Sending...");
   await act(async () => {
     send.click();

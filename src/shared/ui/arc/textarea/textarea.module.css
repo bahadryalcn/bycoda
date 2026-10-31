@@ -37,3 +37,14 @@
 .field[data-variant="compact"] label { margin-bottom: var(--space-1); color: var(--text-secondary); font-size: var(--text-xs); }
 .field[data-variant="compact"] .control { min-height: 4.5rem; padding: var(--space-2) var(--space-3); }
 .field[data-variant="compact"] :is(.hint, .error) { padding-top: var(--space-1); }
+
+/* Box density, row bounds, autosize and monospace. Rows count the field's own line height (1lh) plus its block
+   padding, so the bounds follow density, font and zoom. Autosize measures to the computed max-height. */
+.control { --textarea-pad-block: var(--space-3); }
+.field[data-variant="compact"] .control,
+.field .control[data-field-size="sm"] { --textarea-pad-block: var(--space-2); }
+.field .control[data-field-size="sm"] { min-height: 4.5rem; padding-block: var(--space-2); }
+.field .control[data-min-rows] { min-height: calc(var(--textarea-min-rows) * 1lh + 2 * var(--textarea-pad-block)); }
+.field .control[data-max-rows] { max-height: calc(var(--textarea-max-rows) * 1lh + 2 * var(--textarea-pad-block)); }
+.field .control[data-autosize] { resize: none; overflow-y: hidden; }
+.field .control[data-monospace] { font-family: var(--font-mono); font-variant-ligatures: none; }

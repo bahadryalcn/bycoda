@@ -14,7 +14,7 @@ import {
   type GitFileDiffKind,
   type GitHistoryCommit,
 } from "../../../platform/tauri/fs";
-import { ChevronDown, ChevronRight, RefreshCw } from "../../../shared/ui/icons";
+import { ChevronDown, ChevronRight, FolderTree, RefreshCw } from "../../../shared/ui/icons";
 import { GitChangesPanel } from "./GitChangesPanel";
 import type { HarnessId } from "../../sessions/model/session";
 import type { RepositoryReviewRequest } from "../model/workspaceRepositories";
@@ -27,6 +27,7 @@ import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { useGitSubmodules } from "../hooks/useGitSubmodules";
+import { requestWorktreeManagement } from "../model/worktreeManagement";
 
 export function WorkspaceSourceControl({
   cwd,
@@ -210,6 +211,18 @@ export function WorkspaceSourceControl({
               ]}
             />
           </div>
+          {checkouts ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              label={t("Manage worktrees…")}
+              disabled={!enabled}
+              onClick={() => requestWorktreeManagement(active || cwd)}
+            >
+              <FolderTree aria-hidden className="size-3.5" />
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
@@ -260,6 +273,7 @@ export function WorkspaceSourceControl({
             selectedKind={own(active || cwd) ? selectedKind : undefined}
             selectedSha={own(active || cwd) ? selectedSha : undefined}
             refreshInTarget={showHeader}
+            worktreesInTarget={checkouts && showHeader}
             {...callbacks(active || cwd)}
           />
         ) : checkouts ? (

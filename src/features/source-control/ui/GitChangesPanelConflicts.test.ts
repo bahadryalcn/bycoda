@@ -206,8 +206,8 @@ describe("Merge Conflicts section", () => {
     expect(row("a.ts").querySelector('[title^="Both modified"]')).not.toBeNull();
     expect(row("sub/gone.ts").querySelector('[title^="Deleted by us"]')).not.toBeNull();
     // Conflicted files are not also ordinary rows.
-    expect(container.querySelectorAll('[title="a.ts"]')).toHaveLength(0);
-    expect(container.querySelectorAll('[title="ok.ts"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-git-file][aria-label="a.ts"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-git-file][aria-label="ok.ts"]')).toHaveLength(1);
   });
 
   it("offers the choices that fit each kind", async () => {
@@ -381,7 +381,7 @@ describe("a host that predates conflict info", () => {
     expect(sectionTitles()).toEqual(["Merge Conflicts", "Changes"]);
     expect(row("a.ts").textContent).toContain("U");
     expect(container.textContent).toContain("Merge in progress · 1 conflict");
-    expect(container.querySelectorAll('[title="a.ts"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-git-file][aria-label="a.ts"]')).toHaveLength(0);
     // The kind is unknown, so only choices that work for any kind are offered.
     await openMenu("a.ts");
     expect([...document.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual([

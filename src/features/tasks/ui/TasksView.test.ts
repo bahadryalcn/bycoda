@@ -21,6 +21,19 @@ import { withQueryClient } from "../../../../tests/browser/queryTest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 const TasksView = withQueryClient(RawTasksView);
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", async (original) => ({
   ...(await original<typeof import("@tauri-apps/api/core")>()),
@@ -629,7 +642,9 @@ it("explains a genuinely empty board once, with the one New task action inside i
   // The empty state carries the only New task action; the toolbar leaves it out.
   expect(empty && button(empty, "New task")).toBeTruthy();
   expect(
-    Array.from(container.querySelectorAll("button")).filter((entry) => buttonText(entry) === "New task"),
+    Array.from(container.querySelectorAll("button")).filter(
+      (entry) => buttonText(entry) === "New task",
+    ),
   ).toHaveLength(1);
   expect(container.querySelector('ol[aria-label="How it works"]')?.children).toHaveLength(3);
   expect(button(container, "Select tasks")).toBeUndefined();
@@ -942,7 +957,7 @@ it("shows one Working branch and worktree heading and keeps the machine limit ou
   // The advanced options stay closed until asked for.
   expect(form.querySelector<HTMLDetailsElement>("details.task-form-advanced")!.open).toBe(false);
   // Without a description the start button says why in its tooltip.
-  expect(button(form, "Add and start")!.getAttribute("title")).toBe(
+  expect(await tooltipText(button(form, "Add and start")!)).toBe(
     "Add a description to start this with an agent.",
   );
 });
@@ -1316,7 +1331,7 @@ it("disables goal settings on hosts without the update capability", async () => 
     'button[aria-label="Edit goal settings"]',
   )!;
   expect(edit.disabled).toBe(true);
-  expect(edit.title).toBe("Update the selected host to edit goal settings.");
+  expect(await tooltipText(edit)).toBe("Update the selected host to edit goal settings.");
 });
 
 it("shows a plan waiting for approval and asks the goal's machine to approve it", async () => {

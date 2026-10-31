@@ -1,6 +1,7 @@
 import { memo, useId, type CSSProperties } from "react";
 import { MASCOT_GRID, projectMascot } from "../model/projectMascots";
 import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import { identityClassName, type IdentitySize } from "../../../shared/ui/identity/identitySize";
 
 type Props = {
   project: string;
@@ -8,6 +9,8 @@ type Props = {
   color?: string;
   /** Explicit pick from the project menu; falls back to the hashed one. */
   name?: string | null;
+  /** Shared icon scale (icon-xs/sm/md/lg); `className` then only adds. */
+  size?: IdentitySize;
   className?: string;
   /** Gently breathes while work is in flight, subject to motion preferences. */
   active?: boolean;
@@ -23,9 +26,11 @@ export const ProjectMascot = memo(function ProjectMascot({
   project,
   color,
   name,
-  className = "size-3 shrink-0",
+  size,
+  className: classNameProp,
   active = false,
 }: Props) {
+  const className = identityClassName(size, classNameProp, "size-3 shrink-0");
   const mascot = projectMascot(project, name);
   const id = useId().replace(/:/g, "");
   const clipId = `project-code-${id}`;

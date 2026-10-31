@@ -342,7 +342,7 @@ it("shows a lightweight overview for all checkouts and selects from its rows", a
   await act(async () => toggle.click());
   expect(list.textContent).toContain("idle");
   await act(async () =>
-    [...list.querySelectorAll("button")].find((b) => b.title === "/t/idle")!.click(),
+    [...list.querySelectorAll("button")].find((b) => b.textContent?.includes("idle"))!.click(),
   );
   expect(host.querySelector("section")!.dataset.cwd).toBe("/t/idle");
 });

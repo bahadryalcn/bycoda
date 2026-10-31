@@ -17,6 +17,19 @@ import {
   setCachedRateLimits,
 } from "../../features/providers/model/rateLimitsCache";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
   invoke: vi.fn(async () => null),
@@ -110,7 +123,7 @@ describe("UsageProviderChip", () => {
     const trigger = button("Claude Code usage details");
     expect(trigger.querySelector('[role="progressbar"]')).toBeNull();
     expect(trigger.textContent).not.toContain("0%");
-    expect(trigger.title).toBe(limits.error);
+    expect(await tooltipText(trigger)).toBe(limits.error);
     await act(async () => trigger.click());
     const dialog = document.querySelector('[role="dialog"]');
     expect(dialog?.textContent).toContain(limits.error);
@@ -330,12 +343,12 @@ describe("UsageProviderChip", () => {
     });
     const trigger = button("Codex usage details");
     expect(trigger.textContent).toContain("81%");
-    expect(trigger.title).toContain("81% used");
+    expect(await tooltipText(trigger)).toContain("81% used");
     await act(async () => trigger.click());
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("81% used");
     act(() => saveShowRemainingUsage(true));
     expect(trigger.textContent).toContain("19%");
-    expect(trigger.title).toContain("19% remaining");
+    expect(await tooltipText(trigger)).toContain("19% remaining");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("19% remaining");
   });
 
@@ -616,7 +629,9 @@ describe("UsageProviderChip", () => {
       ...credit,
       title: "Full reset",
     }));
-    act(() => root.render(createElement(UsageProviderChip, { limits, now, onConsumeReset: vi.fn() })));
+    act(() =>
+      root.render(createElement(UsageProviderChip, { limits, now, onConsumeReset: vi.fn() })),
+    );
 
     await act(async () => button("Codex usage details").click());
     expect(document.body.textContent).not.toContain("Full reset");
@@ -649,7 +664,11 @@ describe("UsageProviderChip", () => {
     await act(async () => button("Confirm").click());
     expect(document.body.textContent).toContain("Host offline");
     expect(onConsumeReset).toHaveBeenCalledTimes(1);
-    act(() => useButtons().find((item) => item.textContent === "Try again")?.click());
+    act(() =>
+      useButtons()
+        .find((item) => item.textContent === "Try again")
+        ?.click(),
+    );
     expect(onConsumeReset).toHaveBeenCalledTimes(1);
     await act(async () => button("Confirm").click());
     expect(onConsumeReset).toHaveBeenCalledTimes(2);

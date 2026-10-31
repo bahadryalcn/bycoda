@@ -1,0 +1,18 @@
+/* The one "Loading…" line. A held line stays hidden for the first moments so work that is
+   already warm never flashes a loader; reduced motion keeps the delay and drops the fade. */
+.held {
+  animation: reveal var(--motion-feedback-duration, 120ms) linear 150ms both;
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .held {
+    animation: reveal 1ms linear 150ms both;
+  }
+}

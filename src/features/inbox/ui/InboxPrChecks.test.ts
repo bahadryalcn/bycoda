@@ -4,7 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxPrChecks, PrChecksTab } from "./InboxPrChecks";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
-import { InboxDetail as RawInboxDetail, LinkedWorkItemPanel as RawLinkedWorkItemPanel } from "./InboxView";
+import {
+  InboxDetail as RawInboxDetail,
+  LinkedWorkItemPanel as RawLinkedWorkItemPanel,
+} from "./InboxView";
 import type { GithubPrChecksView } from "../hooks/useGithubPrChecks";
 import type {
   GithubCheckDetails,
@@ -75,6 +78,19 @@ const render = (element: React.ReactElement) => {
   act(() => root.render(element));
   return container;
 };
+
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
 
 const buttonByLabel = (label: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
@@ -549,7 +565,7 @@ it("marks kept results as out of date after a failed refresh", () => {
   expect(kept.textContent).toContain("ci/build");
 });
 
-it("names the per-state counts on the tab for color-blind-safe reading", () => {
+it("names the per-state counts on the tab for color-blind-safe reading", async () => {
   const fail: GithubPrChecksOverall = {
     kind: "fail",
     failed: 2,
@@ -562,9 +578,10 @@ it("names the per-state counts on the tab for color-blind-safe reading", () => {
       onSelect: () => {},
     }),
   );
-  const button = tab.querySelector('button[role="tab"]');
+  const button = tab.querySelector<HTMLButtonElement>('button[role="tab"]');
   expect(button?.getAttribute("aria-label")).toBe("Checks: 2 failed, 1 passed");
-  expect(button?.getAttribute("title")).toBe("Checks: 2 failed, 1 passed");
+  expect(button?.getAttribute("title")).toBeNull();
+  expect(await tooltipText(button!)).toBe("Checks: 2 failed, 1 passed");
   expect(button?.textContent).toContain("Checks");
   expect(button?.textContent).toContain("2");
 

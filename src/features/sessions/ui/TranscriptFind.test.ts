@@ -8,6 +8,19 @@ import type { Block } from "../model/session";
 import { requestTranscriptJump } from "../model/transcriptJump";
 import { TranscriptFind } from "./TranscriptFind";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 it("keeps one keyboard binding across streamed renders and reads the latest navigation callback", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("requestAnimationFrame", () => 1);
@@ -56,6 +69,14 @@ it.each([false, true])(
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal("requestAnimationFrame", () => 1);
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     localStorage.clear();
     const container = document.createElement("div");
     const header = document.createElement("div");
@@ -76,22 +97,23 @@ it.each([false, true])(
       const launcher = () =>
         (inHeader ? header : container).querySelector<HTMLButtonElement>("button")!;
       if (inHeader) expect(container.querySelector("button")).toBeNull();
-      expect(launcher().title).toBe(`Find in conversation (${MOD}F)`);
+      expect(launcher().title).toBe("");
+      expect(await tooltipText(launcher())).toBe(`Find in conversation${MOD.replace(/\+$/, "")}F`);
       await act(async () => {
         saveKeybindingOverride("Editor: Find", { shortcut: "Control+Shift+KeyM" });
       });
-      expect(launcher().title).toContain("M)");
+      expect(await tooltipText(launcher())).toMatch(/M$/);
       await act(async () => {
         saveKeybindingOverride("Editor: Find", { disabled: true });
       });
-      expect(launcher().title).toBe("Find in conversation");
+      expect(await tooltipText(launcher())).toBe("Find in conversation");
       await act(async () => launcher().click());
       if (inHeader) expect(launcher().getAttribute("aria-expanded")).toBe("true");
       expect(container.querySelector('[role="search"]')).not.toBeNull();
-      expect(container.querySelector('[title="Next match (Enter / F3)"]')).not.toBeNull();
-      const close = container.querySelector<HTMLButtonElement>('[title="Close find (Esc)"]')!;
+      expect(container.querySelector('[aria-label="Next match"]')).not.toBeNull();
+      const close = container.querySelector<HTMLButtonElement>('[aria-label="Close find"]')!;
       await act(async () => close.click());
-      expect(launcher().title).toBe("Find in conversation");
+      expect(await tooltipText(launcher())).toBe("Find in conversation");
     } finally {
       await act(async () => root.unmount());
       container.remove();

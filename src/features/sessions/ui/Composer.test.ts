@@ -70,6 +70,19 @@ import {
   saveDefaultRepromptChoice,
 } from "../model/translationPreferences";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 function renderAction(busy: boolean, hasValue: boolean, allowBusySubmit = true) {
   return renderToStaticMarkup(
     createElement(ComposerAction, {
@@ -92,8 +105,8 @@ describe("ComposerAction", () => {
     expect(typed).toContain('aria-label="Send"');
     expect(typed).toContain('data-button-variant="primary"');
     expect(typed).toContain('aria-label="Stop"');
-    expect(typed).toContain('title="Send (Enter)"');
-    expect(typed).toContain('title="Stop (Esc)"');
+    // Send/Stop hints (with their key caps) ride in the shared tooltip, never a native title.
+    expect(typed).not.toContain(" title=");
   });
 
   it("keeps Stop while busy when submitting follow-up text is disabled", () => {
@@ -769,7 +782,9 @@ describe("Composer question focus", () => {
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(6);
     expect(list.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
     expect(list.querySelector('[role="option"]')?.className).toContain("bycoda-arc");
-    expect(document.querySelector("[data-mcp-picker]")?.className).toContain("--ui-surface-floating");
+    expect(document.querySelector("[data-mcp-picker]")?.className).toContain(
+      "--ui-surface-floating",
+    );
     const searchInput = document.querySelector<HTMLInputElement>(
       '[aria-label="Search MCP servers"]',
     )!;
@@ -815,7 +830,7 @@ describe("Composer question focus", () => {
     await typeInto(textarea, "/mcp");
     await openPicker();
     const close = document.querySelector<HTMLButtonElement>('[aria-label="Close MCP picker"]')!;
-    expect(close.title).toContain("Esc");
+    expect(await tooltipText(close)).toContain("Esc");
     await act(async () => close.click());
     expect(document.querySelector("[data-mcp-picker]")).toBeNull();
   });
@@ -1233,9 +1248,7 @@ describe("Composer question focus", () => {
     );
     const textarea = document.querySelector("textarea")!;
     await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!.click(),
     );
     const skillsButton = Array.from(
       document.querySelectorAll<HTMLButtonElement>("[data-composer-plus] button"),
@@ -1562,9 +1575,7 @@ describe("Composer question focus", () => {
       ),
     );
     await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Mode"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="Mode"]')!.click(),
     );
     const options = Array.from(
       document.querySelectorAll<HTMLButtonElement>("[data-composer-mode-menu] button"),
@@ -1996,9 +2007,7 @@ describe("Composer question focus", () => {
     );
 
     await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Mode"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="Mode"]')!.click(),
     );
     const draftMode = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
       button.textContent?.includes("Save this message"),
@@ -2052,7 +2061,7 @@ describe("Composer question focus", () => {
     expect(command).toBeDefined();
     await act(async () => command!.click());
     expect(textarea.value).toBe("/draft ");
-    expect(document.querySelector('[title="Turn off Draft mode"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Turn off Draft mode"]')).not.toBeNull();
     await act(async () => {
       textarea.value += "Explore a quieter empty state";
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -2438,9 +2447,7 @@ describe("Composer question focus", () => {
         ),
       );
       await act(async () =>
-        container
-          .querySelector<HTMLButtonElement>('[aria-label="Mode"]')!
-          .click(),
+        container.querySelector<HTMLButtonElement>('[aria-label="Mode"]')!.click(),
       );
       const draftMode = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
         button.textContent?.includes("Save this message"),

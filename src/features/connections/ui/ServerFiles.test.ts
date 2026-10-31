@@ -289,7 +289,9 @@ it("cancels a pending download picker without starting the late transfer", async
   try {
     await context.list();
     await act(async () =>
-      context.host.querySelector<HTMLButtonElement>('button[title="Download"]')!.click(),
+      context.host
+        .querySelector<HTMLButtonElement>('button[aria-label="Download file.txt"]')!
+        .click(),
     );
     await act(async () => context.button("Cancel").click());
     await act(async () => choose("C:/late-download.txt"));

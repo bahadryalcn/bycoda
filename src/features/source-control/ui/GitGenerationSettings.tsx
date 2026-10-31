@@ -146,9 +146,8 @@ export function GitGenerationSettings({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="relative shrink-0"
+        className="shrink-0"
       >
-        {choice && <span className="absolute right-0.5 top-0.5 size-1 rounded-full bg-accent" />}
         <ChevronDown className={`size-3 shrink-0 ${open ? "rotate-180" : ""}`} />
       </Button>
       {open && (

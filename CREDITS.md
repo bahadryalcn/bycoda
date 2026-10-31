@@ -35,3 +35,20 @@ their owners and do not imply sponsorship or endorsement. See [NOTICE](NOTICE).
 
 Redistributions must retain the original MIT license, copyright notices, and
 any additional notices required by dependencies.
+
+## Sounds
+
+The interface sounds in `public/sounds/bycoda-v2/` come from
+[Freesound](https://freesound.org) through [Openverse](https://openverse.org).
+Every source is dedicated to the public domain under
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). bycoda trimmed,
+faded and level-matched them. Credit is given as thanks; CC0 does not require it.
+
+| File | Source | Creator |
+| --- | --- | --- |
+| `complete.wav` | [UI Sound: Approval - High Pitched Bell Synth](https://freesound.org/people/GabFitzgerald/sounds/625174/) | GabFitzgerald |
+| `inbox.wav` | [chat-message-1 incoming message](https://freesound.org/people/mickleness/sounds/269180/) | mickleness |
+| `activity.wav` | [Chime Notification](https://freesound.org/people/Jofae/sounds/380482/) | Jofae |
+| `update.wav` | [Bell Notification Short 1_3](https://freesound.org/people/Joao_Janz/sounds/504821/) | Joao_Janz |
+| `toggle.wav` | [Soft UI Button Click](https://freesound.org/people/Jummit/sounds/528561/) | Jummit |
+| `copy.wav` | [Glass Tap](https://freesound.org/people/Unicornaphobist/sounds/262958/) | Unicornaphobist |

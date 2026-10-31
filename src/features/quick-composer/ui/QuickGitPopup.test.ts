@@ -151,8 +151,8 @@ it("uses the main composer's branch checkout flow in the current working copy", 
 
 it("selects an existing working copy for the upcoming session", async () => {
   await act(async () => button("Existing worktree…").click());
-  const tree = document.querySelector<HTMLButtonElement>(
-    '[role="menuitem"][title="/repo-feature"]',
+  const tree = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) =>
+    item.textContent?.includes("/repo-feature"),
   )!;
   await act(async () => tree.click());
   expect(selection).toMatchObject({

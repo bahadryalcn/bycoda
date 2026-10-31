@@ -8,6 +8,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileEditor } from "./FileEditor";
 import { mergeResolution } from "../../source-control/model/mergeResolution";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 const bridge = vi.hoisted(() => ({
   invoke: (_command: string, _args?: Record<string, unknown>): unknown => undefined,
 }));
@@ -355,6 +368,7 @@ describe("merge conflicts and blame in the file editor", () => {
     disk = "one\n";
     await render("remote://env/repo", false);
     expect(blameToggle().disabled).toBe(true);
-    expect(blameToggle().title).toMatch(/machine/);
+    expect(blameToggle().title).toBe("");
+    expect(await tooltipText(blameToggle())).toMatch(/machine/);
   });
 });

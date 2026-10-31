@@ -10,6 +10,27 @@ vi.mock("./AgentTranscript", () => ({ ActivityRow: () => null, agentStepBlock: (
 import { ActivityDock } from "./ActivityDock";
 import { SubagentSheet, useSubagentSheet } from "./SubagentSheet";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+/** The sheet's Stop action, found by its visible label. */
+function stopButton(dialog: Element | null) {
+  return (
+    [...(dialog?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+      (button) => button.textContent?.trim() === "Stop",
+    ) ?? null
+  );
+}
+
 const command: Block = {
   id: "command-1",
   role: "tool",
@@ -76,7 +97,9 @@ it("arka plan komutuna tıklayınca detayını açar ve gelen çıktıyı günce
   expect(dialog?.textContent).toContain("G:/project");
   expect(dialog?.textContent).toContain("Running");
   expect(dialog?.textContent).toContain("No output has been reported");
-  const stop = dialog?.querySelector<HTMLButtonElement>('button[title="Stop this command"]');
+  const stop = stopButton(dialog);
+  expect(stop).not.toBeNull();
+  expect(await tooltipText(stop!)).toBe("Stop this command");
   await act(async () => stop?.click());
   expect(onStop).toHaveBeenCalledOnce();
   act(() =>
@@ -98,7 +121,7 @@ it("arka plan komutuna tıklayınca detayını açar ve gelen çıktıyı günce
   expect(dialog?.textContent).toContain("3 passed");
   expect(dialog?.textContent).toContain("Tests passed");
   expect(dialog?.textContent).toContain("Done");
-  expect(dialog?.querySelector('button[title="Stop this command"]')).toBeNull();
+  expect(stopButton(dialog)).toBeNull();
   act(() =>
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
   );

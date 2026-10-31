@@ -266,16 +266,26 @@ describe("NameRow IME composition", () => {
       );
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    return { input, onCommit, onCancel, outside, finish: () => document.removeEventListener("keydown", outside) };
+    return {
+      input,
+      onCommit,
+      onCancel,
+      outside,
+      finish: () => document.removeEventListener("keydown", outside),
+    };
   };
   const key = (input: HTMLInputElement, init: KeyboardEventInit & { keyCode?: number }) =>
     act(async () => {
-      input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }),
+      );
     });
 
   it("ignores Enter and Escape while the IME owns them and keeps the edit open", async () => {
     const { input, onCommit, onCancel, outside, finish } = await mount();
-    await act(async () => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+    await act(async () =>
+      input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
     await key(input, { key: "Enter", isComposing: true, keyCode: 229 });
     await key(input, { key: "Escape", isComposing: true, keyCode: 229 });
     expect(onCommit).not.toHaveBeenCalled();
@@ -289,8 +299,12 @@ describe("NameRow IME composition", () => {
 
   it("treats the WebKit confirming keydown (keyCode 229 after compositionend) as IME input", async () => {
     const { input, onCommit, onCancel, finish } = await mount();
-    await act(async () => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
-    await act(async () => input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "x" })));
+    await act(async () =>
+      input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+    );
+    await act(async () =>
+      input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "x" })),
+    );
     await key(input, { key: "Enter", isComposing: false, keyCode: 229 });
     await key(input, { key: "Escape", isComposing: false, keyCode: 229 });
     expect(onCommit).not.toHaveBeenCalled();
@@ -300,7 +314,11 @@ describe("NameRow IME composition", () => {
 
   it("commits once on Enter after composition ended and cancels on a plain Escape", async () => {
     const first = await mount();
-    await act(async () => first.input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "x" })));
+    await act(async () =>
+      first.input.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true, data: "x" }),
+      ),
+    );
     await key(first.input, { key: "Enter", isComposing: false, keyCode: 13 });
     expect(first.onCommit).toHaveBeenCalledExactlyOnceWith("notes.md");
     first.finish();
@@ -364,9 +382,12 @@ describe("FileTree render isolation", () => {
   );
   it("exposes a file manager action for the project folder in the header menu", async () => {
     await act(async () => render());
-    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Explorer actions"]')!.click());
-    const reveal = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) =>
-      /Finder|File Explorer|File Manager|Containing Folder/i.test(button.textContent ?? ""),
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Explorer actions"]')!.click(),
+    );
+    const reveal = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (button) =>
+        /Finder|File Explorer|File Manager|Containing Folder/i.test(button.textContent ?? ""),
     )!;
     expect(reveal).toBeTruthy();
     await act(async () => reveal.click());
@@ -375,9 +396,12 @@ describe("FileTree render isolation", () => {
 
   it("shows tree-local progress while an operation is pending and ignores repeated requests", async () => {
     await act(async () => render());
-    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Explorer actions"]')!.click());
-    const reveal = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) =>
-      /Finder|File Explorer|File Manager|Containing Folder/i.test(button.textContent ?? ""),
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Explorer actions"]')!.click(),
+    );
+    const reveal = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (button) =>
+        /Finder|File Explorer|File Manager|Containing Folder/i.test(button.textContent ?? ""),
     )!;
     let finish!: () => void;
     vi.mocked(invoke).mockImplementationOnce(
@@ -444,7 +468,7 @@ describe("FileTree render isolation", () => {
     props = { ...props, cwd };
     await act(async () => render());
     await act(async () => {
-      const rootRow = container.querySelector<HTMLButtonElement>(`button[title="${nextRoot}"]`)!;
+      const rootRow = container.querySelector<HTMLButtonElement>("button[data-explorer-root]")!;
       if (rootRow.getAttribute("aria-expanded") !== "true") rootRow.click();
     });
     expect(container.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
@@ -546,7 +570,7 @@ describe("FileTree render isolation", () => {
 
     await act(async () => render());
 
-    const rootButton = container.querySelector<HTMLButtonElement>(`button[title="${cwd}"]`)!;
+    const rootButton = container.querySelector<HTMLButtonElement>("button[data-explorer-root]")!;
     expect(rootButton.textContent).toContain("mc/update-readme-tests");
     expect(rootButton.lastElementChild?.className).not.toContain("uppercase");
     expect(container.querySelector('[role="tree"]')?.getAttribute("aria-label")).toBe(
@@ -629,7 +653,9 @@ describe("FileTree excluded files", () => {
     saveShowExcludedFiles(true);
     await act(async () => render());
     await act(async () => row("debug.log").click());
-    await act(async () => row("first.ts").dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })));
+    await act(async () =>
+      row("first.ts").dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })),
+    );
     act(() => saveShowExcludedFiles(false));
     expect(row("debug.log")).toBeNull();
     const scope = container.querySelector("[data-explorer-selection-scope]");
@@ -639,15 +665,21 @@ describe("FileTree excluded files", () => {
     vi.stubGlobal("confirm", confirm);
     await press(row("first.ts"), { key: "Delete" });
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining(`${cwd}/debug.log`));
-    expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "delete_path")).toHaveLength(0);
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "delete_path"),
+    ).toHaveLength(0);
   });
 
   it("distinguishes an excluded-only folder from an empty listing", async () => {
     directories.set(cwd, [file("debug.log", true)]);
     await refreshDir(cwd);
     await act(async () => render());
-    expect(container.querySelector("[data-explorer-empty]")?.textContent).toContain("Only excluded files in this folder");
-    const show = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Show excluded files")!;
+    expect(container.querySelector("[data-explorer-empty]")?.textContent).toContain(
+      "Only excluded files in this folder",
+    );
+    const show = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Show excluded files",
+    )!;
     await act(async () => show.click());
     expect(row("debug.log")).not.toBeNull();
   });
@@ -773,15 +805,22 @@ describe("FileTree copies paths", () => {
   });
 
   it("reports a rejected clipboard and false fallback, cleans the temporary field and retries exact text", async () => {
-    const write = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("clipboard denied"));
+    const write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockRejectedValueOnce(new Error("clipboard denied"));
     const previous = Object.getOwnPropertyDescriptor(document, "execCommand");
-    Object.defineProperty(document, "execCommand", { configurable: true, value: vi.fn(() => false) });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: vi.fn(() => false),
+    });
     try {
       await press(row("first.ts"), { key: "C", metaKey: true, shiftKey: true });
       expect(container.textContent).toContain("Could not copy. Try again.");
       expect(container.textContent).not.toContain("Copied");
       expect(document.querySelector("textarea")).toBeNull();
-      const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Retry")!;
+      const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Retry",
+      )!;
       await act(async () => retry.click());
       expect(await navigator.clipboard.readText()).toBe(`${cwd}/first.ts`);
       expect(container.textContent).toContain("Copied");
@@ -1161,7 +1200,9 @@ describe("FileTree multiple selection", () => {
     expect(container.textContent).toContain("refresh failed");
     expect(container.textContent).toContain("File change saved. Refresh failed.");
     failures.delete(cwd);
-    const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Retry")!;
+    const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Retry",
+    )!;
     await act(async () => retry.click());
     expect(props.onFileDeleted).toHaveBeenCalledTimes(2);
     expect(row("a.ts")).toBeNull();
@@ -1198,15 +1239,22 @@ describe("FileTree multiple selection", () => {
     expect(props.onFileMoved).toHaveBeenCalledExactlyOnceWith(`${cwd}/a.ts`, `${cwd}/dest/a.ts`);
     expect(container.textContent).toContain("File change saved. Refresh failed.");
     failures.delete(cwd);
-    const retry = container.querySelector<HTMLButtonElement>('[role="alert"]:last-of-type button') ??
-      [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Retry")!;
+    const retry =
+      container.querySelector<HTMLButtonElement>('[role="alert"]:last-of-type button') ??
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Retry",
+      )!;
     await act(async () => retry.click());
     expect(props.onFileMoved).toHaveBeenCalledTimes(1);
     failures.delete(`${cwd}/b.ts`);
     await press(row("dest"), { key: "v", ctrlKey: true });
     expect(props.onFileMoved).toHaveBeenCalledTimes(2);
     const moves = vi.mocked(invoke).mock.calls.filter(([command]) => command === "move_path");
-    expect(moves.map(([, args]) => (args as { from: string }).from)).toEqual([`${cwd}/a.ts`, `${cwd}/b.ts`, `${cwd}/b.ts`]);
+    expect(moves.map(([, args]) => (args as { from: string }).from)).toEqual([
+      `${cwd}/a.ts`,
+      `${cwd}/b.ts`,
+      `${cwd}/b.ts`,
+    ]);
   });
 
   it("moves all selected files on a pointer drop into a folder", async () => {
@@ -1395,9 +1443,9 @@ describe("FileTree drag feedback", () => {
     await down("a.ts", 13);
     await move(13);
     expect(hint()?.textContent).toContain("Already in");
-    expect(container.querySelector("[data-explorer-root]")?.getAttribute("data-drop-indicator")).toBe(
-      "blocked",
-    );
+    expect(
+      container.querySelector("[data-explorer-root]")?.getAttribute("data-drop-indicator"),
+    ).toBe("blocked");
     await move(13, { ctrlKey: true });
     expect(hint()?.textContent).toContain("Copy to");
   });
@@ -1434,7 +1482,9 @@ describe("FileTree drag feedback", () => {
     await down("a.ts", 17);
     await move(17);
     await act(async () => {
-      window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 17, clientX: 40, clientY: 40 }));
+      window.dispatchEvent(
+        new PointerEvent("pointerup", { pointerId: 17, clientX: 40, clientY: 40 }),
+      );
     });
     expect(props.onFileMoved).toHaveBeenCalledWith(`${cwd}/a.ts`, `${cwd}/dest/a.ts`);
     expect(hint()).toBeNull();

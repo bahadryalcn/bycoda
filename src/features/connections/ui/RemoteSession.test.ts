@@ -61,6 +61,19 @@ import { newLocalHostSession } from "../model/newLocalHostSession";
 import { hostSessionBinding, restoreHostSessionShell } from "../model/sessionExecutionBinding";
 import { shouldPersistSession, upsertSession } from "../../sessions/data/sessionStore";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 const transportProbe = vi.hoisted(() => ({
   current: undefined as RemoteSessionOverrides | undefined,
 }));
@@ -1715,7 +1728,7 @@ it("starts a remote session in the worktree chosen before its first message", as
   await act(async () => existing!.click());
   await settle();
   const worktree = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-    (button) => button.title === "remote://env/home/me/repo-worktrees/dev",
+    (button) => button.textContent?.includes("repo-worktrees/dev") ?? false,
   );
   expect(worktree).toBeDefined();
   await act(async () => worktree!.click());
@@ -1988,7 +2001,7 @@ it("puts the message back in the composer when Send cannot reconnect", async () 
   machineDown = unreachable;
   await render();
   await type("Fix the tests");
-  expect(byLabel("Send")!.title).toContain("Can’t reach Home server");
+  expect(await tooltipText(byLabel("Send")!)).toContain("Can’t reach Home server");
   await act(async () => byLabel("Send")!.click());
   await settle();
   await settle();
@@ -2861,8 +2874,8 @@ it("shows loading until the initial owner tail is verified", async () => {
   release();
   await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
   expect(
-    container.querySelector('[data-remote-data-state] [title*="Last verified"]'),
-  ).not.toBeNull();
+    await tooltipText(container.querySelector<HTMLElement>("[data-remote-data-state] button")!),
+  ).toContain("Last verified");
 });
 
 it("re-reads the owner tail when a reset arrives during its initial read", async () => {
@@ -3169,7 +3182,7 @@ it("shows a saved tail offline but requires a fresh tail page before sending", a
   vi.mocked(readRemotePageCache).mockResolvedValue(cached as HostSession);
   await render();
   await vi.waitFor(() => expect(container.textContent).toContain("Earlier reply"));
-  expect(byLabel("Send")!.title).toContain("saved transcript preview");
+  expect(await tooltipText(byLabel("Send")!)).toContain("saved transcript preview");
   await type("verified against host");
   await act(async () => byLabel("Send")!.click());
   expect(commands.some((command) => command.type === "send")).toBe(false);

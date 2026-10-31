@@ -1,15 +1,33 @@
-/* Shared field/focus contract. Density preferences remain authoritative. */
+/* Shared field/focus contract: the only definition of the --ui-field-* and --ui-focus-* tokens.
+   Density preferences remain authoritative.
+   - Outline focus (buttons, rows, tabs, menu items, sliders): --ui-focus-width solid
+     --ui-focus-ring-color at --ui-focus-offset.
+   - Field focus (TextField, TextareaField, Select, SearchInput, pickers, inline edit, composites):
+     the frame's border turns --ui-field-border-focus and the frame gains --ui-focus-ring, a soft
+     2px ring in the user's accent (--ui-focus-ring-invalid while aria-invalid). No inset outline.
+   - Composites: put data-ui-focus-group on the bordered frame and data-ui-focus="group" on the
+     inner editor/trigger; the frame shows the ring, the member draws nothing. Inputs inside a
+     FieldControl ([data-field-control]) are members automatically.
+   - data-ui-focus="input" marks a standalone editor that owns its frame; data-ui-focus="menu"
+     marks an editor inside an already framed menu (no ring).
+   - data-ui-focus-quiet on a focus group opts a writing surface out of the ring (the composer:
+     the caret and surface carry focus). Forced-colors outlines still apply. */
 html:root {
   --ui-field-height-sm: var(--ui-control-height-compact);
   --ui-field-height-md: calc(var(--ui-control-height) - 0.25rem);
   --ui-field-radius: 0.5rem;
   --ui-field-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface-muted));
   --ui-field-border-hover: color-mix(in oklab, var(--color-content) 22%, var(--ui-surface-muted));
+  /* Readability-adjusted accent ink: keeps 3:1 for white/black custom accents. */
   --ui-field-border-focus: var(--ui-interaction-ink);
   --ui-field-border-invalid: var(--ui-tone-danger-fg);
   --ui-focus-ring-color: var(--ui-interaction-ink);
-  --ui-focus-ring: 0 0 0 3px color-mix(in oklab, var(--ui-focus-ring-color) 18%, transparent);
+  /* The ring is decoration around an already visible border, so it uses the plain accent at a
+     low alpha (never the gray ink mix) and stays subtle. */
+  --ui-focus-ring: 0 0 0 2px color-mix(in oklab, var(--ui-interaction-accent) 30%, transparent);
+  --ui-focus-ring-invalid: 0 0 0 2px color-mix(in oklab, var(--ui-tone-danger-fg) 26%, transparent);
   --ui-focus-width: 1px;
+  --ui-focus-offset: 2px;
 }
 html[data-control-density="touch"] {
   --ui-field-height-md: var(--ui-control-height);
@@ -74,11 +92,12 @@ html[data-control-density="touch"] {
   --control-height-sm: var(--ui-field-height-sm);
   --control-height-md: var(--ui-field-height-md);
   --control-height-lg: var(--ui-control-height-lg);
-  --duration-instant: 80ms;
-  --duration-fast: var(--motion-feedback-duration);
-  --duration-standard: var(--motion-reorder-duration);
-  --ease-standard: var(--motion-ease-out);
-  --ease-enter: var(--motion-ease-out);
+  --duration-instant: var(--motion-duration-instant);
+  --duration-fast: var(--motion-duration-fast);
+  --duration-standard: var(--motion-duration-standard);
+  --ease-standard: var(--motion-ease-standard);
+  --ease-enter: var(--motion-ease-enter);
+  --ease-exit: var(--motion-ease-exit);
   --focus-ring: transparent;
   --shadow-floating: none;
   font-family: var(--font-sans);
@@ -113,9 +132,20 @@ html[data-control-density="touch"] {
   --surface-muted: var(--ui-island-surface);
 }
 
-/* Preserve bycoda keyboard focus even for upstream border-only controls. */
+/* Preserve bycoda keyboard focus even for upstream border-only controls. Focus-group members draw
+   nothing of their own: data-ui-focus="group"/"menu" editors, FieldControl editors and the InlineEdit
+   editor (their frame owns focus). :where keeps the exclusion specificity-free, so the owners' rules
+   no longer depend on stylesheet order. */
 :is(button, input, textarea, [tabindex]).bycoda-arc:focus-visible,
-.bycoda-arc :is(button, input, textarea, [tabindex]):focus-visible {
+.bycoda-arc
+  :is(button, input, textarea, [tabindex]):not(
+    :where(
+      [data-ui-focus="group"],
+      [data-ui-focus="menu"],
+      [data-field-control] :is(input, textarea),
+      .bycoda-arc-inline-edit :is(input, textarea)
+    )
+  ):focus-visible {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: var(--ui-focus-offset);
   box-shadow: var(--ui-focus-ring);
@@ -286,18 +316,25 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   border-color: var(--ui-field-border-focus);
 }
 
-.bycoda-arc.bycoda-arc-field :is(input, textarea):focus-visible,
+/* [data-composer-box] is a legacy alias of data-ui-focus-quiet until Composer.tsx sets the
+   attribute itself; remove it from both selectors then. */
+.bycoda-arc.bycoda-arc-field :is(input, textarea):not(:where([data-field-control] *)):focus-visible,
 [data-ui-focus="input"]:focus-visible,
 .bycoda-arc [data-ui-focus="input"]:focus-visible,
-[data-ui-focus-group]:has([data-ui-focus="group"]:focus-visible) {
+[data-ui-focus-group]:not(:where([data-ui-focus-quiet], [data-composer-box])):has(
+    [data-ui-focus="group"]:focus-visible
+  ) {
   outline: none;
   box-shadow: var(--ui-focus-ring);
 }
 
-.bycoda-arc.bycoda-arc-field :is(input, textarea)[aria-invalid="true"]:focus-visible,
+.bycoda-arc.bycoda-arc-field
+  :is(input, textarea)[aria-invalid="true"]:not(:where([data-field-control] *)):focus-visible,
 [data-ui-focus="input"][aria-invalid="true"]:focus-visible,
-[data-ui-focus-group]:has([data-ui-focus="group"][aria-invalid="true"]:focus-visible) {
-  outline-color: var(--danger, var(--color-danger));
+[data-ui-focus-group]:not(:where([data-ui-focus-quiet], [data-composer-box])):has(
+    [data-ui-focus="group"][aria-invalid="true"]:focus-visible
+  ) {
+  box-shadow: var(--ui-focus-ring-invalid);
 }
 
 /* Focus is visible on the composite border or the already framed menu, never both. */
@@ -325,7 +362,8 @@ html[data-control-density="touch"] .bycoda-arc-switch {
     outline-offset: var(--ui-focus-offset) !important;
   }
 
-  html [data-ui-focus-group] [data-ui-focus="group"]:focus-visible {
+  html [data-ui-focus-group] [data-ui-focus="group"]:focus-visible,
+  html [data-field-control] :is(input, textarea):focus-visible {
     outline: none !important;
   }
 
@@ -375,7 +413,7 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 }
 
 .bycoda-arc.bycoda-arc-morph[data-open] {
-  z-index: 80;
+  z-index: var(--layer-popover);
 }
 
 /* MorphSelect expands its own surface rather than spawning a second portal. */

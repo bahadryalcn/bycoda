@@ -8,6 +8,19 @@ import { listExternalEditors, openInExternalEditor } from "../../../platform/tau
 import { saveProjectActions } from "../model/projectActions";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { hostFeatureRequest } from "../../connections/model/hostFeatureClient";
+
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
 vi.mock("../../connections/model/hostFeatureClient", () => ({ hostFeatureRequest: vi.fn() }));
 vi.mock("../../../platform/tauri/fs", () => ({
   listExternalEditors: vi.fn(async () => [{ id: "cursor", name: "Cursor" }]),
@@ -194,7 +207,7 @@ it("runs a saved action and keeps folder controls local while exposing remote pr
     expect(onRun).toHaveBeenCalledWith(action);
     const openButton = host.querySelector<HTMLButtonElement>('[aria-label="Open project in"]')!;
     expect(openButton.dataset.expanded).toBeUndefined();
-    expect(openButton.title).toContain("C:/project-worktree");
+    expect(await tooltipText(openButton)).toContain("C:/project-worktree");
     await act(async () =>
       root.render(
         createElement(ProjectQuickActions, {

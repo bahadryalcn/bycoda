@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from "nod
 import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
+import { checkUiDrift, formatRegressions, scopeOf } from "./check-ui-drift.mjs";
 
 const defaultRoot = fileURLToPath(new URL("../../", import.meta.url));
 const supported = /\.(?:[cm]?[jt]sx?|jsonc?|ya?ml|md|css|html|toml)$/;
@@ -33,7 +34,7 @@ export function stagedBlobs(root = defaultRoot) {
       return { file, text: bytes.toString("utf8") };
     });
 }
-export function checkStaged({ root = defaultRoot, runTool } = {}) {
+export function checkStaged({ root = defaultRoot, runTool, checkDrift = checkUiDrift } = {}) {
   const blobs = stagedBlobs(root);
   if (!blobs.length) return { evidence: "staged-source-only", checked: [], success: true };
   const require = createRequire(join(root, "package.json"));
@@ -99,6 +100,20 @@ export function checkStaged({ root = defaultRoot, runTool } = {}) {
         }
       }
       checked.push(file);
+    }
+    // UI drift ratchet over the staged text of src files only; the rest of src supplies the
+    // variable definitions. Counts above ui-drift-baseline.json fail.
+    const ui = blobs.filter(({ file }) => scopeOf(file));
+    if (ui.length) {
+      const drift = checkDrift({
+        root,
+        overrides: new Map(ui.map(({ file, text }) => [file, text])),
+        files: ui.map(({ file }) => file),
+      });
+      if (!drift.success)
+        throw new Error(
+          `Staged UI drift (above the baseline):${formatRegressions(drift.regressions)}`,
+        );
     }
     return {
       evidence: "staged-source-only",

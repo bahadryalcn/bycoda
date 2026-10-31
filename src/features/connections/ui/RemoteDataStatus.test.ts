@@ -5,6 +5,19 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RemoteDataStatus } from "./RemoteDataStatus";
 import type { RemoteDataState } from "../model/remoteDataState";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
@@ -19,7 +32,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("puts routine verification in one named refresh action without a banner", () => {
+it("puts routine verification in one named refresh action without a banner", async () => {
   const onRefresh = vi.fn();
   act(() =>
     root.render(
@@ -28,7 +41,8 @@ it("puts routine verification in one named refresh action without a banner", () 
   );
   const button = container.querySelector("button")!;
   expect(button.getAttribute("aria-label")).toBe("Refresh conversation");
-  expect(button.title).toContain("Last verified");
+  expect(button.title).toBe("");
+  expect(await tooltipText(button)).toContain("Last verified");
   expect(button.querySelector("svg")).not.toBeNull();
   expect(container.querySelector('[role="alert"]')).toBeNull();
   act(() => button.click());

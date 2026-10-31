@@ -72,17 +72,19 @@
 .root[data-open] .surface::after {
   border-color: var(--border);
 }
-/* Keyboard focus matches the text fields and Select: the border and a contained outline on the same role. */
+/* Keyboard focus matches the text fields and Select (the shared field focus contract): the overlay border turns the
+   focus role and the surface itself carries the soft accent ring (on the surface, not the overlay, which its clip would cut). */
 .root:not([data-open]):has(> .trigger:focus-visible) .surface::after {
   border-color: var(--ui-field-border-focus);
-  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
-  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
+}
+.root:not([data-open]):has(> .trigger:focus-visible) .surface {
+  box-shadow: var(--ui-focus-ring);
 }
 .root[data-invalid]:not([data-open]) .surface::after {
   border-color: var(--danger);
 }
-.root[data-invalid]:not([data-open]):has(> .trigger:focus-visible) .surface::after {
-  outline-color: var(--danger);
+.root[data-invalid]:not([data-open]):has(> .trigger:focus-visible) .surface {
+  box-shadow: var(--ui-focus-ring-invalid);
 }
 .root[data-disabled] .surface {
   background: var(--ui-control-disabled-surface);

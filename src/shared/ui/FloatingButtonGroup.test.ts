@@ -4,6 +4,19 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FloatingButtonGroup } from "./FloatingButtonGroup";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -58,7 +71,7 @@ it("roves vertically across enabled commands and keeps one tab stop", () => {
   expect(onSelect).not.toHaveBeenCalled();
 });
 
-it("preserves pointer selections and exposes icon commands without hover", () => {
+it("preserves pointer selections and exposes icon commands without hover", async () => {
   const onSelect = vi.fn();
   act(() =>
     root.render(
@@ -85,13 +98,15 @@ it("preserves pointer selections and exposes icon commands without hover", () =>
   });
   expect(down.defaultPrevented).toBe(true);
   expect(button.getAttribute("aria-label")).toBe("Copy selection");
-  expect(button.title).toBe("Copy selection (Ctrl+C)");
+  // The hint (name plus key caps) rides in the shared tooltip, not a native title.
+  expect(button.title).toBe("");
+  expect(await tooltipText(button)).toBe("Copy selection (Ctrl+C)");
   act(() => button.click());
   expect(onSelect).toHaveBeenCalledOnce();
   expect(container.querySelectorAll('[role="toolbar"]')).toHaveLength(1);
 });
 
-it("hands a popup trigger to its owner while keeping roving focus and the group's tooltip", () => {
+it("hands a popup trigger to its owner while keeping roving focus and the group's tooltip", async () => {
   const owner = vi.fn();
   const onSelect = vi.fn();
   const received: string[] = [];
@@ -130,7 +145,7 @@ it("hands a popup trigger to its owner while keeping roving focus and the group'
   expect(trigger.getAttribute("aria-label")).toBe("Handoff: 2 agents");
   expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
-  expect(trigger.title).toBe("Hand this session over");
+  expect(await tooltipText(trigger)).toBe("Hand this session over");
   act(() => trigger.click());
   expect(owner).toHaveBeenCalledOnce();
   // The popup item stays in the arrow-key order of the one toolbar.

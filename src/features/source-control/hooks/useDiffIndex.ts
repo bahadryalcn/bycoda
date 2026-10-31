@@ -47,6 +47,8 @@ export function useDiffIndex(
   showOptimistic: (next: GitDiffIndex) => void;
   error: string | null;
   loading: boolean;
+  /** The read on entry or explicit refresh has not answered yet; a cached index may be stale. */
+  checking: boolean;
 } {
   // A remote project keeps its last good index when a load fails; the failure
   // is shown by `ChangedFiles`.
@@ -55,6 +57,7 @@ export function useDiffIndex(
   const [nonce, setNonce] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [checking, setChecking] = useState(enabled);
   const handledRefresh = useRef({ cwd, nonce: 0 });
   const failedRead = useRef<{ cwd: string; at: number } | null>(null);
   const indexRef = useRef(index);
@@ -171,7 +174,10 @@ export function useDiffIndex(
     const explicitRefresh =
       handledRefresh.current.cwd === cwd && handledRefresh.current.nonce !== nonce;
     handledRefresh.current = { cwd, nonce };
-    void load(explicitRefresh, GIT_PANEL_ENTRY_FRESH_MS);
+    setChecking(true);
+    void load(explicitRefresh, GIT_PANEL_ENTRY_FRESH_MS).finally(() => {
+      if (!cancelled) setChecking(false);
+    });
     const onResume = () => {
       if (polling && !document.hidden) void load();
     };
@@ -218,7 +224,7 @@ export function useDiffIndex(
     };
   }, [cwd, enabled, nonce, remote, polling, panel]);
 
-  return { index, reload, showOptimistic, error, loading };
+  return { index, reload, showOptimistic, error, loading, checking: enabled && checking };
 }
 
 /** Whether HEAD, its branch and its upstream counts are unchanged. */

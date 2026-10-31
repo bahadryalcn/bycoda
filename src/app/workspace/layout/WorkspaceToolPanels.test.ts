@@ -93,12 +93,12 @@ it.each([false, true])(
       ]) {
         await act(async () =>
           tabs()
-            .find((node) => node.title === label)!
+            .find((node) => node.textContent === label)!
             .click(),
         );
         expect(
           tabs()
-            .find((node) => node.title === label)
+            .find((node) => node.textContent === label)
             ?.getAttribute("aria-selected"),
         ).toBe("true");
         expect(routeWindowDestination).not.toHaveBeenCalled();

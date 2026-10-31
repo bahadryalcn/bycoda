@@ -226,17 +226,14 @@ html:not(.theme-light) img[src="/brand/bycoda/mark-black.svg"] {
 }
 /* The composer owns one writing surface: the same fill, edge, radius and shadow
    at rest, on hover and while typing. The caret and the toolbar controls' own
-   keyboard focus carry focus; the box never repaints or grows a frame. */
+   keyboard focus carry focus; the box never repaints or grows a frame. It is a quiet
+   focus group (data-ui-focus-quiet, arc.css), so the shared field ring skips it. */
 html [data-composer-box],
 html [data-composer-box]:hover,
 html [data-composer-box]:focus-within {
   border-radius: 12px;
   border-color: var(--ui-composer-border);
   background: var(--ui-composer-surface);
-  box-shadow: var(--ui-composer-shadow);
-}
-html [data-composer-box]:has([data-ui-focus="group"]:focus-visible) {
-  outline-color: transparent;
   box-shadow: var(--ui-composer-shadow);
 }
 /* Operation boundaries retain their meaning independently of ordinary focus. */

@@ -105,18 +105,32 @@ it("updates effort inline and closes with Escape", () => {
     reasoning.value = "high";
     reasoning.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  expect(onSettingsChange).toHaveBeenCalledWith({ ...defaultModelSettings(resolveModel("claude", claude.id)), effort: "high", fast: "false" });
-  act(() => reasoning.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(onSettingsChange).toHaveBeenCalledWith({
+    ...defaultModelSettings(resolveModel("claude", claude.id)),
+    effort: "high",
+    fast: "false",
+  });
+  act(() =>
+    reasoning.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
   expect(onClose).toHaveBeenCalledOnce();
 });
 
 it("shows saved favorites across provider tabs", () => {
-  act(() => container.querySelector<HTMLButtonElement>('[title="Add to favorites"]')!.click());
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label^="Add "][aria-label$=" to favorites"]')!
+      .click(),
+  );
   act(() =>
     container.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Favorites"]')!.click(),
   );
   expect(container.querySelector('[role="listbox"]')?.textContent).toContain("Test Claude");
-  act(() => container.querySelector<HTMLButtonElement>('[title="Remove from favorites"]')!.click());
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label^="Remove "][aria-label$=" from favorites"]')!
+      .click(),
+  );
   expect(container.querySelector('[role="listbox"]')?.textContent).toContain("No favorite models");
 });
 

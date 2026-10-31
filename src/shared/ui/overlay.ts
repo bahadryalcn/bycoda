@@ -17,6 +17,8 @@ type Entry = {
   scope: HTMLElement[];
   initialFocusSelector?: string;
   passive: boolean;
+  /** Leaves this Escape to the focused element (a search field clearing itself) instead of closing. */
+  keepEscape?: (event: KeyboardEvent) => boolean;
 };
 const entries: Entry[] = [];
 /* WebKit does not focus a button on click, so `document.activeElement` is the body when a
@@ -263,6 +265,7 @@ function onKey(event: KeyboardEvent) {
   if (event.key === "Escape") {
     const top = [...entries].reverse().find((entry) => !entry.passive);
     if (!top?.escape) return;
+    if (top.keepEscape?.(event)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     top.escape();
@@ -295,6 +298,7 @@ export function useOverlay(
   initialFocusSelector?: string,
   restoreFocus = true,
   passive = false,
+  keepEscape?: (event: KeyboardEvent) => boolean,
 ) {
   const id = useRef(Symbol("overlay")).current;
   // Capture before descendant layout effects can move focus into their portals.
@@ -302,6 +306,8 @@ export function useOverlay(
   const parent = useContext(OverlayParent);
   const close = useRef(escape);
   close.current = escape;
+  const keep = useRef(keepEscape);
+  keep.current = keepEscape;
   useLayoutEffect(() => {
     if (!enabled || !root.current) return;
     const entry: Entry = {
@@ -315,6 +321,7 @@ export function useOverlay(
       scope: captured.scope,
       initialFocusSelector,
       passive,
+      keepEscape: keepEscape ? (event) => keep.current?.(event) ?? false : undefined,
     };
     // Child layout effects run first: insert ancestors before their descendants.
     const child = entries.findIndex((item) => descendant(item, id));
@@ -355,6 +362,7 @@ export function useOverlay(
     initialFocusSelector,
     restoreFocus,
     passive,
+    Boolean(keepEscape),
   ]);
   return id;
 }

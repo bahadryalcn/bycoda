@@ -33,6 +33,13 @@ vi.mock("../model/githubTasks", async (original) => ({
 }));
 
 const InboxView = withQueryClient(RawInboxView);
+
+/** An Inbox list row by its item title; the title is in the row's accessible name and shared
+ *  tooltip now, not a native title attribute. */
+function inboxRow(scope: ParentNode, title: string): HTMLButtonElement | null {
+  return scope.querySelector<HTMLButtonElement>(`button[aria-label*=": ${title}, "]`);
+}
+
 let root: Root;
 let container: HTMLDivElement;
 let revealMore: (() => void) | undefined;
@@ -98,7 +105,8 @@ it("restores the loaded list window before restoring a position beyond its first
     errors: {},
   });
   await show();
-  const rows = () => container.querySelectorAll<HTMLButtonElement>('button[title^="Inbox issue "]');
+  const rows = () =>
+    container.querySelectorAll<HTMLButtonElement>('button[aria-label*=": Inbox issue "]');
   expect(rows()).toHaveLength(LIST_PAGE_SIZE);
   await act(async () => revealMore!());
   expect(rows()).toHaveLength(LIST_PAGE_SIZE * 2);
@@ -137,7 +145,7 @@ async function show(cwd = "/work/project", target?: LinkedWorkItem) {
 
 it("restores the selected inbox item and list position after leaving the tool", async () => {
   await show();
-  const second = container.querySelector<HTMLButtonElement>('button[title="Inbox issue 2"]')!;
+  const second = inboxRow(container, "Inbox issue 2")!;
   expect(second).not.toBeNull();
   await act(async () => second.click());
   const scroller = second.closest("ul")!.parentElement!;
@@ -146,7 +154,7 @@ it("restores the selected inbox item and list position after leaving the tool", 
   await act(async () => root.unmount());
   root = createRoot(container);
   await show();
-  const restored = container.querySelector<HTMLButtonElement>('button[title="Inbox issue 2"]')!;
+  const restored = inboxRow(container, "Inbox issue 2")!;
   expect(restored.getAttribute("aria-current")).toBe("true");
   expect(restored.closest("ul")!.parentElement!.scrollTop).toBe(420);
   await act(async () => root.unmount());
@@ -154,9 +162,7 @@ it("restores the selected inbox item and list position after leaving the tool", 
   const remoteCwd = "remote://other-host/work/project";
   read.mockResolvedValue({ items: items(remoteCwd), errors: {} });
   await show(remoteCwd);
-  const firstOnOtherHost = container.querySelector<HTMLButtonElement>(
-    'button[title="Inbox issue 1"]',
-  )!;
+  const firstOnOtherHost = inboxRow(container, "Inbox issue 1")!;
   expect(firstOnOtherHost.getAttribute("aria-current")).toBe("true");
   expect(firstOnOtherHost.closest("ul")!.parentElement!.scrollTop).toBe(0);
   await act(async () => root.unmount());
@@ -167,21 +173,25 @@ it("restores the selected inbox item and list position after leaving the tool", 
     number: 1,
     url: "https://github.com/acme/web/issues/1",
   });
-  expect(
-    container.querySelector('button[title="Inbox issue 1"]')?.getAttribute("aria-current"),
-  ).toBe("true");
+  expect(inboxRow(container, "Inbox issue 1")?.getAttribute("aria-current")).toBe("true");
 });
 
 it("returns from the narrow detail view without clearing the selected item or list position", async () => {
   await show();
-  const second = container.querySelector<HTMLButtonElement>('button[title="Inbox issue 2"]')!;
+  const second = inboxRow(container, "Inbox issue 2")!;
   const scroller = second.closest("ul")!.parentElement!;
   scroller.scrollTop = 420;
   await act(async () => second.click());
-  expect(container.querySelector(".inbox-list-detail")?.getAttribute("data-detail-open")).toBe("true");
-  const back = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Back")!;
+  expect(container.querySelector(".inbox-list-detail")?.getAttribute("data-detail-open")).toBe(
+    "true",
+  );
+  const back = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Back",
+  )!;
   await act(async () => back.click());
-  expect(container.querySelector(".inbox-list-detail")?.getAttribute("data-detail-open")).toBe("false");
+  expect(container.querySelector(".inbox-list-detail")?.getAttribute("data-detail-open")).toBe(
+    "false",
+  );
   expect(second.getAttribute("aria-current")).toBe("true");
   expect(scroller.scrollTop).toBe(420);
 });

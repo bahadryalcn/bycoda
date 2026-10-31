@@ -1,0 +1,53 @@
+/* Sheet entrance: the surface slides in from its edge once. No forwards fill, so no compositor
+   layer is retained after the entrance; reduced motion opens in place. Frequent side panels
+   pass motion="none". */
+.sheet {
+  --sheet-distance: var(--motion-sheet-distance, 16px);
+}
+:dir(rtl) .sheet[data-sheet-side="end"] {
+  --sheet-distance: calc(-1 * var(--motion-sheet-distance, 16px));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sheet[data-sheet-side="end"][data-sheet-motion="auto"] {
+    animation: sheet-in-end var(--motion-sheet-duration, 240ms) var(--motion-ease-out, ease-out)
+      backwards;
+  }
+  .sheet[data-sheet-side="bottom"][data-sheet-motion="auto"] {
+    animation: sheet-in-bottom var(--motion-sheet-duration, 240ms) var(--motion-ease-out, ease-out)
+      backwards;
+  }
+}
+@keyframes sheet-in-end {
+  from {
+    opacity: 0;
+    translate: var(--sheet-distance) 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@keyframes sheet-in-bottom {
+  from {
+    opacity: 0;
+    translate: 0 var(--motion-sheet-distance, 16px);
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+/* The resize edge sits on the sheet's inner (start) border. */
+.resize {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 2;
+}
+/* A modal bottom sheet (Modal placement="bottom") has no shared entrance rule yet. */
+@media (prefers-reduced-motion: no-preference) {
+  .modalBottom {
+    animation: sheet-in-bottom var(--motion-sheet-duration, 240ms) var(--motion-ease-out, ease-out)
+      backwards;
+  }
+}

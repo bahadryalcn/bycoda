@@ -1,0 +1,110 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer theme, base, components, utilities;
+
+/* Root placement stays caller-adjustable (F3 style-ownership contract). */
+@layer components {
+  .linear {
+    display: block;
+    min-inline-size: 0;
+  }
+  .ring {
+    display: inline-grid;
+    flex: none;
+  }
+}
+
+/* Tone is the measured state: neutral secondary ink until the warning/danger thresholds,
+   then the shared status ink. The track is the structural stroke role. */
+.meter {
+  --meter-fill: var(--ui-text-secondary);
+  color: var(--meter-fill);
+}
+.meter[data-tone="accent"] {
+  --meter-fill: var(--ui-tone-accent-fg);
+}
+.meter[data-tone="success"] {
+  --meter-fill: var(--ui-tone-success-fg);
+}
+.meter[data-tone="info"] {
+  --meter-fill: var(--ui-tone-info-fg);
+}
+.meter[data-tone="warning"] {
+  --meter-fill: var(--ui-tone-warning-fg);
+}
+.meter[data-tone="danger"] {
+  --meter-fill: var(--ui-tone-danger-fg);
+}
+
+.linear {
+  --meter-thickness: 0.25rem;
+  box-sizing: border-box;
+  block-size: var(--meter-thickness);
+  overflow: clip;
+  border-radius: 9999px;
+  background: var(--color-stroke);
+}
+.linear[data-size="md"] {
+  --meter-thickness: 0.375rem;
+}
+.bar {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--meter-fill);
+  transition: inline-size var(--motion-feedback-duration, 120ms) var(--motion-ease-out, ease-out);
+}
+
+.ring {
+  --meter-ring-size: 1rem;
+  place-items: center;
+  inline-size: var(--meter-ring-size);
+  block-size: var(--meter-ring-size);
+}
+.ring[data-size="md"] {
+  --meter-ring-size: 1.5rem;
+}
+.ring > * {
+  grid-area: 1 / 1;
+}
+.ringSvg {
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+}
+.ringTrack {
+  stroke: var(--color-stroke);
+}
+.ringValue {
+  stroke: var(--meter-fill);
+  transition: stroke-dashoffset var(--motion-feedback-duration, 120ms)
+    var(--motion-ease-out, ease-out);
+}
+.ringCenter {
+  display: inline-flex;
+  inline-size: 100%;
+  block-size: 100%;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 0;
+  font-size: var(--ui-font-micro);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.ringCenter > svg {
+  inline-size: 55%;
+  block-size: 55%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar,
+  .ringValue {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .bar {
+    background: CanvasText;
+  }
+  .ringValue {
+    stroke: CanvasText;
+  }
+}

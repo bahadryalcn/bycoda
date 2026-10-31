@@ -4,6 +4,19 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
 
+/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
+async function tooltipText(element: HTMLElement): Promise<string> {
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 const copy = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: copy }));
 
@@ -22,7 +35,8 @@ it.each(["sh", "bash", "python", ""])("keeps a copy action on %s fences", async 
     const button = shell.querySelector<HTMLButtonElement>('[aria-label="Copy code"]')!;
     // The shell positions and reveals this action using its shared copy class.
     expect(button.classList.contains("markdown-code-copy")).toBe(true);
-    expect(button.getAttribute("title")).toBe("Copy code");
+    expect(button.getAttribute("title")).toBeNull();
+    expect(await tooltipText(button)).toBe("Copy code");
     await act(async () => button.click());
     expect(copy).toHaveBeenLastCalledWith(code);
     expect(button.getAttribute("aria-label")).toBe("Copied");
