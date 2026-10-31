@@ -16,6 +16,8 @@ import { useActivityDock, useDockCountLabel, useStopAllControl } from "../model/
 import { type ActivityDock as ActivityDockModel, type DockAgent } from "../model/activityDock";
 import { canStopAgent } from "../model/backgroundStop";
 import { hasPendingApproval, type Block } from "../model/session";
+import { executionUserIndex } from "../model/executionTurn";
+import { turnClockOrigin, useTurnClockInTranscript } from "../model/turnActivity";
 import { AgentClock } from "./AgentClock";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
 import { STOP_ALL, useStopRequests } from "./useStopRequests";
@@ -122,6 +124,11 @@ export const ActivityDock = memo(function ActivityDock({
     dock.state === "done" && deliveryUnconfirmed
       ? `${t("Turn activity")}: ${t("Finished")}`
       : label;
+  // The transcript's activity line shows the same clock while the turn has
+  // nothing else to show; with the reader at the end it is on screen, so the
+  // dock keeps its state, controls and figure but leaves the number out.
+  const clockInTranscript = useTurnClockInTranscript(sessionId) && visible && atEnd;
+  const clockOrigin = busy ? turnClockOrigin(blocks[executionUserIndex(blocks)]) : undefined;
   const questionOnlyNotice =
     questionPresented &&
     pendingQuestion &&
@@ -145,6 +152,8 @@ export const ActivityDock = memo(function ActivityDock({
           dock={dock}
           visible={visible}
           label={displayLabel}
+          clockOrigin={clockOrigin ?? dock.startedAt}
+          clockInTranscript={clockInTranscript}
           onOpenAgent={onOpenAgent}
           stop={{
             ...stops,
@@ -169,6 +178,8 @@ function DockBody({
   dock,
   visible,
   label,
+  clockOrigin,
+  clockInTranscript,
   onOpenAgent,
   stop,
 }: {
@@ -176,6 +187,8 @@ function DockBody({
   dock: ActivityDockModel;
   visible: boolean;
   label: string;
+  clockOrigin?: number;
+  clockInTranscript: boolean;
   onOpenAgent: (agent: DockAgent) => void;
   stop: DockStop;
 }) {
@@ -190,7 +203,7 @@ function DockBody({
   const open = expanded && hasAgents;
   const listId = `activity-dock-agents-${sessionId}`;
   const counts = useDockCountLabel(dock);
-  const clock = dock.state === "working" || dock.state === "waiting";
+  const clock = (dock.state === "working" || dock.state === "waiting") && !clockInTranscript;
   const stopAllWhenWired = useStopAllControl(dock, stop.perItem);
   const stopAll = stop.onAll ? stopAllWhenWired : null;
 
@@ -223,7 +236,7 @@ function DockBody({
                 label
               )}
             </span>
-            {clock ? <DockClock startedAt={dock.startedAt} /> : null}
+            {clock ? <DockClock startedAt={clockOrigin} /> : null}
           </div>
           {dock.state === "working" || dock.state === "waiting" ? (
             <div

@@ -168,6 +168,20 @@ hover, selection, group colors and pane borders retain their own roles; composer
 and floating-surface roles remain unchanged. Native glass keeps its existing shared
 base tint, independent sidebar/main opacity settings and light-mode opaque policy.
 
+Owner decision, 2026-10-31, V3-039, source: owner chat (Appearance screenshots):
+
+> Defaultu da tam siyah tam beyaz olması gerekiyor hatta
+
+Appearance → Themes → Background tone offers Pure (default) and Tinted. Pure sets
+`html[data-canvas-background="pure"]`, which paints `--color-background-base` and
+`--ui-chat-canvas` with `--palette-canvasPureDark` / `--palette-canvasPureLight`
+(pure black / white) for every palette, so the window, rail, sidebar, chat, side
+panels, editor and terminal share one pure ground. Derived layers (surfaces, text,
+borders) mix from `--ui-tint-base`, the palette ground, so they keep their steps
+above it; pure light adds one faint `--ui-surface` step. Custom surface colors (a
+tint that matches no palette) keep their tinted canvas. Native glass keeps its
+opacity settings and tints with the active canvas.
+
 Make separation clear before reducing containment. Separate ordinary sections
 primarily with spacing and subtle surface-tone differences.
 Use alignment and type to reinforce hierarchy; reserve boxes and borders for

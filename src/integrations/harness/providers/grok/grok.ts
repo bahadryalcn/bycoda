@@ -14,6 +14,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { announceSlowProviderStartup, PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -110,7 +111,7 @@ type Resume = {
   cwd: string;
 };
 
-const INIT_TIMEOUT_MS = 12_000;
+const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 const AUTH_TIMEOUT_MS = 15_000;
 const SESSION_TIMEOUT_MS = 45_000;
 const CONTROL_TIMEOUT_MS = 15_000;
@@ -321,7 +322,7 @@ export async function cancelGrokTurn(
   live.questions.clear();
   await acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
   if (!ownsOperation(context, live.handle, live.operation)) return;
-  live.acp.rejectPending(new Error("cancelled"));
+  live.acp.rejectPending(new Error("cancelled"), { keepNativeOutput: true });
 }
 
 export async function stopGrokSession(
@@ -382,6 +383,15 @@ export function bindGrokSession(threadId: string, acpSessionId: string, cwd: str
 }
 
 async function ensureLive(input: HarnessSessionInput): Promise<Live> {
+  const startupDone = announceSlowProviderStartup(input.onEvent, "Grok");
+  try {
+    return await ensureStartedLive(input);
+  } finally {
+    startupDone();
+  }
+}
+
+async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
   assertProviderOperation(input.operationContext);
 
   const wantPlanning = input.intent === "plan";

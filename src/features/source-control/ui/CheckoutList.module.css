@@ -84,7 +84,7 @@
 
 .deleteSlot {
   flex-shrink: 0;
-  inline-size: var(--control-height-sm);
+  inline-size: var(--ui-control-height-compact);
 }
 
 .heading {

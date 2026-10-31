@@ -91,7 +91,19 @@ fn begin_managed_turn_inner(
         return Err("Managed rewind recovery must complete before writing".into());
     }
     let signature = serde_json::to_string(request).map_err(|e| e.to_string())?;
-    let previous = pending_turn(store, &request.session_id)?;
+    let mut previous = pending_turn(store, &request.session_id)?;
+    if let Some((raw, phase)) = &previous {
+        // A `starting` row that belongs to another run never reached its
+        // "before" commit (failed or abandoned capture), so nothing was
+        // recorded for it. Retire it instead of refusing every later message.
+        if phase == "starting" && *raw != signature {
+            store.lock_conn()?.execute(
+                "DELETE FROM native_managed_turns WHERE session_id=?1 AND request_json=?2 AND phase='starting'",
+                params![request.session_id, raw],
+            ).map_err(|e| e.to_string())?;
+            previous = None;
+        }
+    }
     if let Some((raw, phase)) = previous {
         if raw != signature {
             return Err(
@@ -817,7 +829,14 @@ pub async fn managed_turn_begin(
         let record = stored_managed_session(&store, &session_id)?;
         let host =
             crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
-        let request = if let Some((raw, _)) = pending_turn(&store, &session_id)? {
+        // A stale `starting` row from another run never captured its baseline;
+        // begin_managed_turn retires it, so only later phases pin the request.
+        let pending = pending_turn(&store, &session_id)?
+            .filter(|(raw, phase)| phase != "starting" || {
+                serde_json::from_str::<ManagedTurnRequest>(raw)
+                    .is_ok_and(|r| r.user_block_id == user_block_id && r.run_id == run_id)
+            });
+        let request = if let Some((raw, _)) = pending {
             let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             if request.user_block_id != user_block_id
                 || request.run_id != run_id
@@ -2227,11 +2246,15 @@ mod tests {
         let store = SessionStore::open(path.clone()).unwrap();
         let mut other = request.clone();
         other.run_id = "another-run".into();
-        assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &other, true).is_err());
-        begin_managed_turn(&store, &TurnHost { blocked: false }, &request, true).unwrap();
-        assert!(finish_managed_turn(&store, &TurnHost { blocked: true }, &request, true).is_err());
+        // The provider only spawns after begin succeeds, so a leftover `starting`
+        // row from another run never had a writer and is retired.
+        begin_managed_turn(&store, &TurnHost { blocked: false }, &other, true).unwrap();
+        // An `active` turn (provider may have written) still refuses other turns.
+        assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &request, true).is_err());
+        assert!(finish_managed_turn(&store, &TurnHost { blocked: true }, &other, true).is_err());
         assert!(assert_writable(&store, "native").is_err());
-        finish_managed_turn(&store, &TurnHost { blocked: false }, &request, true).unwrap();
+        assert!(begin_managed_turn(&store, &TurnHost { blocked: false }, &request, true).is_err());
+        finish_managed_turn(&store, &TurnHost { blocked: false }, &other, true).unwrap();
         assert!(assert_writable(&store, "native").is_ok());
         drop(store);
         std::fs::remove_file(path).unwrap();

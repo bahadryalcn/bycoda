@@ -14,6 +14,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { announceSlowProviderStartup, PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -85,7 +86,7 @@ type Resume = {
 // fx answers `initialize` in well under a second when it can reach a
 // credential. A long wait means it is blocked reading the macOS Keychain, not
 // working — so fail fast with something actionable instead of stalling.
-const INIT_TIMEOUT_MS = 12_000;
+const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 const SESSION_TIMEOUT_MS = 45_000;
 const CONTROL_TIMEOUT_MS = 15_000;
 const PROMPT_TIMEOUT_MS = 30 * 60_000;
@@ -227,7 +228,7 @@ export async function cancelFxTurn(
   live.muteUpdates = true;
   await acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
   if (!ownsOperation(context, live.handle, live.operation)) return;
-  live.acp.rejectPending(new Error("cancelled"));
+  live.acp.rejectPending(new Error("cancelled"), { keepNativeOutput: true });
 }
 
 export async function stopFxSession(
@@ -283,6 +284,15 @@ export function bindFxSession(threadId: string, acpSessionId: string, cwd: strin
 }
 
 async function ensureLive(input: SendTurnInput): Promise<Live> {
+  const startupDone = announceSlowProviderStartup(input.onEvent, "fx");
+  try {
+    return await ensureStartedLive(input);
+  } finally {
+    startupDone();
+  }
+}
+
+async function ensureStartedLive(input: SendTurnInput): Promise<Live> {
   assertProviderOperation(input.operationContext);
 
   const existing = liveByThread.get(input.sessionId);

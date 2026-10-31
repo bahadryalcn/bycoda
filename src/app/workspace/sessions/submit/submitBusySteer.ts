@@ -112,7 +112,7 @@ export function steerBusySubmit(
   // ordinary follow-ups through that host rather than this desktop's provider.
   if (current.adoptedSyncConflict && !current.busy && !pendingSwitch) return queueFollowUp();
   if (current.continuingElsewhere && !current.busy && !pendingSwitch) {
-    if (adoptedFollowUpPending(sessionId)) return false;
+    if (adoptedFollowUpPending(sessionId)) return queueFollowUp();
     if (
       options?.followUpBehavior === "queue" ||
       intent !== "default" ||

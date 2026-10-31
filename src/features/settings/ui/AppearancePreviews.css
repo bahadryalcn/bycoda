@@ -1,56 +1,125 @@
-/* One live sample of the current appearance. Only theme roles: nothing here invents a color, so it
-   follows palette, accent, mode and contrast. The window is inert; it is a picture, not a control. */
+/* One live sample of the current appearance, drawn as a small app window that fills the group:
+   project rail, session sidebar and chat canvas share the canvas role (Pure or Tinted), separated by
+   the pane border, with reading, code, composer and accent surfaces above them. Only theme roles:
+   nothing here invents a color, so it follows palette, background tone, accent, mode and contrast.
+   The window is inert; it is a picture, not a control. */
 .appearance-preview {
   display: grid;
+  /* Size containment has no intrinsic width, so the figure claims the stacked row explicitly. */
+  inline-size: 100%;
   margin: 0;
   min-inline-size: 0;
-  max-inline-size: 28rem;
+  container: appearance-preview / inline-size;
 }
 .appearance-preview-window {
   display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr);
-  min-block-size: 9.5rem;
+  grid-template-columns: 2.75rem clamp(7.5rem, 24%, 13rem) minmax(0, 1fr);
+  /* One row the height of the window: the transcript gives way, the composer always shows. */
+  grid-template-rows: minmax(0, 1fr);
+  inline-size: 100%;
+  aspect-ratio: 16 / 7;
+  min-block-size: 16rem;
+  max-block-size: 22rem;
   overflow: hidden;
+  border: 1px solid var(--ui-pane-border);
   border-radius: var(--ui-radius-card);
   background: var(--ui-surface-panel);
   color: var(--color-content);
   font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
   pointer-events: none;
   user-select: none;
 }
 .appearance-preview-rail {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 6px;
-  color: var(--ui-text-secondary);
+  align-items: center;
+  gap: 6px;
+  padding-block: 10px;
+  border-inline-end: 1px solid var(--ui-pane-border);
+  background: var(--ui-surface-panel);
 }
 .appearance-preview-rail > span {
-  padding: 4px 8px;
+  display: grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
   border-radius: var(--ui-control-radius);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: var(--ui-surface-hover);
+  color: var(--ui-text-secondary);
+  font-weight: 600;
 }
 .appearance-preview-rail > span[data-selected] {
   background: var(--ui-surface-selected);
   color: var(--color-content);
 }
-.appearance-preview-main {
+.appearance-preview-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+  padding: 10px 8px;
+  border-inline-end: 1px solid var(--ui-pane-border);
+  background: var(--ui-surface-panel);
+  color: var(--ui-text-secondary);
+}
+.appearance-preview-heading {
+  padding: 0 8px 6px;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.appearance-preview-row {
+  display: flex;
+  align-items: center;
+  min-block-size: 1.5rem;
+  padding: 2px 8px;
+  border-radius: var(--ui-control-radius);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.appearance-preview-row[data-selected] {
+  background: var(--ui-surface-selected);
+  color: var(--color-content);
+}
+.appearance-preview-row > i {
+  inline-size: 70%;
+  block-size: 6px;
+  border-radius: 3px;
+  background: var(--ui-surface-hover);
+}
+.appearance-preview-row:last-child > i {
+  inline-size: 50%;
+}
+.appearance-preview-chat {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-inline-size: 0;
-  margin: 6px 6px 6px 0;
-  padding: 12px;
-  border-radius: var(--ui-control-radius);
-  background: var(--color-background-base);
+  min-block-size: 0;
+  overflow: hidden;
+  padding: 14px clamp(12px, 5%, 40px) 12px;
+  background: var(--ui-chat-canvas);
+}
+.appearance-preview-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  inline-size: 100%;
+  max-inline-size: 34rem;
+  margin-inline: auto;
+  min-block-size: 0;
+  overflow: hidden;
 }
 .appearance-preview-bubble {
   align-self: flex-end;
   margin: 0;
   padding: 6px 10px;
-  border-radius: var(--ui-control-radius);
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--ui-radius-card);
   background: var(--ui-surface);
   color: var(--color-content);
 }
@@ -77,26 +146,60 @@
   border-radius: 3px;
   background: var(--ui-surface-selected);
 }
+.appearance-preview-lines > i:nth-child(2) {
+  inline-size: 86%;
+}
 .appearance-preview-lines > i:last-child {
   inline-size: 60%;
 }
+/* A code block: the reading surface with its editor edge. */
+.appearance-preview-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+}
+.appearance-preview-card > i {
+  inline-size: 72%;
+  block-size: 5px;
+  border-radius: 3px;
+  background: var(--ui-surface-pressed);
+}
+.appearance-preview-card > i:last-child {
+  inline-size: 44%;
+}
 .appearance-preview-composer {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-block-start: auto;
-  padding: 6px 6px 6px 10px;
+  inline-size: 100%;
+  max-inline-size: 34rem;
+  margin: auto auto 0;
+  padding: 8px 8px 8px 12px;
   border: 1px solid var(--ui-composer-border);
   border-radius: var(--ui-radius-card);
   background: var(--ui-composer-surface);
+  box-shadow: var(--ui-composer-shadow);
 }
 .appearance-preview-placeholder {
   flex: 1;
   block-size: 6px;
-  max-inline-size: 5rem;
+  max-inline-size: 8rem;
   border-radius: 3px;
   background: var(--ui-surface-selected);
+}
+/* A narrow group keeps the rail and chat; the session list folds away first. */
+@container appearance-preview (width < 30rem) {
+  .appearance-preview-window {
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+  }
+  .appearance-preview-sidebar {
+    display: none;
+  }
 }
 
 /* Samples that show the effect of a typography choice. They sit inside their font row, compact;

@@ -11,6 +11,7 @@ import {
   Quote as LucideBlockQuote,
   Bold as LucideBold,
   Bot as LucideBot,
+  Brain as LucideBrain,
   ListChecks as LucideCheckList,
   SquareCode as LucideCodeBlock,
   Heading as LucideHeading,
@@ -239,6 +240,7 @@ export const Home = wrap(LucideHome, "Home");
 export const BlockQuote = wrap(LucideBlockQuote, "BlockQuote");
 export const Bold = wrap(LucideBold, "Bold");
 export const Bot = wrap(LucideBot, "Bot");
+export const Brain = wrap(LucideBrain, "Brain");
 export const CheckList = wrap(LucideCheckList, "CheckList");
 export const CodeBlock = wrap(LucideCodeBlock, "CodeBlock");
 export const Heading = wrap(LucideHeading, "Heading");

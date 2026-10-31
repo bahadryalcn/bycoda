@@ -1,6 +1,7 @@
 import {
   captureProviderRetirementCohort,
   drainProviderRetirements,
+  drainRetirementsForWriter,
 } from "../src/integrations/harness/core/providerRetirement";
 
 type Release = (() => Promise<void>) | undefined;
@@ -43,11 +44,15 @@ export class ProviderActivityRetirement {
     private readonly released: () => void,
   ) {}
 
-  start(acquire: () => Promise<Release>): Promise<void> {
+  /** `harness` is the provider about to run: only its own family's failed kill refuses. */
+  start(acquire: () => Promise<Release>, harness?: string): Promise<void> {
     if (this.startWork) return this.startWork;
-    // Host providers bypass the desktop registry: marked failures from another
-    // same-owner family (for example a skill probe) must block before acquisition.
-    this.startWork = drainProviderRetirements({ ownerKey: this.ownerKey })
+    // Host providers bypass the desktop registry. Without a harness every
+    // same-owner family blocks; with one, only that writer's family blocks and
+    // another family (for example a skill probe) is warned about.
+    this.startWork = (harness
+      ? drainRetirementsForWriter(this.ownerKey, harness)
+      : drainProviderRetirements({ ownerKey: this.ownerKey }))
       .then(() => attempted(acquire))
       .then((value) => {
         if (value !== undefined && typeof value !== "function")
@@ -181,7 +186,8 @@ export class ProviderActivityRetirement {
   }
   observation() {
     return { failed: this.failed, settled: this.retirementWork
-      ? this.retirementSettled : this.cohortSettled || (this.startSettled && !this.startSucceeded),
+      ? this.retirementSettled : this.cohortSettled || this.cohort?.size === 0 ||
+        (this.startSettled && !this.startSucceeded),
       retiring: !!this.retirementWork && !this.retirementSettled };
   }
   /** Only settled records may release ledger capacity. */

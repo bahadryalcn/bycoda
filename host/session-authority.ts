@@ -13,6 +13,9 @@ export class SessionAuthorityUnavailable extends Error {
   }
 }
 
+/** How long a metadata read still stands when the desktop database moved after it. */
+const PREPARED_FRESH_MS = 5_000;
+
 export type SessionAuthorityResolver = {
   /** External reads happen here, before reserving the Host SQL owner. */
   prepare(id: string): Promise<void>;
@@ -27,7 +30,10 @@ export function createSessionAuthorityResolver(
   desktop: Pick<DesktopSessions, "metadataAsync" | "fingerprint" | "samePath">,
   providers: readonly string[],
 ): SessionAuthorityResolver {
-  const prepared = new Map<string, { fingerprint: string; cwd: string; provider: string }>();
+  const prepared = new Map<
+    string,
+    { fingerprint: string; cwd: string; provider: string; at: number }
+  >();
   return {
     async prepare(id) {
       if (store.db.ownsScope) throw new SessionAuthorityUnavailable();
@@ -36,10 +42,12 @@ export function createSessionAuthorityResolver(
       for (let attempt = 0; attempt < 2; attempt++) {
         const fingerprint = desktop.fingerprint();
         const value = await desktop.metadataAsync(id);
-        if (desktop.fingerprint() !== fingerprint) continue;
+        // The second read stands even if the database moved again: a running
+        // desktop keeps writing, and the read itself is one consistent snapshot.
+        if (attempt === 0 && desktop.fingerprint() !== fingerprint) continue;
         if (!value) throw new Error("Session not found on this machine");
         prepared.delete(id);
-        prepared.set(id, { fingerprint, cwd: value.cwd, provider: value.harness });
+        prepared.set(id, { fingerprint, cwd: value.cwd, provider: value.harness, at: Date.now() });
         while (prepared.size > 512) prepared.delete(prepared.keys().next().value!);
         return;
       }
@@ -49,12 +57,18 @@ export function createSessionAuthorityResolver(
       const host = await store.sessionAuthority(id);
       if (host) return host;
       const value = prepared.get(id);
-      if (!value || desktop.fingerprint() !== value.fingerprint)
-        throw new SessionAuthorityUnavailable();
+      // A running desktop writes its database all the time, so the fingerprint
+      // moves while this call waits for Host SQL. A change right after the read is
+      // normal activity; only a read that is no longer fresh is repeated.
+      const stale = () =>
+        !value ||
+        (desktop.fingerprint() !== value.fingerprint &&
+          Date.now() - value.at > PREPARED_FRESH_MS);
+      if (!value || stale()) throw new SessionAuthorityUnavailable();
       const project = (await store.projects()).find((project) =>
         desktop.samePath(project.cwd, value.cwd),
       );
-      if (desktop.fingerprint() !== value.fingerprint) throw new SessionAuthorityUnavailable();
+      if (stale()) throw new SessionAuthorityUnavailable();
       if (!project || (value.provider !== "acp" && !providers.includes(value.provider)))
         throw new Error("Session not found on this machine");
       return { projectId: project.id, provider: value.provider };

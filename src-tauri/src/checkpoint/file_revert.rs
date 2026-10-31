@@ -463,7 +463,11 @@ impl CheckpointStore {
                             SnapshotKind::Contents
                         } else {
                             copied = true;
-                            snapshot_file_at(&baseline_dir, &root, &path)?
+                            // One unreadable file (locked by another process, removed
+                            // mid-scan) must not discard the baseline of every other
+                            // file: leave it unreverted and keep going.
+                            snapshot_file_at(&baseline_dir, &root, &path)
+                                .unwrap_or(SnapshotKind::Skipped)
                         };
                         if kind == SnapshotKind::Contents {
                             bytes += size;
@@ -529,7 +533,9 @@ impl CheckpointStore {
         let baseline_dir = dir.join("files-baseline");
         let shared = turn::leases::shared(&self.leases, session, id)? || interrupted;
         if !shared && turn.unavailable.is_none() {
-            let (current, complete) = discover(&root)?;
+            // A failed listing must not leave the turn recording forever: the
+            // turn settles with its history marked unavailable instead.
+            let (current, complete) = discover(&root).unwrap_or_else(|_| (BTreeSet::new(), false));
             if !complete || !turn.baseline_complete {
                 turn.unavailable = Some("This folder exceeded the file discovery limit.".into());
             }
@@ -581,12 +587,18 @@ impl CheckpointStore {
                     continue;
                 }
                 if !turn.files.contains_key(&path) {
-                    copy_state(
+                    if copy_state(
                         &history_dir.join("before"),
                         &path,
                         &before,
                         snapshot_mode(&baseline_dir, &path, before_kind),
-                    )?;
+                    )
+                    .is_err()
+                    {
+                        turn.unavailable =
+                            Some("A changed file's history could not be saved.".into());
+                        continue;
+                    }
                     turn.files.insert(
                         path.clone(),
                         Pair {
@@ -597,8 +609,13 @@ impl CheckpointStore {
                         },
                     );
                 }
-                let after = snapshot_file_at(&history_dir.join("after"), &root, &path)?;
-                turn.files.get_mut(&path).unwrap().after = Some(after);
+                match snapshot_file_at(&history_dir.join("after"), &root, &path) {
+                    Ok(after) => turn.files.get_mut(&path).unwrap().after = Some(after),
+                    Err(_) => {
+                        turn.unavailable =
+                            Some("A changed file's history could not be saved.".into());
+                    }
+                }
             }
         }
         if self.light_turn_active(session, id)? {
@@ -764,7 +781,8 @@ pub(super) fn prepare(dir: &Path, root: &Path, paths: &[String]) -> Result<(), S
             }
             continue;
         }
-        let before = snapshot_file_at(&history_dir.join("before"), root, &path)?;
+        let before = snapshot_file_at(&history_dir.join("before"), root, &path)
+            .unwrap_or(SnapshotKind::Skipped);
         if before == SnapshotKind::Skipped {
             turn.unavailable = Some("An edited file could not be captured safely.".into());
         }
@@ -798,7 +816,13 @@ pub(super) fn capture(dir: &Path, root: &Path, paths: &[String]) -> Result<(), S
         let Some(pair) = turn.files.get_mut(&path) else {
             continue;
         };
-        pair.after = Some(snapshot_file_at(&history_dir.join("after"), root, &path)?);
+        match snapshot_file_at(&history_dir.join("after"), root, &path) {
+            Ok(after) => pair.after = Some(after),
+            Err(_) => {
+                pair.after = Some(SnapshotKind::Skipped);
+                turn.unavailable = Some("An edited file could not be captured safely.".into());
+            }
+        }
         pair.provider_after = false;
     }
     turn.bytes = Some(disk_bytes(&history_dir));

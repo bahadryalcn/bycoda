@@ -10059,5 +10059,18 @@
   "Answer the open question before clearing the conversation.": "Konuşmayı temizlemeden önce açık soruyu yanıtlayın.",
   "Send or delete the queued messages before clearing the conversation.": "Konuşmayı temizlemeden önce kuyruktaki mesajları gönderin veya silin.",
   "Decide the pending approval before clearing the conversation.": "Konuşmayı temizlemeden önce bekleyen onayı karara bağlayın.",
-  "Finish editing the queued message before clearing the conversation.": "Konuşmayı temizlemeden önce kuyruktaki mesajı düzenlemeyi bitirin."
+  "Finish editing the queued message before clearing the conversation.": "Konuşmayı temizlemeden önce kuyruktaki mesajı düzenlemeyi bitirin.",
+  "The previous turn is still being cleaned up. Your message stays queued and will be sent when it finishes.": "Önceki turun temizliği hâlâ sürüyor. Mesajınız kuyrukta bekliyor ve bittiğinde gönderilecek.",
+  "The previous turn is still being cleaned up. This message will be sent when it finishes.": "Önceki turun temizliği hâlâ sürüyor. Bu mesaj bittiğinde gönderilecek.",
+  "The conversation is still busy. The message stays queued. Try again in a moment.": "Konuşma hâlâ meşgul. Mesaj kuyrukta kalıyor. Birazdan tekrar deneyin.",
+  "The conversation is still getting ready. This message will be sent when it is free.": "Konuşma hâlâ hazırlanıyor. Bu mesaj konuşma boşaldığında gönderilecek.",
+  "Starting {p0}…": "{p0} başlatılıyor…",
+  "The previous follow-up is still being delivered. Your message stays queued and will be sent when it finishes.": "Önceki mesaj hâlâ teslim ediliyor. Mesajınız kuyrukta kalır ve bittiğinde gönderilir.",
+  "Earlier messages could not be loaded. Reopen this chat to retry.": "Önceki mesajlar yüklenemedi. Yeniden denemek için bu sohbeti tekrar açın.",
+  "Waiting for {p0}…": "{p0} bekleniyor…",
+  "Background tone": "Arka plan tonu",
+  "Pure": "Saf",
+  "Tinted": "Tonlu",
+  "Pure is true black in dark mode and white in light mode.": "Saf, koyu modda tam siyah, açık modda tam beyazdır.",
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "Özel yüzey renkleri kendi arka planlarını korur. Saf seçeneğini kullanmak için bir tema paleti seçin."
 }

@@ -34,8 +34,21 @@ export function routeSubmitSession(
     showSubmitNotice(sessionId, reason);
     return false;
   };
-  if (adoptedFollowUpPending(sessionId) && options?.followUpBehavior !== "queue")
-    return refuse(t("The previous follow-up is still being delivered. Send again in a moment."));
+  if (adoptedFollowUpPending(sessionId)) {
+    // The previous follow-up may still be uploading its attachments. This one
+    // waits in the queue instead of being refused, and goes out after it.
+    const early = prepareSubmitPreflight(ctx, input);
+    if (early.settled) return early.value;
+    return queueWhileStarting(
+      ctx,
+      input,
+      early.pre,
+      t("The previous follow-up is still being delivered. Send again in a moment."),
+      t(
+        "The previous follow-up is still being delivered. Your message stays queued and will be sent when it finishes.",
+      ),
+    );
+  }
   // Preserve composer text while this session is handed to another window.
   // Other sessions remain usable throughout the move.
   if (windowTransferPendingRef.current || movingSessionIds.current.has(sessionId))
@@ -52,10 +65,20 @@ export function routeSubmitSession(
       input,
       early.pre,
       t("The previous turn is still being cleaned up. Send again in a moment."),
+      t(
+        "The previous turn is still being cleaned up. Your message stays queued and will be sent when it finishes.",
+      ),
     );
   }
-  if (sessionsRef.current.some((session) => session.id === sessionId && session.historyLoading))
-    return refuse(t("This conversation is still loading. Send again in a moment."));
+  const loading = sessionsRef.current.find(
+    (session) => session.id === sessionId && session.historyLoading,
+  );
+  if (loading)
+    return refuse(
+      loading.historyLoadError
+        ? t("Earlier messages could not be loaded. Reopen this chat to retry.")
+        : t("This conversation is still loading. Send again in a moment."),
+    );
   const remote = sessionsRef.current.find((session) => session.id === sessionId);
   if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) {
     const actions = remoteSessionActions(sessionId);

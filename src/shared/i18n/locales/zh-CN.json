@@ -10059,5 +10059,18 @@
   "Answer the open question before clearing the conversation.": "清除对话前，请先回答待处理的问题。",
   "Send or delete the queued messages before clearing the conversation.": "清除对话前，请先发送或删除排队中的消息。",
   "Decide the pending approval before clearing the conversation.": "清除对话前，请先处理待审批项。",
-  "Finish editing the queued message before clearing the conversation.": "清除对话前，请先完成对排队消息的编辑。"
+  "Finish editing the queued message before clearing the conversation.": "清除对话前，请先完成对排队消息的编辑。",
+  "The previous turn is still being cleaned up. Your message stays queued and will be sent when it finishes.": "上一轮仍在清理中。你的消息仍在队列中，完成后将自动发送。",
+  "The previous turn is still being cleaned up. This message will be sent when it finishes.": "上一轮仍在清理中。此消息将在其完成后发送。",
+  "The conversation is still busy. The message stays queued. Try again in a moment.": "对话仍在忙碌。消息仍保留在队列中。请稍后再试。",
+  "The conversation is still getting ready. This message will be sent when it is free.": "对话仍在准备中。此消息将在对话空闲时发送。",
+  "Starting {p0}…": "正在启动 {p0}…",
+  "The previous follow-up is still being delivered. Your message stays queued and will be sent when it finishes.": "上一条消息仍在发送中。您的消息会留在队列中，完成后发送。",
+  "Earlier messages could not be loaded. Reopen this chat to retry.": "无法加载更早的消息。请重新打开此聊天以重试。",
+  "Waiting for {p0}…": "正在等待 {p0}…",
+  "Background tone": "背景色调",
+  "Pure": "纯色",
+  "Tinted": "着色",
+  "Pure is true black in dark mode and white in light mode.": "纯色在深色模式下为纯黑，在浅色模式下为纯白。",
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "自定义表面颜色会保留自己的背景。选择一个主题调色板即可使用纯色。"
 }

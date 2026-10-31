@@ -162,7 +162,8 @@ fn connection_port(data_dir: &Path, program: &str, base_args: &[String]) -> Opti
         program,
         base_args,
         &["connection-info"],
-        Duration::from_secs(10),
+        // Node cold start behind antivirus scanning can exceed 10 s once.
+        Duration::from_secs(30),
     )
     .and_then(|info| info.get("port").and_then(Value::as_u64));
     let mut cache = CONNECTION_INFO.lock().unwrap_or_else(|e| e.into_inner());
@@ -230,7 +231,7 @@ pub(crate) fn local_host_connect_blocking(app: AppHandle) -> Result<Option<Machi
         &program,
         &base_args,
         &["pair", "--name", &local_device_name(), "--json"],
-        Duration::from_secs(20),
+        Duration::from_secs(45),
     ) else {
         return Ok(None);
     };

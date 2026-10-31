@@ -182,8 +182,9 @@ impl NativeWorkspaceChannel {
     }
 }
 
-/// A healthy Host answers `environment.describe` in milliseconds.
-const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// A healthy Host answers `environment.describe` in milliseconds; a cold or
+/// busy one (first start after boot, a large session sync) can need seconds.
+const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 /// One managed send runs several native checks back to back; they share one
 /// describe. The Host policy toggle invalidates explicitly.
 const DESCRIPTOR_TTL: std::time::Duration = std::time::Duration::from_secs(15);

@@ -14,16 +14,17 @@ use std::sync::{Arc, Mutex, RwLock};
 use tauri::Manager;
 
 const MAX_STREAMS: usize = 512;
-const MAX_RECORDS: usize = 4096;
-const MAX_TOTAL_RECORDS: usize = 32768;
+// Per-record metadata is ~150 bytes, so these bound memory to a few MB per stream.
+const MAX_RECORDS: usize = 32768;
+const MAX_TOTAL_RECORDS: usize = 262144;
 const MAX_BATCH_BYTES: usize = 1024 * 1024;
 const MAX_BATCH_ITEMS: usize = 4096;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 static RECORDS: AtomicUsize = AtomicUsize::new(0);
-const MAX_INPUT_ITEMS: usize = 8192;
-const MAX_TOTAL_INPUT_ITEMS: usize = 65536;
-const MAX_DELIVERIES: usize = 8192;
-const MAX_TOTAL_DELIVERIES: usize = 65536;
+const MAX_INPUT_ITEMS: usize = 32768;
+const MAX_TOTAL_INPUT_ITEMS: usize = 131072;
+const MAX_DELIVERIES: usize = 32768;
+const MAX_TOTAL_DELIVERIES: usize = 131072;
 const MAX_BATCH_RECIPIENTS: usize = 64;
 const MAX_COMPARISONS: usize = 32;
 const MAX_TOTAL_COMPARISONS: usize = 128;

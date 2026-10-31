@@ -228,7 +228,7 @@ it("fails with a readable retry error when the policy read hangs", async () => {
   vi.useFakeTimers();
   vi.mocked(getWorkspaceCapabilities).mockReturnValue(new Promise<string[]>(() => {}));
   const result = expect(prepareSessionWorkspace(session)).rejects.toThrow("taking too long");
-  await vi.advanceTimersByTimeAsync(10_000);
+  await vi.advanceTimersByTimeAsync(25_000);
   await result;
   vi.useRealTimers();
 });

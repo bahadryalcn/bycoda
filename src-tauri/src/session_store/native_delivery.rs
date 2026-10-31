@@ -454,22 +454,102 @@ fn prepare_tx(
         }
         return Ok(record);
     }
-    let (rows,active,bytes):(i64,i64,i64) = conn.query_row("SELECT COUNT(*),COALESCE(SUM(phase!='acknowledged'),0),COALESCE(SUM(CASE WHEN phase!='acknowledged' THEN payload_bytes+result_budget ELSE 0 END),0) FROM native_delivery_originals",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
-    if rows < 0
-        || active < 0
-        || bytes < 0
-        || rows as usize >= MAX_ROWS
-        || active as usize >= MAX_ACTIVE_ROWS
-        || (bytes as usize)
-            .checked_add(params_json.len())
-            .and_then(|n| n.checked_add(budget))
-            .is_none_or(|n| n > MAX_ACTIVE_BYTES)
-    {
+    let counts = |conn: &Connection| -> Result<(i64, i64, i64), String> {
+        conn.query_row("SELECT COUNT(*),COALESCE(SUM(phase!='acknowledged'),0),COALESCE(SUM(CASE WHEN phase!='acknowledged' THEN payload_bytes+result_budget ELSE 0 END),0) FROM native_delivery_originals",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())
+    };
+    let full = |(rows, active, bytes): (i64, i64, i64)| {
+        rows < 0
+            || active < 0
+            || bytes < 0
+            || rows as usize >= MAX_ROWS
+            || active as usize >= MAX_ACTIVE_ROWS
+            || (bytes as usize)
+                .checked_add(params_json.len())
+                .and_then(|n| n.checked_add(budget))
+                .is_none_or(|n| n > MAX_ACTIVE_BYTES)
+    };
+    let mut usage = counts(conn)?;
+    if full(usage) && method == BUFFER_UPDATE {
+        // A buffer report is a complete idempotent snapshot and the new one
+        // supersedes every earlier recorded outcome (the Host already holds
+        // each result). Retire those locally rather than wedging the queue;
+        // the same route first, then any route.
+        for route in [Some(route_fingerprint), None] {
+            retire_recorded_buffers_tx(conn, store, route, false);
+            usage = counts(conn)?;
+            if !full(usage) {
+                break;
+            }
+        }
+    }
+    if full(usage) {
         return Err(capacity());
     }
     let id = allocate(conn)?;
     conn.execute("INSERT INTO native_delivery_originals(original_id,semantic_key,route_fingerprint,method,source_store_id,source_profile_id,payload_sha256,payload_bytes,params_json,created_instance,phase,revision,result_budget,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'prepared',0,?11,?12)",params![id,semantic_key,route_fingerprint,method,ids.0,ids.1,hash,params_json.len() as i64,params_json,store.native_instance_id().to_string(),budget as i64,super::now_millis()]).map_err(|e|e.to_string())?;
     read(conn, &id, store.native_instance_id(), connection)?.ok_or_else(invalid)
+}
+
+const BUFFER_UPDATE: &str = "native.buffers.update";
+
+/// Best-effort local retirement of recorded `native.buffers.update` originals
+/// (recorded to acknowledged, which releases their active reservation). Only
+/// the superseded snapshot journal entry is retired, never a newer report's
+/// freshness. Caller holds the FULL projection transaction. Returns the count.
+fn retire_recorded_buffers_tx(
+    conn: &Connection,
+    store: &SessionStore,
+    route: Option<&str>,
+    previous_runs_only: bool,
+) -> usize {
+    let connection = (conn as *const Connection) as usize;
+    let runtime = store.native_instance_id();
+    let ids: Vec<String> = (|| -> rusqlite::Result<Vec<String>> {
+        let mut statement = conn.prepare(
+            "SELECT original_id FROM native_delivery_originals WHERE phase='recorded' AND method=?1
+             AND (?2 IS NULL OR route_fingerprint=?2) AND (?3=0 OR created_instance!=?4) ORDER BY rowid LIMIT 512",
+        )?;
+        let rows = statement.query_map(
+            params![BUFFER_UPDATE, route, previous_runs_only as i64, runtime.to_string()],
+            |r| r.get::<_, String>(0),
+        )?;
+        rows.collect()
+    })()
+    .unwrap_or_default();
+    let mut retired = 0;
+    for id in ids {
+        if let Ok(Some(record)) = read(conn, &id, runtime, connection) {
+            if acknowledge_tx(conn, &record).is_ok() {
+                retired += 1;
+            }
+        }
+    }
+    retired
+}
+
+/// Startup/first-report cleanup: recorded buffer snapshots left by previous
+/// runs (or dead windows) can never be confirmed again and only consume the
+/// active-row budget. Best effort; a failure never blocks reporting.
+pub(crate) fn retire_stale_buffer_originals(store: &SessionStore) -> Result<usize, String> {
+    {
+        let conn = store.lock_conn()?;
+        if !exists(&conn)? {
+            return Ok(0);
+        }
+        let stale: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM native_delivery_originals WHERE phase='recorded' AND method=?1 AND created_instance!=?2",
+                params![BUFFER_UPDATE, store.native_instance_id().to_string()],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if stale == 0 {
+            return Ok(0);
+        }
+    }
+    write(store, |conn| {
+        Ok(retire_recorded_buffers_tx(conn, store, None, true))
+    })
 }
 
 fn change_phase(

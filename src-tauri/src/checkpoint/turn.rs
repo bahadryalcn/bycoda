@@ -535,8 +535,12 @@ impl CheckpointStore {
         id: &str,
         interrupted: bool,
     ) -> Result<(), String> {
-        self.finish_files_turn(session, cwd, id, interrupted)?;
-        self.finish_turn(session, cwd, id, interrupted)
+        // A failed file-history settle must not leave the review turn recording:
+        // settle the review turn regardless, then report the first error.
+        let files = self.finish_files_turn(session, cwd, id, interrupted);
+        let review = self.finish_turn(session, cwd, id, interrupted);
+        files?;
+        review
     }
 
     /// Retire accepted results in the existing manifest, without touching the

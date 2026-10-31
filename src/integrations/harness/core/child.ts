@@ -1117,7 +1117,17 @@ export function killChild(handle: ChildProcessHandle): Promise<void> {
           if (state.spawnReturned) {
             // Native accepted the spawn but returned an invalid receipt. Ask it
             // to stop the original session instead of treating validation as exit.
-            return state.invoke<void>("harness_kill", { sessionId: handle.sessionId });
+            // Without a valid construction id native answers CONSTRUCTION_REQUIRED
+            // (there is nothing addressable to stop); that is not a kill failure.
+            return state.invoke<void>("harness_kill", { sessionId: handle.sessionId }).catch(
+              (killError: unknown) => {
+                if (/NATIVE_PROCESS_CONSTRUCTION_REQUIRED/.test(String(killError))) {
+                  console.warn("[child] kill skipped, spawn receipt was invalid", killError);
+                  return;
+                }
+                throw killError;
+              },
+            );
           }
           console.warn("[child] kill skipped, spawn invoke rejected", error);
         })

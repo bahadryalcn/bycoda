@@ -119,12 +119,15 @@ export function beginSendStarting(
  * A second send while the first is still starting (lease, guidance, usage check)
  * joins the queue and goes out next: nothing is lost and no second turn starts.
  * Content the queue cannot take over is refused with the reason in the transcript.
+ * A queued row sent by hand is already queued: its refusal says it stays queued
+ * (`queuedRowReason`) instead of asking the user to send again.
  */
 export function queueWhileStarting(
   ctx: SubmitDeps,
   input: SubmitInput,
   pre: SubmitPreflight,
   reason: string,
+  queuedRowReason?: string,
 ): SubmissionAcceptance {
   const { options } = input;
   if (
@@ -136,7 +139,10 @@ export function queueWhileStarting(
     pre.editedResend
   ) {
     pre.editedResend?.reject();
-    showSubmitNotice(input.sessionId, reason);
+    showSubmitNotice(
+      input.sessionId,
+      options?.queuedMessageId && queuedRowReason ? queuedRowReason : reason,
+    );
     return false;
   }
   return queueSubmittedFollowUp(ctx, input, pre);

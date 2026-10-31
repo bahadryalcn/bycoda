@@ -770,6 +770,15 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "accent color contrast text selection readable auto strong buttons",
   },
   {
+    id: "canvas-background",
+    section: "appearance",
+    get label() {
+      return t("Background tone");
+    },
+    keywords:
+      "pure true black white oled amoled canvas tinted tint dark light theme saf siyah beyaz arka plan",
+  },
+  {
     id: "chat-width",
     section: "chat",
     get label() {
@@ -1465,6 +1474,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "git-generation-default": ["Default generation model"],
   theme: ["Theme and colors", "System", "Light", "Dark"],
   "theme-palettes": ["Blue", "Violet", "Pink", "Red", "Orange", "Green"],
+  "canvas-background": ["Pure", "Tinted"],
   "file-access": ["File access", "Change file access"],
   "file-access-permissions": ["File access"],
   "import-history": ["Import Claude Code and Codex sessions"],

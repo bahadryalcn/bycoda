@@ -3295,7 +3295,7 @@ export class HostEngine {
       let executed = false;
       let result: T | undefined;
       try {
-        await activity.start(() => this.executionActivity(value, "provider"));
+        await activity.start(() => this.executionActivity(value, "provider"), value.session.harness);
         if (!this.closing) {
           this.retainProvider(value.session.id, provider);
           executed = true;
@@ -3556,7 +3556,10 @@ export class HostEngine {
           if (!this.closing && !active.cancelled) {
             active.activity = this.reserveProviderActivity(session.id, provider);
             try {
-              await active.activity.start(() => this.executionActivity(value, "provider"));
+              await active.activity.start(
+                () => this.executionActivity(value, "provider"),
+                session.harness,
+              );
             } catch (reason) {
               active.admissionRefused = true;
               throw reason;
@@ -3589,7 +3592,9 @@ export class HostEngine {
                   ? this.checkpoints.beginFilesTurn(session.id, session.cwd, runId!, userBlockId)
                   : this.checkpoints.begin(session.id, session.cwd, runId!, userBlockId)
               ).catch((error) => {
-                if (String(error).includes("checkpoint-coordination:")) throw error;
+                // Lease publish I/O failures/timeouts (`checkpoint-coordination:`) are
+                // not a competing writer (publish marks overlap as shared and never
+                // refuses): warn and run without a baseline, like the renderer.
                 console.warn("Workspace checkpoint failed", error);
               });
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");

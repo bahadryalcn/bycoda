@@ -1,12 +1,12 @@
 /** A Host bridge lookup is optional context for a turn, so it must never hold a send. */
 export const BRIDGE_LOOKUP_TIMEOUT_MS = 2_000;
-/** How long an empty, failed or timed-out answer is reused before asking the Host again. */
-export const BRIDGE_NEGATIVE_TTL_MS = 30_000;
+/** How long a definite empty or failed answer is reused before asking the Host again. */
+export const BRIDGE_NEGATIVE_TTL_MS = 10_000;
 const MAX_NEGATIVE = 256;
 
 /**
- * Caches a bridge answer per session. A usable answer is kept; an empty, failed or
- * timed-out answer is kept for BRIDGE_NEGATIVE_TTL_MS so the next send (and the
+ * Caches a bridge answer per session. A usable answer is kept; a definite empty or
+ * failed answer is kept for BRIDGE_NEGATIVE_TTL_MS so the next send (and the
  * second lookup inside one send) reuses it instead of asking the Host again. A
  * lookup that outlives the cap keeps running and still fills the cache when it
  * finishes, so the following turn gets the bridge.
@@ -59,8 +59,8 @@ export function createBridgeLookup<T>(
     let timer: ReturnType<typeof setTimeout> | undefined;
     const capped = new Promise<null>((resolve) => {
       timer = setTimeout(() => {
-        // Do not make every following send wait for the same slow Host.
-        rememberMissing(key);
+        // A slow answer is not a definite "no bridge": do not cache it. The shared
+        // in-flight lookup still fills the cache when the Host finally answers.
         resolve(null);
       }, timeoutMs);
     });

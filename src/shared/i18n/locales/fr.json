@@ -10059,5 +10059,18 @@
   "Answer the open question before clearing the conversation.": "Répondez à la question en attente avant d'effacer la conversation.",
   "Send or delete the queued messages before clearing the conversation.": "Envoyez ou supprimez les messages en file d'attente avant d'effacer la conversation.",
   "Decide the pending approval before clearing the conversation.": "Statuez sur l'approbation en attente avant d'effacer la conversation.",
-  "Finish editing the queued message before clearing the conversation.": "Terminez de modifier le message en file d'attente avant d'effacer la conversation."
+  "Finish editing the queued message before clearing the conversation.": "Terminez de modifier le message en file d'attente avant d'effacer la conversation.",
+  "The previous turn is still being cleaned up. Your message stays queued and will be sent when it finishes.": "Le tour précédent est encore en cours de nettoyage. Votre message reste en file d’attente et sera envoyé à la fin.",
+  "The previous turn is still being cleaned up. This message will be sent when it finishes.": "Le tour précédent est encore en cours de nettoyage. Ce message sera envoyé à la fin.",
+  "The conversation is still busy. The message stays queued. Try again in a moment.": "La conversation est encore occupée. Le message reste en file d’attente. Réessayez dans un instant.",
+  "The conversation is still getting ready. This message will be sent when it is free.": "La conversation est encore en préparation. Ce message sera envoyé dès qu’elle sera libre.",
+  "Starting {p0}…": "Démarrage de {p0}…",
+  "The previous follow-up is still being delivered. Your message stays queued and will be sent when it finishes.": "Le message précédent est encore en cours de remise. Votre message reste en file d’attente et sera envoyé ensuite.",
+  "Earlier messages could not be loaded. Reopen this chat to retry.": "Impossible de charger les messages précédents. Rouvrez cette conversation pour réessayer.",
+  "Waiting for {p0}…": "En attente de {p0}…",
+  "Background tone": "Ton de l’arrière-plan",
+  "Pure": "Pur",
+  "Tinted": "Teinté",
+  "Pure is true black in dark mode and white in light mode.": "Pur est un noir absolu en mode sombre et un blanc en mode clair.",
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "Les couleurs de surface personnalisées gardent leur propre arrière-plan. Choisissez une palette de thème pour utiliser Pur."
 }

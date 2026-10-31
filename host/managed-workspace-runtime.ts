@@ -480,7 +480,11 @@ export function createManagedWorkspaceRuntime(
             workspaceId: operation.workspaceId,
             operationId: operation.id,
           });
-      await activity.reconcilePreviousActivities();
+      const reconciled = await activity.reconcilePreviousActivities();
+      for (const blocked of reconciled.blocked)
+        console.warn(
+          `Workspace activity ${blocked.activityId} from a previous Host run was kept: ${blocked.reason}`,
+        );
       const results = (await exactGitRewind.enabled()) ? await rewind.recoverPending() : [];
       for (const operation of await registry.listOperations()) {
         if (operation.kind === "rewind") continue;

@@ -849,3 +849,11 @@ Owner, 2026-10-31, with a screenshot of reading mode, exact quote:
 Delivered in source (uncommitted; `useComposerDockMotion.ts`, `composerReading.ts`, `chat-controls.css`): entering or leaving reading mode eases the field's height and the workspace row's height, opacity and offset in place (shared `--motion-ease-out` token), so the box, its controls and the transcript viewport move together and nothing is clipped. Reduced motion, or an already open popover (it stays aligned with its trigger), switches instantly. The delivering agent added test cases beyond the existing-tests-only brief.
 
 **V2-018 is still open:** whether the workspace row is hidden or shown in reading mode has no recorded owner answer. The current source collapses and fades the row. Unverified: light/dark screenshots and a mid-transition capture; 0.5rem padding clipping and transcript jump checks.
+
+## V3-038 Inline turn activity line (2026-10-31)
+
+Owner, 2026-10-31, with screenshots of an empty bycoda transcript and T3 Code's inline "Working for 0s / Thinking" block, exact quote:
+
+> chat ekranında bazen böyle hiç birşey gözükmüyor aslında birşeyler oluyor ama ne olduğunu anlamıyoruz. T3Code da mesela bu şekilde gösteriliyor ama bizde değil. Bu tarz şeyleri de düzenler misin lütfen.
+
+Delivered in source (uncommitted): `model/turnActivity.ts` derives the live phase from existing state only (send preparing, `send-starting`/`provider-starting` status rows, `retryMessage`, provider not yet answered, provider answered with nothing readable, private reasoning only, hidden calls, mid-turn silence ≥4 s). `ui/TurnActivityLine.tsx` renders it at the end of the live turn (icon, pulsing label, clock); `AgentTranscript.tsx` wires it and lets it replace the live private-reasoning placeholder; start-up status rows leave the work trail (`model/startupStatus.ts`). Visible live rows (running tool/subagent, compaction, approvals, questions, background work) suppress the line. Clock ownership: before output the line shows the turn clock and `ActivityDock.tsx` drops its own number while the reader is at the end (`claimTurnClock`/`useTurnClockInTranscript`); a mid-turn silence line counts the silence and the dock keeps the turn total. Fixture captures: `temp/verification/v3-038-turn-activity/` (fixture data, light/dark 1280/800).

@@ -219,7 +219,17 @@ fn host_healthy(base: &Path) -> bool {
     let probe = || -> Option<bool> {
         let runtime = std::fs::read_to_string(base.join("runtime-path")).ok()?;
         let version = installed_version(base)?;
-        let (state, response) = lifecycle_status(base)?;
+        // A busy host can miss a probe; repairing (restarting) a healthy but slow
+        // host would interrupt the owner's work, so retry before calling it unhealthy.
+        let mut probe = probe_lifecycle_status(base);
+        for _ in 0..2 {
+            if probe != Err(LifecycleProbeError::Unconfirmed) {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+            probe = probe_lifecycle_status(base);
+        }
+        let (state, response) = probe.ok()?;
         Some(
             response.get("pid")?.as_u64()? == state.get("pid")?.as_u64()?
                 && Path::new(response.get("runtime")?.as_str()?)
@@ -228,6 +238,20 @@ fn host_healthy(base: &Path) -> bool {
         )
     };
     probe().unwrap_or(false)
+}
+
+/// The service may still be starting when the installer returns.
+fn host_healthy_within(base: &Path, limit: Duration) -> bool {
+    let deadline = std::time::Instant::now() + limit;
+    loop {
+        if host_healthy(base) {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
 }
 
 fn version_parts(version: &str) -> Option<Vec<u64>> {
@@ -597,7 +621,7 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
                 if installation_confirmed(
                     installed_version(&base).as_deref(),
                     &bundled,
-                    host_healthy(&base),
+                    host_healthy_within(&base, Duration::from_secs(30)),
                 ) {
                     Ok(())
                 } else {

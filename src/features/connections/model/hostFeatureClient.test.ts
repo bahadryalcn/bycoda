@@ -55,9 +55,9 @@ describe("hostFeatureRequest", () => {
 
   it("resolves again after a failed request", async () => {
     remoteRequest.mockRejectedValueOnce(new Error("gone"));
-    await expect(
-      hostFeatureRequest("/repo", "dev.servers", "devServers.list"),
-    ).rejects.toThrow("gone");
+    await expect(hostFeatureRequest("/repo", "dev.servers", "devServers.list")).rejects.toThrow(
+      "gone",
+    );
     await hostFeatureRequest("/repo", "dev.servers", "devServers.list");
     expect(invoke.mock.calls.filter(([command]) => command === "local_host_connect")).toHaveLength(
       2,
@@ -155,6 +155,22 @@ describe("explicit host tool targets", () => {
     expect(hostProjectFor).not.toHaveBeenCalled();
     expect(remoteRequest).toHaveBeenCalledWith("local", "devices.status", {});
     expect(remoteRequest).toHaveBeenCalledWith("local", "resources.read", {});
+  });
+
+  it("runs realtime and cloud voice requests on this computer", async () => {
+    machineCapabilities.mockResolvedValue(["voice.realtime.v2", "voice.cloud.v1"]);
+    await hostToolRequest(
+      "G:/repo",
+      "voice.realtime.v2",
+      "voice.realtime.secret",
+      { provider: "openai" },
+      { kind: "local" },
+    );
+    await hostToolRequest("G:/repo", "voice.cloud.v1", "voice.cloud.status", {}, { kind: "local" });
+    expect(remoteRequest).toHaveBeenCalledWith("local", "voice.realtime.secret", {
+      provider: "openai",
+    });
+    expect(remoteRequest).toHaveBeenCalledWith("local", "voice.cloud.status", {});
   });
 
   it("uses the selected MacBook for a local conversation and omits foreign project/session IDs", async () => {
@@ -264,11 +280,7 @@ describe("explicit host tool targets", () => {
   });
 
   it("does not retarget project tools or authorize unknown host methods", async () => {
-    for (const method of [
-      "devServers.list",
-      "browser.execute",
-      "devices.exec",
-    ]) {
+    for (const method of ["devServers.list", "browser.execute", "devices.exec"]) {
       await expect(
         hostToolRequest(
           "G:/repo",

@@ -12,6 +12,7 @@ import { displayPath, pathKey, resolveWorkspacePath } from "../../../shared/lib/
 import { isTurnInterruptMessage } from "./inFlight";
 import { isSessionErrorBlock } from "./sessionIssue";
 import { COMPACTING_TEXT, isRunningCompaction } from "./compactionStatus";
+import { isStartupStatusBlock } from "./startupStatus";
 import type { AgentStep, Block, ToolPreview } from "./session";
 import { findModelIdentity } from "./models";
 import { bycodaWorkSummary } from "./bycodaToolCall";
@@ -565,6 +566,8 @@ export function initialThinkingIndex(items: TurnItem[]): number {
 }
 
 function isIgnoredTurnBlock(block: Block): boolean {
+  // The live activity line names the start-up phase; it is never history.
+  if (isStartupStatusBlock(block)) return true;
   // Keep thinking as a step in the group, so a long think does not read as
   // the agent having stalled.
   if (block.role === "reasoning") return !block.text.trim();

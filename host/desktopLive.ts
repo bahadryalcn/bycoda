@@ -31,7 +31,7 @@ export const DESKTOP_WRITER_STALE_MS = 60_000;
  * never sent a heartbeat. A crashed app leaves the mark behind for good; without
  * an end the host would never send a queued message of that conversation.
  */
-export const DESKTOP_STORED_RUNNING_MS = 15 * 60_000;
+export const DESKTOP_STORED_RUNNING_MS = 75_000;
 
 export type DesktopCommand = {
   id: string;
@@ -173,6 +173,7 @@ export class DesktopLive {
   onIdle?: (sessionId: string, clientId: string, reason?: "idle" | "gone") => void;
   /** When the in-flight mark of a session was first seen while no app had beat. */
   private storedSince = new Map<string, number>();
+  private expiredStoredWarned = new Set<string>();
   constructor(private readonly now: () => number = Date.now) {}
 
   /** Only running state, including heartbeat/stored-mark expiry, influences
@@ -325,6 +326,7 @@ export class DesktopLive {
     );
     this.clients.set(clientId, this.now());
     this.storedSince.clear();
+    this.expiredStoredWarned.clear();
     for (const [id, beatAt] of this.clients) {
       if (this.now() - beatAt <= DESKTOP_BEAT_STALE_MS) continue;
       this.clients.delete(id);
@@ -432,6 +434,7 @@ export class DesktopLive {
     if (alive === undefined) {
       if (!stored) {
         this.storedSince.delete(id);
+        this.expiredStoredWarned.delete(id);
         return false;
       }
       // No app has beat since this host started: the mark is all there is. It is
@@ -440,7 +443,16 @@ export class DesktopLive {
       this.storedSince.set(id, since);
       while (this.storedSince.size > 512)
         this.storedSince.delete(this.storedSince.keys().next().value!);
-      return this.now() - since < DESKTOP_STORED_RUNNING_MS;
+      if (this.now() - since < DESKTOP_STORED_RUNNING_MS) return true;
+      if (!this.expiredStoredWarned.has(id)) {
+        this.expiredStoredWarned.add(id);
+        if (this.expiredStoredWarned.size > 512)
+          this.expiredStoredWarned.delete(this.expiredStoredWarned.values().next().value!);
+        console.warn(
+          `[bycoda] desktop session ${id} still carries an in-flight mark with no desktop heartbeat; treating it as not running.`,
+        );
+      }
+      return false;
     }
     const session = this.sessions.get(id);
     return alive && !!session?.busy && this.clientAlive(session.clientId);

@@ -16,6 +16,11 @@ export function showSubmitNotice(
   setSessions((all) =>
     all.map((session) => {
       if (session.id !== sessionId) return session;
+      // Earlier pages are still being merged into this transcript. Any block
+      // change now makes that merge discard its result and leaves the
+      // conversation "loading" for good, so no notice is added until it ends
+      // (or has failed, when nothing more arrives).
+      if (session.historyLoading && !session.historyLoadError) return session;
       const last = session.blocks[session.blocks.length - 1];
       if (last?.role === "system" && last.notice === notice && last.text === message)
         return session;

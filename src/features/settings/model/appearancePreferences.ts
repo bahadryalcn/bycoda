@@ -13,6 +13,14 @@ export const APPEARANCE_PREFERENCES_EVENT = "bycoda.appearancePreferencesChanged
 const KEY = "bycoda.appearancePreferences.v1";
 export const INTERFACE_FONTS = ["System", "Segoe UI", "Arial", "Verdana"] as const;
 export const CODE_FONTS = ["System", "Consolas", "Menlo", "Courier New"] as const;
+/**
+ * The main canvas tone. "pure" paints the shared canvas pure black in dark mode and pure white in
+ * light mode for every theme palette; "tinted" keeps the palette's own tinted canvas. Owner
+ * decision 2026-10-31 (V3-039): Pure is the default, including for records saved before it existed.
+ */
+export const CANVAS_BACKGROUNDS = ["pure", "tinted"] as const;
+export type CanvasBackground = (typeof CANVAS_BACKGROUNDS)[number];
+export const CANVAS_BACKGROUND_DEFAULT: CanvasBackground = "pure";
 export const APPEARANCE_DEFAULTS = {
   interfaceFont: "System",
   codeFont: "System",
@@ -24,6 +32,7 @@ export const APPEARANCE_DEFAULTS = {
   terminalLineHeight: 1,
   contrast: 100,
   accentReadability: ACCENT_READABILITY_DEFAULT,
+  canvasBackground: CANVAS_BACKGROUND_DEFAULT,
   controlDensity: "compact",
   chatWidth: "comfortable",
   wordWrap: false,
@@ -41,6 +50,8 @@ export type AppearancePreferences = {
   contrast: number;
   /** Contrast level the accent fill, its ink and text selection must reach. */
   accentReadability: AccentReadability;
+  /** Main canvas tone; custom surface colors keep their own tinted canvas (see appearance.ts). */
+  canvasBackground: CanvasBackground;
   controlDensity: "compact" | "comfortable" | "touch";
   chatWidth: "comfortable" | "wide" | "full";
   wordWrap: boolean;
@@ -87,6 +98,8 @@ export function normalizeAppearancePreferences(
     accentReadability: isAccentReadability(value.accentReadability)
       ? value.accentReadability
       : ACCENT_READABILITY_DEFAULT,
+    // Only an explicit "tinted" opts out; records without the field resolve to the Pure default.
+    canvasBackground: value.canvasBackground === "tinted" ? "tinted" : CANVAS_BACKGROUND_DEFAULT,
     controlDensity:
       value.controlDensity === "comfortable" || value.controlDensity === "touch"
         ? value.controlDensity
@@ -120,6 +133,8 @@ export function applyAppearancePreferences(value: AppearancePreferences) {
   root.dataset.controlDensity = value.controlDensity;
   root.dataset.codeTheme = value.codeTheme;
   root.dataset.accentReadability = value.accentReadability;
+  // The chosen tone; appearance.ts resolves the effective `data-canvas-background` from it.
+  root.dataset.canvasBackgroundPreference = value.canvasBackground;
   for (const [property, font, fallback] of [
     ["--font-sans", value.interfaceFont, "sans-serif"],
     ["--font-mono", value.codeFont, "monospace"],

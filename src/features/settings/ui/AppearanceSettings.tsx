@@ -752,6 +752,7 @@ export function AccentColorPicker({
   return (
     <div ref={root} className="appearance-accent">
       <ColorSwatchRow
+        className="appearance-accent-swatches"
         colors={[ACCENT_COLOR_DEFAULT, ...ACCENT_COLOR_PRESETS]}
         labels={[
           t("Default"),

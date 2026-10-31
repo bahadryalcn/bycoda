@@ -430,8 +430,10 @@ export async function createHostServer(
           (task.artifactDeliveryPending === true || !!task.artifactDeliveryActivityId),
       ),
     canReconcileActivity: async (entry) => {
+      // Only rows from a previous Host process reach here; the workspace probe
+      // still refuses while a real process uses the directory.
       if (
-        entry.kind !== "provider" ||
+        !["provider", "shell", "devServer"].includes(entry.kind) ||
         engine.desktopRefreshBlocked(entry.ownerId) ||
         desktop.live.busyClient(entry.ownerId) ||
         runLeases.holder(entry.ownerId)
@@ -440,14 +442,12 @@ export async function createHostServer(
       const summary = (await engine.store.startupStates()).find(
         (value) => value.id === entry.ownerId,
       );
-      // Unknown and native writers require their own process-identity proof.
-      return (
-        !!summary &&
-        !!(await engine.store.sessionAuthority(entry.ownerId)) &&
-        !summary.running &&
-        !summary.shellRunning &&
-        summary.workspaceId === entry.workspaceId
-      );
+      if (summary?.running || summary?.shellRunning) return false;
+      if (!summary || !(await engine.store.sessionAuthority(entry.ownerId)))
+        console.warn(
+          `Retiring stale workspace activity ${entry.id} (${entry.kind}): its previous owner ${entry.ownerId} has no live session record.`,
+        );
+      return true;
     },
   });
   const managedWorkspaces = managed.registry;

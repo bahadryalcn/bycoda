@@ -21,19 +21,32 @@
 }
 
 /* Mode and theme cards: a sample of the option, its name and a selected frame in the accent
-   interaction role. Selection never relies on the sample's own colors. */
+   interaction role. Selection never relies on the sample's own colors. Both grids span the group
+   (V3-039) and share one column rhythm: three modes, and palettes in six, three or two columns as
+   the group narrows, so a mode card lines up with two palette cards. The sample art grows with the
+   group width (cqi of the settings-group container) between a compact and a capped height. */
 .appearance-modes,
 .appearance-palettes {
   display: grid;
   gap: 8px;
   inline-size: 100%;
-  max-inline-size: 28.5rem;
+  max-inline-size: 72rem;
 }
 .appearance-modes {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .appearance-palettes {
-  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@container (width >= 44rem) {
+  .appearance-palettes {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@container (width < 26rem) {
+  .appearance-palettes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .appearance-settings .appearance-mode-card,
 .appearance-settings .appearance-palette {
@@ -56,7 +69,7 @@
 .appearance-mode-preview {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  block-size: 3.25rem;
+  block-size: clamp(3.25rem, 8cqi, 5.5rem);
   overflow: hidden;
   border-radius: var(--ui-control-radius);
   box-shadow: inset 0 0 0 1px var(--color-stroke);
@@ -64,7 +77,8 @@
 .appearance-mode-preview[data-split] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-/* A tone shows one option's surface, a raised card and the accent; values come from the option. */
+/* A tone shows one option's surface, a raised card and the accent; values come from the option.
+   Offsets are proportional so the sample scales with its card. */
 .appearance-tone {
   position: relative;
   display: block;
@@ -73,28 +87,29 @@
 }
 .appearance-tone > i {
   position: absolute;
-  inset-block-start: 8px;
-  inset-inline: 8px;
-  block-size: 40%;
+  inset-block-start: 16%;
+  inset-inline: 14%;
+  block-size: 36%;
   border-radius: 3px;
   background: var(--palette-raised);
 }
 .appearance-tone::after {
   content: "";
   position: absolute;
-  inset-block-end: 8px;
-  inset-inline-start: 8px;
+  inset-block-end: 16%;
+  inset-inline-start: 14%;
   inline-size: 40%;
-  block-size: 5px;
+  block-size: max(5px, 9%);
   border-radius: 3px;
   background: var(--palette-raised);
 }
 .appearance-tone > b {
   position: absolute;
-  inset-block-end: 7px;
-  inset-inline-end: 8px;
-  inline-size: 8px;
-  block-size: 8px;
+  inset-block-end: 14%;
+  inset-inline-end: 14%;
+  /* Sized from the sample height so wide mode cards keep a small dot. */
+  block-size: max(8px, 15%);
+  aspect-ratio: 1;
   border-radius: 50%;
   background: var(--palette-accent);
 }
@@ -111,10 +126,32 @@
   font-weight: 500;
 }
 
-/* Accent: every swatch, the palette default first and the custom picker last, on one row. */
+/* Accent: every swatch, the palette default first and the custom picker last, on one row at every
+   density. The row widens the control column only as far as the swatches need, and a narrow group
+   folds them into two even rows of four instead of leaving one swatch alone on a second line. */
+.settings-row:has(.appearance-accent) > .settings-row-control {
+  max-inline-size: none;
+}
 .appearance-accent {
-  inline-size: 17.5rem;
   max-inline-size: 100%;
+}
+.appearance-accent-swatches {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--ui-color-swatch-target);
+  justify-content: end;
+  gap: 4px;
+}
+@container (width < 560px) {
+  .appearance-accent-swatches {
+    justify-content: start;
+  }
+}
+@container (width < 22rem) {
+  .appearance-accent-swatches {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(4, var(--ui-color-swatch-target));
+  }
 }
 
 /* Font + size: one pattern for interface-adjacent, monospace and terminal rows. The control column

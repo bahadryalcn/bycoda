@@ -10059,5 +10059,18 @@
   "Answer the open question before clearing the conversation.": "Responda à pergunta em aberto antes de limpar a conversa.",
   "Send or delete the queued messages before clearing the conversation.": "Envie ou exclua as mensagens na fila antes de limpar a conversa.",
   "Decide the pending approval before clearing the conversation.": "Decida sobre a aprovação pendente antes de limpar a conversa.",
-  "Finish editing the queued message before clearing the conversation.": "Termine de editar a mensagem na fila antes de limpar a conversa."
+  "Finish editing the queued message before clearing the conversation.": "Termine de editar a mensagem na fila antes de limpar a conversa.",
+  "The previous turn is still being cleaned up. Your message stays queued and will be sent when it finishes.": "O turno anterior ainda está sendo limpo. Sua mensagem continua na fila e será enviada quando ele terminar.",
+  "The previous turn is still being cleaned up. This message will be sent when it finishes.": "O turno anterior ainda está sendo limpo. Esta mensagem será enviada quando ele terminar.",
+  "The conversation is still busy. The message stays queued. Try again in a moment.": "A conversa ainda está ocupada. A mensagem continua na fila. Tente novamente em instantes.",
+  "The conversation is still getting ready. This message will be sent when it is free.": "A conversa ainda está sendo preparada. Esta mensagem será enviada quando ela estiver livre.",
+  "Starting {p0}…": "Iniciando {p0}…",
+  "The previous follow-up is still being delivered. Your message stays queued and will be sent when it finishes.": "A mensagem anterior ainda está sendo entregue. Sua mensagem fica na fila e será enviada quando terminar.",
+  "Earlier messages could not be loaded. Reopen this chat to retry.": "Não foi possível carregar as mensagens anteriores. Reabra este chat para tentar novamente.",
+  "Waiting for {p0}…": "Aguardando {p0}…",
+  "Background tone": "Tom do fundo",
+  "Pure": "Puro",
+  "Tinted": "Tingido",
+  "Pure is true black in dark mode and white in light mode.": "Puro é preto absoluto no modo escuro e branco no modo claro.",
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "As cores de superfície personalizadas mantêm o próprio fundo. Escolha uma paleta de tema para usar Puro."
 }

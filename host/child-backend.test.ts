@@ -733,7 +733,7 @@ it.each(["callback", "close"] as const)(
         delay?: number,
         ...args: unknown[]
       ) => {
-        if (delay === 12_000) fireTimeout = () => callback(...args);
+        if (delay === 90_000) fireTimeout = () => callback(...args);
         return originalSetTimeout(callback, delay, ...args);
       }) as typeof setTimeout);
       const write = vi.spyOn(oldChild.stdin, "write").mockImplementation(((
@@ -771,7 +771,7 @@ it.each(["callback", "close"] as const)(
       fireTimeout!();
       await closeReady.promise;
       expect(oldChild.exitCode !== null || oldChild.signalCode !== null).toBe(true);
-      expect(f.internal.children.has(f.sessionId)).toBe(false);
+      expect(f.internal.children.has(f.sessionId)).toBe(true);
       let replacementStarted = false;
       replacementWork = f.launch("B").then((receipt) => {
         replacementStarted = true;
@@ -783,7 +783,7 @@ it.each(["callback", "close"] as const)(
       await new Promise<void>((resolve) => setImmediate(resolve));
       expect(settled).toBe(false);
       expect(replacementStarted).toBe(false);
-      expect(f.internal.children.has(f.sessionId)).toBe(false);
+      expect(f.internal.children.has(f.sessionId)).toBe(first === "callback");
       if (first === "callback") releaseClose!();
       else finishWrite!(lateFailure);
       restoreClose();
@@ -992,7 +992,7 @@ it("invalidates a pending launch on per-ID kill and drains accepted preparation 
   expect(closed).toBe(true);
 });
 
-it("lets a replacement start while old grant preparation is held without stale launch or credential publication", async () => {
+it("refuses a second start while the first grant preparation is held, then the first start completes once", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-replace-start-"));
   const file = join(directory, "provider.cjs");
   const marker = join(directory, "started");
@@ -1016,35 +1016,34 @@ it("lets a replacement start while old grant preparation is held without stale l
     })
     .mockResolvedValue(current);
   backend.setSocialAccess({ remoteAccess } as unknown as SocialService, current.endpoint);
-  const old = backend.invoke("harness_spawn", {
+  const old = backend.invoke<HarnessProcessReceipt>("harness_spawn", {
     sessionId: "same",
     command: file,
     args: [],
     cwd: directory,
   });
-  const rejected = expect(old).rejects.toThrow("startup cancelled");
   try {
     await entered.promise;
-    const replacement = await backend.invoke<HarnessProcessReceipt>("harness_spawn", {
-      sessionId: "same",
-      command: file,
-      args: [],
-      cwd: directory,
-    });
-    await vi.waitFor(() => expect(existsSync(marker)).toBe(true), { timeout: 5000 });
+    await expect(
+      backend.invoke<HarnessProcessReceipt>("harness_spawn", {
+        sessionId: "same",
+        command: file,
+        args: [],
+        cwd: directory,
+      }),
+    ).rejects.toThrow(/already starting/);
     release.resolve({ ...current, token: "fixture-old-token" });
-    await rejected;
+    const receipt = await old;
+    await vi.waitFor(() => expect(existsSync(marker)).toBe(true), { timeout: 5000 });
     expect(readFileSync(marker, "utf8")).toBe("started\n");
     const state = backend as unknown as {
-      socialEnvironments: Map<string, NodeJS.ProcessEnv>;
       children: Map<string, { pid?: number }>;
     };
-    expect(state.socialEnvironments.get("same")?.BYCODA_SOCIAL_TOKEN).toBe(current.token);
-    expect(state.children.get("same")?.pid).toBe(replacement.pid);
-    expect(() => process.kill(replacement.pid, 0)).not.toThrow();
+    expect(state.children.get("same")?.pid).toBe(receipt.pid);
+    expect(() => process.kill(receipt.pid, 0)).not.toThrow();
   } finally {
     release.resolve({ ...current, token: "fixture-old-token" });
-    await rejected;
+    await old.catch(() => undefined);
     await backend.close();
     rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }

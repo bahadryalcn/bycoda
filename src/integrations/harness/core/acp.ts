@@ -64,8 +64,8 @@ export class AcpClient {
     this.rpc.close(error);
   }
 
-  rejectPending(error?: Error) {
-    this.rpc.rejectPending(error);
+  rejectPending(error?: Error, options?: { keepNativeOutput?: boolean }) {
+    this.rpc.rejectPending(error, options);
   }
 
   get isClosed(): boolean {

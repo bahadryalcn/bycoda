@@ -89,7 +89,10 @@ export class RuntimeLogAccess {
       for (const [key, grant] of this.grants) if (grant.expiresAt <= now) this.grants.delete(key);
       // Concurrent provider children may have different grants for one session.
       // Bound memory without revoking one child's still-current sibling grant.
-      if (this.grants.size >= 4096) throw new Error("Runtime log grant capacity reached.");
+      if (this.grants.size >= 4096) {
+        console.warn("Runtime log grant capacity reached; the provider will start without this tool access.");
+        throw new Error("Runtime log grant capacity reached.");
+      }
       const token = randomBytes(32).toString("base64url");
       const expiresAt = now + 12 * 60 * 60_000;
       const grant: Grant = {
@@ -108,6 +111,16 @@ export class RuntimeLogAccess {
       });
       return { token, expiresAt, scope };
     });
+  }
+
+  /** Drops one memory-only grant when the provider child that held it has ended. */
+  revokeSessionGrant(token: string): void {
+    this.grants.delete(digest(token));
+  }
+
+  pruneExpiredGrants(): void {
+    const now = this.now();
+    for (const [key, grant] of this.grants) if (grant.expiresAt <= now) this.grants.delete(key);
   }
 
   authorization(token: string): StoreAuthorization {

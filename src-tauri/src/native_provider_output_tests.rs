@@ -778,10 +778,11 @@ fn real_retention_and_comparison_limits_preserve_ordinary_delivery_and_charge_un
     assert_eq!(f.stream.comparisons.load(Ordering::Acquire), 0);
     let overflow = InputFixture::new();
     let items = vec!["x".into(); MAX_BATCH_ITEMS];
-    for _ in 0..3 {
+    let emits = MAX_INPUT_ITEMS / MAX_BATCH_ITEMS + 1;
+    for _ in 0..emits {
         let _ = overflow.emit(&items, false, true);
     }
-    assert_eq!(overflow.stream.records().len(), 3); // no ordinary output was suppressed
+    assert_eq!(overflow.stream.records().len(), emits); // no ordinary output was suppressed
     assert_eq!(overflow.stream.lock_state().input_items, MAX_INPUT_ITEMS);
     overflow.seal();
     assert_eq!(

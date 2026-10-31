@@ -62,6 +62,7 @@ impl ProcessFixture {
             process: Some(process.clone()),
             exit: Some(Arc::new(ManagedProviderExit::default())),
             writers: WriteGate::new(),
+            order: WriteOrder::new(),
         });
         output.reader(0).finish(true, false);
         output.reader(1).finish(true, false);

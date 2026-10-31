@@ -2427,7 +2427,7 @@ function SidebarComponent({
       <Tooltip key={itemId} label={TAB_LABELS[itemId]} details={tabDetails} wide>
       <div
         ref={(el) => sortable.setItemRef(itemId, el)}
-        className={`reorder-item workspace-tab relative flex min-w-0 touch-none items-stretch ${itemId === "sessions" && workingSessionsBadge ? "flex-[1.4]" : "flex-1"}`}
+        className={`reorder-item workspace-tab relative flex min-w-0 touch-none items-stretch ${(itemId === "sessions" && workingSessionsBadge) || (isChangesTab && hasChangeStats) ? "flex-[1.4]" : "flex-1"}`}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           sortable.onItemPointerDown(itemId, event);
@@ -2454,6 +2454,7 @@ function SidebarComponent({
               ? ""
               : undefined
           }
+          data-workspace-tab-churn={isChangesTab && hasChangeStats ? "" : undefined}
           aria-label={label}
           title=""
           data-usage-guide={
@@ -2474,12 +2475,13 @@ function SidebarComponent({
             <span className="workspace-tab-label block whitespace-nowrap leading-label">
               {TAB_LABELS[itemId]}
             </span>
-            {isChangesTab && hasChangeStats ? (
-              <span className="workspace-tab-stats ms-1.5">
-                <DiffStat additions={changeAdditions} deletions={changeDeletions} />
-              </span>
-            ) : null}
           </span>
+          {/* Outside the label so the churn outlives it: the icon already names the tab. */}
+          {isChangesTab && hasChangeStats ? (
+            <span className="workspace-tab-stats ms-1 min-w-0">
+              <DiffStat additions={changeAdditions} deletions={changeDeletions} />
+            </span>
+          ) : null}
           {/* Outside .workspace-tab-content so they survive the icon-only widths. Wide and medium
               tabs show the badge, narrow tabs a smaller one, the narrowest only a presence dot.
               The file count is its own measure, with or without line churn (binary, mode-only,

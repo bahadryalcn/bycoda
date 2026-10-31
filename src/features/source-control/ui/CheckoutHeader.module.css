@@ -17,7 +17,7 @@
   align-items: center;
   gap: 4px;
   min-inline-size: 0;
-  min-block-size: var(--control-height-sm);
+  min-block-size: var(--ui-control-height-compact);
   text-align: start;
 }
 
@@ -113,7 +113,7 @@
 }
 .actionSlots {
   display: grid;
-  grid-template-columns: repeat(4, var(--control-height-sm));
+  grid-template-columns: repeat(4, var(--ui-control-height-compact));
   gap: 4px;
   align-items: center;
   margin-inline-start: auto;
@@ -122,4 +122,4 @@
 .actionSlot { display: flex; justify-content: flex-end; min-inline-size: 0; }
 
 .branchHeader { display: flex; min-block-size: 36px; align-items: center; gap: 4px; padding-inline: 6px; }
-.branchSlots { display: grid; grid-template-columns: repeat(3, var(--control-height-sm)); align-items: center; gap: 4px; flex-shrink: 0; }
+.branchSlots { display: grid; grid-template-columns: repeat(3, var(--ui-control-height-compact)); align-items: center; gap: 4px; flex-shrink: 0; }

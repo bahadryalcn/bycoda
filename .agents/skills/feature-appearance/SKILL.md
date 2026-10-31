@@ -5,6 +5,45 @@ description: Appearance Settings inventory for theme/palette/accent, scale/contr
 
 # Appearance Settings
 
+## V3-039 Layout fill and Pure background, 2026-10-31 (uncommitted)
+
+Owner, exact quote, 2026-10-31, source: owner chat (Appearance and main-window screenshots):
+
+> görünüm kısmı bu şekilde olmuş ama tam dolmamış. Preview kısmıda tam dolmamış bunları düzeltip daha güzel hale getirmek gerekiyor. Birde buranın yada buranın yada bu arkaplan rengine sahip olan heryeri t3code daki gibi full #000000 yapabilmek istiyorum light modda da beyaz. Fakat görünümde yapamıyorum seçenekler arasında da yok Bu seçenekleride genişletmeliz. Defaultu da tam siyah tam beyaz olması gerekiyor hatta
+
+Delivered behavior:
+- Mode cards span the group in three equal columns; palette cards use six, three or two
+  columns as the group narrows (container queries), so a mode card lines up with two
+  palettes. Sample art scales with the group (`clamp(…, 8cqi, …)`) and the accent dot
+  scales with sample height (`AppearanceSettings.css`).
+- Accent swatches stay on one row at every density: the control column widens for this
+  row only and a narrow group folds them into two rows of four. `ColorSwatchRow` gained an
+  optional `className` for external placement. Cause of the old orphan: at comfortable
+  density 8 × 32 px swatches + gaps exceeded the fixed 17.5rem picker width.
+- Preview is a full-width inert, aria-hidden app window (rail, session sidebar, chat with
+  bubble, selection, link and code card, composer with the accent Send button) drawn only
+  with theme roles; it folds the sidebar below 30rem (`AppearancePreviews.tsx/.css`).
+- Background tone (`canvas-background`, Themes group, under the palettes): Pure (default) /
+  Tinted, stored as `canvasBackground` in `bycoda.appearancePreferences.v1`. Records without
+  the field (every existing user) resolve to Pure; only an explicit "tinted" opts out.
+  `appearance.ts` publishes `data-canvas-background` = pure only while the tint matches a
+  theme palette; custom surface colors keep their tinted canvas and the row is disabled
+  with a visible reason. Reset colors and Restore defaults return it to Pure. Palette
+  presets moved to `model/themePalettes.ts` so the model can resolve that.
+- Shared theme: `--palette-canvasPureDark/Light` (palette.ts → palette.css) are the only
+  literals. `index.css` adds `--ui-tint-base`; derived roles mix from it, and the pure rule
+  overrides `--color-background-base` and `--ui-chat-canvas`, so window, rail, sidebar,
+  chat, side panels, settings, editor and terminal share the pure ground while surfaces,
+  borders and text keep their palette steps. Pure light adds one faint `--ui-surface` step.
+  Native-glass sidebars tint with the active canvas at the sidebar opacity; the opaque
+  native window colour follows Pure. Settings search indexes "Background tone" with
+  Pure/Tinted control labels; strings exist in all eight catalogs.
+
+Acceptance: fixture screenshots in `temp/verification/v3-039-appearance/` (real
+`AppearancePage`, real `Sidebar`, stubbed Tauri) at 1280/800, light/dark, Pure/Tinted,
+custom colors, comfortable/touch density and keyboard focus. Native glass on/off and the
+installed desktop window remain UNVERIFIED (browser fixture only).
+
 ## V3-033 Navigation canvas, 2026-10-31
 
 Owner, exact quote from `temp/local/2026-10-31-ui-refinements-3/TODO.md`, V3-033

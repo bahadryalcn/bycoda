@@ -410,6 +410,52 @@ export function createProviderRetirementLedger(
 export function drainProviderRetirements(scope: DrainScope = {}): Promise<void> {
   return defaultScope.drain(scope);
 }
+/** How long a different provider's retirement may delay the new turn. */
+const OTHER_PROVIDER_DRAIN_MS = 2_000;
+
+/** True when `family` (`<harness>.<part>`, or a generic-acp alias) is the writer `harness` is about to run. */
+export function isSameWriterFamily(harness: string, family: string): boolean {
+  return family.startsWith(`${harness}.`) || family.startsWith("generic-acp.");
+}
+
+/**
+ * Wait for the previous provider processes of an owner before `harness` starts.
+ * A failed or unsettled kill of the SAME writer family still rejects (it could
+ * become a second concurrent writer). A different family's retirement is
+ * warned about and bounded, never a refusal.
+ */
+export async function drainRetirementsForWriter(
+  ownerKey: string,
+  harness: string,
+  warn: (label: string, error: unknown) => void = (label, error) =>
+    console.warn(`[providerRetirement] ${label}`, error),
+): Promise<void> {
+  const others = drainProviderRetirements({
+    ownerKey,
+    includeFamily: (family) => !isSameWriterFamily(harness, family),
+  }).catch((error: unknown) => warn("previous provider retirement", error));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await drainProviderRetirements({
+      ownerKey,
+      includeFamily: (family) => isSameWriterFamily(harness, family),
+    });
+  } catch (error) {
+    warn("provider retirement drain", error);
+    throw error;
+  }
+  await Promise.race([
+    others,
+    new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        warn("previous provider retirement", new Error("still stopping; continuing with the new provider"));
+        resolve();
+      }, OTHER_PROVIDER_DRAIN_MS);
+    }),
+  ]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
 export function providerRetirementObservation() {
   return defaultScope.observation();
 }

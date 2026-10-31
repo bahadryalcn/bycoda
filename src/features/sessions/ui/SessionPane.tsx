@@ -1676,6 +1676,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       liveStatusInDock
                       backgroundTasks={session.backgroundTasks}
                       backgroundAgents={session.backgroundAgents}
+                      retryMessage={session.retryMessage}
+                      preparingTurn={!!session.worktreePreparing}
                       onApproval={session.worktreeRemoved ? undefined : approve}
                       onAddToChat={addSelectionToChat}
                       onSaveNote={notesEnabled ? saveNote : undefined}

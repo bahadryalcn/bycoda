@@ -48,6 +48,7 @@ import {
 } from "../../../features/sessions/model/deliveryProgress";
 import { steerAppliesModelSettings, type HarnessEvent } from "../../../integrations/harness";
 import { type Submit } from "../helpers/types";
+import { isSendStarting } from "./submit/submitStarting";
 import { t } from "../../../shared/i18n";
 
 export interface QueuedMessageActionDeps {
@@ -95,6 +96,22 @@ const lateAnswerPending = (): QueueActionResult => ({
   message: t(
     "The provider has not answered yet and may still deliver this message. Resuming now could send it twice. Wait for the answer, or stop the turn.",
   ),
+});
+/**
+ * A manual send of a queued row while the conversation is not free yet (a failed
+ * turn is still cleaning up, a send is still starting). The row stays queued and
+ * the drain sends it once, so this is a wait, never an error and never "sent".
+ */
+const waitsForFreeConversation = (session: Session, cleaning: boolean): QueueActionResult => ({
+  kind: "waiting",
+  message:
+    session.queueStatus === "paused"
+      ? t("The conversation is still busy. The message stays queued. Try again in a moment.")
+      : cleaning
+        ? t(
+            "The previous turn is still being cleaned up. This message will be sent when it finishes.",
+          )
+        : t("The conversation is still getting ready. This message will be sent when it is free."),
 });
 const stillWaiting = (): QueueActionResult => ({
   kind: "waiting",
@@ -400,6 +417,9 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           "This message cannot be sent now. Check its attachments and saved model settings, or resume the queue.",
         );
       }
+      const cleaning = retiringTurns.current.has(sessionId);
+      if (cleaning || isSendStarting(sessionId) || isPreparingHandoff(session))
+        return waitsForFreeConversation(session, cleaning);
       if (message.intent === "orchestrate" && session.busy) {
         enqueueHarnessEvent(sessionId, {
           type: "status",

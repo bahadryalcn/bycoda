@@ -10059,5 +10059,18 @@
   "Answer the open question before clearing the conversation.": "会話を消去する前に、未回答の質問に答えてください。",
   "Send or delete the queued messages before clearing the conversation.": "会話を消去する前に、キュー内のメッセージを送信するか削除してください。",
   "Decide the pending approval before clearing the conversation.": "会話を消去する前に、保留中の承認を判断してください。",
-  "Finish editing the queued message before clearing the conversation.": "会話を消去する前に、キュー内メッセージの編集を終えてください。"
+  "Finish editing the queued message before clearing the conversation.": "会話を消去する前に、キュー内メッセージの編集を終えてください。",
+  "The previous turn is still being cleaned up. Your message stays queued and will be sent when it finishes.": "前のターンはまだ後片付け中です。メッセージはキューに残り、完了後に送信されます。",
+  "The previous turn is still being cleaned up. This message will be sent when it finishes.": "前のターンはまだ後片付け中です。このメッセージは完了後に送信されます。",
+  "The conversation is still busy. The message stays queued. Try again in a moment.": "会話はまだ処理中です。メッセージはキューに残ります。少し待ってからもう一度お試しください。",
+  "The conversation is still getting ready. This message will be sent when it is free.": "会話はまだ準備中です。このメッセージは空き次第送信されます。",
+  "Starting {p0}…": "{p0} を起動しています…",
+  "The previous follow-up is still being delivered. Your message stays queued and will be sent when it finishes.": "前のメッセージを送信中です。このメッセージはキューに残り、完了後に送信されます。",
+  "Earlier messages could not be loaded. Reopen this chat to retry.": "以前のメッセージを読み込めませんでした。このチャットを開き直して再試行してください。",
+  "Waiting for {p0}…": "{p0} を待機中…",
+  "Background tone": "背景のトーン",
+  "Pure": "ピュア",
+  "Tinted": "ティント",
+  "Pure is true black in dark mode and white in light mode.": "ピュアはダークモードで真っ黒、ライトモードで真っ白になります。",
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "カスタムのサーフェスカラーは独自の背景を保ちます。ピュアを使うにはテーマパレットを選んでください。"
 }

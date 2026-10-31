@@ -163,20 +163,26 @@ const queueOperation = (paramsSchema: z.ZodType): HostRpcMethodDefinition => ({
   cost: "read",
   requiredCapability: "transport.ws.queue.v2",
 });
+/** Healthy slow Host reads (git, files, session sync, project browse) must outlive the 12 s default. */
+const SLOW_READ_RESPONSE_TIMEOUT_MS = 30_000;
+const GIT_ACTION_RESPONSE_TIMEOUT_MS = 600_000;
 const sessionRead = (
   params: z.ZodType,
   result: z.ZodType = JsonValueSchema,
 ): HostRpcMethodDefinition => ({
   ...read(params, result),
+  responseTimeoutMs: SLOW_READ_RESPONSE_TIMEOUT_MS,
   requiredCapability: "transport.ws.sessions.v2",
 });
 const fileRead = (params: z.ZodType, result: z.ZodType): HostRpcMethodDefinition => ({
   ...read(params, result),
+  responseTimeoutMs: SLOW_READ_RESPONSE_TIMEOUT_MS,
   requiredCapability: "transport.ws.files.v2",
 });
 const fileMutation = (params: z.ZodType, result: z.ZodType): HostRpcMethodDefinition => ({
   ...control(params, result),
   cost: "read",
+  responseTimeoutMs: SLOW_READ_RESPONSE_TIMEOUT_MS,
   requiredCapability: "transport.ws.files.v2",
 });
 const terminalOperation = (
@@ -197,7 +203,7 @@ const gitOperation = (
   ...(mutation ? control(params, result) : read(params, result)),
   cost: "read",
   requiredCapability: "transport.ws.git.v2",
-  responseTimeoutMs: mutation ? 120_000 : WS_LIMITS.defaultResponseTimeoutMs,
+  responseTimeoutMs: mutation ? 120_000 : SLOW_READ_RESPONSE_TIMEOUT_MS,
 });
 const notesOperation = (
   params: z.ZodType,
@@ -215,6 +221,7 @@ const projectOperation = (
 ): HostRpcMethodDefinition => ({
   ...(mutation ? control(params, result) : read(params, result)),
   cost: "read",
+  responseTimeoutMs: SLOW_READ_RESPONSE_TIMEOUT_MS,
   requiredCapability: "transport.ws.read.v2",
 });
 
@@ -837,7 +844,10 @@ export const HOST_RPC_METHODS = Object.freeze({
     gitDto.GitWorktreeSchema,
     true,
   ),
-  "git.action": gitOperation(gitDto.GitActionParamsSchema, gitDto.GitActionResultSchema, true),
+  "git.action": {
+    ...gitOperation(gitDto.GitActionParamsSchema, gitDto.GitActionResultSchema, true),
+    responseTimeoutMs: GIT_ACTION_RESPONSE_TIMEOUT_MS,
+  },
   "terminals.list": terminalOperation(TerminalsListParamsSchema, HostTerminalListSchema, true),
   "terminals.create": terminalOperation(TerminalsCreateParamsSchema, HostTerminalSchema),
   "terminals.read": terminalOperation(TerminalsReadParamsSchema, HostTerminalReadSchema, true),

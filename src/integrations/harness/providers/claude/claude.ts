@@ -14,6 +14,10 @@ import {
 
 import { killChild } from "../../core/child";
 import {
+  announceSlowProviderStartup,
+  PROVIDER_STARTUP_TIMEOUT_MS,
+} from "../../core/providerStartupStatus";
+import {
   createProviderRetirementLedger,
   preserveProviderFailure,
 } from "../../core/providerRetirement";
@@ -248,7 +252,8 @@ type Resume = {
   providerAccountId?: string;
 };
 
-const INIT_TIMEOUT_MS = 8_000;
+/** Claude answers `initialize` in 2-6 s when idle; a cold or loaded start takes longer. */
+const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 /**
  * How long a finished background task may take to wake Claude before the turn
  * is let go anyway. The follow-up turn normally starts within a second or two.
@@ -920,6 +925,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     operation: input.operationContext?.operation,
   };
   startingByThread.set(input.sessionId, startup);
+  // A start slower than a few seconds says so instead of looking stuck.
+  const clearStartupNotice = announceSlowProviderStartup(input.onEvent, "Claude");
   try {
     observeProviderProcess(input, handle, "starting");
     if (existing) {
@@ -1044,9 +1051,11 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     if (live.exitError) throw live.exitError;
     if (startingByThread.get(input.sessionId) !== startup)
       throw new Error("Provider startup cancelled");
+    clearStartupNotice();
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
+    clearStartupNotice();
     const failure = startup.live?.exitError ?? error;
     if (/No conversation found with session ID:/i.test(String(failure)) && resumeByThread.has(input.sessionId)) {
       await stopClaudeSession(input.sessionId, handle);
@@ -1059,6 +1068,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       stopClaudeSession(input.sessionId, handle),
     );
   } finally {
+    clearStartupNotice();
     if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }

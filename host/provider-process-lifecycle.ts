@@ -1,5 +1,8 @@
 import type { ProviderChild } from "./provider-child";
 
+/** A healthy CLI can take many seconds to start reading stdin; only a stuck pipe is a failure. */
+const PROVIDER_WRITE_TIMEOUT_MS = 90_000;
+
 type OwnedProcess = {
   sessionId: string;
   closed: Promise<void>;
@@ -87,7 +90,7 @@ export class ProviderProcessLifecycle {
       // Observe now, but keep the original result for the drain below. This never
       // declares completion or replaces the callback/close evidence with a catch.
       void retirement.catch(() => {});
-    }, 12_000);
+    }, PROVIDER_WRITE_TIMEOUT_MS);
     const done = (error?: Error | null) => {
       if (didFinish) return;
       didFinish = true;

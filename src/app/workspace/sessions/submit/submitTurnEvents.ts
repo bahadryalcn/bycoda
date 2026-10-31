@@ -146,6 +146,9 @@ export function createSubmitTurnEvents(
       return;
     }
     editedResend.markAccepted();
+    // The rewind is over: the turn that follows is an ordinary running turn, and
+    // a follow-up sent during it must queue or steer, not be refused as a change.
+    ctx.refs.editedResends?.finish(sessionId);
     for (const event of pendingEditedEvents) applyTurnEvent(event);
     pendingEditedEvents.length = 0;
   };

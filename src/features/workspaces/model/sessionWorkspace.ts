@@ -41,8 +41,8 @@ export function workspaceModeForPolicy(
   return choice ?? policy.defaultMode;
 }
 
-/** Bound for the capability/policy reads that gate a new session's first Send. */
-const POLICY_READ_TIMEOUT_MS = 10_000;
+/** Bound for the capability/policy reads that gate a new session's first Send; above the 20 s transport timeout. */
+const POLICY_READ_TIMEOUT_MS = 25_000;
 
 /**
  * Why no managed workspace was returned. `current` is the project's own policy (or the owner's

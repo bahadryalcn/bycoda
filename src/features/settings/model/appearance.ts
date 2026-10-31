@@ -3,9 +3,12 @@ import { themePalette } from "../../../shared/theme/palette";
 import { clamp } from "../../../shared/lib/numbers";
 import {
   APPEARANCE_PREFERENCES_EVENT,
+  CANVAS_BACKGROUND_DEFAULT,
   initAppearancePreferences,
   loadAppearancePreferences,
+  type CanvasBackground,
 } from "./appearancePreferences";
+import { matchThemePalette } from "./themePalettes";
 import {
   deriveAccentRoles,
   isAccentReadability,
@@ -439,7 +442,51 @@ export function applyThemeDarkLightness(value: number) {
   document.documentElement.style.setProperty("--theme-dark-lightness", `${next}%`);
   appliedTint.darkLightness = next;
   refreshAccentRoles();
+  applyCanvasBackground();
   return next;
+}
+
+/** The chosen canvas tone: the live document value, else the saved one. */
+function currentCanvasBackground(): CanvasBackground {
+  const live = document.documentElement.dataset.canvasBackgroundPreference;
+  if (live === "pure" || live === "tinted") return live;
+  try {
+    return loadAppearancePreferences().canvasBackground;
+  } catch {
+    return CANVAS_BACKGROUND_DEFAULT;
+  }
+}
+
+/**
+ * True when the shared canvas is painted pure black (dark) or pure white (light). Custom surface
+ * colors win: a tint that matches no theme palette keeps its own tinted canvas, so the Dark-mode
+ * lightness and hue the user chose stay visible.
+ */
+export function canvasBackgroundIsPure(
+  preference: CanvasBackground,
+  tint: { themeHue: number; themeSaturation: number; themeDarkLightness: number },
+) {
+  return preference === "pure" && matchThemePalette(tint) !== undefined;
+}
+
+/**
+ * Publishes the effective canvas tone as `data-canvas-background` on the document; the shared theme
+ * (src/styles/index.css) maps "pure" to the canvasPure palette roles. Raised surfaces, borders and
+ * text keep deriving from the palette tint, so they stay distinct on pure black or white.
+ */
+export function applyCanvasBackground(preference: CanvasBackground = currentCanvasBackground()) {
+  const root = document.documentElement;
+  const pure = canvasBackgroundIsPure(preference, {
+    themeHue: appliedTint.hue ?? loadThemeHue(),
+    themeSaturation: appliedTint.saturation ?? loadThemeSaturation(),
+    themeDarkLightness: appliedTint.darkLightness ?? loadThemeDarkLightness(),
+  });
+  const next = pure ? "pure" : "tinted";
+  if (root.dataset.canvasBackground === next) return pure;
+  root.dataset.canvasBackground = next;
+  // The opaque native window behind the page follows the canvas it shows through resize gaps.
+  if (nativeGlassReady) syncNativeGlass(isLightScheme() ? "light" : "dark");
+  return pure;
 }
 
 export function applyThemeTint(hue: number, saturation: number) {
@@ -450,6 +497,7 @@ export function applyThemeTint(hue: number, saturation: number) {
   appliedTint.hue = nextHue;
   appliedTint.saturation = nextSaturation;
   refreshAccentRoles();
+  applyCanvasBackground();
   return { hue: nextHue, saturation: nextSaturation };
 }
 
@@ -553,9 +601,10 @@ export function initAppearance() {
     themeStorageWatching = true;
     subscribeThemeStorage(applyStoredAppearance);
     // The readability level is part of the appearance record; this also fires for sibling windows.
-    window.addEventListener(APPEARANCE_PREFERENCES_EVENT, () =>
-      applyAccentColor(loadAccentColor()),
-    );
+    window.addEventListener(APPEARANCE_PREFERENCES_EVENT, () => {
+      applyAccentColor(loadAccentColor());
+      applyCanvasBackground();
+    });
   }
   initUiScale();
 }
@@ -615,6 +664,8 @@ export function applyThemePreference(
 
 /** The page colour the native window sits behind while glass is off. */
 function opaqueWindowBackground(): Rgb {
+  if (document.documentElement.dataset.canvasBackground === "pure")
+    return hslToRgb(0, 0, isLightScheme() ? 100 : 0);
   const style = getComputedStyle(document.documentElement);
   const read = (name: string, fallback: number) => {
     const value = Number.parseFloat(style.getPropertyValue(name));

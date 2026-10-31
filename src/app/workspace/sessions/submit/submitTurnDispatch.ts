@@ -146,7 +146,8 @@ export async function runSubmitDispatch(
           ? ((turn.checkpointStarted = true),
             beginSessionTurn(sessionId, workCwd, checkpointTurnId, user?.id, false)).catch(
               (error) => {
-                if (String(error).includes("checkpoint-coordination:")) throw error;
+                // A coordination failure (lease publish timing out or failing on disk)
+                // is not a competing writer: the turn runs without a checkpoint baseline.
                 console.warn("App operation failed", error);
               },
             )

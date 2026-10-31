@@ -469,7 +469,10 @@ fn removal_target(root: &Path, path: &Path) -> Result<Worktree, String> {
         .and_then(|name| name.to_str())
         .is_some_and(|name| {
             name.strip_prefix("wt-").is_some_and(|id| {
-                id.len() == 12 && id.bytes().all(|byte| byte.is_ascii_alphanumeric())
+                // Host ids are 12 lowercase hex digits; a plain worktree for a branch such
+                // as "optimization" (`wt-optimization`) must stay removable.
+                id.len() == 12
+                    && id.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
             })
         });
     if reserved_directory

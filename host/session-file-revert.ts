@@ -341,7 +341,11 @@ export class SessionFileRevert {
   private path(session: string) {
     return join(this.root, validId(session), "file-history.json");
   }
-  private async load(session: string, cwd: string): Promise<History> {
+  /** `startFresh`: a turn is beginning, so history that cannot be read for this
+   * checkout (the session moved to another folder, or the file is damaged) is
+   * replaced instead of failing every later turn of the session. Reverting
+   * still refuses it. */
+  private async load(session: string, cwd: string, startFresh = false): Promise<History> {
     try {
       const history = JSON.parse(await readFile(this.path(session), "utf8")) as History;
       if (history.version !== 1 || history.cwd !== cwd || !Array.isArray(history.turns))
@@ -350,6 +354,10 @@ export class SessionFileRevert {
       return history;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, cwd, turns: [] };
+      if (startFresh) {
+        console.warn("File history was reset for a new turn:", error);
+        return { version: 1, cwd, turns: [] };
+      }
       throw error;
     }
   }
@@ -411,7 +419,7 @@ export class SessionFileRevert {
     if (this.active.get(session)?.turn.id === turnId) return;
     if (this.active.has(session))
       await this.finish(session, cwd, this.active.get(session)!.turn.id, true);
-    const history = await this.load(session, cwd);
+    const history = await this.load(session, cwd, true);
     if (history.turns.some((previous) => previous.id === turnId))
       throw new Error("File history turn was already recorded; a new turn ID is required");
     const turn: Turn = {

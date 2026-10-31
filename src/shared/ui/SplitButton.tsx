@@ -83,8 +83,9 @@ export function SplitButton({
           label
         )}
       </Button>
+      {/* A disabled solid primary must not leave a bright solid chevron beside it. */}
       <Button
-        variant={buttonProps.variant}
+        variant={disabled && hierarchy === "primary" ? "secondary" : buttonProps.variant}
         tone={buttonProps.tone}
         size={buttonProps.size}
         shape={buttonProps.shape}

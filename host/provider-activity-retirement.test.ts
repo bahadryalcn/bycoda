@@ -22,7 +22,7 @@ function deferred<T = void>() {
 }
 function source(kill: (handle: ChildProcessHandle) => Promise<void>) {
   // Real production family ledger; kernel/transport completion is controlled, not Native proof.
-  const ledger = createProviderRetirementLedger(`activity-${randomUUID()}`, kill);
+  const ledger = createProviderRetirementLedger(`activity.${randomUUID()}`, kill);
   const id = randomUUID();
   const handle = ledger.admit(createChildProcessHandle(id));
   return { ledger, id, handle };
@@ -32,18 +32,19 @@ describe("original provider activity retirement", () => {
   it("warns about another same-owner family's failed kill and still acquires without touching active children", async () => {
     const mainKill = vi.fn(async (_handle: ChildProcessHandle) => {});
     const { ledger: main, id, handle } = source(mainKill);
-    const skills = createProviderRetirementLedger(`activity-skills-${randomUUID()}`, async () => {
+    const skills = createProviderRetirementLedger(`skills.probe-${randomUUID()}`, async () => {
       throw new Error("Original skill probe retirement unverified");
     });
     const probe = skills.admit(createChildProcessHandle(id));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    // A failed kill is cleanup uncertainty: it is warned about, never a permanent refusal.
-    await expect(skills.retire([probe])).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalled();
+    // The failed kill stays retained and still refuses its own family's callers...
+    await expect(skills.retire([probe])).rejects.toThrow("has not stopped");
+    // ...but the provider about to run is another family: warn and continue.
     const records = new ProviderActivityRetirements();
     const acquire = vi.fn(async () => async () => {});
     const ticket = records.reserve(id);
-    await ticket.start(acquire);
+    await ticket.start(acquire, "activity");
+    expect(warn).toHaveBeenCalled();
     expect(acquire).toHaveBeenCalledOnce();
     // The other family's active child is untouched.
     expect(mainKill).not.toHaveBeenCalled();

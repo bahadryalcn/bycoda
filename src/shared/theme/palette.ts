@@ -20,6 +20,8 @@ export const themePalette = {
   "search": "#93c5fd",
   "accent": "#a3acb8",
   "active": "#38bdf8",
+  "canvasPureDark": "#000000",
+  "canvasPureLight": "#ffffff",
   "hexf59e0b": "#f59e0b",
   "oklch_100pct_0_none": "oklch(100% 0 none)",
   "hex14b8a6": "#14b8a6",

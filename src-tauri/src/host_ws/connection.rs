@@ -93,7 +93,8 @@ async fn connect(
         != Some(contracts.protocol())
     {
         let _ = socket.close(None).await;
-        return Err(("schema", true));
+        // A Host that speaks another subprotocol still serves HTTP.
+        return Err(("unsupported", true));
     }
     let id = format!("hello.{generation}.{}", uuid::Uuid::new_v4());
     let hello = json!({"jsonrpc":"2.0","id":id,"method":"connection.hello","params":{
@@ -140,7 +141,8 @@ async fn connect(
                 if result["wireVersion"] != contracts.manifest["wireVersion"]
                     || result["schemaVersion"] != contracts.manifest["schemaVersion"]
                 {
-                    return Err(("schema", true));
+                    // App/Host version skew: the WebSocket lane is unusable, HTTP is not.
+                    return Err(("unsupported", true));
                 }
                 let methods = result["methods"]
                     .as_array()

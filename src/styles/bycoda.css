@@ -462,10 +462,16 @@ html.theme-light .project-sigil {
     display: inline-block;
   }
 }
-/* The +/- churn only returns once the tab itself has room for it. */
-@container workspace-tab (inline-size >= 170px) {
+/* Changes keeps its +/- churn longer than its label (the icon already names the tab):
+   icon + churn + badge once the churn fits, the word only when all of them fit. */
+@container workspace-tab (inline-size >= 112px) {
   .workspace-tab-stats {
     display: inline-flex;
+  }
+}
+@container workspace-tab (inline-size < 184px) {
+  [data-workspace-tab-churn] .workspace-tab-content {
+    display: none;
   }
 }
 /* Churn without a file count (binary, mode-only) is a presence dot until the churn fits. */
@@ -477,7 +483,7 @@ html.theme-light .project-sigil {
   font-variant-numeric: tabular-nums;
   color: var(--ui-text-secondary);
 }
-@container workspace-tab (inline-size >= 170px) {
+@container workspace-tab (inline-size >= 112px) {
   .workspace-tab-stats-compact {
     display: none;
   }

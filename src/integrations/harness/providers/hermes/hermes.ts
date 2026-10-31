@@ -14,6 +14,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { announceSlowProviderStartup, PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -117,7 +118,7 @@ type Live = {
 
 type Resume = { acpSessionId: string; cwd: string };
 
-const INIT_TIMEOUT_MS = 20_000;
+const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 const SESSION_TIMEOUT_MS = 45_000;
 const CONTROL_TIMEOUT_MS = 20_000;
 const PROMPT_TIMEOUT_MS = 30 * 60_000;
@@ -281,7 +282,7 @@ export async function cancelHermesTurn(
   resolveApprovals(live);
   await acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
   if (!ownsOperation(context, live.handle, live.operation)) return;
-  live.acp.rejectPending(new Error("cancelled"));
+  live.acp.rejectPending(new Error("cancelled"), { keepNativeOutput: true });
 }
 
 export async function stopHermesSession(
@@ -342,6 +343,15 @@ export function bindHermesSession(threadId: string, acpSessionId: string, cwd: s
 }
 
 async function ensureLive(input: HarnessSessionInput): Promise<Live> {
+  const startupDone = announceSlowProviderStartup(input.onEvent, "Hermes");
+  try {
+    return await ensureStartedLive(input);
+  } finally {
+    startupDone();
+  }
+}
+
+async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
   assertProviderOperation(input.operationContext);
 
   const existing = liveByThread.get(input.sessionId);

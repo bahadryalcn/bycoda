@@ -873,7 +873,10 @@ export class SocialService {
         if (grant.expiresAt <= this.now()) this.grants.delete(key);
       // Catalog/title helpers and the main provider can share one conversation.
       // Issuing a sibling grant must not disconnect a running MCP server.
-      if (this.grants.size >= 4096) throw new Error("Social session grant capacity reached.");
+      if (this.grants.size >= 4096) {
+        console.warn("Social session grant capacity reached; the provider will start without this tool access.");
+        throw new Error("Social session grant capacity reached.");
+      }
       const grant: Grant = {
         principal: {
           kind: "session",
@@ -891,6 +894,16 @@ export class SocialService {
       return { token, expiresAt, scope };
     });
   }
+  /** Drops one memory-only grant when the provider child that held it has ended. */
+  revokeSessionGrant(token: string): void {
+    this.grants.delete(hash(token));
+  }
+
+  pruneExpiredGrants(): void {
+    const now = this.now();
+    for (const [key, grant] of this.grants) if (grant.expiresAt <= now) this.grants.delete(key);
+  }
+
   authorization(token: string): StoreAuthorization {
     const check = async () => !!(await this.principalForToken(token));
     return {

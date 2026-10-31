@@ -726,9 +726,19 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           return;
         }
         if (closing || socket.destroyed) return;
+        const deviceSockets = [...peers].filter(
+          (peer) => !peer.closed && peer.principal.id === principal.id,
+        );
+        if (deviceSockets.length >= limits.maxSocketsPerDevice) {
+          // Half-dead sockets (sleep, wifi change) linger until the heartbeat
+          // gives up. A heartbeat-suspect socket of the same device yields to
+          // the new connection instead of refusing it.
+          const stale = deviceSockets.find((peer) => peer.pongTimer);
+          if (stale) closePeer(stale, 1001, "Replaced by a newer connection.");
+        }
         if (
           peers.size >= limits.maxAuthenticatedSockets ||
-          [...peers].filter((peer) => peer.principal.id === principal.id).length >=
+          [...peers].filter((peer) => !peer.closed && peer.principal.id === principal.id).length >=
             limits.maxSocketsPerDevice
         ) {
           rejectUpgrade(socket, 429);

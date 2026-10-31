@@ -11,6 +11,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   settleProviderRetirements,
@@ -109,7 +110,7 @@ type Resume = {
 };
 
 // Bound startup and control requests; a prompt may legitimately run much longer.
-const INIT_TIMEOUT_MS = 12_000;
+const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 const SESSION_TIMEOUT_MS = 45_000;
 const CONTROL_TIMEOUT_MS = 15_000;
 const PROMPT_TIMEOUT_MS = 30 * 60_000;
@@ -343,7 +344,7 @@ export async function cancelAntigravityTurn(
   cancelPendingApprovals(live.approvals);
   // Unwind the local turn first: a blocked stdin must not keep the UI's send
   // promise (or this cancel) wedged. The wire notify is best-effort.
-  live.acp.rejectPending(new Error("cancelled"));
+  live.acp.rejectPending(new Error("cancelled"), { keepNativeOutput: true });
   void acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
   await pending;
 }

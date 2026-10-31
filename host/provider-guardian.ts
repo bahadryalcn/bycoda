@@ -156,7 +156,7 @@ export class NativeGuardianChild extends EventEmitter implements GuardianProvide
     this.startupTimer = setTimeout(() => {
       if (!this.ownerId)
         this.abortStart(new ProviderGuardianError("Provider guardian startup timed out."));
-    }, 15_000);
+    }, 45_000);
   }
 
   get pid(): number | undefined {

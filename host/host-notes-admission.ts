@@ -36,6 +36,8 @@ const TRANSIENT_FS = new Set([
   "ENOLCK",
   "ENOMEM",
   "ETIMEDOUT",
+  // A database file that vanished between listing and opening is state, not corruption.
+  "ENOENT",
 ]);
 function checkArtifactPath(path: string): void {
   if (

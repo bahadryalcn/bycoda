@@ -18,7 +18,7 @@ export type SettleOutcome = {
 
 /** A refusal that only says the conversation is busy right now: nothing was decided. */
 const TRANSIENT =
-  /already running|host is stopping|in progress|branch switch|wait for running|wait for the (current|running)|current turn|still pending|being sent|being rewound/i;
+  /already running|host is stopping|in progress|branch switch|wait for running|wait for the (current|running)|wait before|current turn|still (pending|stopping|active|running)|retry when it exits|being (sent|rewound|removed)/i;
 export const isTransientDrainError = (error: unknown): boolean => {
   const text = error instanceof Error ? error.message : String(error ?? "");
   return isLeaseHeld(text) || TRANSIENT.test(text);

@@ -296,7 +296,7 @@ it.each(["rejected", "stopped"])(
   },
 );
 
-it("rejects a repeated adopted Send synchronously so its second draft is not cleared", () => {
+it("queues a repeated adopted Send so the first is not duplicated and the second is not lost", () => {
   transport.pending.mockReturnValue(true);
   const session = { ...newSession("codex", "/fake"), id: "steer-test", continuingElsewhere: true };
   resetSessionsStore([session]);
@@ -308,11 +308,16 @@ it("rejects a repeated adopted Send synchronously so its second draft is not cle
   } as unknown as SubmitPreflight;
   expect(
     steerBusySubmit(
-      { refs: { turnGen: { current: new Map() } } } as unknown as SubmitDeps,
+      {
+        refs: { turnGen: { current: new Map() } },
+        dismissNoticesForContinuedSession: vi.fn(),
+      } as unknown as SubmitDeps,
       { sessionId: session.id, text: "second draft", attachments: [] } as SubmitInput,
       pre,
     ),
-  ).toBe(false);
+  ).toBe(true);
   expect(transport.adopted).not.toHaveBeenCalled();
-  expect(getSessions()[0].queuedMessages ?? []).toEqual([]);
+  expect(getSessions()[0].queuedMessages).toEqual([
+    expect.objectContaining({ text: "second draft" }),
+  ]);
 });

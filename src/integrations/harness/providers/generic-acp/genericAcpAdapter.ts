@@ -13,6 +13,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -379,7 +380,7 @@ export async function sendGenericAcpTurn(
                     terminal: false,
                   },
                 },
-                20_000,
+                PROVIDER_STARTUP_TIMEOUT_MS,
               );
               const configs = await invokeProviderCommand<GenericAcpSummary[]>("generic_acp_list");
               const auth = configs.find((config) => config.id === configId)?.authMethodId;

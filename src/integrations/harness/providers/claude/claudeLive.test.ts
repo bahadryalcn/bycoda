@@ -1119,8 +1119,15 @@ describe("claude startup failures", () => {
     try {
       const events: HarnessEvent[] = [];
       const outcome = send(events).catch((error: Error) => error.message);
-      await vi.advanceTimersByTimeAsync(8_001);
+      await vi.advanceTimersByTimeAsync(30_001);
       expect(await outcome).toContain("initialize response timed out");
+      const startNotices = events.filter(
+        (event) => event.type === "status" && event.key === "provider-starting",
+      );
+      expect(startNotices.map((event) => (event as { text: string }).text)).toEqual([
+        "Starting Claude…",
+        "",
+      ]);
       expect(events.some((event) => event.type === "session.started")).toBe(false);
       expect(parse().some((message) => message.type === "user")).toBe(false);
     } finally {

@@ -21,6 +21,16 @@ export class ProviderConstructions {
       if (this.originals.size + this.reservations.size < this.capacity) break;
       if (entry.outcome === "verified") this.originals.delete(id);
     }
+    // An unverified receipt of a process that has already exited must not wedge every
+    // later provider start once capacity fills; warn and forget the oldest ones.
+    for (const [id, entry] of this.originals) {
+      if (this.originals.size + this.reservations.size < this.capacity) break;
+      const exited = entry.child.exitCode !== null || entry.child.signalCode !== null;
+      if (entry.outcome === "unknown" && exited) {
+        console.warn(`Dropping unverified exited provider receipt for ${entry.sessionId}`);
+        this.originals.delete(id);
+      }
+    }
     if (this.originals.size + this.reservations.size >= this.capacity)
       throw new Error(
         "Original provider process receipts are full; unresolved cleanup was retained.",

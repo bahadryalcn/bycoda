@@ -1,4 +1,3 @@
-import { themePalette } from "../../../shared/theme/palette";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
@@ -6,12 +5,19 @@ import {
   AdvancedSettings,
   Group,
   Row,
+  Segmented,
   Select,
   Slider,
   settingDomId,
 } from "./settingsControls";
 import type { AppearanceSettings } from "./useAppearanceSettings";
-import { APPEARANCE_DEFAULTS, CODE_FONTS, INTERFACE_FONTS } from "../model/appearancePreferences";
+import {
+  APPEARANCE_DEFAULTS,
+  CANVAS_BACKGROUND_DEFAULT,
+  CODE_FONTS,
+  INTERFACE_FONTS,
+  type CanvasBackground,
+} from "../model/appearancePreferences";
 import {
   ACCENT_COLOR_DEFAULT,
   DIFF_PALETTE_DEFAULT,
@@ -19,8 +25,10 @@ import {
   THEME_SATURATION_DEFAULT,
   THEME_DARK_LIGHTNESS_DEFAULT,
   THEME_PREFERENCE_DEFAULT,
+  canvasBackgroundIsPure,
   type ThemePreference,
 } from "../model/appearance";
+import { THEME_PALETTE_PRESETS, matchThemePalette } from "../model/themePalettes";
 import { UI_SCALE_DEFAULT, UI_SCALE_PERCENTS } from "../model/uiScale";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useCodeTheme } from "../../../shared/hooks/useCodeTheme";
@@ -31,73 +39,7 @@ import { Combobox } from "../../../shared/ui/Combobox";
 import { liveBackgroundKeyTarget } from "./LiveBackgroundPicker";
 import "./AppearancePreviews.css";
 
-const presets = [
-  {
-    name: "bycoda",
-    note: "Cool silver, quiet surfaces",
-    hue: 216,
-    saturation: 24,
-    lightness: 4,
-    accent: themePalette.hexA3ACB8,
-  },
-  {
-    name: "Olive",
-    note: "A softer green workspace",
-    hue: 150,
-    saturation: 22,
-    lightness: 7,
-    accent: themePalette.hex69b68e,
-  },
-  {
-    name: "Tide",
-    note: "Clear blue, a little air",
-    hue: 205,
-    saturation: 30,
-    lightness: 7,
-    accent: themePalette.hex65b4db,
-  },
-  {
-    name: "Kiln",
-    note: "Warm clay, mellow light",
-    hue: 25,
-    saturation: 24,
-    lightness: 7,
-    accent: themePalette.hexdba276,
-  },
-  {
-    name: "Dusk",
-    note: "Muted violet, evening calm",
-    hue: 275,
-    saturation: 24,
-    lightness: 7,
-    accent: themePalette.hexb297d4,
-  },
-  {
-    name: "Ink",
-    note: "A study in neutral tones",
-    hue: 216,
-    saturation: 0,
-    lightness: 5,
-    accent: themePalette.hexb8b8b8,
-  },
-];
-
-/**
- * The palette whose surface tint matches. Only surface values count: an accent override never
- * unselects a palette, and hue is meaningless at zero saturation (Ink is the neutral palette).
- */
-export function matchThemePalette(a: {
-  themeHue: number;
-  themeSaturation: number;
-  themeDarkLightness: number;
-}) {
-  return presets.find(
-    (p) =>
-      p.saturation === a.themeSaturation &&
-      p.lightness === a.themeDarkLightness &&
-      (p.saturation === 0 || p.hue === a.themeHue),
-  );
-}
+export { matchThemePalette };
 
 /** True while the accent is the app default (no override, or the default value itself). */
 export function isDefaultAccent(accentColor: string | null) {
@@ -109,25 +51,29 @@ type Tint = { hue: number; saturation: number; lightness: number; accent: string
 /**
  * A tone's own surface values for a sample; these show a selectable option (a mode or a palette in
  * light or dark), not live UI, so they are computed from the option instead of the current theme.
+ * With the Pure background the ground is the shared pure role and the card keeps the palette tint.
  */
-function toneStyle(p: Tint, light: boolean): CSSProperties {
+function toneStyle(p: Tint, light: boolean, pure: boolean): CSSProperties {
   const saturation = light ? Math.round(p.saturation * 0.2) : p.saturation;
-  const base = light ? 94 : p.lightness + 5;
-  const raised = light ? 100 : p.lightness + 13;
+  const tinted = (lightness: number) => `hsl(${p.hue} ${saturation}% ${lightness}%)`;
+  const base = pure
+    ? `var(${light ? "--palette-canvasPureLight" : "--palette-canvasPureDark"})`
+    : tinted(light ? 94 : p.lightness + 5);
+  const raised = light ? tinted(pure ? 93 : 100) : tinted(p.lightness + 13);
   return {
-    "--palette-base": `hsl(${p.hue} ${saturation}% ${base}%)`,
-    "--palette-raised": `hsl(${p.hue} ${saturation}% ${raised}%)`,
+    "--palette-base": base,
+    "--palette-raised": raised,
     "--palette-accent": p.accent,
   } as CSSProperties;
 }
 
-function ToneSample({ tint, tone }: { tint: Tint; tone: "light" | "dark" }) {
+function ToneSample({ tint, tone, pure }: { tint: Tint; tone: "light" | "dark"; pure: boolean }) {
   return (
     <span
       className="appearance-tone"
       data-tone={tone}
       aria-hidden="true"
-      style={toneStyle(tint, tone === "light")}
+      style={toneStyle(tint, tone === "light", pure)}
     >
       <i />
       <b />
@@ -136,29 +82,53 @@ function ToneSample({ tint, tone }: { tint: Tint; tone: "light" | "dark" }) {
 }
 
 /**
- * One live sample of the current appearance: surface steps, text, link, selection and the
- * accent action. Every color is a theme role, so it follows the palette, accent, mode and
- * contrast as they change. It is a picture, not a control (inert), and has no state of its own.
+ * One live sample of the current appearance, drawn as a small app window: project rail, session
+ * sidebar, chat canvas with a message, selection and link, a code card and the composer with the
+ * accent action. Every color is a theme role, so it follows palette, Pure/Tinted background, accent,
+ * mode and contrast as they change. It is a picture, not a control: inert and hidden from
+ * assistive technology, and it mounts no app feature components.
  */
 export function AppearancePreview() {
   useLocale();
   return (
-    <figure className="appearance-preview">
-      <div className="appearance-preview-window" inert aria-hidden="true">
+    <figure className="appearance-preview" aria-hidden="true">
+      <div className="appearance-preview-window" inert>
         <div className="appearance-preview-rail">
-          <span>{t("Workspace")}</span>
-          <span data-selected="true">{t("Chat")}</span>
-          <span>{t("Terminal")}</span>
+          <span data-selected="true">{PRODUCT_IDENTITY.displayName.slice(0, 1).toUpperCase()}</span>
+          <span />
+          <span />
+          <span />
         </div>
-        <div className="appearance-preview-main">
-          <p className="user-message-bubble appearance-preview-bubble">{t("Message")}</p>
-          <p className="appearance-preview-text">
-            {PRODUCT_IDENTITY.displayName} <mark>{t("Selection")}</mark>{" "}
-            <span className="appearance-preview-link">Aa</span>
-          </p>
-          <div className="appearance-preview-lines">
+        <div className="appearance-preview-sidebar">
+          <span className="appearance-preview-heading">{t("Sessions")}</span>
+          <span className="appearance-preview-row" data-selected="true">
+            {t("Chat")}
+          </span>
+          <span className="appearance-preview-row">{t("Workspace")}</span>
+          <span className="appearance-preview-row">{t("Terminal")}</span>
+          <span className="appearance-preview-row">
             <i />
+          </span>
+          <span className="appearance-preview-row">
             <i />
+          </span>
+        </div>
+        <div className="appearance-preview-chat">
+          <div className="appearance-preview-transcript">
+            <p className="user-message-bubble appearance-preview-bubble">{t("Message")}</p>
+            <p className="appearance-preview-text">
+              {PRODUCT_IDENTITY.displayName} <mark>{t("Selection")}</mark>{" "}
+              <span className="appearance-preview-link">Aa</span>
+            </p>
+            <div className="appearance-preview-lines">
+              <i />
+              <i />
+              <i />
+            </div>
+            <div className="appearance-preview-card">
+              <i />
+              <i />
+            </div>
           </div>
           <div className="appearance-preview-composer">
             <span className="appearance-preview-placeholder" />
@@ -173,7 +143,7 @@ export function AppearancePreview() {
 }
 
 /** System / Light / Dark as three visual cards; the selected card carries the accent border. */
-function ModeCards({ appearance: a }: { appearance: AppearanceSettings }) {
+function ModeCards({ appearance: a, pure }: { appearance: AppearanceSettings; pure: boolean }) {
   const light = useColorScheme() === "light";
   const group = useRef<HTMLDivElement>(null);
   const tint: Tint = {
@@ -224,8 +194,8 @@ function ModeCards({ appearance: a }: { appearance: AppearanceSettings }) {
               className="appearance-mode-preview"
               data-split={mode.value === "system" || undefined}
             >
-              {mode.value === "dark" ? null : <ToneSample tint={tint} tone="light" />}
-              {mode.value === "light" ? null : <ToneSample tint={tint} tone="dark" />}
+              {mode.value === "dark" ? null : <ToneSample tint={tint} tone="light" pure={pure} />}
+              {mode.value === "light" ? null : <ToneSample tint={tint} tone="dark" pure={pure} />}
             </span>
             <span className="appearance-card-name">
               {mode.label}
@@ -235,6 +205,47 @@ function ModeCards({ appearance: a }: { appearance: AppearanceSettings }) {
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Background tone: Pure paints the shared canvas pure black (dark) or white (light) for every
+ * theme palette; Tinted keeps the palette canvas. Custom surface colors keep their own tinted
+ * canvas, so the control is inactive while they are in use and says why.
+ */
+function CanvasBackgroundRow({
+  appearance: a,
+  customColors,
+}: {
+  appearance: AppearanceSettings;
+  customColors: boolean;
+}) {
+  const value = a.preferences.canvasBackground;
+  const save = (canvasBackground: CanvasBackground) =>
+    a.onPreferences({ ...a.preferences, canvasBackground });
+  return (
+    <Row
+      id="canvas-background"
+      label={t("Background tone")}
+      description={
+        customColors
+          ? t("Custom surface colors keep their own background. Choose a theme palette to use Pure.")
+          : t("Pure is true black in dark mode and white in light mode.")
+      }
+      disabled={customColors}
+      modified={value !== CANVAS_BACKGROUND_DEFAULT}
+      onReset={() => save(CANVAS_BACKGROUND_DEFAULT)}
+    >
+      <Segmented<CanvasBackground>
+        label={t("Background tone")}
+        value={value}
+        options={[
+          { value: "pure", label: t("Pure") },
+          { value: "tinted", label: t("Tinted") },
+        ]}
+        onChange={save}
+      />
+    </Row>
   );
 }
 
@@ -251,18 +262,25 @@ export function AppearanceStudio({
 }) {
   useLocale();
   const selected = matchThemePalette(a);
+  const pureChosen = a.preferences.canvasBackground === "pure";
+  const pure = canvasBackgroundIsPure(a.preferences.canvasBackground, a);
   const colorsModified =
     a.themeHue !== THEME_HUE_DEFAULT ||
     a.themeSaturation !== THEME_SATURATION_DEFAULT ||
     a.themeDarkLightness !== THEME_DARK_LIGHTNESS_DEFAULT ||
     !isDefaultAccent(a.accentColor) ||
-    a.preferences.accentReadability !== APPEARANCE_DEFAULTS.accentReadability;
+    a.preferences.accentReadability !== APPEARANCE_DEFAULTS.accentReadability ||
+    a.preferences.canvasBackground !== CANVAS_BACKGROUND_DEFAULT;
   const resetColors = () => {
     a.onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
     a.onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT);
     a.onAccentColor(ACCENT_COLOR_DEFAULT);
-    // Accent readability is a color preference, so it returns to Auto with the accent.
-    a.onPreferences({ ...a.preferences, accentReadability: APPEARANCE_DEFAULTS.accentReadability });
+    // Accent readability and the background tone are color preferences, so they reset here too.
+    a.onPreferences({
+      ...a.preferences,
+      accentReadability: APPEARANCE_DEFAULTS.accentReadability,
+      canvasBackground: CANVAS_BACKGROUND_DEFAULT,
+    });
   };
   return (
     <>
@@ -272,7 +290,7 @@ export function AppearanceStudio({
         onReset={() => a.onThemePreference(THEME_PREFERENCE_DEFAULT)}
       >
         <Row id="theme" stacked label={t("Mode")}>
-          <ModeCards appearance={a} />
+          <ModeCards appearance={a} pure={pure} />
         </Row>
       </Group>
       <Group
@@ -292,7 +310,7 @@ export function AppearanceStudio({
           }
         >
           <div className="appearance-palettes">
-            {presets.map((p) => {
+            {THEME_PALETTE_PRESETS.map((p) => {
               const on = selected?.name === p.name;
               return (
                 <Button
@@ -310,8 +328,8 @@ export function AppearanceStudio({
                   }}
                 >
                   <span className="appearance-mode-preview" data-split>
-                    <ToneSample tint={p} tone="light" />
-                    <ToneSample tint={p} tone="dark" />
+                    <ToneSample tint={p} tone="light" pure={pureChosen} />
+                    <ToneSample tint={p} tone="dark" pure={pureChosen} />
                   </span>
                   <span className="appearance-card-name">
                     {p.name}
@@ -322,6 +340,7 @@ export function AppearanceStudio({
             })}
           </div>
         </Row>
+        <CanvasBackgroundRow appearance={a} customColors={!selected} />
         {children}
       </Group>
     </>

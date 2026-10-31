@@ -166,6 +166,8 @@ type ToolPreparation = {
   owner?: object;
   groups: Map<SessionToolGroup, Promise<PreparedTool | undefined>>;
   capabilities: Set<SessionToolCapability>;
+  /** Revokes the memory-only grants issued for this preparation when its child ends. */
+  revokers: Set<() => void>;
   expiry?: ReturnType<typeof setTimeout>;
 };
 
@@ -736,22 +738,6 @@ export class HostChildBackend implements ChildBackend {
       check();
     };
     try {
-      const previous = this.children.get(id);
-      if (previous && previous.exitCode === null && previous.signalCode === null) {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        try {
-          await Promise.race([
-            this.retireChild(id, previous),
-            new Promise<never>((_, reject) => {
-              timer = setTimeout(() => reject(new Error("The original provider is still stopping. Retry when it exits.")), 20_000);
-            }),
-          ]);
-        } catch (error) {
-          if (previous.exitCode === null && previous.signalCode === null) throw error;
-          console.warn("Provider exited with unverified cleanup:", error);
-        } finally { clearTimeout(timer); }
-        check();
-      }
       if (runWriters && hostRun) {
         const requestedCwd = await canonicalWorkspacePath(await workingDirectory(String(args.cwd)));
         let cwdGrant: HostRunCwdGrant | undefined;
@@ -798,6 +784,22 @@ export class HostChildBackend implements ChildBackend {
         genericEnv = config.env ?? {};
       }
       if (beforeSpawn || runPreparation) await restrict();
+      const previous = this.children.get(id);
+      if (previous && previous.exitCode === null && previous.signalCode === null) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            this.retireChild(id, previous),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error("The original provider is still stopping. Retry when it exits.")), 20_000);
+            }),
+          ]);
+        } catch (error) {
+          if (previous.exitCode === null && previous.signalCode === null) throw error;
+          console.warn("Provider exited with unverified cleanup:", error);
+        } finally { clearTimeout(timer); }
+        check();
+      }
       await this.killCurrent(id);
       check();
       if (beforeSpawn || runPreparation) await restrict();
@@ -1029,11 +1031,30 @@ export class HostChildBackend implements ChildBackend {
     }
   }
 
+  private grantPruning?: ReturnType<typeof setInterval>;
+  /** Expired memory-only grants are otherwise pruned only when another is issued. */
+  private startGrantPruning(): void {
+    if (this.grantPruning || this.closing) return;
+    this.grantPruning = setInterval(() => {
+      for (const access of [this.socialAccess, this.runtimeLogAccess, this.conversationAccess])
+        access?.service.pruneExpiredGrants?.();
+    }, 10 * 60_000);
+    this.grantPruning.unref();
+  }
+
   private retireTools(tools: ToolPreparation): void {
     tools.live = false;
     clearTimeout(tools.expiry);
     for (const capability of tools.capabilities) capability.dispose();
     tools.capabilities.clear();
+    for (const revoke of tools.revokers) {
+      try {
+        revoke();
+      } catch (error) {
+        console.warn("Session tool grant could not be revoked:", error);
+      }
+    }
+    tools.revokers.clear();
   }
 
   private releaseActiveTools(id: string): void {
@@ -1056,7 +1077,7 @@ export class HostChildBackend implements ChildBackend {
     if (!tools) {
       if (this.preparedTools.size >= 512)
         throw new Error("Session tool preparation capacity reached.");
-      tools = { live: true, groups: new Map(), capabilities: new Set() };
+      tools = { live: true, groups: new Map(), capabilities: new Set(), revokers: new Set() };
       this.preparedTools.set(id, tools);
       const current = tools;
       tools.expiry = setTimeout(() => {
@@ -1118,7 +1139,12 @@ export class HostChildBackend implements ChildBackend {
           if (await social.isDelegated?.()) return undefined;
           check();
         }
+        this.startGrantPruning();
         const grant = await access.service.issueSessionGrant(sessionId);
+        const issued = [grant.token];
+        tools.revokers.add(() => {
+          for (const token of issued) access.service.revokeSessionGrant?.(token);
+        });
         check();
         const capability = await this.toolRelay.create({
           group,
@@ -1136,6 +1162,7 @@ export class HostChildBackend implements ChildBackend {
             };
             await localSocial();
             const fresh = await access.service.issueSessionGrant(sessionId, undefined, scope);
+            issued.push(fresh.token);
             await localSocial();
             if (this.closing || !tools.live) throw new Error("Session tool capability retired.");
             return fresh;
@@ -1156,6 +1183,10 @@ export class HostChildBackend implements ChildBackend {
         check();
         // Helpers without an authoritative session must not inherit any access.
         if (error instanceof ProviderStartupCancelled) throw error;
+        console.warn(
+          `Session ${group} tool access was not granted to the provider for ${sessionId}:`,
+          error,
+        );
         return undefined;
       }
     })();
@@ -1356,6 +1387,7 @@ export class HostChildBackend implements ChildBackend {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.closing = true;
+    clearInterval(this.grantPruning);
     this.starts.clear();
     this.pendingStarts.clear();
     for (const tools of this.preparedTools.values()) this.retireTools(tools);

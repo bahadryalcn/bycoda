@@ -121,7 +121,9 @@ fn requires_host_activity(
                     .and_then(|name| name.to_str())
                     .is_some_and(|name| {
                         name.strip_prefix("wt-").is_some_and(|id| {
-                            id.len() == 12 && id.bytes().all(|byte| byte.is_ascii_alphanumeric())
+                            // Host ids are 12 lowercase hex digits; `wt-optimization` is a plain branch worktree.
+                            id.len() == 12
+                                && id.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
                         })
                     });
                 if reserved {
@@ -248,7 +250,7 @@ impl BufferReportReceipt {
 
     /// A different process can overwrite a same-label row even in the same
     /// millisecond. An old successful response must never confirm its new data.
-    fn confirm(self, conn: &rusqlite::Connection) -> Result<(), String> {
+    fn confirm(&self, conn: &rusqlite::Connection) -> Result<(), String> {
         if !self.attributed {
             // Host delivery does not attribute an unknown physical owner.
             let matches: bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM native_workspace_buffers b JOIN native_workspace_buffer_identity i ON i.owner_id=b.owner_id
@@ -374,7 +376,13 @@ fn report_buffers(
     for buffer in buffers {
         let path = crate::fs::expand_home(&buffer.path);
         if !path.is_absolute() || buffer.path.contains('\0') {
-            return Err("Buffer path must be absolute".into());
+            // Untitled or relative tabs have no file on disk to protect; one of them
+            // must not reject the report for every other buffer.
+            eprintln!(
+                "Skipping non-absolute buffer path in native buffer report: {:?}",
+                buffer.path
+            );
+            continue;
         }
         normalized.push(BufferState {
             path: crate::fs::path_to_js(&path),
@@ -426,6 +434,9 @@ fn report_buffers(
     // Historical failures remain held in their own originals. This fresh
     // physical report still crosses its own route/journal/Host/ACK gates below;
     // a bad older outcome must not prevent unrelated current reporting.
+    // Recorded snapshots of earlier runs can never be confirmed again; free
+    // their active-row reservation (best effort, newer complete reports supersede them).
+    let _stale = crate::session_store::native_delivery::retire_stale_buffer_originals(store);
     let _retirement_recovery = host.reconcile_buffer_acknowledgements(store);
     let _historical_recovery = host.reconcile_buffer_deliveries(store);
     let original_key = format!(
@@ -446,20 +457,37 @@ fn report_buffers(
             // Keep both Host replies current through the actual local confirmation.
             // The Host independently proves predecessor process death; dirty/unknown
             // reports keep their explicit recovery fence.
-            host.project(
+            let commit = |projections: &[&NativeProjection<'_>]| {
+                let admission = crate::session_store::native_delivery::completion_admission(store)?;
+                let outcome = NativeProjection::commit(projections, || {
+                    crate::session_store::authority::with_full_projection_transaction(store, |tx| {
+                        receipt.confirm(tx.connection())?;
+                        crate::session_store::native_delivery::acknowledge_tx(tx.connection(), original)
+                    })
+                });
+                admission.finish(outcome)
+            };
+            let committing = std::cell::Cell::new(false);
+            let reconciled = host.project(
                 "native.buffers.reconcile",
                 json!({"clientId":client_id,"instanceId":instance_id,"predecessors":[]}),
                 |_, reconcile| {
-                    let admission = crate::session_store::native_delivery::completion_admission(store)?;
-                    let outcome = NativeProjection::commit(&[update, reconcile], || {
-                        crate::session_store::authority::with_full_projection_transaction(store, |tx| {
-                            receipt.confirm(tx.connection())?;
-                            crate::session_store::native_delivery::acknowledge_tx(tx.connection(), original)
-                        })
-                    });
-                    admission.finish(outcome)
+                    committing.set(true);
+                    commit(&[update, reconcile])
                 },
-            )
+            );
+            match reconciled {
+                // Retiring dead predecessors is housekeeping: the Host already
+                // acknowledged this report. A refusal (a predecessor with dirty
+                // buffers, or one not proven dead) keeps that predecessor's own
+                // fence but must not leave this report unconfirmed and its
+                // journal entry active forever (that wedged the queue at capacity).
+                Err(error) if !committing.get() => {
+                    eprintln!("Native buffer predecessor reconcile was not completed: {error}");
+                    commit(&[update])
+                }
+                other => other,
+            }
         },
     )
 }
@@ -569,14 +597,15 @@ pub(crate) fn assert_buffers_settled(
         })
         .map_err(|e| e.to_string())?;
     let mut any_owner = false;
+    let mut any_fresh = false;
     for row in rows {
         any_owner = true;
         let (raw, updated, confirmed) = row.map_err(|e| e.to_string())?;
-        if !confirmed || now_millis().saturating_sub(updated) > 45000 {
-            return Err(
-                "Workspace editor state is unknown; reconnect and wait for a fresh buffer report"
-                    .into(),
-            );
+        // Rows of closed windows and earlier app runs are never deleted, so only a
+        // fresh confirmed report has to exist. Any row still holding a dirty buffer
+        // under the root keeps the data-loss fence, however old it is.
+        if confirmed && now_millis().saturating_sub(updated) <= 45000 {
+            any_fresh = true;
         }
         let buffers: Vec<BufferState> = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
         for buffer in buffers {
@@ -591,6 +620,12 @@ pub(crate) fn assert_buffers_settled(
     }
     if !any_owner {
         return Err("Workspace editor state is unknown; wait for the first buffer report".into());
+    }
+    if !any_fresh {
+        return Err(
+            "Workspace editor state is unknown; reconnect and wait for a fresh buffer report"
+                .into(),
+        );
     }
     Ok(())
 }

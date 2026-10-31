@@ -335,7 +335,7 @@ html.theme-light {
   --ui-elevation-floating: 0 8px 24px color-mix(in oklab, var(--color-scrim) 10%, transparent),
     0 1px 2px color-mix(in oklab, var(--color-scrim) 8%, transparent);
   --ui-tone-neutral-on-solid: var(--palette-solidInk);
-  --ui-primary-pressed: color-mix(in oklab, var(--color-content) 90%, var(--color-background-base));
+  --ui-primary-pressed: color-mix(in oklab, var(--color-content) 90%, var(--ui-tint-base));
   --ui-tone-status-on-solid: var(--palette-solidInk);
   --ui-tone-status-interaction-ink: var(--palette-scrim);
 }
@@ -369,49 +369,51 @@ html.theme-light {
   --ui-text-secondary: color-mix(
     in srgb,
     var(--color-content) var(--appearance-secondary-strength, 85%),
-    var(--color-background-base)
+    var(--ui-tint-base)
   );
-  --ui-text-disabled: color-mix(in srgb, var(--color-content) 60%, var(--color-background-base));
-  --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 82%, var(--color-background-base));
+  --ui-text-disabled: color-mix(in srgb, var(--color-content) 60%, var(--ui-tint-base));
+  --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 82%, var(--ui-tint-base));
   --ui-terminal-suggestion: color-mix(
     in oklab,
     var(--color-info) 55%,
-    var(--color-background-base)
+    var(--ui-tint-base)
   );
   /* Canvas = navigation panel < reading/form surface < floating surface.
      Navigation shares the chat ground; existing borders separate panes (V3-033).
-     Derive every layer from the user's tint rather than a second gray palette. */
+     Derive every layer from the user's tint rather than a second gray palette. Layers mix with
+     --ui-tint-base (the palette ground), not the painted canvas, so they keep the same steps when
+     the Pure background paints the canvas pure black or white (V3-039). */
   --ui-surface-panel: var(--ui-chat-canvas);
-  --ui-surface: color-mix(in oklab, var(--color-content) 10%, var(--color-background-base));
+  --ui-surface: color-mix(in oklab, var(--color-content) 10%, var(--ui-tint-base));
   /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
   --ui-startup-surface: var(--palette-scrim);
   --ui-startup-text: var(--palette-solidInk);
-  --ui-surface-raised: color-mix(in oklab, var(--color-content) 16%, var(--color-background-base));
+  --ui-surface-raised: color-mix(in oklab, var(--color-content) 16%, var(--ui-tint-base));
   --ui-conflict-current-surface: color-mix(
     in oklab,
     var(--color-conflict-ours) 12%,
-    var(--color-background-base)
+    var(--ui-tint-base)
   );
   --ui-conflict-incoming-surface: color-mix(
     in oklab,
     var(--color-conflict-theirs) 12%,
-    var(--color-background-base)
+    var(--ui-tint-base)
   );
   /* Intra-conflict differences sit on top of the side's line tint. */
   --ui-conflict-current-word: color-mix(in oklab, var(--color-conflict-ours) 30%, transparent);
   --ui-conflict-incoming-word: color-mix(in oklab, var(--color-conflict-theirs) 30%, transparent);
   /* Keep fields and muted controls at their existing tone independently of navigation. */
-  --ui-surface-muted: color-mix(in oklab, var(--color-content) 5%, var(--color-background-base));
+  --ui-surface-muted: color-mix(in oklab, var(--color-content) 5%, var(--ui-tint-base));
   /* Hover stays a transient step below selection so the two never read alike. */
-  --ui-surface-hover: color-mix(in oklab, var(--color-content) 13%, var(--color-background-base));
-  --ui-surface-pressed: color-mix(in oklab, var(--color-content) 17%, var(--color-background-base));
+  --ui-surface-hover: color-mix(in oklab, var(--color-content) 13%, var(--ui-tint-base));
+  --ui-surface-pressed: color-mix(in oklab, var(--color-content) 17%, var(--ui-tint-base));
   --ui-surface-selected: color-mix(in oklab, var(--color-content) 15%, var(--ui-surface-muted));
   --ui-border-accent: var(--ui-interaction-ink);
   /* One writing surface owner: identical at rest and while typing. */
   /* The writing box is the reading surface one tier above the chat canvas, not the popup step:
      distinct from the canvas (and from a background image behind it) without a hard jump.
      Popups, menus and modals keep --ui-surface-raised. */
-  --ui-chat-canvas: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
+  --ui-chat-canvas: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
   --ui-composer-surface: var(--ui-surface);
   --ui-composer-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-composer-surface));
   --ui-composer-shadow: none;
@@ -424,8 +426,8 @@ html.theme-light {
      which the light, dark and custom themes already override, so one definition serves all. Inputs,
      selected rows, focus rings and drag targets keep their own boundary roles. */
   --ui-settings-group-surface: transparent;
-  --ui-settings-group-border: color-mix(in oklab, var(--color-content) 15%, var(--color-background-base));
-  --ui-settings-hairline: color-mix(in oklab, var(--color-content) 9%, var(--color-background-base));
+  --ui-settings-group-border: color-mix(in oklab, var(--color-content) 15%, var(--ui-tint-base));
+  --ui-settings-hairline: color-mix(in oklab, var(--color-content) 9%, var(--ui-tint-base));
   --ui-settings-row-hover: color-mix(in oklab, var(--color-content) 4%, transparent);
   --ui-radius-card: 0.5rem;
   /* One scrollbar family for native bars and custom rails (editor, rulers). */
@@ -462,8 +464,8 @@ html.theme-light {
     var(--ui-interaction-ink) var(--ui-overlay-selection-strength),
     transparent
   );
-  --ui-primary-hover: color-mix(in oklab, var(--color-content) 85%, var(--color-background-base));
-  --ui-primary-pressed: color-mix(in oklab, var(--color-content) 75%, var(--color-background-base));
+  --ui-primary-hover: color-mix(in oklab, var(--color-content) 85%, var(--ui-tint-base));
+  --ui-primary-pressed: color-mix(in oklab, var(--color-content) 75%, var(--ui-tint-base));
   --ui-control-thumb: var(--color-on-solid);
   --ui-control-thumb-border: color-mix(in oklab, var(--color-scrim) 5%, transparent);
   --ui-control-thumb-shadow: 0 1px 4px color-mix(in oklab, var(--color-scrim) 20%, transparent);
@@ -512,6 +514,9 @@ html.theme-light {
   --selection-hover-strength: 15%;
   --selection-emphasis-strength: 20%;
   --background-lightness: var(--theme-dark-lightness);
+  /* The palette ground every derived layer mixes from. The painted canvas
+     (--color-background-base) equals it unless the Pure background is active. */
+  --ui-tint-base: hsl(var(--theme-hue) var(--theme-saturation) var(--background-lightness));
   --content-lightness: 92%;
   --link-color: var(--palette-hex7dd3fc);
   --color-skill: var(--palette-hexe8c547);
@@ -596,25 +601,24 @@ html.theme-light {
   --theme-light-saturation: calc(var(--theme-saturation) * 0.2);
   --background-lightness: 98.6%;
   --content-lightness: 13%;
-  --color-background-base: hsl(
-    var(--theme-hue) var(--theme-light-saturation) var(--background-lightness)
-  );
+  --ui-tint-base: hsl(var(--theme-hue) var(--theme-light-saturation) var(--background-lightness));
+  --color-background-base: var(--ui-tint-base);
   --color-content: hsl(
     var(--theme-hue) calc(var(--theme-saturation) * 0.35) var(--content-lightness)
   );
   /* Navigation and chat share the near-white canvas, separated by existing borders;
      editable and floating surfaces retain their paper-white roles. */
   --ui-surface-panel: var(--ui-chat-canvas);
-  --ui-surface: color-mix(in oklab, var(--color-background-base) 35%, var(--palette-solidInk));
+  --ui-surface: color-mix(in oklab, var(--ui-tint-base) 35%, var(--palette-solidInk));
   --ui-surface-raised: var(--palette-solidInk);
-  --ui-surface-muted: var(--color-background-base);
+  --ui-surface-muted: var(--ui-tint-base);
   --ui-surface-hover: color-mix(in oklab, var(--color-content) 5%, var(--ui-surface));
   --ui-surface-pressed: color-mix(in oklab, var(--color-content) 9%, var(--ui-surface));
   /* Calm selected fill: a neutral step firmer than hover. Hue comes only from the
      user's tint, never from the accent, so selection reads the same for every accent. */
   --ui-surface-selected: color-mix(in oklab, var(--color-content) 11%, var(--ui-surface));
 
-  --ui-pane-border: color-mix(in oklab, var(--color-content) 9%, var(--color-background-base));
+  --ui-pane-border: color-mix(in oklab, var(--color-content) 9%, var(--ui-tint-base));
   --ui-control-border: color-mix(in oklab, var(--color-content) 52%, var(--ui-surface-muted));
   --ui-editor-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface));
   --ui-chat-canvas: var(--color-background-base);
@@ -633,6 +637,23 @@ html.theme-light {
   --color-diff-add-fg: var(--palette-hex047857);
   --color-diff-del-fg: var(--palette-hexbe123c);
   color-scheme: light;
+}
+
+/* Pure background (V3-039, owner decision 2026-10-31; default on): the canvas every pane shares
+   (window, project rail, session sidebar, chat, side panels, settings) is pure black in dark mode
+   and pure white in light mode for every palette. appearance.ts sets the attribute only while a
+   theme palette is active; custom surface colors keep their tinted canvas. Derived layers keep
+   mixing from --ui-tint-base, so cards, fields, composer, popovers, hover/selection and borders
+   keep their palette steps above the pure ground. Native glass keeps its opacity settings. */
+html[data-canvas-background="pure"] {
+  --color-background-base: var(--palette-canvasPureDark);
+  --ui-chat-canvas: var(--color-background-base);
+}
+html.theme-light[data-canvas-background="pure"] {
+  --color-background-base: var(--palette-canvasPureLight);
+  /* Paper-white reading surfaces would vanish into the white canvas; one faint tint step keeps
+     bubbles, code and cards readable as surfaces. Hover/pressed/selected derive from it. */
+  --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
 }
 
 /* Native ranges keep their text readable; transparent overlay editors below
@@ -874,8 +895,10 @@ html.theme-light .sidebar-glass {
 }
 
 html.has-native-glass:not(.theme-light) .sidebar-glass {
-  background: hsl(
-    var(--theme-hue) var(--theme-saturation) var(--background-lightness) / var(--sidebar-opacity)
+  background: color-mix(
+    in srgb,
+    var(--color-background-base) calc(var(--sidebar-opacity) * 100%),
+    transparent
   );
 }
 

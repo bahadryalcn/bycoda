@@ -400,6 +400,10 @@ fn write_controlled_within(
     after_io: impl FnOnce() + Send + 'static,
     wait: Duration,
 ) -> Result<(), String> {
+    // Idempotent; a no-op when the command already queued before its lease.
+    let deadline = Instant::now() + wait;
+    admission.physical.acquire(deadline)?;
+    let wait = deadline.saturating_duration_since(Instant::now());
     if let Some(lease) = authority.as_mut() {
         lease.begin_external()?;
     }
@@ -410,7 +414,7 @@ fn write_controlled_within(
             let mut stdin = live
                 .stdin
                 .try_lock()
-                .map_err(|_| "Previous provider write is still in flight; wait before retrying".to_string())?;
+                .map_err(|_| crate::harness::PROVIDER_NOT_READING.to_string())?;
             stdin
                 .write_all(line.as_bytes())
                 .and_then(|_| stdin.write_all(b"\n"))
@@ -460,13 +464,16 @@ pub async fn harness_write_controlled(
     tauri::async_runtime::spawn_blocking(move || {
         // The write deadline starts before the lease wait, as in `harness_write`.
         let deadline = Instant::now() + CONTROLLED_WRITE_BUDGET;
+        // Queue behind earlier writes to this child (FIFO) before taking a lease.
+        let mut admission = admission;
+        admission.physical.acquire(deadline)?;
         let lease = reserve_authority_within(
             gate,
             target,
             "provider-stdin",
             scope,
             false,
-            AUTHORITY_LEASE_WAIT,
+            AUTHORITY_LEASE_WAIT.min(deadline.saturating_duration_since(Instant::now())),
         )?;
         let line = crate::social_bridge::authorize_acp_frame(&session_id, line);
         let line = crate::runtime_logs_bridge::authorize_acp_frame(&session_id, line);

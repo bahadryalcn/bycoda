@@ -15,6 +15,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { announceSlowProviderStartup, PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -106,7 +107,7 @@ import {
   mergeToolPreview,
 } from "../../core/preview";
 
-const INIT_TIMEOUT_MS = 20_000;
+const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 const AUTH_TIMEOUT_MS = 60_000;
 const SESSION_TIMEOUT_MS = 30_000;
 
@@ -347,7 +348,7 @@ export async function cancelCursorTurn(
   live.questions.clear();
   await acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
   if (!ownsOperation(context, live.handle, live.operation)) return;
-  live.acp.rejectPending(new Error("cancelled"));
+  live.acp.rejectPending(new Error("cancelled"), { keepNativeOutput: true });
 }
 
 /** Kill the Cursor process but keep the ACP session id so we can session/load. */
@@ -416,6 +417,15 @@ export function bindCursorSession(threadId: string, acpSessionId: string, cwd: s
 }
 
 async function ensureLive(input: SendTurnInput): Promise<Live> {
+  const startupDone = announceSlowProviderStartup(input.onEvent, "Cursor");
+  try {
+    return await ensureStartedLive(input);
+  } finally {
+    startupDone();
+  }
+}
+
+async function ensureStartedLive(input: SendTurnInput): Promise<Live> {
   assertProviderOperation(input.operationContext);
 
   const existing = liveByThread.get(input.sessionId);

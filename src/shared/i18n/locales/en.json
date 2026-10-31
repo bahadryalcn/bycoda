@@ -10059,5 +10059,18 @@
   "Answer the open question before clearing the conversation.": "Answer the open question before clearing the conversation.",
   "Send or delete the queued messages before clearing the conversation.": "Send or delete the queued messages before clearing the conversation.",
   "Decide the pending approval before clearing the conversation.": "Decide the pending approval before clearing the conversation.",
-  "Finish editing the queued message before clearing the conversation.": "Finish editing the queued message before clearing the conversation."
+  "Finish editing the queued message before clearing the conversation.": "Finish editing the queued message before clearing the conversation.",
+  "The previous turn is still being cleaned up. Your message stays queued and will be sent when it finishes.": "The previous turn is still being cleaned up. Your message stays queued and will be sent when it finishes.",
+  "The previous turn is still being cleaned up. This message will be sent when it finishes.": "The previous turn is still being cleaned up. This message will be sent when it finishes.",
+  "The conversation is still busy. The message stays queued. Try again in a moment.": "The conversation is still busy. The message stays queued. Try again in a moment.",
+  "The conversation is still getting ready. This message will be sent when it is free.": "The conversation is still getting ready. This message will be sent when it is free.",
+  "Starting {p0}…": "Starting {p0}…",
+  "The previous follow-up is still being delivered. Your message stays queued and will be sent when it finishes.": "The previous follow-up is still being delivered. Your message stays queued and will be sent when it finishes.",
+  "Earlier messages could not be loaded. Reopen this chat to retry.": "Earlier messages could not be loaded. Reopen this chat to retry.",
+  "Waiting for {p0}…": "Waiting for {p0}…",
+  "Background tone": "Background tone",
+  "Pure": "Pure",
+  "Tinted": "Tinted",
+  "Pure is true black in dark mode and white in light mode.": "Pure is true black in dark mode and white in light mode.",
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "Custom surface colors keep their own background. Choose a theme palette to use Pure."
 }

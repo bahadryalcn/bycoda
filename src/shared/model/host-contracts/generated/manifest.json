@@ -20,9 +20,9 @@
     "maxReplayAgeMs": 300000,
     "maxReplayBytes": 8388608,
     "maxReplayEvents": 2048,
-    "maxResponseTimeoutMs": 180000,
+    "maxResponseTimeoutMs": 600000,
     "maxSocketQueuedBytes": 8388608,
-    "maxSocketsPerDevice": 4,
+    "maxSocketsPerDevice": 12,
     "maxSubscriptionWindowBytes": 2097152,
     "maxSubscriptionsPerHost": 512,
     "maxSubscriptionsPerSocket": 64,
@@ -2188,7 +2188,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.sessions.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "anyOf": [
@@ -5775,6 +5775,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -5842,6 +5851,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -5909,6 +5927,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -5976,6 +6003,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -6043,6 +6079,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -6110,6 +6155,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -6177,6 +6231,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -6244,6 +6307,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -6311,6 +6383,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -6378,6 +6459,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -6445,6 +6535,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -6942,6 +7041,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -7009,6 +7117,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -7076,6 +7193,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -7143,6 +7269,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -7210,6 +7345,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -7277,6 +7421,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -7344,6 +7497,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -7411,6 +7573,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -7478,6 +7649,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -7545,6 +7725,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -7612,6 +7801,15 @@
                           "properties": {
                             "aliasTarget": { "type": "string" },
                             "contextWindow": { "type": "number" },
+                            "fastVariant": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": { "type": "string" },
+                                "nativeId": { "type": "string" }
+                              },
+                              "required": ["id", "nativeId"],
+                              "type": "object"
+                            },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -15680,7 +15878,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.files.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": { "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string" },
       "retry": "never",
       "scope": "device"
@@ -15705,7 +15903,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.files.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "items": { "type": "string" },
@@ -15735,7 +15933,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.files.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "items": {
@@ -15775,7 +15973,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.files.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": { "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string" },
       "retry": "safe-query",
       "scope": "device"
@@ -15801,7 +15999,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.files.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "items": {
@@ -15846,7 +16044,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.files.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -15897,7 +16095,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.files.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": { "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "null" },
       "retry": "never",
       "scope": "device"
@@ -15950,7 +16148,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.git.v2",
-      "responseTimeoutMs": 120000,
+      "responseTimeoutMs": 600000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": ["string", "null"]
@@ -15978,7 +16176,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.git.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -16065,7 +16263,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.git.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": { "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string" },
       "retry": "safe-query",
       "scope": "device"
@@ -16092,7 +16290,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.git.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -16131,7 +16329,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.git.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$defs": {
           "__schema0": {
@@ -16317,7 +16515,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.git.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -23462,7 +23660,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.read.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -23509,7 +23707,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.read.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -23555,7 +23753,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.read.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -23677,7 +23875,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.read.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "items": {
@@ -23723,7 +23921,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.read.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -23803,7 +24001,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.sessions.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "anyOf": [
@@ -23844,7 +24042,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.sessions.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$defs": {
           "__schema0": {
@@ -23970,7 +24168,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.sessions.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "anyOf": [
@@ -24259,7 +24457,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.sessions.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$defs": {
           "__schema0": {
@@ -27297,7 +27495,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.sessions.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$defs": {
           "__schema0": {
@@ -27598,7 +27796,7 @@
         "type": "object"
       },
       "requiredCapability": "transport.ws.sessions.v2",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 30000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -51380,5 +51578,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "99e514b39a7b622fab99dd1224d7a69b78fa268a27a68e14e5c51dffdbf7b865"
+  "schemaHash": "2302288d8992db47664f2699efd190912c9861350ea3e69c705dd84856cb3fec"
 }

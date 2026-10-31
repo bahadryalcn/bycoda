@@ -93,6 +93,7 @@ import { TranscriptTurnCache } from "../model/transcriptTurnCache";
 import { Shimmer } from "../../../shared/ui/Shimmer";
 import {
   hasPendingApproval,
+  HARNESS_TITLE,
   type Block,
   type HarnessId,
   type ModelTarget,
@@ -102,6 +103,9 @@ import {
 import { HarnessIcon } from "./HarnessIcon";
 import { useElapsedFrom } from "./useElapsedFrom";
 import { isBackgroundOnly } from "../model/activityDock";
+import { executionUserIndex } from "../model/executionTurn";
+import { deriveTurnActivity, turnClockOrigin, type TurnActivityPhase } from "../model/turnActivity";
+import { TurnActivityLine } from "./TurnActivityLine";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useTranscriptLayout } from "../hooks/useTranscriptLayout";
 import { useTranscriptAnchor } from "../hooks/useTranscriptAnchor";
@@ -170,6 +174,10 @@ type Props = {
   /** Work the agent left running when it yielded; the turn waits on it. */
   backgroundTasks?: string[];
   backgroundAgents?: number;
+  /** The provider's latest retry notice for the running turn. */
+  retryMessage?: string;
+  /** The app is still starting the send (lease, workspace, usage checks). */
+  preparingTurn?: boolean;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onAddToChat?: (text: string) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
@@ -215,6 +223,7 @@ function filterAuthErrors(harness: HarnessId | undefined, sourceBlocks: Block[])
 }
 
 function AgentTranscriptComponent({
+  sessionId,
   blocks: persistedBlocks,
   busy,
   historyLoading = false,
@@ -235,6 +244,8 @@ function AgentTranscriptComponent({
   liveStatusInDock = false,
   backgroundTasks,
   backgroundAgents,
+  retryMessage,
+  preparingTurn = false,
   onApproval,
   onAddToChat,
   onSaveNote,
@@ -376,6 +387,8 @@ function AgentTranscriptComponent({
   const preparingHandoff = blocks.some(
     (block) => block.role === "handoff" && block.handoff?.status === "preparing",
   );
+  // The prompt whose run is in flight; a mid-turn message continues its clock.
+  const runOwner = busy ? blocks[executionUserIndex(blocks)] : undefined;
 
   // In the chat layout a sent prompt rises from the upper screen into its
   // anchored spot at the top. On mount this only plays for a session's first
@@ -574,6 +587,20 @@ function AgentTranscriptComponent({
             const settled = !(busy && isLastTurn);
             const live = visible && !settled && !preparingHandoff;
             const turnId = turn[0].id;
+            const runHarness = turnHarnesses?.[turnIndex] ?? harness;
+            const activity = live
+              ? deriveTurnActivity({
+                  turn,
+                  responded:
+                    !!runOwner?.continuationOf ||
+                    (runOwner?.startedAt != null && runOwner.durationMs == null),
+                  provider: runHarness ? HARNESS_TITLE[runHarness] : undefined,
+                  retryMessage,
+                  preparing: preparingTurn,
+                  waiting: waitingForApproval || pendingQuestion || !!backgroundTasks?.length,
+                })
+              : null;
+            const activityOwnsClock = !!activity && !activity.afterSilence && liveStatusInDock;
             return (
               <Turn
                 key={turnId}
@@ -596,6 +623,11 @@ function AgentTranscriptComponent({
                 liveStatusInDock={live && liveStatusInDock}
                 backgroundTasks={live ? backgroundTasks : undefined}
                 backgroundAgents={live ? backgroundAgents : undefined}
+                activityPhase={activity?.phase}
+                activityLabel={activity?.label}
+                activityAfterSilence={activity?.afterSilence}
+                activityOrigin={activityOwnsClock ? turnClockOrigin(runOwner) : undefined}
+                activitySessionId={activityOwnsClock ? sessionId : undefined}
                 anchorPrompt={promptAnchor && anchorTurn && isLastTurn}
                 latestTurnAccessory={isLastTurn && !parked ? latestTurnAccessory : undefined}
                 workOpen={openWork[turnId] ?? false}
@@ -748,6 +780,12 @@ type TurnProps = {
   liveStatusInDock: boolean;
   backgroundTasks?: string[];
   backgroundAgents?: number;
+  /** The live turn's activity line, while visible rows do not say what it is doing. */
+  activityPhase?: TurnActivityPhase;
+  activityLabel?: string;
+  activityAfterSilence?: boolean;
+  activityOrigin?: number;
+  activitySessionId?: string;
   anchorPrompt: boolean;
   latestTurnAccessory?: ReactNode;
   workOpen: boolean;
@@ -801,6 +839,11 @@ const Turn = memo(function Turn({
   liveStatusInDock,
   backgroundTasks,
   backgroundAgents,
+  activityPhase,
+  activityLabel,
+  activityAfterSilence = false,
+  activityOrigin,
+  activitySessionId,
   anchorPrompt,
   latestTurnAccessory,
   workOpen,
@@ -840,6 +883,10 @@ const Turn = memo(function Turn({
   // more work. Only the last one can still be the live group.
   const foldedAt = lastActivityIndex(items);
   const initialThinkingAt = initialThinkingIndex(items);
+  // While the turn is live, the activity line at its end stands in for the
+  // private-reasoning placeholder, with the same words plus how long.
+  const initialThinkingInLine =
+    live && activityPhase === "thinking" && !activityAfterSilence ? initialThinkingAt : -1;
   const startedAt = userBlock?.startedAt;
   // The agent starting its answer is the end of the work: fold the
   // groups then, not when the turn finally settles, so the collapse
@@ -1045,20 +1092,32 @@ const Turn = memo(function Turn({
             )),
           ];
         }
-        const row = (
-          <div
-            key={turnItemKey(item)}
-            data-transcript-search-item
-            data-transcript-search-current={isCurrentItem(item) || undefined}
-            className="flow-root pb-1"
-          >
-            {renderItem(item, itemIndex)}
-          </div>
-        );
-        if (itemIndex !== foldLineAt) return row;
-        return [foldLineRow, row];
+        const row =
+          itemIndex === initialThinkingInLine ? null : (
+            <div
+              key={turnItemKey(item)}
+              data-transcript-search-item
+              data-transcript-search-current={isCurrentItem(item) || undefined}
+              className="flow-root pb-1"
+            >
+              {renderItem(item, itemIndex)}
+            </div>
+          );
+        if (itemIndex !== foldLineAt) return row ?? [];
+        return row ? [foldLineRow, row] : [foldLineRow];
       })}
       {foldLineAt >= items.length ? foldLineRow : null}
+      {activityPhase && activityLabel ? (
+        <TurnActivityLine
+          phase={activityPhase}
+          label={activityLabel}
+          afterSilence={activityAfterSilence}
+          activityKey={turn}
+          origin={activityOrigin}
+          ownsClock={activityOrigin !== undefined}
+          sessionId={activitySessionId}
+        />
+      ) : null}
       {settled &&
         proposals
           .filter((block) => block.orchestration?.status !== "planning")

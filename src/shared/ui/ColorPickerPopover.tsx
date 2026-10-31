@@ -33,6 +33,7 @@ export function ColorSwatchRow({
   customHighlighted,
   onPickIndex,
   onToggleCustom,
+  className,
 }: {
   colors: readonly string[];
   labels?: readonly string[];
@@ -42,11 +43,13 @@ export function ColorSwatchRow({
   customHighlighted?: boolean;
   onPickIndex: (index: number) => void;
   onToggleCustom?: () => void;
+  /** External placement of the row (for example a grid of swatches); colours stay internal. */
+  className?: string;
 }) {
   const t = useT();
   const pipetteActive = customHighlighted ?? (customColor != null || customPickerOpen);
   return (
-    <div className={styles.swatchRow}>
+    <div className={className ? `${styles.swatchRow} ${className}` : styles.swatchRow}>
       {colors.map((color, index) => {
         const label = labels?.[index] ?? `Color ${index + 1}`;
         const selected =

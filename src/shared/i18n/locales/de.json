@@ -10059,5 +10059,18 @@
   "Answer the open question before clearing the conversation.": "Beantworte die offene Frage, bevor du die Unterhaltung leerst.",
   "Send or delete the queued messages before clearing the conversation.": "Sende oder lösche die wartenden Nachrichten, bevor du die Unterhaltung leerst.",
   "Decide the pending approval before clearing the conversation.": "Entscheide über die ausstehende Freigabe, bevor du die Unterhaltung leerst.",
-  "Finish editing the queued message before clearing the conversation.": "Beende das Bearbeiten der wartenden Nachricht, bevor du die Unterhaltung leerst."
+  "Finish editing the queued message before clearing the conversation.": "Beende das Bearbeiten der wartenden Nachricht, bevor du die Unterhaltung leerst.",
+  "The previous turn is still being cleaned up. Your message stays queued and will be sent when it finishes.": "Der vorherige Durchgang wird noch aufgeräumt. Deine Nachricht bleibt in der Warteschlange und wird gesendet, sobald er fertig ist.",
+  "The previous turn is still being cleaned up. This message will be sent when it finishes.": "Der vorherige Durchgang wird noch aufgeräumt. Diese Nachricht wird gesendet, sobald er fertig ist.",
+  "The conversation is still busy. The message stays queued. Try again in a moment.": "Die Unterhaltung ist noch beschäftigt. Die Nachricht bleibt in der Warteschlange. Versuche es gleich noch einmal.",
+  "The conversation is still getting ready. This message will be sent when it is free.": "Die Unterhaltung wird noch vorbereitet. Diese Nachricht wird gesendet, sobald sie frei ist.",
+  "Starting {p0}…": "{p0} wird gestartet…",
+  "The previous follow-up is still being delivered. Your message stays queued and will be sent when it finishes.": "Die vorherige Nachricht wird noch zugestellt. Deine Nachricht bleibt in der Warteschlange und wird danach gesendet.",
+  "Earlier messages could not be loaded. Reopen this chat to retry.": "Frühere Nachrichten konnten nicht geladen werden. Öffne diesen Chat erneut, um es noch einmal zu versuchen.",
+  "Waiting for {p0}…": "Warten auf {p0}…",
+  "Background tone": "Hintergrundton",
+  "Pure": "Rein",
+  "Tinted": "Getönt",
+  "Pure is true black in dark mode and white in light mode.": "Rein ist echtes Schwarz im dunklen Modus und Weiß im hellen Modus.",
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "Eigene Oberflächenfarben behalten ihren eigenen Hintergrund. Wähle eine Designpalette, um Rein zu verwenden."
 }

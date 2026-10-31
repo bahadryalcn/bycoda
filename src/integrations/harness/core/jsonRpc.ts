@@ -42,6 +42,12 @@ export class JsonRpcResponseError extends Error {
 // A child wedged hard enough to block stdin writes is unrecoverable; the
 // write deadline fails the request so the caller can recycle the generation.
 const WRITE_TIMEOUT_MS = 15_000;
+const WRITE_TIMEOUT_MAX_MS = 120_000;
+/** Control frames keep the short bound. A frame carrying attachments can fill the
+ * stdin pipe and legitimately wait for a slow-starting CLI to begin reading. */
+function writeTimeoutMs(bytes: number): number {
+  return Math.min(WRITE_TIMEOUT_MAX_MS, WRITE_TIMEOUT_MS + Math.max(0, Math.ceil(bytes / 65_536) - 1) * 1_000);
+}
 
 export type JsonRpcHandlers = {
   onNotification?: (
@@ -131,8 +137,12 @@ export class JsonRpcClient {
   }
 
   /** Drop in-flight client requests so a cancelled turn can unwind. */
-  rejectPending(error?: Error) {
-    if (this.pending.size) invalidateChildOutput(this.child, "rpc-pending-rejected");
+  rejectPending(error?: Error, options?: { keepNativeOutput?: boolean }) {
+    // A Stop cancels one prompt on a warm process. Keep the construction's stream
+    // usable: a late response that actually carries native output for the
+    // cancelled prompt still fails its own work as an unmatched response.
+    if (this.pending.size && !options?.keepNativeOutput)
+      invalidateChildOutput(this.child, "rpc-pending-rejected");
     const err = error ?? new Error("cancelled");
     for (const [, pending] of this.pending) pending.reject(err);
     this.pending.clear();
@@ -420,6 +430,8 @@ export class JsonRpcClient {
     // Its settlement is not provider consumption or process-route attestation.
     onActualWrite?.(actualWrite);
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const lineBytes = new TextEncoder().encode(line).length;
+    const writeTimeout = writeTimeoutMs(lineBytes);
     try {
       await Promise.race([
         actualWrite,
@@ -428,10 +440,10 @@ export class JsonRpcClient {
             () =>
               reject(
                 new Error(
-                  `${this.label} ${operation} write timed out after ${WRITE_TIMEOUT_MS} ms (session ${this.sessionId}, ${new TextEncoder().encode(line).length} bytes)`,
+                  `${this.label} ${operation} write timed out after ${writeTimeout} ms (session ${this.sessionId}, ${lineBytes} bytes)`,
                 ),
               ),
-            WRITE_TIMEOUT_MS,
+            writeTimeout,
           );
         }),
       ]);

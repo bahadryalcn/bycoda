@@ -484,9 +484,12 @@ fn rpc_agent() -> &'static ureq::Agent {
 const DEFAULT_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// The renderer abandons a run-lease acquire after 4 s (`RUN_LEASE_ACQUIRE_TIMEOUT_MS`).
 const INTERACTIVE_LEASE_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
-const INTERACTIVE_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const INTERACTIVE_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Workspace and policy reads resolve the repository identity with git, which
+/// takes seconds on a large repository or a cold disk.
+const WORKSPACE_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const INTERACTIVE_ACTION_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-const GIT_STATUS_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const GIT_STATUS_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const ATTACHMENT_CHUNK_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const CONNECTION_REFUSED: &str =
     "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
@@ -508,11 +511,11 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         | "attachments.claims"
         | "attachments.release"
         | "attachments.status"
-        | "workspaces.get"
-        | "workspaces.list"
-        | "projects.workspacePolicy.get"
         | "host.settings.get"
         | "shell.profiles" => INTERACTIVE_READ_RPC_TIMEOUT,
+        "workspaces.get" | "workspaces.list" | "projects.workspacePolicy.get" => {
+            WORKSPACE_READ_RPC_TIMEOUT
+        }
         // One 512 KiB chunk per call; allow slow SSH links.
         "attachments.upload" | "attachments.read" => ATTACHMENT_CHUNK_RPC_TIMEOUT,
         "sessions.update"

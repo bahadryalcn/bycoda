@@ -9,7 +9,7 @@ export const WS_LIMITS = Object.freeze({
   streamChunkBytes: 65_536,
   maxPendingRpc: 64,
   maxAuthenticatedSockets: 64,
-  maxSocketsPerDevice: 4,
+  maxSocketsPerDevice: 12,
   maxUnauthenticatedSockets: 16,
   maxUnauthenticatedSocketsPerSource: 4,
   maxAuthenticationJobs: 16,
@@ -33,7 +33,7 @@ export const WS_LIMITS = Object.freeze({
   defaultResponseTimeoutMs: 12_000,
   defaultAdmissionTimeoutMs: 5_000,
   minResponseTimeoutMs: 1_000,
-  maxResponseTimeoutMs: 180_000,
+  maxResponseTimeoutMs: 600_000,
 });
 
 /** A physical transport owner schedules retries; views never own another loop. */

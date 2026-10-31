@@ -6,6 +6,8 @@ import { isFilesystemTab, type FilePaneTab } from "../../../features/workspace/m
 type BufferState = { path: string; dirty: boolean };
 
 const BUFFER_KEEPALIVE_MS = 25_000;
+/** Untitled and relative-path tabs cannot name a workspace file; native skips them too. */
+const ABSOLUTE_PATH = /^(?:[A-Za-z]:[\\/]|\\\\|\/)/;
 
 export function managedWorkspaceBuffers(
   files: readonly FilePaneTab[],
@@ -16,6 +18,7 @@ export function managedWorkspaceBuffers(
     if (
       !isFilesystemTab(file) ||
       !file.path ||
+      !ABSOLUTE_PATH.test(file.path) ||
       isRemoteProjectPath(file.path) ||
       isRemoteProjectPath(file.cwd)
     )

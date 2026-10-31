@@ -31,7 +31,7 @@ import {
   nativeControlTurnReceipt,
   type ControlTurnHandle,
 } from "./controlTurn";
-import { drainProviderRetirements, retireProviderOwner } from "./providerRetirement";
+import { drainRetirementsForWriter, retireProviderOwner } from "./providerRetirement";
 import { beginHandoffPhase } from "./handoffPhase";
 import { TurnNotReadyError } from "./types";
 import type {
@@ -282,9 +282,6 @@ function assertAdapterOperationReady(sessionId: string): void {
   adapterOperations.delete(sessionId);
 }
 
-/** How long a different provider's retirement may delay the new turn. */
-const OTHER_PROVIDER_DRAIN_MS = 2_000;
-
 /**
  * Wait for the previous provider processes of this session before a turn starts.
  * Only a process of the provider this turn is about to run can become a second
@@ -293,33 +290,7 @@ const OTHER_PROVIDER_DRAIN_MS = 2_000;
  * slow or failed stop of it is warned about and the turn continues.
  */
 async function drainRetirementsBestEffort(sessionId: string, harness: HarnessId): Promise<void> {
-  const sameWriter = (family: string) =>
-    family.startsWith(`${harness}.`) || family.startsWith("generic-acp.");
-  const others = drainProviderRetirements({
-    ownerKey: sessionId,
-    includeFamily: (family) => !sameWriter(family),
-  }).catch((error: unknown) => warnCleanup("previous provider retirement", error));
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await drainProviderRetirements({ ownerKey: sessionId, includeFamily: sameWriter });
-  } catch (error) {
-    warnCleanup("provider retirement drain", error);
-    throw error;
-  }
-  await Promise.race([
-    others,
-    new Promise<void>((resolve) => {
-      timer = setTimeout(() => {
-        warnCleanup(
-          "previous provider retirement",
-          new Error("still stopping; continuing with the new provider"),
-        );
-        resolve();
-      }, OTHER_PROVIDER_DRAIN_MS);
-    }),
-  ]).finally(() => {
-    if (timer !== undefined) clearTimeout(timer);
-  });
+  await drainRetirementsForWriter(sessionId, harness, warnCleanup);
 }
 
 function beginAdapterOperation(
@@ -399,17 +370,37 @@ async function beginOperationControl(input: HarnessSessionInput): Promise<{
   return { control, processes };
 }
 
+const CONTROL_FINISH_WAIT_MS = 15_000;
+
 async function endOperationControl(
   sessionId: string,
   control: ControlTurnHandle | undefined,
 ): Promise<void> {
   activeTurnSessions.delete(sessionId);
   if (!control) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await finishNativeControlTurn(control);
+    // The finish drains the turn's provider writes. A provider that stopped
+    // reading its input must not hold this session's whole queue forever: the
+    // finish keeps running, the next turn replaces this authorization natively.
+    const finishing = finishNativeControlTurn(control);
+    finishing.catch(() => undefined);
+    await Promise.race([
+      finishing,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          warnCleanup(
+            "native control turn finish",
+            new Error(`not confirmed within ${CONTROL_FINISH_WAIT_MS / 1000} s; continuing`),
+          );
+          resolve();
+        }, CONTROL_FINISH_WAIT_MS);
+      }),
+    ]);
   } catch (error) {
     warnCleanup("native control turn finish", error);
   } finally {
+    if (timer !== undefined) clearTimeout(timer);
     if (nativeControlTurns.get(sessionId)?.handle === control)
       nativeControlTurns.delete(sessionId);
   }

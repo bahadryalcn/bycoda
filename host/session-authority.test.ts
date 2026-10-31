@@ -219,10 +219,21 @@ it("fails closed on changed desktop metadata without destroying a still-valid gr
   const grant = await s.access.issueSessionGrant("native");
   await s.resolver.prepare("native");
   s.changeFingerprint();
-  await expect(s.store.db.scope(() => s.resolver.current("native"))).rejects.toBeInstanceOf(
-    SessionAuthorityUnavailable,
-  );
-  expect(await s.store.db.scope(() => s.access.principalForToken(grant.token))).toBeUndefined();
+  // A change right after the read is normal desktop activity and is tolerated.
+  await expect(s.store.db.scope(() => s.resolver.current("native"))).resolves.toMatchObject({
+    provider: "codex",
+  });
+  // A read that is no longer fresh is repeated, without destroying the grant.
+  const now = Date.now();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
+  try {
+    await expect(s.store.db.scope(() => s.resolver.current("native"))).rejects.toBeInstanceOf(
+      SessionAuthorityUnavailable,
+    );
+    expect(await s.store.db.scope(() => s.access.principalForToken(grant.token))).toBeUndefined();
+  } finally {
+    clock.mockRestore();
+  }
   expect(await s.access.principalForToken(grant.token)).toBeTruthy();
 });
 

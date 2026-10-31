@@ -180,6 +180,8 @@ struct LiveChild {
     process: Option<Arc<crate::native_provider_output::NativeOutputChild>>,
     exit: Option<Arc<ManagedProviderExit>>,
     writers: Arc<WriteGate>,
+    /// FIFO that serializes every stdin write (plain and controlled) to this child.
+    order: Arc<WriteOrder>,
 }
 
 impl LiveChild {
@@ -191,15 +193,15 @@ impl LiveChild {
             .ok_or("Original process owner unavailable")?
             .pin()
             .map_err(|e| e.to_string())?;
-        let writing_key = Arc::as_ptr(&self.writers) as usize;
-        if !inflight_writes().lock().unwrap_or_else(|e| e.into_inner()).insert(writing_key) {
-            return Err("Previous provider write is still in flight; wait before retrying".into());
-        }
+        // The ticket is taken here, at command entry, so writes leave in arrival
+        // order. This never blocks; the wait happens in `LiveWrite::acquire`.
         Ok(LiveWrite {
-            writing_key,
+            ticket: self.order.ticket(),
+            order: self.order.clone(),
             _permit: permit,
             _process: process,
             gate: self.writers.clone(),
+            acquired: false,
             started: false,
             completed: false,
         })
@@ -254,20 +256,95 @@ impl LiveChild {
     }
 }
 
-fn inflight_writes() -> &'static Mutex<std::collections::HashSet<usize>> {
-    static WRITES: OnceLock<Mutex<std::collections::HashSet<usize>>> = OnceLock::new();
-    WRITES.get_or_init(Mutex::default)
+const WRITE_ORDER_POLL: Duration = Duration::from_millis(100);
+pub(crate) const PROVIDER_NOT_READING: &str = "The provider is not reading its input; the previous message's delivery is unknown. Stop the turn and retry.";
+
+/// Per-child FIFO of provider stdin writes. Provider clients legitimately issue
+/// writes back-to-back (handshake, notifications, approval responses, steer), so
+/// an overlapping write waits for its predecessors instead of being refused. A
+/// slot is held until the writer thread itself finishes, so a wedged or timed-out
+/// write keeps later writes from starting and they refuse after their own budget.
+#[derive(Default)]
+struct WriteOrder {
+    state: Mutex<WriteOrderState>,
+    changed: Condvar,
+}
+#[derive(Default)]
+struct WriteOrderState {
+    next: u64,
+    serving: u64,
+    /// Tickets released before their turn; skipped when serving reaches them.
+    abandoned: std::collections::BTreeSet<u64>,
+}
+impl WriteOrder {
+    fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+    fn ticket(&self) -> u64 {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let ticket = state.next;
+        state.next += 1;
+        ticket
+    }
+    /// A free slot is taken even when the deadline has already passed.
+    fn wait_turn(&self, ticket: u64, deadline: Instant, gate: &WriteGate) -> Result<(), String> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        loop {
+            if state.serving == ticket {
+                return Ok(());
+            }
+            if gate.is_closing() {
+                return Err("Original process is closing".into());
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(PROVIDER_NOT_READING.into());
+            }
+            state = self
+                .changed
+                .wait_timeout(state, left.min(WRITE_ORDER_POLL))
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+    }
+    fn release(&self, ticket: u64) {
+        let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let state = &mut *guard;
+        if ticket < state.serving {
+            return;
+        }
+        if ticket > state.serving {
+            state.abandoned.insert(ticket);
+            return;
+        }
+        state.serving += 1;
+        while state.abandoned.remove(&state.serving) {
+            state.serving += 1;
+        }
+        self.changed.notify_all();
+    }
 }
 
 struct LiveWrite {
-    writing_key: usize,
+    ticket: u64,
+    order: Arc<WriteOrder>,
     _permit: process_lifecycle::WritePermit,
     _process: process_lifecycle::ProcessPin,
     gate: Arc<WriteGate>,
+    acquired: bool,
     started: bool,
     completed: bool,
 }
 impl LiveWrite {
+    /// Waits for this write's turn on the child's stdin, at most until `deadline`.
+    /// Idempotent. Call it only from a blocking section.
+    fn acquire(&mut self, deadline: Instant) -> Result<(), String> {
+        if !self.acquired {
+            self.order.wait_turn(self.ticket, deadline, &self.gate)?;
+            self.acquired = true;
+        }
+        Ok(())
+    }
     fn finish(mut self, result: &Result<(), String>) {
         if let Err(error) = result {
             self.gate.record_failure(error.clone());
@@ -277,7 +354,7 @@ impl LiveWrite {
 }
 impl Drop for LiveWrite {
     fn drop(&mut self) {
-        inflight_writes().lock().unwrap_or_else(|e| e.into_inner()).remove(&self.writing_key);
+        self.order.release(self.ticket);
         if self.started && !self.completed {
             self.gate
                 .record_failure("Original writer settlement unknown".into());
@@ -331,6 +408,7 @@ fn owned_live_fixture<C: Into<OwnedChild>>(child: C) -> (Arc<LiveChild>, TestOwn
         process: Some(process.clone()),
         exit: Some(exit.clone()),
         writers: WriteGate::new(),
+        order: WriteOrder::new(),
     });
     let waiting = process.clone();
     thread::spawn(move || {
@@ -1122,6 +1200,23 @@ impl HarnessHost {
     }
 
     pub(crate) fn retire_managed_session(&self, session_id: &str) -> Result<(), String> {
+        self.retire_managed_session_inner(session_id, false)
+    }
+
+    /// Starting a replacement provider captures no files, so an earlier provider
+    /// whose exit already SETTLED with a failure (its process was waited and its
+    /// pipes drained; only bookkeeping such as a busy lease store failed) must not
+    /// block the session forever. A still-pending exit keeps refusing: that
+    /// provider may still be writing.
+    fn retire_managed_session_for_spawn(&self, session_id: &str) -> Result<(), String> {
+        self.retire_managed_session_inner(session_id, true)
+    }
+
+    fn retire_managed_session_inner(
+        &self,
+        session_id: &str,
+        tolerate_settled_failure: bool,
+    ) -> Result<(), String> {
         let mut routes = vec![session_id.to_owned()];
         routes.extend(
             self.lock_inner()
@@ -1166,6 +1261,10 @@ impl HarnessHost {
         for exit in &exits {
             // Do not capture files until the retained provider exit succeeds.
             if let Err(error) = exit.wait(deadline.saturating_duration_since(Instant::now())) {
+                if tolerate_settled_failure && exit.settled() {
+                    eprintln!("[harness] earlier provider exit settled with failure; continuing: {error}");
+                    continue;
+                }
                 return Err(format!("Provider may still be writing; cannot capture turn: {error}"));
             }
         }
@@ -2179,7 +2278,24 @@ fn harness_spawn_blocking(
             gate
         }
     };
-    let _spawn_guard = spawn_gate.try_lock().map_err(|_| "Another provider is starting for this session; wait before retrying")?;
+    // Back-to-back starts (resend after a failed start, model switch, warm
+    // respawn) queue behind the running start instead of being refused. The
+    // wait is bounded a little above the previous start's own retire deadline.
+    let _spawn_guard = {
+        let deadline = Instant::now() + SPAWN_GATE_WAIT;
+        loop {
+            match spawn_gate.try_lock() {
+                Ok(guard) => break guard,
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => break poisoned.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if Instant::now() >= deadline {
+                        return Err("Another provider is still starting for this session; try again shortly".into());
+                    }
+                    thread::sleep(Duration::from_millis(25));
+                }
+            }
+        }
+    };
     let control_turn = crate::control::capture_child_turn(
         &app,
         &issuer,
@@ -2190,7 +2306,7 @@ fn harness_spawn_blocking(
     )?;
     // Claim bounded original ownership before begin_spawn can retire A. A
     // capacity refusal therefore leaves the currently executing child intact.
-    host.retire_managed_session(&authority_target)?;
+    host.retire_managed_session_for_spawn(&authority_target)?;
     let mut process_start = host.reserve_process(&session_id)?;
     let gate = source.control_gate(&app)?;
     let scope = match (authority_environment_id, authority_generation) {
@@ -2306,6 +2422,7 @@ fn harness_spawn_blocking(
         process: Some(child.clone()),
         exit: Some(managed_exit.clone()),
         writers: WriteGate::new(),
+        order: WriteOrder::new(),
     });
     let receipt = live.receipt(&session_id);
     let binding_rejected = control_turn
@@ -2875,6 +2992,7 @@ const PROVIDER_WRITE_BUDGET: Duration = Duration::from_secs(12);
 /// upsert or delete can hold for seconds. Bound the wait so the write still has
 /// most of its budget left.
 const AUTHORITY_LEASE_WAIT: Duration = Duration::from_secs(5);
+const SPAWN_GATE_WAIT: Duration = Duration::from_secs(30);
 
 /// Reserves a native authority lease, waiting at most `wait`. On timeout
 /// nothing has been dispatched, so the caller refuses and a retry cannot
@@ -2921,7 +3039,7 @@ pub async fn harness_write(
     authority_generation: Option<u64>,
 ) -> Result<(), String> {
     let live = host.get_original(&session_id, construction_id.as_deref())?;
-    let admission = live.admit_write()?;
+    let mut admission = live.admit_write()?;
     let gate = if let Some(output) = &live.output {
         output.control_gate(&app)?
     } else {
@@ -2943,13 +3061,15 @@ pub async fn harness_write(
     let result = tauri::async_runtime::spawn_blocking(move || {
         // The write deadline starts before the lease wait.
         let deadline = Instant::now() + PROVIDER_WRITE_BUDGET;
+        // Queue behind earlier writes to this child (FIFO) before taking a lease.
+        admission.acquire(deadline)?;
         let lease = reserve_authority_within(
             gate,
             target,
             "provider-stdin",
             scope,
             finishing,
-            AUTHORITY_LEASE_WAIT,
+            AUTHORITY_LEASE_WAIT.min(deadline.saturating_duration_since(Instant::now())),
         )?;
         let line = crate::social_bridge::authorize_acp_frame(&line_session, line);
         let line = crate::runtime_logs_bridge::authorize_acp_frame(&line_session, line);
@@ -3032,6 +3152,10 @@ fn write_child_with_deadline_waiter(
         Duration,
     ) -> Result<Result<(), String>, mpsc::RecvTimeoutError>,
 ) -> Result<(), String> {
+    // Idempotent; a no-op when the command already queued before its lease.
+    let deadline = Instant::now() + timeout;
+    admission.acquire(deadline)?;
+    let timeout = deadline.saturating_duration_since(Instant::now());
     admission.started = true;
     if let Some(lease) = authority.as_mut() {
         if let Err(error) = lease.begin_external() {
@@ -3050,7 +3174,9 @@ fn write_child_with_deadline_waiter(
         let mut stdin = match writing.stdin.try_lock() {
             Ok(stdin) => stdin,
             Err(_) => {
-                let result = Err("Previous provider write is still in flight; wait before retrying".into());
+                // Writes are serialized before this point, so this only means the
+                // stdin owner is wedged outside the queue.
+                let result = Err(PROVIDER_NOT_READING.into());
                 if let Some(lease) = authority { let _ = lease.finish(); }
                 admission.finish(&result);
                 let _ = tx.send(result);
@@ -3062,6 +3188,9 @@ fn write_child_with_deadline_waiter(
             .and_then(|_| stdin.write_all(b"\n"))
             .and_then(|_| stdin.flush())
             .map_err(|e| format!("Failed to write to harness (pid {pid}, {bytes} bytes): {e}"));
+        // Unlock stdin before the queue slot is released so the next write cannot
+        // observe it locked.
+        drop(stdin);
         after_io();
         let cleanup = authority.map_or(Ok(()), |lease| lease.finish());
         let result = result.and(cleanup);
@@ -4643,6 +4772,7 @@ mod managed_retirement_tests {
             process: Some(process.clone()),
             exit: Some(exit.clone()),
             writers: WriteGate::new(),
+            order: WriteOrder::new(),
         });
         assert!(host
             .install_spawn("lightweight".into(), epoch, kill_all, live)
@@ -4744,6 +4874,7 @@ mod managed_retirement_tests {
             process: Some(process.clone()),
             exit: Some(exit.clone()),
             writers: WriteGate::new(),
+            order: WriteOrder::new(),
         });
         assert!(host
             .install_spawn("managed".into(), epoch, kill_all, live)
