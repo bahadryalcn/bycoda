@@ -5,6 +5,13 @@ description: Chat composer inventory for send, queue, steer, stop, drafts, attac
 
 # Chat composer
 
+## Failed provider-switch recovery, 2026-10-31
+
+Surface checklist: handoff metadata, submit failure/cancel, model selection, Retry, persistence, complete history/bounded context, and honest failed/cancelled divider feedback. Original pending source and private cleanup obligations stay distinct. A failed preparing divider no longer silently locks later provider choices. Only an identical unsent request from a known failed original-source handoff is omitted from retry context; the transcript and genuinely repeated delivered messages remain.
+
+Full archive includes previous attachment references with their owning Host and saved recovered context. Binary previews/functions are not copied into the archive; inline-only or missing files are labelled honestly. Existing context budgets, current prompt, account selection, drafts and permission gates remain. Actual feedback markup was reviewed at1280/800 in light/dark as an SSR layout fixture; interactive hooks have focused tests. This is not current native or real-provider acceptance. See temp/verification/2026-10-31-provider-switch/.
+
+
 ## Original follow-up and manual-operation context, 2026-10-30
 
 Registry captures a steer submission, actual adapter and original operation

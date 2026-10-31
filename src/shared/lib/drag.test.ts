@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   announceDrag,
   clearDropFeedback,
+  createDragPreview,
+  createListGap,
   clearDropIndicator,
   setDropFeedback,
   setDropIndicator,
@@ -131,5 +133,47 @@ describe("drag announcements", () => {
   it("ignores an empty message", () => {
     announceDrag("");
     expect(region()?.textContent ?? "").toBe("");
+  });
+});
+
+describe("drag preview", () => {
+  it("follows the pointer without ids or list markers, labels the copy, and removes it on settle", () => {
+    const source = row();
+    source.id = "source";
+    source.dataset.sessionCard = "one";
+    source.innerHTML = '<span id="inner">Title</span>';
+    const preview = createDragPreview(source, { clientX: 10, clientY: 10 });
+    const copy = document.querySelector<HTMLElement>(".pointer-drag-preview")!;
+    expect(copy.id).toBe("");
+    expect(copy.querySelector("#inner")).toBeNull();
+    expect(copy.dataset.sessionCard).toBeUndefined();
+    expect(copy.getAttribute("aria-hidden")).toBe("true");
+    preview.move({ clientX: 30, clientY: 50 }, { label: "Release to group" });
+    expect(copy.style.transform).toBe("translate3d(20px, 40px, 0)");
+    expect(copy.querySelector(".pointer-drag-preview-label")?.textContent).toBe("Release to group");
+    preview.move({ clientX: 30, clientY: 50 });
+    expect(copy.querySelector(".pointer-drag-preview-label")).toBeNull();
+    preview.settleTo(null);
+    expect(document.querySelector(".pointer-drag-preview")).toBeNull();
+  });
+});
+
+describe("list gap", () => {
+  it("collapses the source, spaces the target and removes every inline style on release", () => {
+    const list = document.createElement("ul");
+    const [a, b] = ["a", "b"].map(() => document.createElement("li"));
+    list.append(a, b);
+    document.body.append(list);
+    a.getBoundingClientRect = () => new DOMRect(0, 0, 100, 40);
+    const gap = createListGap(a);
+    gap.open(b, "after");
+    expect(a.style.getPropertyValue("height")).toBe("0px");
+    expect(b.style.getPropertyValue("margin-block-end")).toBe("40px");
+    gap.open(null);
+    expect(a.style.getPropertyValue("height")).toBe("40px");
+    expect(b.style.getPropertyValue("margin-block-end")).toBe("0px");
+    gap.release();
+    expect(a.hasAttribute("style")).toBe(false);
+    expect(b.hasAttribute("style")).toBe(false);
   });
 });

@@ -9680,5 +9680,13 @@
   "Waiting for confirmation": "等待确认",
   "Sending decision…": "正在发送决定…",
   "Decision was not sent. Check the request and try again.": "决定尚未发送。请检查请求后重试。",
-  "Open this request in its conversation to respond.": "请在所属对话中打开此请求以作出回应。"
+  "Open this request in its conversation to respond.": "请在所属对话中打开此请求以作出回应。",
+  "Output actions": "输出操作",
+  "Wrap lines": "自动换行",
+  "Image actions": "图片操作",
+  "Open in new tab": "在新标签页中打开",
+  "{p0} is not a readable image.": "{p0} 不是可读取的图片。",
+  "Could not read {p0}: {p1}": "无法读取 {p0}：{p1}",
+  "Only files on this computer can be shown in the file manager.": "文件管理器中只能显示这台电脑上的文件。",
+  "Could not open the containing folder: {p0}": "无法打开所在文件夹：{p0}"
 }

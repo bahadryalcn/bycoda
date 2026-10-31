@@ -1,4 +1,5 @@
 import { t } from "../i18n/technical";
+import { reorderMotion } from "./motion";
 
 export const EXPLORER_FILE_POINTER_DRAG_EVENT = "bycoda:explorer-file-pointer-drag";
 
@@ -209,5 +210,228 @@ export function suppressTextSelection() {
     window.removeEventListener("selectstart", onSelectStart);
     document.documentElement.classList.remove("is-reordering");
     window.getSelection()?.removeAllRanges();
+  };
+}
+
+function motionDuration() {
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return { ms: 0, easing: "" };
+  const { duration, easing } = reorderMotion();
+  return { ms: duration, easing };
+}
+
+/**
+ * A lifted copy of the item being dragged. The real item stays in its list (the caller collapses or
+ * hides it) while this copy follows the pointer, so the card itself seems to be carried. It never
+ * intercepts hit testing, carries the only on-target hint (a short label on its lower edge) and
+ * settles into the landing slot when the gesture ends. Opt-in: surfaces that do not create one keep
+ * their own feedback.
+ */
+export type DragPreview = {
+  /** Follow the pointer; `state` sets the cursor and the short label shown on the copy. */
+  move(
+    pointer: { clientX: number; clientY: number },
+    state?: { action?: "move" | "window" | "blocked"; label?: string },
+  ): void;
+  /** Glide to `rect` (viewport coordinates) and remove the copy; no rect removes it at once. */
+  settleTo(rect: DOMRect | null, onDone?: () => void): void;
+  dispose(): void;
+};
+
+let activePreview: DragPreview | null = null;
+
+/** The copy must not duplicate ids, tooltips, focus stops or the markers the list queries for. */
+function sanitizePreview(root: HTMLElement) {
+  const strip = [
+    "id",
+    "title",
+    "tabindex",
+    "data-session-card",
+    "data-drop-indicator",
+    "data-drop-axis",
+    "aria-describedby",
+    "aria-labelledby",
+  ];
+  for (const element of [root, ...root.querySelectorAll<HTMLElement>("*")]) {
+    for (const name of strip) element.removeAttribute(name);
+  }
+  root.setAttribute("aria-hidden", "true");
+  root.inert = true;
+}
+
+export function createDragPreview(
+  source: HTMLElement,
+  pointer: { clientX: number; clientY: number },
+): DragPreview {
+  activePreview?.dispose();
+  const rect = source.getBoundingClientRect();
+  const element = source.cloneNode(true) as HTMLElement;
+  sanitizePreview(element);
+  element.classList.add("pointer-drag-preview");
+  element.dataset.dragPreview = "";
+  Object.assign(element.style, {
+    position: "fixed",
+    left: `${rect.left}px`,
+    top: `${rect.top}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+    margin: "0",
+    opacity: "1",
+    transformOrigin: `${pointer.clientX - rect.left}px ${pointer.clientY - rect.top}px`,
+    transform: "translate3d(0, 0, 0)",
+  });
+  document.body.append(element);
+  // Commit the resting style first so the lift animates instead of starting lifted.
+  void element.getBoundingClientRect();
+  element.dataset.lifted = "true";
+
+  let label: HTMLElement | null = null;
+  let labelText = "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let done = false;
+
+  const preview: DragPreview = {
+    move(point, state) {
+      if (done) return;
+      const action = state?.action ?? "move";
+      element.dataset.action = action;
+      setDragCursor(action === "blocked" ? "not-allowed" : action === "window" ? "alias" : "move");
+      const text =
+        state?.label ??
+        (action === "blocked"
+          ? t("Cannot drop here")
+          : action === "window"
+            ? t("Move to another window")
+            : "");
+      if (text !== labelText) {
+        labelText = text;
+        if (!text) {
+          label?.remove();
+          label = null;
+        } else {
+          if (!label) {
+            label = document.createElement("span");
+            label.className = "pointer-drag-preview-label";
+            element.append(label);
+          }
+          label.textContent = text;
+        }
+      }
+      element.style.transform = `translate3d(${point.clientX - pointer.clientX}px, ${point.clientY - pointer.clientY}px, 0)`;
+    },
+    settleTo(target, onDone) {
+      if (done) return;
+      window.clearTimeout(timer);
+      const { ms, easing } = motionDuration();
+      if (!target || ms === 0) {
+        preview.dispose();
+        onDone?.();
+        return;
+      }
+      label?.remove();
+      label = null;
+      delete element.dataset.lifted;
+      delete element.dataset.action;
+      element.style.transition = `transform ${ms}ms ${easing}, scale ${ms}ms ${easing}, box-shadow ${ms}ms ${easing}`;
+      element.style.transform = `translate3d(${target.left - rect.left}px, ${target.top - rect.top}px, 0)`;
+      timer = setTimeout(() => {
+        preview.dispose();
+        onDone?.();
+      }, ms + 40);
+    },
+    dispose() {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      element.remove();
+      if (activePreview === preview) activePreview = null;
+    },
+  };
+  activePreview = preview;
+  return preview;
+}
+
+/**
+ * Opens a gap in a list while one of its items is dragged: the source item collapses to nothing and
+ * the item next to the insertion point gets a margin the size of the source, so the neighbours (and
+ * every container around them) flow apart exactly as they will after the drop. Layout, not
+ * transforms, so folders and groups grow with it; only the two touched items animate.
+ */
+export type ListGap = {
+  /** Open the gap before/after `target`; `null` (or the source itself) restores the source slot. */
+  open(target: HTMLElement | null, place?: "before" | "after"): void;
+  /** Remove every inline style this gap added, immediately. */
+  release(): void;
+};
+
+function rowGap(container: Element | null) {
+  const gap = container ? Number.parseFloat(getComputedStyle(container).rowGap) : 0;
+  return Number.isFinite(gap) ? gap : 0;
+}
+
+type GapSide = "margin-block-start" | "margin-block-end";
+
+export function createListGap(source: HTMLElement): ListGap {
+  const { ms, easing } = motionDuration();
+  const transition = ms ? `height ${ms}ms ${easing}, margin ${ms}ms ${easing}` : "";
+  const sourceHeight = source.getBoundingClientRect().height;
+  const sourceGap = rowGap(source.parentElement);
+  const touched = new Set<HTMLElement>();
+  let collapsed = false;
+  let spacer: { element: HTMLElement; side: GapSide; base: number } | null = null;
+
+  const touch = (element: HTMLElement) => {
+    touched.add(element);
+    if (transition) element.style.transition = transition;
+  };
+  touch(source);
+  source.style.height = `${sourceHeight}px`;
+  source.style.overflow = "hidden";
+
+  const closeSpacer = () => {
+    if (spacer) spacer.element.style.setProperty(spacer.side, `${spacer.base}px`);
+    spacer = null;
+  };
+
+  return {
+    open(target, place = "before") {
+      const wantCollapsed = !!target && target !== source;
+      if (wantCollapsed !== collapsed) {
+        collapsed = wantCollapsed;
+        source.style.height = collapsed ? "0px" : `${sourceHeight}px`;
+        // The flex gap that used to separate the source from its neighbour must not stay behind.
+        source.style.setProperty("margin-block-end", collapsed ? `${-sourceGap}px` : "0px");
+      }
+      if (!wantCollapsed || !target) {
+        closeSpacer();
+        return;
+      }
+      const side: GapSide = place === "before" ? "margin-block-start" : "margin-block-end";
+      if (spacer?.element === target && spacer.side === side) return;
+      closeSpacer();
+      touch(target);
+      const base = Number.parseFloat(getComputedStyle(target).getPropertyValue(side)) || 0;
+      const neighbour =
+        place === "before" ? target.previousElementSibling : target.nextElementSibling;
+      const gap = neighbour ? rowGap(target.parentElement) : 0;
+      target.style.setProperty(side, `${base + sourceHeight + gap}px`);
+      spacer = { element: target, side, base };
+    },
+    release() {
+      for (const element of touched) {
+        for (const property of [
+          "height",
+          "overflow",
+          "margin-block-start",
+          "margin-block-end",
+          "transition",
+        ]) {
+          element.style.removeProperty(property);
+        }
+        if (!element.getAttribute("style")) element.removeAttribute("style");
+      }
+      touched.clear();
+      spacer = null;
+      collapsed = false;
+    },
   };
 }

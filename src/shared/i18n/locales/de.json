@@ -9680,5 +9680,13 @@
   "Waiting for confirmation": "Bestätigung ausstehend",
   "Sending decision…": "Entscheidung wird gesendet…",
   "Decision was not sent. Check the request and try again.": "Die Entscheidung wurde nicht gesendet. Prüfen Sie die Anfrage und versuchen Sie es erneut.",
-  "Open this request in its conversation to respond.": "Öffnen Sie diese Anfrage zum Antworten in ihrer Unterhaltung."
+  "Open this request in its conversation to respond.": "Öffnen Sie diese Anfrage zum Antworten in ihrer Unterhaltung.",
+  "Output actions": "Ausgabeaktionen",
+  "Wrap lines": "Zeilen umbrechen",
+  "Image actions": "Bildaktionen",
+  "Open in new tab": "In neuem Tab öffnen",
+  "{p0} is not a readable image.": "{p0} ist kein lesbares Bild.",
+  "Could not read {p0}: {p1}": "{p0} konnte nicht gelesen werden: {p1}",
+  "Only files on this computer can be shown in the file manager.": "Im Dateimanager können nur Dateien auf diesem Computer angezeigt werden.",
+  "Could not open the containing folder: {p0}": "Der übergeordnete Ordner konnte nicht geöffnet werden: {p0}"
 }

@@ -185,7 +185,7 @@ test("yerel ve origin branch silme ayrı aksiyonlar kullanır", async ({ page })
     .click();
   await page.getByText("Delete from remote…", { exact: true }).click();
   await page
-    .getByRole("dialog", { name: "Delete origin/feature/team from the remote for everyone?", exact: true })
+    .getByRole("dialog", { name: "Delete?", exact: true })
     .getByRole("button", { name: "Delete", exact: true })
     .click();
   await expect(

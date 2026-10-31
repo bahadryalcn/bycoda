@@ -1,4 +1,4 @@
-import { SplitButton } from "../../../shared/ui/SplitButton";
+import { SplitButton, type SplitButtonAction } from "../../../shared/ui/SplitButton";
 import { Badge } from "../../../shared/ui/Badge";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Popover } from "../../../shared/ui/Popover";
@@ -867,7 +867,10 @@ function ChangedFiles({
   const canPublish = hasRemote && !!index?.branch && !index?.upstream;
   const canSync =
     hasRemote && Boolean(index?.upstream) && ((index?.ahead ?? 0) > 0 || (index?.behind ?? 0) > 0);
-  const canCommitPush = canCommit && hasRemote && !diverged && (!amend || !index?.headPushed);
+  const pushPossible = hasRemote && !diverged && (!amend || !index?.headPushed);
+  const canCommitPush = canCommit && pushPossible;
+  // A drafted message with something to commit: the commit action leads, otherwise sync/PR does.
+  const commitIntent = (staged.length > 0 || amend) && message.trim().length > 0;
   const canCommitPushPr = canCommitPush && !hasOpenPr && !prLoading && !prError && !onDefault;
   // Drafting is independent of staging. Commit and generation retain their
   // own eligibility checks and every checkout retains its own message.
@@ -1350,69 +1353,36 @@ function ChangedFiles({
             )}
           </div>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <div className="min-w-[9rem] flex-1">
-          <SplitButton
-            variant="primary"
-            size="sm"
-            motion="none"
-            fullWidth
-            label={
-              busy === "commit" || busy === "pr"
-                ? (pending ?? busyLabel(busy))
-                : amend
-                  ? t("Amend Commit")
-                  : t("Commit")
-            }
-            menuLabel={t("Commit options")}
-            menuOpen={menuOpen}
-            onMenuOpenChange={setMenuOpen}
-            disabled={!canCommit}
-            menuDisabled={!canOpenMenu}
-            loading={busy === "commit" || busy === "pr"}
-            startIcon={<Check className="size-3.5" strokeWidth={2} />}
-            onClick={() => void commit(false)}
-            actions={[
-              {
-                id: "push",
-                label: t("Commit & Push"),
-                disabled: !canCommitPush,
-                onSelect: () => void commit(true),
-              },
-              {
-                id: "push-pr",
-                label: t("Commit, Push & Create PR"),
-                disabled: !canCommitPushPr,
-                onSelect: () => void commit(true, true),
-              },
-              {
-                id: "amend",
-                label: t("Amend Last Commit"),
-                checked: amend,
-                onSelect: () => void toggleAmend(),
-              },
-            ]}
-          />
-        </div>
-        {index ? (
-          <GitSyncActions
-            index={index}
+        <div className="min-w-0">
+          <GitCommitActions
+            index={index ?? null}
             pr={pr}
             busy={busy}
+            pending={pending}
             hasRemote={hasRemote}
             hasOpenPr={hasOpenPr}
             onDefault={onDefault}
+            amend={amend}
+            commitIntent={commitIntent}
+            pushPossible={pushPossible}
+            canCommit={canCommit}
+            canCommitPush={canCommitPush}
+            canCommitPushPr={canCommitPushPr}
             canSync={canSync}
             canPublish={canPublish}
             canCreatePr={canCreatePr}
             canViewPr={canViewPr}
+            canOpenMenu={canOpenMenu}
+            menuOpen={menuOpen}
+            onMenuOpenChange={setMenuOpen}
+            onCommit={(push, createPr) => void commit(push, createPr)}
+            onToggleAmend={() => void toggleAmend()}
             onSync={() => void sync()}
             onCreatePr={() => void createPr()}
             onViewPr={() => {
               if (pr?.url) void openUrl(pr.url);
             }}
           />
-        ) : null}
         </div>
         {blockedMessage ? (
           <p
@@ -1701,45 +1671,78 @@ function usePrStatus(cwd: string, branch: string | null | undefined, enabled: bo
   };
 }
 
-function GitSyncActions({
+type CommitPrimary = "commit" | "commit-push" | "sync" | "create-pr" | "view-pr";
+
+/**
+ * One contextual split action for the commit area. The primary follows intent: a drafted
+ * message leads with Commit (& Push when pushing is possible); otherwise the pending sync,
+ * Create PR or View PR leads. Everything else stays in the menu behind its own gates.
+ */
+function GitCommitActions({
   index,
   pr,
   busy,
+  pending,
   hasRemote,
   hasOpenPr,
   onDefault,
+  amend,
+  commitIntent,
+  pushPossible,
+  canCommit,
+  canCommitPush,
+  canCommitPushPr,
   canSync,
   canPublish,
   canCreatePr,
   canViewPr,
+  canOpenMenu,
+  menuOpen,
+  onMenuOpenChange,
+  onCommit,
+  onToggleAmend,
   onSync,
   onCreatePr,
   onViewPr,
 }: {
-  index: GitDiffIndex;
+  index: GitDiffIndex | null;
   pr: GitPr | null;
   busy: string | null;
+  pending: string | null;
   hasRemote: boolean;
   hasOpenPr: boolean;
   onDefault: boolean;
+  amend: boolean;
+  commitIntent: boolean;
+  pushPossible: boolean;
+  canCommit: boolean;
+  canCommitPush: boolean;
+  canCommitPushPr: boolean;
   canSync: boolean;
   canPublish: boolean;
   canCreatePr: boolean;
   canViewPr: boolean;
+  canOpenMenu: boolean;
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
+  onCommit: (push: boolean, createPr?: boolean) => void;
+  onToggleAmend: () => void;
   onSync: () => void;
   onCreatePr: () => void;
   onViewPr: () => void;
 }) {
   useLocale();
-  if (!hasRemote) return null;
-  const ahead = index.ahead;
-  const behind = index.behind;
-  const dest = index.upstream ?? `${index.remote ?? "origin"}/${index.branch ?? "HEAD"}`;
+  const committing = busy === "commit" || busy === "pr";
   const syncing = busy === "sync";
+  const ahead = index?.ahead ?? 0;
+  const behind = index?.behind ?? 0;
+  const dest = index
+    ? (index.upstream ?? `${index.remote ?? "origin"}/${index.branch ?? "HEAD"}`)
+    : "";
   const syncTitle = syncing
     ? "Synchronizing Changes..."
     : canPublish
-      ? index.branch
+      ? index?.branch
         ? `Publish Branch "${index.branch}"`
         : "Publish Branch"
       : behind > 0 && ahead > 0
@@ -1747,97 +1750,201 @@ function GitSyncActions({
         : behind > 0
           ? `Pull ${behind} commit${behind === 1 ? "" : "s"} from ${dest}`
           : `Push ${ahead} commit${ahead === 1 ? "" : "s"} to ${dest}`;
-  const createTitle = index.defaultBranch
+  const syncDetail = `${syncTitle}${canPublish || !index?.upstream ? ` · ${dest}` : ""}`;
+  const syncLabel = canPublish
+    ? t("Publish Branch")
+    : t(behind > 0 && ahead > 0 ? "Sync Changes" : behind > 0 ? "Pull" : "Push");
+  const createTitle = index?.defaultBranch
     ? `Create a pull request into ${index.defaultBranch}`
     : "Create pull request";
   const viewTitle = pr?.title ? `View PR #${pr.number}: ${pr.title}` : "View pull request";
+  const viewLabel = pr?.number ? t("View PR #{p0}", { p0: pr.number }) : t("View PR");
+  const showSync = hasRemote && !!index && (canPublish || canSync || syncing);
   // A permanently disabled Create PR is noise: offer it only when it can run.
-  const showCreatePr = !hasOpenPr && !onDefault && (canCreatePr || busy === "pr");
-  const showViewPr = hasOpenPr;
-  if (!canPublish && !canSync && !syncing && !showCreatePr && !showViewPr) return null;
+  const showCreatePr = hasRemote && !hasOpenPr && !onDefault && (canCreatePr || busy === "pr");
+  const showViewPr = hasRemote && hasOpenPr;
+  const createDisabled = busy !== "pr" && (!canCreatePr || !!busy);
+  const viewDisabled = !canViewPr || !!busy;
+  const syncDisabled = !!busy && !syncing;
+  const primary: CommitPrimary =
+    committing || commitIntent
+      ? pushPossible
+        ? "commit-push"
+        : "commit"
+      : showSync
+        ? "sync"
+        : showCreatePr
+          ? "create-pr"
+          : showViewPr
+            ? "view-pr"
+            : "commit";
+  const commitLabel = amend ? t("Amend Commit") : t("Commit");
 
-  return (
+  const syncBadges = canPublish ? null : (
     <>
-      {canPublish ? (
-        <Button
-          variant="secondary"
+      {behind > 0 ? (
+        <Badge
           size="sm"
-          title={`${syncTitle} · ${dest}`}
-          disabled={!!busy && !syncing}
-          loading={syncing}
-          loadingLabel={t("Syncing…")}
-          startIcon={<CloudUpload className="size-3.5 shrink-0" strokeWidth={1.75} />}
-          onClick={onSync}
+          className="shrink-0 tabular-nums"
+          icon={<ArrowDown strokeWidth={2} />}
+          aria-label={t(behind === 1 ? "{p0} incoming commit" : "{p0} incoming commits", {
+            p0: behind,
+          })}
         >
-          <span className="min-w-0 truncate">{t("Publish Branch")}</span>
-        </Button>
-      ) : canSync || syncing ? (
-        <Button
-          variant="secondary"
-          size="sm"
-          title={`${syncTitle}${index.upstream ? "" : ` · ${dest}`}`}
-          disabled={!!busy && !syncing}
-          loading={syncing}
-          loadingLabel={t("Syncing…")}
-          startIcon={<RefreshCw className="size-3.5 shrink-0" strokeWidth={1.75} />}
-          onClick={onSync}
-        >
-          <span className="min-w-0 truncate">{t(behind > 0 && ahead > 0 ? "Sync Changes" : behind > 0 ? "Pull" : "Push")}</span>
-          {behind > 0 ? (
-            <Badge
-              size="sm"
-              className="shrink-0 tabular-nums"
-              icon={<ArrowDown strokeWidth={2} />}
-              aria-label={t(behind === 1 ? "{p0} incoming commit" : "{p0} incoming commits", {
-                p0: behind,
-              })}
-            >
-              {behind}
-            </Badge>
-          ) : null}
-          {ahead > 0 ? (
-            <Badge
-              size="sm"
-              className="shrink-0 tabular-nums"
-              icon={<ArrowUp strokeWidth={2} />}
-              aria-label={t(ahead === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", {
-                p0: ahead,
-              })}
-            >
-              {ahead}
-            </Badge>
-          ) : null}
-        </Button>
+          {behind}
+        </Badge>
       ) : null}
-      {showCreatePr ? (
-        <Button
-          variant="secondary"
+      {ahead > 0 ? (
+        <Badge
           size="sm"
-          title={createTitle}
-          disabled={busy !== "pr" && (!canCreatePr || !!busy)}
-          loading={busy === "pr"}
-          loadingLabel={t("Creating pull request…")}
-          startIcon={<GitPullRequest className="size-3.5 shrink-0" strokeWidth={1.75} />}
-          onClick={onCreatePr}
+          className="shrink-0 tabular-nums"
+          icon={<ArrowUp strokeWidth={2} />}
+          aria-label={t(ahead === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", {
+            p0: ahead,
+          })}
         >
-          {t("Create PR")}
-        </Button>
-      ) : null}
-      {showViewPr ? (
-        <Button
-          variant="secondary"
-          size="sm"
-          title={viewTitle}
-          disabled={!canViewPr || !!busy}
-          onClick={onViewPr}
-        >
-          <ExternalLink className="size-3.5 shrink-0" strokeWidth={1.75} />
-          <span className="min-w-0 truncate">
-            {pr?.number ? t("View PR #{p0}", { p0: pr.number }) : t("View PR")}
-          </span>
-        </Button>
+          {ahead}
+        </Badge>
       ) : null}
     </>
+  );
+
+  const lead =
+    primary === "sync"
+      ? {
+          variant: "secondary" as const,
+          label: syncLabel,
+          title: syncDetail,
+          disabled: syncDisabled,
+          loading: syncing,
+          loadingLabel: t("Syncing…"),
+          icon: canPublish ? (
+            <CloudUpload className="size-3.5 shrink-0" strokeWidth={1.75} />
+          ) : (
+            <RefreshCw className="size-3.5 shrink-0" strokeWidth={1.75} />
+          ),
+          trailing: syncBadges,
+          onClick: onSync,
+        }
+      : primary === "create-pr"
+        ? {
+            variant: "secondary" as const,
+            label: t("Create PR"),
+            title: createTitle,
+            disabled: createDisabled,
+            loading: busy === "pr",
+            loadingLabel: t("Creating pull request…"),
+            icon: <GitPullRequest className="size-3.5 shrink-0" strokeWidth={1.75} />,
+            trailing: null,
+            onClick: onCreatePr,
+          }
+        : primary === "view-pr"
+          ? {
+              variant: "secondary" as const,
+              label: viewLabel,
+              title: viewTitle,
+              disabled: viewDisabled,
+              loading: false,
+              loadingLabel: undefined,
+              icon: <ExternalLink className="size-3.5 shrink-0" strokeWidth={1.75} />,
+              trailing: null,
+              onClick: onViewPr,
+            }
+          : {
+              variant: "primary" as const,
+              label: committing
+                ? (pending ?? busyLabel(busy ?? ""))
+                : primary === "commit-push"
+                  ? t("Commit & Push")
+                  : commitLabel,
+              title: undefined,
+              disabled: !canCommit,
+              loading: committing,
+              loadingLabel: undefined,
+              icon: <Check className="size-3.5" strokeWidth={2} />,
+              trailing: null,
+              onClick: () => onCommit(primary === "commit-push"),
+            };
+
+  const actions: SplitButtonAction[] = [];
+  if (primary !== "commit") {
+    actions.push({
+      id: "commit",
+      label: commitLabel,
+      disabled: !canCommit,
+      onSelect: () => onCommit(false),
+    });
+  }
+  if (primary !== "commit-push") {
+    actions.push({
+      id: "push",
+      label: t("Commit & Push"),
+      disabled: !canCommitPush,
+      onSelect: () => onCommit(true),
+    });
+  }
+  actions.push(
+    {
+      id: "push-pr",
+      label: t("Commit, Push & Create PR"),
+      disabled: !canCommitPushPr,
+      onSelect: () => onCommit(true, true),
+    },
+    {
+      id: "amend",
+      label: t("Amend Last Commit"),
+      checked: amend,
+      onSelect: onToggleAmend,
+    },
+  );
+  if (showSync && primary !== "sync") {
+    actions.push({
+      id: "sync",
+      label: syncLabel,
+      description: syncDetail,
+      disabled: syncDisabled,
+      onSelect: onSync,
+    });
+  }
+  if (showCreatePr && primary !== "create-pr") {
+    actions.push({
+      id: "create-pr",
+      label: t("Create PR"),
+      description: createTitle,
+      disabled: createDisabled,
+      onSelect: onCreatePr,
+    });
+  }
+  if (showViewPr && primary !== "view-pr") {
+    actions.push({
+      id: "view-pr",
+      label: viewLabel,
+      description: viewTitle,
+      disabled: viewDisabled,
+      onSelect: onViewPr,
+    });
+  }
+
+  return (
+    <SplitButton
+      variant={lead.variant}
+      size="sm"
+      motion="none"
+      fullWidth
+      label={lead.label}
+      title={lead.title}
+      menuLabel={t("Commit options")}
+      menuOpen={menuOpen}
+      onMenuOpenChange={onMenuOpenChange}
+      disabled={lead.disabled}
+      menuDisabled={!canOpenMenu}
+      loading={lead.loading}
+      loadingLabel={lead.loadingLabel}
+      startIcon={lead.icon}
+      trailing={lead.trailing}
+      onClick={lead.onClick}
+      actions={actions}
+    />
   );
 }
 

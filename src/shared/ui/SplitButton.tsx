@@ -17,6 +17,8 @@ export interface SplitButtonAction {
 }
 export type SplitButtonProps = Omit<ButtonProps, "children" | "iconOnly" | "label"> & {
   label: string;
+  /** Fixed-size content after the label (counts, badges). The label truncates first. */
+  trailing?: ReactNode;
   menuLabel: string;
   actions: readonly SplitButtonAction[];
   groupRef?: Ref<HTMLDivElement>;
@@ -29,6 +31,7 @@ export type SplitButtonProps = Omit<ButtonProps, "children" | "iconOnly" | "labe
 /** Arc split-button composition with bycoda's action, motion and overlay owners. */
 export function SplitButton({
   label,
+  trailing,
   menuLabel,
   actions,
   groupRef,
@@ -71,7 +74,14 @@ export function SplitButton({
         .join(" ")}
     >
       <Button {...buttonProps} data-split-part="primary" disabled={disabled} loading={loading}>
-        {label}
+        {trailing ? (
+          <>
+            <span className="min-w-0 truncate">{label}</span>
+            {trailing}
+          </>
+        ) : (
+          label
+        )}
       </Button>
       <Button
         variant={buttonProps.variant}

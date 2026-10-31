@@ -252,8 +252,8 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   await expect(module.getByRole("button", { name: "Stage All Changes", exact: true })).toHaveCount(
     0,
   );
-  await module.getByRole("button", { name: "Commit options", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Commit & Push", exact: true }).click();
+  // A drafted message with staged changes and a pushable branch leads with Commit & Push.
+  await module.getByRole("button", { name: "Commit & Push", exact: true }).click();
   await expect(message).toHaveValue("");
   await expect(parentMessage).toHaveValue("Parent draft stays here");
   const calls = await page.evaluate(
@@ -373,10 +373,14 @@ test("grouped commit forms retain their height and drafts after disclosure and r
       );
       await expect.poll(async () => (await message.boundingBox())!.height).toBeGreaterThan(32);
       const input = (await message.boundingBox())!;
-      const commit = (await panel
-        .getByRole("button", { name: "Commit", exact: true })
+      // One contextual primary (Commit, Commit & Push or sync) sits in a single row with its menu.
+      const primary = panel.locator('[data-split-part="primary"]').first();
+      const commit = (await primary.boundingBox())!;
+      const options = (await panel
+        .getByRole("button", { name: "Commit options", exact: true })
         .boundingBox())!;
       expect(commit.y).toBeGreaterThanOrEqual(input.y + input.height);
+      expect(Math.abs(options.y - commit.y)).toBeLessThan(2);
       expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );

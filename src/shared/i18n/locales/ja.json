@@ -9680,5 +9680,13 @@
   "Waiting for confirmation": "確認待ち",
   "Sending decision…": "判断を送信中…",
   "Decision was not sent. Check the request and try again.": "判断は送信されていません。リクエストを確認して再試行してください。",
-  "Open this request in its conversation to respond.": "返信するには、このリクエストを元の会話で開いてください。"
+  "Open this request in its conversation to respond.": "返信するには、このリクエストを元の会話で開いてください。",
+  "Output actions": "出力の操作",
+  "Wrap lines": "行を折り返す",
+  "Image actions": "画像の操作",
+  "Open in new tab": "新しいタブで開く",
+  "{p0} is not a readable image.": "{p0} は読み取れる画像ではありません。",
+  "Could not read {p0}: {p1}": "{p0} を読み取れませんでした: {p1}",
+  "Only files on this computer can be shown in the file manager.": "ファイルマネージャーに表示できるのはこのコンピューター上のファイルだけです。",
+  "Could not open the containing folder: {p0}": "含まれているフォルダーを開けませんでした: {p0}"
 }

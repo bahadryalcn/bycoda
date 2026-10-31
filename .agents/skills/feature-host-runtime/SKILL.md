@@ -5,6 +5,11 @@ description: Host authority and WebSocket migration inventory for neutral schema
 
 # Host runtime and WebSocket migration
 
+## Windows original-job handoff repair, 2026-10-31
+
+The shared guardian Windows job owner associates a private completion port before process assignment. Final proof joins original accounting and all captured HANDLE waits with a complete birth/exit census, allowing only an individually matched original waited handle to cover its missing EXIT event. Missing births, ambiguous PIDs, unrelated handles, API/termination errors and unresolved work stay unverified. Real Windows standalone guardian tests passed19 cases/2 helper ignores; app/SDK/native installation inclusion is pending an approved rebuild. This closes the observed normal rapid-descendant handoff failure in source/tests only; it does not qualify all actors, crash recovery, Native Buffers MISSING5 or full26.
+
+
 ## Host run writers, 2026-10-31
 
 Engine and its actual backend now share a private HostRunWriters issuer. Main,

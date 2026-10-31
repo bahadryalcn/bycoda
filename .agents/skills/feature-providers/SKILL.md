@@ -5,6 +5,15 @@ description: "Providers Settings inventory for model discovery and enable policy
 
 # Providers, models, accounts and CLI lifecycle
 
+## Provider handoff recovery, 2026-10-31
+
+The owner reaffirmed the existing feature in the interactive prompt: "En iyi özelliğimiz buydu providerlar modeller arasında kesintisiz cotnext kaybetmeden geçiş yapmak?" This is a defect repair, not permission for unrelated architecture/default/release work.
+
+Failed/cancelled handoffs retain original provider/model/account provenance and reach terminal UI state, so a later model choice is effective. Unverified original cleanup still blocks target dispatch. Source-free context packets survive failures after verified cleanup. Retry/persistence preserve requests and attachments; a budgeted provider handoff replaces duplicate unbounded replay and archives recovered context.
+
+Windows original jobs now reconcile their private kernel notifications, original accounting and waited HANDLEs. Missing/ambiguous evidence and API failures remain failures. Source tests: desktop179 pass/1 opt-in live skip, Host history2 pass, standalone guardian19 pass/2 helper ignores; counts overlap with focused renewals. Evidence: temp/verification/2026-10-31-provider-switch/. Current running 0.7.0 predates this repair; native rebuild/real SDK switch acceptance and installation remain pending owner approval.
+
+
 ## Explicit Host normal and cleanup views, 2026-10-31
 
 Host operations carry captured private normal/control handles through existing

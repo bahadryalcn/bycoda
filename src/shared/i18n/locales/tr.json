@@ -9680,5 +9680,13 @@
   "Waiting for confirmation": "Doğrulama bekleniyor",
   "Sending decision…": "Karar gönderiliyor…",
   "Decision was not sent. Check the request and try again.": "Karar gönderilmedi. İsteği kontrol edip yeniden deneyin.",
-  "Open this request in its conversation to respond.": "Yanıtlamak için bu isteği ait olduğu konuşmada açın."
+  "Open this request in its conversation to respond.": "Yanıtlamak için bu isteği ait olduğu konuşmada açın.",
+  "Output actions": "Çıktı eylemleri",
+  "Wrap lines": "Satırları kaydır",
+  "Image actions": "Görsel eylemleri",
+  "Open in new tab": "Yeni sekmede aç",
+  "{p0} is not a readable image.": "{p0} okunabilir bir görsel değil.",
+  "Could not read {p0}: {p1}": "{p0} okunamadı: {p1}",
+  "Only files on this computer can be shown in the file manager.": "Dosya yöneticisinde yalnız bu bilgisayardaki dosyalar gösterilebilir.",
+  "Could not open the containing folder: {p0}": "İçeren klasör açılamadı: {p0}"
 }

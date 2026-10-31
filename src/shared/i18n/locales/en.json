@@ -9680,5 +9680,13 @@
   "Waiting for confirmation": "Waiting for confirmation",
   "Sending decision…": "Sending decision…",
   "Decision was not sent. Check the request and try again.": "Decision was not sent. Check the request and try again.",
-  "Open this request in its conversation to respond.": "Open this request in its conversation to respond."
+  "Open this request in its conversation to respond.": "Open this request in its conversation to respond.",
+  "Output actions": "Output actions",
+  "Wrap lines": "Wrap lines",
+  "Image actions": "Image actions",
+  "Open in new tab": "Open in new tab",
+  "{p0} is not a readable image.": "{p0} is not a readable image.",
+  "Could not read {p0}: {p1}": "Could not read {p0}: {p1}",
+  "Only files on this computer can be shown in the file manager.": "Only files on this computer can be shown in the file manager.",
+  "Could not open the containing folder: {p0}": "Could not open the containing folder: {p0}"
 }

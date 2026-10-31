@@ -142,10 +142,11 @@ describe("sidebar view tabs without dragging", () => {
   });
 });
 
-describe("session drag drop indicator", () => {
+describe("session drag preview and gap", () => {
   function card(id: string) {
     return container.querySelector<HTMLElement>(`[data-session-card="${id}"]`)!;
   }
+  const item = (id: string) => card(id).closest("li")!;
   function pointer(target: EventTarget, type: string, x: number, y: number) {
     const event = new Event(type, { bubbles: true });
     Object.assign(event, { pointerId: 1, button: 0, clientX: x, clientY: y, screenX: x, screenY: y });
@@ -153,67 +154,82 @@ describe("session drag drop indicator", () => {
       target.dispatchEvent(event);
     });
   }
+  // The list is measured from layout, which happy-dom does not have: give the scroller and the
+  // dragged and target cards boxes (target card at y 100-140, dragged card 44px tall).
   function startDrag(overId: string) {
     const source = card("one");
     const over = card(overId);
     Object.assign(source, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() });
+    vi.spyOn(source, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200, 44));
+    vi.spyOn(source.closest("li")!, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 200, 44),
+    );
     vi.spyOn(over, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 200, 40));
-    vi.spyOn(document, "elementFromPoint").mockReturnValue(over);
+    vi.spyOn(
+      container.querySelector<HTMLElement>(".sidebar-session-scroll")!,
+      "getBoundingClientRect",
+    ).mockReturnValue(new DOMRect(0, 0, 300, 600));
     pointer(source, "pointerdown", 20, 10);
     pointer(window, "pointermove", 20, 120);
     return over;
   }
 
-  it("marks the card edge it would land on, names the dragged session once, and clears on Escape", async () => {
+  it("lifts a copy of the card, opens a gap instead of a line or badge, and clears on Escape", async () => {
     await render();
-    // Upper quarter of the target card: an insertion line before it.
-    const over = startDrag("two");
-    pointer(window, "pointermove", 20, 104);
-    expect(over.getAttribute("data-drop-indicator")).toBe("before");
-    expect(document.querySelectorAll("[data-drop-indicator]")).toHaveLength(1);
-    const badge = document.querySelector(".pointer-drop-hint");
-    expect(badge?.querySelector(".pointer-drop-hint-subject")?.textContent).toBe(
-      "Conversation one",
-    );
-    pointer(window, "pointermove", 20, 136);
-    expect(over.getAttribute("data-drop-indicator")).toBe("after");
-    // Nothing is drawn on the row itself besides the shared mark.
-    expect(over.querySelector("[data-session-drop-line]")).toBeNull();
-    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
-    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
+    startDrag("two");
+    expect(document.querySelectorAll(".pointer-drag-preview")).toHaveLength(1);
+    expect(document.querySelector(".pointer-drag-preview [data-session-card]")).toBeNull();
     expect(document.querySelector(".pointer-drop-hint")).toBeNull();
+    // Upper quarter of the target card: the gap opens above it and nothing is drawn on the card.
+    pointer(window, "pointermove", 20, 104);
+    expect(item("two").style.getPropertyValue("margin-block-start")).toBe("44px");
+    expect(item("one").style.getPropertyValue("height")).toBe("0px");
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
+    expect(document.querySelector(".pointer-drag-preview-label")).toBeNull();
+    // Lower quarter: the gap moves below it.
+    pointer(window, "pointermove", 20, 136);
+    expect(item("two").style.getPropertyValue("margin-block-start")).toBe("0px");
+    expect(item("two").style.getPropertyValue("margin-block-end")).toBe("44px");
+    // Over its own slot nothing opens.
+    pointer(window, "pointermove", 20, 20);
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(document.querySelector(".pointer-drag-preview")).toBeNull();
+    expect(item("one").getAttribute("style") ?? "").not.toContain("height");
+    expect(item("two").getAttribute("style") ?? "").not.toContain("margin");
+    expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
   });
 
-  it("frames the card as a group target after the dwell and says it once, in the badge", async () => {
+  it("closes the gap and frames the card as a group target after the dwell, saying it on the copy", async () => {
     vi.useFakeTimers();
     await render();
     const over = startDrag("two");
-    // Just above the middle of the card: still a line, now counting down to grouping.
+    // Just above the middle of the card: still a gap, now counting down to grouping.
     pointer(window, "pointermove", 20, 119);
-    expect(over.getAttribute("data-drop-indicator")).toBe("before");
+    expect(item("two").style.getPropertyValue("margin-block-start")).toBe("44px");
     expect(document.querySelector('[data-session-dwell="waiting"]')).not.toBeNull();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
     expect(over.getAttribute("data-drop-indicator")).toBe("group");
+    expect(item("two").style.getPropertyValue("margin-block-start")).toBe("0px");
     expect(document.querySelector('[data-session-dwell="ready"]')).not.toBeNull();
-    const text = document.querySelector(".pointer-drop-hint")?.textContent ?? "";
-    expect(text.match(/Release to group/g)).toHaveLength(1);
+    expect(document.querySelector(".pointer-drag-preview-label")?.textContent).toBe(
+      "Release to group",
+    );
     expect(container.textContent).not.toContain("Release to group");
-    pointer(window, "pointercancel", 20, 120);
     act(() => window.dispatchEvent(new Event("pointercancel")));
     expect(document.querySelector("[data-drop-indicator]")).toBeNull();
-    expect(document.querySelector(".pointer-drop-hint")).toBeNull();
+    expect(document.querySelector(".pointer-drag-preview")).toBeNull();
   });
 
-  it("clears the mark when the session list unmounts mid-drag", async () => {
+  it("removes the copy and the gap when the session list unmounts mid-drag", async () => {
     await render();
     startDrag("two");
     pointer(window, "pointermove", 20, 104);
-    expect(document.querySelector("[data-drop-indicator]")).not.toBeNull();
+    expect(document.querySelector(".pointer-drag-preview")).not.toBeNull();
     act(() => root.unmount());
+    expect(document.querySelector(".pointer-drag-preview")).toBeNull();
     expect(document.querySelector("[data-drop-indicator]")).toBeNull();
-    expect(document.querySelector(".pointer-drop-hint")).toBeNull();
     root = createRoot(container);
   });
 });

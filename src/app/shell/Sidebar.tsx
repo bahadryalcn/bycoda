@@ -141,6 +141,8 @@ import type { PaneEdge } from "../../features/workspace/model/layout";
 import {
   announceDrag,
   clearDropIndicator,
+  createDragPreview,
+  createListGap,
   setDropFeedback,
   setDropIndicator,
   setGrabbing,
@@ -1046,6 +1048,13 @@ function SidebarComponent({
     rootRef: sessionsScrollRef,
     shownCount: shownUngroupedCount,
     onLoadMore: showMoreSessions,
+  });
+  // A session drop lets the list settle first: the gap it opened is released here, in the commit
+  // that reorders the list and before the motion hook measures where each card ended up.
+  useLayoutEffect(() => {
+    const settle = afterSessionListCommit;
+    afterSessionListCommit = null;
+    settle?.();
   });
   const { captureListMotion, insertMotion: sessionInsertMotion } = useSessionListMotion(
     sessionsScrollRef,
@@ -4236,33 +4245,76 @@ function SessionsHeaderButton({
 
 type FolderEntry = Extract<SessionListEntry, { kind: "folder" }>;
 
+/** Runs once in the commit that follows a session-list drop (see the layout effect in Sidebar). */
+let afterSessionListCommit: (() => void) | null = null;
+
 type SessionListHit =
+  | { kind: "self" }
   | { kind: "folder"; id: string }
   | { kind: "pinned" }
   | { kind: "card"; id: string; place: "before" | "after"; middle: boolean };
 
-function sessionListHitFromPoint(x: number, y: number, draggedId: string): SessionListHit | null {
-  const el = document.elementFromPoint(x, y);
-  if (!el) return null;
-  if (el.closest("[data-reminder-sessions]")) return null;
-  const card = el.closest("[data-session-card]") as HTMLElement | null;
-  const cardId = card?.dataset.sessionCard;
-  if (card && cardId) {
-    if (cardId === draggedId) return null;
-    const rect = card.getBoundingClientRect();
-    const at = rect.height > 0 ? (y - rect.top) / rect.height : 0.5;
+/**
+ * Where a dragged session would land, decided from the layout as it was when the drag began. The
+ * live list moves apart to open a gap under the pointer, so asking the DOM what is under it would
+ * flip the target every time the list shifts; the frozen zones keep the answer stable.
+ */
+function snapshotSessionList(scroller: HTMLElement | null) {
+  type Zone = { left: number; right: number; top: number; bottom: number };
+  const origin = scroller?.getBoundingClientRect();
+  const base = scroller?.scrollTop ?? 0;
+  const zone = (element: HTMLElement): Zone => {
+    const rect = element.getBoundingClientRect();
     return {
-      kind: "card",
-      id: cardId,
-      place: at < 0.5 ? "before" : "after",
-      middle: at > 0.25 && at < 0.75,
+      left: rect.left,
+      right: rect.right,
+      top: rect.top - (origin?.top ?? 0) + base,
+      bottom: rect.bottom - (origin?.top ?? 0) + base,
     };
-  }
-  // A folder inside the pinned group takes the drop before the group does.
-  const folderId = (el.closest("[data-session-folder]") as HTMLElement | null)?.dataset
-    .sessionFolder;
-  if (folderId) return { kind: "folder", id: folderId };
-  return el.closest("[data-pinned-sessions]") ? { kind: "pinned" } : null;
+  };
+  const zones = (selector: string, key: "sessionCard" | "sessionFolder") =>
+    [...(scroller?.querySelectorAll<HTMLElement>(selector) ?? [])]
+      .map((element) => ({ element, id: element.dataset[key] ?? "", zone: zone(element) }))
+      .filter((entry) => entry.zone.bottom > entry.zone.top);
+  const cards = zones("[data-session-card]", "sessionCard");
+  const folders = zones("[data-session-folder]", "sessionFolder");
+  const single = (selector: string) => {
+    const element = scroller?.querySelector<HTMLElement>(selector);
+    return element ? zone(element) : null;
+  };
+  const pinned = single("[data-pinned-sessions]");
+  const reminders = single("[data-reminder-sessions]");
+  return {
+    /** The live element of a card, so the list can open a gap beside it. */
+    cardElement: (id: string) => cards.find((card) => card.id === id)?.element ?? null,
+    hit(x: number, y: number, draggedId: string): SessionListHit | null {
+      if (!scroller) return null;
+      const box = scroller.getBoundingClientRect();
+      if (x < box.left || x > box.right || y < box.top || y > box.bottom) return null;
+      const at = y - box.top + scroller.scrollTop;
+      // The rows are a pixel or two apart: a hair of slack keeps the pointer from falling between.
+      const inside = (z: Zone) => x >= z.left && x <= z.right && at >= z.top - 1 && at <= z.bottom + 1;
+      if (reminders && inside(reminders)) return null;
+      const card = cards.find((entry) => inside(entry.zone));
+      if (card) {
+        if (card.id === draggedId) return { kind: "self" };
+        const height = card.zone.bottom - card.zone.top;
+        const ratio = height > 0 ? (at - card.zone.top) / height : 0.5;
+        return {
+          kind: "card",
+          id: card.id,
+          place: ratio < 0.5 ? "before" : "after",
+          middle: ratio > 0.25 && ratio < 0.75,
+        };
+      }
+      // A folder inside the pinned group takes the drop before the group does.
+      const folder = folders
+        .filter((entry) => inside(entry.zone))
+        .sort((a, b) => a.zone.bottom - a.zone.top - (b.zone.bottom - b.zone.top))[0];
+      if (folder) return { kind: "folder", id: folder.id };
+      return pinned && inside(pinned) ? { kind: "pinned" } : null;
+    },
+  };
 }
 
 function folderMoveTargetAt(
@@ -4339,7 +4391,8 @@ function sameDropTarget(a: SessionListDropTarget | null, b: SessionListDropTarge
   return (a as { id: string }).id === (b as { id: string }).id;
 }
 
-function dropTargetLabel(target: SessionListDropTarget): string {
+/** The hint on the dragged copy; a plain reorder has none because the open gap is the hint. */
+function dropTargetLabel(target: SessionListDropTarget): string | undefined {
   switch (target.kind) {
     case "session":
       return t("Release to group");
@@ -4348,25 +4401,25 @@ function dropTargetLabel(target: SessionListDropTarget): string {
     case "folder":
       return t("Release to add to the folder");
     case "insert":
-      return target.dwell ? t("Hold to group") : t("Release to move here");
+      return undefined;
   }
 }
 
 /**
- * Marks the one row a dragged session would land on, in the shared drop-indicator vocabulary:
- * a line before/after a card, a dashed frame once a card is ready to group, a frame on a folder
- * or the pinned header. The instruction itself lives only in the cursor badge.
+ * Marks the one row a dragged session would land on, in the shared drop-indicator vocabulary: a
+ * dashed frame once a card is ready to group, a frame on a folder or the pinned header. A plain
+ * insert draws nothing here: the list opens a gap at that point instead of drawing a line.
  */
 function markSessionListTarget(target: SessionListDropTarget | null) {
-  if (!target) {
+  if (!target || target.kind === "insert") {
     clearDropIndicator();
     return;
   }
-  if (target.kind === "insert" || target.kind === "session") {
+  if (target.kind === "session") {
     const card = [...document.querySelectorAll<HTMLElement>("[data-session-card]")].find(
       (el) => el.dataset.sessionCard === target.id,
     );
-    setDropIndicator(card ?? null, target.kind === "session" ? "group" : target.place);
+    setDropIndicator(card ?? null, "group");
     return;
   }
   const scope =
@@ -4945,8 +4998,16 @@ const SessionCard = memo(function SessionCard({
     let screenX = event.screenX;
     let screenY = event.screenY;
     let lastList: SessionListDropTarget | null = null;
+    let overSelf = false;
     // Runs on time, not movement: a pointer held still sends no events.
     let dwell: { id: string; ready: boolean; timer: number } | null = null;
+    // The lifted copy that follows the pointer, and the gap the list opens for it.
+    let preview: ReturnType<typeof createDragPreview> | null = null;
+    let gap: ReturnType<typeof createListGap> | null = null;
+    let zones: ReturnType<typeof snapshotSessionList> | null = null;
+    const scroller = handle.closest<HTMLElement>(".sidebar-session-scroll");
+    const startScroll = scroller?.scrollTop ?? 0;
+    const startRect = handle.getBoundingClientRect();
     handle.setPointerCapture(pointerId);
     const restoreSelection = suppressTextSelection();
 
@@ -4955,15 +5016,22 @@ const SessionCard = memo(function SessionCard({
       lastList = next;
       markSessionListTarget(next);
       onListDropTargetChange?.(next);
+      // Only a plain insert opens a gap; grouping, a folder or pinning closes it again.
+      if (next?.kind === "insert") {
+        const item = zones?.cardElement(next.id)?.closest("li");
+        gap?.open(item ?? null, next.place);
+      } else gap?.open(null);
     };
     const clearDwell = () => {
       if (dwell) window.clearTimeout(dwell.timer);
       dwell = null;
     };
     const listTargetAt = (x: number, y: number): SessionListDropTarget | null => {
-      const hit = onListDrop ? sessionListHitFromPoint(x, y, session.id) : null;
+      const hit = onListDrop ? (zones?.hit(x, y, session.id) ?? null) : null;
+      overSelf = hit?.kind === "self";
       if (hit?.kind !== "card" || !hit.middle) clearDwell();
-      if (!hit || hit.kind !== "card") return hit;
+      if (!hit || hit.kind === "self") return null;
+      if (hit.kind !== "card") return hit;
       if (!hit.middle) return { kind: "insert", id: hit.id, place: hit.place };
       if (dwell?.id !== hit.id) {
         clearDwell();
@@ -4971,20 +5039,36 @@ const SessionCard = memo(function SessionCard({
         const timer = window.setTimeout(() => {
           if (dwell?.id !== id) return;
           dwell.ready = true;
-          const ready: SessionListDropTarget = { kind: "session", id };
-          setListTarget(ready);
-          setDropFeedback(
-            "move",
-            { clientX: lastX, clientY: lastY },
-            dropTargetLabel(ready),
-            title,
-          );
+          setListTarget({ kind: "session", id });
+          showFeedback();
         }, groupDelayMs);
         dwell = { id, ready: false, timer };
       }
       return dwell.ready
         ? { kind: "session", id: hit.id }
         : { kind: "insert", id: hit.id, place: hit.place, dwell: true };
+    };
+
+    // Where the pointer is and what releasing would do, shown on the lifted copy.
+    const showFeedback = () => {
+      if (!preview) return;
+      const point = { clientX: lastX, clientY: lastY };
+      if (onPopOut && isPointerOutsideWindow(lastX, lastY, window.innerWidth, window.innerHeight)) {
+        preview.move(point, {
+          action: "window",
+          label: busy ? "Move after response finishes" : undefined,
+        });
+      } else if (lastList) {
+        preview.move(point, { label: dropTargetLabel(lastList) });
+      } else if (overSelf) {
+        preview.move(point);
+      } else if (!onPlaceOnPane) {
+        preview.move(point, { action: "blocked" });
+      } else {
+        const over = paneDropFromPoint(lastX, lastY);
+        if (!over || over.id === session.id) preview.move(point, { action: "blocked" });
+        else preview.move(point, { label: `Place ${over.edge}` });
+      }
     };
 
     const onMove = (ev: PointerEvent) => {
@@ -4997,6 +5081,12 @@ const SessionCard = memo(function SessionCard({
         if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
         cancelLongPress.current?.();
         active = true;
+        // Measure the list as it is, before the source collapses and the copy appears.
+        zones = snapshotSessionList(scroller);
+        preview = createDragPreview(handle, { clientX: startX, clientY: startY });
+        const item = handle.closest("li");
+        if (item) gap = createListGap(item);
+        if (scroller) scroller.style.overflowAnchor = "none";
         setDragging(true);
         setGrabbing(true);
         if (onPlaceOnPane) {
@@ -5008,31 +5098,21 @@ const SessionCard = memo(function SessionCard({
         }
       }
       setListTarget(listTargetAt(ev.clientX, ev.clientY));
+      showFeedback();
       if (
         onPopOut &&
         isPointerOutsideWindow(ev.clientX, ev.clientY, window.innerWidth, window.innerHeight)
       ) {
-        setDropFeedback(
-          "window",
-          ev,
-          busy ? "Move after response finishes" : undefined,
-          title,
-        );
         setExternalPaneDrop(null);
         return;
       }
       if (lastList) {
-        setDropFeedback("move", ev, dropTargetLabel(lastList), title);
         setExternalPaneDrop(null);
         return;
       }
-      if (!onPlaceOnPane) {
-        setDropFeedback("blocked", ev, undefined, title);
-        return;
-      }
+      if (!onPlaceOnPane) return;
       const over = paneDropFromPoint(ev.clientX, ev.clientY);
       if (!over || over.id === session.id) {
-        setDropFeedback("blocked", ev, undefined, title);
         setExternalPaneDrop({
           fromId: session.id,
           overId: over?.id === session.id ? session.id : null,
@@ -5045,7 +5125,6 @@ const SessionCard = memo(function SessionCard({
         overId: over.id,
         edge: over.edge,
       });
-      setDropFeedback("move", ev, `Place ${over.edge}`, title);
     };
 
     const onUp = (ev: PointerEvent) => {
@@ -5058,6 +5137,18 @@ const SessionCard = memo(function SessionCard({
       if (ev.key !== "Escape") return;
       ev.preventDefault();
       finish(false);
+    };
+
+    // Release everything the drag lent to the list, whatever way it ended.
+    const releaseList = () => {
+      gap?.release();
+      gap = null;
+      if (scroller) scroller.style.removeProperty("overflow-anchor");
+    };
+    const endPreview = () => {
+      preview?.dispose();
+      preview = null;
+      releaseList();
     };
 
     function finish(commit: boolean) {
@@ -5081,8 +5172,13 @@ const SessionCard = memo(function SessionCard({
       }
       if (!active) return;
       skipClickUntil.current = performance.now() + 400;
-      if (!commit) return;
-      if (onPopOut && isPointerOutsideWindow(lastX, lastY, window.innerWidth, window.innerHeight)) {
+      const copy = preview;
+      if (
+        commit &&
+        onPopOut &&
+        isPointerOutsideWindow(lastX, lastY, window.innerWidth, window.innerHeight)
+      ) {
+        endPreview();
         onPopOut(session.id, {
           ...popOutPosition(screenX, screenY),
           clientX: lastX,
@@ -5090,13 +5186,51 @@ const SessionCard = memo(function SessionCard({
         });
         return;
       }
-      if (listOver) {
-        onListDrop?.(session.id, listOver);
+      if (commit && listOver && onListDrop) {
+        // The copy lands on the card the reorder produces, found once the new order is committed.
+        // If nothing is committed (a drop that changes nothing) it returns to where it started.
+        let landed = false;
+        const land = () => {
+          if (landed) return;
+          landed = true;
+          if (afterSessionListCommit === land) afterSessionListCommit = null;
+          window.clearTimeout(fallback);
+          releaseList();
+          const card = [...document.querySelectorAll<HTMLElement>("[data-session-card]")].find(
+            (el) => el.dataset.sessionCard === session.id,
+          );
+          if (card) card.style.visibility = "hidden";
+          preview = null;
+          copy?.settleTo(card?.getBoundingClientRect() ?? null, () => {
+            card?.style.removeProperty("visibility");
+          });
+        };
+        const fallback = window.setTimeout(land, 160);
+        afterSessionListCommit = land;
+        onListDrop(session.id, listOver);
         return;
       }
-      const over = paneDropFromPoint(lastX, lastY);
-      if (over && over.id !== session.id) {
-        onPlaceOnPane?.(session.id, over.id, over.edge);
+      if (commit) {
+        const over = paneDropFromPoint(lastX, lastY);
+        if (over && over.id !== session.id) {
+          endPreview();
+          onPlaceOnPane?.(session.id, over.id, over.edge);
+          return;
+        }
+      }
+      // Cancelled or dropped nowhere: the copy returns to its slot and the gap closes.
+      gap?.open(null);
+      preview = null;
+      const home = new DOMRect(
+        startRect.left,
+        startRect.top + startScroll - (scroller?.scrollTop ?? 0),
+        startRect.width,
+        startRect.height,
+      );
+      if (copy && handle.isConnected) copy.settleTo(home, releaseList);
+      else {
+        copy?.dispose();
+        releaseList();
       }
     }
 
@@ -5348,7 +5482,7 @@ const SessionCard = memo(function SessionCard({
         }}
         onContextMenu={onContextMenu ? (event) => onContextMenu(session.id, event) : undefined}
         className={`relative border flex w-full ${onPlaceOnPane || onListDrop || onPopOut ? "cursor-grab" : "cursor-default"} select-none touch-none flex-col items-stretch gap-0 rounded-md px-2.5 text-left ${cardPaddingY} ${
-          dragging ? "opacity-40" : ""
+          dragging ? "opacity-0" : ""
         } border-transparent ${
           dropTarget
             ? "text-content"

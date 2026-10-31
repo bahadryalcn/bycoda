@@ -28,6 +28,11 @@
   position: relative;
 }
 
+/* The options trigger never gives up width to a long or truncated primary label. */
+.group > [data-split-part="menu"] {
+  flex: none;
+}
+
 .group > [data-split-part="primary"][data-button-tone] {
   border-start-end-radius: 0;
   border-end-end-radius: 0;

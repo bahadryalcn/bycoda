@@ -774,6 +774,26 @@ async function openBranchMenu() {
   return document.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
 }
 
+/** The contextual primary action of the commit split button. */
+function primaryAction() {
+  return container.querySelector<HTMLButtonElement>('[data-split-part="primary"]')!;
+}
+
+async function chooseCommitOption(name: string) {
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>('[aria-label="Commit options"]')!.click();
+  });
+  const items = [...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')];
+  const text = (item: HTMLElement) => item.textContent?.trim() ?? "";
+  const item =
+    items.find((candidate) => text(candidate) === name) ??
+    items.find((candidate) => text(candidate).startsWith(name));
+  expect(item, `menu item ${name}`).toBeDefined();
+  expect(item!.disabled).toBe(false);
+  await act(async () => item!.click());
+  await act(async () => {});
+}
+
 describe("GitChangesPanel action feedback", () => {
   it("allows commit while an automatic fetch is still waiting on the network", async () => {
     localStorage.setItem("bycoda.gitAutoFetch", "1");
@@ -794,13 +814,9 @@ describe("GitChangesPanel action feedback", () => {
       await vi.advanceTimersByTimeAsync(5 * 60_000);
     });
     expect(gitFetch).toHaveBeenCalledTimes(1);
-    const commit = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === "Commit",
-    )!;
-    expect(commit.disabled).toBe(false);
-    await act(async () => {
-      commit.click();
-    });
+    expect(primaryAction().textContent?.trim()).toBe("Commit & Push");
+    expect(primaryAction().disabled).toBe(false);
+    await chooseCommitOption("Commit");
     expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit during fetch", false, false);
     await act(async () => {
       finishFetch();
@@ -1015,13 +1031,8 @@ describe("GitChangesPanel action feedback", () => {
     });
     expect(sections()).toEqual(["Staged Changes"]);
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Commit options"]')!.click();
-    });
-    const pushItem = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-      (item) => item.textContent?.trim() === "Commit & Push",
-    )!;
-    await act(async () => pushItem.click());
+    expect(primaryAction().textContent?.trim()).toBe("Commit & Push");
+    await act(async () => primaryAction().click());
     await act(async () => {});
 
     // Still pushing, and the poll still reads the old index.
@@ -1173,12 +1184,8 @@ describe("GitChangesPanel navigation", () => {
     );
     await renderPanel(cwd);
     await typeMessage("Commit draft");
-    await click("Commit options");
-    await act(async () =>
-      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
-        .find((item) => item.textContent?.trim() === "Commit & Push")!
-        .click(),
-    );
+    expect(primaryAction().textContent?.trim()).toBe("Commit & Push");
+    await act(async () => primaryAction().click());
     await renderPanel("/other-navigation");
     expect(status()).toBeUndefined();
     await typeMessage("Other draft");
@@ -1241,11 +1248,7 @@ describe("GitChangesPanel navigation", () => {
     );
     await renderPanel(cwd);
     await typeMessage("Commit draft");
-    await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>("button")]
-        .find((button) => button.textContent?.trim() === "Commit")!
-        .click(),
-    );
+    await chooseCommitOption("Commit");
     await renderPanel("/other-navigation");
     await renderPanel(cwd);
     expect(container.textContent).toContain("Staged Changes");
@@ -1573,14 +1576,8 @@ describe("GitChangesPanel loading and publication recovery", () => {
       );
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Commit options"]')!.click(),
-    );
-    await act(async () =>
-      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
-        .find((button) => button.textContent?.trim() === "Commit & Push")!
-        .click(),
-    );
+    expect(primaryAction().textContent?.trim()).toBe("Commit & Push");
+    await act(async () => primaryAction().click());
     expect(container.textContent).toContain("Commit created; push failed");
     expect(gitCommit).toHaveBeenCalledTimes(1);
     await act(async () =>
@@ -1747,14 +1744,9 @@ describe("GitChangesPanel remote pull request", () => {
     vi.mocked(gitPrCreate).mockResolvedValue("https://example.test/pull/42");
     await renderPanel(cwd);
 
-    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-      (candidate) => candidate.textContent?.trim() === "Create PR",
-    );
-    expect(button?.disabled).toBe(false);
-    await act(async () => {
-      button!.click();
-      await Promise.resolve();
-    });
+    // An unpushed commit leads with Push; Create PR stays one menu choice away.
+    expect(primaryAction().textContent?.trim()).toContain("Push");
+    await chooseCommitOption("Create PR");
 
     expect(gitPush).toHaveBeenCalledWith(cwd);
     expect(gitRangeContext).toHaveBeenCalledWith(cwd);
