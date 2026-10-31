@@ -172,7 +172,10 @@ export function prepareSubmittedTurn(
   const queuedHandoff = live ? pendingHandoff(current) : null;
 
   if (pendingSwitch && current.busy) {
-    void cancelHarnessTurn(pendingSwitch.from, sessionId);
+    // The old provider is retired next; a cancel that was not confirmed is only logged.
+    cancelHarnessTurn(pendingSwitch.from, sessionId).catch((error) => {
+      console.warn("Could not stop the previous provider's turn", error);
+    });
   }
 
   dismissNoticesForContinuedSession(sessionId);

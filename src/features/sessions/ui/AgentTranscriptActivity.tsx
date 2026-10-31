@@ -1,4 +1,8 @@
 import { useFollowBottom } from "../hooks/useFollowBottom";
+import {
+  handoffPhaseOf,
+  subscribeHandoffPhase,
+} from "../../../integrations/harness/core/handoffPhase";
 import { useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
@@ -19,6 +23,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -174,21 +179,43 @@ function sameActivity(a: ActivityPhasesProps, b: ActivityPhasesProps): boolean {
  * While live, the open body stays a short scrolling window pinned to the
  * newest step; after the turn settles an opened group is full height again.
  */
-function ActivityPhaseGroup({
-  phase,
-  cwd,
-  active,
-  onApproval,
-  onOpenFile,
-  onOpenDiff,
-}: {
+type ActivityPhaseGroupProps = {
   phase: ActivityPhase;
   cwd?: string;
   active: boolean;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
-}) {
+};
+
+/**
+ * `buildActivityPhases` returns new phase objects for every frame, but a phase
+ * that holds the same blocks renders the same, so only the live one re-renders.
+ */
+function sameActivityPhaseGroup(a: ActivityPhaseGroupProps, b: ActivityPhaseGroupProps): boolean {
+  return (
+    a.cwd === b.cwd &&
+    a.active === b.active &&
+    a.onApproval === b.onApproval &&
+    a.onOpenFile === b.onOpenFile &&
+    a.onOpenDiff === b.onOpenDiff &&
+    (a.phase === b.phase ||
+      (a.phase.id === b.phase.id &&
+        a.phase.kind === b.phase.kind &&
+        a.phase.headline === b.phase.headline &&
+        a.phase.steps.length === b.phase.steps.length &&
+        a.phase.steps.every((step, index) => step === b.phase.steps[index])))
+  );
+}
+
+const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
+  phase,
+  cwd,
+  active,
+  onApproval,
+  onOpenFile,
+  onOpenDiff,
+}: ActivityPhaseGroupProps) {
   const t = useT();
   const [override, setOverride] = useRetainedDisclosure<boolean | null>(`phase:${phase.id}`, null);
   const waiting = phase.steps.some(needsApproval);
@@ -197,7 +224,11 @@ function ActivityPhaseGroup({
     phase.steps.some((step) => step.role === "tool" && toolCallState(step) === "rejected");
   const open = waiting || (override ?? active);
   const [liveScroller, setLiveScroller] = useState<HTMLDivElement | null>(null);
-  useFollowBottom(liveScroller, active && open, phase.steps, NEAR_BOTTOM_PX, true);
+  // A step's own growth is followed by the hook's resize observer; the layout
+  // pass is only needed when a step arrives, so a rebuilt array is not a trigger.
+  const lastStepId = phase.steps[phase.steps.length - 1]?.id;
+  const followKey = `${phase.steps.length}:${lastStepId ?? ""}`;
+  useFollowBottom(liveScroller, active && open, followKey, NEAR_BOTTOM_PX, true);
   // Steps already here when the group mounted, or that landed while it was
   // folded, are history: only a step you watch arrive gets the entrance.
   const settled = useRef<Set<Block["id"]> | null>(null);
@@ -370,7 +401,7 @@ function ActivityPhaseGroup({
       ) : null}
     </div>
   );
-}
+}, sameActivityPhaseGroup);
 
 type StepTurn = { wait: number; pace: number };
 
@@ -795,7 +826,7 @@ export function ActivityPhaseIcon({
  * a paragraph. In a phase the rail draws the bullet, so the row drops its own
  * leading icon and leans on the rail instead.
  */
-export function ActivityRow({
+export const ActivityRow = memo(function ActivityRow({
   block,
   cwd,
   live = false,
@@ -848,7 +879,7 @@ export function ActivityRow({
       onOpenDiff={onOpenDiff}
     />
   );
-}
+});
 
 /** A status row folded into the trail: one muted line, nothing to open. */
 function ActivityStatusRow({ block }: { block: Block }) {
@@ -1696,6 +1727,11 @@ function ConnectedApprovalControls({
 export function HandoffDivider({ block }: { block: Block }) {
   const t = useT();
   const meta = block.handoff;
+  const phase = useSyncExternalStore(
+    subscribeHandoffPhase,
+    () => (meta ? handoffPhaseOf(meta.from) : undefined),
+    () => undefined,
+  );
   if (!meta) return null;
 
   const preparing = meta.status === "preparing";
@@ -1703,7 +1739,11 @@ export function HandoffDivider({ block }: { block: Block }) {
   const cancelled = meta.status === "cancelled";
   const terminal = failed || cancelled;
   const label = preparing
-    ? "Preparing a handoff"
+    ? phase === "summarizing"
+      ? t("Asking {p0} for a summary…", { p0: HARNESS_TITLE[meta.from] })
+      : phase === "stopping"
+        ? t("Stopping {p0}…", { p0: HARNESS_TITLE[meta.from] })
+        : t("Preparing a handoff")
     : terminal
       ? `${HARNESS_TITLE[meta.to]} · ${t(failed ? "Failed" : "Cancelled")}`
       : HARNESS_TITLE[meta.to];

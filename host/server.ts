@@ -15,7 +15,8 @@ import {
 } from "../src/shared/model/host-contracts/native-devices";
 import { ModelCatalogCache } from "./model-catalog-cache";
 import { hostProviderAccounts } from "./provider-accounts";
-import { createVoiceClientSecret } from "./voice";
+import { createRealtimeSecret, createVoiceClientSecret } from "./voice";
+import { VoiceCloudCredentials } from "./voice-cloud-credentials";
 import { LocalVoiceService } from "./voice-local";
 import { inspectVoiceRuntime } from "./voice-runtime";
 import { VoiceSetupService } from "./voice-setup";
@@ -190,7 +191,7 @@ import type { DevServerDetails } from "../src/features/host-tools/devServerTypes
 import { WebControl } from "./web-control";
 import type { GenericAcpConfig } from "../src/features/providers/model/genericAcp";
 import type { HandoffHistory } from "../src/features/sessions/model/handoffBudget";
-import { DesktopSessions } from "./desktopSessions";
+import { DesktopSessions, type DesktopSessionMeta } from "./desktopSessions";
 import { QueueDrainer, queueRowCommands } from "./queue-drainer";
 import { SessionQueues } from "./session-queue";
 import { RequestAuthorizationError } from "./store-db";
@@ -593,7 +594,11 @@ export async function createHostServer(
     workspaceIdForDirectory: async (cwd) =>
       (await managed.list()).find((value) => inWorkspace(cwd, value.path))?.id,
   });
-  const localVoice = new LocalVoiceService();
+  // Cloud voice keys (ElevenLabs) live in their own OS-encrypted vault.
+  const voiceCloud = new VoiceCloudCredentials(
+    new OsSocialCredentials(join(featureDirectory, "voice", "credentials"), engine.store.environmentId),
+  );
+  const localVoice = new LocalVoiceService({ cloudKey: (provider) => voiceCloud.get(provider) });
   const voiceSetup = new VoiceSetupService();
   const devServerAccess = new DevServerAccess(
     async (params) => {
@@ -686,6 +691,54 @@ export async function createHostServer(
     if (snapshot) return snapshot;
     return await engine.store.session(id);
   };
+  /**
+   * A desktop-only session without its 7-10 MB transcript (`snapshotMetaAsync`): project,
+   * folder, harness, model, settings, usage limit and the last user block's text. Use it
+   * wherever a call site decides on those; keep `featureSession` where the blocks are the
+   * content (a conversation page, a provider prompt built from history, adoption).
+   */
+  const desktopMeta = async (id: string): Promise<DesktopSessionMeta | undefined> => {
+    if (!id || (await inHost(id))) return undefined;
+    const cwd = await desktop.projectCwdAsync(id);
+    const project = cwd
+      ? (await engine.store.projects()).find((p) => desktop.samePath(p.cwd, cwd))
+      : undefined;
+    const snapshot = project && (await desktop.snapshotMetaAsync(id, project.id, project.cwd));
+    return snapshot &&
+      (snapshot.session.harness === "acp" ||
+        providers.includes(snapshot.session.harness as RemoteProvider))
+      ? snapshot
+      : undefined;
+  };
+  /** Same ownership rules as `featureSession`: the desktop-only copy, else the host's own. */
+  const featureMeta = async (id: string): Promise<DesktopSessionMeta> => {
+    const meta = await desktopMeta(id);
+    if (meta) return meta;
+    const hosted = await engine.store.session(id);
+    const lastUser = hosted.session.blocks.findLast((block) => block.role === "user");
+    return { ...hosted, lastUserText: lastUser?.text ?? "" };
+  };
+  /**
+   * Reads that need only what a commit left (a queued send's model, the last user block)
+   * do not query the desktop database again while the desktop stamp is unchanged.
+   * The stamp is read first, so a newer transcript only ever causes one more read.
+   * Never use it for an authority recheck.
+   */
+  const stableMetas = new Map<string, { key: string; value: DesktopSessionMeta }>();
+  const featureMetaStable = async (id: string): Promise<DesktopSessionMeta> => {
+    if (!id || (await inHost(id))) return await featureMeta(id);
+    const stamp = await desktop.stampAsync(id);
+    const key = stamp ? `${stamp.updatedAt}\0${stamp.running}` : undefined;
+    const known = stableMetas.get(id);
+    if (key && known?.key === key) return known.value;
+    const value = await featureMeta(id);
+    stableMetas.delete(id);
+    if (key) {
+      stableMetas.set(id, { key, value });
+      while (stableMetas.size > 2) stableMetas.delete(stableMetas.keys().next().value!);
+    }
+    return value;
+  };
   const queueSessionStatus = async (id: string) => {
     const metadata = await desktop.metadataAsync(id);
     if (
@@ -696,11 +749,21 @@ export async function createHostServer(
       return metadata.running ? "running" : "idle";
     return await engine.store.sessionStatus(id);
   };
+  /** Existence check for queue calls. A conversation the host already stores is one indexed
+   * read; only a desktop-only one needs the desktop notes worker, which may be busy for long.
+   * `running` asks for the desktop's live status (only finishing without acceptance needs it). */
+  const queueSessionKnown = async (id: string, running = false) => {
+    if (running) return await queueSessionStatus(id);
+    try {
+      return await engine.store.sessionStatus(id);
+    } catch {
+      return await queueSessionStatus(id);
+    }
+  };
   const explicitSkillNames = async (id: string) =>
-    skillInvocationTokens(
-      (await featureSession(id)).session.blocks.filter((block) => block.role === "user").at(-1)
-        ?.text ?? "",
-    ).map((token) => token.name.replace(/^skill:/, ""));
+    skillInvocationTokens((await featureMetaStable(id)).lastUserText).map((token) =>
+      token.name.replace(/^skill:/, ""),
+    );
   const xBrowser = new XBrowserSessions(join(featureDirectory, "social"));
   const social =
     socialOverride ??
@@ -751,7 +814,8 @@ export async function createHostServer(
       typeof params.projectId !== "string"
     )
       throw new Error("Invalid desktop feature identity");
-    const target = await featureSession(params.sessionId);
+    // Identity and folder only: a metadata read, not the transcript (twice per call).
+    const target = await featureMeta(params.sessionId);
     const project = await engine.store.project(params.projectId);
     if (target.projectId !== project.id)
       throw new Error("Desktop feature belongs to another project");
@@ -770,7 +834,8 @@ export async function createHostServer(
       },
       async () => {
         try {
-          const current = await featureSession(target.session.id);
+          // A fresh read of exactly the fields compared below (never the stable cache).
+          const current = await featureMeta(target.session.id);
           return (
             (await engine.store.authenticated(token)) &&
             current.projectId === project.id &&
@@ -864,7 +929,7 @@ export async function createHostServer(
     const key = `${(await engine.store.sessionRevision(id)) ?? ""}\0${(await desktop.stampAsync(id))?.updatedAt ?? ""}`;
     const known = usageLimits.get(id);
     if (known?.key === key) return known.limited;
-    const limited = !!(await featureSession(id)).session.usageLimit;
+    const limited = !!(await featureMeta(id)).session.usageLimit;
     usageLimits.delete(id);
     usageLimits.set(id, { key, limited });
     while (usageLimits.size > 256) usageLimits.delete(usageLimits.keys().next().value!);
@@ -882,8 +947,9 @@ export async function createHostServer(
             // The host's own turn, including one in an adopted session the desktop
             // copy does not know is running.
             !(await hostRuns(id)) &&
-            (await queueSessionStatus(id)) !== "running" &&
+            // The desktop's running state is covered by its run-holder stamp below.
             !(await desktopRunHolder(id)) &&
+            (await queueSessionKnown(id)) !== "running" &&
             !(await usageLimited(id))
           );
         } catch {
@@ -934,37 +1000,39 @@ export async function createHostServer(
   desktop.live.onBusy = (id, clientId) => {
     const acceptedAt = Date.now();
     heartbeatEffects = heartbeatEffects
-      .then(
-        async () =>
-          await engine.store.db.scope(async () => {
-            // A later heartbeat may already have released or replaced this owner.
-            if (desktop.live.busyClient(id) !== clientId) return;
-            await touchSessionWorkspace(id);
-            const holder = `desktop:${clientId}`;
-            let heldBefore = acceptedAt;
-            // A window running a turn holds the conversation whether or not it asked first
-            // (an older app, or a release that raced with its next turn).
-            if (!runLeases.renew(id, holder)) {
-              try {
-                const running = await hostRuns(id);
-                if (desktop.live.busyClient(id) !== clientId) return;
-                const existing = runLeases.holder(id);
-                runLeases.acquire(id, holder, () => (running ? "host" : undefined));
-                // An implicit grant can happen after this beat was accepted.
-                // Include that grant in its idle cutoff, but never a newer
-                // explicit grant that appeared while the database was read.
-                if (!existing) heldBefore = Date.now();
-              } catch {
-                /* another side holds it: that one stays */
-              }
+      .then(async () => {
+        // Workspace bookkeeping runs before taking the store queue: it lists every
+        // workspace and writes one, which is no reason to hold the other requests back.
+        if (desktop.live.busyClient(id) !== clientId) return;
+        await touchSessionWorkspace(id);
+        await engine.store.db.scope(async () => {
+          // A later heartbeat may already have released or replaced this owner.
+          if (desktop.live.busyClient(id) !== clientId) return;
+          const holder = `desktop:${clientId}`;
+          let heldBefore = acceptedAt;
+          // A window running a turn holds the conversation whether or not it asked first
+          // (an older app, or a release that raced with its next turn).
+          if (!runLeases.renew(id, holder)) {
+            try {
+              const running = await hostRuns(id);
+              if (desktop.live.busyClient(id) !== clientId) return;
+              const existing = runLeases.holder(id);
+              runLeases.acquire(id, holder, () => (running ? "host" : undefined));
+              // An implicit grant can happen after this beat was accepted.
+              // Include that grant in its idle cutoff, but never a newer
+              // explicit grant that appeared while the database was read.
+              if (!existing) heldBefore = Date.now();
+            } catch {
+              /* another side holds it: that one stays */
             }
-            // After the grant, so the lease of this very turn counts as held by now.
-            const key = `${id}\0${clientId}`;
-            lastBusy.delete(key);
-            lastBusy.set(key, heldBefore);
-            while (lastBusy.size > 1024) lastBusy.delete(lastBusy.keys().next().value!);
-          }),
-      )
+          }
+          // After the grant, so the lease of this very turn counts as held by now.
+          const key = `${id}\0${clientId}`;
+          lastBusy.delete(key);
+          lastBusy.set(key, heldBefore);
+          while (lastBusy.size > 1024) lastBusy.delete(lastBusy.keys().next().value!);
+        });
+      })
       .catch((error) => console.warn("Desktop heartbeat lease update failed", error));
   };
   desktop.live.onIdle = (id, clientId, reason) => {
@@ -974,6 +1042,30 @@ export async function createHostServer(
       runLeases.drop(id, `desktop:${clientId}`, lastBusy.get(`${id}\0${clientId}`) ?? 0);
     if (reason !== "gone")
       heartbeatEffects = heartbeatEffects.then(() => touchSessionWorkspace(id));
+  };
+  /**
+   * A heartbeat answer is built from memory plus a bounded wait on the store: the window
+   * counts silence as gone, so a stalled store queue must not delay the reply. Whatever
+   * has not finished keeps running and lands later; the missing part of the answer is
+   * simply absent, which the window treats as "no news".
+   */
+  const BEAT_STORE_WAIT_MS = 1_500;
+  const withinBeat = async <T>(work: () => Promise<T>, fallback: T): Promise<T> => {
+    const pending = work();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        pending,
+        new Promise<T>((resolve) => {
+          timer = setTimeout(() => resolve(fallback), BEAT_STORE_WAIT_MS);
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      // An abandoned wait must not surface as an unhandled rejection.
+      pending.catch(() => undefined);
+    }
   };
   /**
    * The run leases a desktop window says it holds (for the conversations it runs
@@ -995,14 +1087,28 @@ export async function createHostServer(
       else if (current) answers[sessionId] = runLeases.renew(sessionId, holder, Number(epoch)) ?? null;
       else {
         try {
-          answers[sessionId] = await engine.store.db.scope(async () => {
-            const hostRunning = await hostRuns(sessionId);
-            return runLeases.acquire(sessionId, holder, () => {
+          const grant = (hostRunning: boolean) =>
+            runLeases.acquire(sessionId, holder, () => {
               if (hostRunning) return "host";
               const busy = desktop.live.busyClient(sessionId);
               return busy && `desktop:${busy}` !== holder ? `desktop:${busy}` : undefined;
             });
-          });
+          // Whether the host runs it is a store read. When the store queue is busy for
+          // long, answer from the engine's own memory of its runs instead of stalling.
+          let late = false;
+          const stored = await withinBeat(
+            () =>
+              engine.store.db.scope(async () => {
+                if (late) return undefined;
+                return { lease: grant(await hostRuns(sessionId)) };
+              }),
+            undefined,
+          );
+          if (stored) answers[sessionId] = stored.lease;
+          else {
+            late = true;
+            answers[sessionId] = grant(engine.hasActiveRun(sessionId));
+          }
         } catch {
           answers[sessionId] = null;
         }
@@ -1755,7 +1861,9 @@ export async function createHostServer(
         "dev.servers",
         "dev.servers.private-access",
         "voice.realtime.v1",
+        "voice.realtime.v2",
         "voice.local.v1",
+        "voice.cloud.v1",
         "voice.local.setup.v1",
         "social.v1",
         "social.policy.reviewed.v1",
@@ -1807,7 +1915,7 @@ export async function createHostServer(
   const sessionQueueService = createSessionQueueService({
     environmentId: engine.store.environmentId,
     transaction: (work) => engine.store.transaction(work, "critical"),
-    sessionStatus: queueSessionStatus,
+    sessionStatus: queueSessionKnown,
     desktopWatch,
     queues: {
       get: (id) => sessionQueues.get(id),
@@ -1834,7 +1942,7 @@ export async function createHostServer(
       receiptStatus: (id) => engine.store.receiptStatus(id),
       transaction: (operation) => engine.store.transaction(operation, "critical"),
       readView: readSessionView,
-      modelTarget: async (id) => (await featureSession(id)).session,
+      modelTarget: async (id) => (await featureMetaStable(id)).session,
       adopt,
       touchWorkspace: touchSessionWorkspace,
     },
@@ -2619,7 +2727,7 @@ export async function createHostServer(
                   if (!(await scopedDeviceAuthorized())) throw new Error("Session authority revoked.");
                 } else if (action === "skills.search")
                   result = searchHarnessSkills(
-                    sessionWorkCwd((await featureSession(boundPrincipal.sessionId)).session),
+                    sessionWorkCwd((await featureMeta(boundPrincipal.sessionId)).session),
                     args,
                     undefined,
                     boundPrincipal.sessionId,
@@ -2627,7 +2735,7 @@ export async function createHostServer(
                   );
                 else if (action === "skills.read")
                   result = await readHarnessSkill(
-                    sessionWorkCwd((await featureSession(boundPrincipal.sessionId)).session),
+                    sessionWorkCwd((await featureMeta(boundPrincipal.sessionId)).session),
                     {
                       name: String(args.name),
                       source: typeof args.source === "string" ? args.source : undefined,
@@ -2678,14 +2786,14 @@ export async function createHostServer(
                     async () => !!(await conversationAccess.principalForToken(token)),
                   );
                 else if (isVisualConversationTool(action)) {
-                  const own = await featureSession(boundPrincipal.sessionId);
+                  const own = await featureMeta(boundPrincipal.sessionId);
                   if (own.projectId !== projectId)
                     throw new Error("Conversation belongs to another project.");
                   const root = await resolveHostWorktreeAsync(project.cwd, sessionWorkCwd(own.session));
                   result = await callVisualConversationTool(root, action, args, scopedDeviceAuthorized, browserRuntime.load);
                 }
                 else if (isFileConversationTool(action)) {
-                  const own = await featureSession(boundPrincipal.sessionId);
+                  const own = await featureMeta(boundPrincipal.sessionId);
                   if (own.projectId !== projectId)
                     throw new Error("Conversation belongs to another project.");
                   const root = await resolveHostWorktreeAsync(
@@ -2806,7 +2914,7 @@ export async function createHostServer(
                 else if (action.startsWith("tasks.")) {
                   const list = (await tasks.list()).filter((task) => task.projectId === projectId);
                   if (action === "tasks.create") {
-                    const own = (await featureSession(boundPrincipal.sessionId)).session;
+                    const own = (await featureMeta(boundPrincipal.sessionId)).session;
                     const input = {
                       ...normalizeConversationTaskConfiguration(
                         args,
@@ -3692,7 +3800,7 @@ export async function createHostServer(
                   if (params.projectId !== undefined)
                     await engine.store.project(String(params.projectId));
                   if (params.sessionId !== undefined) {
-                    const session = await featureSession(String(params.sessionId));
+                    const session = await featureMeta(String(params.sessionId));
                     if (params.projectId !== undefined && session.projectId !== params.projectId)
                       throw new Error("Runtime logs belong to another project");
                   }
@@ -3747,7 +3855,7 @@ export async function createHostServer(
                   if (params.projectId !== undefined)
                     await engine.store.project(String(params.projectId));
                   if (params.sessionId !== undefined) {
-                    const session = await featureSession(String(params.sessionId));
+                    const session = await featureMeta(String(params.sessionId));
                     if (params.projectId !== undefined && session.projectId !== params.projectId)
                       throw new Error("Browser belongs to another project");
                   }
@@ -3769,7 +3877,7 @@ export async function createHostServer(
                   const projectId = String(params.projectId ?? "");
                   await engine.store.project(projectId);
                   if (
-                    (await featureSession(String(params.sessionId ?? ""))).projectId !== projectId
+                    (await featureMeta(String(params.sessionId ?? ""))).projectId !== projectId
                   )
                     throw new Error("Conversation belongs to another project");
                   result = await sharedBrowser.dispatch(input.method, params, token);
@@ -3791,7 +3899,27 @@ export async function createHostServer(
                   result = await createVoiceClientSecret();
                   break;
                 case "voice.local.inspect":
-                  result = await inspectVoiceRuntime(params.config);
+                  result = await inspectVoiceRuntime(params.config, {
+                    cloudKey: async (provider) => Boolean(await voiceCloud.get(provider)),
+                  });
+                  break;
+                case "voice.realtime.secret":
+                case "voice.cloud.status":
+                case "voice.cloud.setKey":
+                  // Sign-ins and keys stay on this computer: no browser or remote caller.
+                  if (
+                    request.headers.origin ||
+                    !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
+                      request.socket.remoteAddress ?? "",
+                    )
+                  )
+                    throw new Error("Cloud voice is available only on this computer.");
+                  result =
+                    input.method === "voice.realtime.secret"
+                      ? await createRealtimeSecret(params.provider)
+                      : input.method === "voice.cloud.status"
+                        ? await voiceCloud.status()
+                        : await voiceCloud.setKey(params.provider, params.key ?? null);
                   break;
                 case "voice.local.setup":
                 case "voice.local.setupStatus":
@@ -3904,7 +4032,7 @@ export async function createHostServer(
                       ? (params.history as HandoffHistory)?.sessionId
                       : String(params.sessionId ?? "");
                   if (!sessionId) throw new Error("Invalid conversation");
-                  if ((await featureSession(sessionId)).projectId !== projectId)
+                  if ((await featureMeta(sessionId)).projectId !== projectId)
                     throw new Error("Conversation belongs to another project");
                   result =
                     input.method === "handoff_history_save"
@@ -4228,17 +4356,20 @@ export async function createHostServer(
                   break;
                 case "sessions.desktopLive": {
                   const beat = desktop.live.beat(params);
-                  await heartbeatEffects;
+                  await withinBeat(() => heartbeatEffects, undefined);
                   result = {
                     ...beat,
-                    deletions: await desktopDelete.beat(
-                      `${tokenHash}:${String(params.clientId ?? "")}`,
-                      params.deletions,
+                    deletions: await withinBeat(
+                      () =>
+                        desktopDelete.beat(
+                          `${tokenHash}:${String(params.clientId ?? "")}`,
+                          params.deletions,
+                        ),
+                      { jobs: [], acked: [] },
                     ),
-                    inbox: await providerInbox.beat(
-                      tokenHash,
-                      params.clientId,
-                      params.inbox,
+                    inbox: await withinBeat(
+                      () => providerInbox.beat(tokenHash, params.clientId, params.inbox),
+                      { jobs: [], acked: [] },
                     ),
                     notesRevision: hostNotes.revision,
                     // Lets the desktop re-read only the shared queues another computer
@@ -4246,10 +4377,13 @@ export async function createHostServer(
                     queues: sessionQueues.changesSince(params.queueSeq),
                     // Likewise the adopted conversations whose host copy moved, so the
                     // desktop mirrors them at once instead of polling `sessions.adopted`.
-                    adopted: await adoptedChanges.changesSince(params.adoptedSeq),
+                    adopted: await withinBeat(
+                      () => adoptedChanges.changesSince(params.adoptedSeq),
+                      undefined,
+                    ),
                     // The same beat keeps this desktop's drain leases alive. A lease it
                     // no longer holds is `null`: the host drains that queue itself.
-                    queueLeases: await renewQueueLeases(params),
+                    queueLeases: await withinBeat(() => renewQueueLeases(params), undefined),
                     // And its run leases: `null` is a conversation it must stop writing to.
                     runLeases: await renewRunLeases(params),
                   };
@@ -4282,7 +4416,10 @@ export async function createHostServer(
                     break;
                   }
                   if (params.action !== "acquire") throw new Error("Invalid run lease request");
-                  await queueSessionStatus(id); // The same authorized existence check as the queue calls.
+                  // The same existence check as the queue calls. A conversation the host
+                  // already stores is known by one indexed read; only a desktop-only one
+                  // needs the desktop database, whose notes worker may be busy for long.
+                  await queueSessionKnown(id);
                   result = await engine.store.db.scope(async () => {
                     const hostRunning = writerTransfers.has(id) || (await hostRuns(id));
                     return {
@@ -4739,11 +4876,20 @@ export async function createHostServer(
                   const projects = projectId
                     ? [await engine.store.project(projectId)]
                     : await engine.store.projects();
-                  const sessions = (
-                    await Promise.all(
-                      projects.map(async (project) => await projectSessionList(project.id)),
-                    )
-                  ).flatMap((entry) => entry.list);
+                  // Bounded fan-out: with 100+ projects an unbounded Promise.all queues every
+                  // list job (and its desktop read) at once and starves the point reads.
+                  const lists: Awaited<ReturnType<typeof projectSessionList>>[] = [];
+                  let nextProject = 0;
+                  await Promise.all(
+                    Array.from({ length: Math.min(4, projects.length) }, async () => {
+                      for (;;) {
+                        const index = nextProject++;
+                        if (index >= projects.length) return;
+                        lists[index] = await projectSessionList(projects[index].id);
+                      }
+                    }),
+                  );
+                  const sessions = lists.flatMap((entry) => entry.list);
                   if (!(await engine.store.authenticated(token)))
                     throw new Error("Session authority revoked.");
                   result = hostInbox(

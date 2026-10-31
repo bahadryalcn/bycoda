@@ -9,7 +9,8 @@ import {
 } from "../model/transcriptJump";
 import { HarnessIcon } from "./HarnessIcon";
 import { findModel } from "../model/models";
-import { useSession } from "../model/sessionsStore";
+import { usePaneSession } from "../model/sessionsStore";
+import { PresentationVisibility } from "./presentationVisibility";
 import { HARNESS_TITLE, sessionDisplayTitle, sessionWorkCwd, type Session } from "../model/session";
 import { createNote, noteTitle } from "../../notes";
 import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
@@ -28,9 +29,16 @@ type AgentTabViewProps = {
 };
 
 export function AgentTabView(props: AgentTabViewProps) {
-  if (props.session && hostSessionBinding(props.session))
-    return <HostAgentTabView {...props} session={props.session} />;
-  return <LocalAgentTabView {...props} />;
+  // A hidden tab must not run its text-reveal frame loop.
+  return (
+    <PresentationVisibility.Provider value={props.visible}>
+      {props.session && hostSessionBinding(props.session) ? (
+        <HostAgentTabView {...props} session={props.session} />
+      ) : (
+        <LocalAgentTabView {...props} />
+      )}
+    </PresentationVisibility.Provider>
+  );
 }
 
 function HostAgentTabView(props: AgentTabViewProps & { session: Session }) {
@@ -72,7 +80,8 @@ function LocalAgentTabView({
 }: AgentTabViewProps & Partial<HostHistoryProps>) {
   const t = useT();
   // The shell's copy lags behind by streamed text; the store has the live one.
-  const live = useSession(shellSession?.id);
+  // A hidden tab follows the shell and skips streamed frames.
+  const live = usePaneSession(shellSession?.id, visible);
   const session = remoteSession ? shellSession : live ?? shellSession;
   const navigateBlockRef = useRef<((blockId: string | null, query?: string) => boolean) | null>(
     null,

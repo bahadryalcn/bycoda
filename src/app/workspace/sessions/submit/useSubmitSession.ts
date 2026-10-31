@@ -9,7 +9,10 @@ import { applyPendingAccount } from "./submitPendingAccount";
 import { prepareSubmitPreflight } from "./submitPreflight";
 import { routeSubmitSession } from "./submitRouting";
 import { steerBusySubmit } from "./submitBusySteer";
-import { gateRunLease } from "./submitRunLease";
+import { gateRunLease, isRunLeaseStarting } from "./submitRunLease";
+import { queueWhileStarting } from "./submitStarting";
+import { showSubmitNotice } from "./submitNotice";
+import { isPreparingHandoff } from "../../../../features/sessions/model/handoff";
 import { harnessRuntimeHints } from "../../../../integrations/harness/core/runtimeGuidance";
 import { loadSkillRestrictions } from "../../../../features/skills/model/skillPreferences";
 import { startSubmittedTurn } from "./submitTurnRun";
@@ -41,19 +44,21 @@ export function useSubmitSession(deps: SubmitDeps) {
       options?: SubmitOptions,
     ): SubmissionAcceptance => {
       const input: SubmitInput = { sessionId, text, attachments, options };
-      // A send already being checked or leased must not start a second turn; say why.
-      const holdSend = (text: string): false => {
-        enqueueHarnessEvent(sessionId, { type: "status", text });
-        flushHarnessEvents();
-        return false;
-      };
-      if (isUsageBudgetChecking(sessionId, deps.refs.turnGen.current.get(sessionId)))
-        return holdSend("The previous message is still being checked. Send again in a moment.");
-      // The run lease is being asked for: this second send must not also start a turn.
-      if (isRunLeasePending(sessionId))
-        return holdSend("The previous message is still starting. Send again in a moment.");
       const routed = routeSubmitSession(deps, input);
       if (routed !== undefined) return routed;
+      // A send still being checked, waiting for the run lease or preparing must
+      // not also start a turn: this one is queued to go out right after it.
+      const generation = deps.refs.turnGen.current.get(sessionId);
+      const startingReason = isUsageBudgetChecking(sessionId, generation)
+        ? "The previous message is still being checked. Send again in a moment."
+        : isRunLeaseStarting(sessionId, generation) || isRunLeasePending(sessionId)
+          ? "The previous message is still starting. Send again in a moment."
+          : undefined;
+      if (startingReason) {
+        const early = prepareSubmitPreflight(deps, input);
+        if (early.settled) return early.value;
+        return queueWhileStarting(deps, input, early.pre, startingReason);
+      }
       // An account picked during the last turn applies before this send.
       const accountApplied = applyPendingAccount(deps, input, () =>
         deps.getSubmitSessionRef().current(sessionId, text, attachments, options),
@@ -62,6 +67,15 @@ export function useSubmitSession(deps: SubmitDeps) {
       const preflight = prepareSubmitPreflight(deps, input);
       if (preflight.settled) return preflight.value;
       const { pre } = preflight;
+      // A provider handoff in progress (up to a minute) is not a reason to
+      // refuse: the message is queued and goes out when it has finished.
+      if (isPreparingHandoff(pre.current))
+        return queueWhileStarting(
+          deps,
+          input,
+          pre,
+          "Message not sent: wait for the provider handoff to finish.",
+        );
       const busy = steerBusySubmit(deps, input, pre);
       if (busy !== undefined) return busy;
       const located = gateProjectLocation(deps, input, pre);
@@ -102,11 +116,7 @@ export function useSubmitSession(deps: SubmitDeps) {
     (...args: Parameters<Submit>): boolean => {
       // Reject before async preparation can make the composer clear its draft.
       if (workspaceNavigation.isSwitching(args[0])) {
-        enqueueHarnessEvent(args[0], {
-          type: "status",
-          text: "The workspace is switching. Send again in a moment.",
-        });
-        flushHarnessEvents();
+        showSubmitNotice(args[0], "The workspace is switching. Send again in a moment.");
         return false;
       }
       const result = submitSession(...args);
@@ -117,7 +127,7 @@ export function useSubmitSession(deps: SubmitDeps) {
       });
       return true;
     },
-    [submitSession, enqueueHarnessEvent, flushHarnessEvents],
+    [submitSession, workspaceNavigation],
   );
 
   return { submitSession, onSubmit };

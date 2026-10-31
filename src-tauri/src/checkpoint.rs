@@ -2,7 +2,8 @@
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet, HashMap as LockMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError, Weak};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -21,6 +22,37 @@ const MAX_SNAPSHOT_FILES: usize = 2000;
 /// than one Git process per file pair.
 const MAX_PAIRWISE_STATS: usize = 8;
 const MAX_TOPLEVEL_CACHE: usize = 64;
+/// Total desktop checkpoint store budget across all sessions.
+const STORE_BUDGET_BYTES: u64 = 1024 * 1024 * 1024;
+/// Idle sessions older than this lose their checkpoint history regardless of size.
+const STORE_MAX_IDLE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+/// How long a send waits for another session's checkpoint work in the same checkout
+/// before it proceeds without a file baseline (undo for that message is unavailable).
+const BEGIN_GATE_WAIT: Duration = Duration::from_secs(3);
+/// Marker error: a bounded gate wait expired. Never shown to users.
+const CHECKPOINT_BUSY: &str = "Checkpoint gate busy";
+
+fn lock_gate<'a>(
+    gate: &'a Mutex<()>,
+    deadline: Option<Instant>,
+    poisoned: &str,
+) -> Result<MutexGuard<'a, ()>, String> {
+    let Some(deadline) = deadline else {
+        return gate.lock().map_err(|_| poisoned.to_string());
+    };
+    loop {
+        match gate.try_lock() {
+            Ok(guard) => return Ok(guard),
+            Err(TryLockError::Poisoned(_)) => return Err(poisoned.to_string()),
+            Err(TryLockError::WouldBlock) => {
+                if Instant::now() >= deadline {
+                    return Err(CHECKPOINT_BUSY.into());
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+}
 
 static TOPLEVEL_CACHE: std::sync::OnceLock<Mutex<LockMap<PathBuf, String>>> =
     std::sync::OnceLock::new();
@@ -112,11 +144,24 @@ impl CheckpointStore {
         cwds: &[&str],
         operation: impl FnOnce(&Self) -> Result<T, String>,
     ) -> Result<T, String> {
+        self.exclusive_until(session_id, cwds, None, operation)
+    }
+
+    /// `exclusive` whose gate acquisition gives up with `CHECKPOINT_BUSY` at `deadline`.
+    /// The operation itself is never interrupted once it holds the gates.
+    fn exclusive_until<T>(
+        &self,
+        session_id: &str,
+        cwds: &[&str],
+        deadline: Option<Instant>,
+        operation: impl FnOnce(&Self) -> Result<T, String>,
+    ) -> Result<T, String> {
         match &self.authority {
             Some(gate) => {
                 let mut completed = None;
                 let guarded = gate.guarded(session_id, "native-checkpoint", || {
-                    completed = Some(self.exclusive_read(session_id, cwds, operation)?);
+                    completed =
+                        Some(self.exclusive_read_until(session_id, cwds, deadline, operation)?);
                     Ok(())
                 });
                 if let Some(value) = completed {
@@ -131,7 +176,7 @@ impl CheckpointStore {
                     Err("Checkpoint operation did not complete".into())
                 }
             }
-            None => self.exclusive_read(session_id, cwds, operation),
+            None => self.exclusive_read_until(session_id, cwds, deadline, operation),
         }
     }
 
@@ -139,6 +184,16 @@ impl CheckpointStore {
         &self,
         session_id: &str,
         cwds: &[&str],
+        operation: impl FnOnce(&Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.exclusive_read_until(session_id, cwds, None, operation)
+    }
+
+    fn exclusive_read_until<T>(
+        &self,
+        session_id: &str,
+        cwds: &[&str],
+        deadline: Option<Instant>,
         operation: impl FnOnce(&Self) -> Result<T, String>,
     ) -> Result<T, String> {
         // A session manifest and all affected working trees have one owner.
@@ -151,9 +206,7 @@ impl CheckpointStore {
                 .map_err(|_| "Checkpoint lock registry poisoned")?;
             checkpoint_gate(&mut gates, format!("session:{session_id}"))
         };
-        let _session = session_gate
-            .lock()
-            .map_err(|_| "Checkpoint session lock poisoned")?;
+        let _session = lock_gate(&session_gate, deadline, "Checkpoint session lock poisoned")?;
         let saved = read_manifest(&self.session_dir(session_id))?;
         let mut keys = BTreeSet::new();
         for cwd in cwds
@@ -196,10 +249,11 @@ impl CheckpointStore {
         };
         let mut guards = Vec::new();
         for gate in &repo_gates {
-            guards.push(
-                gate.lock()
-                    .map_err(|_| "Checkpoint repository lock poisoned")?,
-            );
+            guards.push(lock_gate(
+                gate,
+                deadline,
+                "Checkpoint repository lock poisoned",
+            )?);
         }
         operation(self)
     }
@@ -854,6 +908,15 @@ fn start_orphan_pruning(app: &AppHandle, store: CheckpointStore) {
                 Ok(_) => {}
                 Err(error) => eprintln!("Checkpoint pruning skipped: {error}"),
             }
+            // Budget across sessions (each session is capped on its own), re-checked
+            // periodically because the store only ever grows between launches.
+            loop {
+                let freed = store.enforce_budget(STORE_BUDGET_BYTES, STORE_MAX_IDLE);
+                if freed > 0 {
+                    eprintln!("Checkpoint budget freed {} MiB", freed >> 20);
+                }
+                std::thread::sleep(Duration::from_secs(6 * 60 * 60));
+            }
         });
     if let Err(error) = spawned {
         eprintln!("checkpoint prune thread: {error}");
@@ -1214,6 +1277,43 @@ fn path_contains_symlink(root: &Path, relative: &str) -> bool {
         match std::fs::symlink_metadata(&current) {
             Ok(meta) if meta.file_type().is_symlink() => return true,
             Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
+            Err(_) => return true,
+        }
+    }
+    false
+}
+
+/// Parent directories already verified as symlink-free within one baseline pass.
+/// Lets the per-file stamp check only the file itself instead of every path component.
+#[derive(Default)]
+struct VerifiedDirs(std::collections::HashSet<String>);
+
+/// True when a parent directory of `relative` is a symlink or cannot be inspected.
+/// Each parent is walked once per `VerifiedDirs`; the file itself is not checked here.
+fn parent_contains_symlink(root: &Path, relative: &str, verified: &mut VerifiedDirs) -> bool {
+    let Some((parent, _)) = relative.rsplit_once('/') else {
+        return false;
+    };
+    if verified.0.contains(parent) {
+        return false;
+    }
+    let mut current = root.to_path_buf();
+    let mut prefix = String::new();
+    for part in parent.split('/') {
+        if !prefix.is_empty() {
+            prefix.push('/');
+        }
+        prefix.push_str(part);
+        current.push(part);
+        if verified.0.contains(&prefix) {
+            continue;
+        }
+        match std::fs::symlink_metadata(&current) {
+            Ok(meta) if meta.file_type().is_symlink() => return true,
+            Ok(_) => {
+                verified.0.insert(prefix.clone());
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
             Err(_) => return true,
         }

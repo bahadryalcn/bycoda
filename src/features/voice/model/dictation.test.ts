@@ -8,6 +8,11 @@ const backend = vi.hoisted(() => ({
 }));
 vi.mock("./localVoiceClient", () => ({ localVoiceBackend: backend }));
 import { Dictation } from "./dictation";
+/** A voiced (150 Hz) speech-like frame: the VAD requires pitch, not just level. */
+const voicedFrame = () =>
+  Int16Array.from({ length: 1024 }, (_, i) =>
+    Math.round(4000 * Math.sin((2 * Math.PI * 150 * i) / 16000)),
+  );
 
 const track = { stop: vi.fn() };
 let port: { onmessage: ((event: { data: ArrayBuffer }) => void) | null };
@@ -45,8 +50,7 @@ function setup() {
   return events;
 }
 const speak = (frames = 5) => {
-  for (let i = 0; i < frames; i++)
-    port.onmessage!({ data: new Int16Array(1024).fill(4000).buffer });
+  for (let i = 0; i < frames; i++) port.onmessage!({ data: voicedFrame().buffer });
 };
 const pause = () => {
   for (let i = 0; i < 10; i++) port.onmessage!({ data: new Int16Array(1024).buffer });

@@ -788,84 +788,93 @@ pub(crate) fn reconcile_pending_native(
     }
 }
 
-#[tauri::command(async)]
-pub fn managed_rewind_reconcile(
+#[tauri::command]
+pub async fn managed_rewind_reconcile(
     app: AppHandle,
-    store: State<'_, SessionStore>,
 ) -> Result<Vec<String>, String> {
-    reconcile_pending_native(&app, &store, None)
+    crate::harness::run_blocking("managed_rewind_reconcile", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        reconcile_pending_native(&app, &store, None)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn managed_turn_begin(
+#[tauri::command]
+pub async fn managed_turn_begin(
     app: AppHandle,
-    store: State<'_, SessionStore>,
     session_id: String,
     user_block_id: String,
     run_id: String,
 ) -> Result<(), String> {
-    if !exact_git_rewind_enabled(&app) {
-        return Ok(());
-    }
-    validate_id(&user_block_id, "user block")?;
-    validate_id(&run_id, "turn run")?;
-    reconcile_pending_native(&app, &store, Some(&session_id))?;
-    let record = stored_managed_session(&store, &session_id)?;
-    let host =
-        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
-    let request = if let Some((raw, _)) = pending_turn(&store, &session_id)? {
+    crate::harness::run_blocking("managed_turn_begin", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        if !exact_git_rewind_enabled(&app) {
+            return Ok(());
+        }
+        validate_id(&user_block_id, "user block")?;
+        validate_id(&run_id, "turn run")?;
+        reconcile_pending_native(&app, &store, Some(&session_id))?;
+        let record = stored_managed_session(&store, &session_id)?;
+        let host =
+            crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
+        let request = if let Some((raw, _)) = pending_turn(&store, &session_id)? {
+            let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+            if request.user_block_id != user_block_id
+                || request.run_id != run_id
+                || Some(&request.workspace_id) != record.workspace_id.as_ref()
+            {
+                return Err(
+                    "A different managed turn is still active or has an unknown outcome".into(),
+                );
+            }
+            request
+        } else {
+            ManagedTurnRequest {
+                workspace_id: record.workspace_id.unwrap(),
+                session_id,
+                user_block_id,
+                run_id,
+                conversation_revision: record.transcript_revision.unwrap_or(0),
+            }
+        };
+        begin_managed_turn(&store, &host, &request, true)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn managed_turn_end(
+    app: AppHandle,
+    session_id: String,
+    user_block_id: String,
+    run_id: String,
+) -> Result<(), String> {
+    crate::harness::run_blocking("managed_turn_end", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        if !exact_git_rewind_enabled(&app) {
+            return Ok(());
+        }
+        let record = stored_managed_session(&store, &session_id)?;
+        let Some((raw, _)) = pending_turn(&store, &session_id)? else {
+            return Err("There is no managed turn to complete".into());
+        };
         let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
         if request.user_block_id != user_block_id
             || request.run_id != run_id
             || Some(&request.workspace_id) != record.workspace_id.as_ref()
         {
-            return Err(
-                "A different managed turn is still active or has an unknown outcome".into(),
-            );
+            return Err("Managed turn completion does not match the active turn".into());
         }
-        request
-    } else {
-        ManagedTurnRequest {
-            workspace_id: record.workspace_id.unwrap(),
-            session_id,
-            user_block_id,
-            run_id,
-            conversation_revision: record.transcript_revision.unwrap_or(0),
-        }
-    };
-    begin_managed_turn(&store, &host, &request, true)
-}
-
-#[tauri::command(async)]
-pub fn managed_turn_end(
-    app: AppHandle,
-    store: State<'_, SessionStore>,
-    session_id: String,
-    user_block_id: String,
-    run_id: String,
-) -> Result<(), String> {
-    if !exact_git_rewind_enabled(&app) {
-        return Ok(());
-    }
-    let record = stored_managed_session(&store, &session_id)?;
-    let Some((raw, _)) = pending_turn(&store, &session_id)? else {
-        return Err("There is no managed turn to complete".into());
-    };
-    let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-    if request.user_block_id != user_block_id
-        || request.run_id != run_id
-        || Some(&request.workspace_id) != record.workspace_id.as_ref()
-    {
-        return Err("Managed turn completion does not match the active turn".into());
-    }
-    // Persistent native transports may outlive a completed provider turn. Exact
-    // capture requires their process exit and acknowledged shared-activity release.
-    // Legacy sessions never enter this managed-only command.
-    app.state::<crate::harness::HarnessHost>()
-        .retire_managed_session(&request.session_id)?;
-    let host =
-        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
-    finish_managed_turn(&store, &host, &request, true)
+        // Persistent native transports may outlive a completed provider turn. Exact
+        // capture requires their process exit and acknowledged shared-activity release.
+        // Legacy sessions never enter this managed-only command.
+        app.state::<crate::harness::HarnessHost>()
+            .retire_managed_session(&request.session_id)?;
+        let host =
+            crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
+        finish_managed_turn(&store, &host, &request, true)
+    })
+    .await
 }
 
 fn validate_rewind_input(
@@ -891,33 +900,36 @@ fn validate_rewind_input(
     Ok(boundary)
 }
 
-#[tauri::command(async)]
-pub fn managed_rewind_plan(
+#[tauri::command]
+pub async fn managed_rewind_plan(
     app: AppHandle,
-    store: State<'_, SessionStore>,
     request: Value,
 ) -> Result<Value, String> {
-    require_exact_git_rewind(&app)?;
-    if let Some(session_id) = request["sessionId"].as_str() {
-        reconcile_pending_native(&app, &store, Some(session_id))?;
-    }
-    let boundary = validate_rewind_input(&store, &request)?;
-    assert_writable(&store, request["sessionId"].as_str().unwrap())?;
-    let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
-    host.project(
-        "native.rewind.plan",
-        json!({"request":request,"conversation":boundary}),
-        |plan, _projection| {
-            if plan["workspaceId"] != request["workspaceId"]
-                || plan["sessionId"] != request["sessionId"]
-                || plan["expectedConversationRevision"] != boundary.revision
-                || plan["expectedRevision"] != request["expectedRevision"]
-            {
-                return Err("Execution Host returned a different rewind preview".into());
-            }
-            Ok(plan.clone())
-        },
-    )
+    crate::harness::run_blocking("managed_rewind_plan", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        require_exact_git_rewind(&app)?;
+        if let Some(session_id) = request["sessionId"].as_str() {
+            reconcile_pending_native(&app, &store, Some(session_id))?;
+        }
+        let boundary = validate_rewind_input(&store, &request)?;
+        assert_writable(&store, request["sessionId"].as_str().unwrap())?;
+        let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
+        host.project(
+            "native.rewind.plan",
+            json!({"request":request,"conversation":boundary}),
+            |plan, _projection| {
+                if plan["workspaceId"] != request["workspaceId"]
+                    || plan["sessionId"] != request["sessionId"]
+                    || plan["expectedConversationRevision"] != boundary.revision
+                    || plan["expectedRevision"] != request["expectedRevision"]
+                {
+                    return Err("Execution Host returned a different rewind preview".into());
+                }
+                Ok(plan.clone())
+            },
+        )
+    })
+    .await
 }
 
 /// A failed/absent preparation is not evidence of no mutation. Only this
@@ -1215,26 +1227,32 @@ fn native_rewind_crash_boundary(boundary: &str) {
 #[cfg(not(test))]
 fn native_rewind_crash_boundary(_: &str) {}
 
-#[tauri::command(async)]
-pub fn managed_rewind_apply(
+#[tauri::command]
+pub async fn managed_rewind_apply(
     app: AppHandle,
-    store: State<'_, SessionStore>,
     request: Value,
 ) -> Result<Value, String> {
-    require_exact_git_rewind(&app)?;
-    let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
-    native_apply(&store, &host, request, RewindDirection::Rewind)
+    crate::harness::run_blocking("managed_rewind_apply", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        require_exact_git_rewind(&app)?;
+        let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
+        native_apply(&store, &host, request, RewindDirection::Rewind)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn managed_rewind_undo(
+#[tauri::command]
+pub async fn managed_rewind_undo(
     app: AppHandle,
-    store: State<'_, SessionStore>,
     request: Value,
 ) -> Result<Value, String> {
-    require_exact_git_rewind(&app)?;
-    let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
-    native_apply(&store, &host, request, RewindDirection::Undo)
+    crate::harness::run_blocking("managed_rewind_undo", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        require_exact_git_rewind(&app)?;
+        let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
+        native_apply(&store, &host, request, RewindDirection::Undo)
+    })
+    .await
 }
 
 fn truncate_chars(text: &str, limit: usize) -> String {

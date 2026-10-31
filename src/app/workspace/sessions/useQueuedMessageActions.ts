@@ -74,6 +74,12 @@ const STOP_WAIT_MS = 20_000;
  * not polled every two seconds for hours. */
 const QUEUE_RETRY_MS = 2_000;
 const QUEUE_RETRY_MAX_MS = 60_000;
+/** How often an idle queue checks whether a failed turn has finished its cleanup. */
+const RETIRE_POLL_MS = 400;
+/** Refused sends in a row before the queue pauses with a visible reason. */
+const MAX_REFUSED_DRAINS = 4;
+/** How long a shared queue may wait for the Host before the wait is explained. */
+const HOST_WAIT_NOTICE_MS = 8_000;
 
 /** Resume cannot decide an unconfirmed delivery: the inline choice takes focus instead. */
 function reviewDelivery(sessionId: string): QueueActionResult {
@@ -116,12 +122,27 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
   const retryAfter = useRef(new Map<string, number>());
   const retryAttempts = useRef(new Map<string, number>());
   const retryTimer = useRef<number>(undefined);
+  // Since when a dispatchable queue waits for the Host; the value is -1 once explained.
+  const hostWaitSince = useRef(new Map<string, number>());
   const [retryTick, setRetryTick] = useState(0);
   useEffect(() => () => window.clearTimeout(retryTimer.current), []);
+
+  const scheduleRetry = useCallback((sessionId: string) => {
+    const attempt = (retryAttempts.current.get(sessionId) ?? 0) + 1;
+    retryAttempts.current.set(sessionId, attempt);
+    const delay = Math.min(QUEUE_RETRY_MS * 2 ** (attempt - 1), QUEUE_RETRY_MAX_MS);
+    retryAfter.current.set(sessionId, Date.now() + delay);
+    window.clearTimeout(retryTimer.current);
+    retryTimer.current = window.setTimeout(() => setRetryTick((value) => value + 1), delay);
+    return attempt;
+  }, []);
 
   useEffect(() => {
     const timers: number[] = [];
     const scheduled = new Set<string>();
+    // Cleanup of a failed turn ends without touching the sessions, so nothing
+    // would wake the drain again: poll until it is done.
+    let waitingForCleanup = false;
     for (const session of sessions) {
       const queued = session.queuedMessages ?? [];
       if (
@@ -131,6 +152,13 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
         queued.length === 0
       )
         continue;
+
+      // A hold (the refusal itself paused the queue, e.g. a reached usage budget) waits
+      // for an explicit resume, which must not meet the backoff of the refused attempt.
+      if (session.queueStatus === "paused") {
+        retryAttempts.current.delete(session.id);
+        retryAfter.current.delete(session.id);
+      }
 
       if (session.queueStatus === "resuming") {
         if (manualActions.current.has(session.id)) continue;
@@ -144,6 +172,40 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       // A handoff no running submit owns would hold the queue forever; the
       // repair changes the sessions, which runs this effect again.
       if (isPreparingHandoff(session) && repairStaleHandoff(session.id)) continue;
+      if (canDispatchQueuedHead(session) && retiringTurns.current.has(session.id)) {
+        waitingForCleanup = true;
+        continue;
+      }
+      if (canDispatchQueuedHead(session) && !sharedLocalQueueReady(session.id)) {
+        // The Host that coordinates this queue is not answering. Sending stays
+        // refused (two windows could send the same row), but say why.
+        if (!sharedLocalQueueLeaseHeld(session.id) && !lateSettlementPossible(session.id)) {
+          const now = Date.now();
+          const since = hostWaitSince.current.get(session.id) ?? now;
+          hostWaitSince.current.set(session.id, since);
+          if (since >= 0) {
+            if (now - since >= HOST_WAIT_NOTICE_MS) {
+              hostWaitSince.current.set(session.id, -1);
+              enqueueHarnessEvent(session.id, {
+                type: "status",
+                text: t(
+                  "Waiting for the bycoda Host to coordinate the queued messages. They send as soon as it answers.",
+                ),
+              });
+              flushHarnessEvents();
+            } else {
+              timers.push(
+                window.setTimeout(
+                  () => setRetryTick((value) => value + 1),
+                  HOST_WAIT_NOTICE_MS - (now - since),
+                ),
+              );
+            }
+          }
+        }
+        continue;
+      }
+      hostWaitSince.current.delete(session.id);
       if (
         !canDispatchQueuedHead(session) ||
         !sharedLocalQueueReady(session.id) ||
@@ -161,6 +223,11 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       timers.push(
         window.setTimeout(() => {
           queueDispatchingRef.current.delete(session.id);
+          if (retiringTurns.current.has(session.id)) {
+            // A failed turn started cleaning up since the effect ran.
+            window.setTimeout(() => setRetryTick((value) => value + 1), RETIRE_POLL_MS);
+            return;
+          }
           const latest = sessionsRef.current.find((entry) => entry.id === session.id);
           const head = latest?.queuedMessages?.[0];
           if (
@@ -182,7 +249,35 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
               intent: head.intent,
             }),
           )
-            .then(() => {
+            .then((accepted) => {
+              if (accepted === false) {
+                // Refused before anything was sent (the reason was shown by
+                // the send). Offer the same head again later, and pause with
+                // a visible reason when it keeps being refused.
+                const stillHead =
+                  sessionsRef.current.find((entry) => entry.id === session.id)?.queuedMessages?.[0]
+                    ?.id === head.id;
+                if (!stillHead) return;
+                const refused = scheduleRetry(session.id);
+                if (refused < MAX_REFUSED_DRAINS) return;
+                retryAttempts.current.delete(session.id);
+                retryAfter.current.delete(session.id);
+                setSessions((sessions) =>
+                  sessions.map((entry) =>
+                    entry.id === session.id
+                      ? { ...entry, queueStatus: nextQueueStatus(entry.queueStatus, "reject") }
+                      : entry,
+                  ),
+                );
+                enqueueHarnessEvent(session.id, {
+                  type: "status",
+                  text: t(
+                    "The next queued message could not be sent, so the queue is paused. Resume it when you are ready.",
+                  ),
+                });
+                flushHarnessEvents();
+                return;
+              }
               retryAttempts.current.delete(session.id);
               retryAfter.current.delete(session.id);
             })
@@ -190,15 +285,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
               if (error instanceof QueueNotReadyError) {
                 // Nothing was sent. The queue stays as it is and the head is
                 // offered again once the host or the other computer settles.
-                const attempt = (retryAttempts.current.get(session.id) ?? 0) + 1;
-                retryAttempts.current.set(session.id, attempt);
-                const delay = Math.min(QUEUE_RETRY_MS * 2 ** (attempt - 1), QUEUE_RETRY_MAX_MS);
-                retryAfter.current.set(session.id, Date.now() + delay);
-                window.clearTimeout(retryTimer.current);
-                retryTimer.current = window.setTimeout(
-                  () => setRetryTick((value) => value + 1),
-                  delay,
-                );
+                scheduleRetry(session.id);
                 return;
               }
               // The provider refused the head, or its delivery is unconfirmed:
@@ -219,6 +306,9 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
             });
         }, 0),
       );
+    }
+    if (waitingForCleanup) {
+      timers.push(window.setTimeout(() => setRetryTick((value) => value + 1), RETIRE_POLL_MS));
     }
     return () => {
       for (const timer of timers) window.clearTimeout(timer);

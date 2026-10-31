@@ -32,7 +32,9 @@ it("routes account changes for an explicit local Host session before any Native 
   function Fixture() {
     actions = useUsageLimitAccountActions({
       sessionsRef: { current: [session] },
-    } as UsageLimitAccountActionDeps);
+      enqueueHarnessEvent: vi.fn(),
+      flushHarnessEvents: vi.fn(),
+    } as unknown as UsageLimitAccountActionDeps);
     return null;
   }
   try {

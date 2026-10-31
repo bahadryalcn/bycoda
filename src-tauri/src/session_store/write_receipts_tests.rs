@@ -1130,6 +1130,7 @@ fn no_opt_in_or_missing_owner_preserves_ordinary_ack_shape_and_retires_prior() {
     let delta = incremental::DeltaAck {
         updated_at: 1,
         revision: 2,
+        summary: None,
     };
     assert_eq!(
         serde_json::to_value(NativeWriteAck {

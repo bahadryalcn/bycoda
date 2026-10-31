@@ -20,6 +20,50 @@ const AUTH_STAGE: &str = "X-Bycoda-Auth-Stage";
 //16active MCP slots for cancellation and unrelated callers.
 const NORMAL_LIMIT: usize = 12;
 
+/// Optional Host tool work on the send path (spawn grants and bridge metadata).
+/// Each call gets this budget; after one exhausts it, the Host is treated as
+/// unhealthy and the optional work is skipped for `OPTIONAL_HOST_BACKOFF`.
+pub(crate) const OPTIONAL_HOST_BUDGET: Duration = Duration::from_millis(2_500);
+const OPTIONAL_HOST_BACKOFF: Duration = Duration::from_secs(30);
+
+fn optional_host_unhealthy_until() -> &'static Mutex<Option<std::time::Instant>> {
+    static UNTIL: OnceLock<Mutex<Option<std::time::Instant>>> = OnceLock::new();
+    UNTIL.get_or_init(|| Mutex::new(None))
+}
+
+/// Deadline for one optional Host call, or `None` while the Host is in its
+/// unhealthy back-off (callers continue without the optional tools).
+pub(crate) fn optional_host_deadline() -> Option<std::time::Instant> {
+    let now = std::time::Instant::now();
+    let until = *optional_host_unhealthy_until()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if until.is_some_and(|until| now < until) {
+        return None;
+    }
+    Some(now + OPTIONAL_HOST_BUDGET)
+}
+
+/// A failure that used up its whole budget means the Host accepted the call
+/// but did not answer in time. Fast failures (no Host, refused) do not count.
+pub(crate) fn note_optional_host_outcome(deadline: std::time::Instant, ok: bool) {
+    let now = std::time::Instant::now();
+    let mut until = optional_host_unhealthy_until()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if ok {
+        *until = None;
+    } else if now + Duration::from_millis(200) >= deadline {
+        if !until.is_some_and(|until| until > now) {
+            eprintln!(
+                "[session tools] Host did not answer an optional tool request in time; skipping Host tools for {} s",
+                OPTIONAL_HOST_BACKOFF.as_secs()
+            );
+        }
+        *until = Some(now + OPTIONAL_HOST_BACKOFF);
+    }
+}
+
 #[derive(Default)]
 struct Capacity {
     normal: AtomicUsize,

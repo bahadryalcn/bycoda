@@ -74,6 +74,10 @@ pub struct RemoteConnections {
     native_buffer_delivery_cursors: Arc<native_buffer_delivery::RecoveryCursors>,
     native_buffer_delivery_ack_cursors: Arc<native_buffer_delivery::RecoveryCursors>,
     ws_capabilities: Mutex<HashMap<String, WsCapability>>,
+    /// Local Host `environment.describe` per machine, reused by the managed
+    /// send chain instead of one fresh describe per native check.
+    native_workspace_descriptors:
+        Mutex<HashMap<String, native_workspace_transport::CachedDescriptor>>,
     recovery_routes: Arc<RecoveryRoutes>,
 }
 
@@ -178,6 +182,14 @@ impl RemoteConnections {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(machine_id);
         self.ws_capabilities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(machine_id);
+        self.forget_native_workspace_descriptor(machine_id);
+    }
+
+    fn forget_native_workspace_descriptor(&self, machine_id: &str) {
+        self.native_workspace_descriptors
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(machine_id);
@@ -470,6 +482,12 @@ fn rpc_agent() -> &'static ureq::Agent {
 }
 
 const DEFAULT_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// The renderer abandons a run-lease acquire after 4 s (`RUN_LEASE_ACQUIRE_TIMEOUT_MS`).
+const INTERACTIVE_LEASE_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
+const INTERACTIVE_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const INTERACTIVE_ACTION_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const GIT_STATUS_READ_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const ATTACHMENT_CHUNK_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const CONNECTION_REFUSED: &str =
     "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 
@@ -480,6 +498,55 @@ const CONNECTION_REFUSED: &str =
 fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
     const GIT_MUTATION: std::time::Duration = std::time::Duration::from_secs(450);
     match method {
+        // Interactive HTTP-only methods that a send, the composer or an open
+        // pane awaits. A hung Host must not hold a native worker (and the user's
+        // send) for the 30 s default; these reply in milliseconds when healthy.
+        "sessions.runLease" => INTERACTIVE_LEASE_RPC_TIMEOUT,
+        "sessions.desktopLive"
+        | "sessions.adopted"
+        | "attachments.claim"
+        | "attachments.claims"
+        | "attachments.release"
+        | "attachments.status"
+        | "workspaces.get"
+        | "workspaces.list"
+        | "projects.workspacePolicy.get"
+        | "host.settings.get"
+        | "shell.profiles" => INTERACTIVE_READ_RPC_TIMEOUT,
+        // One 512 KiB chunk per call; allow slow SSH links.
+        "attachments.upload" | "attachments.read" => ATTACHMENT_CHUNK_RPC_TIMEOUT,
+        "sessions.update"
+        | "browser.status"
+        | "browser.claim"
+        | "browser.frame"
+        | "browser.input" => INTERACTIVE_ACTION_RPC_TIMEOUT,
+        // Cheap status reads for the Git panel. History, blame, PR status and
+        // file diffs keep the default: the Host allows its git reads 30 s.
+        "workspace.run"
+            if params
+                .get("command")
+                .and_then(Value::as_str)
+                .is_some_and(|command| {
+                    matches!(
+                        command,
+                        "git_diff_index"
+                            | "git_diff_files"
+                            | "git_diff_stats"
+                            | "git_head_message"
+                            | "git_branches"
+                            | "git_worktrees"
+                            | "git_submodules"
+                            | "git_operation_state"
+                            | "git_operation_status"
+                            | "git_conflicts"
+                            | "git_stash_list"
+                            | "git_tags"
+                            | "git_remotes"
+                    )
+                }) =>
+        {
+            GIT_STATUS_READ_RPC_TIMEOUT
+        }
         "browser.setup" | "devices.setup" => std::time::Duration::from_secs(1230),
         // Pi/OMP discovery can use 45 seconds, plus binary resolution and teardown.
         "models.list" => std::time::Duration::from_secs(60),
@@ -1032,15 +1099,18 @@ pub fn remote_machines(
         .collect())
 }
 
-#[tauri::command(async)]
-pub fn remote_connect(
+#[tauri::command]
+pub async fn remote_connect(
     app: AppHandle,
-    state: State<'_, RemoteConnections>,
     name: String,
     url: String,
     token: String,
 ) -> Result<Machine, String> {
-    connect_host(app, state, name, url, token, false)
+    crate::harness::run_blocking("remote_connect", move || {
+        let state = app.state::<RemoteConnections>();
+        connect_host(app.clone(), state, name, url, token, false)
+    })
+    .await
 }
 
 /// Called only after pairing through the launcher installed on this computer.
@@ -1325,13 +1395,45 @@ fn disconnect_saved_machine(
     Ok(())
 }
 
-#[tauri::command(async)]
+/// HTTP calls and SSH tunnel starts block for seconds when a Host hangs. Run
+/// them on the blocking pool so they cannot occupy every async worker and
+/// stall true async commands such as `harness_write` and `harness_kill`.
+#[tauri::command]
 // Preserve the existing IPC/process-launch argument contract.
 #[allow(clippy::too_many_arguments)]
-pub fn remote_request(
+pub async fn remote_request(
     app: AppHandle,
     window: tauri::Window,
-    state: State<'_, RemoteConnections>,
+    machine_id: String,
+    method: String,
+    params: Value,
+    fresh: Option<bool>,
+    allow_connect: Option<bool>,
+    expected_environment_id: Option<String>,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state: State<'_, RemoteConnections> = app.state();
+        remote_request_blocking(
+            &app,
+            &window,
+            &state,
+            machine_id,
+            method,
+            params,
+            fresh,
+            allow_connect,
+            expected_environment_id,
+        )
+    })
+    .await
+    .map_err(|e| format!("Remote request task failed: {e}"))?
+}
+
+#[allow(clippy::too_many_arguments)]
+fn remote_request_blocking(
+    app: &AppHandle,
+    window: &tauri::Window,
+    state: &RemoteConnections,
     machine_id: String,
     method: String,
     params: Value,
@@ -1360,8 +1462,8 @@ pub fn remote_request(
             });
     }
     let machine = machine_for_request(
-        &state,
-        &store_path(&app)?,
+        state,
+        &store_path(app)?,
         &machine_id,
         expected_environment_id.as_deref(),
     )?;
@@ -1373,12 +1475,12 @@ pub fn remote_request(
     let disclosure = Mutex::new(None);
     let send = |params| {
         machine_rpc_for_consumer(
-            &state,
+            state,
             &machine,
             &method,
             params,
             allow,
-            Some((&app, window.label())),
+            Some((app, window.label())),
             Some(&disclosure),
         )
     };
@@ -1407,12 +1509,16 @@ pub fn remote_request(
     } else {
         send(params)
     };
+    if method == "workspaces.exactGitRewind.set" {
+        // The Host advertises its exact-rewind capabilities from this policy.
+        state.forget_native_workspace_descriptor(&machine.id);
+    }
     {
         let _guard = state
             .store
             .lock()
             .map_err(|_| "Connection store is locked")?;
-        let current = read_uncached(&store_path(&app)?)?;
+        let current = read_uncached(&store_path(app)?)?;
         if !current
             .iter()
             .any(|saved| same_request_route(&machine, saved))
@@ -1514,54 +1620,70 @@ fn native_ws_route(
     )
 }
 
+/// Blocking Host-connection work off Tauri's async workers: a hung Host must
+/// not occupy the threads that stop and write commands need.
+async fn run_ws_blocking<T: Send + 'static>(
+    label: &'static str,
+    work: impl FnOnce() -> Result<T, WsFailure> + Send + 'static,
+) -> Result<T, WsFailure> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| {
+            WsFailure::local("RPC_WS_TASK", &format!("{label} task failed: {error}"))
+        })?
+}
+
 /// Desktop adapters attach with a saved machine ID. Tokens and SSH credentials
 /// remain in this process; the sink is scoped to the invoking Tauri window.
-#[tauri::command(async)]
-pub fn host_connection_attach(
+#[tauri::command]
+pub async fn host_connection_attach(
     app: AppHandle,
     window: tauri::Window,
-    state: State<'_, RemoteConnections>,
     machine_id: String,
     allow_connect: Option<bool>,
 ) -> Result<bool, WsFailure> {
-    let machine = saved_ws_machine(&app, &state, &machine_id)?;
-    // Negotiate using authenticated compatibility discovery before opening WS.
-    let descriptor = machine_rpc(
-        &state,
-        &machine,
-        "environment.describe",
-        json!({}),
-        allow_connect != Some(false),
-    )
-    .map_err(|_| WsFailure::local("RPC_WS_DISCOVERY", "Authenticated Host discovery failed"))?;
-    if descriptor["environmentId"].as_str() != Some(machine.environment_id.as_str()) {
-        state.invalidate_ws(&machine.id);
-        return Err(WsFailure::local(
-            "RPC_WS_IDENTITY",
-            "Saved Host identity changed",
-        ));
-    }
-    if !state.ws_enabled(&machine) {
-        return Ok(false);
-    }
-    let route = native_ws_route(&state, &machine, allow_connect != Some(false))?;
-    let label = window.label().to_owned();
-    let consumer = label.clone();
-    let event_app = app.clone();
-    with_current_ws_machine(&app, &state, &machine, || {
-        state.ws.attach(
-            &route,
-            &consumer,
-            Arc::new(move |event| {
-                let _ = event_app.emit_to(
-                    &label,
-                    HOST_CONNECTION_EVENT,
-                    json!({"machineId":machine_id,"event":event}),
-                );
-            }),
+    run_ws_blocking("host_connection_attach", move || {
+        let state = app.state::<RemoteConnections>();
+        let machine = saved_ws_machine(&app, &state, &machine_id)?;
+        // Negotiate using authenticated compatibility discovery before opening WS.
+        let descriptor = machine_rpc(
+            &state,
+            &machine,
+            "environment.describe",
+            json!({}),
+            allow_connect != Some(false),
         )
-    })?;
-    Ok(true)
+        .map_err(|_| WsFailure::local("RPC_WS_DISCOVERY", "Authenticated Host discovery failed"))?;
+        if descriptor["environmentId"].as_str() != Some(machine.environment_id.as_str()) {
+            state.invalidate_ws(&machine.id);
+            return Err(WsFailure::local(
+                "RPC_WS_IDENTITY",
+                "Saved Host identity changed",
+            ));
+        }
+        if !state.ws_enabled(&machine) {
+            return Ok(false);
+        }
+        let route = native_ws_route(&state, &machine, allow_connect != Some(false))?;
+        let label = window.label().to_owned();
+        let consumer = label.clone();
+        let event_app = app.clone();
+        with_current_ws_machine(&app, &state, &machine, || {
+            state.ws.attach(
+                &route,
+                &consumer,
+                Arc::new(move |event| {
+                    let _ = event_app.emit_to(
+                        &label,
+                        HOST_CONNECTION_EVENT,
+                        json!({"machineId":machine_id,"event":event}),
+                    );
+                }),
+            )
+        })?;
+        Ok(true)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1573,12 +1695,11 @@ pub fn host_connection_detach(
     state.ws.detach_machine(&machine_id, window.label());
 }
 
-#[tauri::command(async)]
+#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn host_connection_request(
+pub async fn host_connection_request(
     app: AppHandle,
     window: tauri::Window,
-    state: State<'_, RemoteConnections>,
     machine_id: String,
     method: String,
     params: Value,
@@ -1587,115 +1708,127 @@ pub fn host_connection_request(
     response_timeout_ms: Option<u64>,
     allow_connect: Option<bool>,
 ) -> Result<WsReply, WsFailure> {
-    if !HostWsBroker::supports_method(&method) {
-        return Err(WsFailure::unsupported());
-    }
-    let machine = saved_ws_machine(&app, &state, &machine_id)?;
-    if !state.ws_enabled(&machine) {
-        return Err(WsFailure::unsupported());
-    }
-    let route = native_ws_route(&state, &machine, allow_connect != Some(false))?;
-    let command_id = command_id.or_else(|| params["commandId"].as_str().map(str::to_owned));
-    let pending = with_current_ws_machine(&app, &state, &machine, || {
-        state.ws.begin_request(
-            &route,
-            window.label(),
-            &method,
-            params,
-            RequestOptions {
-                request_id: request_id.clone(),
-                command_id: command_id.clone(),
-                response_timeout: response_timeout_ms.map(std::time::Duration::from_millis),
-                absolute_deadline: None,
-            },
-        )
-    });
-    let reply = pending.and_then(|pending| pending.wait());
-    let current = saved_ws_machine(&app, &state, &machine_id);
-    if !current
-        .as_ref()
-        .is_ok_and(|current| same_request_route(&machine, current))
-    {
-        state.invalidate_ws(&machine.id);
-        let mut error = WsFailure::local(
-            "RPC_WS_ROUTE_CHANGED",
-            "Native connection changed during the request",
-        );
-        error.generation = match &reply {
-            Ok(reply) => Some(reply.generation),
-            Err(error) => error.generation,
-        };
-        error.request_id = reply
+    run_ws_blocking("host_connection_request", move || {
+        let state = app.state::<RemoteConnections>();
+        if !HostWsBroker::supports_method(&method) {
+            return Err(WsFailure::unsupported());
+        }
+        let machine = saved_ws_machine(&app, &state, &machine_id)?;
+        if !state.ws_enabled(&machine) {
+            return Err(WsFailure::unsupported());
+        }
+        let route = native_ws_route(&state, &machine, allow_connect != Some(false))?;
+        let command_id = command_id.or_else(|| params["commandId"].as_str().map(str::to_owned));
+        let pending = with_current_ws_machine(&app, &state, &machine, || {
+            state.ws.begin_request(
+                &route,
+                window.label(),
+                &method,
+                params,
+                RequestOptions {
+                    request_id: request_id.clone(),
+                    command_id: command_id.clone(),
+                    response_timeout: response_timeout_ms.map(std::time::Duration::from_millis),
+                    absolute_deadline: None,
+                },
+            )
+        });
+        let reply = pending.and_then(|pending| pending.wait());
+        let current = saved_ws_machine(&app, &state, &machine_id);
+        if !current
             .as_ref()
-            .err()
-            .and_then(|error| error.request_id.clone())
-            .or(request_id);
-        error.command_id = reply
-            .as_ref()
-            .err()
-            .and_then(|error| error.command_id.clone())
-            .or(command_id);
-        error.uncertain = match &reply {
-            Ok(_) => HostWsBroker::method_has_effect(&method),
-            Err(error) => error.uncertain,
-        };
-        return Err(error);
-    }
-    reply.and_then(|reply| {
-        disclose_public_reply(reply, &method, request_id, command_id, |reply| {
-            with_current_ws_machine(&app, &state, &machine, || reply.disclose())
+            .is_ok_and(|current| same_request_route(&machine, current))
+        {
+            state.invalidate_ws(&machine.id);
+            let mut error = WsFailure::local(
+                "RPC_WS_ROUTE_CHANGED",
+                "Native connection changed during the request",
+            );
+            error.generation = match &reply {
+                Ok(reply) => Some(reply.generation),
+                Err(error) => error.generation,
+            };
+            error.request_id = reply
+                .as_ref()
+                .err()
+                .and_then(|error| error.request_id.clone())
+                .or(request_id);
+            error.command_id = reply
+                .as_ref()
+                .err()
+                .and_then(|error| error.command_id.clone())
+                .or(command_id);
+            error.uncertain = match &reply {
+                Ok(_) => HostWsBroker::method_has_effect(&method),
+                Err(error) => error.uncertain,
+            };
+            return Err(error);
+        }
+        reply.and_then(|reply| {
+            disclose_public_reply(reply, &method, request_id, command_id, |reply| {
+                with_current_ws_machine(&app, &state, &machine, || reply.disclose())
+            })
         })
     })
+    .await
 }
 
+/// Off the main thread: resolving the route takes the machine's SSH tunnel
+/// slot, which a reconnect holds for up to its 20 s start.
 #[tauri::command]
-pub fn host_connection_cancel(
+pub async fn host_connection_cancel(
     app: AppHandle,
     window: tauri::Window,
-    state: State<'_, RemoteConnections>,
     machine_id: String,
     request_id: String,
 ) -> Result<(), WsFailure> {
-    let machine = saved_ws_machine(&app, &state, &machine_id)?;
-    // Cancellation never creates an SSH tunnel or opens a replacement pipe.
-    if let Ok(route) = native_ws_route(&state, &machine, false) {
-        state.ws.cancel_request(&route, window.label(), &request_id);
-    }
-    Ok(())
+    run_ws_blocking("host_connection_cancel", move || {
+        let state = app.state::<RemoteConnections>();
+        let machine = saved_ws_machine(&app, &state, &machine_id)?;
+        // Cancellation never creates an SSH tunnel or opens a replacement pipe.
+        if let Ok(route) = native_ws_route(&state, &machine, false) {
+            state.ws.cancel_request(&route, window.label(), &request_id);
+        }
+        Ok(())
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn host_connection_bulk(
+#[tauri::command]
+pub async fn host_connection_bulk(
     app: AppHandle,
     window: tauri::Window,
-    state: State<'_, RemoteConnections>,
     machine_id: String,
     descriptor: Value,
     response_timeout_ms: Option<u64>,
 ) -> Result<Value, WsFailure> {
-    let machine = saved_ws_machine(&app, &state, &machine_id)?;
-    if !state.ws_enabled(&machine) {
-        return Err(WsFailure::unsupported());
-    }
-    let route = native_ws_route(&state, &machine, false)?;
-    let result = state.ws.fetch_bulk(
-        &route,
-        window.label(),
-        &descriptor,
-        response_timeout_ms.map(std::time::Duration::from_millis),
-    );
-    if !saved_ws_machine(&app, &state, &machine_id)
-        .as_ref()
-        .is_ok_and(|current| same_request_route(&machine, current))
-    {
-        state.invalidate_ws(&machine.id);
-        return Err(WsFailure::local(
-            "RPC_WS_ROUTE_CHANGED",
-            "Native connection changed during bulk transfer",
-        ));
-    }
-    result
-        .and_then(|pending| with_current_ws_machine(&app, &state, &machine, || pending.disclose()))
+    run_ws_blocking("host_connection_bulk", move || {
+        let state = app.state::<RemoteConnections>();
+        let machine = saved_ws_machine(&app, &state, &machine_id)?;
+        if !state.ws_enabled(&machine) {
+            return Err(WsFailure::unsupported());
+        }
+        let route = native_ws_route(&state, &machine, false)?;
+        let result = state.ws.fetch_bulk(
+            &route,
+            window.label(),
+            &descriptor,
+            response_timeout_ms.map(std::time::Duration::from_millis),
+        );
+        if !saved_ws_machine(&app, &state, &machine_id)
+            .as_ref()
+            .is_ok_and(|current| same_request_route(&machine, current))
+        {
+            state.invalidate_ws(&machine.id);
+            return Err(WsFailure::local(
+                "RPC_WS_ROUTE_CHANGED",
+                "Native connection changed during bulk transfer",
+            ));
+        }
+        result
+            .and_then(|pending| with_current_ws_machine(&app, &state, &machine, || pending.disclose()))
+    })
+    .await
 }
 
 fn shareable_remote_read(method: &str, params: &Value) -> bool {
@@ -1729,16 +1862,18 @@ fn shareable_remote_read(method: &str, params: &Value) -> bool {
         ))
 }
 
-pub(crate) fn local_social_rpc(
+/// `deadline` bounds the connect and the call for optional metadata reads.
+pub(crate) fn local_social_rpc_until(
     app: &AppHandle,
     method: &str,
     params: Value,
+    deadline: Option<std::time::Instant>,
 ) -> Result<Value, String> {
     if !matches!(method, "social.bridge.describe" | "social.access.issue") {
         return Err("Unsupported native social bridge operation".into());
     }
-    let channel = NativeServiceChannel::connect(app)?;
-    channel.project(method, params, |value| {
+    let channel = NativeServiceChannel::connect_until(app, deadline)?;
+    channel.request_until(method, params, deadline)?.project(|value| {
         let mut value = value.clone();
         if method == "social.access.issue" && value.get("endpoint").is_none() {
             value["endpoint"] = json!(channel.endpoint());
@@ -2270,90 +2405,96 @@ pub(crate) fn conversation_machine_call_pinned(
     channel.request(action, params, taken, deadline)
 }
 
-#[tauri::command(async)]
-pub fn social_authority_status(
+#[tauri::command]
+pub async fn social_authority_status(
     app: AppHandle,
-    state: State<'_, RemoteConnections>,
 ) -> Result<Value, String> {
-    let source = NativeServiceChannel::connect(&app)?;
-    let machines = {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        read_uncached(&store_path(&app)?)?
-    };
-    source.project("social.native.status", json!({}), |value| {
-        let mut value = value.clone();
-        value["sourceMachineId"] = json!(source.machine_id());
-        if let Some(id) = value["authority"]["environmentId"]
-            .as_str()
-            .map(str::to_owned)
-        {
-            value["authorityMachineId"] = machines
-                .iter()
-                .find(|m| m.environment_id == id)
-                .map(|m| json!(m.id))
-                .unwrap_or(Value::Null);
-        }
-        Ok(value)
+    crate::harness::run_blocking("social_authority_status", move || {
+        let state = app.state::<RemoteConnections>();
+        let source = NativeServiceChannel::connect(&app)?;
+        let machines = {
+            let _guard = state
+                .store
+                .lock()
+                .map_err(|_| "Connection store is locked")?;
+            read_uncached(&store_path(&app)?)?
+        };
+        source.project("social.native.status", json!({}), |value| {
+            let mut value = value.clone();
+            value["sourceMachineId"] = json!(source.machine_id());
+            if let Some(id) = value["authority"]["environmentId"]
+                .as_str()
+                .map(str::to_owned)
+            {
+                value["authorityMachineId"] = machines
+                    .iter()
+                    .find(|m| m.environment_id == id)
+                    .map(|m| json!(m.id))
+                    .unwrap_or(Value::Null);
+            }
+            Ok(value)
+        })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn social_authority_connect(
+#[tauri::command]
+pub async fn social_authority_connect(
     app: AppHandle,
-    state: State<'_, RemoteConnections>,
     machine_id: Option<String>,
     mapping: Value,
     source_endpoint: Option<String>,
 ) -> Result<Value, String> {
-    let source = NativeServiceChannel::connect(&app)?;
-    let Some(id) = machine_id else {
-        return source.project("social.native.reset", json!({}), |value| Ok(value.clone()));
-    };
-    let target = {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        read_uncached(&store_path(&app)?)?
-            .into_iter()
-            .find(|m| m.id == id && m.environment_id != source.environment_id())
-            .ok_or("Choose a different paired host")?
-    };
-    let source_url = source_endpoint
-        .ok_or("Enter this host's HTTPS endpoint reachable from the central authority")?;
-    let source_url = social_peer_endpoint(&source_url)?;
-    let authority_url = social_peer_endpoint(&target.endpoint)?;
-    let peer = NativeServiceChannel::peer(&app, &target.id, &target.environment_id)?;
-    let enrollment = source.request(
-        "social.native.enroll",
-        json!({"environmentId":target.environment_id}),
-    )?;
-    let token = enrollment.project(|value| {
-        value["token"]
-            .as_str()
-            .map(str::to_owned)
-            .ok_or("Social enrollment failed".into())
-    })?;
-    enrollment.check()?;
-    // The dedicated enrollment token is forwarded only to its original paired
-    // authority. It is never a device/session tool principal or renderer value.
-    let registered = peer.request(
-        "social.native.register",
-        json!({"environmentId":source.environment_id(),
-        "endpoint":source_url,"token":token,"mapping":mapping}),
-    )?;
-    registered.check()?;
-    enrollment.check()?;
-    let result = source.request(
-        "social.native.authority",
-        json!({"environmentId":target.environment_id,
-        "endpoint":authority_url,"mapping":mapping}),
-    )?;
-    registered.check()?;
-    result.project(|value| Ok(value.clone()))
+    crate::harness::run_blocking("social_authority_connect", move || {
+        let state = app.state::<RemoteConnections>();
+        let source = NativeServiceChannel::connect(&app)?;
+        let Some(id) = machine_id else {
+            return source.project("social.native.reset", json!({}), |value| Ok(value.clone()));
+        };
+        let target = {
+            let _guard = state
+                .store
+                .lock()
+                .map_err(|_| "Connection store is locked")?;
+            read_uncached(&store_path(&app)?)?
+                .into_iter()
+                .find(|m| m.id == id && m.environment_id != source.environment_id())
+                .ok_or("Choose a different paired host")?
+        };
+        let source_url = source_endpoint
+            .ok_or("Enter this host's HTTPS endpoint reachable from the central authority")?;
+        let source_url = social_peer_endpoint(&source_url)?;
+        let authority_url = social_peer_endpoint(&target.endpoint)?;
+        let peer = NativeServiceChannel::peer(&app, &target.id, &target.environment_id)?;
+        let enrollment = source.request(
+            "social.native.enroll",
+            json!({"environmentId":target.environment_id}),
+        )?;
+        let token = enrollment.project(|value| {
+            value["token"]
+                .as_str()
+                .map(str::to_owned)
+                .ok_or("Social enrollment failed".into())
+        })?;
+        enrollment.check()?;
+        // The dedicated enrollment token is forwarded only to its original paired
+        // authority. It is never a device/session tool principal or renderer value.
+        let registered = peer.request(
+            "social.native.register",
+            json!({"environmentId":source.environment_id(),
+            "endpoint":source_url,"token":token,"mapping":mapping}),
+        )?;
+        registered.check()?;
+        enrollment.check()?;
+        let result = source.request(
+            "social.native.authority",
+            json!({"environmentId":target.environment_id,
+            "endpoint":authority_url,"mapping":mapping}),
+        )?;
+        registered.check()?;
+        result.project(|value| Ok(value.clone()))
+    })
+    .await
 }
 
 fn social_peer_endpoint(value: &str) -> Result<String, String> {
@@ -2412,6 +2553,9 @@ fn supported_remote_method(method: &str) -> bool {
             | "voice.local.speak"
             | "voice.local.speechNext"
             | "voice.local.speechCancel"
+            | "voice.realtime.secret"
+            | "voice.cloud.status"
+            | "voice.cloud.setKey"
             | "social.oauth.availability"
             | "social.oauth.begin"
             | "social.oauth.status"
@@ -3991,6 +4135,9 @@ mod tests {
             "voice.local.speak",
             "voice.local.speechNext",
             "voice.local.speechCancel",
+            "voice.realtime.secret",
+            "voice.cloud.status",
+            "voice.cloud.setKey",
         ] {
             assert!(supported_remote_method(method), "{method}");
         }
@@ -4029,16 +4176,16 @@ mod tests {
         for method in ["git.switch", "git.createBranch", "git.worktreeCreate"] {
             assert!(rpc_timeout(method, &none) >= Duration::from_secs(450));
         }
-        for command in [
-            "git_diff_index",
-            "git_file_diff",
-            "git_operation_status",
-            "git_pr_status",
-            "git_blame",
-        ] {
+        for command in ["git_file_diff", "git_pr_status", "git_blame"] {
             assert_eq!(
                 rpc_timeout("workspace.run", &json!({"command": command})),
                 DEFAULT_RPC_TIMEOUT
+            );
+        }
+        for command in ["git_diff_index", "git_operation_status"] {
+            assert_eq!(
+                rpc_timeout("workspace.run", &json!({"command": command})),
+                GIT_STATUS_READ_RPC_TIMEOUT
             );
         }
         let read = json!({ "command": "read_text_file" });
@@ -4074,14 +4221,20 @@ mod tests {
             "devices.list",
             "devices.capture",
             "devices.stop",
-            "browser.status",
-            "browser.frame",
             "resources.read",
             "devices.exec",
         ] {
             assert_eq!(
                 rpc_timeout(method, &params),
                 DEFAULT_RPC_TIMEOUT,
+                "{method}"
+            );
+        }
+        // The Host bounds a frame capture to 5 s; the pane must not wait 30 s.
+        for method in ["browser.status", "browser.frame", "browser.input"] {
+            assert_eq!(
+                rpc_timeout(method, &params),
+                INTERACTIVE_ACTION_RPC_TIMEOUT,
                 "{method}"
             );
         }

@@ -141,6 +141,12 @@ function ProjectQuickActionsFor({
     };
   }, [menu?.kind]);
 
+  // The parent passes a new `onRun` as its own state changes (every streamed frame
+  // for a session pane); reading it through a ref keeps `run` and the keyboard
+  // listener below from being rebuilt for it.
+  const onRunRef = useRef(onRun);
+  onRunRef.current = onRun;
+  const canRun = !!onRun;
   const run = useCallback(
     (action: ProjectAction) => {
       setMenu(null);
@@ -180,11 +186,11 @@ function ProjectQuickActionsFor({
           });
         return;
       }
-      if (action.command.trim()) onRun?.(action);
+      if (action.command.trim()) onRunRef.current?.(action);
       if (action.url.trim() && action.openUrlOnRun !== false)
         void openUrl(action.url.trim()).catch((reason: unknown) => setError(String(reason)));
     },
-    [cwd, onRun],
+    [cwd],
   );
 
   useEffect(() => {
@@ -197,14 +203,14 @@ function ProjectQuickActionsFor({
           shortcutMatches(value.shortcut, event) &&
           !projectActionShortcutError(value.shortcut, actions, value.id),
       );
-      if (!action || (action.command.trim() && !action.devServer && !onRun)) return;
+      if (!action || (action.command.trim() && !action.devServer && !canRun)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       run(action);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [actions, onRun, run, shortcutsEnabled]);
+  }, [actions, canRun, run, shortcutsEnabled]);
 
   const persist = (values: ProjectAction[]) => {
     try {

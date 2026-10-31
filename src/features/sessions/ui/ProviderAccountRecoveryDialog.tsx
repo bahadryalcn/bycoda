@@ -37,6 +37,10 @@ export function ProviderAccountRecoveryDialog({
     setError(null);
     try {
       if (await onSelect(accountId)) onClose();
+      else
+        setError(
+          t("The account could not be switched. The conversation shows the reason; try again."),
+        );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {

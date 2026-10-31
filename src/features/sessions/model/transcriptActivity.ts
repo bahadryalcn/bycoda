@@ -199,15 +199,49 @@ export function hasReadableText(text: string): boolean {
   return /[^\s\p{P}]/u.test(text);
 }
 
-/** First paragraph of a folded prose block, stripped to one plain line. */
-export function proseSummary(text: string): string {
-  const body = text.replace(/```[\s\S]*?(?:```|$)/g, " ");
-  const paragraph =
-    body
+const FENCE = "```";
+
+function countFences(text: string, from: number, to: number): number {
+  let count = 0;
+  for (let at = text.indexOf(FENCE, from); at >= 0 && at + FENCE.length <= to; ) {
+    count++;
+    at = text.indexOf(FENCE, at + FENCE.length);
+  }
+  return count;
+}
+
+/** The first non-empty paragraph of `text`, outside code fences. */
+function firstParagraph(text: string): string {
+  const boundary = /\n\s*\n/g;
+  // Only text up to a blank line can matter, so a long streaming reply is not
+  // scanned in full. A blank line inside a fence is not a paragraph break.
+  let fences = 0;
+  let counted = 0;
+  for (let match = boundary.exec(text); match; match = boundary.exec(text)) {
+    // A fence marker never spans whitespace, so each stretch is counted once.
+    fences += countFences(text, counted, match.index);
+    counted = match.index;
+    if (fences % 2 !== 0) continue;
+    const head = text.slice(0, match.index);
+    const paragraph = head
+      .replace(/```[\s\S]*?(?:```|$)/g, " ")
       .split(/\n\s*\n/)
       .map((part) => part.trim())
-      .find(Boolean) ?? "";
-  return paragraph
+      .find(Boolean);
+    if (paragraph) return paragraph;
+  }
+  return (
+    text
+      .replace(/```[\s\S]*?(?:```|$)/g, " ")
+      .split(/\n\s*\n/)
+      .map((part) => part.trim())
+      .find(Boolean) ?? ""
+  );
+}
+
+/** First paragraph of a folded prose block, stripped to one plain line. */
+export function proseSummary(text: string): string {
+  return firstParagraph(text)
     .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")

@@ -5,6 +5,14 @@ import { bridgeQueryEvents } from "../../../shared/lib/queryClient";
 import { getCachedRateLimits, loadRateLimits, subscribeRateLimits } from "./rateLimitsCache";
 import type { RateLimitProvider } from "./rateLimits";
 
+/** Claude reads a cheap endpoint; Codex starts a `codex app-server` process per read, so it is polled rarely.
+ * The footer's Refresh button and sign-in flows still read on demand. */
+const POLL_MS: Record<RateLimitProvider, number> = {
+  claude: 120_000,
+  codex: 600_000,
+  opencode: 120_000,
+};
+
 export const rateLimitQueryKey = (provider: RateLimitProvider, accountId: string) =>
   ["rate-limits", provider, accountId] as const;
 
@@ -25,10 +33,10 @@ export function useRateLimitQuery(
   const query = useQuery({
     queryKey,
     enabled: enabled && visible,
-    staleTime: 120_000,
+    staleTime: POLL_MS[provider],
     queryFn: () =>
       loadRateLimitsForQuery(provider, accountId, client.getQueryData(queryKey) !== undefined),
-    refetchInterval: 120_000,
+    refetchInterval: POLL_MS[provider],
   });
   useEffect(() => {
     let previous = getCachedRateLimits(provider, accountId);

@@ -70,21 +70,34 @@
   margin-top: 10px;
   padding-top: 4px;
 }
-.session {
+.choices {
   display: grid;
-  gap: 3px;
+  gap: 6px;
   margin-bottom: 12px;
+}
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.choice > :last-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+.choiceIcon {
+  flex-shrink: 0;
+  color: var(--ui-text-secondary);
+}
+.choiceRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .caption {
   color: var(--ui-text-secondary);
   font-size: 12px;
   line-height: 1.4;
-}
-.sessionName {
-  font-size: 13px;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-  line-height: 1.45;
 }
 .status {
   font-size: 13px;

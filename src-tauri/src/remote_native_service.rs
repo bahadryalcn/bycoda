@@ -109,6 +109,15 @@ impl NativeServiceChannel {
         })
     }
     pub(crate) fn connect(app: &AppHandle) -> Result<Arc<Self>, String> {
+        Self::connect_until(app, None)
+    }
+
+    /// Optional helpers (spawn tool grants, bridge metadata) bound the whole
+    /// uncached connect, including its `environment.describe`, by `deadline`.
+    pub(crate) fn connect_until(
+        app: &AppHandle,
+        deadline: Option<Instant>,
+    ) -> Result<Arc<Self>, String> {
         let state: State<'_, RemoteConnections> = app.state();
         let retained = state
             .native_service_channel
@@ -170,13 +179,23 @@ impl NativeServiceChannel {
             .as_ref()
             .ok_or("Native profile unavailable")?
             .machine;
-        let descriptor = rpc(
-            &machine.endpoint,
-            &machine.token,
-            Some(&machine.environment_id),
-            "environment.describe",
-            json!({}),
-        )?;
+        let descriptor = match deadline {
+            Some(deadline) => rpc_until(
+                &machine.endpoint,
+                &machine.token,
+                Some(&machine.environment_id),
+                "environment.describe",
+                json!({}),
+                deadline,
+            )?,
+            None => rpc(
+                &machine.endpoint,
+                &machine.token,
+                Some(&machine.environment_id),
+                "environment.describe",
+                json!({}),
+            )?,
+        };
         channel.check()?;
         if descriptor["environmentId"] != machine.environment_id
             || descriptor["protocolVersion"] != 1
@@ -196,9 +215,10 @@ impl NativeServiceChannel {
         if channel.journal.is_some() && channel.delivery_supported {
             // Startup recovery is status-only. Ordinary helper reads remain
             // usable if a former outcome is still unavailable or unconfirmed.
+            let recovery = Instant::now() + std::time::Duration::from_secs(2);
             let _ = delivery::reconcile_pending(
                 &channel,
-                Instant::now() + std::time::Duration::from_secs(2),
+                deadline.map_or(recovery, |deadline| deadline.min(recovery)),
             );
         }
         if channel.websocket {
@@ -491,6 +511,16 @@ impl NativeServiceChannel {
         method: &str,
         params: Value,
     ) -> Result<NativeServiceReply, String> {
+        self.request_until(method, params, None)
+    }
+
+    /// `deadline` can only shorten the method's own budget.
+    pub(crate) fn request_until(
+        self: &Arc<Self>,
+        method: &str,
+        params: Value,
+        deadline: Option<Instant>,
+    ) -> Result<NativeServiceReply, String> {
         let wire = wire_method(method).ok_or("Unsupported native helper operation")?;
         if self.peer && !crate::host_ws::native_peer_service_method(&wire) {
             return Err("The social peer channel cannot invoke local native tools".into());
@@ -498,7 +528,8 @@ impl NativeServiceChannel {
         if method == "workspace.run" && params["command"] != "format_text_file" {
             return Err("Only editor formatting belongs to native helper transport".into());
         }
-        let deadline = Instant::now() + rpc_timeout(method, &params);
+        let budget = Instant::now() + rpc_timeout(method, &params);
+        let deadline = deadline.map_or(budget, |deadline| deadline.min(budget));
         if matches!(method, "conversation.desktop.finish" | "workspace.run") {
             #[cfg(test)]
             if self.journal.is_none() {
@@ -565,6 +596,17 @@ impl NativeServiceChannel {
         consume: impl FnOnce(&Value) -> Result<T, String>,
     ) -> Result<T, String> {
         self.request(method, params)?.project(consume)
+    }
+
+    pub(crate) fn project_until<T>(
+        self: &Arc<Self>,
+        method: &str,
+        params: Value,
+        deadline: Instant,
+        consume: impl FnOnce(&Value) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.request_until(method, params, Some(deadline))?
+            .project(consume)
     }
 
     fn upload(

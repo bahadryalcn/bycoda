@@ -76,42 +76,60 @@ fn decorate_frame(line: String, grant: &Value) -> String {
     }
     request.to_string()
 }
-#[tauri::command(async)]
-pub fn harness_social_bridge(app: AppHandle, session_id: String) -> Result<Option<Value>, String> {
-    if session_id.is_empty() {
-        return Ok(None);
-    }
-    let value = crate::remote::local_social_rpc(&app, "social.bridge.describe", json!({}));
-    Ok(value.ok().map(|value| {
-        crate::session_tools_bridge::metadata(value, crate::session_tools_bridge::Group::Social)
-    }))
+#[tauri::command]
+pub async fn harness_social_bridge(app: AppHandle, session_id: String) -> Result<Option<Value>, String> {
+    crate::harness::run_blocking("harness_social_bridge", move || {
+        if session_id.is_empty() {
+            return Ok(None);
+        }
+        // Optional metadata: a slow Host must not hold the send for 30 s.
+        let Some(deadline) = crate::session_tools_bridge::optional_host_deadline() else {
+            return Ok(None);
+        };
+        let value = crate::remote::local_social_rpc_until(
+            &app,
+            "social.bridge.describe",
+            json!({}),
+            Some(deadline),
+        );
+        crate::session_tools_bridge::note_optional_host_outcome(deadline, value.is_ok());
+        Ok(value.ok().map(|value| {
+            crate::session_tools_bridge::metadata(value, crate::session_tools_bridge::Group::Social)
+        }))
+    })
+    .await
 }
 
-pub fn configure_child(
-    app: &AppHandle,
-    session_id: &str,
-    command: &mut Command,
-    stamp: (u64, u64),
-) {
-    // An isolated title/catalog helper must never inherit an agent's grant or
-    // host OAuth app secrets from ambient environment variables.
+/// An isolated title/catalog helper must never inherit an agent's grant or
+/// host OAuth app secrets from ambient environment variables.
+pub(crate) fn strip_child_env(command: &mut Command) {
     for (key, _) in std::env::vars() {
         if key.starts_with("BYCODA_SOCIAL_") {
             command.env_remove(key);
         }
     }
+}
+
+/// Issues, pins and caches this child's grant within `deadline`, returning
+/// the environment the child receives. Runs off the spawn thread.
+pub(crate) fn issue_child_grant(
+    app: &AppHandle,
+    session_id: &str,
+    stamp: (u64, u64),
+    deadline: std::time::Instant,
+) -> Result<Vec<(&'static str, String)>, String> {
     let primary = session_id
         .rsplit_once('#')
         .filter(|(_, suffix)| suffix.chars().all(|c| c.is_ascii_digit()))
         .map(|(id, _)| id)
         .unwrap_or(session_id);
-    let Ok(issuer) = crate::remote::NativeServiceChannel::connect(app) else {
-        return;
-    };
-    let Ok(reply) = issuer.request("social.access.issue", json!({"sessionId":primary})) else {
-        return;
-    };
-    let _ = reply.project(|value| {
+    let issuer = crate::remote::NativeServiceChannel::connect_until(app, Some(deadline))?;
+    let reply = issuer.request_until(
+        "social.access.issue",
+        json!({"sessionId":primary}),
+        Some(deadline),
+    )?;
+    reply.project(|value| {
         let mut grant = value.clone();
         if grant.get("endpoint").is_none() {
             grant["endpoint"] = json!(issuer.endpoint());
@@ -136,13 +154,14 @@ pub fn configure_child(
             .get("environmentId")
             .and_then(Value::as_str)
             .ok_or("Scoped tool environment required")?;
-        command
-            .env("BYCODA_SOCIAL_TOKEN", token)
-            .env("BYCODA_SOCIAL_ENDPOINT", endpoint)
-            .env("BYCODA_SOCIAL_ENVIRONMENT", environment);
+        let env = vec![
+            ("BYCODA_SOCIAL_TOKEN", token.to_owned()),
+            ("BYCODA_SOCIAL_ENDPOINT", endpoint.to_owned()),
+            ("BYCODA_SOCIAL_ENVIRONMENT", environment.to_owned()),
+        ];
         crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
-        Ok(())
-    });
+        Ok(env)
+    })
 }
 
 #[cfg(test)]

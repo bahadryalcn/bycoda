@@ -288,3 +288,15 @@ it("installs Supertonic by default without PyTorch and still adds GPU recognitio
     join(home, ".bycoda", "voice", "models", "whisper-large-v3-turbo"),
   );
 });
+
+it("installs no local speech package or model for the ElevenLabs reply voice", async () => {
+  const { service, run } = fixture(true, rtx);
+  service.start({ natural: true, engine: "elevenlabs" });
+  await vi.waitFor(() => expect(service.status().state).toBe("ready"));
+  const pip = run.mock.calls.find(([, args]) => args.includes("pip"))!;
+  expect(pip[1]).not.toContain("voxcpm");
+  expect(pip[1]).not.toContain("supertonic==1.3.1");
+  expect(torchInstalls(run)).toHaveLength(0);
+  const download = run.mock.calls.find(([, args]) => args[0] === "-c")!;
+  expect(JSON.parse(download[1][2])).toMatchObject({ engine: "elevenlabs" });
+});

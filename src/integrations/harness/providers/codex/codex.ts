@@ -493,10 +493,12 @@ export function respondCodexQuestion(
   sessionId: string,
   requestId: number,
   reply: UserQuestionReply,
-): void {
+): boolean {
   const live = liveByThread.get(sessionId);
   const pending = live?.questions.get(requestId);
-  if (!live || !pending || pending.sending) return;
+  if (!live || !pending) return false;
+  // Already being delivered: the first answer stands.
+  if (pending.sending) return true;
   if (pending.rpcId !== null) {
     deliverQuestionReply(
       pending,
@@ -506,16 +508,16 @@ export function respondCodexQuestion(
       () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
       () => pending.resolve(reply),
     );
-    return;
+    return true;
   }
   if (reply.kind === "skipped") {
     pending.resolve(reply);
-    return;
+    return true;
   }
   const text = codexAsyncQuestionResponse(pending.event.questions, reply);
   if (!text) {
     pending.resolve({ kind: "skipped" });
-    return;
+    return true;
   }
   if (live.awaitingAsyncAnswers) {
     // The provider turn has ended, so turn/steer would target a stale turn.
@@ -527,12 +529,12 @@ export function respondCodexQuestion(
     live.onEvent({ type: "question.updated", requestId, delivery: "queued" });
     showNextQuestion(live);
     settleAsyncAnswers(live);
-    return;
+    return true;
   }
   const turnId = pending.turnId;
   if (!turnId || live.activeTurnId !== turnId) {
     pending.resolve("cancelled");
-    return;
+    return true;
   }
   pending.sending = true;
   live.onEvent({ type: "question.updated", requestId, delivery: "sending" });
@@ -564,6 +566,7 @@ export function respondCodexQuestion(
           : "Answer delivery could not be confirmed. Check the connection before continuing.",
       });
     });
+  return true;
 }
 
 export function keepCodexQuestionOpen(sessionId: string, requestId: number): void {

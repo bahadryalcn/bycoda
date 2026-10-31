@@ -64,7 +64,6 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
     tabsRef,
     sessionsRef,
     setTabs,
-    setActiveTabId,
     setProjectTerminalFocused,
     setComposerFocused,
     setEditorNavigation,
@@ -153,7 +152,8 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
           });
           if (!foreground) return;
           if (target?.paneId) activateTab(target.tabId, target.paneId);
-          else if (target) setActiveTabId(target.tabId);
+          // activateTab follows the file's project, like every other tab switch.
+          else if (target) activateTab(target.tabId);
           if (target) {
             const tabId = target.tabId;
             lastOpenedLocation.current = {

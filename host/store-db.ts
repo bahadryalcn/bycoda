@@ -56,6 +56,8 @@ export class StoreDatabase {
   private recovering = new AsyncLocalStorage<boolean>();
   private health: PersistenceHealth = { state: "ready" };
   private ioFailures = 0;
+  private busyFailures = 0;
+  private recoveryAttempts = 0;
   private recoveryTimer?: ReturnType<typeof setTimeout>;
   private pending = new Map<
     number,
@@ -65,6 +67,7 @@ export class StoreDatabase {
       owner: Owner;
       sql?: string;
       mutation: boolean;
+      write: boolean;
     }
   >();
 
@@ -91,7 +94,10 @@ export class StoreDatabase {
           errcode: reply.errcode,
         });
         const health = storageFailure(error);
-        if (health) this.setHealth(health);
+        // A busy, full or I/O failure of a read changes nothing on disk, so it only fails
+        // that read. Writes stay blocked only after a failed write; corruption always blocks.
+        if (health && (request.write || health.state === "recovery-required"))
+          this.setHealth(health);
         request.reject(error);
       } else {
         try {
@@ -144,22 +150,35 @@ export class StoreDatabase {
   }
   /** Transient IO errors escalate only after repeated failed probes. */
   private setHealth(next: PersistenceHealth, recoveryProbe = false): void {
-    if (recoveryProbe && next.reason === "io" && next.state === "temporarily-blocked" && ++this.ioFailures > 5)
-      next = { state: "recovery-required", reason: "io" };
+    if (recoveryProbe && next.state === "temporarily-blocked") {
+      if (next.reason === "io" && ++this.ioFailures > 5)
+        next = { state: "recovery-required", reason: "io" };
+      // Another process holding the database is not damage: a write that fails because of
+      // it reports its own error. Stop holding every write back once probes keep finding
+      // it busy, instead of probing forever.
+      else if (next.reason === "busy" && ++this.busyFailures > 6) {
+        console.warn("Host database stayed busy; accepting writes again, each reports its own failure.");
+        next = { state: "ready" };
+        this.busyFailures = 0;
+        this.recoveryAttempts = 0;
+      }
+    }
     this.health = next;
     if (next.state === "temporarily-blocked") this.scheduleRecovery();
   }
-  /** A temporary block heals itself: probe every few seconds until writes work. */
+  /** A temporary block heals itself: probe with growing gaps until writes work. */
   private scheduleRecovery(): void {
     if (this.recoveryTimer || this.failed || this.closing || this.terminating) return;
+    const delay = Math.min(3000 * 2 ** Math.min(this.recoveryAttempts, 4), 30_000);
     this.recoveryTimer = setTimeout(() => {
       this.recoveryTimer = undefined;
       if (this.health.state !== "temporarily-blocked") return;
-      this.recoverPersistence().catch((error) => {
+      this.recoveryAttempts++;
+      this.recoverPersistence({ automatic: true }).catch((error) => {
         console.warn("Automatic persistence recovery failed; will retry:", error);
         if (this.health.state === "temporarily-blocked") this.scheduleRecovery();
       });
-    }, 3000);
+    }, delay);
     this.recoveryTimer.unref?.();
   }
   assertWriteAdmission(): void {
@@ -223,37 +242,62 @@ export class StoreDatabase {
     });
   }
   /** Probe (automatic for temporary blocks); a live worker may leave recovery-required
-   * when the integrity check and write probe pass. Worker failure needs a restart. */
-  recoverPersistence(): Promise<void> {
+   * when the integrity check and write probe pass. Worker failure needs a restart.
+   * An explicit call always runs the integrity check. An automatic probe is one small
+   * write that does not wait out a lock, and verifies integrity only after an I/O error
+   * (a whole-file scan on the storage queue every few seconds is not a probe). */
+  recoverPersistence(options: { automatic?: boolean } = {}): Promise<void> {
     return this.scope(async () => {
       if (this.failed) throw new PersistenceAdmissionError(this.persistenceHealth());
       const previous = this.health;
+      const automatic = options.automatic === true;
+      const verify = !automatic || previous.reason === "io";
       this.health = { state: "recovering", reason: previous.reason };
+      let waitMs: number | undefined;
       try {
         await this.recovering.run(true, () =>
           this.durableScope(async () => {
-            const rows = await this.prepare("PRAGMA quick_check").all();
-            if (rows.length !== 1 || Object.values(rows[0])[0] !== "ok")
-              throw Object.assign(new Error("Storage integrity verification failed."), {
-                errcode: 11,
-              });
-            await this.exec("BEGIN IMMEDIATE");
+            if (automatic) {
+              const row = await this.prepare("PRAGMA busy_timeout").get();
+              waitMs = Number(row && Object.values(row)[0]) || 5000;
+              await this.exec("PRAGMA busy_timeout=200");
+            }
             try {
-              await this.exec(
-                "CREATE TABLE IF NOT EXISTS host_persistence_probe (id INTEGER PRIMARY KEY, value BLOB NOT NULL)",
-              );
-              await this.prepare(
-                "INSERT INTO host_persistence_probe VALUES (1, randomblob(4096)) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
-              ).run();
-              await this.exec("COMMIT");
-            } catch (error) {
-              await this.exec("ROLLBACK");
-              throw error;
+              await this.exec("BEGIN IMMEDIATE");
+              try {
+                await this.exec(
+                  "CREATE TABLE IF NOT EXISTS host_persistence_probe (id INTEGER PRIMARY KEY, value BLOB NOT NULL)",
+                );
+                await this.prepare(
+                  "INSERT INTO host_persistence_probe VALUES (1, randomblob(4096)) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
+                ).run();
+                await this.exec("COMMIT");
+              } catch (error) {
+                await this.exec("ROLLBACK");
+                throw error;
+              }
+            } finally {
+              if (waitMs !== undefined) {
+                try {
+                  await this.exec(`PRAGMA busy_timeout=${waitMs}`);
+                } catch {
+                  /* a dead worker fails the probe on its own */
+                }
+              }
+            }
+            if (verify) {
+              const rows = await this.prepare("PRAGMA quick_check").all();
+              if (rows.length !== 1 || Object.values(rows[0])[0] !== "ok")
+                throw Object.assign(new Error("Storage integrity verification failed."), {
+                  errcode: 11,
+                });
             }
           }),
         );
         this.health = { state: "ready" };
         this.ioFailures = 0;
+        this.busyFailures = 0;
+        this.recoveryAttempts = 0;
       } catch (error) {
         this.setHealth(storageFailure(error) ?? previous, true);
         throw error;
@@ -405,6 +449,7 @@ export class StoreDatabase {
         owner,
         sql,
         mutation: !this.internal.getStore() && (method === "runMany" || method === "run" || method === "exec"),
+        write: writes,
       });
       try {
         this.worker.postMessage({ id, owner: owner.id, method, sql, params });

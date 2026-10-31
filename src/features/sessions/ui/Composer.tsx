@@ -142,9 +142,13 @@ import type {
   ComposerTurnOptions,
 } from "../model/session";
 import { parseShellCommand } from "../model/shellRun";
+import { clearConversationBlocker } from "../model/clearConversation";
+import { getSessions } from "../model/sessionsStore";
 import {
   canSteerHarness,
+  isHarnessTurnStopping,
   steerAppliesModelSettings,
+  subscribeHarnessStopping,
 } from "../../../integrations/harness/core/registry";
 import {
   HARNESS_TITLE,
@@ -296,6 +300,8 @@ import {
   useAttachmentSink,
   useComposerAttachmentLifecycle,
   useComposerAttachmentReads,
+  releaseOverLimit,
+  skippedPastedFiles,
 } from "./useComposerAttachments";
 import { useComposerFileDrop } from "./useComposerFileDrop";
 import { useComposerRegistrations } from "./useComposerRegistrations";
@@ -1224,6 +1230,11 @@ export const Composer = memo(function Composer({
     }
     previousBusyRef.current = busy;
   }, [busy]);
+  const stopping = useSyncExternalStore(
+    subscribeHarnessStopping,
+    () => (sessionId ? isHarnessTurnStopping(sessionId) : false),
+    () => false,
+  );
   const stopPendingSend = () => {
     parentInputRef.current?.();
     // Retire submission intent without discarding a clipboard read or its result.
@@ -1598,10 +1609,8 @@ export const Composer = memo(function Composer({
     attachmentsRef,
     borrowedAttachmentIdsRef,
     pasteGenerationRef,
-    inputRef: ref,
     mountedClosure,
-    setAttachments,
-    syncHasText,
+    setPasteError,
   });
 
   /** Text goes at the caret when the input has focus, otherwise at the end. */
@@ -1637,7 +1646,8 @@ export const Composer = memo(function Composer({
       const next = mergeAttachments(previous, incoming);
       attachmentsRef.current = next;
       setAttachments(next);
-      setPasteError(null);
+      // Files the full draft left out are said, not silently dropped.
+      setPasteError(releaseOverLimit(previous, next, incoming));
       draftRevisionRef.current += 1;
       // Skipped duplicates are not in `next`, so they get no token either.
       insertIntoDraft(tokensForIncoming(previous, next.slice(previous.length)));
@@ -2425,7 +2435,15 @@ export const Composer = memo(function Composer({
         busy ||
         onSubmit(value.trim(), [], { intent: "default" }, ...continuationArgs) === false
       ) {
-        setPasteError(t("Stop the current turn before clearing the conversation."));
+        const blocked = sessionId
+          ? getSessions().find((entry) => entry.id === sessionId)
+          : undefined;
+        setPasteError(
+          (blocked && clearConversationBlocker(blocked)) ||
+            (busy
+              ? t("Stop the current turn before clearing the conversation.")
+              : t("The conversation cannot be cleared right now. Try again in a moment.")),
+        );
         return;
       }
       pasteGenerationRef.current += 1;
@@ -2616,6 +2634,13 @@ export const Composer = memo(function Composer({
       operatorSelected && !consumeOperatorCommand(text).matched ? `/operator ${text}` : text;
     const files = attachmentsRef.current;
     if (!text && files.length === 0 && !noteCard && !handoffCard) return;
+    // The files stay in the draft; say why they are not going out.
+    if (files.length > 0 && !harnessSupportsAttachments(harness)) {
+      setPasteError(
+        t("This provider cannot take attachments. They are kept; remove them or switch provider."),
+      );
+      return;
+    }
     // `!command` runs in the shell: it goes out exactly as typed, with none of
     // the context a prompt would carry.
     const shellLine =
@@ -2724,7 +2749,12 @@ export const Composer = memo(function Composer({
     // intact so resolving the blocker never destroys their work.
     if (accepted === false) {
       retained.release();
-      restoreDraft(text, files);
+      // Restore the typed text without the inbox prompt (its card is still
+      // attached) and bring back the mode the typed /plan or /orchestrate
+      // selected, so Enter cannot send a normal turn that may edit files.
+      restoreDraft(shellLine ? value : orchestratorCommand.text, files);
+      if (command.planning) setPlanSelected(true);
+      if (orchestratorCommand.matched) setOrchestrationSelected(true);
       setPasteError(t("The message was not accepted. Your text and files are kept."));
       return;
     }
@@ -3042,7 +3072,10 @@ export const Composer = memo(function Composer({
       const captured = captureDraft(e.currentTarget);
       const text = e.clipboardData.getData("text/plain");
       if (captured) insertRestoredText(captured, text);
-      if (!attachmentsSupported) return;
+      if (!attachmentsSupported) {
+        setPasteError(t("This conversation does not accept attachments."));
+        return;
+      }
       rememberAttachmentRead((accepted) =>
         attachmentsFromFiles(messageFiles).then((pasted) =>
           accepted.apply(() => {
@@ -3051,6 +3084,8 @@ export const Composer = memo(function Composer({
               return;
             }
             addAttachments(pasted);
+            const skipped = skippedPastedFiles(messageFiles, pasted);
+            if (skipped) setPasteError(skipped);
           }),
         ),
       );
@@ -3061,7 +3096,12 @@ export const Composer = memo(function Composer({
       // A webview reports a paste as text only, so a screenshot or a file
       // copied in a file manager arrives with nothing to attach; both live on
       // the native clipboard.
-      if (!attachmentsSupported) return;
+      if (!attachmentsSupported) {
+        // A screenshot arrives with no text; say it was not taken.
+        if (!e.clipboardData.getData("text/plain"))
+          setPasteError(t("This conversation does not accept attachments."));
+        return;
+      }
       const text = e.clipboardData.getData("text/plain");
       // Prose and whitespace alike are the webview's to insert.
       if (text && !isFileReferenceText(text)) return;
@@ -3109,6 +3149,8 @@ export const Composer = memo(function Composer({
             return;
           }
           addAttachments(pasted);
+          const skipped = skippedPastedFiles(files, pasted);
+          if (skipped) setPasteError(skipped);
         }),
       ),
     );
@@ -4100,6 +4142,7 @@ export const Composer = memo(function Composer({
                 }
                 queueShortcut={queueShortcut}
                 stopShortcut={stopShortcut ? `${stopShortcut} / Ctrl+C` : "Ctrl+C"}
+                stopping={stopping}
                 onStop={stopPendingSend}
               />
             </div>
@@ -4371,6 +4414,7 @@ export function ComposerAction({
   onQueue,
   queueShortcut,
   stopShortcut = "Esc",
+  stopping = false,
   onStop,
 }: {
   busy: boolean;
@@ -4389,6 +4433,8 @@ export function ComposerAction({
   onQueue?: () => void;
   queueShortcut?: string | null;
   stopShortcut?: string | null;
+  /** Stop was requested and the provider has not confirmed yet. */
+  stopping?: boolean;
   onStop: () => void;
 }) {
   const t = useT();
@@ -4462,6 +4508,8 @@ export function ComposerAction({
           label={t("Stop")}
           shortcut={stopShortcut}
           data-usage-guide="stop-button"
+          loading={stopping}
+          loadingLabel={t("Stopping…")}
           onClick={onStop}
         >
           <Square className="size-2.5 fill-current" strokeWidth={0} />

@@ -46,6 +46,12 @@ const CACHED_SESSIONS = 32;
 // Retried commands are deduplicated by receipt; a week far outlives any retry.
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const RECEIPT_PRUNE_EVERY = 500;
+/** Sync replay needs only a recent suffix of a session's events: a client further behind
+ * gets the snapshot. Streaming `tool.updated` events carry whole tool blocks, so the row
+ * count alone let one busy session keep megabytes (all of host.db: 185 MB of events). */
+const EVENT_BYTES_PER_SESSION = 4 * 1024 * 1024;
+/** The byte cap is re-measured after this much new event payload, not on every write. */
+const EVENT_PRUNE_AFTER_BYTES = 512 * 1024;
 // Saves caused only by streamed deltas ("soft") update memory at once but reach
 // SQLite at most this often per session. Durability trade-off accepted by the
 // owner: if the host process dies mid-stream, up to this much streamed text of
@@ -1867,10 +1873,12 @@ export class HostStore {
           value.session.blocks.some((block) => block.shell?.running) ? 1 : 0,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
-      await insert.runMany(rows.map((row) => [value.session.id, row.revision, JSON.stringify(row.event)]));
+      const eventRows = rows.map((row) => [value.session.id, row.revision, JSON.stringify(row.event)]);
+      await insert.runMany(eventRows);
       await this.db
         .prepare("DELETE FROM events WHERE session_id=? AND revision<?")
         .run(value.session.id, value.revision - 2000);
+      await this.capEvents(value.session.id, eventRows);
       await this.db.prepare("DELETE FROM session_journal WHERE session_id=?").run(value.session.id);
       await this.db
         .prepare("DELETE FROM session_journal_blocks WHERE session_id=?")
@@ -1946,10 +1954,12 @@ export class HostStore {
           id,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
-      await insert.runMany(rows.map((row) => [id, row.revision, JSON.stringify(row.event)]));
+      const eventRows = rows.map((row) => [id, row.revision, JSON.stringify(row.event)]);
+      await insert.runMany(eventRows);
       await this.db
         .prepare("DELETE FROM events WHERE session_id=? AND revision<?")
         .run(id, value.revision - 2000);
+      await this.capEvents(id, eventRows);
     };
     const guarded = () => this.sessionWrite(value.session.id, value.authorityGeneration, run);
     if (this.inTransaction) await guarded();
@@ -2062,6 +2072,36 @@ export class HostStore {
     );
   }
   /** Clients retry a command for seconds to minutes, never days. */
+  /** Event payload written per session since its byte cap was last applied. */
+  private eventBytes = new Map<string, number>();
+  /** Drops a session's oldest events until the rest fit the byte cap (always keeping the
+   * newest). Only a contiguous newest suffix stays, which is what `events()` replays; a
+   * client behind it gets the snapshot. A session not measured yet in this run is measured
+   * on its first write, which also trims what earlier runs accumulated. */
+  private async capEvents(id: string, written: (string | number | null)[][]): Promise<void> {
+    const added = written.reduce((sum, row) => sum + String(row[2]).length, 0);
+    const since = (this.eventBytes.get(id) ?? Infinity) + added;
+    this.eventBytes.delete(id);
+    if (since < EVENT_PRUNE_AFTER_BYTES) {
+      this.eventBytes.set(id, since);
+      return;
+    }
+    this.eventBytes.set(id, 0);
+    while (this.eventBytes.size > 1024) this.eventBytes.delete(this.eventBytes.keys().next().value!);
+    const over = await this.db
+      .prepare(
+        `SELECT revision FROM (
+           SELECT revision, SUM(octet_length(payload)) OVER (ORDER BY revision DESC) AS bytes
+           FROM events WHERE session_id=?1
+         ) WHERE bytes>?2 AND revision<(SELECT MAX(revision) FROM events WHERE session_id=?1)
+         ORDER BY revision DESC LIMIT 1`,
+      )
+      .get(id, EVENT_BYTES_PER_SESSION);
+    if (over)
+      await this.db
+        .prepare("DELETE FROM events WHERE session_id=? AND revision<=?")
+        .run(id, Number(over.revision));
+  }
   async pruneReceipts(now = Date.now()): Promise<void> {
     return this.db.storeScope(async () => {
       await this.db

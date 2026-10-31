@@ -160,7 +160,7 @@ it("opens a validated external file without waiting for a second native inspecti
       cwd: "/Downloads",
       external: true,
     });
-    expect(deps.setActiveTabId).toHaveBeenCalledWith(tabs.current[0].id);
+    expect(deps.activateTab).toHaveBeenCalledWith(tabs.current[0].id);
   } finally {
     await act(async () => root.unmount());
   }

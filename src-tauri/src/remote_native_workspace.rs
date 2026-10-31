@@ -49,13 +49,7 @@ impl NativeWorkspaceChannel {
         };
         let machine = selection.machine.clone();
         selection.with_current(|| Ok(()))?;
-        let descriptor = rpc(
-            &machine.endpoint,
-            &machine.token,
-            Some(&machine.environment_id),
-            "environment.describe",
-            json!({}),
-        )?;
+        let descriptor = cached_describe(&state, &machine, selection.pin.revision)?;
         selection.with_current(|| Ok(()))?;
         if descriptor["environmentId"] != machine.environment_id
             || descriptor["protocolVersion"] != 1
@@ -186,6 +180,84 @@ impl NativeWorkspaceChannel {
             upload: None,
         })
     }
+}
+
+/// A healthy Host answers `environment.describe` in milliseconds.
+const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// One managed send runs several native checks back to back; they share one
+/// describe. The Host policy toggle invalidates explicitly.
+const DESCRIPTOR_TTL: std::time::Duration = std::time::Duration::from_secs(15);
+/// A describe that used most of its budget means the Host is hung; the rest of
+/// the same send chain fails fast instead of waiting again.
+const SLOW_FAILURE_TTL: std::time::Duration = std::time::Duration::from_secs(10);
+
+pub(super) struct CachedDescriptor {
+    fingerprint: String,
+    revision: u64,
+    until: std::time::Instant,
+    result: Result<Value, String>,
+}
+
+fn cached_describe(
+    state: &RemoteConnections,
+    machine: &StoredMachine,
+    revision: u64,
+) -> Result<Value, String> {
+    let fingerprint = ws_fingerprint(machine);
+    let now = std::time::Instant::now();
+    {
+        let cache = state
+            .native_workspace_descriptors
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(entry) = cache.get(&machine.id).filter(|entry| {
+            entry.fingerprint == fingerprint && entry.revision == revision && now < entry.until
+        }) {
+            return entry.result.clone();
+        }
+    }
+    let result = rpc_timed(
+        &machine.endpoint,
+        &machine.token,
+        Some(&machine.environment_id),
+        "environment.describe",
+        json!({}),
+        DESCRIBE_TIMEOUT,
+    );
+    let finished = std::time::Instant::now();
+    let ttl = match &result {
+        Ok(descriptor)
+            if descriptor["environmentId"] == machine.environment_id
+                && descriptor["protocolVersion"] == 1 =>
+        {
+            Some(DESCRIPTOR_TTL)
+        }
+        Err(_) if finished.duration_since(now) >= DESCRIBE_TIMEOUT / 2 => Some(SLOW_FAILURE_TTL),
+        _ => None,
+    };
+    let mut cache = state
+        .native_workspace_descriptors
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match ttl {
+        // Only the route revision captured before the call may store it; a
+        // reconnect during the describe retires that revision.
+        Some(ttl) if state.recovery_routes.current(revision) => {
+            cache.insert(
+                machine.id.clone(),
+                CachedDescriptor {
+                    fingerprint,
+                    revision,
+                    until: finished + ttl,
+                    result: result.clone(),
+                },
+            );
+        }
+        _ => {
+            cache.remove(&machine.id);
+        }
+    }
+    result
 }
 
 fn has_capability(descriptor: &Value, capability: &str) -> bool {

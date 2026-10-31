@@ -53,14 +53,49 @@ the turn ends after roughly 600 ms of silence. Recognition detects the spoken
 language independently of the interface language and knows common coding words
 (commit, branch, pull request, TypeScript…).
 
-**Reply voice** offers three choices:
+The voice panel also has these choices, so you can change them without opening
+settings:
 
-- **Natural** (default): Supertonic 3. Runs on the CPU, loads in about 2 s,
+- **Session**: a searchable list of sessions with their project. Choose one to keep
+  voice on it, or **Active session** to follow the session you are viewing.
+- **Conversation** and, for Local, **Reply voice**, shown with their icons.
+  Changing either ends a live connection; select **Start voice** to continue.
+- The microphone button pauses and resumes listening.
+
+**Conversation** chooses who runs the conversation:
+
+- **Local** (default): speech is recognized on this computer and the session's
+  provider writes the reply, spoken by the **Reply voice** below.
+- **Grok Voice** or **OpenAI Realtime**: a cloud speech-to-speech model listens,
+  answers and speaks, usually starting within about a second. It can read the
+  session's state, send your request to the session as work and stop work you
+  explicitly ask it to stop. Audio is sent to the provider while voice is on. It uses
+  your existing Grok Build or Codex sign-in on this computer (or `XAI_API_KEY` /
+  `OPENAI_API_KEY` on bycoda Host); no separate key is entered in bycoda. Grok
+  sign-ins expire after a few hours: open Grok Build once to refresh it.
+
+**Reply voice** (Local only) offers four choices:
+
+- **Natural (Supertonic)** (default): runs on the CPU, loads in about 2 s,
   speaks 31 languages including English and Turkish, and synthesizes a sentence in
   about 0.4–0.8 s. Setup installs `supertonic` and downloads its model (~385 MB).
-- **High quality**: VoxCPM2. Sounds richer and streams audio, but needs an NVIDIA
+- **High quality (VoxCPM2)**: sounds richer and streams audio, but needs an NVIDIA
   GPU to keep up, about 6 GB of its memory and up to a minute to load.
+- **ElevenLabs**: a natural cloud voice (Flash v2.5, 32 languages). Only the reply
+  text is sent to ElevenLabs. Paste your API key in settings; bycoda Host checks
+  it and stores it encrypted on this computer (Windows DPAPI, macOS Keychain, Linux
+  Secret Service). An optional voice ID selects another ElevenLabs voice.
 - **System voice**: an installed local voice of the operating system.
+
+**Speaker** chooses who speaks, in settings and in the voice panel: Supertonic has
+five male and five female voices, Grok Voice has Eve, Ara, Leo, Rex and Sal, and
+OpenAI Realtime has Marin, Cedar, Alloy, Ash, Ballad, Coral, Echo, Sage, Shimmer
+and Verse. ElevenLabs uses the voice ID field. VoxCPM2 has one built-in voice.
+Changing the speaker ends a live connection; select **Start voice** to continue.
+
+Local listening ignores breaths, clicks and steady background noise: a turn
+starts only after about 0.13 s of voiced speech, and while a reply is playing
+about 0.26 s of clear speech is needed to interrupt it.
 
 Replies are spoken sentence by sentence: the first sentence plays while the
 provider is still writing the rest. Natural voices play at their own sample rate

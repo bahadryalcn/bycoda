@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("./child", () => ({ invokeProviderCommand: invoke }));
+afterEach(() => vi.useRealTimers());
 import {
   conversationToolsAcpServers,
   conversationToolsBridge,
@@ -75,9 +76,14 @@ describe("Provider conversation tool bridge", () => {
     expect(conversationToolsCliHint(null)).toBe("");
   });
 
-  it("normalizes child suffixes, caches only executable metadata and retries offline hosts", async () => {
+  it("normalizes child suffixes, caches only executable metadata and retries offline hosts after a short pause", async () => {
+    vi.useFakeTimers();
     invoke.mockRejectedValueOnce(new Error("Offline"));
     expect(await conversationToolsBridge("logs-offline")).toBeNull();
+    const offlineCalls = invoke.mock.calls.length;
+    expect(await conversationToolsBridge("logs-offline#2")).toBeNull();
+    expect(invoke.mock.calls).toHaveLength(offlineCalls);
+    vi.advanceTimersByTime(30_001);
     invoke.mockResolvedValueOnce({ ...bridge, token: "never-in-renderer" });
     expect(await conversationToolsBridge("logs-offline#2")).toEqual(bridge);
     expect(invoke).toHaveBeenLastCalledWith("harness_conversation_tools_bridge", {

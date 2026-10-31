@@ -56,6 +56,7 @@ const methods = new Set([
   "desktopMetadata",
   "desktopLocalSessionReference",
   "desktopSnapshot",
+  "desktopSnapshotMeta",
 ]);
 parentPort.on(
   "message",
@@ -94,7 +95,11 @@ parentPort.on(
       let value;
       if (method.startsWith("desktop")) {
         const platform =
-          method === "desktopList" ? args[3] : method === "desktopSnapshot" ? args[2] : args[1];
+          method === "desktopList"
+            ? args[3]
+            : method === "desktopSnapshot" || method === "desktopSnapshotMeta"
+              ? args[2]
+              : args[1];
         if (
           ![
             "aix",
@@ -155,7 +160,10 @@ parentPort.on(
                 (expectedProjectCwd !== undefined && typeof expectedProjectCwd !== "string")
               )
                 throw new Error("Invalid desktop snapshot read.");
-              value = desktop.readSnapshotRecord(id, projectId, expectedProjectCwd);
+              value =
+                method === "desktopSnapshotMeta"
+                  ? desktop.readSnapshotMetaRecord(id, projectId, expectedProjectCwd)
+                  : desktop.readSnapshotRecord(id, projectId, expectedProjectCwd);
             }
           }
         } finally {

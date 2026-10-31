@@ -155,8 +155,13 @@ pub struct HarnessProcessReceipt {
     construction_id: String,
 }
 
-/// Upper bound for each wait while stopping an already-signalled provider.
+/// Upper bound for one wait while stopping an already-signalled provider.
 const STOP_WAIT: Duration = Duration::from_secs(5);
+/// One shared deadline for the whole `stop_and_drain` (writer drain, process
+/// wait and exit confirmation) instead of a fresh `STOP_WAIT` for each step.
+const STOP_DEADLINE: Duration = Duration::from_secs(8);
+/// One shared deadline for every retained provider exit of a retiring session.
+const RETIRE_EXIT_DEADLINE: Duration = Duration::from_secs(20);
 
 struct LiveChild {
     cwd: PathBuf,
@@ -207,19 +212,21 @@ impl LiveChild {
             .request_stop()
             .map_err(|e| e.to_string())
     }
-    /// Best-effort and idempotent: each wait is bounded, failures are logged and
+    /// Best-effort and idempotent: the waits share one deadline, failures are logged and
     /// never surfaced. The process was already signalled/terminated by `request_stop`.
     fn stop_and_drain(&self) -> Result<(), String> {
+        let deadline = Instant::now() + STOP_DEADLINE;
+        let left = || deadline.saturating_duration_since(Instant::now());
         if let Err(error) = self.request_stop() {
             eprintln!("[harness] stop request failed: {error}");
         }
-        match self.writers.drain_timeout(STOP_WAIT) {
+        match self.writers.drain_timeout(left()) {
             None => eprintln!("[harness] writer drain timed out during stop"),
             Some(Err(error)) => eprintln!("[harness] writer settled with failure: {error}"),
             Some(Ok(())) => {}
         }
         if let Some(process) = &self.process {
-            match process.wait_actual_timeout(STOP_WAIT) {
+            match process.wait_actual_timeout(left()) {
                 None => eprintln!("[harness] process wait timed out during stop"),
                 Some(Err(error)) => eprintln!("[harness] process wait failed during stop: {error}"),
                 Some(Ok(_)) => {
@@ -230,7 +237,7 @@ impl LiveChild {
             }
         }
         if let Some(exit) = &self.exit {
-            if let Err(error) = exit.wait(STOP_WAIT) {
+            if let Err(error) = exit.wait(left()) {
                 eprintln!("[harness] provider exit not confirmed during stop: {error}");
             }
         }
@@ -682,6 +689,20 @@ fn finish_spawn_authority(
         eprintln!("[harness] provider retirement unverified: {error}");
     }
     authority.finish()
+}
+
+/// Runs blocking command work (network RPC, SQLite under the write connection,
+/// process spawn/wait, file hashing) on Tauri's blocking pool. A
+/// `#[tauri::command(async)]` sync fn runs on the tokio workers (one per core);
+/// enough stalled ones would freeze every IPC command, stop and write included.
+pub(crate) async fn run_blocking<T, F>(label: &'static str, work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| format!("{label} task failed: {error}"))?
 }
 
 pub struct HarnessHost {
@@ -1139,9 +1160,12 @@ impl HarnessHost {
             .get(session_id)
             .cloned()
             .unwrap_or_default();
+        // One deadline for all retained exits, not 20 s for each. An exit that is not
+        // confirmed by then still refuses: that provider may be writing.
+        let deadline = Instant::now() + RETIRE_EXIT_DEADLINE;
         for exit in &exits {
             // Do not capture files until the retained provider exit succeeds.
-            if let Err(error) = exit.wait(Duration::from_secs(20)) {
+            if let Err(error) = exit.wait(deadline.saturating_duration_since(Instant::now())) {
                 return Err(format!("Provider may still be writing; cannot capture turn: {error}"));
             }
         }
@@ -1299,54 +1323,66 @@ impl Drop for HarnessHost {
 }
 
 /// Resolve the Cursor CLI (`cursor-agent`), never Grok's `agent` shim.
-#[tauri::command(async)]
-pub fn harness_resolve_cursor() -> Result<CursorBinary, String> {
-    resolve_cursor_agent()
-        .map(|path| CursorBinary {
-            path: path.to_string_lossy().into_owned(),
-        })
-        .ok_or_else(|| "Cursor CLI not found. Install it and run `agent login`, then retry.".into())
+#[tauri::command]
+pub async fn harness_resolve_cursor() -> Result<CursorBinary, String> {
+    crate::harness::run_blocking("harness_resolve_cursor", move || {
+        resolve_cursor_agent()
+            .map(|path| CursorBinary {
+                path: path.to_string_lossy().into_owned(),
+            })
+            .ok_or_else(|| "Cursor CLI not found. Install it and run `agent login`, then retry.".into())
+    })
+    .await
 }
 
 /// Resolve the Codex CLI (`codex`).
-#[tauri::command(async)]
-pub fn harness_resolve_codex() -> Result<CursorBinary, String> {
-    resolve_codex()
-        .map(|path| CursorBinary {
-            path: path.to_string_lossy().into_owned(),
-        })
-        .ok_or_else(|| {
-            "Codex CLI not found. Install it from https://developers.openai.com/codex/cli and run `codex login`, then retry."
-                .into()
-        })
+#[tauri::command]
+pub async fn harness_resolve_codex() -> Result<CursorBinary, String> {
+    crate::harness::run_blocking("harness_resolve_codex", move || {
+        resolve_codex()
+            .map(|path| CursorBinary {
+                path: path.to_string_lossy().into_owned(),
+            })
+            .ok_or_else(|| {
+                "Codex CLI not found. Install it from https://developers.openai.com/codex/cli and run `codex login`, then retry."
+                    .into()
+            })
+    })
+    .await
 }
 
 /// Resolve the OpenCode CLI (`opencode`).
-#[tauri::command(async)]
-pub fn harness_resolve_opencode() -> Result<CursorBinary, String> {
-    resolve_opencode()
-        .map(|path| CursorBinary {
-            path: path.to_string_lossy().into_owned(),
-        })
-        .ok_or_else(|| {
-            "OpenCode CLI not found. Install it from https://opencode.ai and run `opencode auth login`, then retry."
-                .into()
-        })
+#[tauri::command]
+pub async fn harness_resolve_opencode() -> Result<CursorBinary, String> {
+    crate::harness::run_blocking("harness_resolve_opencode", move || {
+        resolve_opencode()
+            .map(|path| CursorBinary {
+                path: path.to_string_lossy().into_owned(),
+            })
+            .ok_or_else(|| {
+                "OpenCode CLI not found. Install it from https://opencode.ai and run `opencode auth login`, then retry."
+                    .into()
+            })
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn harness_resolve_configured(
+#[tauri::command]
+pub async fn harness_resolve_configured(
     provider: String,
     binary_path: String,
 ) -> Result<ConfiguredBinary, String> {
-    resolve_harness_binary_override(&provider, &binary_path).map(|path| {
-        let transport = (provider == "antigravity").then(|| antigravity_transport(&path));
-        ConfiguredBinary {
-            args: transport.map(antigravity_args),
-            path: path.to_string_lossy().into_owned(),
-            transport,
-        }
+    crate::harness::run_blocking("harness_resolve_configured", move || {
+        resolve_harness_binary_override(&provider, &binary_path).map(|path| {
+            let transport = (provider == "antigravity").then(|| antigravity_transport(&path));
+            ConfiguredBinary {
+                args: transport.map(antigravity_args),
+                path: path.to_string_lossy().into_owned(),
+                transport,
+            }
+        })
     })
+    .await
 }
 
 fn initialize_runtime_binary_paths(
@@ -1371,16 +1407,19 @@ pub fn harness_runtime_binary_paths(
 }
 
 /// Resolve the Claude Code CLI (`claude`).
-#[tauri::command(async)]
-pub fn harness_resolve_claude() -> Result<CursorBinary, String> {
-    resolve_claude()
-        .map(|path| CursorBinary {
-            path: path.to_string_lossy().into_owned(),
-        })
-        .ok_or_else(|| {
-            "Claude Code CLI not found. Install it from https://claude.com/product/claude-code and run `claude auth login`, then retry."
-                .into()
-        })
+#[tauri::command]
+pub async fn harness_resolve_claude() -> Result<CursorBinary, String> {
+    crate::harness::run_blocking("harness_resolve_claude", move || {
+        resolve_claude()
+            .map(|path| CursorBinary {
+                path: path.to_string_lossy().into_owned(),
+            })
+            .ok_or_else(|| {
+                "Claude Code CLI not found. Install it from https://claude.com/product/claude-code and run `claude auth login`, then retry."
+                    .into()
+            })
+    })
+    .await
 }
 
 fn resolve_mcp_binary(provider: &str, binary_path: Option<&str>) -> Result<PathBuf, String> {
@@ -1750,88 +1789,106 @@ fn valid_mcp_name(name: &str) -> bool {
 }
 
 /// Resolve the Pi coding agent CLI (`pi`).
-#[tauri::command(async)]
-pub fn harness_resolve_pi() -> Result<CursorBinary, String> {
-    resolve_pi()
-        .map(|path| CursorBinary {
-            path: path.to_string_lossy().into_owned(),
-        })
-        .ok_or_else(|| {
-            "Pi CLI not found. Install it with `npm install -g @earendil-works/pi-coding-agent` and authenticate, then retry."
-                .into()
-        })
+#[tauri::command]
+pub async fn harness_resolve_pi() -> Result<CursorBinary, String> {
+    crate::harness::run_blocking("harness_resolve_pi", move || {
+        resolve_pi()
+            .map(|path| CursorBinary {
+                path: path.to_string_lossy().into_owned(),
+            })
+            .ok_or_else(|| {
+                "Pi CLI not found. Install it with `npm install -g @earendil-works/pi-coding-agent` and authenticate, then retry."
+                    .into()
+            })
+    })
+    .await
 }
 
 /// Resolve the omp (oh-my-pi) coding agent CLI.
-#[tauri::command(async)]
-pub fn harness_resolve_omp() -> Result<CursorBinary, String> {
-    resolve_omp()
-        .map(|path| CursorBinary {
-            path: path.to_string_lossy().into_owned(),
-        })
-        .ok_or_else(|| {
-            "omp CLI not found. Install it with `curl -fsSL https://omp.sh/install | sh` and authenticate, then retry."
-                .into()
-        })
+#[tauri::command]
+pub async fn harness_resolve_omp() -> Result<CursorBinary, String> {
+    crate::harness::run_blocking("harness_resolve_omp", move || {
+        resolve_omp()
+            .map(|path| CursorBinary {
+                path: path.to_string_lossy().into_owned(),
+            })
+            .ok_or_else(|| {
+                "omp CLI not found. Install it with `curl -fsSL https://omp.sh/install | sh` and authenticate, then retry."
+                    .into()
+            })
+    })
+    .await
 }
 
 /// Resolve the Vercel fx coding agent CLI (`fx`), never the JSON viewer of the same name.
-#[tauri::command(async)]
-pub fn harness_resolve_fx() -> Result<CursorBinary, String> {
-    resolve_fx()
-        .map(|path| CursorBinary {
-            path: path.to_string_lossy().into_owned(),
-        })
-        .ok_or_else(|| {
-            "fx CLI not found. Install it from https://fx.sh and run `fx login`, then retry.".into()
-        })
+#[tauri::command]
+pub async fn harness_resolve_fx() -> Result<CursorBinary, String> {
+    crate::harness::run_blocking("harness_resolve_fx", move || {
+        resolve_fx()
+            .map(|path| CursorBinary {
+                path: path.to_string_lossy().into_owned(),
+            })
+            .ok_or_else(|| {
+                "fx CLI not found. Install it from https://fx.sh and run `fx login`, then retry.".into()
+            })
+    })
+    .await
 }
 
 /// Resolve xAI Grok Build (`grok`).
-#[tauri::command(async)]
-pub fn harness_resolve_grok() -> Result<CursorBinary, String> {
-    resolve_grok()
-        .map(|path| CursorBinary {
-            path: path.to_string_lossy().into_owned(),
-        })
-        .ok_or_else(|| {
-            "Grok Build CLI not found. Install it with `curl -fsSL https://x.ai/cli/install.sh | bash` and run `grok login`, then retry.".into()
-        })
+#[tauri::command]
+pub async fn harness_resolve_grok() -> Result<CursorBinary, String> {
+    crate::harness::run_blocking("harness_resolve_grok", move || {
+        resolve_grok()
+            .map(|path| CursorBinary {
+                path: path.to_string_lossy().into_owned(),
+            })
+            .ok_or_else(|| {
+                "Grok Build CLI not found. Install it with `curl -fsSL https://x.ai/cli/install.sh | bash` and run `grok login`, then retry.".into()
+            })
+    })
+    .await
 }
 
 /// Resolve Nous Research Hermes Agent (`hermes`).
-#[tauri::command(async)]
-pub fn harness_resolve_hermes() -> Result<CursorBinary, String> {
-    resolve_hermes()
-        .map(|path| CursorBinary {
-            path: path.to_string_lossy().into_owned(),
-        })
-        .ok_or_else(|| {
-            "Hermes Agent CLI not found. Install it from https://hermes-agent.nousresearch.com, run `hermes model`, then retry."
-                .into()
-        })
+#[tauri::command]
+pub async fn harness_resolve_hermes() -> Result<CursorBinary, String> {
+    crate::harness::run_blocking("harness_resolve_hermes", move || {
+        resolve_hermes()
+            .map(|path| CursorBinary {
+                path: path.to_string_lossy().into_owned(),
+            })
+            .ok_or_else(|| {
+                "Hermes Agent CLI not found. Install it from https://hermes-agent.nousresearch.com, run `hermes model`, then retry."
+                    .into()
+            })
+    })
+    .await
 }
 
 /// Antigravity's ACP server is separate from the interactive agy CLI; on
 /// Windows only the CLI exists and Bycoda drives its headless stream-json mode.
-#[tauri::command(async)]
-pub fn harness_resolve_antigravity() -> Result<AntigravityBinary, String> {
-    resolve_antigravity()
-        .map(|path| {
-            let transport = antigravity_transport(&path);
-            AntigravityBinary {
-                path: path.to_string_lossy().into_owned(),
-                args: antigravity_args(transport),
-                transport,
-            }
-        })
-        .ok_or_else(|| {
-            if cfg!(windows) {
-                "Antigravity CLI (agy.exe) not found. Install Antigravity, then run `agy` once in a terminal to sign in.".into()
-            } else {
-                "Antigravity CLI (agy) not found. Install from https://antigravity.google/docs/cli/install/, then run `agy` in Terminal to sign in.".into()
-            }
-        })
+#[tauri::command]
+pub async fn harness_resolve_antigravity() -> Result<AntigravityBinary, String> {
+    crate::harness::run_blocking("harness_resolve_antigravity", move || {
+        resolve_antigravity()
+            .map(|path| {
+                let transport = antigravity_transport(&path);
+                AntigravityBinary {
+                    path: path.to_string_lossy().into_owned(),
+                    args: antigravity_args(transport),
+                    transport,
+                }
+            })
+            .ok_or_else(|| {
+                if cfg!(windows) {
+                    "Antigravity CLI (agy.exe) not found. Install Antigravity, then run `agy` once in a terminal to sign in.".into()
+                } else {
+                    "Antigravity CLI (agy) not found. Install from https://antigravity.google/docs/cli/install/, then run `agy` in Terminal to sign in.".into()
+                }
+            })
+    })
+    .await
 }
 
 /// A bounded tail of a provider-reported shell task output file.
@@ -1962,12 +2019,112 @@ fn exact_workspace_activity_enabled(app: &AppHandle, cwd: &Path) -> bool {
         && crate::session_store::rewind::exact_git_rewind_enabled(app)
 }
 
+/// The social, runtime-log and conversation tool grants are optional: a
+/// provider still starts without them. Issue them in parallel, each bounded by
+/// a short Host budget, and skip them while the Host is in its unhealthy
+/// back-off. Every worker finishes by its deadline, so no grant is pinned or
+/// cached after the spawn proceeds.
+fn configure_optional_tool_grants(
+    app: &AppHandle,
+    session_id: &str,
+    cmd: &mut Command,
+    stamp: (u64, u64),
+) {
+    crate::social_bridge::strip_child_env(cmd);
+    crate::runtime_logs_bridge::strip_child_env(cmd);
+    let fallback = crate::conversation_tools_bridge::prepare_child(session_id, cmd, stamp);
+    let Some(deadline) = crate::session_tools_bridge::optional_host_deadline() else {
+        eprintln!("[harness] Host is unhealthy; starting the provider without Host tools");
+        return;
+    };
+    type Issued = Result<Vec<(&'static str, String)>, String>;
+    let results: [(&str, Issued); 3] = std::thread::scope(|scope| {
+        let social = scope.spawn(|| {
+            crate::social_bridge::issue_child_grant(app, session_id, stamp, deadline)
+        });
+        let logs = scope.spawn(|| {
+            crate::runtime_logs_bridge::issue_child_grant(app, session_id, stamp, deadline)
+        });
+        let conversation = crate::conversation_tools_bridge::issue_child_grant(
+            app, session_id, stamp, &fallback, deadline,
+        );
+        let joined = |handle: std::thread::ScopedJoinHandle<'_, Issued>| {
+            handle
+                .join()
+                .unwrap_or_else(|_| Err("tool grant worker panicked".into()))
+        };
+        [
+            ("social", joined(social)),
+            ("runtime logs", joined(logs)),
+            ("conversation", conversation),
+        ]
+    });
+    let mut healthy = true;
+    for (group, issued) in results {
+        match issued {
+            Ok(env) => {
+                for (key, value) in env {
+                    cmd.env(key, value);
+                }
+            }
+            Err(error) => {
+                healthy = false;
+                // An unpaired local Host is the ordinary no-tools setup.
+                if !error.starts_with("Connect the local bycoda Host") {
+                    eprintln!("[harness] continuing without {group} tools: {error}");
+                }
+            }
+        }
+    }
+    crate::session_tools_bridge::note_optional_host_outcome(deadline, healthy);
+}
+
 /// Off the main thread: fork/exec, and `apply_gui_env` can wait on the first
 /// login-shell read. Callers await this before writing to the child. Kill can
 /// still race the fork, so a cancelled spawn must not reinsert the child.
-#[tauri::command(async)]
+#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn harness_spawn(
+pub async fn harness_spawn(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    session_id: String,
+    command: String,
+    args: Vec<String>,
+    cwd: String,
+    account: Option<HarnessAccount>,
+    binary_provider: Option<String>,
+    binary_path: Option<String>,
+    generic_acp_id: Option<String>,
+    authority_environment_id: Option<String>,
+    authority_generation: Option<u64>,
+    logical_session_id: Option<String>,
+    control_turn: Option<crate::control::ControlTurnReceipt>,
+) -> Result<HarnessProcessReceipt, String> {
+    run_blocking("harness_spawn", move || {
+        let host = app.state::<HarnessHost>();
+        harness_spawn_blocking(
+            app.clone(),
+            window,
+            host,
+            session_id,
+            command,
+            args,
+            cwd,
+            account,
+            binary_provider,
+            binary_path,
+            generic_acp_id,
+            authority_environment_id,
+            authority_generation,
+            logical_session_id,
+            control_turn,
+        )
+    })
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+fn harness_spawn_blocking(
     app: AppHandle,
     window: tauri::WebviewWindow,
     host: State<'_, HarnessHost>,
@@ -2092,14 +2249,7 @@ pub fn harness_spawn(
     });
 
     crate::control::configure_child(&app, &session_id, &mut cmd, control_turn.as_ref());
-    crate::social_bridge::configure_child(&app, &session_id, &mut cmd, (epoch, kill_all));
-    crate::runtime_logs_bridge::configure_child(&app, &session_id, &mut cmd, (epoch, kill_all));
-    crate::conversation_tools_bridge::configure_child(
-        &app,
-        &session_id,
-        &mut cmd,
-        (epoch, kill_all),
-    );
+    configure_optional_tool_grants(&app, &session_id, &mut cmd, (epoch, kill_all));
 
     // Hold this child's redaction values through its final output drain, even
     // after a replacement has revoked and removed its native grant cache.
@@ -2354,8 +2504,21 @@ pub(crate) fn provider_account_path(
         .join(account_id))
 }
 
-#[tauri::command(async)]
-pub fn provider_account_remove(
+#[tauri::command]
+pub async fn provider_account_remove(
+    app: AppHandle,
+    provider: String,
+    account_id: String,
+    credentials_only: Option<bool>,
+) -> Result<(), String> {
+    run_blocking("provider_account_remove", move || {
+        let host = app.state::<HarnessHost>();
+        provider_account_remove_blocking(app.clone(), host, provider, account_id, credentials_only)
+    })
+    .await
+}
+
+fn provider_account_remove_blocking(
     app: AppHandle,
     host: State<'_, HarnessHost>,
     provider: String,
@@ -2706,6 +2869,44 @@ mod shared_agents_tests {
     }
 }
 
+/// Whole provider-stdin write budget, including the authority lease wait.
+const PROVIDER_WRITE_BUDGET: Duration = Duration::from_secs(12);
+/// The authority lease shares the transcript write connection, which a large
+/// upsert or delete can hold for seconds. Bound the wait so the write still has
+/// most of its budget left.
+const AUTHORITY_LEASE_WAIT: Duration = Duration::from_secs(5);
+
+/// Reserves a native authority lease, waiting at most `wait`. On timeout
+/// nothing has been dispatched, so the caller refuses and a retry cannot
+/// duplicate the write. A reservation that completes after the timeout is
+/// dropped unstarted, which releases it.
+fn reserve_authority_within(
+    gate: crate::session_store::authority::ExecutionGate,
+    target: String,
+    kind: &'static str,
+    scope: Option<crate::session_store::authority::NativeScope>,
+    existing_control: bool,
+    wait: Duration,
+) -> Result<crate::session_store::authority::NativeLease, String> {
+    let (tx, rx) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name("authority-lease".into())
+        .spawn(move || {
+            let _ = tx.send(gate.reserve_existing(&target, kind, scope.as_ref(), existing_control));
+        })
+        .map_err(|e| format!("Failed to reserve the session lease: {e}"))?;
+    match rx.recv_timeout(wait) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(
+            "Session storage is busy, so this was not sent to the provider. Try again in a moment."
+                .into(),
+        ),
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            Err("Session lease reservation failed before it completed".into())
+        }
+    }
+}
+
 /// A child that stops draining stdin can block `write_all` for minutes, so the
 /// write runs on the blocking pool — never on an async worker or the IPC path,
 /// where it would starve `harness_kill` and make the wedged child unrecoverable.
@@ -2740,14 +2941,23 @@ pub async fn harness_write(
     // Lease SQL (store mutex + write transaction) must not run on the async
     // command thread: reserve inside the blocking task together with the write.
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let lease = gate.reserve_existing(&target, "provider-stdin", scope.as_ref(), finishing)?;
+        // The write deadline starts before the lease wait.
+        let deadline = Instant::now() + PROVIDER_WRITE_BUDGET;
+        let lease = reserve_authority_within(
+            gate,
+            target,
+            "provider-stdin",
+            scope,
+            finishing,
+            AUTHORITY_LEASE_WAIT,
+        )?;
         let line = crate::social_bridge::authorize_acp_frame(&line_session, line);
         let line = crate::runtime_logs_bridge::authorize_acp_frame(&line_session, line);
         let line = crate::conversation_tools_bridge::authorize_acp_frame(&line_session, line);
         write_child_with_deadline_admitted(
             live,
             line,
-            Duration::from_secs(12),
+            deadline.saturating_duration_since(Instant::now()),
             Some(lease),
             admission,
         )
@@ -3168,10 +3378,24 @@ mod authority_tests {
     }
 }
 
-/// `async` dispatch keeps kill executable while a sibling `harness_write` is
-/// blocked on a wedged child's stdin.
-#[tauri::command(async)]
-pub fn harness_kill(
+/// Async dispatch plus the blocking pool keeps kill executable while a sibling
+/// `harness_write` is blocked on a wedged child's stdin, and while other
+/// commands wait on a hung Host.
+#[tauri::command]
+pub async fn harness_kill(
+    window: tauri::WebviewWindow,
+    session_id: String,
+    construction_id: Option<String>,
+) -> Result<(), String> {
+    run_blocking("harness_kill", move || {
+        let app = window.app_handle().clone();
+        let host = app.state::<HarnessHost>();
+        harness_kill_blocking(window, host, session_id, construction_id)
+    })
+    .await
+}
+
+fn harness_kill_blocking(
     window: tauri::WebviewWindow,
     host: State<'_, HarnessHost>,
     session_id: String,
@@ -3214,17 +3438,23 @@ pub(crate) fn kill_current_harness(host: &HarnessHost, session_id: &str) -> Resu
 
 /// Explicit ownership transfer waits for physical process exit and, when enabled,
 /// the execution Host's activity acknowledgement. Ordinary idle turns stay warm.
-#[tauri::command(async)]
-pub fn harness_retire(host: State<'_, HarnessHost>, session_id: String) -> Result<(), String> {
-    host.retire_managed_session(&session_id)
+#[tauri::command]
+pub async fn harness_retire(app: AppHandle, session_id: String) -> Result<(), String> {
+    run_blocking("harness_retire", move || {
+        app.state::<HarnessHost>().retire_managed_session(&session_id)
+    })
+    .await
 }
 
 /// Off the main thread: `kill_all` waits for the children to die before it
 /// returns, and a window close calls this while the app keeps running.
-#[tauri::command(async)]
-pub fn harness_kill_all(host: State<'_, HarnessHost>) -> Result<(), String> {
-    host.kill_all();
-    Ok(())
+#[tauri::command]
+pub async fn harness_kill_all(app: AppHandle) -> Result<(), String> {
+    run_blocking("harness_kill_all", move || {
+        app.state::<HarnessHost>().kill_all();
+        Ok(())
+    })
+    .await
 }
 
 static HTTP_AGENT: OnceLock<ureq::Agent> = OnceLock::new();
@@ -3351,10 +3581,40 @@ pub fn harness_set_owner(
     Ok(())
 }
 
+/// Off the main thread: the authority lease shares the transcript write
+/// connection and must never freeze the UI while another write holds it.
 #[tauri::command]
 // Window/AppHandle/State are injected natively; retain the existing flat IPC shape.
 #[allow(clippy::too_many_arguments)]
-pub fn harness_sse_open(
+pub async fn harness_sse_open(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    session_id: String,
+    url: String,
+    headers: Option<HashMap<String, String>>,
+    authority_environment_id: Option<String>,
+    authority_generation: Option<u64>,
+    logical_session_id: Option<String>,
+) -> Result<(), String> {
+    run_blocking("harness_sse_open", move || {
+        let host = app.state::<HarnessHost>();
+        harness_sse_open_blocking(
+            app.clone(),
+            window,
+            host,
+            session_id,
+            url,
+            headers,
+            authority_environment_id,
+            authority_generation,
+            logical_session_id,
+        )
+    })
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+fn harness_sse_open_blocking(
     app: AppHandle,
     window: tauri::WebviewWindow,
     host: State<HarnessHost>,
@@ -3371,7 +3631,14 @@ pub fn harness_sse_open(
     let gate = source.control_gate(&app)?;
     gate.assert_provider_target(source.target(), &url)?;
     let scope = native_authority_scope(authority_environment_id, authority_generation)?;
-    let mut authority = gate.reserve(source.target(), "provider-events", scope.as_ref())?;
+    let mut authority = reserve_authority_within(
+        gate,
+        source.target().to_owned(),
+        "provider-events",
+        scope,
+        false,
+        AUTHORITY_LEASE_WAIT,
+    )?;
     source.check_target_before_start(explicit)?;
     authority.begin_external()?;
     host.stop_sse(&session_id);

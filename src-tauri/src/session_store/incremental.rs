@@ -95,6 +95,9 @@ pub struct SessionDelta {
 pub struct DeltaAck {
     pub updated_at: i64,
     pub revision: i64,
+    /// Sidebar summary, only when the caller asked for one (idle saves).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<SessionSummary>,
 }
 
 #[cfg(test)]
@@ -217,11 +220,13 @@ pub(super) fn apply_observed(
       provider_session_id=?8,provider_account_id=?9,context_used=?10,context_window=?11,branch=?12,worktree_cwd=?13,
       worktree_removed=?14,linked_work_item_json=?15,automation_id=?16,updated_at=?17,
       rewind_history_json=?18,pending_context_replay=?19,adopted_divergence=?21,adopted_base=?22,workspace_id=?23,workspace_revision=?24,
+      workspace_mode=COALESCE(?25,workspace_mode),
       has_user_message=?20 OR EXISTS(SELECT 1 FROM session_blocks WHERE session_id=?1 AND json_extract(block_json,'$.role')='user'),
       is_draft=EXISTS(SELECT 1 FROM session_blocks WHERE session_id=?1 AND json_extract(block_json,'$.role')='user' AND json_extract(block_json,'$.draft')=1)
       WHERE id=?1",params![id,s.cwd,s.harness,s.model,settings,s.runtime_mode,s.title,s.provider_session_id,s.provider_account_id,
       s.context_used,s.context_window,s.branch,s.worktree_cwd,i64::from(s.worktree_removed),linked,s.automation_id,updated_at,
-      rewind_history,s.pending_context_replay,i64::from(archived_user),s.adopted_divergence,s.adopted_base,s.workspace_id,s.workspace_revision]).map_err(|e|e.to_string())?;
+      rewind_history,s.pending_context_replay,i64::from(archived_user),s.adopted_divergence,s.adopted_base,s.workspace_id,s.workspace_revision,
+      s.workspace_mode]).map_err(|e|e.to_string())?;
     for change in &delta.changes {
         remember_worker_from_blocks(&tx, id, &json!([change.block])).map_err(|e| e.to_string())?;
     }
@@ -233,6 +238,7 @@ pub(super) fn apply_observed(
     let ack = DeltaAck {
         updated_at,
         revision,
+        summary: None,
     };
     let pending = observe(&tx, &ack);
     tx.commit().map_err(|e| e.to_string())?;
@@ -242,18 +248,46 @@ pub(super) fn apply_observed(
     })
 }
 
-#[tauri::command(async)]
-pub fn session_apply_delta(
+#[tauri::command]
+pub async fn session_apply_delta(
+    app: tauri::AppHandle,
     window: tauri::Window,
-    store: State<'_, SessionStore>,
-    delta: SessionDelta,
+    mut delta: SessionDelta,
     capture_output_receipt: Option<bool>,
+    summary: Option<bool>,
 ) -> Result<Option<write_receipts::NativeWriteAck<DeltaAck>>, String> {
-    let owner = write_receipts::capture_owner(&window, &store, capture_output_receipt);
-    crate::native_window_lifecycle::session_persistence_write(&window, &delta.session.id, || {
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-        write_receipts::apply_delta(&store, &conn, &delta, owner)
+    crate::harness::run_blocking("session_apply_delta", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        let owner = write_receipts::capture_owner(&window, &store, capture_output_receipt);
+        let session_id = delta.session.id.clone();
+        crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
+            // Idle saves replace the full upsert: they derive the branch from Git
+            // the same way (outside the store lock) and return the sidebar summary.
+            let git = (summary == Some(true)).then(|| super::upsert_git_info(&delta.session));
+            if let Some(git) = &git {
+                delta.session.branch = super::stored_branch(&delta.session, git);
+            }
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let mut written = write_receipts::apply_delta(&store, &conn, &delta, owner)?;
+            if let (Some(git), Some(written)) = (git, written.as_mut()) {
+                // The write is committed; a failed summary read must not report it
+                // as failed. The caller keeps its sidebar row until the next save.
+                written.ack.summary = super::delta_summary(
+                    &conn,
+                    &delta.session,
+                    git.repo,
+                    written.ack.updated_at,
+                    written.ack.revision,
+                )
+                .unwrap_or_else(|error| {
+                    eprintln!("session summary after delta: {error}");
+                    None
+                });
+            }
+            Ok(written)
+        })
     })
+    .await
 }
 
 #[derive(Serialize)]
@@ -435,32 +469,31 @@ fn read_legacy_window(
     Ok((bytes, false))
 }
 
-#[tauri::command(async)]
-pub fn session_get_page(
+#[tauri::command]
+pub async fn session_get_page(
     app: AppHandle,
     window: tauri::Window,
-    store: State<'_, SessionStore>,
     session_id: String,
     before: Option<usize>,
     revision: Option<i64>,
     limit: Option<usize>,
 ) -> Result<Option<TranscriptPage>, String> {
-    // Reconciliation can resume workspace-file effects, beyond this row's ID.
-    if super::rewind::has_pending_native(&store, Some(&session_id)).unwrap_or(false) {
-        let _ = crate::native_window_lifecycle::persistence_write(&window, || {
-            super::rewind::reconcile_pending_native(&app, &store, Some(&session_id))
-        });
-    }
-    store.with_read_conn(|conn| {
-        page_with_cache(
-            conn,
-            &session_id,
-            before,
-            revision,
-            limit.unwrap_or(80).clamp(1, 200),
-            Some(&store.legacy_page_cache),
-        )
+    crate::harness::run_blocking("session_get_page", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        // Reconciliation can resume workspace-file effects, beyond this row's ID.
+        super::reconcile_pending_before_read(&app, &window, &store, &session_id);
+        store.with_read_conn(|conn| {
+            page_with_cache(
+                conn,
+                &session_id,
+                before,
+                revision,
+                limit.unwrap_or(80).clamp(1, 200),
+                Some(&store.legacy_page_cache),
+            )
+        })
     })
+    .await
 }
 
 #[cfg(test)]
@@ -740,7 +773,9 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(checkpoint.contains("before"));
+        // The normalized rows are the only copy; the delta leaves the retired
+        // legacy column empty.
+        assert_eq!(checkpoint, super::super::legacy_blob::NORMALIZED_BLOB);
         assert!(page(&conn, &session.id, first.before, Some(first.revision), 1).is_err());
     }
     #[test]

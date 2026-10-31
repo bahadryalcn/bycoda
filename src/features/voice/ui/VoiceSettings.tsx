@@ -15,9 +15,12 @@ import {
   Group,
   Row,
   Segmented,
+  Select,
   SettingsFeedback,
   Toggle,
 } from "../../settings/ui/settingsControls";
+import { VoiceCloudKey } from "./VoiceCloudKey";
+import { speakerEngine, speakerOptions } from "../model/voiceSpeakers";
 import {
   localVoiceBackend,
   type VoiceDevice,
@@ -29,6 +32,7 @@ import {
   saveVoiceSettings,
   useVoiceSettings,
   voiceRuntimeSettings,
+  type VoiceMode,
   type VoiceSettings as Preferences,
   type VoiceVisual,
 } from "../model/voiceSettings";
@@ -298,14 +302,29 @@ export function VoiceSettings() {
       ? [["ttsPath", "Natural voice model", "voice-tts"] as [PathKey, string, string]]
       : []),
   ];
+  // Speaker voice for Supertonic and the cloud conversations.
+  const speakerRow = speakerEngine(settings) ? (
+    <Row id="voice-speaker" label={t("Speaker")} description={t("The voice that speaks replies.")}>
+      <Select
+        label={t("Speaker")}
+        value={settings.speakers[speakerEngine(settings)!]}
+        options={speakerOptions(speakerEngine(settings)!)}
+        onChange={(value) =>
+          change({ speakers: { ...settings.speakers, [speakerEngine(settings)!]: value } })
+        }
+      />
+    </Row>
+  ) : null;
   return (
     <Group title={t("Voice companion")} layout="full">
       <Row
         id="voice-companion"
         label={t("Enable voice companion")}
-        description={t(
-          "Talk to your session while the agent works. Audio is processed on this computer.",
-        )}
+        description={
+          settings.mode === "local"
+            ? t("Talk to your session while the agent works. Audio is processed on this computer.")
+            : t("Talk to your session while the agent works.")
+        }
       >
         <Toggle
           label={t("Enable voice companion")}
@@ -338,53 +357,111 @@ export function VoiceSettings() {
             />
           </Row>
           <Row
-            id="voice-engine"
-            label={t("Reply voice")}
-            description={t("High quality sounds richer but needs an NVIDIA GPU.")}
+            id="voice-mode"
+            label={t("Conversation")}
+            description={
+              settings.mode === "local"
+                ? t("Speech is recognized on this computer; the session's provider writes replies.")
+                : t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
+                    p1: settings.mode === "grok" ? "Grok Voice" : "OpenAI Realtime",
+                  })
+            }
             disabled={installing}
           >
             <Segmented
-              label={t("Reply voice")}
-              value={
-                !settings.natural ? "system" : settings.engine === "voxcpm2" ? "quality" : "natural"
-              }
+              label={t("Conversation")}
+              value={settings.mode}
               options={[
-                // Supertonic: fast on the CPU, 31 languages. VoxCPM2: richer, needs a GPU.
-                { value: "natural", label: t("Natural") },
-                { value: "quality", label: t("High quality") },
-                { value: "system", label: t("System voice") },
+                { value: "local", label: t("Local") },
+                // Signed in through Grok Build and Codex; no separate API key.
+                { value: "grok", label: "Grok Voice" },
+                { value: "openai", label: "OpenAI Realtime" },
               ]}
-              onChange={(value) => {
-                setJob({ state: "idle" });
-                change({
-                  natural: value !== "system",
-                  ...(value !== "system"
-                    ? { engine: value === "quality" ? "voxcpm2" : "supertonic" }
-                    : {}),
-                });
-              }}
+              onChange={(mode) => change({ mode: mode as VoiceMode })}
             />
           </Row>
-          <Row
-            id="voice-device"
-            label={t("Processing")}
-            description={t("Automatic uses a supported NVIDIA GPU when available.")}
-            disabled={installing}
-          >
-            <Segmented
-              label={t("Processing")}
-              value={settings.device}
-              options={[
-                { value: "auto", label: t("Automatic") },
-                { value: "gpu", label: t("GPU") },
-                { value: "cpu", label: t("CPU") },
-              ]}
-              onChange={(value) => {
-                setJob({ state: "idle" });
-                change({ device: value as VoiceDevice });
-              }}
-            />
-          </Row>
+          {settings.mode !== "local" ? speakerRow : null}
+          {settings.mode === "local" ? (
+            <>
+              <Row
+                id="voice-engine"
+                label={t("Reply voice")}
+                description={
+                  !settings.natural
+                    ? t("An installed voice of this computer.")
+                    : settings.engine === "voxcpm2"
+                      ? t("High quality sounds richer but needs an NVIDIA GPU.")
+                      : settings.engine === "elevenlabs"
+                        ? t("Natural cloud voice. Only the reply text leaves this computer.")
+                        : t("Fast and private: runs on this computer's processor.")
+                }
+                disabled={installing}
+              >
+                <Select
+                  label={t("Reply voice")}
+                  value={!settings.natural ? "system" : settings.engine}
+                  options={[
+                    { value: "supertonic", label: t("Natural (Supertonic)") },
+                    { value: "voxcpm2", label: t("High quality (VoxCPM2)") },
+                    { value: "elevenlabs", label: "ElevenLabs" },
+                    { value: "system", label: t("System voice") },
+                  ]}
+                  onChange={(value) => {
+                    setJob({ state: "idle" });
+                    change(
+                      value === "system"
+                        ? { natural: false }
+                        : { natural: true, engine: value as Preferences["engine"] },
+                    );
+                  }}
+                />
+              </Row>
+              {speakerRow}
+              {settings.natural && settings.engine === "elevenlabs" ? (
+                <>
+                  <VoiceCloudKey onSaved={() => void check()} />
+                  <Row
+                    id="voice-elevenlabs-voice"
+                    label={t("ElevenLabs voice ID")}
+                    description={t("Optional. Leave empty for a multilingual default voice.")}
+                  >
+                    <TextField
+                      label={t("ElevenLabs voice ID")}
+                      hideLabel
+                      value={settings.elevenVoice}
+                      placeholder="JBFqnCBsd6RMkjVDRZzb"
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={(event) => {
+                        const value = event.target.value.trim();
+                        if (/^[A-Za-z0-9]{0,64}$/.test(value)) change({ elevenVoice: value });
+                      }}
+                    />
+                  </Row>
+                </>
+              ) : null}
+              <Row
+                id="voice-device"
+                label={t("Processing")}
+                description={t("Automatic uses a supported NVIDIA GPU when available.")}
+                disabled={installing}
+              >
+                <Segmented
+                  label={t("Processing")}
+                  value={settings.device}
+                  options={[
+                    { value: "auto", label: t("Automatic") },
+                    { value: "gpu", label: t("GPU") },
+                    { value: "cpu", label: t("CPU") },
+                  ]}
+                  onChange={(value) => {
+                    setJob({ state: "idle" });
+                    change({ device: value as VoiceDevice });
+                  }}
+                />
+              </Row>
+            </>
+          ) : null}
           <Row
             id="voice-setup"
             label={t("Voice setup")}

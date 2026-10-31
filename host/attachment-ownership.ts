@@ -1,9 +1,15 @@
 import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
 import type { HostStore } from "./store";
-import { attachmentPath, collectAttachmentGarbage } from "./attachments";
+import {
+  attachmentPath,
+  collectAttachmentGarbage,
+  type AttachmentScanResume,
+} from "./attachments";
 export const ATTACHMENT_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+/** Pause between slices of one sweep, so queued database requests run first. */
+const SLICE_PAUSE_MS = 25;
 function hasControlCharacter(value: string): boolean {
   for (const character of value) {
     const code = character.charCodeAt(0);
@@ -18,6 +24,8 @@ export class AttachmentOwnership {
   private sweeping?: Promise<string[]>;
   private closed = false;
   private cursor = "";
+  /** The sweep in progress: its candidate page and where the reference scan stopped. */
+  private pass?: { eligible: Set<string>; resume: AttachmentScanResume };
   readonly ready: Promise<void>;
   constructor(
     private readonly store: HostStore,
@@ -244,7 +252,7 @@ export class AttachmentOwnership {
   async collect(): Promise<string[]> {
     if (this.closed) return [];
     if (this.sweeping) return this.sweeping;
-    const operation = this.collectScoped();
+    const operation = this.collectSliced();
     this.sweeping = operation;
     const clear = () => {
       if (this.sweeping === operation) this.sweeping = undefined;
@@ -252,68 +260,100 @@ export class AttachmentOwnership {
     void operation.then(clear, clear);
     return operation;
   }
+  /** One sweep as several short database scopes, not one long one. */
+  private async collectSliced(): Promise<string[]> {
+    try {
+      for (;;) {
+        const removed = await this.collectScoped();
+        if (!this.pass || this.closed) return removed;
+        await new Promise<void>((resolve) => setTimeout(resolve, SLICE_PAUSE_MS));
+      }
+    } catch (error) {
+      this.pass = undefined;
+      throw error;
+    }
+  }
   private async collectScoped(): Promise<string[]> {
     return this.store.db.scope(async () => {
       await this.ready;
       if (this.closed) return Promise.resolve([]);
       const now = this.now();
-      const page = async (after: string) =>
-        await this.store.db
-          .prepare("SELECT id FROM attachment_ownership_files WHERE id>? ORDER BY id LIMIT 1000")
-          .all(after);
-      let after = this.cursor;
-      let rows = await page(after);
-      if (!rows.length && after) {
-        after = "";
-        rows = await page(after);
-      }
-      const end = rows.length ? String(rows.at(-1)!.id) : after;
-      // Bound eligibility work as well as deletion: an archive of non-expiring
-      // offline claims must not force a synchronous full-ledger query per hour.
-      const eligible = new Set(
-        (
-          await this.store.db
-            .prepare(`
-      SELECT file.id FROM attachment_ownership_files file
-      WHERE file.id>? AND file.id<=? AND file.legacy=0 AND file.updated_at<=? AND NOT EXISTS (
-        SELECT 1 FROM attachment_ownership_claims claim WHERE claim.id=file.id
-          AND (file.complete=1 OR claim.updated_at>?)
-      ) ORDER BY file.id LIMIT 200
-    `)
-            .all(after, end, now - ATTACHMENT_GRACE_MS, now - ATTACHMENT_GRACE_MS)
-        ).map((row) => String(row.id)),
-      );
-      this.cursor = eligible.size === 200 ? Array.from(eligible).at(-1)! : end;
-      const operation = collectAttachmentGarbage(
-        this.store,
-        async () => {
-          if (this.closed) return undefined;
-          // Claims may have arrived while the reference scan yielded. Recheck
-          // synchronously in the same final phase as reference scanning/deletion.
-          // Query exact IDs individually so the 200-item page never hides a claim.
-          const protectedIds = new Set<string>();
-          for (const id of eligible) {
-            const file = await this.store.db
-              .prepare(`SELECT 1 FROM attachment_ownership_files file
-          WHERE file.id=? AND file.legacy=0 AND file.updated_at<=? AND NOT EXISTS (
-            SELECT 1 FROM attachment_ownership_claims claim WHERE claim.id=file.id AND (file.complete=1 OR claim.updated_at>?)
-          )`)
-              .get(id, now - ATTACHMENT_GRACE_MS, now - ATTACHMENT_GRACE_MS);
-            if (!file) protectedIds.add(id);
-          }
-          return protectedIds;
-        },
-        now,
-        ATTACHMENT_GRACE_MS,
-        eligible,
-        async (id) => {
-          await this.store.db.prepare("DELETE FROM attachment_ownership_claims WHERE id=?").run(id);
-          await this.store.db.prepare("DELETE FROM attachment_ownership_files WHERE id=?").run(id);
-        },
-        () => !this.closed,
-      );
+      const current = this.pass ?? (await this.startPass(now));
+      this.pass = current;
+      const { eligible, resume } = current;
+      const operation = await this.slice(now, eligible, resume);
+      if (!resume.pending) this.pass = undefined;
       return operation;
     });
+  }
+  /** The next page of candidate files, and the cursor to continue from. */
+  private async startPass(
+    now: number,
+  ): Promise<{ eligible: Set<string>; resume: AttachmentScanResume }> {
+    const page = async (after: string) =>
+      await this.store.db
+        .prepare("SELECT id FROM attachment_ownership_files WHERE id>? ORDER BY id LIMIT 1000")
+        .all(after);
+    let after = this.cursor;
+    let rows = await page(after);
+    if (!rows.length && after) {
+      after = "";
+      rows = await page(after);
+    }
+    const end = rows.length ? String(rows.at(-1)!.id) : after;
+    // Bound eligibility work as well as deletion: an archive of non-expiring
+    // offline claims must not force a synchronous full-ledger query per hour.
+    const eligible = new Set(
+      (
+        await this.store.db
+          .prepare(`
+    SELECT file.id FROM attachment_ownership_files file
+    WHERE file.id>? AND file.id<=? AND file.legacy=0 AND file.updated_at<=? AND NOT EXISTS (
+      SELECT 1 FROM attachment_ownership_claims claim WHERE claim.id=file.id
+        AND (file.complete=1 OR claim.updated_at>?)
+    ) ORDER BY file.id LIMIT 200
+    `)
+          .all(after, end, now - ATTACHMENT_GRACE_MS, now - ATTACHMENT_GRACE_MS)
+      ).map((row) => String(row.id)),
+    );
+    this.cursor = eligible.size === 200 ? Array.from(eligible).at(-1)! : end;
+    return { eligible, resume: {} };
+  }
+  private slice(
+    now: number,
+    eligible: Set<string>,
+    resume: AttachmentScanResume,
+  ): Promise<string[]> {
+    const operation = collectAttachmentGarbage(
+      this.store,
+      async () => {
+        if (this.closed) return undefined;
+        // Claims may have arrived while the reference scan yielded. Recheck
+        // synchronously in the same final phase as reference scanning/deletion.
+        // Query exact IDs individually so the 200-item page never hides a claim.
+        const protectedIds = new Set<string>();
+        for (const id of eligible) {
+          const file = await this.store.db
+            .prepare(`SELECT 1 FROM attachment_ownership_files file
+        WHERE file.id=? AND file.legacy=0 AND file.updated_at<=? AND NOT EXISTS (
+          SELECT 1 FROM attachment_ownership_claims claim WHERE claim.id=file.id AND (file.complete=1 OR claim.updated_at>?)
+        )`)
+            .get(id, now - ATTACHMENT_GRACE_MS, now - ATTACHMENT_GRACE_MS);
+          if (!file) protectedIds.add(id);
+        }
+        return protectedIds;
+      },
+      now,
+      ATTACHMENT_GRACE_MS,
+      eligible,
+      async (id) => {
+        await this.store.db.prepare("DELETE FROM attachment_ownership_claims WHERE id=?").run(id);
+        await this.store.db.prepare("DELETE FROM attachment_ownership_files WHERE id=?").run(id);
+      },
+      () => !this.closed,
+      resume,
+    );
+    return operation;
   }
   async start(): Promise<void> {
     await this.ready;

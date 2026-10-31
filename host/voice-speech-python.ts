@@ -1,6 +1,6 @@
 /** Protocol stdout is reserved for PCM chunks; library diagnostics stay on stderr. */
 export const voiceSpeechPython = String.raw`
-import os, sys, json, threading, queue, base64, contextlib
+import os, re, sys, json, threading, queue, base64, contextlib
 os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['HF_HUB_DISABLE_IMPLICIT_TOKEN'] = '1'
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
@@ -24,7 +24,8 @@ try:
             if not os.path.isfile(os.path.join(folder, 'onnx', 'tts.json')):
                 folder = os.path.join(os.path.expanduser('~'), '.cache', 'supertonic3')
             model = TTS(model='supertonic-3', model_dir=folder, auto_download=False)
-            style = model.get_voice_style(voice_name='M1')
+            speaker = config.get('voiceId') or 'M1'
+            style = model.get_voice_style(voice_name=speaker if re.fullmatch(r'[MF][1-5]', speaker) else 'M1')
             sample_rate = model.sample_rate
             def synthesize(text, language, is_current):
                 lang = language if language in AVAILABLE_LANGUAGES else 'na'

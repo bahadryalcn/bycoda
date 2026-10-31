@@ -1168,13 +1168,7 @@ impl CheckpointStore {
                     }
                     _ => return Ok(false),
                 };
-                // The snapshots go, so do the refs that kept their trees alive.
-                if let (Some(turn), Ok(prefix)) = (turn, checkpoint_ref_prefix(&dir)) {
-                    if let Ok(root) = project_root(&turn.cwd) {
-                        drop_checkpoint_refs(&root, &prefix, None);
-                    }
-                }
-                std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+                discard_session_dir(&dir, turn)?;
                 Ok(true)
             });
             if matches!(result, Ok(true)) {
@@ -1183,6 +1177,150 @@ impl CheckpointStore {
         }
         removed
     }
+
+    /// Keeps the checkpoint store inside a total size and idle-age budget across
+    /// sessions (each session is already capped on its own). Oldest idle sessions go
+    /// first and a session with an active turn is never touched. Sessions used within
+    /// `MIN_EVICT_IDLE` only lose their rebuildable baseline cache. Returns freed bytes.
+    pub(crate) fn enforce_budget(&self, max_bytes: u64, max_idle: std::time::Duration) -> u64 {
+        const MIN_EVICT_IDLE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+        struct Entry {
+            session: String,
+            dir: PathBuf,
+            last_used: std::time::SystemTime,
+            bytes: u64,
+        }
+        let Ok(entries) = std::fs::read_dir(&self.root) else {
+            return 0;
+        };
+        let now = std::time::SystemTime::now();
+        let idle_of =
+            |last_used: std::time::SystemTime| now.duration_since(last_used).unwrap_or_default();
+        let mut total = 0u64;
+        let mut idle = Vec::new();
+        for entry in entries.flatten() {
+            let session = entry.file_name().to_string_lossy().into_owned();
+            if validate_id(&session, "session").is_err()
+                || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+            {
+                continue;
+            }
+            let dir = entry.path();
+            let bytes = file_revert::dir_bytes(&dir);
+            total = total.saturating_add(bytes);
+            // An unreadable record is never evicted: its state is unknown.
+            let active = read_turn(&dir).map_or(true, |turn| turn.is_some_and(|t| t.active))
+                || file_revert::has_active_files_turn(&dir).unwrap_or(true);
+            if active {
+                continue;
+            }
+            idle.push(Entry {
+                session,
+                last_used: last_activity(&dir),
+                dir,
+                bytes,
+            });
+        }
+        let start_total = total;
+        idle.sort_by_key(|entry| entry.last_used);
+        let mut evicted = HashSet::new();
+        let evict_whole = |entry: &Entry, total: &mut u64| {
+            let result = self.exclusive(&entry.session, &[], |_| {
+                // Re-check under the session gate: a turn may have begun since.
+                let turn = match read_turn(&entry.dir) {
+                    Ok(turn)
+                        if !turn.as_ref().is_some_and(|t| t.active)
+                            && !file_revert::has_active_files_turn(&entry.dir).unwrap_or(true) =>
+                    {
+                        turn
+                    }
+                    _ => return Ok(false),
+                };
+                discard_session_dir(&entry.dir, turn)?;
+                Ok(true)
+            });
+            match result {
+                Ok(true) => {
+                    *total = total.saturating_sub(entry.bytes);
+                    true
+                }
+                Ok(false) => false,
+                Err(error) => {
+                    eprintln!(
+                        "[checkpoint] budget eviction of {} failed: {error}",
+                        entry.session
+                    );
+                    false
+                }
+            }
+        };
+        // Age first: nothing keeps history of a session idle for months.
+        for entry in &idle {
+            if idle_of(entry.last_used) >= max_idle && evict_whole(entry, &mut total) {
+                evicted.insert(entry.session.clone());
+            }
+        }
+        // Then size, cheapest loss first: rebuildable baseline caches, oldest session first.
+        for entry in &idle {
+            if total <= max_bytes {
+                break;
+            }
+            if evicted.contains(&entry.session) {
+                continue;
+            }
+            let freed = self
+                .exclusive(&entry.session, &[], |_| {
+                    file_revert::drop_baseline_cache(&entry.dir)
+                })
+                .unwrap_or(0);
+            total = total.saturating_sub(freed);
+        }
+        for entry in &idle {
+            if total <= max_bytes {
+                break;
+            }
+            if evicted.contains(&entry.session) || idle_of(entry.last_used) < MIN_EVICT_IDLE {
+                continue;
+            }
+            if evict_whole(entry, &mut total) {
+                evicted.insert(entry.session.clone());
+            }
+        }
+        if total > max_bytes {
+            eprintln!(
+                "[checkpoint] store is {} MiB, over its {} MiB budget; recent or active sessions are kept",
+                total >> 20,
+                max_bytes >> 20
+            );
+        }
+        start_total.saturating_sub(total)
+    }
+}
+
+/// Removes a session's snapshot directory together with the Git refs that kept its
+/// trees alive. The caller holds the session gate and has checked there is no active turn.
+fn discard_session_dir(dir: &Path, turn: Option<Turn>) -> Result<(), String> {
+    if let (Some(turn), Ok(prefix)) = (turn, checkpoint_ref_prefix(dir)) {
+        if let Ok(root) = project_root(&turn.cwd) {
+            drop_checkpoint_refs(&root, &prefix, None);
+        }
+    }
+    std::fs::remove_dir_all(dir).map_err(|e| e.to_string())
+}
+
+/// Latest write to any record of the session (the directory mtime alone misses
+/// in-place rewrites of nested files).
+fn last_activity(dir: &Path) -> std::time::SystemTime {
+    ["turn.json", "manifest.json", "files-history.json"]
+        .iter()
+        .filter_map(|name| {
+            std::fs::metadata(dir.join(name))
+                .and_then(|meta| meta.modified())
+                .ok()
+        })
+        .chain(std::fs::metadata(dir).and_then(|meta| meta.modified()).ok())
+        .max()
+        .unwrap_or(std::time::UNIX_EPOCH)
 }
 
 #[cfg(test)]
@@ -1286,15 +1424,33 @@ pub async fn session_checkpoint_begin_turn(
     validate_id(&turn_id, "turn")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&cwd], |s| {
-            s.begin_checkpoint_turn(
-                &session_id,
-                &cwd,
-                &turn_id,
-                user_block_id.as_deref().unwrap_or(&turn_id),
-                experimental_exact_git_rewind.unwrap_or(false),
-            )
-        })
+        // Another session's capture in the same checkout must not stall this send
+        // indefinitely. Past the bound the turn runs without a file baseline: undo for
+        // this message is unavailable, no data is touched.
+        let result = store.exclusive_until(
+            &session_id,
+            &[&cwd],
+            Some(Instant::now() + BEGIN_GATE_WAIT),
+            |s| {
+                s.begin_checkpoint_turn(
+                    &session_id,
+                    &cwd,
+                    &turn_id,
+                    user_block_id.as_deref().unwrap_or(&turn_id),
+                    experimental_exact_git_rewind.unwrap_or(false),
+                )
+            },
+        );
+        match result {
+            Err(error) if error.contains(CHECKPOINT_BUSY) => {
+                eprintln!(
+                    "[checkpoint] begin skipped for turn {turn_id}: checkpoint busy for over {}s; file history is unavailable for this message",
+                    BEGIN_GATE_WAIT.as_secs()
+                );
+                Ok(())
+            }
+            other => other,
+        }
     })
     .await
     .map_err(|e| e.to_string())?

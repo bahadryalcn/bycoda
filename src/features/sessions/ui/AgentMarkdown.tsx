@@ -620,13 +620,16 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
   const [collapsed, setCollapsed] = useState(false);
   const contentId = useId();
   const label = collapsed ? "Expand code block" : "Collapse code block";
+  // Only a collapsed block shows its summary; a streaming one would otherwise
+  // split every line on every frame for nothing.
   const summary = useMemo(() => {
+    if (!collapsed) return { preview: "", lineCount: 0 };
     const lines = code.replace(/\r?\n$/, "").split(/\r?\n/);
     return {
       preview: (lines.find((line) => line.trim())?.trim() || "Code block").slice(0, 160),
       lineCount: code ? lines.length : 0,
     };
-  }, [code]);
+  }, [code, collapsed]);
 
   return (
     <div

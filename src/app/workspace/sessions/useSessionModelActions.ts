@@ -1,9 +1,12 @@
-import { useCallback, type MutableRefObject } from "react";
+import { useCallback, useRef, type MutableRefObject } from "react";
 import {
   bindHarnessSession,
   forgetHarnessSession,
   type HarnessEvent,
 } from "../../../integrations/harness";
+import { t } from "../../../shared/i18n";
+import { deferPickUntilHandoffEnds } from "../../../features/sessions/model/deferredPicks";
+import { showSubmitNotice } from "./submit/submitNotice";
 import { repairStaleHandoff } from "../../../features/sessions/model/activeSubmits";
 import { switchSessionAccount } from "../../../features/sessions/model/accountSwitch";
 import {
@@ -54,6 +57,12 @@ export function useSessionModelActions({
   flushHarnessEvents,
   promptProviderAccountSignIn,
 }: SessionModelActionDeps) {
+  // Newest model pick per session; an older idle account switch must not apply late.
+  const pickRequests = useRef(new Map<string, object>());
+  // A pick that waited for a handoff runs the newest handler, not the one that deferred it.
+  const latestModelChange = useRef<
+    (sessionId: string, harness: HarnessId, model: string, accountId?: string) => Promise<void>
+  >(async () => undefined);
   const onModelChange = useCallback(
     async (sessionId: string, harness: HarnessId, model: string, accountId?: string) => {
       const say = (text: string) => {
@@ -69,10 +78,23 @@ export function useSessionModelActions({
       const current = sessionsRef.current.find((s) => s.id === sessionId);
       if (!current) return;
       if (isPreparingHandoff(current)) {
-        say("Wait for the provider handoff to finish before changing the provider.");
+        // The handoff owns the provider and account until it ends: keep the pick
+        // and apply it afterwards, with a notice that stays in the transcript.
+        deferPickUntilHandoffEnds(sessionId, "model", () => {
+          void latestModelChange.current(sessionId, harness, model, accountId);
+        });
+        showSubmitNotice(
+          sessionId,
+          t("The provider handoff is still being prepared. Your pick applies as soon as it finishes."),
+        );
         return;
       }
+      const request = {};
+      pickRequests.current.set(sessionId, request);
       let accountUpdate: ((session: Session) => Session) | undefined;
+      // Posted after the update below: a status block replaces `blocks`, and the
+      // account update only applies to the snapshot it was computed from.
+      let switchStatus: string | undefined;
       const wantsAccount = !!accountId && supportsProviderAccounts(harness);
       // While a turn runs it keeps its own provider and account; a pick for
       // the same provider with another account waits for the next idle send.
@@ -107,6 +129,7 @@ export function useSessionModelActions({
             latest: (id) => sessionsRef.current.find((s) => s.id === id),
             label: providerAccountLabel,
             removing: (id) => removingSessionIds.current.has(id),
+            ownsRequest: () => pickRequests.current.get(sessionId) === request,
           });
         } catch (error) {
           console.warn("App operation failed", error);
@@ -123,7 +146,7 @@ export function useSessionModelActions({
         }
         if (result.kind === "switched") {
           accountUpdate = result.update;
-          if (result.status) say(result.status);
+          switchStatus = result.status;
         }
       }
       const resolved = resolveModel(harness, model);
@@ -192,6 +215,7 @@ export function useSessionModelActions({
           return next;
         }),
       );
+      if (switchStatus) say(switchStatus);
       if (nowAccount && supportsProviderAccounts(harness)) {
         promptProviderAccountSignIn(sessionId, harness, nowAccount);
       } else if (deferAccount && accountId && supportsProviderAccounts(harness)) {
@@ -203,6 +227,8 @@ export function useSessionModelActions({
     },
     [enqueueHarnessEvent, flushHarnessEvents, promptProviderAccountSignIn],
   );
+
+  latestModelChange.current = onModelChange;
 
   const onModelSettingsChange = useCallback(
     (sessionId: string, modelSettings: Record<string, string>) => {

@@ -32,6 +32,7 @@ import {
   type ControlTurnHandle,
 } from "./controlTurn";
 import { drainProviderRetirements, retireProviderOwner } from "./providerRetirement";
+import { beginHandoffPhase } from "./handoffPhase";
 import { TurnNotReadyError } from "./types";
 import type {
   ApprovalDecision,
@@ -106,7 +107,8 @@ export type HarnessAdapter = {
     decision: ApprovalDecision,
     approvalOccurrenceId?: string,
   ): void;
-  respondQuestion?(sessionId: string, requestId: number, reply: UserQuestionReply): void;
+  /** False when nothing is waiting for the answer (it was not delivered); void or true otherwise. */
+  respondQuestion?(sessionId: string, requestId: number, reply: UserQuestionReply): boolean | void;
   /** Keep a timed question open once the user starts answering it. */
   keepQuestionOpen?(sessionId: string, requestId: number): void;
   /** Kill the child but keep resume state for later rebind. */
@@ -280,13 +282,44 @@ function assertAdapterOperationReady(sessionId: string): void {
   adapterOperations.delete(sessionId);
 }
 
-async function drainRetirementsBestEffort(sessionId: string): Promise<void> {
+/** How long a different provider's retirement may delay the new turn. */
+const OTHER_PROVIDER_DRAIN_MS = 2_000;
+
+/**
+ * Wait for the previous provider processes of this session before a turn starts.
+ * Only a process of the provider this turn is about to run can become a second
+ * concurrent writer, so that wait still fails the turn. The old provider of a
+ * handoff has finished its reply (and was already waited for by the handoff): a
+ * slow or failed stop of it is warned about and the turn continues.
+ */
+async function drainRetirementsBestEffort(sessionId: string, harness: HarnessId): Promise<void> {
+  const sameWriter = (family: string) =>
+    family.startsWith(`${harness}.`) || family.startsWith("generic-acp.");
+  const others = drainProviderRetirements({
+    ownerKey: sessionId,
+    includeFamily: (family) => !sameWriter(family),
+  }).catch((error: unknown) => warnCleanup("previous provider retirement", error));
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await drainProviderRetirements({ ownerKey: sessionId });
+    await drainProviderRetirements({ ownerKey: sessionId, includeFamily: sameWriter });
   } catch (error) {
     warnCleanup("provider retirement drain", error);
     throw error;
   }
+  await Promise.race([
+    others,
+    new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        warnCleanup(
+          "previous provider retirement",
+          new Error("still stopping; continuing with the new provider"),
+        );
+        resolve();
+      }, OTHER_PROVIDER_DRAIN_MS);
+    }),
+  ]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
 }
 
 function beginAdapterOperation(
@@ -570,7 +603,7 @@ export function sendHarnessTurn(
       if (lightweightWorktree || input.harness === "codex")
         retainedWriters.set(input.sessionId, input.harness);
       cancelIdlePark(input.sessionId);
-      await drainRetirementsBestEffort(input.sessionId);
+      await drainRetirementsBestEffort(input.sessionId, input.harness);
       const guidance = Promise.allSettled([
         harnessRuntimeHints(input.sessionId),
         loadSkillRestrictions(input.cwd),
@@ -698,7 +731,7 @@ export function compactHarnessContext(
     }
     cancelIdlePark(input.sessionId);
     assertAdapterOperationReady(input.sessionId);
-    await drainRetirementsBestEffort(input.sessionId);
+    await drainRetirementsBestEffort(input.sessionId, input.harness);
     const { control, processes } = await beginOperationControl(input);
     try {
       const owner = beginAdapterOperation(input.sessionId, adapter, control, processes);
@@ -754,7 +787,7 @@ export function rewindHarnessLastTurn(
     }
     cancelIdlePark(input.sessionId);
     assertAdapterOperationReady(input.sessionId);
-    await drainRetirementsBestEffort(input.sessionId);
+    await drainRetirementsBestEffort(input.sessionId, input.harness);
     const { control, processes } = await beginOperationControl(input);
     try {
       const owner = beginAdapterOperation(input.sessionId, adapter, control, processes);
@@ -850,6 +883,31 @@ export function steerHarnessTurn(request: SteerTurnInput & { harness: HarnessId 
   });
 }
 
+/** How long Stop waits for the provider to confirm before it reports instead of hanging. */
+const STOP_CONFIRM_MS = 10_000;
+const stoppingTurns = new Map<string, number>();
+const stoppingListeners = new Set<() => void>();
+function setStopping(sessionId: string, delta: 1 | -1): void {
+  const next = (stoppingTurns.get(sessionId) ?? 0) + delta;
+  if (next > 0) stoppingTurns.set(sessionId, next);
+  else stoppingTurns.delete(sessionId);
+  for (const listener of [...stoppingListeners]) listener();
+}
+/** True while a Stop for this session is waiting for the provider to confirm. */
+export function isHarnessTurnStopping(sessionId: string): boolean {
+  return stoppingTurns.has(sessionId);
+}
+/** Notified whenever a session enters or leaves the "Stopping…" state. */
+export function subscribeHarnessStopping(listener: () => void): () => void {
+  stoppingListeners.add(listener);
+  return () => stoppingListeners.delete(listener);
+}
+
+/**
+ * Cancels the running turn. Resolves once the provider confirmed. Rejects when the
+ * cancel failed or was not confirmed within STOP_CONFIRM_MS, so the caller can say
+ * so and offer Stop again; a failed cancel never schedules the idle park.
+ */
 export async function cancelHarnessTurn(harness: HarnessId, sessionId: string): Promise<void> {
   cancellationEpoch.set(sessionId, (cancellationEpoch.get(sessionId) ?? 0) + 1);
   const owner = adapterOperations.get(sessionId);
@@ -857,14 +915,35 @@ export async function cancelHarnessTurn(harness: HarnessId, sessionId: string): 
   cancelIdlePark(sessionId);
   if (!owner.entered) return;
   const originalContext = operationContext(owner);
-  // A failed cancellation is warned about and not cached, so Stop can retry.
+  // A failed cancellation is not cached, so Stop can retry. It is rethrown below.
   const cancellation: Promise<void> = (owner.cancellation ??= Promise.resolve()
     .then(() => owner.adapter.cancelTurn(sessionId, originalContext))
     .catch((error: unknown) => {
       warnCleanup("turn cancellation", error);
       if (owner.cancellation === cancellation) owner.cancellation = undefined;
+      throw error;
     }));
-  await cancellation;
+  setStopping(sessionId, 1);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      cancellation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `${harness} did not confirm Stop within ${STOP_CONFIRM_MS / 1000} s; it may still be running`,
+              ),
+            ),
+          STOP_CONFIRM_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    setStopping(sessionId, -1);
+  }
   if (
     owner.cancellation === cancellation &&
     (!adapterOperations.has(sessionId) || adapterOperations.get(sessionId) === owner)
@@ -910,8 +989,11 @@ export function respondHarnessQuestion(
   sessionId: string,
   requestId: number,
   reply: UserQuestionReply,
-): void {
-  getHarness(harness)?.respondQuestion?.(sessionId, requestId, reply);
+): boolean {
+  const respond = getHarness(harness)?.respondQuestion;
+  // No adapter, or an adapter that cannot take answers, did not deliver anything.
+  if (!respond) return false;
+  return respond(sessionId, requestId, reply) !== false;
 }
 
 export function keepHarnessQuestionOpen(
@@ -985,6 +1067,7 @@ export async function forgetHarnessSession(harness: HarnessId, sessionId: string
     owner?.adapter === adapter && activeTurnSessions.has(sessionId)
       ? operationContext(owner)
       : undefined;
+  const endPhase = beginHandoffPhase(harness, "stopping");
   try {
     if (context) await adapter.forgetSession(sessionId, context);
     else await adapter.forgetSession(sessionId);
@@ -993,6 +1076,8 @@ export async function forgetHarnessSession(harness: HarnessId, sessionId: string
   } catch (error) {
     warnCleanup("forget session", error);
     throw error;
+  } finally {
+    endPhase();
   }
 }
 

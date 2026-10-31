@@ -35,6 +35,8 @@ const holder = () => `desktop:${desktopInstanceId()}`;
 const MACHINE_RECHECK_MS = 15_000;
 /** How long the very first look at the host may hold up the first turn of a run. */
 const FIRST_LOOK_MS = 2_000;
+/** How long a send waits for the host's answer before it starts without a lease. */
+export const RUN_LEASE_ACQUIRE_TIMEOUT_MS = 4_000;
 /** A lease whose turn never becomes busy here (it failed to start) is given back after this. */
 export const RUN_LEASE_IDLE_RELEASE_MS = 30_000;
 
@@ -166,35 +168,67 @@ export function noteRunLeases(answers: Record<string, RunLease | null> | undefin
   return lost;
 }
 
+/** Tracks a granted lease until its turn ends here. */
+function trackLease(sessionId: string, lease: RunLease, late = false) {
+  clearTimeout(tracked.get(sessionId)?.idleTimer);
+  const state: NonNullable<ReturnType<typeof tracked.get>> = {
+    epoch: lease.epoch,
+    // A late grant may find its turn already running: the heartbeat must renew it.
+    sawBusy: late && !!getShellSessions().find((session) => session.id === sessionId)?.busy,
+  };
+  // A turn that never became busy here (it failed to start) gives the lease back.
+  if (!state.sawBusy) {
+    state.idleTimer = setTimeout(() => {
+      if (tracked.get(sessionId) === state && !state.sawBusy) void releaseRunLease(sessionId);
+    }, RUN_LEASE_IDLE_RELEASE_MS);
+    state.idleTimer.unref?.();
+  }
+  tracked.set(sessionId, state);
+  watchTurns();
+}
+
 /** Asks the home host for the right to start a turn of `sessionId`. */
 export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcome> {
   const id = runLeaseMachine();
   if (!id) return { kind: "unavailable" };
   pending.add(sessionId);
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const request = transport<{ lease: RunLease }>(id, "sessions.runLease", {
+    sessionId,
+    clientId: holder(),
+    action: "acquire",
+  });
   try {
-    const { lease } = await transport<{ lease: RunLease }>(id, "sessions.runLease", {
-      sessionId,
-      clientId: holder(),
-      action: "acquire",
+    // A slow host (a busy notes worker, a handoff) must not hold a send invisibly:
+    // after a moment the turn starts as before, as when the host is unreachable.
+    const limit = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        reject(new Error("Run lease request timed out"));
+      }, RUN_LEASE_ACQUIRE_TIMEOUT_MS);
     });
-    clearTimeout(tracked.get(sessionId)?.idleTimer);
-    const state: NonNullable<ReturnType<typeof tracked.get>> = {
-      epoch: lease.epoch,
-      sawBusy: false,
-    };
-    // A turn that never became busy here (it failed to start) gives the lease back.
-    state.idleTimer = setTimeout(() => {
-      if (tracked.get(sessionId) === state && !state.sawBusy) void releaseRunLease(sessionId);
-    }, RUN_LEASE_IDLE_RELEASE_MS);
-    state.idleTimer.unref?.();
-    tracked.set(sessionId, state);
-    watchTurns();
+    const { lease } = await Promise.race([request, limit]);
+    trackLease(sessionId, lease);
     return { kind: "granted", lease };
   } catch (error) {
+    if (timedOut) {
+      // The grant may still arrive: keep it for the turn that started without it
+      // (renewed by the heartbeat while busy, given back if it never runs) rather
+      // than leaving it on the host until it runs out.
+      void request.then(
+        ({ lease }) => {
+          if (!tracked.has(sessionId)) trackLease(sessionId, lease, true);
+        },
+        () => {},
+      );
+      return { kind: "unavailable" };
+    }
     if (isLeaseHeld(error)) return { kind: "held", text: leaseHeldText(error) };
     // The host is unreachable or does not know leases: start the turn as before.
     return { kind: "unavailable" };
   } finally {
+    clearTimeout(timer);
     pending.delete(sessionId);
   }
 }

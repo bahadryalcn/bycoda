@@ -1,4 +1,5 @@
 import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { workspaceSnapshotWriteBlocked } from "../../model/appLifecycle";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 import {
   getSessionRecovery,
@@ -70,6 +71,9 @@ export function useSessionRecoveryActions({
   }, []);
   const persistDismissal = async () => {
     if (!mounted.current || dismissSavePending.current) return;
+    // The saved layout could not be read at launch (a notice says so): this
+    // window shows a seed layout that must not be saved over it.
+    if (workspaceSnapshotWriteBlocked()) return;
     dismissSavePending.current = true;
     const context = latest.current;
     try {
@@ -102,6 +106,9 @@ export function useSessionRecoveryActions({
     const next = removeRecoverySessions(current, ids);
     setSessionRecovery(next);
     updateSessionRecovery(next);
+    // Blocked while the boot read failure is unresolved: the recovery list itself is
+    // updated above, only the layout write is held back.
+    if (workspaceSnapshotWriteBlocked()) return;
     try {
       await saveWorkspaceSnapshot(
         collectWorkspaceSnapshot(

@@ -187,8 +187,10 @@ describe("harness registry", () => {
     };
     const first = sendHarnessTurn(input);
     await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
-    // The failed cancellation is warned about, never rethrown or cached.
-    await expect(cancelHarnessTurn("claude", input.sessionId)).resolves.toBeUndefined();
+    // The failed cancellation is reported to Stop and warned about, but never cached.
+    await expect(cancelHarnessTurn("claude", input.sessionId)).rejects.toThrow(
+      "original cancellation is unresolved",
+    );
     const second = sendHarnessTurn({ ...input, text: "second" });
     const followup = steerHarnessTurn({ ...input, text: "follow-up for second" });
     const refused = expect(followup).rejects.toThrow("original turn is no longer ready");
@@ -726,15 +728,16 @@ describe("harness registry", () => {
     const results = Promise.allSettled([first, second]);
     await vi.waitFor(() => expect(cancelTurn).toHaveBeenCalledOnce());
     fail(new Error("pipe unavailable"));
-    expect(await results).toEqual([
-      { status: "fulfilled", value: undefined },
-      { status: "fulfilled", value: undefined },
+    // Stop reports the failure so the caller can show it; the turn itself is unaffected.
+    expect(await results).toMatchObject([
+      { status: "rejected", reason: { message: "pipe unavailable" } },
+      { status: "rejected", reason: { message: "pipe unavailable" } },
     ]);
     // The failure was not cached: a later Stop reaches the adapter again.
     const retry = cancelHarnessTurn("claude", input.sessionId);
     await vi.waitFor(() => expect(cancelTurn).toHaveBeenCalledTimes(2));
     fail(new Error("pipe unavailable again"));
-    await retry;
+    await expect(retry).rejects.toThrow("pipe unavailable again");
     finish();
     await turn;
     const replacement = sendHarnessTurn({ ...input, text: "replacement" });

@@ -90,6 +90,20 @@ function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
   while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
 }
 
+
+/** Patches can be megabytes, so the diff cache is also bounded by their total size. */
+const DIFF_CACHE_MAX_CHARS = 8_000_000;
+function trimDiffCache(cache: Map<string, { patch: string }>) {
+  let chars = 0;
+  for (const diff of cache.values()) chars += diff.patch?.length ?? 0;
+  for (const oldest of cache.keys()) {
+    // The diff just stored always stays.
+    if (chars <= DIFF_CACHE_MAX_CHARS || cache.size <= 1) break;
+    chars -= cache.get(oldest)?.patch?.length ?? 0;
+    cache.delete(oldest);
+  }
+}
+
 function itemKey(repo: string, kind: AzureDevOpsKind, number: number): string {
   return `${repo.trim().toLowerCase()}:${kind}:${number}`;
 }
@@ -274,7 +288,10 @@ export async function azureDevOpsMrDiff(repo: string, number: number): Promise<A
   })
     .then((diff) => {
       // Same staleness guard as the thread cache above.
-      if (diffInflight.get(key) === pending) boundedSet(diffByKey, key, diff);
+      if (diffInflight.get(key) === pending) {
+        boundedSet(diffByKey, key, diff);
+        trimDiffCache(diffByKey);
+      }
       return diff;
     })
     .finally(() => {

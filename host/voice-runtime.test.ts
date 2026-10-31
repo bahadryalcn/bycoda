@@ -153,3 +153,44 @@ it("keeps VoxCPM2 explicit and Supertonic implicit, and rejects unknown voice en
   expect(voiceRuntimeConfig({ natural: true, engine: "supertonic" })).toEqual({ natural: true });
   expect(() => voiceRuntimeConfig({ engine: "other" })).toThrow("Invalid voice engine.");
 });
+
+it("accepts ElevenLabs with an optional voice ID and reports a missing key during inspection", async () => {
+  expect(voiceRuntimeConfig({ natural: true, engine: "elevenlabs", voiceId: "Voice123" })).toEqual({
+    natural: true,
+    engine: "elevenlabs",
+    voiceId: "Voice123",
+  });
+  // A voice ID only applies to ElevenLabs.
+  expect(voiceRuntimeConfig({ natural: true, voiceId: "Voice123" })).toEqual({ natural: true });
+  expect(() => voiceRuntimeConfig({ engine: "elevenlabs", voiceId: "../x" })).toThrow(
+    "Invalid voice ID.",
+  );
+  spawn.mockImplementation(() =>
+    child({ python: "python", whisperPath: "w", missing: [], ready: true }),
+  );
+  const config = { python: "python", natural: true, engine: "elevenlabs" };
+  expect(await inspectVoiceRuntime(config, { cloudKey: async () => false })).toMatchObject({
+    missing: ["ElevenLabs API key"],
+    ready: false,
+  });
+  expect(await inspectVoiceRuntime(config, { cloudKey: async () => true })).toMatchObject({
+    missing: [],
+    ready: true,
+  });
+  // Setup inspects without a key check: installation does not need the key.
+  expect(await inspectVoiceRuntime(config)).toMatchObject({ ready: true });
+});
+
+it("keeps a Supertonic speaker and ignores other speaker IDs for it", () => {
+  expect(voiceRuntimeConfig({ natural: true, voiceId: "F3" })).toEqual({
+    natural: true,
+    voiceId: "F3",
+  });
+  expect(voiceRuntimeConfig({ natural: true, voiceId: "JBFqnCBsd6RMkjVDRZzb" })).toEqual({
+    natural: true,
+  });
+  expect(voiceRuntimeConfig({ natural: true, engine: "voxcpm2", voiceId: "F3" })).toEqual({
+    natural: true,
+    engine: "voxcpm2",
+  });
+});

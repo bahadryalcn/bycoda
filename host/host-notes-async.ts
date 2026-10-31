@@ -4,6 +4,7 @@ import {
   desktopDatabasePaths,
   type DesktopMetadataReply,
   type DesktopMetadataRecord,
+  type DesktopSnapshotMetaRecord,
   type DesktopSnapshotRecord,
   type DesktopStampRow,
 } from "./desktopSessions";
@@ -22,6 +23,7 @@ type Results = { [M in NoteMethod]: ReturnType<HostNotes[M]> } & {
   desktopMetadata: DesktopMetadataRecord | undefined;
   desktopLocalSessionReference: LocalSessionLocator | undefined;
   desktopSnapshot: DesktopSnapshotRecord | undefined;
+  desktopSnapshotMeta: DesktopSnapshotMetaRecord | undefined;
 };
 type StorageMethod = keyof Results;
 type Result<M extends StorageMethod> = Results[M];
@@ -38,6 +40,8 @@ type StorageJob = {
   lifetime: Promise<void>;
   finish: () => void;
   admission?: HostNotesAcceptedJob;
+  /** Desktop session reads never write; see the close-uncertain handling below. */
+  readOnly: boolean;
 };
 type DispatchedJob = StorageJob & { owner: StorageWorker; outcomeObserved: boolean };
 export interface HostNotesAccess {
@@ -171,7 +175,13 @@ export class AsyncHostNotes implements HostNotesAccess {
         const terminalClosed =
           reply.terminalClosed === true ||
           (!request.admission && reply.terminalClosed === undefined);
-        if (reply.admissionFault || !terminalClosed || !bindingObserved) this.admission.markFault();
+        const closeUncertain = reply.admissionFault === true || !terminalClosed;
+        // A read-only desktop job that cannot confirm its connection closed holds
+        // no writer and risks no data: retire this worker (the OS closes its
+        // handles) and carry on with a fresh one. Marking the whole instance
+        // faulted would refuse every later metadata read until the Host restarts.
+        const retire = request.readOnly && closeUncertain && bindingObserved;
+        if ((!request.readOnly && closeUncertain) || !bindingObserved) this.admission.markFault();
         try {
           if (request.outcomeObserved) return;
           request.outcomeObserved = true;
@@ -205,8 +215,15 @@ export class AsyncHostNotes implements HostNotesAccess {
         } finally {
           // The production terminal message follows connection close, even if
           // its public waiter was already rejected by an earlier observation.
-          if (terminalClosed && bindingObserved) {
+          if ((terminalClosed && bindingObserved) || retire) {
             this.pending.delete(reply.id);
+            if (retire) {
+              console.warn(
+                "[bycoda] desktop read could not confirm its connection closed; restarting its worker",
+              );
+              owner.failed = true;
+              void worker.terminate();
+            }
             request.finish();
           }
           if (!owner.failed && !this.pending.size) worker.unref();
@@ -253,6 +270,7 @@ export class AsyncHostNotes implements HostNotesAccess {
         lifetime,
         finish,
         admission,
+        readOnly: method.startsWith("desktop"),
       };
     });
     this.tail = this.tail.then(async () => {
@@ -332,6 +350,14 @@ export class AsyncHostNotes implements HostNotesAccess {
     expectedProjectCwd?: string,
   ) {
     return this.call("desktopSnapshot", [id, projectId, platform, expectedProjectCwd]);
+  }
+  desktopSnapshotMeta(
+    id: string,
+    projectId: string,
+    platform: NodeJS.Platform,
+    expectedProjectCwd?: string,
+  ) {
+    return this.call("desktopSnapshotMeta", [id, projectId, platform, expectedProjectCwd]);
   }
   save(raw: unknown, expectedUpdatedAt: unknown, scopedCwd?: string, authorize?: Authorization) {
     return this.call("save", [raw, expectedUpdatedAt, scopedCwd], authorize);

@@ -248,6 +248,58 @@ Delivered:
 - End to end (recorded speech, real workers, warm Claude Opus low): turn+ASR 0.6 s,
   first Claude sentence 2.6–4.4 s, Supertonic +0.7 s → first audio ~4 s.
 
+## Cloud voices, ElevenLabs and breath rejection (2026-10-31, uncommitted)
+
+Owner, same session: "Ses inanılmaz kötü durumda. Groq build codex yada benzer
+başka birşey yada localdeki daha iyi bir ses modelini kullanamazmıyız nefes alsam
+bile ses algılarsa kesiliyor ayrıca." Decision (AskUserQuestion answer):
+"kullanıcı seçebilsin grok openai voxcpm2  ve elevenlabs ve local diğer
+alternatifleri seçebilsin."
+
+- Settings `mode` local/grok/openai (Conversation row) and `engine`
+  supertonic/voxcpm2/elevenlabs + `elevenVoice` (Reply voice Select, Local only).
+- Realtime: `host/voice.ts` `createRealtimeSecret` (env key, else `~/.grok/auth.json`
+  login key / Codex `auth.json`; both verified live), RPC `voice.realtime.secret`
+  (capability `voice.realtime.v2`, loopback only). `realtimeVoice.ts` replaces
+  `grokVoice.ts` (xAI `grok-voice-latest` server_vad; OpenAI `gpt-realtime-2.1`
+  semantic_vad), tools session_context/submit_work/stop_work in `VoiceCompanion.tsx`.
+  Live first audio ~0.8–0.9 s after a request.
+- ElevenLabs: `host/voice-elevenlabs.ts` (Flash v2.5, pcm_24000, default voice
+  `JBFqnCBsd6RMkjVDRZzb`), `host/voice-cloud-credentials.ts` (OS-encrypted vault,
+  `<feature dir>/voice/credentials`), RPCs `voice.cloud.status` / `voice.cloud.setKey`
+  (capability `voice.cloud.v1`, loopback only), `VoiceCloudKey.tsx`. Not tested with a
+  real key (none on this machine).
+- `voiceVad.ts`: adaptive noise floor, 70–400 Hz periodicity, sustained onset
+  (~0.13 s, stricter ~0.26 s while a reply plays). Synthetic breath/keyboard false
+  starts 20→0/min; FLEURS onsets 75–77/80. `temp/local/voice-vad/README.md`.
+- `src-tauri/src/remote.rs` allowlist + test; `host/perf-metrics.ts` names.
+
+## Panel choices (2026-10-31, uncommitted)
+
+Owner, same session: "ses yerini açıyorum ya ordan model proje filandaseçebilsinler
+ikonlaarla destekle birdemikrofonu filanda ikonla. Konuşma modelinide
+değiştirebilsinler"
+
+- `VoicePanelChoices.tsx`: SearchableSelect of sessions (project as description,
+  follow-active option names the followed session; workers/Inbox asks excluded),
+  Conversation Select (Laptop / Grok / Codex HarnessIcon) and Reply voice Select
+  (Local only). Option rows have no icons by the shared design (`782dc71f0` removed
+  them from `ComboboxChoice`); triggers show the icon.
+- `VoiceCompanion.tsx`: Mic/MicOff icons; a conversation or voice change closes the
+  live connection and keeps the panel open (Gate no longer remounts by key).
+- New icons `MicOff`, `Laptop`, `AudioLines`; fixture mock exports `warmVoiceReply`.
+  Captures: `temp/verification/2026-10-31-voice-stack/panel-*`.
+
+## Speaker choice (2026-10-31, uncommitted)
+
+Owner, same session: "yaptın mı hepsini" (after the proposal to add a speaker
+choice per engine). `voiceSpeakers.ts` lists speakers; settings `speakers`
+{supertonic, grok, openai} (defaults M1, eve, marin). Supertonic sends `voiceId`
+M1–M5/F1–F5 (host keeps it only for Supertonic or ElevenLabs IDs); realtime passes
+the voice to `realtimeSession`. All 5 xAI and 10 OpenAI voices were verified live
+(`temp/local/voice-realtime/voices.mjs`, first audio 0.6–1.3 s); Supertonic F1 vs
+M1 median pitch 191 vs 135 Hz. Speaker Select in settings (`voice-speaker`) and panel.
+
 ## Behavior to preserve
 
 - Voice stays opt-in/off by default; request microphone only on explicit start.

@@ -469,8 +469,9 @@ export class DesktopLive {
       if (this.now() - known.at > DESKTOP_WRITER_STALE_MS) this.writerClients.delete(clientId);
   }
 
-  /** Before Host continuation, every live window must release this writer.
-   * A dead (silent) client counts as retired; only a busy live one blocks. */
+  /** Before Host continuation, every live window that holds this session's writer must release it.
+   * A dead (silent) client and a live window whose last report lacks the session count as
+   * retired; only a busy live holder blocks. */
   async retireWriters(sessionId: string): Promise<void> {
     this.pruneWriterClients();
     const clients = [...this.writerClients].filter(
@@ -479,7 +480,9 @@ export class DesktopLive {
     for (const [clientId] of clients)
       if (!this.clientAlive(clientId))
         console.warn(`Desktop writer client ${clientId} is silent; treating it as retired.`);
-    const live = clients.filter(([clientId]) => this.clientAlive(clientId));
+    const live = clients.filter(
+      ([clientId, known]) => this.clientAlive(clientId) && known.sessions.has(sessionId),
+    );
     if (this.busyClient(sessionId))
       throw new Error("The desktop session is still running. Retry after it finishes.");
     await Promise.all(

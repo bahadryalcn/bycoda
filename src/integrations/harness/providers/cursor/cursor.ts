@@ -290,10 +290,11 @@ export function respondCursorQuestion(
   sessionId: string,
   requestId: number,
   reply: UserQuestionReply,
-) {
+): boolean {
   const live = liveByThread.get(sessionId);
   const pending = live?.questions.get(requestId);
-  if (!live || !pending) return;
+  // Nothing is waiting for this answer (the question was resolved or the turn ended).
+  if (!live || !pending) return false;
   deliverQuestionReply(
     pending,
     requestId,
@@ -302,6 +303,7 @@ export function respondCursorQuestion(
     () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
     () => pending(reply),
   );
+  return true;
 }
 
 /** Abort the in-flight prompt without tearing down the ACP session. */

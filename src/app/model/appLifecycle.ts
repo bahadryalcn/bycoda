@@ -62,9 +62,12 @@ import { loadWindowTransfer } from "./windowTransferBootstrap";
 import type { WindowTransferPayload } from "./windowTransfer";
 import {
   lastProjectPath,
+  looksLikeProject,
   normalizeProjectPath,
   sameProjectPath,
 } from "../../features/projects/model/recents";
+import { workspaceTabCwd } from "../../features/workspace/model/workspaceTabGroups";
+import { showBootRestoreNotice } from "./bootRestoreNotice";
 import type { ProjectReturnMemory } from "../../features/projects/model/projectReturn";
 import { appName } from "../../shared/lib/appName";
 import { platformConfirm } from "../../shared/model/appConfirm";
@@ -94,6 +97,50 @@ export type BootWorkspace = {
 };
 
 let resumedPromise: Promise<ResumedWorkspace | null> | null = null;
+/**
+ * The saved workspace could not be read at launch. What the window shows is then
+ * a seed layout, not the person's layout, so it must not be saved over the
+ * stored one until they accept it ("Start fresh") or a retry restores it.
+ */
+let snapshotReadFailed = false;
+let blankWorkspaceAccepted = false;
+const SNAPSHOT_READ_ATTEMPTS = 3;
+const SNAPSHOT_READ_RETRY_MS = 300;
+
+/** True while the workspace snapshot must not be written because its boot read failed. */
+export function workspaceSnapshotWriteBlocked(): boolean {
+  return snapshotReadFailed && !blankWorkspaceAccepted;
+}
+
+/** The person chose to work in the seed layout: saving the workspace resumes. */
+export function acceptBlankWorkspace(): void {
+  blankWorkspaceAccepted = true;
+}
+
+/** One more read of the saved workspace; true when it can be read now. */
+export async function canReadWorkspaceSnapshot(): Promise<boolean> {
+  try {
+    await loadWorkspaceSnapshot();
+    return true;
+  } catch (error) {
+    console.warn("appLifecycle workspace snapshot retry failed", error);
+    return false;
+  }
+}
+
+/** Transient store errors (a busy database) usually pass; only then is it "unreadable". */
+async function readWorkspaceSnapshot(): Promise<{ ok: boolean; raw: unknown }> {
+  for (let attempt = 1; attempt <= SNAPSHOT_READ_ATTEMPTS; attempt += 1) {
+    try {
+      return { ok: true, raw: await loadWorkspaceSnapshot() };
+    } catch (error) {
+      console.warn(`appLifecycle workspace snapshot read failed (attempt ${attempt})`, error);
+      if (attempt < SNAPSHOT_READ_ATTEMPTS)
+        await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_READ_RETRY_MS * attempt));
+    }
+  }
+  return { ok: false, raw: null };
+}
 let bootPromise: Promise<BootWorkspace> | null = null;
 let quitting = false;
 let quitDialogOpen = false;
@@ -395,6 +442,29 @@ async function listProjectHistory(
   }
 }
 
+/**
+ * The sidebar, files and Git follow the active tab, while the saved `projectCwd`
+ * can have drifted from it (a file opened from another project, rail history).
+ * Restoring both independently opened the app on a project nobody chose, so the
+ * tab that was on screen decides.
+ */
+function reconcileRestoredProject(workspace: ResumedWorkspace): void {
+  const activeTab = workspace.tabs.find((tab) => tab.id === workspace.activeTabId);
+  const tabCwd = activeTab ? workspaceTabCwd(activeTab, workspace.sessions) : null;
+  console.info("[boot] restored workspace", {
+    activeTabId: workspace.activeTabId,
+    projectCwd: workspace.projectCwd,
+    activeTabProject: tabCwd,
+    tabs: workspace.tabs.length,
+  });
+  if (!tabCwd || !looksLikeProject(tabCwd) || sameProjectPath(tabCwd, workspace.projectCwd)) return;
+  console.warn("[boot] saved project differs from the active tab's project; following the tab", {
+    savedProjectCwd: workspace.projectCwd,
+    activeTabProject: tabCwd,
+  });
+  workspace.projectCwd = normalizeProjectPath(tabCwd);
+}
+
 async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   let serverRestoreOwner = false;
   try {
@@ -404,12 +474,20 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   }
   if (serverRestoreOwner) serverTerminalRestoreState.beginLoad();
   const [snapshotResult, refs] = await Promise.all([
-    loadWorkspaceSnapshot()
-      .then((raw) => ({ ok: true, raw }))
-      .catch(() => ({ ok: false, raw: null })),
-    listInFlightSessions().catch(() => []),
+    readWorkspaceSnapshot(),
+    listInFlightSessions().catch((error) => {
+      console.warn("appLifecycle could not list interrupted sessions", error);
+      return [];
+    }),
   ]);
   const snapshotRaw = snapshotResult.raw;
+  if (!snapshotResult.ok) {
+    snapshotReadFailed = true;
+    console.error(
+      "[boot] the saved workspace could not be read; it is kept as it is and not overwritten",
+    );
+    showBootRestoreNotice({ canRead: canReadWorkspaceSnapshot, startFresh: acceptBlankWorkspace });
+  }
   if (serverRestoreOwner && snapshotResult.ok) {
     serverTerminalRestoreState.initialize(
       snapshotRaw && typeof snapshotRaw === "object" && "serversRestore" in snapshotRaw
@@ -487,6 +565,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   );
 
   let workspace = snapshot ? hydrateWorkspaceSnapshot(snapshot, loaded, interrupted) : null;
+  if (workspace) reconcileRestoredProject(workspace);
   if (!workspace && refs.length > 0) {
     const sessions: Session[] = [];
     for (const ref of refs) {
@@ -623,18 +702,20 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
         ),
       );
       // Freeze recovery before the first app paint can replace the workspace.
-      await saveWorkspaceSnapshot(
-        snapshotRaw ??
-          collectWorkspaceSnapshot(
-            workspace.tabs,
-            workspace.sessions,
-            workspace.activeTabId,
-            workspace.projectCwd,
-            workspace.projectReturnMemory ?? new Map(),
-            workspace.projectTerminals,
-            workspace.lastDockSide,
-          ),
-      ).catch((error) => console.warn("Could not persist session recovery", error));
+      if (!workspaceSnapshotWriteBlocked()) {
+        await saveWorkspaceSnapshot(
+          snapshotRaw ??
+            collectWorkspaceSnapshot(
+              workspace.tabs,
+              workspace.sessions,
+              workspace.activeTabId,
+              workspace.projectCwd,
+              workspace.projectReturnMemory ?? new Map(),
+              workspace.projectTerminals,
+              workspace.lastDockSide,
+            ),
+        ).catch((error) => console.warn("Could not persist session recovery", error));
+      }
     }
   }
   if (workspace) {
@@ -848,23 +929,25 @@ export async function persistQuitState(
       .filter((session) => shouldPersistSession(session) && session.queuedMessages?.length)
       .map((session) => write(setSessionQueue(session.id, session.queuedMessages))),
   );
-  await write(
-    saveWorkspaceSnapshot(
-      collectWorkspaceSnapshot(
-        tabs,
-        sessions,
-        activeTabId,
-        projectCwd,
-        memory,
-        projectTerminals,
-        lastDockSide,
-        keepTab,
+  // A window whose saved layout was unreadable keeps the stored one.
+  if (!workspaceSnapshotWriteBlocked())
+    await write(
+      saveWorkspaceSnapshot(
+        collectWorkspaceSnapshot(
+          tabs,
+          sessions,
+          activeTabId,
+          projectCwd,
+          memory,
+          projectTerminals,
+          lastDockSide,
+          keepTab,
+        ),
       ),
-    ),
-  );
+    );
   // Vite/webview reload must not wipe a restored snapshot: those chats are idle
   // in this process until Continue runs.
-  if (mode === "quit" || refs.length > 0) {
+  if ((mode === "quit" || refs.length > 0) && !workspaceSnapshotWriteBlocked()) {
     await write(replaceInFlightSessions(refs));
   }
 }
@@ -875,19 +958,20 @@ async function persistBootingResume(workspace: ResumedWorkspace): Promise<void> 
       .filter(shouldPersistSession)
       .map((session) => upsertSession(session).catch(() => null)),
   );
-  await saveWorkspaceSnapshot(
-    collectWorkspaceSnapshot(
-      workspace.tabs,
-      workspace.sessions,
-      workspace.activeTabId,
-      workspace.projectCwd,
-      workspace.projectReturnMemory ?? new Map(),
-      workspace.projectTerminals ?? [],
-      workspace.lastDockSide,
-    ),
-  ).catch((error) => {
-    console.warn("appLifecycle operation failed", error);
-  });
+  if (!workspaceSnapshotWriteBlocked())
+    await saveWorkspaceSnapshot(
+      collectWorkspaceSnapshot(
+        workspace.tabs,
+        workspace.sessions,
+        workspace.activeTabId,
+        workspace.projectCwd,
+        workspace.projectReturnMemory ?? new Map(),
+        workspace.projectTerminals ?? [],
+        workspace.lastDockSide,
+      ),
+    ).catch((error) => {
+      console.warn("appLifecycle operation failed", error);
+    });
   await replaceInFlightSessions(
     workspace.sessions.filter(wasTurnInterrupted).map((session) => ({
       sessionId: session.id,

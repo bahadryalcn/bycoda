@@ -174,6 +174,25 @@ fn file_stamp(root: &Path, path: &str) -> Option<String> {
         return None;
     }
     let meta = std::fs::symlink_metadata(root.join(path)).ok()?;
+    stamp_from_metadata(root, path, &meta)
+}
+
+/// `file_stamp` for bulk passes: one `lstat` per file, parent directories verified once.
+/// `meta` must be the `symlink_metadata` of the file itself, so the stamp and any size
+/// read from it describe one observation.
+fn file_stamp_cached(
+    root: &Path,
+    path: &str,
+    meta: Option<&std::fs::Metadata>,
+    verified: &mut VerifiedDirs,
+) -> Option<String> {
+    if parent_contains_symlink(root, path, verified) {
+        return None;
+    }
+    stamp_from_metadata(root, path, meta?)
+}
+
+fn stamp_from_metadata(root: &Path, path: &str, meta: &std::fs::Metadata) -> Option<String> {
     if !meta.is_file() {
         return None;
     }
@@ -193,6 +212,38 @@ fn file_stamp(root: &Path, path: &str) -> Option<String> {
         meta.len(),
         file_mode(&root.join(path))
     ))
+}
+
+/// True when the session's file-history journal has an unsettled turn.
+pub(super) fn has_active_files_turn(dir: &Path) -> Result<bool, String> {
+    Ok(load(dir)?.is_some_and(|journal| journal.turns.iter().any(|turn| turn.active)))
+}
+
+/// Bytes on disk below `path` (budget accounting).
+pub(super) fn dir_bytes(path: &Path) -> u64 {
+    disk_bytes(path)
+}
+
+/// Deletes the rebuildable baseline cache of an idle session and returns the freed
+/// bytes. The next send recopies it. A session with an unsettled turn is left alone.
+pub(super) fn drop_baseline_cache(dir: &Path) -> Result<u64, String> {
+    let baseline = dir.join("files-baseline");
+    if !baseline.exists() {
+        return Ok(0);
+    }
+    if let Some(mut journal) = load(dir)? {
+        if journal.turns.iter().any(|turn| turn.active) {
+            return Ok(0);
+        }
+        // Invalidate the inventory first: a crash must never leave stamps that
+        // describe bytes which are gone.
+        journal.cached_baseline.clear();
+        journal.cached_stamps.clear();
+        save(dir, &journal)?;
+    }
+    let freed = disk_bytes(&baseline);
+    std::fs::remove_dir_all(&baseline).map_err(|e| e.to_string())?;
+    Ok(freed)
 }
 
 fn remove_cached_file(baseline: &Path, path: &str) -> Result<(), String> {
@@ -391,9 +442,16 @@ impl CheckpointStore {
                     remove_cached_file(&baseline_dir, path)?;
                 }
                 let mut bytes = 0;
+                // One symlink walk per parent directory for the whole pass.
+                let mut verified = VerifiedDirs::default();
                 for path in paths {
-                    let size = std::fs::symlink_metadata(root.join(&path)).map_or(0, |m| m.len());
-                    let before_stamp = file_stamp(&root, &path);
+                    let meta = std::fs::symlink_metadata(root.join(&path)).ok();
+                    let size = meta.as_ref().map_or(0, |m| m.len());
+                    let before_stamp =
+                        file_stamp_cached(&root, &path, meta.as_ref(), &mut verified);
+                    // A copy can race with a writer, so re-stamp only after copying. Reused
+                    // and over-budget files are not read; their stamp was just taken.
+                    let mut copied = false;
                     let kind = if bytes + size <= BASELINE_BYTES {
                         let reusable = before_stamp
                             .as_ref()
@@ -404,6 +462,7 @@ impl CheckpointStore {
                         let kind = if reusable {
                             SnapshotKind::Contents
                         } else {
+                            copied = true;
                             snapshot_file_at(&baseline_dir, &root, &path)?
                         };
                         if kind == SnapshotKind::Contents {
@@ -414,12 +473,23 @@ impl CheckpointStore {
                         SnapshotKind::Skipped
                     };
                     if kind == SnapshotKind::Skipped {
-                        turn.baseline_skipped_stamps
-                            .insert(path.clone(), stamp(&root, &path));
+                        // Size/mtime stamp (content-hashed only when recent): out-of-budget
+                        // files are never hashed on every send.
+                        turn.baseline_skipped_stamps.insert(
+                            path.clone(),
+                            before_stamp.clone().unwrap_or_else(|| "unsafe".into()),
+                        );
                     }
-                    if before_stamp.is_some() && before_stamp == file_stamp(&root, &path) {
-                        turn.baseline_stamps
-                            .insert(path.clone(), before_stamp.unwrap());
+                    if let Some(before) = before_stamp {
+                        let settled = !copied || {
+                            let after_meta = std::fs::symlink_metadata(root.join(&path)).ok();
+                            file_stamp_cached(&root, &path, after_meta.as_ref(), &mut verified)
+                                .as_ref()
+                                == Some(&before)
+                        };
+                        if settled {
+                            turn.baseline_stamps.insert(path.clone(), before);
+                        }
                     }
                     turn.baseline.insert(path, kind);
                 }
@@ -468,13 +538,15 @@ impl CheckpointStore {
                 .chain(turn.baseline.keys().cloned())
                 .collect();
             let history_dir = turn_dir(&dir, id)?;
+            let mut verified = VerifiedDirs::default();
             for path in all {
                 // Structured edit completions record what this session last wrote. Do not adopt
                 // subsequent foreign writes, even on an otherwise exclusive turn.
                 if turn.files.get(&path).is_some_and(|p| p.after.is_some()) {
                     continue;
                 }
-                if file_stamp(&root, &path)
+                let current_meta = std::fs::symlink_metadata(root.join(&path)).ok();
+                if file_stamp_cached(&root, &path, current_meta.as_ref(), &mut verified)
                     .as_ref()
                     .is_some_and(|value| turn.baseline_stamps.get(&path) == Some(value))
                 {
@@ -488,7 +560,8 @@ impl CheckpointStore {
                 let before = read_snapshot_at(&baseline_dir, &path, before_kind);
                 let after = read_worktree(&root, &path);
                 if before_kind == SnapshotKind::Skipped {
-                    if turn.baseline_skipped_stamps.get(&path) != Some(&stamp(&root, &path)) {
+                    let changed = file_stamp(&root, &path).unwrap_or_else(|| "unsafe".into());
+                    if turn.baseline_skipped_stamps.get(&path) != Some(&changed) {
                         turn.unavailable =
                             Some("A changed file exceeded the file history size limit.".into());
                     }

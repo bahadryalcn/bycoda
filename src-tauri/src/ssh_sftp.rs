@@ -461,8 +461,8 @@ fn parse_listing(content: &str) -> Result<Vec<SftpEntry>, String> {
     Ok(entries)
 }
 
-#[tauri::command(async)]
-pub fn ssh_sftp_list(
+#[tauri::command]
+pub async fn ssh_sftp_list(
     app: tauri::AppHandle,
     window: tauri::Window,
     connection_id: String,
@@ -470,32 +470,35 @@ pub fn ssh_sftp_list(
     operation_id: String,
     http_proxy_ticket_id: Option<String>,
 ) -> Result<Vec<SftpEntry>, String> {
-    let owner_lease = crate::ssh_window_lifecycle::capture(window.label())?;
-    let endpoint = crate::server_inventory::resolve_ssh_endpoint(&app, &connection_id)?;
-    let request = crate::ssh_http_proxy_credentials::ProxyOperation::SftpList {
-        operation_id: operation_id.clone(),
-        path: path.clone(),
-    };
-    let mut operation = Operation::begin_for_window_with_lease(
-        operation_id,
-        window.label(),
-        &endpoint,
-        owner_lease,
-    )?;
-    operation.authorize_http_proxy(
-        &app,
-        window.label(),
-        &connection_id,
-        &endpoint,
-        &request,
-        http_proxy_ticket_id.as_deref(),
-    )?;
-    let output = run_batch(
-        &endpoint,
-        format!("ls -la {}\nbye\n", quote_path(&path)?),
-        &operation,
-    )?;
-    parse_listing(&output)
+    crate::harness::run_blocking("ssh_sftp_list", move || {
+        let owner_lease = crate::ssh_window_lifecycle::capture(window.label())?;
+        let endpoint = crate::server_inventory::resolve_ssh_endpoint(&app, &connection_id)?;
+        let request = crate::ssh_http_proxy_credentials::ProxyOperation::SftpList {
+            operation_id: operation_id.clone(),
+            path: path.clone(),
+        };
+        let mut operation = Operation::begin_for_window_with_lease(
+            operation_id,
+            window.label(),
+            &endpoint,
+            owner_lease,
+        )?;
+        operation.authorize_http_proxy(
+            &app,
+            window.label(),
+            &connection_id,
+            &endpoint,
+            &request,
+            http_proxy_ticket_id.as_deref(),
+        )?;
+        let output = run_batch(
+            &endpoint,
+            format!("ls -la {}\nbye\n", quote_path(&path)?),
+            &operation,
+        )?;
+        parse_listing(&output)
+    })
+    .await
 }
 
 fn publish_download(temporary: &Path, destination: &Path) -> Result<(), String> {
@@ -505,8 +508,8 @@ fn publish_download(temporary: &Path, destination: &Path) -> Result<(), String> 
 /// Downloads never overwrite an existing local path. Data stays in a sibling
 /// temporary file until success; hard_link publishes it atomically without
 /// clobbering. A failed/cancelled transfer removes its own partial file.
-#[tauri::command(async)]
-pub fn ssh_sftp_download(
+#[tauri::command]
+pub async fn ssh_sftp_download(
     app: tauri::AppHandle,
     window: tauri::Window,
     connection_id: String,
@@ -515,20 +518,23 @@ pub fn ssh_sftp_download(
     operation_id: String,
     http_proxy_ticket_id: Option<String>,
 ) -> Result<(), String> {
-    transfer::download(
-        app,
-        window,
-        connection_id,
-        remote_path,
-        local_path,
-        operation_id,
-        http_proxy_ticket_id,
-    )
+    crate::harness::run_blocking("ssh_sftp_download", move || {
+        transfer::download(
+            app,
+            window,
+            connection_id,
+            remote_path,
+            local_path,
+            operation_id,
+            http_proxy_ticket_id,
+        )
+    })
+    .await
 }
 
-#[tauri::command(async)]
+#[tauri::command]
 #[allow(clippy::too_many_arguments)] // Preserve the reviewed IPC transfer contract.
-pub fn ssh_sftp_upload(
+pub async fn ssh_sftp_upload(
     app: tauri::AppHandle,
     window: tauri::Window,
     connection_id: String,
@@ -538,16 +544,19 @@ pub fn ssh_sftp_upload(
     operation_id: String,
     http_proxy_ticket_id: Option<String>,
 ) -> Result<u64, String> {
-    transfer::upload(
-        app,
-        window,
-        connection_id,
-        local_path,
-        remote_path,
-        overwrite_confirmed,
-        operation_id,
-        http_proxy_ticket_id,
-    )
+    crate::harness::run_blocking("ssh_sftp_upload", move || {
+        transfer::upload(
+            app,
+            window,
+            connection_id,
+            local_path,
+            remote_path,
+            overwrite_confirmed,
+            operation_id,
+            http_proxy_ticket_id,
+        )
+    })
+    .await
 }
 
 #[tauri::command(async)]
@@ -559,8 +568,8 @@ pub fn ssh_sftp_recoveries(
     transfer::list(&app, window.label(), &connection_id)
 }
 
-#[tauri::command(async)]
-pub fn ssh_sftp_resume(
+#[tauri::command]
+pub async fn ssh_sftp_resume(
     app: tauri::AppHandle,
     window: tauri::Window,
     connection_id: String,
@@ -569,19 +578,22 @@ pub fn ssh_sftp_resume(
     operation_id: String,
     http_proxy_ticket_id: Option<String>,
 ) -> Result<(), String> {
-    transfer::resume(
-        app,
-        window,
-        connection_id,
-        recovery_id,
-        overwrite_confirmed,
-        operation_id,
-        http_proxy_ticket_id,
-    )
+    crate::harness::run_blocking("ssh_sftp_resume", move || {
+        transfer::resume(
+            app,
+            window,
+            connection_id,
+            recovery_id,
+            overwrite_confirmed,
+            operation_id,
+            http_proxy_ticket_id,
+        )
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn ssh_sftp_discard(
+#[tauri::command]
+pub async fn ssh_sftp_discard(
     app: tauri::AppHandle,
     window: tauri::Window,
     connection_id: String,
@@ -589,14 +601,17 @@ pub fn ssh_sftp_discard(
     operation_id: String,
     http_proxy_ticket_id: Option<String>,
 ) -> Result<(), String> {
-    transfer::discard(
-        app,
-        window,
-        connection_id,
-        recovery_id,
-        operation_id,
-        http_proxy_ticket_id,
-    )
+    crate::harness::run_blocking("ssh_sftp_discard", move || {
+        transfer::discard(
+            app,
+            window,
+            connection_id,
+            recovery_id,
+            operation_id,
+            http_proxy_ticket_id,
+        )
+    })
+    .await
 }
 /// App shutdown cancels all registered operations; each worker owns and reaps
 /// its native child. Called before the application's final process teardown.

@@ -1,7 +1,7 @@
 //! Authoritative session deletion and its separately observed asset cleanup.
 use super::{
-    cleanup_unreferenced_generated_images, delete_session, generated_image_paths, get_session,
-    validate_id, SessionStore,
+    cleanup_unreferenced_since, delete_session, generated_image_paths, get_session,
+    unreferenced_generated_images, validate_id, SessionStore,
 };
 
 pub(super) fn run(
@@ -13,24 +13,36 @@ pub(super) fn run(
     let mut observation = Ok(());
     let result = (|| {
         validate_id(session_id, "session")?;
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-        let persisted_paths = match get_session(&conn, session_id) {
-            Ok(record) => record
-                .map(|record| generated_image_paths(&record.blocks))
-                .unwrap_or_default(),
-            Err(_) => {
-                observation = Err(());
-                Vec::new()
-            }
-        };
-        image_paths.extend(persisted_paths);
-        delete_session(&conn, session_id).map_err(|error| error.to_string())?;
-        if !image_paths.is_empty() {
-            if let Err(error) = cleanup_unreferenced_generated_images(&conn, &image_paths, cleanup)
-            {
-                observation = Err(());
-                eprintln!("Generated image cleanup will need a retry: {error}");
-            }
+        {
+            let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            let persisted_paths = match get_session(&conn, session_id) {
+                Ok(record) => record
+                    .map(|record| generated_image_paths(&record.blocks))
+                    .unwrap_or_default(),
+                Err(_) => {
+                    observation = Err(());
+                    Vec::new()
+                }
+            };
+            image_paths.extend(persisted_paths);
+            delete_session(&conn, session_id).map_err(|error| error.to_string())?;
+        }
+        if image_paths.is_empty() {
+            return Ok(());
+        }
+        // Finding the surviving references parses every stored transcript. Do
+        // that on a read snapshot without the write lock, then hold the lock
+        // only to re-check records that changed since and delete the files.
+        // Any failure keeps the files (they need a retry, nothing is lost).
+        let cleaned = store
+            .with_background_conn(|reader| unreferenced_generated_images(reader, &image_paths))
+            .and_then(|(candidates, since)| {
+                let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+                cleanup_unreferenced_since(&conn, candidates, since, cleanup)
+            });
+        if let Err(error) = cleaned {
+            observation = Err(());
+            eprintln!("Generated image cleanup will need a retry: {error}");
         }
         Ok(())
     })();

@@ -114,7 +114,10 @@ export function windowsServiceRunner(options: WindowsServiceOptions, path: strin
   // Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
   // A provider diagnostic must be logged without terminating the host pipeline.
   // The native exit code, rather than stderr output, decides service recovery.
-  return `$ErrorActionPreference = 'Stop'\n$env:PATH = ${psQuote(path)}\n$global:LASTEXITCODE = 1\n$ErrorActionPreference = 'Continue'\n& ${psQuote(options.executable)} ${[options.entry, "serve", "--data-dir", options.directory, "--port", String(options.port)].map(psQuote).join(" ")} >> ${psQuote(join(options.directory, "host.log"))} 2>&1\nexit $global:LASTEXITCODE`;
+  const log = psQuote(join(options.directory, "host.log"));
+  // One previous copy keeps the log bounded across restarts (it is only ever appended to).
+  const rotate = `try { $log = ${log}; if ((Test-Path -LiteralPath $log) -and (Get-Item -LiteralPath $log).Length -gt 10MB) { Move-Item -LiteralPath $log -Destination ($log + '.old') -Force } } catch { }`;
+  return `$ErrorActionPreference = 'Stop'\n$env:PATH = ${psQuote(path)}\n$global:LASTEXITCODE = 1\n$ErrorActionPreference = 'Continue'\n${rotate}\n& ${psQuote(options.executable)} ${[options.entry, "serve", "--data-dir", options.directory, "--port", String(options.port)].map(psQuote).join(" ")} >> ${log} 2>&1\nexit $global:LASTEXITCODE`;
 }
 
 /** Task Scheduler owns the process, independently of the SSH session. An

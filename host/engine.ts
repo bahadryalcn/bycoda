@@ -22,7 +22,7 @@ import { isEditTool } from "../src/integrations/harness/core/preview";
 import { homedir } from "node:os";
 import { HandoffHistoryStore } from "./handoff-history";
 import { buildBudgetedHandoff, handoffHistory } from "../src/features/sessions/model/handoffBudget";
-import { renameHostWorktreeBranch, resolveHostWorktree } from "./git-worktrees";
+import { renameHostWorktreeBranch, resolveHostWorktreeAsync } from "./git-worktrees";
 import {
   applyHarnessEvent,
   promoteLastAssistantToPlan,
@@ -1742,7 +1742,7 @@ export class HostEngine {
     if (
       command.worktreeCwd &&
       command.workspaceMode !== "worktree" &&
-      resolveHostWorktree(project.cwd, command.worktreeCwd) !== project.cwd
+      (await resolveHostWorktreeAsync(project.cwd, command.worktreeCwd)) !== project.cwd
     )
       return undefined;
     const prepared = await this.managedTurns.prepareWorkspaceForCreate?.({
@@ -1760,6 +1760,53 @@ export class HostEngine {
     return prepared;
   }
 
+  /**
+   * Creating a worktree runs git for seconds. Do it before this command takes the store
+   * queue, so unrelated reads, heartbeats and writes are not held behind it. Preparation
+   * is idempotent by command id and the transaction re-verifies workspace ownership.
+   * Failures and unparsable input are left for the command itself to raise in order.
+   */
+  private async prepareCreationEarly(
+    raw: unknown,
+  ): Promise<{ value: Awaited<ReturnType<HostEngine["prepareCreation"]>> } | { error: unknown } | undefined> {
+    if (!raw || typeof raw !== "object" || (raw as Record<string, unknown>).type !== "create")
+      return undefined;
+    let create: Extract<HostCommand, { type: "create" }>;
+    let signature: string;
+    try {
+      const input = raw as Record<string, unknown>;
+      if (input.firstTurn !== undefined) {
+        const parsed = parseCommand({ ...input, firstTurn: undefined });
+        const first = parseCommand({ ...(input.firstTurn as object), sessionId: "pending" });
+        if (parsed.type !== "create" || (first.type !== "send" && first.type !== "draft"))
+          return undefined;
+        create = parsed;
+        signature = createHash("sha256").update(JSON.stringify({ create, first })).digest("hex");
+      } else {
+        const parsed = parseCommand(raw);
+        if (parsed.type !== "create") return undefined;
+        create = parsed;
+        signature = createHash("sha256").update(JSON.stringify(parsed)).digest("hex");
+      }
+      if (this.closing || (await this.store.receipt(create.commandId, signature))) return undefined;
+    } catch {
+      return undefined;
+    }
+    try {
+      return { value: await this.prepareCreation(create) };
+    } catch (error) {
+      return { error };
+    }
+  }
+
+  private async preparedCreation(
+    early: Awaited<ReturnType<HostEngine["prepareCreationEarly"]>>,
+    command: Extract<HostCommand, { type: "create" }>,
+  ) {
+    if (early && "error" in early) throw early.error;
+    return early ? early.value : await this.prepareCreation(command);
+  }
+
   async command(raw: unknown): Promise<CommandReceipt> {
     await this.ready;
     // Admission precedes workspace preparation and all provider side effects.
@@ -1770,6 +1817,7 @@ export class HostEngine {
       "type" in raw &&
       (raw.type === "cancel" || raw.type === "stopItem");
     if (!stopping) this.store.db.assertWriteAdmission();
+    const early = await this.prepareCreationEarly(raw);
     return this.store.db.scope(() =>
       this.operations.run(
         typeof raw === "object" && raw !== null && "sessionId" in raw
@@ -1793,7 +1841,7 @@ export class HostEngine {
               .digest("hex");
             const previous = await this.store.receipt(create.commandId, signature);
             if (previous) return previous;
-            const prepared = await this.prepareCreation(create);
+            const prepared = await this.preparedCreation(early, create);
             return await this.store.transaction(async () => {
               const created = await this.command({
                 ...create,
@@ -1825,7 +1873,7 @@ export class HostEngine {
           if (command.type === "contextual")
             return await this.contextualCommand(command, signature);
           const prepared =
-            command.type === "create" ? await this.prepareCreation(command) : undefined;
+            command.type === "create" ? await this.preparedCreation(early, command) : undefined;
           if (command.type !== "create" && this.rewinding.has(command.sessionId))
             throw new Error("A conversation change is in progress");
           // Commands apply to the latest state, including batched stream output.
@@ -1861,7 +1909,8 @@ export class HostEngine {
                 command.sessionId !== managed.sessionId
               )
                 throw new Error("Requested session identity does not own this workspace");
-              const cwd = managed?.path ?? resolveHostWorktree(project.cwd, command.worktreeCwd);
+              const cwd =
+                managed?.path ?? (await resolveHostWorktreeAsync(project.cwd, command.worktreeCwd));
               const sessionId = managed?.sessionId ?? command.sessionId ?? randomUUID();
               await this.store.assertAuthority(sessionId, command.authorityGeneration);
               if (await this.store.sessionAuthority(sessionId))

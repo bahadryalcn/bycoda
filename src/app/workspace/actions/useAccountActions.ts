@@ -14,6 +14,10 @@ import {
   providerAccountLabel,
 } from "../../../features/providers/model/providerAccounts";
 import { repairStaleHandoff } from "../../../features/sessions/model/activeSubmits";
+import { isPreparingHandoff } from "../../../features/sessions/model/handoff";
+import { deferPickUntilHandoffEnds } from "../../../features/sessions/model/deferredPicks";
+import { showSubmitNotice } from "../sessions/submit/submitNotice";
+import { t } from "../../../shared/i18n";
 import { switchSessionAccount } from "../../../features/sessions/model/accountSwitch";
 import { transferProviderSession } from "../../../platform/tauri/providerSessionTransfer";
 import {
@@ -64,6 +68,9 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
     onSubmit,
   } = deps;
   const accountRequests = useRef(new Map<string, object>());
+  const latestSwitch = useRef<
+    (sessionId: string, provider: ProviderAccountProvider, accountId: string) => Promise<boolean>
+  >(async () => false);
 
   const onUsageLimitDismiss = useCallback((sessionId: string) => {
     setSessions((prev) =>
@@ -78,15 +85,45 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
   /** Move one session to another account of its provider, keeping the conversation. */
   const onSwitchSessionAccount = useCallback(
     async (sessionId: string, provider: ProviderAccountProvider, accountId: string) => {
+      const say = (text: string) => {
+        enqueueHarnessEvent(sessionId, { type: "status", text });
+        flushHarnessEvents();
+      };
       const owned = sessionsRef.current.find((session) => session.id === sessionId);
-      if (owned && hostSessionBinding(owned))
-        return remoteSessionActions(sessionId)?.selectAccount?.(provider, accountId) ?? false;
+      if (owned && hostSessionBinding(owned)) {
+        const selectAccount = remoteSessionActions(sessionId)?.selectAccount;
+        if (!selectAccount) {
+          say("This conversation runs on the bycoda Host, which cannot switch its account from here.");
+          return false;
+        }
+        if (selectAccount(provider, accountId)) return true;
+        say("This account cannot be used for the Host conversation. Pick another account.");
+        return false;
+      }
       const request = {};
       accountRequests.current.set(sessionId, request);
       const ownsRequest = () => accountRequests.current.get(sessionId) === request;
-      if (isMovingPane(sessionId)) return false;
-      if (!providerAccountExists(provider, accountId)) return false;
+      if (isMovingPane(sessionId)) {
+        say("The conversation is being moved. Pick the account again in a moment.");
+        return false;
+      }
+      if (!providerAccountExists(provider, accountId)) {
+        say("That account no longer exists. Pick another account.");
+        return false;
+      }
       repairStaleHandoff(sessionId);
+      const during = sessionsRef.current.find((session) => session.id === sessionId);
+      if (during && isPreparingHandoff(during)) {
+        // The handoff owns the account until it ends: keep the pick and apply it afterwards.
+        deferPickUntilHandoffEnds(sessionId, "account", () => {
+          void latestSwitch.current(sessionId, provider, accountId);
+        });
+        showSubmitNotice(
+          sessionId,
+          t("The provider handoff is still being prepared. Your pick applies as soon as it finishes."),
+        );
+        return true;
+      }
       const result = await switchSessionAccount(sessionId, provider, accountId, {
         transfer: transferProviderSession,
         forget: forgetHarnessSession,
@@ -97,10 +134,6 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
         ownsRequest,
       });
       if (!ownsRequest()) return false;
-      const say = (text: string) => {
-        enqueueHarnessEvent(sessionId, { type: "status", text });
-        flushHarnessEvents();
-      };
       if (result.kind === "refused") {
         say(result.status);
         return false;
@@ -115,11 +148,16 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
       if (result.kind !== "switched") {
         if (result.kind === "noop") {
           promptProviderAccountSignIn(sessionId, provider, accountId);
+        } else {
+          say("The conversation changed while switching accounts. Pick the account again.");
         }
         return result.kind === "noop";
       }
       const latest = sessionsRef.current.find((s) => s.id === sessionId);
-      if (!latest || result.update(latest) === latest) return false;
+      if (!latest || result.update(latest) === latest) {
+        say("The conversation changed while switching accounts. Pick the account again.");
+        return false;
+      }
       setSessions((prev) => prev.map((s) => (s.id === sessionId ? result.update(s) : s)));
       if (result.status) say(result.status);
       promptProviderAccountSignIn(sessionId, provider, accountId);
@@ -127,6 +165,8 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
     },
     [enqueueHarnessEvent, flushHarnessEvents, promptProviderAccountSignIn],
   );
+
+  latestSwitch.current = onSwitchSessionAccount;
 
   const onSelectProviderAccount = useCallback(
     (provider: ProviderAccountProvider, accountId: string) => {

@@ -8,6 +8,10 @@ import {
   submitSharedLocalQueue,
 } from "../../../../features/connections/model/useSharedLocalQueues";
 import { sessionsRef } from "../../../../features/sessions/model/sessionsStore";
+import { t } from "../../../../shared/i18n";
+import { showSubmitNotice } from "./submitNotice";
+import { prepareSubmitPreflight } from "./submitPreflight";
+import { queueWhileStarting } from "./submitStarting";
 import { parseShellCommand } from "../../../../features/sessions/model/shellRun";
 import { isClearSessionCommand } from "../../../../features/sessions/model/newSessionCommand";
 import { submitClearConversation } from "./submitClearConversation";
@@ -24,18 +28,45 @@ export function routeSubmitSession(
   const { windowTransferPendingRef, movingSessionIds, editedResends, retiringTurns, turnGen } =
     ctx.refs;
   const { sessionId, text, attachments, options } = input;
-  if (adoptedFollowUpPending(sessionId) && options?.followUpBehavior !== "queue") return false;
+  // A send that cannot start says why, as a notice that stays in the transcript
+  // (a status line folds into the running turn); the composer keeps the text.
+  const refuse = (reason: string): false => {
+    showSubmitNotice(sessionId, reason);
+    return false;
+  };
+  if (adoptedFollowUpPending(sessionId) && options?.followUpBehavior !== "queue")
+    return refuse(t("The previous follow-up is still being delivered. Send again in a moment."));
   // Preserve composer text while this session is handed to another window.
   // Other sessions remain usable throughout the move.
-  if (windowTransferPendingRef.current || movingSessionIds.current.has(sessionId)) return false;
-  if (editedResends.isActive(sessionId)) return false;
-  if (retiringTurns.current.has(sessionId)) return false;
+  if (windowTransferPendingRef.current || movingSessionIds.current.has(sessionId))
+    return refuse(t("This conversation is being moved to another window. Send again in a moment."));
+  if (editedResends.isActive(sessionId))
+    return refuse(t("This conversation is being changed. Send again in a moment."));
+  if (retiringTurns.current.has(sessionId)) {
+    // The failed turn is still being cleaned up (its process, its checkpoint).
+    // The message waits in the queue and goes out when the conversation is free.
+    const early = prepareSubmitPreflight(ctx, input);
+    if (early.settled) return early.value;
+    return queueWhileStarting(
+      ctx,
+      input,
+      early.pre,
+      t("The previous turn is still being cleaned up. Send again in a moment."),
+    );
+  }
   if (sessionsRef.current.some((session) => session.id === sessionId && session.historyLoading))
-    return false;
+    return refuse(t("This conversation is still loading. Send again in a moment."));
   const remote = sessionsRef.current.find((session) => session.id === sessionId);
-  if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd)))
-    return !!remoteSessionActions(sessionId)?.submit(text, attachments, options);
-  if (sharedLocalQueueClaiming(sessionId) && !options?.sharedQueueClaimed) return false;
+  if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) {
+    const actions = remoteSessionActions(sessionId);
+    if (!actions)
+      return refuse(
+        t("The computer that runs this conversation is not connected. Your message is kept."),
+      );
+    return !!actions.submit(text, attachments, options);
+  }
+  if (sharedLocalQueueClaiming(sessionId) && !options?.sharedQueueClaimed)
+    return refuse(t("A queued message is being sent. Send again in a moment."));
   if (options?.queuedMessageId && !options.sharedQueueClaimed && !remote?.continuingElsewhere) {
     const queuedGeneration = turnGen.current.get(sessionId);
     const selected = remote?.queuedMessages?.find(
@@ -94,9 +125,7 @@ export function routeSubmitSession(
   if (shellCommand) {
     // Its output joins the transcript the host is still writing.
     if (remote?.continuingElsewhere && !remote.busy) {
-      ctx.enqueueHarnessEvent(sessionId, { type: "status", text: ADOPTED_RUNNING_REASON });
-      ctx.flushHarnessEvents();
-      return false;
+      return refuse(ADOPTED_RUNNING_REASON);
     }
     return runSessionShell(sessionId, shellCommand);
   }

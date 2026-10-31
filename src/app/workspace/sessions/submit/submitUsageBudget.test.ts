@@ -11,7 +11,9 @@ import {
 
 const mocks = vi.hoisted(() => ({ assert: vi.fn(), rules: vi.fn() }));
 vi.mock("../../../../features/usage/model/usageBudgetReadings", () => ({
-  assertUsageBudgets: mocks.assert,
+  // A pending read resolves to nothing (within budget); a blocked one to "exceeded".
+  createBudgetReader: () => async (budget: unknown) =>
+    (await mocks.assert(budget)) ?? { state: "ok" },
   blockingUsageBudgets: mocks.rules,
 }));
 const session = {
@@ -50,7 +52,7 @@ it("keeps the existing synchronous path when no blocking rule applies", () => {
 });
 it("rejects before dispatch and retains the exact message as a paused follow-up", async () => {
   mocks.rules.mockReturnValue([{}]);
-  mocks.assert.mockRejectedValue(new Error("Budget reached"));
+  mocks.assert.mockResolvedValue({ state: "exceeded" });
   const dispatch = vi.fn(() => true);
   await expect(gateUsageBudget(ctx, input, pre, dispatch)).resolves.toBe(false);
   expect(dispatch).not.toHaveBeenCalled();
@@ -100,7 +102,7 @@ it("honors Stop while validation is pending and preserves the request", async ()
 });
 it("does not duplicate a queued message or a draft on rejection", async () => {
   mocks.rules.mockReturnValue([{}]);
-  mocks.assert.mockRejectedValue(new Error("offline"));
+  mocks.assert.mockResolvedValue({ state: "exceeded" });
   await gateUsageBudget(ctx, { ...input, options: { queuedMessageId: "q" } }, pre, () => true);
   expect(getSessions()[0].queuedMessages).toBeUndefined();
 });
@@ -116,7 +118,7 @@ it.each([false, true])(
       });
     else {
       mocks.rules.mockReturnValue([{}]);
-      mocks.assert.mockRejectedValue(new Error("Budget reached"));
+      mocks.assert.mockResolvedValue({ state: "exceeded" });
     }
     const dispatch = vi.fn(() => true);
     expect(
@@ -129,10 +131,10 @@ it.each([false, true])(
 
 it("does not pause a replacement head after a rejected check settles", async () => {
   mocks.rules.mockReturnValue([{}]);
-  let reject!: (error: Error) => void;
+  let reject!: (reading: { state: string }) => void;
   mocks.assert.mockReturnValue(
-    new Promise<void>((_resolve, rejectPromise) => {
-      reject = rejectPromise;
+    new Promise<{ state: string }>((resolve) => {
+      reject = resolve;
     }),
   );
   resetSessionsStore([
@@ -151,7 +153,7 @@ it("does not pause a replacement head after a rejected check settles", async () 
   setSessions((all) =>
     all.map((s) => ({ ...s, queuedMessages: [{ id: "new", text: "New", attachments: [] }] })),
   );
-  reject(new Error("Budget reached"));
+  reject({ state: "exceeded" });
   expect(await checking).toBe(false);
   expect(getSessions()[0].queueStatus).toBe("active");
 });

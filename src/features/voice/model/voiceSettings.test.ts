@@ -47,3 +47,18 @@ it.each(["mark", "wave", "dots", "orb"] as const)(
     stop();
   },
 );
+
+it("keeps a valid speaker per engine and sends only a non-default Supertonic speaker", () => {
+  localStorage.setItem(
+    "bycoda.voice",
+    JSON.stringify({ speakers: { supertonic: "F2", grok: "rex", openai: "nope" } }),
+  );
+  const settings = loadVoiceSettings();
+  expect(settings.speakers).toEqual({ supertonic: "F2", grok: "rex", openai: "marin" });
+  expect(voiceRuntimeSettings(settings)).toMatchObject({ natural: true, voiceId: "F2" });
+  expect(
+    voiceRuntimeSettings({ ...settings, speakers: { ...settings.speakers, supertonic: "M1" } }),
+  ).not.toHaveProperty("voiceId");
+  expect(voiceRuntimeSettings({ ...settings, engine: "voxcpm2" })).not.toHaveProperty("voiceId");
+  localStorage.removeItem("bycoda.voice");
+});

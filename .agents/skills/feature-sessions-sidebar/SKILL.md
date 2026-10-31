@@ -256,3 +256,15 @@ Delivered in source (uncommitted; unit and fixture evidence only):
 - The single drop hint is owned by `drag.ts`; the sidebar no longer draws a second one.
 - Remote bulk or single delete goes through `confirmSessionDelete({ count, title })`, the shared in-app confirm; `SidebarRename.test.ts` covers the request and that declining deletes nothing.
 - `drag.ts` drop-hint ownership and `showLiveAgents` behaviour are recorded from sub-agent reports; the integration pass verified the unit tests only.
+
+## V3-037 2026-10-31: modern, spacing-led session list
+
+Owner, 2026-10-31 (V3-037 brief, dark sidebar screenshots after V3-029): “bu tasarımıda hiç beğenmedim baya kötü duruyor bence … çok old school duruyor biz daha modern bir anlayış istemiştik.”
+
+Delivered in source (uncommitted; unit, type and fixture-screenshot evidence only):
+
+- Groups/sections are separated by spacing only: no full-width hairline after a group, no indent guide line. Open groups (and a closed one handing over to loose sessions) get `--space-3` after them; collapsed headers stack tightly (`Sidebar.module.css`).
+- Children indent so titles align with the group name (`.folderChildren`); a folder's colour stays on its header icon.
+- `FolderRow`: one ~28px line, muted folder/open-folder (or Pin/Clock) icon that becomes a rotating chevron on hover/focus, medium secondary-ink name, small muted count. The count yields to `+` (new session in group) and `…` (same menu as right-click; also ContextMenu/Shift+F10 on the header). The `+` no longer renders over the count at rest.
+- Crew work with nothing running is only its label row with Manage; the empty line is gone (`CrewSessions.tsx`).
+- Evidence: `temp/verification/v3-037-sidebar/` (scratch fixture `temp/local/v3-037-sidebar/`, memory-only data). Not yet checked in the native app.

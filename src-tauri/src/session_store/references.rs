@@ -112,24 +112,32 @@ impl SessionStore {
     }
 }
 
-#[tauri::command(async)]
-pub fn session_reference_get(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_reference_get(
+    app: tauri::AppHandle,
     session_id: String,
 ) -> Result<Option<SessionReferenceMetadata>, String> {
-    store.local_session_reference(&session_id, None)
+    crate::harness::run_blocking("session_reference_get", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        store.local_session_reference(&session_id, None)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn session_reference_resolve(
-    store: State<'_, SessionStore>,
+#[tauri::command]
+pub async fn session_reference_resolve(
+    app: tauri::AppHandle,
     source_store_id: String,
     source_profile_id: String,
     session_id: String,
 ) -> Result<Option<SessionReferenceMetadata>, String> {
-    validate_id(&source_store_id, "store")?;
-    validate_id(&source_profile_id, "profile")?;
-    store.local_session_reference(&session_id, Some((&source_store_id, &source_profile_id)))
+    crate::harness::run_blocking("session_reference_resolve", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        validate_id(&source_store_id, "store")?;
+        validate_id(&source_profile_id, "profile")?;
+        store.local_session_reference(&session_id, Some((&source_store_id, &source_profile_id)))
+    })
+    .await
 }
 
 #[cfg(test)]

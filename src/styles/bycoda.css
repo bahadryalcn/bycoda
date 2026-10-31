@@ -237,6 +237,7 @@ html [data-composer-box]:focus-within {
 }
 html [data-composer-box]:has([data-ui-focus="group"]:focus-visible) {
   outline-color: transparent;
+  box-shadow: var(--ui-composer-shadow);
 }
 /* Operation boundaries retain their meaning independently of ordinary focus. */
 html [data-composer-box][data-composer-editing] {

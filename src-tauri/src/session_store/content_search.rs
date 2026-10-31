@@ -47,11 +47,16 @@ const KEY_SHIFT: u32 = 20;
 const MAX_BLOCKS_PER_SESSION: usize = (1 << KEY_SHIFT) - 1;
 /// Indexed text per block. Conversation text is rarely near this; tool output is.
 const MAX_BLOCK_CHARS: usize = 32 * 1024;
-const MAX_TOOL_BLOCK_CHARS: usize = 8 * 1024;
+/// Tool blocks index their title, command and the head of their output only.
+/// Tool output was 93 % of the index (139 MB of text plus the FTS prefix
+/// trees); 1 KB per block keeps the searchable part (title, command, path,
+/// first lines) at about a quarter of that. Rows indexed under the old cap are
+/// trimmed when their session is next re-indexed.
+const MAX_TOOL_BLOCK_CHARS: usize = 1024;
 /// Tool output is the bulk of a multi-megabyte transcript. It gets a budget per
 /// session so it can never crowd out the conversation text, which is always
 /// indexed.
-const MAX_TOOL_CHARS_PER_SESSION: usize = 1024 * 1024;
+const MAX_TOOL_CHARS_PER_SESSION: usize = 256 * 1024;
 const MAX_RESULT_SESSIONS: usize = 60;
 const MAX_HITS_PER_SESSION: usize = 5;
 const MAX_RANGES_PER_SNIPPET: usize = 8;
@@ -88,6 +93,11 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     )? {
         return Ok(());
     }
+    // The startup dirty reconcile below runs on every launch before the window
+    // paints. `updated_at` sits after `blocks_json` in the record, so a table
+    // scan walks every transcript's overflow chain (~300 ms warm on a 1.4 GB
+    // store). `migrate` creates `sessions_cwd_cover_idx` and the partial inbox
+    // index before this runs, so the reconcile is pinned to them (0.4 ms).
     let columns = conn
         .prepare("PRAGMA table_info(session_search_index)")?
         .query_map([], |row| row.get::<_, String>(1))?
@@ -105,9 +115,9 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
       CREATE INDEX IF NOT EXISTS session_search_dirty_newest ON session_search_dirty(updated_at DESC, session_id);
       INSERT OR IGNORE INTO session_search_source_revision SELECT id,0 FROM sessions;
       UPDATE session_search_revision SET version=MAX(version, COALESCE((SELECT MAX(version) FROM session_search_source_revision),0)) WHERE id=1;
-      INSERT INTO session_search_dirty SELECT s.id,s.updated_at,r.version FROM sessions s
+      INSERT INTO session_search_dirty SELECT s.id,s.updated_at,r.version FROM sessions s INDEXED BY sessions_cwd_cover_idx
         JOIN session_search_source_revision r ON r.session_id=s.id LEFT JOIN session_search_index i ON i.session_id=s.id
-        WHERE s.has_user_message=1 AND s.inbox_ask IS NULL
+        WHERE s.has_user_message=1 AND s.id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
           AND (i.session_id IS NULL OR i.source_updated_at!=s.updated_at OR i.source_version!=r.version)
         ON CONFLICT(session_id) DO UPDATE SET updated_at=excluded.updated_at,version=excluded.version;
       DELETE FROM session_search_dirty WHERE session_id NOT IN(SELECT id FROM sessions);

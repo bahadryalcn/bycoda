@@ -270,17 +270,27 @@ function listCached(cwd: string, force = false): Promise<HostWorktrees> {
   return entry.promise;
 }
 
-function listSync(cwd: string, force = false): HostWorktrees {
+/** Last resort for synchronous callers; async callers use `resolveHostWorktreeAsync`.
+ * `ran` reports whether git actually ran (a cache hit did not), so a caller does not
+ * run the same blocking command twice. A short timeout bounds the event-loop freeze. */
+const SYNC_LIST_TIMEOUT_MS = 4_000;
+function listSync(cwd: string, force = false): { value: HostWorktrees; ran: boolean } {
   const hit = force ? undefined : fresh(cwd);
-  if (hit?.value) return hit.value;
-  const value = build(execFileSync("git", LIST_ARGS, { ...options(cwd), encoding: "utf8" }));
+  if (hit?.value) return { value: hit.value, ran: false };
+  const value = build(
+    execFileSync("git", LIST_ARGS, {
+      ...options(cwd),
+      timeout: SYNC_LIST_TIMEOUT_MS,
+      encoding: "utf8",
+    }),
+  );
   remember(cwd, {
     at: Date.now(),
     generation: listGeneration,
     promise: Promise.resolve(value),
     value,
   });
-  return value;
+  return { value, ran: true };
 }
 
 /** The real path of a requested working copy, or null for the project itself. */
@@ -298,7 +308,9 @@ export function resolveHostWorktree(projectCwd: string, requested: unknown): str
   const find = (listed: HostWorktrees) => listed.worktrees.find((tree) => tree.path === actual);
   // A cached list may predate a worktree made outside this host: look again
   // before refusing.
-  const target = find(listSync(projectCwd)) ?? find(listSync(projectCwd, true));
+  // Only a cached list needs a second look; a list git just produced is already current.
+  const first = listSync(projectCwd);
+  const target = find(first.value) ?? (first.ran ? undefined : find(listSync(projectCwd, true).value));
   if (!target || !available(target.path))
     throw new Error("Choose an available worktree of this project");
   return canonicalWorkspacePathSync(target.path);

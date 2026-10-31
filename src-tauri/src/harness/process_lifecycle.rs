@@ -73,6 +73,10 @@ impl Failure {
         io::Error::new(self.kind, self.message.clone())
     }
 }
+/// Exit-poll interval bounds: start tight so short-lived children are seen quickly,
+/// then relax so a long-running provider is not woken 200 times a second.
+const POLL_MIN: Duration = Duration::from_millis(5);
+const POLL_MAX: Duration = Duration::from_millis(250);
 struct Stop {
     #[cfg(unix)]
     deadline: Instant,
@@ -257,6 +261,7 @@ impl ProcessOwner {
         self.wait_until(Some(Instant::now() + timeout))
     }
     fn wait_until(&self, deadline: Option<Instant>) -> Option<io::Result<ExitStatus>> {
+        let mut poll = POLL_MIN;
         loop {
             let mut state = match self.state.lock() {
                 Ok(state) => state,
@@ -347,11 +352,35 @@ impl ProcessOwner {
                     continue;
                 }
             }
-            drop(
-                self.changed
-                    .wait_timeout(state, Duration::from_millis(5))
-                    .unwrap_or_else(|e| e.into_inner()),
-            );
+            // Exit is observed by polling (no OS event reaches the condvar), so back off
+            // while the child is simply running. Every state change notifies the condvar,
+            // and the wait never overshoots a caller deadline, the kill escalation or the
+            // drain grace, so stop and exit handling stay as prompt as before.
+            let now = Instant::now();
+            let mut wait = poll;
+            if let Some(deadline) = deadline {
+                wait = wait.min(deadline.saturating_duration_since(now));
+            }
+            #[cfg(unix)]
+            if let Some(stop) = state.stop.as_ref().filter(|stop| !stop.killed) {
+                wait = wait.min(stop.deadline.saturating_duration_since(now));
+            }
+            if let Some(seen) = state
+                .exit_seen
+                .filter(|seen| seen.elapsed() < super::EXIT_DRAIN_GRACE)
+            {
+                wait = wait.min((seen + super::EXIT_DRAIN_GRACE).saturating_duration_since(now));
+            }
+            let (guard, timeout) = self
+                .changed
+                .wait_timeout(state, wait.max(Duration::from_millis(1)))
+                .unwrap_or_else(|e| e.into_inner());
+            drop(guard);
+            poll = if timeout.timed_out() {
+                (poll * 2).min(POLL_MAX)
+            } else {
+                POLL_MIN
+            };
         }
     }
 }

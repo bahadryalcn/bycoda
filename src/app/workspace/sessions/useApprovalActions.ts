@@ -16,6 +16,19 @@ import {
 } from "../../../features/sessions/model/approvalIntents";
 import { liveTurnHarness } from "../../../features/sessions/model/messageQueue";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
+import { setSessions } from "../../../features/sessions/model/sessionsStore";
+import { t } from "../../../shared/i18n";
+
+/** An answer that never left the app must not leave its form on "Sending answer…". */
+function failQuestionDelivery(sessionId: string, requestId: number, error: string): void {
+  setSessions((sessions) =>
+    sessions.map((session) =>
+      session.id === sessionId && session.pendingQuestion?.requestId === requestId
+        ? { ...session, pendingQuestion: { ...session.pendingQuestion, delivery: "failed", error } }
+        : session,
+    ),
+  );
+}
 
 export interface ApprovalActionDeps {
   sessionsRef: MutableRefObject<Session[]>;
@@ -47,7 +60,15 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
   const onQuestionReply = useCallback(
     (sessionId: string, requestId: number, reply: UserQuestionReply) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
-      if (!session || session.worktreeRemoved) return;
+      if (!session) return;
+      if (session.worktreeRemoved) {
+        failQuestionDelivery(
+          sessionId,
+          requestId,
+          t("The workspace was removed, so the answer could not be delivered."),
+        );
+        return;
+      }
       if (
         session.pendingQuestion?.requestId !== requestId ||
         ["sending", "queued", "unknown"].includes(session.pendingQuestion.delivery ?? "")
@@ -59,7 +80,12 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
         actions.answer(requestId, reply);
         return;
       }
-      respondHarnessQuestion(liveTurnHarness(session), sessionId, requestId, reply);
+      if (!respondHarnessQuestion(liveTurnHarness(session), sessionId, requestId, reply))
+        failQuestionDelivery(
+          sessionId,
+          requestId,
+          t("The provider is no longer waiting for this answer, so it was not delivered."),
+        );
     },
     [],
   );

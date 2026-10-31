@@ -194,7 +194,9 @@ export function useProjectRemoval({
           if (session.busy) {
             turnGen.current.set(session.id, (turnGen.current.get(session.id) ?? 0) + 1);
             for (const id of sessionChildHarnesses(session)) {
-              void cancelHarnessTurn(id, session.id);
+              cancelHarnessTurn(id, session.id).catch((error) => {
+                console.warn("Could not stop the turn of a removed project", error);
+              });
             }
           }
           for (const id of sessionChildHarnesses(session)) {

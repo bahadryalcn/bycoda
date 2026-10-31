@@ -78,33 +78,41 @@ fn decorate_frame(line: String, grant: &Value) -> String {
     request.to_string()
 }
 
-#[tauri::command(async)]
-pub fn harness_runtime_logs_bridge(
+#[tauri::command]
+pub async fn harness_runtime_logs_bridge(
     app: AppHandle,
     session_id: String,
 ) -> Result<Option<Value>, String> {
-    if session_id.is_empty() {
-        return Ok(None);
-    }
-    let Ok(service) = crate::remote::NativeServiceChannel::connect(&app) else {
-        return Ok(None);
-    };
-    Ok(service
-        .project("runtimeLogs.bridge.describe", json!({}), |value| {
-            Ok(crate::session_tools_bridge::metadata(
-                value.clone(),
-                crate::session_tools_bridge::Group::RuntimeLogs,
-            ))
-        })
-        .ok())
+    crate::harness::run_blocking("harness_runtime_logs_bridge", move || {
+        if session_id.is_empty() {
+            return Ok(None);
+        }
+        // Optional metadata: a slow Host must not hold the send for 30 s.
+        let Some(deadline) = crate::session_tools_bridge::optional_host_deadline() else {
+            return Ok(None);
+        };
+        let value = crate::remote::NativeServiceChannel::connect_until(&app, Some(deadline)).and_then(
+            |service| {
+                service.project_until(
+                    "runtimeLogs.bridge.describe",
+                    json!({}),
+                    deadline,
+                    |value| {
+                        Ok(crate::session_tools_bridge::metadata(
+                            value.clone(),
+                            crate::session_tools_bridge::Group::RuntimeLogs,
+                        ))
+                    },
+                )
+            },
+        );
+        crate::session_tools_bridge::note_optional_host_outcome(deadline, value.is_ok());
+        Ok(value.ok())
+    })
+    .await
 }
 
-pub fn configure_child(
-    app: &AppHandle,
-    session_id: &str,
-    command: &mut Command,
-    stamp: (u64, u64),
-) {
+pub(crate) fn strip_child_env(command: &mut Command) {
     let keys: Vec<String> = std::env::vars()
         .map(|(key, _)| key)
         .chain(
@@ -117,17 +125,26 @@ pub fn configure_child(
     for key in keys {
         command.env_remove(key);
     }
+}
+
+/// Issues, pins and caches this child's grant within `deadline`, returning
+/// the environment the child receives. Runs off the spawn thread.
+pub(crate) fn issue_child_grant(
+    app: &AppHandle,
+    session_id: &str,
+    stamp: (u64, u64),
+    deadline: std::time::Instant,
+) -> Result<Vec<(&'static str, String)>, String> {
     let primary = session_id
         .rsplit_once('#')
         .filter(|(_, suffix)| !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()))
         .map(|(id, _)| id)
         .unwrap_or(session_id);
-    let Ok(service) = crate::remote::NativeServiceChannel::connect(app) else {
-        return;
-    };
-    let _ = service.project(
+    let service = crate::remote::NativeServiceChannel::connect_until(app, Some(deadline))?;
+    service.project_until(
         "runtimeLogs.access.issue",
         json!({"sessionId": primary}),
+        deadline,
         |issued| {
             let mut issued = issued.clone();
             issued["endpoint"] = json!(service.endpoint());
@@ -146,14 +163,15 @@ pub fn configure_child(
             ) else {
                 return Err("Runtime log tool grant is incomplete".into());
             };
-            command
-                .env("BYCODA_RUNTIME_LOGS_TOKEN", token)
-                .env("BYCODA_RUNTIME_LOGS_ENDPOINT", endpoint)
-                .env("BYCODA_RUNTIME_LOGS_ENVIRONMENT", environment);
+            let env = vec![
+                ("BYCODA_RUNTIME_LOGS_TOKEN", token.to_owned()),
+                ("BYCODA_RUNTIME_LOGS_ENDPOINT", endpoint.to_owned()),
+                ("BYCODA_RUNTIME_LOGS_ENVIRONMENT", environment.to_owned()),
+            ];
             crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
-            Ok(())
+            Ok(env)
         },
-    );
+    )
 }
 
 #[cfg(test)]

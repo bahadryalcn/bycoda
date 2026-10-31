@@ -25,7 +25,8 @@ export interface SessionQueueServicePorts<
 > {
   environmentId: string;
   transaction<T>(work: () => Promise<T>): Promise<T>;
-  sessionStatus(sessionId: string): Promise<string>;
+  /** `running` asks for the live status (desktop included); otherwise it is an existence check. */
+  sessionStatus(sessionId: string, running?: boolean): Promise<string>;
   desktopWatch(sessionId: string): Promise<{ running?: boolean } | undefined>;
   queues: {
     get(sessionId: string): Promise<Queue>;
@@ -83,7 +84,9 @@ export function createSessionQueueService<
     const id = String(params.sessionId ?? "");
     await ports.attachments.validateExposure(params);
     await assertDomainAuthority(context);
-    const status = await ports.sessionStatus(id);
+    // Only recovering an unaccepted claim looks at whether a turn runs; every other
+    // action just needs the conversation to exist, which the host store answers directly.
+    const status = await ports.sessionStatus(id, action === "finish" && params.accepted === false);
     await assertDomainAuthority(context);
     const clientId = params.clientId;
     if (typeof clientId !== "string" || !clientId || clientId.length > 200)

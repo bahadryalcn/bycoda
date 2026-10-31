@@ -10,11 +10,31 @@ const mock = vi.hoisted(() => ({
   converse: vi.fn(async () => ({ action: "submit", reply: "" })),
   connect: vi.fn(async () => {}),
   warm: vi.fn(async () => {}),
+  realtime: null as any,
+  realtimeArgs: [] as unknown[],
+  realtimeConnect: vi.fn(async () => {}),
+  realtimeSecret: vi.fn(async () => ({ value: "v", expires_at: 1, model: "m", url: "wss://x" })),
+  localConstructed: vi.fn(),
 }));
+vi.mock("../model/realtimeVoice", () => ({
+  RealtimeVoice: class {
+    constructor(...args: unknown[]) {
+      mock.realtimeArgs = args;
+      mock.realtime = args[1];
+    }
+    connect = mock.realtimeConnect;
+    close = mock.close;
+    speak = mock.speak;
+    mute() {}
+    silence() {}
+  },
+}));
+vi.mock("../model/realtimeVoiceClient", () => ({ realtimeSecret: mock.realtimeSecret }));
 vi.mock("../model/localVoice", () => ({
   LocalVoice: class {
     constructor(callbacks: unknown) {
       mock.callbacks = callbacks;
+      mock.localConstructed();
     }
     connect = mock.connect;
     close = mock.close;
@@ -41,6 +61,7 @@ let root: Root, container: HTMLDivElement;
 afterEach(async () => {
   if (root) await act(async () => root.unmount());
   container?.remove();
+  localStorage.removeItem("bycoda.voice");
   vi.clearAllMocks();
 });
 const a = { id: "a", title: "Alpha", cwd: "/a", blocks: [], busy: true } as unknown as Session;
@@ -228,4 +249,68 @@ it("shows the Host's reason when local voice start is rejected with a string", a
   await setup();
   expect(container.textContent).toContain("Voice setup is still running.");
   expect(container.textContent).not.toContain("Local voice could not start.");
+});
+
+it("uses the cloud companion for Grok Voice and routes its tools through the same session checks", async () => {
+  localStorage.setItem("bycoda.voice", JSON.stringify({ enabled: true, mode: "grok" }));
+  const { onSubmit, onStop } = await setup();
+  expect(mock.localConstructed).not.toHaveBeenCalled();
+  expect(mock.realtimeSecret).toHaveBeenCalledExactlyOnceWith("xai");
+  expect(mock.realtimeArgs[0]).toBe("xai");
+  expect(mock.realtimeConnect).toHaveBeenCalledWith(
+    expect.objectContaining({ url: "wss://x", value: "v" }),
+  );
+  expect(await mock.realtime.tool("session_context", {})).toMatchObject({ title: "Alpha" });
+  expect(await mock.realtime.tool("submit_work", { text: " Fix login " })).toEqual({
+    accepted: true,
+  });
+  expect(onSubmit).toHaveBeenCalledExactlyOnceWith("a", "Fix login");
+  expect(await mock.realtime.tool("submit_work", { text: "" })).toMatchObject({ accepted: false });
+  expect(await mock.realtime.tool("stop_work", {})).toEqual({ stopped: true });
+  expect(onStop).toHaveBeenCalledWith("a");
+  await act(async () => {
+    mock.realtime.reply("Merhaba", false);
+    mock.realtime.reply(" dünya", true);
+  });
+  expect(container.textContent).toContain("Merhaba dünya");
+});
+
+it("shows the Host's reason when the cloud companion cannot get a credential", async () => {
+  localStorage.setItem("bycoda.voice", JSON.stringify({ enabled: true, mode: "openai" }));
+  mock.realtimeSecret.mockRejectedValueOnce("OpenAI Realtime is not signed in. Sign in to Codex.");
+  await setup();
+  expect(mock.realtimeArgs[0]).toBe("openai");
+  expect(container.textContent).toContain("OpenAI Realtime is not signed in. Sign in to Codex.");
+  expect(container.textContent).toContain("Start voice");
+});
+
+it("picks the voice session from the panel and keeps it while the active session changes", async () => {
+  const { render, onSubmit } = await setup();
+  // The session picker lists sessions with their project; choosing one pins it.
+  const picker = container.querySelector<HTMLButtonElement>('button[aria-label^="Voice session"]');
+  expect(picker?.getAttribute("aria-label")).toContain("Active session: Alpha");
+  await act(async () => picker!.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
+    item.textContent?.includes("Beta"),
+  );
+  expect(option?.textContent).toContain("b");
+  await act(async () => option!.click());
+  await render("a");
+  await speech("Fix the filter");
+  expect(onSubmit).toHaveBeenLastCalledWith("b", "Fix the filter");
+});
+
+it("ends a live connection when the conversation changes and keeps the panel open", async () => {
+  await setup();
+  expect(mock.connect).toHaveBeenCalledOnce();
+  await act(async () =>
+    localStorage.setItem("bycoda.voice", JSON.stringify({ enabled: true, mode: "grok" })),
+  );
+  await act(async () => window.dispatchEvent(new Event("bycoda:voice-settings")));
+  expect(mock.close).toHaveBeenCalled();
+  expect(container.querySelector('section[aria-label="Voice companion"]')).not.toBeNull();
+  const start = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Start voice"),
+  );
+  expect(start).toBeDefined();
 });

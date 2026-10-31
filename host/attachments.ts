@@ -252,8 +252,38 @@ export async function readAttachmentChunk(
     }
   });
 }
+/** Progress of one reference pass that runs in short slices, so other database
+ * requests run between them instead of waiting behind (or cancelling) a full-database
+ * read. The caller keeps this object and calls again while `pending` is true. */
+export type AttachmentScanResume = {
+  pending?: boolean;
+  scan?: {
+    candidates: Set<string>;
+    referenced: Set<string>;
+    tables: string[];
+    table: number;
+    rowid: number;
+    startedAt: number;
+    /** `PRAGMA data_version` at the start: it moves when another connection writes. */
+    dataVersion: unknown;
+  };
+};
+/** Work per slice before the database queue is released. */
+const SCAN_SLICE_MS = 40;
+const SCAN_ROWS_PER_QUERY = 25;
+/** A pass that takes longer is discarded: references written since its start may be missed. */
+const SCAN_PASS_MAX_MS = 15 * 60 * 1000;
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi;
+
 /** A reference authority must include external drafts/desktop consumers. Unknown
- * consumers return undefined, which suspends deletion rather than guessing. */
+ * consumers return undefined, which suspends deletion rather than guessing.
+ *
+ * Without `resume` the whole reference pass runs in one database scope and is
+ * abandoned if anything writes meanwhile. With `resume` each call runs one short
+ * slice; the pass completes across calls and deletion happens in the last slice. A
+ * reference added to an already scanned row between slices is covered by the
+ * in-process touch lease (`resolveAttachments` touches every attachment a message
+ * uses) and by the external-reference and ownership rechecks in the final phase. */
 export async function collectAttachmentGarbage(
   store: HostStore,
   externalReferences: () =>
@@ -265,9 +295,18 @@ export async function collectAttachmentGarbage(
   eligible?: ReadonlySet<string>,
   onRemoved?: (id: string) => void | Promise<void>,
   shouldContinue: () => boolean | Promise<boolean> = () => true,
+  resume?: AttachmentScanResume,
 ): Promise<string[]> {
+  const abandon = (): string[] => {
+    if (resume) {
+      resume.pending = false;
+      resume.scan = undefined;
+    }
+    return [];
+  };
   return store.db.scope(async () => {
-    if (eligible?.size === 0) return [];
+    if (resume) resume.pending = false;
+    if (eligible?.size === 0) return abandon();
     if (!Number.isFinite(graceMs) || graceMs < 24 * 60 * 60 * 1000)
       throw new Error("Attachment grace period must be at least one day");
     const entries = eligible
@@ -276,72 +315,117 @@ export async function collectAttachmentGarbage(
           if (error.code === "ENOENT") return [];
           throw error;
         });
-    if (attachmentTouchOverflowUntil > now) return [];
-    const external = await externalReferences();
-    if (!external) return [];
-    if (entries.length > 10000) return [];
-    // Flush may fail: never delete if the authoritative durable scan cannot run.
-    await store.flushAll();
-    const candidates = new Set(entries.map((id) => id.toLowerCase()));
-    const referenced = new Set(Array.from(external, (id) => id.toLowerCase()));
-    const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi;
+    if (attachmentTouchOverflowUntil > now) return abandon();
+    if (entries.length > 10000) return abandon();
+    if (resume?.scan && Date.now() - resume.scan.startedAt > SCAN_PASS_MAX_MS) return abandon();
+    const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"';
     const stamp = async () =>
       `${store.changeVersion}:${store.db.admissionVersion}:${(await store.db.prepare("SELECT total_changes() AS changes").get())?.changes}:${(await store.db.prepare("PRAGMA data_version").get())?.data_version}`;
-    const startedStamp = await stamp();
-    const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"';
+    let startedStamp = "";
+    let scan = resume?.scan;
+    if (!scan) {
+      const external = await externalReferences();
+      if (!external) return abandon();
+      // Flush may fail: never delete if the authoritative durable scan cannot run.
+      await store.flushAll();
+      scan = {
+        candidates: new Set(entries.map((id) => id.toLowerCase())),
+        referenced: new Set(Array.from(external, (id) => id.toLowerCase())),
+        tables: (
+          await store.db
+            .prepare(
+              "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            )
+            .all()
+        )
+          .map((table) => String(table.name))
+          .filter(
+            (name) =>
+              !(
+                eligible &&
+                ["attachment_ownership_files", "attachment_ownership_claims"].includes(name)
+              ),
+          ),
+        table: 0,
+        rowid: 0,
+        startedAt: Date.now(),
+        dataVersion: (await store.db.prepare("PRAGMA data_version").get())?.data_version,
+      };
+      if (resume) resume.scan = scan;
+    }
+    // In slices this guards only the slice that completes the pass and deletes.
+    startedStamp = await stamp();
+    const { candidates, referenced } = scan;
     const scanStarted = performance.now();
     let sliceStarted = scanStarted;
     let sliceCharacters = 0;
-    // The SELECT cursor may span yields. Any local or external write invalidates
-    // this scan; no deletion occurs until a stable, complete inventory finishes.
-    for (const table of await store.db
-      .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-      .all()) {
-      if (
-        eligible &&
-        ["attachment_ownership_files", "attachment_ownership_claims"].includes(String(table.name))
-      )
-        continue;
-      for await (const row of store.db
-        .prepare(`SELECT * FROM ${quote(String(table.name))}`)
-        .iterate()) {
-        for (const value of Object.values(row)) {
-          if (value instanceof Uint8Array) return [];
-          if (typeof value !== "string") continue;
-          for (let at = 0; at < value.length; at += 256 * 1024) {
-            // A UUID split at a chunk boundary must still be seen exactly once or
-            // conservatively twice. Only candidate IDs are retained in memory.
-            const chunk = value.slice(Math.max(0, at - 35), at + 256 * 1024);
-            for (const match of chunk.matchAll(uuid)) {
-              const id = match[0].toLowerCase();
-              if (candidates.has(id)) referenced.add(id);
-            }
-            sliceCharacters += chunk.length;
-            if (sliceCharacters >= 256 * 1024 || performance.now() - sliceStarted >= 8) {
-              await new Promise<void>((done) => setImmediate(done));
-              if (
-                !(await shouldContinue()) ||
-                (await stamp()) !== startedStamp ||
-                performance.now() - scanStarted > 120000
-              )
-                return [];
-              sliceStarted = performance.now();
-              sliceCharacters = 0;
-            }
+    /** False when the pass must stop: shutdown, or (one-shot mode) a write or timeout. */
+    const yielded = async (): Promise<boolean> => {
+      await new Promise<void>((done) => setImmediate(done));
+      sliceStarted = performance.now();
+      sliceCharacters = 0;
+      if (!(await shouldContinue())) return false;
+      if (resume) return true;
+      return (await stamp()) === startedStamp && performance.now() - scanStarted <= 120000;
+    };
+    /** Collects candidate ids from one row. False: an opaque value or a stop, so nothing may be deleted. */
+    const inspect = async (row: Record<string, unknown>): Promise<boolean> => {
+      for (const value of Object.values(row)) {
+        if (value instanceof Uint8Array) return false;
+        if (typeof value !== "string") continue;
+        for (let at = 0; at < value.length; at += 256 * 1024) {
+          // A UUID split at a chunk boundary must still be seen exactly once or
+          // conservatively twice. Only candidate IDs are retained in memory.
+          const chunk = value.slice(Math.max(0, at - 35), at + 256 * 1024);
+          for (const match of chunk.matchAll(UUID_PATTERN)) {
+            const id = match[0].toLowerCase();
+            if (candidates.has(id)) referenced.add(id);
           }
-        }
-        if (performance.now() - sliceStarted >= 8) {
-          await new Promise<void>((done) => setImmediate(done));
-          if (
-            !(await shouldContinue()) ||
-            (await stamp()) !== startedStamp ||
-            performance.now() - scanStarted > 120000
-          )
-            return [];
-          sliceStarted = performance.now();
-          sliceCharacters = 0;
+          sliceCharacters += chunk.length;
+          if (sliceCharacters >= 256 * 1024 || performance.now() - sliceStarted >= 8)
+            if (!(await yielded())) return false;
         }
       }
+      return true;
+    };
+    while (scan.table < scan.tables.length) {
+      const name = scan.tables[scan.table]!;
+      let rows: Record<string, unknown>[] | undefined;
+      if (resume) {
+        try {
+          rows = (await store.db
+            .prepare(
+              `SELECT rowid AS "__attachment_scan_rowid", * FROM ${quote(name)} WHERE rowid>? ORDER BY rowid LIMIT ${SCAN_ROWS_PER_QUERY}`,
+            )
+            .all(scan.rowid)) as Record<string, unknown>[];
+        } catch {
+          // A WITHOUT ROWID table cannot be paged by rowid: read it whole in this slice.
+          rows = undefined;
+        }
+      }
+      if (rows) {
+        for (const row of rows) {
+          const { __attachment_scan_rowid: rowid, ...values } = row;
+          if (!(await inspect(values))) return abandon();
+          scan.rowid = Number(rowid);
+        }
+        if (rows.length < SCAN_ROWS_PER_QUERY) {
+          scan.table++;
+          scan.rowid = 0;
+        }
+        if (performance.now() - scanStarted >= SCAN_SLICE_MS && scan.table < scan.tables.length) {
+          if (!(await shouldContinue())) return abandon();
+          resume!.pending = true;
+          return [];
+        }
+        continue;
+      }
+      for await (const row of store.db.prepare(`SELECT * FROM ${quote(name)}`).iterate()) {
+        if (!(await inspect(row))) return abandon();
+        if (performance.now() - sliceStarted >= 8 && !(await yielded())) return abandon();
+      }
+      scan.table++;
+      scan.rowid = 0;
     }
     // Flush newly pending session state before the final revision check. Refresh
     // external ownership after all yields; nothing below this point awaits.
@@ -351,7 +435,14 @@ export async function collectAttachmentGarbage(
     // different connection cannot publish a new reference between them. Ledger
     // removals share this transaction rather than committing per file.
     return await store.transaction(async () => {
+      if (resume) resume.scan = undefined;
       if ((await stamp()) !== startedStamp) return [];
+      // A write by another connection at any point in a sliced pass.
+      if (
+        resume &&
+        (await store.db.prepare("PRAGMA data_version").get())?.data_version !== scan.dataVersion
+      )
+        return [];
       const currentExternal = await externalReferences();
       if (!currentExternal) return [];
       for (const id of currentExternal) referenced.add(id.toLowerCase());
@@ -387,5 +478,8 @@ export async function collectAttachmentGarbage(
           attachmentTouches.delete(key);
       return removed;
     });
+  }).catch((error: unknown) => {
+    abandon();
+    throw error;
   });
 }

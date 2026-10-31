@@ -12,6 +12,11 @@ const backend = vi.hoisted(() => ({
 }));
 vi.mock("./localVoiceClient", () => ({ localVoiceBackend: backend }));
 import { LocalVoice } from "./localVoice";
+/** A voiced (150 Hz) speech-like frame: the VAD requires pitch, not just level. */
+const voicedFrame = () =>
+  Int16Array.from({ length: 1024 }, (_, i) =>
+    Math.round(4000 * Math.sin((2 * Math.PI * 150 * i) / 16000)),
+  );
 const track = { stop: vi.fn(), enabled: true };
 const nodes: any[] = [];
 const node = () => ({ connect: vi.fn(), disconnect: vi.fn(), port: { onmessage: null as any } });
@@ -133,8 +138,7 @@ it("captures and transcribes PCM locally with the app language as a hint, and mu
   const events = callbacks();
   const voice = new LocalVoice(events, "en");
   await voice.connect();
-  for (let i = 0; i < 5; i++)
-    nodes[0].port.onmessage({ data: new Int16Array(1024).fill(4000).buffer });
+  for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
   for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
   await Promise.resolve();
   await Promise.resolve();
@@ -230,8 +234,8 @@ it("smooths normalized microphone RMS without state callbacks and resets on mute
   nodes[0].port.onmessage({ data: new Int16Array(1024).fill(16384).buffer });
   expect(voice.level).toBe(level);
   expect(level.current).toBeCloseTo(0.275);
-  expect(events.state.mock.calls).toEqual([["speaking"]]);
-  events.state.mockClear();
+  // One loud frame without pitch (a click or breath) is not speech.
+  expect(events.state).not.toHaveBeenCalled();
   nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
   expect(level.current).toBeCloseTo(0.22);
   expect(events.state).not.toHaveBeenCalled();
@@ -351,7 +355,7 @@ it("ends a finished sentence at the short pause with Smart Turn and keeps listen
   const events = callbacks();
   const voice = new LocalVoice(events, "tr");
   await voice.connect();
-  const speech = () => nodes[0].port.onmessage({ data: new Int16Array(1024).fill(4000).buffer });
+  const speech = () => nodes[0].port.onmessage({ data: voicedFrame().buffer });
   const quiet = () => nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
   // A mid-sentence pause: the model says "not finished", so nothing is transcribed.
   for (let i = 0; i < 5; i++) speech();

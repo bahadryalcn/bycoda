@@ -80,6 +80,18 @@ export function applyHarnessEvents(session: Session, events: readonly HarnessEve
   let next = session;
   for (let index = 0; index < events.length; index++) {
     const event = events[index];
+    if (event.type === "tool.updated") {
+      // Command output arrives as one update per chunk, each carrying the whole
+      // tail so far; only the last chunk of a run in this batch changes the result.
+      while (
+        index + 1 < events.length &&
+        isSupersededToolUpdate(event, events[index + 1])
+      ) {
+        index++;
+      }
+      next = applyHarnessEvent(next, events[index]);
+      continue;
+    }
     if (event.type !== "message.delta" && event.type !== "reasoning.delta") {
       next = applyHarnessEvent(next, event);
       continue;
@@ -101,6 +113,35 @@ export function applyHarnessEvents(session: Session, events: readonly HarnessEve
     );
   }
   return next;
+}
+
+type ToolUpdatedEvent = Extract<HarnessEvent, { type: "tool.updated" }>;
+
+/**
+ * True when `following` repeats `event` for the same call and only replaces its
+ * output, so applying `event` first changes nothing the second update would not.
+ */
+function isSupersededToolUpdate(event: ToolUpdatedEvent, following: HarnessEvent): boolean {
+  return (
+    following.type === "tool.updated" &&
+    !!event.callId &&
+    following.callId === event.callId &&
+    following.detail !== undefined &&
+    following.title === event.title &&
+    following.kind === event.kind &&
+    following.status === event.status &&
+    following.preview === event.preview &&
+    following.agentModel === event.agentModel &&
+    following.agentPrompt === event.agentPrompt &&
+    !event.fileChanges &&
+    !following.fileChanges &&
+    !event.paths &&
+    !following.paths &&
+    (following.status === undefined ||
+      (following.status !== "completed" &&
+        following.status !== "failed" &&
+        following.status !== "stopped"))
+  );
 }
 
 export type ApplyHarnessEventOptions = {
@@ -1538,9 +1579,12 @@ function capAgentStepText(value: string): string {
 
 function findToolIndex(session: Session, patch: { callId: string; title?: string }): number {
   if (patch.callId) {
-    const byId = session.blocks.findIndex((block) => block.tool?.callId === patch.callId);
     // An explicit call id is authoritative; title similarity is not identity.
-    return byId;
+    // The running call is almost always near the end of a long transcript.
+    for (let index = session.blocks.length - 1; index >= 0; index--) {
+      if (session.blocks[index].tool?.callId === patch.callId) return index;
+    }
+    return -1;
   }
   const needle = normalizeLabel(patch.title || "");
   if (!needle) return -1;

@@ -49,3 +49,45 @@ it("bounds generated text and fails pending readers when the worker exits", asyn
   child.emit("exit", 1);
   expect(await next).toEqual({ done: true, error: "Local voice disconnected." });
 });
+
+it("speaks through ElevenLabs without a Python worker and requires a stored key", async () => {
+  service = new VoiceSpeechService({ cloudKey: async () => undefined });
+  await expect(service.start({ natural: true, engine: "elevenlabs" })).rejects.toThrow(
+    "Add your ElevenLabs API key",
+  );
+  const request = vi.fn(
+    async (_url: unknown, _init?: RequestInit) =>
+      new Response(new Uint8Array(48000 + 10), { status: 200 }),
+  );
+  service = new VoiceSpeechService({
+    cloudKey: async () => "key",
+    request: request as unknown as typeof fetch,
+  });
+  await service.start({ natural: true, engine: "elevenlabs", voiceId: "Voice123" });
+  expect(launch.spawn).not.toHaveBeenCalled();
+  const { id } = service.speak("one", "Merhaba", "tr");
+  expect(String(request.mock.calls[0][0])).toContain("/Voice123/stream");
+  expect(await service.next("one", id)).toMatchObject({ sampleRate: 24000 });
+  expect(await service.next("one", id)).toMatchObject({ sampleRate: 24000 });
+  const last = await service.next("one", id);
+  expect(Buffer.from(last.audio!, "base64")).toHaveLength(10);
+  expect(await service.next("one", id)).toEqual({ done: true });
+  // A newer utterance from the same owner aborts the previous stream.
+  service.speak("one", "Bir");
+  service.speak("one", "İki");
+  expect(request.mock.calls[1][1]?.signal?.aborted).toBe(true);
+  expect(request.mock.calls[2][1]?.signal?.aborted).toBe(false);
+});
+
+it("reports ElevenLabs failures as a final chunk without leaking details", async () => {
+  service = new VoiceSpeechService({
+    cloudKey: async () => "key",
+    request: (async () => new Response("quota for key", { status: 402 })) as typeof fetch,
+  });
+  await service.start({ natural: true, engine: "elevenlabs" });
+  const { id } = service.speak("one", "Merhaba");
+  expect(await service.next("one", id)).toEqual({
+    done: true,
+    error: "ElevenLabs has no credits left for this account.",
+  });
+});

@@ -42,6 +42,7 @@ import {
 } from "../../../../features/connections/model/adoptedSessionCommands";
 import { wakeSharedLocalQueues } from "../../../../features/connections/model/useSharedLocalQueues";
 import { sameQueueValue } from "../../../../features/connections/model/sharedQueue";
+import { showSubmitNotice } from "./submitNotice";
 
 /** Parks the submitted message in the conversation's queue: it is sent when the
  * conversation is free. A queue-row action already owns retained content, so it
@@ -90,7 +91,7 @@ export function steerBusySubmit(
   input: SubmitInput,
   pre: SubmitPreflight,
 ): SubmissionAcceptance | undefined {
-  const { dismissNoticesForContinuedSession, enqueueHarnessEvent, flushHarnessEvents } = ctx;
+  const { dismissNoticesForContinuedSession } = ctx;
   const { turnGen } = ctx.refs;
   const { sessionId, text, attachments, options } = input;
   const {
@@ -218,11 +219,7 @@ export function steerBusySubmit(
       options?.queuedMessageId &&
       options.followUpBehavior === "steer"
     ) {
-      enqueueHarnessEvent(sessionId, {
-        type: "status",
-        text: "/operator starts a new turn after the current turn finishes.",
-      });
-      flushHarnessEvents();
+      showSubmitNotice(sessionId, "/operator starts a new turn after the current turn finishes.");
       return false;
     }
     // Background work with the agent yielded may never end (a dev
@@ -249,11 +246,10 @@ export function steerBusySubmit(
     if (!isLiveHarness(running.harness) || !canSteerHarness(running.harness)) {
       // Harnesses that cannot steer (fx) used to drop the message on the
       // floor here, so a follow-up sent mid-turn just vanished. Say so.
-      enqueueHarnessEvent(sessionId, {
-        type: "status",
-        text: `${running.harness} cannot take a follow-up mid-turn — wait for this turn to finish, or stop it first.`,
-      });
-      flushHarnessEvents();
+      showSubmitNotice(
+        sessionId,
+        `${running.harness} cannot take a follow-up mid-turn — wait for this turn to finish, or stop it first.`,
+      );
       return false;
     }
     dismissNoticesForContinuedSession(sessionId);
@@ -401,22 +397,45 @@ export function steerBusySubmit(
           return false;
         }
         if (error instanceof TurnNotReadyError) {
+          // The provider is not taking follow-ups right now: the turn has just
+          // finished, or has not reached the provider yet. Either way the message
+          // goes to the queue, ahead of anything queued after it when it came from
+          // a queue row, and the wording does not claim which of the two it was.
+          const fromRow = !!options?.queuedMessageId;
           setSessions((prev) =>
             prev.map((entry) => {
               if (entry.id !== sessionId) return entry;
-              return appendQueuedMessage(
-                { ...entry, blocks: entry.blocks.filter((block) => block.id !== steerUserId) },
-                { id: messageId, text, attachments, noteCard, handoffCard, intent,
-                  modelTarget: queuedModelTarget(storedCurrent) },
-              );
+              const cleaned = {
+                ...entry,
+                blocks: entry.blocks.filter((block) => block.id !== steerUserId),
+              };
+              const row = {
+                id: messageId,
+                text,
+                attachments,
+                noteCard,
+                handoffCard,
+                intent,
+                modelTarget: queuedModelTarget(storedCurrent),
+              };
+              const parked = appendQueuedMessage(cleaned, row);
+              if (!fromRow) return parked;
+              return {
+                ...parked,
+                queuedMessages: [
+                  row,
+                  ...(parked.queuedMessages ?? []).filter((queued) => queued.id !== messageId),
+                ],
+              };
             }),
           );
-          updateDeliveryProgress(sessionId, progress, "rejected",
-            t("The turn finished. Your message will be sent next."));
-          enqueueHarnessEvent(sessionId, {
-            type: "status", text: t("The turn finished. Your message will be sent next."),
-          });
-          flushHarnessEvents();
+          const paused = sessionsRef.current.find((entry) => entry.id === sessionId)?.queueStatus;
+          const note =
+            paused === "paused" || paused === "restored"
+              ? t("The provider is not taking follow-ups right now. Your message is in the paused queue; resume the queue to send it.")
+              : t("The provider is not taking follow-ups right now. Your message is queued and will be sent next.");
+          updateDeliveryProgress(sessionId, progress, "rejected", note);
+          showSubmitNotice(sessionId, note);
           wakeSharedLocalQueues([sessionId]);
           // A queue action must not remove this reinserted row as an accepted steer.
           return !options?.queuedMessageId;
@@ -427,11 +446,10 @@ export function steerBusySubmit(
             : `${running.harness} could not steer the active turn`;
         holdFollowUp();
         updateDeliveryProgress(sessionId, progress, "rejected", message);
-        enqueueHarnessEvent(sessionId, {
-          type: "status",
-          text: `${t("The follow-up could not be delivered. It is saved in the paused queue.")} ${message}`,
-        });
-        flushHarnessEvents();
+        showSubmitNotice(
+          sessionId,
+          `${t("The follow-up could not be delivered. It is saved in the paused queue.")} ${message}`,
+        );
         return false;
       }
     })();

@@ -540,7 +540,9 @@ describe("Composer question focus", () => {
     );
     expect(onSubmit).toHaveBeenCalledWith("/clear", [], { intent: "default" });
     expect(textarea.value).toBe("/clear");
-    expect(document.body.textContent).toContain("Stop the current turn");
+    // An idle session that refuses must not claim a turn is running (U16).
+    expect(document.body.textContent).toContain("cannot be cleared right now");
+    expect(document.body.textContent).not.toContain("Stop the current turn");
   });
 
   async function typeInto(textarea: HTMLTextAreaElement, value: string) {

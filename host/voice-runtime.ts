@@ -12,11 +12,17 @@ export type VoiceRuntimeConfig = {
   /** Natural voice model. Omitted means Supertonic 3: fast, CPU, 31 languages.
    * VoxCPM2 sounds richer but needs a GPU to keep up and ~6 GB of its memory. */
   engine?: VoiceEngine;
+  /** ElevenLabs voice ID; omitted uses the default multilingual voice. */
+  voiceId?: string;
   /** Where speech models run. Omitted means automatic: GPU when usable. */
   device?: VoiceDevice;
 };
 export type VoiceDevice = "auto" | "gpu" | "cpu";
-export type VoiceEngine = "supertonic" | "voxcpm2";
+/** ElevenLabs runs in the cloud: only reply text leaves this computer, and it
+ * needs no Python speech package or model. */
+export type VoiceEngine = "supertonic" | "voxcpm2" | "elevenlabs";
+/** Whether a cloud voice provider has a stored (or environment) API key. */
+export type VoiceCloudKeyStatus = (provider: "elevenlabs") => Promise<boolean>;
 export type VoiceRuntimeStatus = {
   python?: string;
   whisperPath?: string;
@@ -50,8 +56,16 @@ export function voiceRuntimeConfig(value: unknown): VoiceRuntimeConfig {
     result.natural = input.natural;
   }
   if (input.engine !== undefined && input.engine !== "supertonic") {
-    if (input.engine !== "voxcpm2") throw new Error("Invalid voice engine.");
+    if (input.engine !== "voxcpm2" && input.engine !== "elevenlabs")
+      throw new Error("Invalid voice engine.");
     result.engine = input.engine;
+  }
+  if (input.voiceId !== undefined && input.voiceId !== "") {
+    if (typeof input.voiceId !== "string" || !/^[A-Za-z0-9]{1,64}$/.test(input.voiceId))
+      throw new Error("Invalid voice ID.");
+    if (result.engine === "elevenlabs") result.voiceId = input.voiceId;
+    // Supertonic ships ten speakers: M1–M5 and F1–F5.
+    else if (!result.engine && /^[MF][1-5]$/.test(input.voiceId)) result.voiceId = input.voiceId;
   }
   if (input.device !== undefined && input.device !== "auto") {
     if (input.device !== "gpu" && input.device !== "cpu")
@@ -111,7 +125,7 @@ if c.get('natural', True) and c.get('engine') == 'voxcpm2':
     if not t: missing.append('VoxCPM2 model')
     accelerated = torch_cuda()
     if c.get('device') == 'gpu' and available('voxcpm') and not accelerated: missing.append('GPU support (CUDA)')
-elif c.get('natural', True):
+elif c.get('natural', True) and c.get('engine') != 'elevenlabs':
     if not available('supertonic'): missing.append('supertonic')
     if not supertonic_path(): missing.append('Supertonic model')
 print(json.dumps({**({'python': sys.executable} if (3, 10) <= sys.version_info[:2] < (3, 13) else {}), 'whisperPath': w, 'ttsPath': t, **({} if accelerated is None else {'accelerated': accelerated}), 'missing': missing, 'ready': not missing}))
@@ -179,7 +193,12 @@ function inspect(
 }
 
 /** Detect only; never install packages, download models or open the microphone. */
-export async function inspectVoiceRuntime(value?: unknown): Promise<VoiceRuntimeStatus> {
+/** `cloudKey` lets the Host report a missing ElevenLabs key; setup omits it
+ * because installation does not need the key. */
+export async function inspectVoiceRuntime(
+  value?: unknown,
+  options: { cloudKey?: VoiceCloudKeyStatus } = {},
+): Promise<VoiceRuntimeStatus> {
   const config = voiceRuntimeConfig(value);
   const candidates = config.python
     ? [config.python]
@@ -259,10 +278,23 @@ export async function inspectVoiceRuntime(value?: unknown): Promise<VoiceRuntime
       "Python 3.10–3.12",
       "faster-whisper",
       "Whisper model",
-      ...(config.natural === false ? [] : ["voxcpm", "VoxCPM2 model"]),
+      ...(config.natural === false || config.engine === "elevenlabs"
+        ? []
+        : config.engine === "voxcpm2"
+          ? ["voxcpm", "VoxCPM2 model"]
+          : ["supertonic", "Supertonic model"]),
     ],
     ready: false,
   };
+  if (
+    config.natural !== false &&
+    config.engine === "elevenlabs" &&
+    options.cloudKey &&
+    !(await options.cloudKey("elevenlabs").catch(() => false))
+  ) {
+    status.missing = [...status.missing, "ElevenLabs API key"];
+    status.ready = false;
+  }
   const found = await gpu;
   if (found) status.gpu = found.name;
   else if (config.device === "gpu") {

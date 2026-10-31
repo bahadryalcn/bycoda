@@ -39,3 +39,22 @@ it("requires setup support and targets only this computer for install and progre
     { kind: "local" },
   );
 });
+
+it("keeps cloud voice keys on this computer's Host and only reads their status", async () => {
+  await localVoiceBackend.cloudStatus();
+  expect(request).toHaveBeenLastCalledWith(
+    "",
+    "voice.cloud.v1",
+    "voice.cloud.status",
+    {},
+    { kind: "local" },
+  );
+  await localVoiceBackend.setCloudKey("elevenlabs", null);
+  expect(request).toHaveBeenLastCalledWith(
+    "",
+    "voice.cloud.v1",
+    "voice.cloud.setKey",
+    { provider: "elevenlabs", key: null },
+    { kind: "local" },
+  );
+});

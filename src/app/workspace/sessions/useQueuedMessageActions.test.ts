@@ -27,6 +27,14 @@ const shared = vi.hoisted(() => ({
 }));
 vi.mock("../../../features/usage/model/usageBudgetReadings", () => ({
   assertUsageBudgets: budget.assert,
+  // The send gate reads the budget itself: a refusal from `assert` is a budget reached.
+  createBudgetReader: () => async () => {
+    try {
+      return (await budget.assert()) ?? { state: "ok" };
+    } catch {
+      return { state: "exceeded" };
+    }
+  },
   blockingUsageBudgets: budget.rules,
 }));
 vi.mock("../../../features/connections/model/useSharedLocalQueues", () => ({

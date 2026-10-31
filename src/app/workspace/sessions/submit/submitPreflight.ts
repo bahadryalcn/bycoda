@@ -34,32 +34,27 @@ import { isNativeCommandPrompt } from "../../../../features/skills/model/skills"
 import { isEqualOrInside } from "../../../../shared/lib/paths";
 import { withPlanBuildTarget } from "../../helpers/sessionHelpers";
 import { needsSessionWorkspace } from "../../../../features/workspaces/model/sessionWorkspace";
+import { t } from "../../../../shared/i18n";
+import { showSubmitNotice } from "./submitNotice";
 
 export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): PreflightResult {
-  const {
-    workspaceNavigation,
-    enqueueHarnessEvent,
-    flushHarnessEvents,
-    setProviderAccountRecovery,
-  } = ctx;
+  const { workspaceNavigation, setProviderAccountRecovery } = ctx;
   const { editedResends, removingSessionIds, switchingWorktrees, removingWorktreePaths } = ctx.refs;
   const { sessionId, text, attachments, options } = input;
-  if (editedResends.isActive(sessionId)) return { settled: true, value: false };
-  // Apply received output and terminal state before reading the next turn.
-  flushHarnessEvents();
-  // A handoff block no running submit owns would refuse every send below.
-  repairStaleHandoff(sessionId);
+  // A refusal says why, as a notice that stays in the transcript: a status line
+  // folds into the running turn's activity and is gone within seconds.
   const refuse = (text: string): PreflightResult => {
-    enqueueHarnessEvent(sessionId, { type: "status", text });
-    flushHarnessEvents();
+    showSubmitNotice(sessionId, text);
     return { settled: true, value: false };
   };
+  if (editedResends.isActive(sessionId))
+    return refuse(t("This conversation is being changed. Send again in a moment."));
+  // Apply received output and terminal state before reading the next turn.
+  ctx.flushHarnessEvents();
+  // A handoff block no running submit owns would refuse every send below.
+  repairStaleHandoff(sessionId);
   const controlError = orchestrator.submissionError(sessionId, options?.managed);
-  if (controlError) {
-    enqueueHarnessEvent(sessionId, { type: "status", text: controlError });
-    flushHarnessEvents();
-    return { settled: true, value: false };
-  }
+  if (controlError) return refuse(controlError);
   if (options?.managed) {
     const target = sessionsRef.current.find((s) => s.id === sessionId);
     if (
@@ -185,19 +180,18 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
       if (run && ["active", "paused"].includes(run.status))
         throw new Error("Stop the current orchestration run before preparing another proposal.");
     } catch (error) {
-      enqueueHarnessEvent(sessionId, {
-        type: "status",
-        text: error instanceof Error ? error.message : String(error),
-      });
-      flushHarnessEvents();
-      return { settled: true, value: false };
+      return refuse(error instanceof Error ? error.message : String(error));
     }
   }
   const approvedPlan = options?.planBlockId
     ? current.blocks.find((block) => block.id === options.planBlockId && block.role === "plan")
     : messagePlan;
   if (intent === "build" && (!approvedPlan || current.busy || !isBuildablePlan(approvedPlan)))
-    return { settled: true, value: false };
+    return refuse(
+      current.busy
+        ? t("Wait for the current turn to finish before building the plan.")
+        : t("This plan can no longer be built."),
+    );
   if (options?.queuedMessageId) {
     const mode = options.followUpBehavior === "steer" ? "steer" : "dispatch";
     if (!queuedMessageForSubmit(current, options.queuedMessageId, mode)) {
@@ -210,8 +204,8 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   if (!text.trim() && attachments.length === 0 && !noteCard && !handoffCard) {
     return { settled: true, value: false };
   }
-  if (isPreparingHandoff(current))
-    return refuse("Message not sent: wait for the provider handoff to finish.");
+  // A handoff in progress is not a reason to refuse: the caller queues the
+  // message behind it (see `isPreparingHandoff(pre.current)` in useSubmitSession).
   saveRecentModelChoice(current.harness, current.model);
   const initialWorkCwd = sessionWorkCwd(current);
   const createDraftWorktree = needsSessionWorkspace(current);
@@ -236,12 +230,7 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
       current.inboxAsk ||
       orchestrator.run(sessionId))
   ) {
-    enqueueHarnessEvent(sessionId, {
-      type: "status",
-      text: "Use /operator from a regular session turn, outside an orchestration run.",
-    });
-    flushHarnessEvents();
-    return { settled: true, value: false };
+    return refuse("Use /operator from a regular session turn, outside an orchestration run.");
   }
   const operatorAccess = operatorCommand.matched || operatorEnabledInThread(current.blocks);
   const delegation =
@@ -258,11 +247,7 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
       : !delegation.request
         ? `Add a request after /${delegation.name}.`
         : undefined;
-  if (delegationError) {
-    enqueueHarnessEvent(sessionId, { type: "status", text: delegationError });
-    flushHarnessEvents();
-    return { settled: true, value: false };
-  }
+  if (delegationError) return refuse(delegationError);
   const promptText = operatorCommand.matched
     ? operatorCommand.text.trim() || "Explain what you can do in bycoda with the app CLI."
     : (delegation?.prompt ?? submittedText);

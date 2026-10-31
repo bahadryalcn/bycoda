@@ -224,11 +224,14 @@ describe("desktop window ownership", () => {
       live.beat({ clientId: "owner", sessions: [], writers: { version: 1, sessionIds: ["warm"] } });
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const timed = expect(live.retireWriters("warm")).resolves.toBeUndefined();
+      // The window stops reporting the writer without acknowledging the request.
+      live.beat({ clientId: "owner", sessions: [], writers: { version: 1, sessionIds: [] } });
       await vi.advanceTimersByTimeAsync(DESKTOP_WRITER_TRANSFER_MS);
       await timed;
       expect(warn).toHaveBeenCalled();
       warn.mockRestore();
       expect(live.beat({ clientId: "owner", sessions: [] }).commands).toEqual([]);
+      live.beat({ clientId: "owner", sessions: [], writers: { version: 1, sessionIds: ["warm"] } });
       const closed = expect(live.retireWriters("warm")).rejects.toThrow("Host closed");
       live.closeWriterTransfers();
       await closed;

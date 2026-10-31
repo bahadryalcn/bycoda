@@ -9,8 +9,8 @@ import {
 import type { Session } from "../../../features/sessions/model/session";
 import {
   persistFingerprint,
+  saveSessionIdle,
   shouldPersistSession,
-  upsertSession,
   upsertSessionLive,
   type SessionSummary,
 } from "../../../features/sessions/data/sessionStore";
@@ -117,11 +117,13 @@ export function useSessionPersistence({
     // re-diff its whole transcript under the store lock, stalling the next load.
     if (lastPersisted.current.get(session.id) === revision && !needsSessionOutputWrite(session))
       return;
-    void upsertSession(session)
-      .then((summary) => {
-        if (!summary) return;
+    // Turn end and metadata changes send a delta when a baseline exists.
+    void saveSessionIdle(session)
+      .then((saved) => {
+        if (!saved) return;
         lastPersisted.current.set(session.id, revision);
-        if (summary.cwd === sidebarCwdRef.current) {
+        const summary = saved.summary;
+        if (summary && summary.cwd === sidebarCwdRef.current) {
           setHistory((current) => mergeProjectHistorySummary(current, summary));
         }
       })
@@ -220,8 +222,7 @@ export function useSessionPersistence({
           )
             return;
           if (session.busy) {
-            // A running session saves incrementally; the full replace is kept for
-            // the turn end, when it stops being busy.
+            // A running session saves through the bounded live slot.
             await upsertSessionLive(session, {
               shouldWrite: () =>
                 !removingSessionIds.current.has(session.id) &&
@@ -234,10 +235,11 @@ export function useSessionPersistence({
             }).catch((error) => console.warn("App operation failed", error));
             return;
           }
-          const summary = await upsertSession(session).catch(() => null);
-          if (!summary) return;
+          const saved = await saveSessionIdle(session).catch(() => null);
+          if (!saved) return;
           lastPersisted.current.set(session.id, revision);
-          if (summary.cwd === sidebarCwdRef.current) {
+          const summary = saved.summary;
+          if (summary && summary.cwd === sidebarCwdRef.current) {
             setHistory((current) => mergeProjectHistorySummary(current, summary));
           }
         }),

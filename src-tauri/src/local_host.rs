@@ -194,13 +194,16 @@ fn local_device_name() -> String {
 /// is not also acting as someone else's remote machine, so it is not an
 /// error.
 ///
-/// `remote_machines`/`remote_connect` are themselves plain, non-`async`
-/// functions under `#[tauri::command(async)]` (Tauri runs them on a
-/// blocking thread; the attribute does not require an `async fn` body) —
-/// so this command follows the same shape and calls them directly, with
-/// no `.await`.
-#[tauri::command(async)]
-pub fn local_host_connect(app: AppHandle) -> Result<Option<Machine>, String> {
+/// The linking work blocks on lifecycle probes, the launcher process and
+/// Host RPC, so the command runs it on the blocking pool; `remote_machines` is
+/// a short store read and is called directly.
+#[tauri::command]
+pub async fn local_host_connect(app: AppHandle) -> Result<Option<Machine>, String> {
+    crate::harness::run_blocking("local_host_connect", move || local_host_connect_blocking(app))
+        .await
+}
+
+pub(crate) fn local_host_connect_blocking(app: AppHandle) -> Result<Option<Machine>, String> {
     let Some(data_dir) = host_data_dir() else {
         return Ok(None);
     };
@@ -279,8 +282,15 @@ fn updating(data_dir: &Path) -> bool {
 
 /// Polled by the app-wide notice. An install or update in progress stops the
 /// host on purpose, so it is reported as `updating`, not `stopped`.
-#[tauri::command(async)]
-pub fn local_host_status() -> LocalHostStatus {
+#[tauri::command]
+pub async fn local_host_status() -> LocalHostStatus {
+    // The probes read the Host's lifecycle files and make bounded HTTP calls.
+    tauri::async_runtime::spawn_blocking(local_host_status_blocking)
+        .await
+        .unwrap_or(LocalHostStatus { state: "unknown" })
+}
+
+fn local_host_status_blocking() -> LocalHostStatus {
     let Some(data_dir) = host_data_dir() else {
         return LocalHostStatus { state: "absent" };
     };
@@ -340,61 +350,64 @@ static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// it again. Falls back to the host's own `service install`, which starts an
 /// existing service and only (re)creates a missing one; it also returns early
 /// when a host already answers.
-#[tauri::command(async)]
-pub fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String> {
-    let _guard = STARTING
-        .try_lock()
-        .map_err(|_| "This computer's host is already starting.".to_string())?;
-    let data_dir = host_data_dir().ok_or("Could not find this computer's host folder.")?;
-    let (program, base_args) =
-        launcher_command(&data_dir).ok_or("bycoda Host is not installed on this computer.")?;
-    // One bounded probe, no retry: a host that answers needs no restart. A
-    // failed probe is either Stopped (service not running) or Unconfirmed
-    // (corrupt running.json, port reused by another app, hung Host); both still
-    // go through the idempotent install/start path, which returns early when a
-    // Host really answers.
-    let stopped = match probe_lifecycle_status(&data_dir) {
-        Ok(_) => None,
-        Err(error) => Some(error == LifecycleProbeError::Stopped),
-    };
-    if let Some(stopped) = stopped {
-        if crate::debug_profile::profile_id().is_some() {
-            if stopped {
-                return Err(
-                    "The development host stopped. Restart pnpm dev:native for this workspace."
-                        .into(),
-                );
-            }
-        } else {
-            if updating(&data_dir) {
-                return Err(
-                    "The host on this computer is being updated. Try again when it finishes."
-                        .into(),
-                );
-            }
-            // Starting the task is a no-op for a running or hung process, so only
-            // wait for it when the host was actually stopped.
-            let started = stopped
-                && start_service()
-                && wait_until_responding(&data_dir, Duration::from_secs(20));
-            if !started {
-                let port = running_port(&data_dir).unwrap_or(3776).to_string();
-                run_launcher(
-                    &program,
-                    &base_args,
-                    &["service", "install", "--port", &port],
-                    Duration::from_secs(60),
-                );
-                if !wait_until_responding(&data_dir, Duration::from_secs(10)) {
-                    return Err(format!(
-                        "The host on this computer did not start. Check {}.",
-                        data_dir.join("host.log").display()
-                    ));
+#[tauri::command]
+pub async fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String> {
+    crate::harness::run_blocking("local_host_start", move || {
+        let _guard = STARTING
+            .try_lock()
+            .map_err(|_| "This computer's host is already starting.".to_string())?;
+        let data_dir = host_data_dir().ok_or("Could not find this computer's host folder.")?;
+        let (program, base_args) =
+            launcher_command(&data_dir).ok_or("bycoda Host is not installed on this computer.")?;
+        // One bounded probe, no retry: a host that answers needs no restart. A
+        // failed probe is either Stopped (service not running) or Unconfirmed
+        // (corrupt running.json, port reused by another app, hung Host); both still
+        // go through the idempotent install/start path, which returns early when a
+        // Host really answers.
+        let stopped = match probe_lifecycle_status(&data_dir) {
+            Ok(_) => None,
+            Err(error) => Some(error == LifecycleProbeError::Stopped),
+        };
+        if let Some(stopped) = stopped {
+            if crate::debug_profile::profile_id().is_some() {
+                if stopped {
+                    return Err(
+                        "The development host stopped. Restart pnpm dev:native for this workspace."
+                            .into(),
+                    );
+                }
+            } else {
+                if updating(&data_dir) {
+                    return Err(
+                        "The host on this computer is being updated. Try again when it finishes."
+                            .into(),
+                    );
+                }
+                // Starting the task is a no-op for a running or hung process, so only
+                // wait for it when the host was actually stopped.
+                let started = stopped
+                    && start_service()
+                    && wait_until_responding(&data_dir, Duration::from_secs(20));
+                if !started {
+                    let port = running_port(&data_dir).unwrap_or(3776).to_string();
+                    run_launcher(
+                        &program,
+                        &base_args,
+                        &["service", "install", "--port", &port],
+                        Duration::from_secs(60),
+                    );
+                    if !wait_until_responding(&data_dir, Duration::from_secs(10)) {
+                        return Err(format!(
+                            "The host on this computer did not start. Check {}.",
+                            data_dir.join("host.log").display()
+                        ));
+                    }
                 }
             }
         }
-    }
-    local_host_connect(app)
+        local_host_connect_blocking(app)
+    })
+    .await
 }
 
 fn wait_until_responding(data_dir: &Path, timeout: Duration) -> bool {

@@ -1,8 +1,8 @@
 import type { SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 import {
-  assertUsageBudgets,
   blockingUsageBudgets,
+  createBudgetReader,
 } from "../../../../features/usage/model/usageBudgetReadings";
 import {
   holdUndeliveredFollowUp,
@@ -10,6 +10,8 @@ import {
 } from "../../../../features/sessions/model/messageQueue";
 import { getSessions, setSessions } from "../../../../features/sessions/model/sessionsStore";
 import { t } from "../../../../shared/i18n";
+import { beginSendStarting, claimStartingGeneration } from "./submitStarting";
+import { showSubmitNotice } from "./submitNotice";
 import type { Session } from "../../../../features/sessions/model/session";
 
 function holdRejectedQueuedHead(session: Session, messageId: string | undefined): Session {
@@ -18,9 +20,49 @@ function holdRejectedQueuedHead(session: Session, messageId: string | undefined)
     : session;
 }
 
+/**
+ * A budget the user set to block stops a send only when its usage is known to
+ * be over the limit. A reading that cannot be verified, or a scan that takes
+ * longer than this, warns and lets the message go out.
+ */
+export const USAGE_CHECK_WAIT_MS = 3000;
+
+type BudgetCheck = { exceeded?: { label: string }; unverified?: { label: string } };
+
+async function checkSendBudgets(session: Session): Promise<BudgetCheck> {
+  const matching = blockingUsageBudgets(session);
+  if (!matching.length) return {};
+  const reader = createBudgetReader(
+    matching.some((budget) => budget.scope === "machine")
+      ? [...getSessions().filter((current) => current.id !== session.id), session]
+      : [session],
+  );
+  const read = Promise.all(
+    matching.map(async (budget) => ({ budget, reading: await reader(budget) })),
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const readings = await Promise.race([
+      read,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), USAGE_CHECK_WAIT_MS);
+      }),
+    ]);
+    if (!readings) return { unverified: { label: matching[0].label } };
+    const exceeded = readings.find(({ reading }) => reading.state === "exceeded");
+    if (exceeded) return { exceeded: { label: exceeded.budget.label } };
+    const unknown = readings.find(({ reading }) => reading.state === "unknown");
+    return unknown ? { unverified: { label: unknown.budget.label } } : {};
+  } catch {
+    return { unverified: { label: matching[0].label } };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const pendingChecks = new Map<string, number>();
 export function isUsageBudgetChecking(sessionId: string, generation: number | undefined): boolean {
-  return generation != null && pendingChecks.get(sessionId) === generation;
+  return pendingChecks.get(sessionId) === (generation ?? 0);
 }
 
 /** Validate before committing a user turn, title generation, worktrees or provider calls. */
@@ -44,30 +86,37 @@ export function gateUsageBudget(
     return false;
   }
   const { sessionId, options } = input;
-  const { turnGen } = ctx.refs;
-  const gen = (turnGen.current.get(sessionId) ?? 0) + 1;
-  turnGen.current.set(sessionId, gen);
+  // A running turn that this send replaces keeps its own generation and busy state.
+  const { gen, isCurrent } = claimStartingGeneration(ctx, sessionId, pre.current.busy);
   pendingChecks.set(sessionId, gen);
-  const isCurrent = () => turnGen.current.get(sessionId) === gen;
-  setSessions((all) => all.map((s) => (s.id === sessionId ? { ...s, busy: true } : s)));
+  // Busy and "preparing": Stop works and a second message is queued, not lost.
+  const sending = beginSendStarting(ctx, sessionId, !!pre.current.busy);
   let accepted = false;
   const release = (rejected = false) => {
-    if (isCurrent())
+    if (isCurrent() && rejected)
       setSessions((all) =>
-        all.map((s) =>
-          s.id === sessionId
-            ? {
-                ...(rejected ? holdRejectedQueuedHead(s, options?.queuedMessageId) : s),
-                busy: false,
-              }
-            : s,
-        ),
+        all.map((s) => (s.id === sessionId ? holdRejectedQueuedHead(s, options?.queuedMessageId) : s)),
       );
+    sending.release(isCurrent());
   };
   return (async () => {
     try {
-      await assertUsageBudgets(pre.current);
+      const checked = await checkSendBudgets(pre.current);
       if (!isCurrent()) return false;
+      if (checked.exceeded)
+        throw new Error(
+          `${t("Usage budget")}: ${checked.exceeded.label}. ${t(
+            "Budget reached. Edit or remove the budget in Usage settings to continue.",
+          )}`,
+        );
+      if (checked.unverified)
+        showSubmitNotice(
+          sessionId,
+          t(
+            "Usage budget: {p0}. Usage could not be verified, so the message was sent anyway. Check Usage settings.",
+            { p0: checked.unverified.label },
+          ),
+        );
       const latest = getSessions().find((s) => s.id === sessionId);
       if (
         !latest ||

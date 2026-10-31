@@ -1,6 +1,6 @@
 import { useLayoutEffect, useReducer, useRef } from "react";
 import { createStore } from "zustand/vanilla";
-import type { Session } from "./session";
+import type { Block, Session } from "./session";
 import { sameBlocksIgnoringStreamingText } from "./stableBlocks";
 
 /**
@@ -190,7 +190,50 @@ export function isTextOnlyChange(shell: readonly Session[], next: readonly Sessi
         return false;
       }
     }
-    if (!sameBlocksIgnoringStreamingText(a.blocks, b.blocks)) return false;
+    if (
+      !sameBlocksIgnoringStreamingText(a.blocks, b.blocks) &&
+      !sameBlocksIgnoringLiveToolOutput(a.blocks, b.blocks)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * True when `next` differs from `previous` only by the output of one tool call
+ * that is still running: the same block with the same fields, except for the
+ * output text growing. Like streamed text, the shell can skip these frames; the
+ * pane showing the call reads the live store, and the call's completion changes
+ * its status, which reaches the shell.
+ */
+function sameBlocksIgnoringLiveToolOutput(previous: Block[], next: Block[]): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+  let changed = -1;
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    if (previous[index] === next[index]) continue;
+    if (changed >= 0) return false;
+    changed = index;
+  }
+  if (changed < 0) return true;
+  const a = previous[changed];
+  const b = next[changed];
+  if (a.role !== "tool" || b.role !== "tool" || !a.tool || !b.tool) return false;
+  if (a.id !== b.id || !a.streaming || !b.streaming) return false;
+  return (
+    sameFieldsExcept(a, b, "tool") &&
+    sameFieldsExcept(a.tool, b.tool, "detail", "outputTruncated")
+  );
+}
+
+function sameFieldsExcept<T extends object>(a: T, b: T, ...ignored: string[]): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of ignored) keys.delete(key);
+  for (const key of keys) {
+    if (!Object.is((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) {
+      return false;
+    }
   }
   return true;
 }
@@ -233,9 +276,26 @@ export function useShellSessions(): Session[] {
 /** `useSession` for a session pane. A hidden pane follows the shell instead of the
  * store: it skips streamed-text frames (its transcript is frozen while hidden) but
  * still receives status, approvals, tools and the accumulated text. */
-export function usePaneSession(id: string, live: boolean): Session | undefined {
+export function usePaneSession(id: string | undefined, live: boolean): Session | undefined {
   return useStoreValue(live ? store.subscribe : subscribeShell, () =>
     selectSessionById(live ? store.getState().sessions : shell, id),
+  );
+}
+
+/**
+ * The blocks `usePaneSession` would return, or `undefined` while `enabled` is
+ * off. A disabled subscription never re-renders its component, so a caller can
+ * take live blocks only while it needs them.
+ */
+export function usePaneSessionBlocks(
+  id: string | undefined,
+  live: boolean,
+  enabled: boolean,
+): Block[] | undefined {
+  return useStoreValue(
+    live ? store.subscribe : subscribeShell,
+    () => (live ? store.getState().sessions : shell),
+    (sessions) => (enabled ? selectSessionById(sessions, id)?.blocks : undefined),
   );
 }
 

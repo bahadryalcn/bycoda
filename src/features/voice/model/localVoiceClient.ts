@@ -10,9 +10,11 @@ export type VoiceRuntimeConfig = {
   natural?: boolean;
   /** Natural voice model; omitted means Supertonic 3. */
   engine?: VoiceEngine;
+  /** ElevenLabs voice ID (engine "elevenlabs" only). */
+  voiceId?: string;
   device?: VoiceDevice;
 };
-export type VoiceEngine = "supertonic" | "voxcpm2";
+export type VoiceEngine = "supertonic" | "voxcpm2" | "elevenlabs";
 /** Where speech models run; "auto" uses a supported NVIDIA GPU when available. */
 export type VoiceDevice = "auto" | "gpu" | "cpu";
 export type VoiceRuntimeStatus = {
@@ -34,6 +36,12 @@ export type VoiceSetupStatus = {
   detail?: string;
 };
 
+export type VoiceCloudProvider = "elevenlabs";
+export type VoiceCloudStatus = { elevenlabs: boolean };
+function cloudRequest<T>(method: string, params: Record<string, unknown> = {}) {
+  // Keys stay on this desktop's Host, like microphone processing.
+  return hostToolRequest<T>("", "voice.cloud.v1", method, params, { kind: "local" });
+}
 function request<T>(method: string, params: Record<string, unknown> = {}) {
   // Microphone processing stays on this desktop even when the active project is remote.
   return hostToolRequest<T>("", "voice.local.v1", method, params, { kind: "local" });
@@ -87,6 +95,11 @@ export const localVoiceBackend = {
       ...(language ? { language } : {}),
       endpoint: true,
     }),
+  /** Whether a cloud voice key is stored on this computer's Host; never the key itself. */
+  cloudStatus: () => cloudRequest<VoiceCloudStatus>("voice.cloud.status"),
+  /** Verifies and stores a key in the Host's encrypted vault; `null` removes it. */
+  setCloudKey: (provider: VoiceCloudProvider, key: string | null) =>
+    cloudRequest<VoiceCloudStatus>("voice.cloud.setKey", { provider, key }),
   keepAlive: (lease: string) => request<{ ready: boolean }>("voice.local.keepAlive", { lease }),
   release: (lease: string) => request("voice.local.release", { lease }),
 };

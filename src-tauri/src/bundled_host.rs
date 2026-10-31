@@ -613,7 +613,7 @@ fn ensure_once(app: &AppHandle) -> Option<Duration> {
                         bundled: Some(bundled.clone()),
                         installed: installed_version(&base),
                     });
-                    let _ = crate::local_host::local_host_connect(app.clone());
+                    let _ = crate::local_host::local_host_connect_blocking(app.clone());
                     Some(RETRY_INTERVAL)
                 }
                 Err(error) => {

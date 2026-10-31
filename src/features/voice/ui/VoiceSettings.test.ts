@@ -8,6 +8,8 @@ const backend = vi.hoisted(() => ({
   setupStatus: vi.fn(),
   browse: vi.fn(),
   openUrl: vi.fn(),
+  cloudStatus: vi.fn(),
+  setCloudKey: vi.fn(),
 }));
 vi.mock("../model/localVoiceClient", () => ({ localVoiceBackend: backend }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: backend.browse }));
@@ -24,6 +26,7 @@ beforeEach(() => {
     missing: ["faster-whisper", "Whisper model", "voxcpm"],
   });
   backend.setupStatus.mockResolvedValue({ state: "idle" });
+  backend.cloudStatus.mockResolvedValue({ elevenlabs: false });
 });
 afterEach(async () => {
   if (root) await act(async () => root!.unmount());
@@ -307,25 +310,22 @@ it("persists the processing choice and rechecks with it; CPU hides the GPU offer
   expect(container.textContent).not.toContain("Install GPU support");
 });
 
-it("offers Natural, High quality and System replies and keeps Supertonic implicit", async () => {
+it("chooses the conversation mode; cloud modes hide the local reply voice and processing", async () => {
   await setup();
   await advance();
-  const options = () =>
-    [...document.querySelectorAll<HTMLElement>('[role="radio"]')].filter((option) =>
-      ["Natural", "High quality", "System voice"].includes(option.textContent?.trim() ?? ""),
-    );
-  expect(options().map((option) => option.textContent?.trim())).toEqual([
-    "Natural",
-    "High quality",
-    "System voice",
-  ]);
-  await act(async () => options()[1].click());
-  expect(loadVoiceSettings()).toMatchObject({ natural: true, engine: "voxcpm2" });
-  await advance();
-  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: true, engine: "voxcpm2" });
-  await act(async () => options()[0].click());
-  await advance();
-  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: true });
+  const radio = (name: string) =>
+    [...document.querySelectorAll<HTMLElement>('[role="radio"]')].find(
+      (option) => option.textContent?.trim() === name,
+    )!;
+  expect(radio("Local").getAttribute("aria-checked")).toBe("true");
+  expect(document.querySelector('[data-setting-id="voice-engine"]')).not.toBeNull();
+  await act(async () => radio("Grok Voice").click());
+  expect(loadVoiceSettings().mode).toBe("grok");
+  expect(container.textContent).toContain("Voice runs on Grok Voice.");
+  expect(document.querySelector('[data-setting-id="voice-engine"]')).toBeNull();
+  expect(document.querySelector('[data-setting-id="voice-device"]')).toBeNull();
+  await act(async () => radio("OpenAI Realtime").click());
+  expect(loadVoiceSettings().mode).toBe("openai");
 });
 
 it("never offers GPU support for the default Natural voice, which runs on the CPU", async () => {
@@ -339,4 +339,35 @@ it("never offers GPU support for the default Natural voice, which runs on the CP
   await advance();
   expect(container.textContent).toContain("Voice is ready");
   expect(container.textContent).not.toContain("Install GPU support");
+});
+
+it("keeps the ElevenLabs key on the Host and rechecks the setup after saving it", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), engine: "elevenlabs" });
+  backend.setCloudKey.mockResolvedValue({ elevenlabs: true });
+  await setup();
+  await advance();
+  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: true, engine: "elevenlabs" });
+  const field = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+  expect(field).not.toBeNull();
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    setter.call(field, " sk_test ");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Save");
+  expect(backend.setCloudKey).toHaveBeenCalledExactlyOnceWith("elevenlabs", "sk_test");
+  expect(container.textContent).toContain("Key saved");
+  expect(field.value).toBe("");
+  await advance();
+  expect(backend.inspect).toHaveBeenCalledTimes(2);
+});
+
+it("shows the speaker choice for Supertonic and cloud conversations, not for VoxCPM2", async () => {
+  await setup();
+  await advance();
+  expect(document.querySelector('[data-setting-id="voice-speaker"]')).not.toBeNull();
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), engine: "voxcpm2" }));
+  expect(document.querySelector('[data-setting-id="voice-speaker"]')).toBeNull();
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), mode: "grok" }));
+  expect(document.querySelector('[data-setting-id="voice-speaker"]')).not.toBeNull();
 });

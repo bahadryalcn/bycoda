@@ -52,7 +52,6 @@ import {
   CheckList,
   DashboardSquare,
   Bot,
-  ChevronDown,
   ChevronRight,
   CircleAlert,
   CircleDashed,
@@ -60,6 +59,7 @@ import {
   Clock,
   FileScript,
   Folder,
+  FolderOpen,
   FolderTree,
   GitBranch,
   GitPullRequest,
@@ -266,7 +266,7 @@ import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview"
 import { ProjectRail } from "./ProjectRail";
 import { RailAction } from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
-import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
+import { ActionHost, InlineAction, InlineMoreAction } from "../../shared/ui/ActionHost";
 import { Tooltip, useTooltip } from "../../shared/ui/Tooltip";
 import { DevModeIndicator, IconButton, TabVisitNav } from "./TitleBar";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
@@ -1573,6 +1573,18 @@ function SidebarComponent({
     setSessionMenu(null);
     setFolderMenu({ x: e.clientX, y: e.clientY, folderId });
   };
+  // The header's `…` (and the context-menu key) open the same menu under the control.
+  const openFolderMenuAt = (folderId: string, anchor: HTMLElement) => {
+    if (folderMenu?.folderId === folderId) {
+      setFolderMenu(null);
+      return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    setFilterMenu(null);
+    setSessionMenu(null);
+    // Right-aligned to the action, like the filter menu; the menu keeps itself on screen.
+    setFolderMenu({ x: Math.max(4, rect.right - 260), y: rect.bottom + 2, folderId });
+  };
 
   const onSessionMenuPick = (id: string) => {
     if (!sessionMenu) return;
@@ -2149,8 +2161,7 @@ function SidebarComponent({
     ) : null;
   const renderFolderEntry = (entry: FolderEntry, depth: number): ReactNode => {
     const expanded = searchNarrowed || !entry.folder.collapsed;
-    // A folder's own colour marks its indent guide; the group itself has no filled box.
-    const guideColor = folderAccent(entry.folder.colorIndex, entry.folder.customColor);
+    // No filled box and no rule: a folder's own colour stays on its header mark.
     const topLevel = depth === 0 && !entry.folder.pinned;
     return (
       <li
@@ -2158,6 +2169,7 @@ function SidebarComponent({
         data-session-folder={entry.folder.id}
         data-folder-collapsed={expanded ? undefined : "true"}
         data-section-divided={topLevel ? "" : undefined}
+        data-section-collapsed={expanded ? undefined : ""}
         className={`relative ${styles.folder}`}
       >
         <div className="overflow-hidden rounded-md">
@@ -2192,17 +2204,16 @@ function SidebarComponent({
               onContextMenu={(event) => onFolderContextMenu(entry.folder.id, event)}
               onRename={() => setRenamingFolderId(entry.folder.id)}
               onNewSession={onNew ? () => onNewInFolder(entry.folder.id) : undefined}
+              onOpenMenu={(anchor) => openFolderMenuAt(entry.folder.id, anchor)}
+              menuOpen={folderMenu?.folderId === entry.folder.id}
             />
           )}
           {expanded && (entry.folders.length > 0 || entry.sessions.length > 0) ? (
-            // Subgroups and sessions sit indented under the header, on one quiet guide line.
-            <div
-              data-folder-children=""
-              className="ms-4 border-s border-(--ui-pane-border) ps-1 pt-0.5 pb-1"
-              style={guideColor ? { borderColor: guideColor } : undefined}
-            >
+            // Subgroups and sessions sit indented under the header so their titles line up with
+            // the group name; the indent alone carries the hierarchy, with no guide line.
+            <div data-folder-children="" className={styles.folderChildren}>
               {entry.folders.length > 0 ? (
-                <ul className="flex flex-col gap-1 pb-1">
+                <ul className="flex flex-col gap-px pb-0.5">
                   {entry.folders.map((child) => renderFolderEntry(child, depth + 1))}
                 </ul>
               ) : null}
@@ -2983,6 +2994,7 @@ function SidebarComponent({
                           data-pinned-sessions={isReminders ? undefined : ""}
                           data-reminder-sessions={isReminders ? "" : undefined}
                           data-section-divided=""
+                          data-section-collapsed={expanded ? undefined : ""}
                           className={`relative ${styles.folder}`}
                         >
                           <div className="overflow-hidden rounded-md">
@@ -3010,7 +3022,7 @@ function SidebarComponent({
                                 isReminders ? (
                                   <Clock className="icon-sm" strokeWidth={1.75} />
                                 ) : (
-                                  <Pin className="icon-sm text-content" strokeWidth={1.75} />
+                                  <Pin className="icon-sm" strokeWidth={1.75} />
                                 )
                               }
                               onToggle={() => {
@@ -3028,12 +3040,9 @@ function SidebarComponent({
                             {expanded &&
                             ((entry.kind === "pinned" && entry.folders.length > 0) ||
                               entry.sessions.length > 0) ? (
-                              <div
-                                data-folder-children=""
-                                className="ms-4 border-s border-(--ui-pane-border) ps-1 pt-0.5 pb-1"
-                              >
+                              <div data-folder-children="" className={styles.folderChildren}>
                                 {entry.kind === "pinned" && entry.folders.length > 0 ? (
-                                  <ul className="flex flex-col gap-1 pb-1">
+                                  <ul className="flex flex-col gap-px pb-0.5">
                                     {entry.folders.map((child) => renderFolderEntry(child, 0))}
                                   </ul>
                                 ) : null}
@@ -4570,6 +4579,8 @@ function FolderRow({
   onContextMenu,
   onRename,
   onNewSession,
+  onOpenMenu,
+  menuOpen,
 }: {
   folder: Pick<SessionFolder, "name" | "colorIndex" | "customColor">;
   sessions: SessionSummary[];
@@ -4584,6 +4595,9 @@ function FolderRow({
   onRename?: () => void;
   /** Starts a session inside this group: a `+` in the header, shown on hover and focus. */
   onNewSession?: () => void;
+  /** Opens the group's own menu (same as right-click) from the header's `…` action. */
+  onOpenMenu?: (anchor: HTMLButtonElement) => void;
+  menuOpen?: boolean;
 }) {
   const t = useT();
   const count = sessions.length;
@@ -4593,6 +4607,7 @@ function FolderRow({
     details: [busy ? t("Working") : null, needsApproval ? t("Needs input") : null],
     wide: true,
   });
+  const actionCount = (onNewSession ? 1 : 0) + (onOpenMenu ? 1 : 0);
   const header = (
     <>
     <Button
@@ -4618,44 +4633,46 @@ function FolderRow({
         if (event.key === "F2" && onRename) {
           event.preventDefault();
           onRename();
+          return;
+        }
+        if (
+          onOpenMenu &&
+          (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
+        ) {
+          event.preventDefault();
+          onOpenMenu(event.currentTarget);
         }
       }}
-      className="group relative flex w-full min-w-0 touch-none items-center gap-1.5 text-start"
+      // One quiet ~28px line: the group's mark (a chevron while pointed at or focused), the
+      // name in secondary ink and a muted count. No box, no rule; spacing separates groups.
+      className="group relative flex min-h-7 w-full min-w-0 touch-none items-center gap-1.5 px-2.5 py-1 text-start"
     >
       <span
+        aria-hidden
         className={`relative grid size-4 shrink-0 place-items-center ${
-          accent ? "" : "text-(--ui-text-secondary)"
+          accent ? "" : "text-(--ui-text-muted)"
         }`}
         style={accent ? { color: accent } : undefined}
       >
-        {expanded ? (
-          groupIcon ? (
-            <>
-              <span className="group-hover:hidden group-focus-visible:hidden">{groupIcon}</span>
-              <ChevronDown
-                className="hidden icon-sm text-content group-hover:block group-focus-visible:block"
-                strokeWidth={1.75}
-              />
-            </>
-          ) : (
-            <ChevronDown className="icon-sm text-content" strokeWidth={1.75} />
-          )
-        ) : (
-          <>
-            <span className="group-hover:hidden group-focus-visible:hidden">
-              {groupIcon ?? <Folder className="icon-sm text-content" strokeWidth={1.75} />}
-            </span>
-            <ChevronRight
-              className="hidden icon-sm group-hover:block group-focus-visible:block text-content"
-              strokeWidth={1.75}
-            />
-          </>
-        )}
+        <span className="contents group-hover:hidden group-focus-visible:hidden">
+          {groupIcon ??
+            (expanded ? (
+              <FolderOpen className="icon-sm" strokeWidth={1.75} />
+            ) : (
+              <Folder className="icon-sm" strokeWidth={1.75} />
+            ))}
+        </span>
+        <ChevronRight
+          className={`hidden icon-sm text-(--ui-text-secondary) transition-transform duration-150 ease-out motion-reduce:transition-none group-hover:block group-focus-visible:block ${
+            expanded ? "rotate-90" : ""
+          }`}
+          strokeWidth={1.75}
+        />
       </span>
-      <span className="relative min-w-0 flex-1 truncate text-ui-secondary font-medium leading-snug text-content">
+      <span className="relative min-w-0 flex-1 truncate text-ui-secondary font-medium leading-snug text-(--ui-text-secondary) group-hover:text-content group-focus-visible:text-content">
         <SessionSearchText text={folder.name} />
       </span>
-      <span className="relative flex shrink-0 items-center gap-1 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+      <span className="relative flex shrink-0 items-center gap-1.5 text-ui-micro tabular-nums text-(--ui-text-muted)">
         {busy ? (
           <span role="img" aria-label={t("Working")}>
             <TerminalSpinner />
@@ -4668,33 +4685,59 @@ function FolderRow({
         ) : !expanded && !busy && done ? (
           <Check className="icon-xs text-success" strokeWidth={2.25} />
         ) : null}
-        <span data-action-yield="">{count}</span>
+        {/* With a fine pointer the count steps aside for the header actions on hover and focus;
+            it is as wide as they are, so they cover only the count, never the status marks
+            beside it. Touch shows the actions after the count instead. */}
+        <span
+          data-action-yield={actionCount ? "" : undefined}
+          className={`text-end ${
+            actionCount === 2 ? "pointer-fine:w-10" : actionCount === 1 ? "pointer-fine:w-5" : ""
+          }`}
+        >
+          {count}
+        </span>
       </span>
     </Button>
     {nameTip.tooltip}
     </>
   );
-  if (!onNewSession) return header;
+  if (!actionCount) return header;
   const newSessionLabel = t("New session");
+  const menuLabel = t("More actions");
   return (
     <ActionHost className="w-full">
       {header}
-      <span data-action-slot="collapse" className="flex shrink-0 items-center">
-        <Tooltip label={newSessionLabel} details={[folder.name]}>
-          <InlineAction
-            reveal="always"
-            label={newSessionLabel}
-            motion="none"
-            type="button"
-            data-no-drag
-            data-tauri-drag-region="false"
-            title=""
-            aria-label={`${newSessionLabel}: ${folder.name}`}
-            onClick={onNewSession}
-          >
-            <Plus className="icon-xs shrink-0" strokeWidth={1.75} />
-          </InlineAction>
-        </Tooltip>
+      <span data-action-slot="collapse" className="flex shrink-0 items-center pe-2">
+        {onNewSession ? (
+          <Tooltip label={newSessionLabel} details={[folder.name]}>
+            <InlineAction
+              label={newSessionLabel}
+              motion="none"
+              type="button"
+              data-no-drag
+              data-tauri-drag-region="false"
+              title=""
+              aria-label={`${newSessionLabel}: ${folder.name}`}
+              onClick={onNewSession}
+            >
+              <Plus className="icon-xs shrink-0" strokeWidth={1.75} />
+            </InlineAction>
+          </Tooltip>
+        ) : null}
+        {onOpenMenu ? (
+          <Tooltip label={menuLabel} details={[folder.name]}>
+            <InlineMoreAction
+              label={t("Actions for {p0}", { p0: folder.name })}
+              motion="none"
+              type="button"
+              data-no-drag
+              data-tauri-drag-region="false"
+              title=""
+              expanded={menuOpen}
+              onOpen={onOpenMenu}
+            />
+          </Tooltip>
+        ) : null}
       </span>
     </ActionHost>
   );
@@ -4741,9 +4784,9 @@ function FolderRenameRow({
 
   return (
     // data-folder-row keeps this row a drop target (and its mark) while the name is being edited.
-    <div data-folder-row="" className="relative flex w-full items-center gap-1.5 px-2 py-1.5 text-content">
-      <span className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary)">
-        <ChevronDown className="icon-sm" strokeWidth={1.75} />
+    <div data-folder-row="" className="relative flex min-h-7 w-full items-center gap-1.5 px-2.5 py-0.5 text-content">
+      <span className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-muted)">
+        <FolderOpen className="icon-sm" strokeWidth={1.75} />
       </span>
       <TextField
         fieldClassName="min-w-0 flex-1"
@@ -4766,7 +4809,7 @@ function FolderRenameRow({
         }}
         className="relative min-w-0 flex-1 leading-snug"
       />
-      <span className="relative shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+      <span className="relative shrink-0 text-ui-micro tabular-nums text-(--ui-text-muted)">
         {memberCount}
       </span>
     </div>

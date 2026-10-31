@@ -5,7 +5,9 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -55,6 +57,15 @@ const lifecycle = async (state: Running, action: "status" | "stop") => {
   });
   if (!response.ok) throw new Error("Could not verify the running host");
 };
+
+/** Keeps host.log bounded: past 10 MB it becomes host.log.old (one copy) before a new log starts. */
+function rotateHostLog(path: string): void {
+  try {
+    if (statSync(path).size > 10 * 1024 * 1024) renameSync(path, `${path}.old`);
+  } catch {
+    // No log yet, or it is in use: keep appending.
+  }
+}
 
 async function main() {
   if (command === "tunnel-worker") {
@@ -239,6 +250,7 @@ Connect another computer using an SSH forward to the loopback port.`);
     return;
   }
   if (command === "start") {
+    rotateHostLog(join(directory, "host.log"));
     const log = openSync(join(directory, "host.log"), "a", 0o600);
     const child = spawn(
       process.execPath,

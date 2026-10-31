@@ -927,8 +927,8 @@ impl NativeProjectionCoordinator {
     }
 }
 
-#[tauri::command(async)]
-pub(crate) fn native_projection_checkpoint_prepared(
+#[tauri::command]
+pub(crate) async fn native_projection_checkpoint_prepared(
     window: tauri::Window,
     prepare_id: String,
     window_epoch: String,
@@ -937,60 +937,72 @@ pub(crate) fn native_projection_checkpoint_prepared(
     raw_capture_json: Option<String>,
     missing_coverage: Vec<String>,
 ) -> Result<(), String> {
-    crate::native_authority_runtime::projection_coordinator(window.app_handle())?.prepared(
-        &window,
-        &prepare_id,
-        &window_epoch,
-        &status,
-        PreparedCaptureJson {
-            comparison: comparison_json,
-            raw_capture_json,
-        },
-        missing_coverage,
-    )
+    crate::harness::run_blocking("native_projection_checkpoint_prepared", move || {
+        crate::native_authority_runtime::projection_coordinator(window.app_handle())?.prepared(
+            &window,
+            &prepare_id,
+            &window_epoch,
+            &status,
+            PreparedCaptureJson {
+                comparison: comparison_json,
+                raw_capture_json,
+            },
+            missing_coverage,
+        )
+    })
+    .await
 }
-#[tauri::command(async)]
-pub(crate) fn native_projection_checkpoint_verify(
+#[tauri::command]
+pub(crate) async fn native_projection_checkpoint_verify(
     window: tauri::Window,
     prepare_id: String,
     nonce: String,
     comparison_json: String,
     raw_capture_json: String,
 ) -> Result<NativeProjectionReceipt, String> {
-    crate::native_authority_runtime::projection_coordinator(window.app_handle())?.verify(
-        &window,
-        &prepare_id,
-        &nonce,
-        &comparison_json,
-        &raw_capture_json,
-    )
+    crate::harness::run_blocking("native_projection_checkpoint_verify", move || {
+        crate::native_authority_runtime::projection_coordinator(window.app_handle())?.verify(
+            &window,
+            &prepare_id,
+            &nonce,
+            &comparison_json,
+            &raw_capture_json,
+        )
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub(crate) fn native_projection_checkpoint_raw_status(
+#[tauri::command]
+pub(crate) async fn native_projection_checkpoint_raw_status(
     window: tauri::Window,
     prepare_id: String,
     nonce: String,
     comparison_json: String,
     raw_capture_json: String,
 ) -> Result<Value, String> {
-    crate::native_authority_runtime::projection_coordinator(window.app_handle())?.raw_status(
-        &window,
-        &prepare_id,
-        &nonce,
-        &comparison_json,
-        &raw_capture_json,
-    )
+    crate::harness::run_blocking("native_projection_checkpoint_raw_status", move || {
+        crate::native_authority_runtime::projection_coordinator(window.app_handle())?.raw_status(
+            &window,
+            &prepare_id,
+            &nonce,
+            &comparison_json,
+            &raw_capture_json,
+        )
+    })
+    .await
 }
-#[tauri::command(async)]
-pub(crate) fn native_projection_checkpoint_release(
+#[tauri::command]
+pub(crate) async fn native_projection_checkpoint_release(
     window: tauri::Window,
     prepare_id: String,
     reason: String,
 ) -> Result<Value, String> {
-    crate::native_authority_runtime::projection_coordinator(window.app_handle())?
-        .release(&window, &prepare_id, &reason)
-        .map(|ready| json!({"releaseReady":ready}))
+    crate::harness::run_blocking("native_projection_checkpoint_release", move || {
+        crate::native_authority_runtime::projection_coordinator(window.app_handle())?
+            .release(&window, &prepare_id, &reason)
+            .map(|ready| json!({"releaseReady":ready}))
+    })
+    .await
 }
 
 #[cfg(all(test, windows))]

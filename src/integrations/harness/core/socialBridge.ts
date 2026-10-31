@@ -1,32 +1,31 @@
 import { httpMcpArgs, mcpMetadata, type McpBridge } from "./mcpTransport";
 import { invokeProviderCommand } from "./child";
+import { createBridgeLookup } from "./bridgeLookup";
 import type { ConfigurableBinaryProvider } from "../../../features/providers/model/providerBinaryPaths";
 
 export type SocialBridge = McpBridge;
-const cache = new Map<string, SocialBridge | null>();
 /** Returns executable metadata only. Native/host spawn supplies the scoped tool
- * credential directly to the child environment, never to the renderer. */
-export async function socialBridge(sessionId: string): Promise<SocialBridge | null> {
-  sessionId = sessionId.replace(/#\d+$/, "");
-  if (cache.has(sessionId)) return cache.get(sessionId)!;
-  try {
-    const bridge = await invokeProviderCommand<SocialBridge | null>("harness_social_bridge", {
+ * credential directly to the child environment, never to the renderer. A slow,
+ * offline or social-less Host is answered `null` after a short cap, and that
+ * answer is reused briefly. */
+const lookup = createBridgeLookup<SocialBridge>(async (sessionId) => {
+  const bridge = await invokeProviderCommand<SocialBridge | null>(
+    "harness_social_bridge",
+    {
       sessionId,
-    });
-    if (
-      bridge &&
-      typeof bridge.command === "string" &&
-      Array.isArray(bridge.args) &&
-      bridge.args.every((value) => typeof value === "string")
-    ) {
-      const metadata = mcpMetadata(bridge);
-      cache.set(sessionId, metadata);
-      return metadata;
-    }
-  } catch {
-    /* A missing/offline host must not break ordinary provider turns. */
-  }
-  return null; // A disconnected host can become available next turn.
+    },
+  );
+  if (
+    bridge &&
+    typeof bridge.command === "string" &&
+    Array.isArray(bridge.args) &&
+    bridge.args.every((value) => typeof value === "string")
+  )
+    return mcpMetadata(bridge);
+  return null;
+});
+export function socialBridge(sessionId: string): Promise<SocialBridge | null> {
+  return lookup(sessionId.replace(/#\d+$/, ""));
 }
 export function socialAcpServers(bridge: SocialBridge | null) {
   return bridge
@@ -45,8 +44,19 @@ export function socialSpawnArgs(
   args: string[],
   bridge: SocialBridge | null,
 ): string[] {
-  if (!bridge || args.includes("--strict-mcp-config") || args.includes("--max-turns")) return args;
-  const http = httpMcpArgs(provider, args, bridge, "bycoda-social", "BYCODA_SOCIAL_TOKEN");
+  if (
+    !bridge ||
+    args.includes("--strict-mcp-config") ||
+    args.includes("--max-turns")
+  )
+    return args;
+  const http = httpMcpArgs(
+    provider,
+    args,
+    bridge,
+    "bycoda-social",
+    "BYCODA_SOCIAL_TOKEN",
+  );
   if (http) return http;
   const server = {
     command: bridge.command,
@@ -54,9 +64,16 @@ export function socialSpawnArgs(
   };
   // MCP flags belong to conversation launches, not auth/update subcommands.
   if (provider === "claude" && args[0]?.startsWith("-"))
-    return [...args, "--mcp-config", JSON.stringify({ mcpServers: { "bycoda-social": server } })];
+    return [
+      ...args,
+      "--mcp-config",
+      JSON.stringify({ mcpServers: { "bycoda-social": server } }),
+    ];
   let commandIndex = 0;
-  while (args[commandIndex] === "-c" && typeof args[commandIndex + 1] === "string")
+  while (
+    args[commandIndex] === "-c" &&
+    typeof args[commandIndex + 1] === "string"
+  )
     commandIndex += 2;
   if (provider === "codex" && args[commandIndex] === "app-server") {
     // Codex app-server reads MCP configuration at process start for new and resumed threads.

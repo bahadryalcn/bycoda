@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { useVoiceSettings, voiceRuntimeSettings } from "../model/voiceSettings";
+import { useVoiceSettings } from "../model/voiceSettings";
 import type { VoiceCompanionProps } from "./VoiceCompanion";
 
 const Companion = lazy(() =>
@@ -11,7 +11,9 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
   const settings = useVoiceSettings();
   return settings.enabled ? (
     <Suspense fallback={null}>
-      <Companion key={JSON.stringify(voiceRuntimeSettings(settings))} {...props} />
+      {/* The companion ends its own connection when the conversation or voice
+          changes, so the panel stays open for choices made inside it. */}
+      <Companion {...props} />
     </Suspense>
   ) : null;
 }

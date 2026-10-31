@@ -9,7 +9,7 @@ use std::sync::{
     Arc, Mutex, OnceLock,
 };
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
 #[path = "remote_folder_access/os_adapter.rs"]
 mod os_adapter;
@@ -205,138 +205,141 @@ fn stop_matching(predicate: impl Fn(&Gateway) -> bool) {
     }
 }
 
-#[tauri::command(async)]
-pub fn remote_open_live_folder(
+#[tauri::command]
+pub async fn remote_open_live_folder(
     app: AppHandle,
-    state: State<'_, RemoteConnections>,
     machine_id: String,
     environment_id: String,
     path: String,
 ) -> Result<(), String> {
-    os_adapter::check_available()?;
-    if path.len() > 4096 || path.chars().any(|ch| ch.is_control()) {
-        return Err("Invalid connected folder path".into());
-    }
-    let store = store_path(&app)?;
-    let machine = {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        read(&store)?
-            .into_iter()
-            .find(|machine| machine.id == machine_id && machine.environment_id == environment_id)
-            .ok_or("The owning computer is not connected")?
-    };
-    let endpoint = match &machine.ssh {
-        Some(target) => {
-            state
-                .tunnels
-                .endpoint(&machine.id, &machine.environment_id, target, true)?
-                .endpoint
+    crate::harness::run_blocking("remote_open_live_folder", move || {
+        let state = app.state::<RemoteConnections>();
+        os_adapter::check_available()?;
+        if path.len() > 4096 || path.chars().any(|ch| ch.is_control()) {
+            return Err("Invalid connected folder path".into());
         }
-        None => machine.endpoint.clone(),
-    };
-    let access = Arc::new(Access {
-        machine,
-        endpoint,
-        store,
-    });
-    // The host checks the selected root itself, not merely the project containing it.
-    let entry = access
-        .call(
-            "read_folder_entry",
-            json!({"root":path,"path":path,"children":false}),
-        )
-        .map_err(|error| {
-            if error.contains("Unsupported") {
-                "Update bycoda Host on the connected computer to open live folders.".into()
-            } else {
-                error
+        let store = store_path(&app)?;
+        let machine = {
+            let _guard = state
+                .store
+                .lock()
+                .map_err(|_| "Connection store is locked")?;
+            read(&store)?
+                .into_iter()
+                .find(|machine| machine.id == machine_id && machine.environment_id == environment_id)
+                .ok_or("The owning computer is not connected")?
+        };
+        let endpoint = match &machine.ssh {
+            Some(target) => {
+                state
+                    .tunnels
+                    .endpoint(&machine.id, &machine.environment_id, target, true)?
+                    .endpoint
             }
-        })?;
-    if entry["isDir"].as_bool() != Some(true) {
-        return Err("Choose a folder for live file-manager access".into());
-    }
-    let root_identity = entry["rootIdentity"]
-        .as_str()
-        .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
-        .ok_or("The connected computer returned an invalid folder identity")?
-        .to_owned();
-    let key = json!([
-        access.machine.id,
-        access.machine.environment_id,
-        access.machine.token,
-        access.endpoint,
-        path,
-        root_identity
-    ])
-    .to_string();
-    let (gateway, created) = {
-        let mut gateways = GATEWAYS
-            .get_or_init(Mutex::default)
-            .lock()
-            .map_err(|_| "Folder access is unavailable")?;
-        gateways.retain(|_, gate| gate.alive.load(Ordering::SeqCst));
-        if let Some(gateway) = gateways.get(&key) {
-            (gateway.clone(), false)
-        } else {
-            if gateways.len() >= 8 {
-                return Err(
-                    "Too many live folders are open. Close an unused folder and try again later."
-                        .into(),
-                );
-            }
-            let gateway = listen(access, path, root_identity, machine_id, environment_id)?;
-            gateways.insert(key, gateway.clone());
-            (gateway, true)
-        }
-    };
-    gateway.touch();
-    if !created {
-        let mount = gateway
-            .mount
-            .lock()
-            .map_err(|_| "Folder access is unavailable")?;
-        return mount
-            .as_ref()
-            .ok_or("This folder is still opening. Try again shortly.")?
-            .open();
-    }
-    let mounted = (|| {
-        let base = app
-            .path()
-            .app_cache_dir()
-            .map_err(|error| error.to_string())?;
-        std::fs::create_dir_all(&base).map_err(|error| error.to_string())?;
-        let storage = base.join("remote-live-folders");
-        crate::file_access::produced_target(&storage, &base, "remote-live-folders")?;
-        std::fs::create_dir_all(&storage).map_err(|error| error.to_string())?;
-        let mount_dir = storage.join(uuid::Uuid::new_v4().to_string());
-        os_adapter::mount_and_open(&gateway.url(), &mount_dir)
-    })();
-    match mounted {
-        Ok(mount) => {
-            let mut slot = match gateway.mount.lock() {
-                Ok(slot) => slot,
-                Err(_) => {
-                    mount.cleanup();
-                    gateway.stop();
-                    return Err("Folder access is unavailable".into());
+            None => machine.endpoint.clone(),
+        };
+        let access = Arc::new(Access {
+            machine,
+            endpoint,
+            store,
+        });
+        // The host checks the selected root itself, not merely the project containing it.
+        let entry = access
+            .call(
+                "read_folder_entry",
+                json!({"root":path,"path":path,"children":false}),
+            )
+            .map_err(|error| {
+                if error.contains("Unsupported") {
+                    "Update bycoda Host on the connected computer to open live folders.".into()
+                } else {
+                    error
                 }
-            };
-            if !gateway.alive.load(Ordering::SeqCst) || !gateway.reader.current() {
-                mount.cleanup();
-                drop(slot);
-                gateway.stop();
-                return Err("The folder connection closed while opening.".into());
+            })?;
+        if entry["isDir"].as_bool() != Some(true) {
+            return Err("Choose a folder for live file-manager access".into());
+        }
+        let root_identity = entry["rootIdentity"]
+            .as_str()
+            .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .ok_or("The connected computer returned an invalid folder identity")?
+            .to_owned();
+        let key = json!([
+            access.machine.id,
+            access.machine.environment_id,
+            access.machine.token,
+            access.endpoint,
+            path,
+            root_identity
+        ])
+        .to_string();
+        let (gateway, created) = {
+            let mut gateways = GATEWAYS
+                .get_or_init(Mutex::default)
+                .lock()
+                .map_err(|_| "Folder access is unavailable")?;
+            gateways.retain(|_, gate| gate.alive.load(Ordering::SeqCst));
+            if let Some(gateway) = gateways.get(&key) {
+                (gateway.clone(), false)
+            } else {
+                if gateways.len() >= 8 {
+                    return Err(
+                        "Too many live folders are open. Close an unused folder and try again later."
+                            .into(),
+                    );
+                }
+                let gateway = listen(access, path, root_identity, machine_id, environment_id)?;
+                gateways.insert(key, gateway.clone());
+                (gateway, true)
             }
-            *slot = Some(mount);
-            Ok(())
+        };
+        gateway.touch();
+        if !created {
+            let mount = gateway
+                .mount
+                .lock()
+                .map_err(|_| "Folder access is unavailable")?;
+            return mount
+                .as_ref()
+                .ok_or("This folder is still opening. Try again shortly.")?
+                .open();
         }
-        Err(error) => {
-            gateway.stop();
-            Err(error)
+        let mounted = (|| {
+            let base = app
+                .path()
+                .app_cache_dir()
+                .map_err(|error| error.to_string())?;
+            std::fs::create_dir_all(&base).map_err(|error| error.to_string())?;
+            let storage = base.join("remote-live-folders");
+            crate::file_access::produced_target(&storage, &base, "remote-live-folders")?;
+            std::fs::create_dir_all(&storage).map_err(|error| error.to_string())?;
+            let mount_dir = storage.join(uuid::Uuid::new_v4().to_string());
+            os_adapter::mount_and_open(&gateway.url(), &mount_dir)
+        })();
+        match mounted {
+            Ok(mount) => {
+                let mut slot = match gateway.mount.lock() {
+                    Ok(slot) => slot,
+                    Err(_) => {
+                        mount.cleanup();
+                        gateway.stop();
+                        return Err("Folder access is unavailable".into());
+                    }
+                };
+                if !gateway.alive.load(Ordering::SeqCst) || !gateway.reader.current() {
+                    mount.cleanup();
+                    drop(slot);
+                    gateway.stop();
+                    return Err("The folder connection closed while opening.".into());
+                }
+                *slot = Some(mount);
+                Ok(())
+            }
+            Err(error) => {
+                gateway.stop();
+                Err(error)
+            }
         }
-    }
+    })
+    .await
 }

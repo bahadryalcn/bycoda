@@ -75,8 +75,10 @@
 .trigger[hidden] {
   display: none;
 }
+/* Above the full-size trigger so its hover/pressed fill never hides the glyph. */
 .icon {
   position: absolute;
+  z-index: 2;
   inset-block-start: 50%;
   inset-inline-start: calc(var(--control-height-sm) / 2 - 9px);
   translate: 0 -50%;

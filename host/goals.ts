@@ -1,6 +1,6 @@
 import { flatMapAsync, mapAsync, someAsync } from "./async-collections";
 import { createHash, randomUUID } from "node:crypto";
-import { resolveHostWorktree } from "./git-worktrees";
+import { resolveHostWorktreeAsync } from "./git-worktrees";
 import {
   GOAL_CANCELLED,
   GOAL_FINAL_ACCEPTANCE_CRITERIA,
@@ -606,7 +606,7 @@ export class HostGoals {
           cwd: project.cwd,
           ...(goal.workspaces?.[projectId]?.checkoutCwd
             ? {
-                workingCwd: resolveHostWorktree(
+                workingCwd: await resolveHostWorktreeAsync(
                   project.cwd,
                   goal.workspaces[projectId].checkoutCwd,
                 ),
@@ -1212,7 +1212,10 @@ export class HostGoals {
         const project = await this.store.project(id);
         return {
           id,
-          cwd: resolveHostWorktree(project.cwd, goal.workspaces?.[id]?.checkoutCwd ?? project.cwd),
+          cwd: await resolveHostWorktreeAsync(
+            project.cwd,
+            goal.workspaces?.[id]?.checkoutCwd ?? project.cwd,
+          ),
         };
       });
       const launchAt = this.now();
@@ -1349,7 +1352,7 @@ export class HostGoals {
         throw new Error("Reviewer managed workspace ownership changed");
     } else {
       const project = await this.store.project(projectId);
-      const selected = resolveHostWorktree(
+      const selected = await resolveHostWorktreeAsync(
         project.cwd,
         goal.workspaces?.[projectId]?.checkoutCwd ?? project.cwd,
       );
@@ -1369,10 +1372,10 @@ export class HostGoals {
       const project = await this.store.project(goal.leadProjectId);
       const cwd =
         final.executionWorkspace?.cwd ??
-        resolveHostWorktree(
+        (await resolveHostWorktreeAsync(
           project.cwd,
           goal.workspaces?.[goal.leadProjectId]?.checkoutCwd ?? project.cwd,
-        );
+        ));
       if (final.executionWorkspace) {
         const current = await this.reviewerExecutionWorkspace(final.sessionId, goal);
         if (

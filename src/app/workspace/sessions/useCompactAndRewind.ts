@@ -65,6 +65,26 @@ export interface CompactAndRewindDeps {
   persistSession: (session: Session | undefined) => void;
 }
 
+/** Why a rewind from this message is refused, in words for the person. */
+function rewindRefusalReason(session: Session | undefined, submissionError: string | null): string {
+  if (!session) return "This conversation is no longer open, so it cannot be rewound.";
+  if (submissionError) return submissionError;
+  if (session.busy) return "Stop the running turn before rewinding the conversation.";
+  if (session.pendingQuestion || session.blocks.some((b) => b.approval && !b.approval.decided))
+    return "Answer the open question or approval before rewinding the conversation.";
+  if ((session.queuedMessages?.length ?? 0) > 0 || session.editingQueuedMessageId)
+    return "Send or delete the queued messages before rewinding the conversation.";
+  if (session.historyLoading || session.historyPartial || session.worktreePreparing)
+    return "The conversation is still loading. Rewind it once it has loaded.";
+  if (session.worktreeRemoved)
+    return "This conversation's workspace was removed, so it cannot be rewound.";
+  if (session.continuingElsewhere || session.adoptedSyncConflict)
+    return "The bycoda Host owns this conversation right now. Wait for it to finish before rewinding.";
+  if (session.orchestrationLeadId || session.automationId)
+    return "This conversation belongs to an orchestration or automation and cannot be rewound.";
+  return "This message cannot be rewound from here.";
+}
+
 /** Manual context compaction and conversation rewind for a session. */
 export function useCompactAndRewind({
   sessionsRef,
@@ -81,11 +101,24 @@ export function useCompactAndRewind({
   lastPersistedUserBlock,
   persistSession,
 }: CompactAndRewindDeps) {
+  const say = useCallback(
+    (sessionId: string, text: string) => {
+      enqueueHarnessEvent(sessionId, { type: "status", text });
+      flushHarnessEvents();
+    },
+    [enqueueHarnessEvent, flushHarnessEvents],
+  );
   const onCompactContext = useCallback(
     (sessionId: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
-      if (current && (hostSessionBinding(current) || remoteProjectFor(current.cwd)))
-        return remoteSessionActions(sessionId)?.compact() ?? false;
+      if (current && (hostSessionBinding(current) || remoteProjectFor(current.cwd))) {
+        if (remoteSessionActions(sessionId)?.compact()) return true;
+        say(
+          sessionId,
+          "Compaction did not start. The bycoda Host conversation must be connected, idle and without pending changes. Try /compact again once it is.",
+        );
+        return false;
+      }
       if (current?.busy && !current.worktreeRemoved) {
         // Keep the typed command and say why, instead of ignoring it silently.
         const waiting = sessionsRef.current.map((session) =>
@@ -187,7 +220,7 @@ export function useCompactAndRewind({
       })();
       return true;
     },
-    [enqueueHarnessEvent, flushHarnessEvents],
+    [enqueueHarnessEvent, flushHarnessEvents, say],
   );
 
   const reconcileManaged = useCallback((sessionId: string, next: Session) => {
@@ -272,16 +305,23 @@ export function useCompactAndRewind({
       }
       flushHarnessEvents();
       const snapshot = sessionsRef.current.find((session) => session.id === sessionId);
-      if (
-        !snapshot ||
-        !canRewindConversation(snapshot, blockId) ||
-        orchestrator.submissionError(sessionId)
-      )
+      const submissionError = snapshot ? orchestrator.submissionError(sessionId) : null;
+      if (!snapshot || !canRewindConversation(snapshot, blockId) || submissionError) {
+        say(sessionId, rewindRefusalReason(snapshot, submissionError));
         return false;
-      if (hostSessionBinding(snapshot) || remoteProjectFor(snapshot.cwd)) {
-        return (await remoteSessionActions(sessionId)?.rewind(blockId)) ?? false;
       }
-      if (!editedResends.start(sessionId)) return false;
+      if (hostSessionBinding(snapshot) || remoteProjectFor(snapshot.cwd)) {
+        if (await remoteSessionActions(sessionId)?.rewind(blockId)) return true;
+        say(
+          sessionId,
+          "The bycoda Host did not rewind this conversation. Check the connection and that no turn is running, then try again.",
+        );
+        return false;
+      }
+      if (!editedResends.start(sessionId)) {
+        say(sessionId, "Another change to this conversation is still finishing. Try again in a moment.");
+        return false;
+      }
       try {
         // Edit from here has an exact message boundary. A provider turn may
         // contain several user steers, and provider rewind can also touch files.
@@ -349,7 +389,7 @@ export function useCompactAndRewind({
         editedResends.finish(sessionId);
       }
     },
-    [editedResends, enqueueHarnessEvent, flushHarnessEvents, persistSession],
+    [editedResends, enqueueHarnessEvent, flushHarnessEvents, persistSession, say],
   );
   return { onCompactContext, onRewindMessage };
 }

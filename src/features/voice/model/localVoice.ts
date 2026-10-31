@@ -300,6 +300,8 @@ export class LocalVoice {
   private setPlayback(active: boolean) {
     if (this.playbackActive === active) return;
     this.playbackActive = active;
+    // While the reply plays, echo residue and breaths must not interrupt it.
+    this.vad?.setStrict(active);
     this.callbacks.playback?.(active);
   }
 

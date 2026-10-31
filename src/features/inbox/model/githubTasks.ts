@@ -305,6 +305,20 @@ function remember<T>(cache: Map<string, T>, key: string, value: T, namespace: st
     fetchedAt.delete(`${namespace}:${oldest}`);
   }
 }
+
+/** Patches can be megabytes, so the diff cache is also bounded by their total size. */
+const DIFF_CACHE_MAX_CHARS = 8_000_000;
+function trimDiffCache(cache: Map<string, { patch: string }>) {
+  let chars = 0;
+  for (const diff of cache.values()) chars += diff.patch?.length ?? 0;
+  for (const oldest of cache.keys()) {
+    // The diff just stored always stays.
+    if (chars <= DIFF_CACHE_MAX_CHARS || cache.size <= 1) break;
+    chars -= cache.get(oldest)?.patch?.length ?? 0;
+    cache.delete(oldest);
+    fetchedAt.delete(`diff:${oldest}`);
+  }
+}
 function invalidateGithubWorkItem(repo: string, kind: GithubTaskKind, number: number) {
   const key = detailsCacheKey(repo, kind, number);
   workItemByKey.delete(key);
@@ -884,8 +898,10 @@ export async function githubPrDiff(
     fullContext,
   })
     .then((diff) => {
-      if (generation === inboxCacheGeneration && prDiffInflight.get(key) === promise)
+      if (generation === inboxCacheGeneration && prDiffInflight.get(key) === promise) {
         remember(prDiffByKey, key, diff, "diff");
+        trimDiffCache(prDiffByKey);
+      }
       return diff;
     })
     .finally(() => {

@@ -1,37 +1,32 @@
 import { httpMcpArgs, mcpMetadata, type McpBridge } from "./mcpTransport";
 import { invokeProviderCommand } from "./child";
+import { createBridgeLookup } from "./bridgeLookup";
 import type { ConfigurableBinaryProvider } from "../../../features/providers/model/providerBinaryPaths";
 
 export type RuntimeLogsBridge = McpBridge;
-const cache = new Map<string, RuntimeLogsBridge>();
 
-/** Renderer metadata has no token. Native/headless spawn supplies the grant. */
-export async function runtimeLogsBridge(sessionId: string): Promise<RuntimeLogsBridge | null> {
-  const primary = sessionId.replace(/#\d+$/, "");
-  if (cache.has(primary)) return cache.get(primary)!;
-  try {
-    const bridge = await invokeProviderCommand<RuntimeLogsBridge | null>(
-      "harness_runtime_logs_bridge",
-      {
-        sessionId: primary,
-      },
-    );
-    if (
-      bridge &&
-      typeof bridge.command === "string" &&
-      bridge.command.length > 0 &&
-      Array.isArray(bridge.args) &&
-      bridge.args.every((value) => typeof value === "string")
-    ) {
-      // Copy only executable metadata; never forward an accidental host credential.
-      const metadata = mcpMetadata(bridge);
-      cache.set(primary, metadata);
-      return metadata;
-    }
-  } catch {
-    /* An older or offline host must not prevent ordinary provider work. */
-  }
+/** Renderer metadata has no token. Native/headless spawn supplies the grant. A slow,
+ * offline or older Host is answered `null` after a short cap, reused briefly. */
+const lookup = createBridgeLookup<RuntimeLogsBridge>(async (sessionId) => {
+  const bridge = await invokeProviderCommand<RuntimeLogsBridge | null>(
+    "harness_runtime_logs_bridge",
+    { sessionId },
+  );
+  if (
+    bridge &&
+    typeof bridge.command === "string" &&
+    bridge.command.length > 0 &&
+    Array.isArray(bridge.args) &&
+    bridge.args.every((value) => typeof value === "string")
+  )
+    // Copy only executable metadata; never forward an accidental host credential.
+    return mcpMetadata(bridge);
   return null;
+});
+export function runtimeLogsBridge(
+  sessionId: string,
+): Promise<RuntimeLogsBridge | null> {
+  return lookup(sessionId.replace(/#\d+$/, ""));
 }
 
 export function runtimeLogsAcpServers(bridge: RuntimeLogsBridge | null) {
@@ -52,7 +47,12 @@ export function runtimeLogsSpawnArgs(
   args: string[],
   bridge: RuntimeLogsBridge | null,
 ): string[] {
-  if (!bridge || args.includes("--strict-mcp-config") || args.includes("--max-turns")) return args;
+  if (
+    !bridge ||
+    args.includes("--strict-mcp-config") ||
+    args.includes("--max-turns")
+  )
+    return args;
   const http = httpMcpArgs(
     provider,
     args,
@@ -61,7 +61,10 @@ export function runtimeLogsSpawnArgs(
     "BYCODA_RUNTIME_LOGS_TOKEN",
   );
   if (http) return http;
-  const server = { command: bridge.command, args: [...bridge.args, "runtime-logs-mcp"] };
+  const server = {
+    command: bridge.command,
+    args: [...bridge.args, "runtime-logs-mcp"],
+  };
   if (provider === "claude" && args[0]?.startsWith("-")) {
     // Merge the app's existing Social Media MCP config, preserving other servers.
     const index = args.lastIndexOf("--mcp-config");
@@ -87,7 +90,10 @@ export function runtimeLogsSpawnArgs(
     ];
   }
   let commandIndex = 0;
-  while (args[commandIndex] === "-c" && typeof args[commandIndex + 1] === "string")
+  while (
+    args[commandIndex] === "-c" &&
+    typeof args[commandIndex + 1] === "string"
+  )
     commandIndex += 2;
   if (provider === "codex" && args[commandIndex] === "app-server") {
     const quote = (value: string) => JSON.stringify(value);

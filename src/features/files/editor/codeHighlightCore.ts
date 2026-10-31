@@ -23,6 +23,8 @@ import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 const DEFAULT_THEMES: [ThemeInput, ThemeInput] = ["github-light", "github-dark"];
 const MAX_ENTRIES = 100;
 const MAX_CACHED_CHARS = 500_000;
+/** Source characters one cached token stands for in that budget. */
+const TOKEN_WEIGHT_CHARS = 8;
 /** Streams resumed independently: replies, panes and subagents can stream fences at once. */
 const MAX_CHECKPOINTS = 8;
 
@@ -66,7 +68,15 @@ export function createBoundedCodePlugin(
   const highlighters = new Map<string, Promise<Highlighter>>();
   const results = new Map<string, HighlightResult>();
   const pending = new Map<string, Set<HighlightCallback>>();
+  // What each cached result costs against `maxChars`: its source plus the
+  // dual-theme token objects built from it, which outweigh the text.
+  const weights = new Map<string, number>();
   let cachedChars = 0;
+  const forget = (key: string) => {
+    cachedChars -= weights.get(key) ?? 0;
+    weights.delete(key);
+    results.delete(key);
+  };
   // Bounded streaming prefixes, one per growing block and independent of the
   // exact-result LRU. Only newline-terminated lines are reusable; the unfinished
   // tail can change syntax. `key` is the latest partial result of that stream.
@@ -92,17 +102,20 @@ export function createBoundedCodePlugin(
   };
 
   const remember = (key: string, result: HighlightResult) => {
-    if (results.delete(key)) cachedChars -= key.length;
+    forget(key);
+    let tokens = 0;
+    for (const line of result.tokens) tokens += line.length;
+    const weight = key.length + tokens * TOKEN_WEIGHT_CHARS;
     // A block larger than the whole budget is delivered but never cached.
-    if (key.length <= maxChars) {
+    if (weight <= maxChars) {
       results.set(key, result);
-      cachedChars += key.length;
+      weights.set(key, weight);
+      cachedChars += weight;
     }
     while (results.size > maxEntries || cachedChars + checkpointChars() > maxChars) {
       const oldest = results.keys().next().value;
       if (oldest === undefined) break;
-      results.delete(oldest);
-      cachedChars -= oldest.length;
+      forget(oldest);
     }
   };
 
@@ -175,9 +188,9 @@ export function createBoundedCodePlugin(
             previous &&
             previous.key !== key &&
             key.startsWith(previous.key) &&
-            results.delete(previous.key)
+            results.has(previous.key)
           )
-            cachedChars -= previous.key.length;
+            forget(previous.key);
           checkpoints = checkpoints.filter((item) => item !== previous);
           if (boundary > 0 && boundary <= maxChars) {
             checkpoints.push({

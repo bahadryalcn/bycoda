@@ -251,7 +251,7 @@ pub fn package_smoke_dom_proof(
     let connection = store.lock_conn()?;
     let (title, blocks): (String, String) = connection
         .query_row(
-            "SELECT title, blocks_json FROM sessions WHERE id=?1",
+            "SELECT title, blocks_json FROM session_transcripts WHERE id=?1",
             [&request.session_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )

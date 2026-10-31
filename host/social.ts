@@ -184,6 +184,9 @@ const ESCALATE =
 /** One durable host service for owner UI, session MCP, CLI and signed events.
  * Adapter calls cannot mutate policy. Inbound text never becomes a tool request.
  * JSON records use the host's SQLite connection and transactions; no UI/session timers. */
+/** Social scheduler cadence: normal while there is work, longer while idle. */
+const SOCIAL_TICK_MS = 5000;
+const SOCIAL_IDLE_TICK_MS = 30_000;
 export class SocialService {
   refreshCredential?: (
     account: SocialAccount,
@@ -241,7 +244,13 @@ export class SocialService {
     await this.setSetting("polling", "false");
     await this.setSetting("stopped", "true");
   }
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: ReturnType<typeof setTimeout>;
+  /** When the scheduled tick fires, so a write can pull a far-off tick closer. */
+  private nextTickAt = 0;
+  /** Consecutive ticks that found nothing to do; they stretch the wait up to `SOCIAL_IDLE_TICK_MS`. */
+  private idleTicks = 0;
+  private tickActive = false;
+  private tickToken = 0;
   private busy = false;
   private disposing = false;
   private disposal?: Promise<void>;
@@ -553,6 +562,7 @@ export class SocialService {
         "INSERT INTO social_records VALUES (?,?,?) ON CONFLICT(kind,id) DO UPDATE SET value=excluded.value",
       )
       .run(kind, id, JSON.stringify(value));
+    this.wake();
     if (kind === "campaign" || kind === "account") await this.invalidatePublishingPlans(kind, id);
     return value;
   }
@@ -566,6 +576,7 @@ export class SocialService {
         "INSERT INTO social_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
       )
       .run(key, value);
+    this.wake();
   }
   private async changeCredentials<T>(accountId: string, action: () => Promise<T>): Promise<T> {
     if (this.disposing) throw new Error("The social service is stopping.");
@@ -683,6 +694,7 @@ export class SocialService {
         "INSERT INTO social_jobs VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET dedupe_key=excluded.dedupe_key,status=excluded.status,scheduled_at=excluded.scheduled_at,value=excluded.value",
       )
       .run(job.id, job.dedupeKey, job.accountId, job.status, job.scheduledAt, JSON.stringify(job));
+    this.wake();
     return job;
   }
   private async applyDelivery(job: SocialJob): Promise<void> {
@@ -4451,17 +4463,65 @@ export class SocialService {
       .run(this.store.environmentId);
     if (epoch !== this.backgroundEpoch) return;
     this.store.db.outsideScope(() => {
-      const kick = () =>
-        void this.tick().catch((error) => console.error("Social scheduling failed:", error));
-      this.timer = setInterval(kick, 5000);
-      this.timer.unref?.();
-      kick();
+      this.idleTicks = 0;
+      this.scheduleTick(0);
     });
+  }
+  /** Runs a tick after `delay`, then schedules the next from what that tick found:
+   * every 5 s while there is work, backing off to `SOCIAL_IDLE_TICK_MS` when idle. */
+  private scheduleTick(delay: number): void {
+    if (this.disposing) return;
+    clearTimeout(this.timer);
+    this.nextTickAt = Date.now() + delay;
+    const epoch = this.backgroundEpoch;
+    const token = ++this.tickToken;
+    const fire = () => {
+      this.tickActive = false;
+      void this.tick()
+        .catch((error) => console.error("Social scheduling failed:", error))
+        .then(async () => {
+          if (token !== this.tickToken || this.disposing || epoch !== this.backgroundEpoch) return;
+          this.idleTicks = this.tickActive ? 0 : this.idleTicks + 1;
+          this.scheduleTick(await this.nextDelay());
+        });
+    };
+    // `this.timer` stays set while a tick runs: it also tells snapshots the scheduler is online.
+    const timer = setTimeout(fire, delay);
+    timer.unref?.();
+    this.timer = timer;
+    if (delay === 0) {
+      // The first tick starts at once, inside `start()`.
+      clearTimeout(timer);
+      fire();
+    }
+  }
+  private async nextDelay(): Promise<number> {
+    const delay = Math.min(SOCIAL_IDLE_TICK_MS, SOCIAL_TICK_MS * 2 ** this.idleTicks);
+    if (delay <= SOCIAL_TICK_MS) return delay;
+    // A queued job due sooner than the idle wait is not made to wait for it.
+    try {
+      const next = await this.store.db
+        .prepare("SELECT MIN(scheduled_at) AS at FROM social_jobs WHERE status='queued'")
+        .get();
+      if (next?.at !== null && next?.at !== undefined)
+        return Math.max(SOCIAL_TICK_MS, Math.min(delay, Number(next.at) - this.now()));
+    } catch {
+      return SOCIAL_TICK_MS;
+    }
+    return delay;
+  }
+  /** A write to social data ends any idle wait, so changes are noticed within a normal tick. */
+  private wake(): void {
+    this.idleTicks = 0;
+    // A write while a tick runs (a job sent, a plan advanced) means that tick had work.
+    if (this.busy) this.tickActive = true;
+    if (this.timer && !this.busy && this.nextTickAt - Date.now() > SOCIAL_TICK_MS)
+      this.scheduleTick(SOCIAL_TICK_MS);
   }
   async stop(): Promise<void> {
     this.backgroundEpoch++;
     for (const controller of this.generationControllers.values()) controller.abort();
-    clearInterval(this.timer);
+    clearTimeout(this.timer);
     this.timer = undefined;
     this.grants.clear();
     await this.ready;
@@ -4585,6 +4645,7 @@ export class SocialService {
             Number((await this.setting(`pollRate:${account.id}`)) ?? 0) <= this.now() &&
             !this.pollingPending.has(account.id)
           ) {
+            this.tickActive = true;
             background.push(
               this.pollAccount(account.id).catch(async () => {
                 await this.setSetting(
@@ -4614,6 +4675,7 @@ export class SocialService {
           this.dueCursor = undefined;
           candidates = await page();
         }
+        if (candidates.length) this.tickActive = true;
         let attempts = 0,
           examined = 0;
         for (const candidate of candidates) {
@@ -4642,6 +4704,7 @@ export class SocialService {
     // Release dispatch ownership before waiting for unrelated provider/inbound
     // work. The next timer tick can admit newly due jobs during those waits.
     const generated = generation && (await generation);
+    if (generated) this.tickActive = true;
     if (generated && epoch === this.backgroundEpoch && !(await this.isDelegated?.()))
       await this.tick(); // A completed draft may have queued an authorized reply.
   }

@@ -10,10 +10,11 @@ import {
 import type { ComposerPreparation } from "../data/composerClosure";
 import type { ParentAdmission, ParentInputHandle } from "../data/parentInputClosure";
 import type { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
-import { revokeAttachment } from "../model/attachments";
+import { MAX_ATTACHMENTS, MAX_EMBED_BYTES, revokeAttachment } from "../model/attachments";
 import { setComposerAttachments } from "../model/draftCache";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { harnessSupportsAttachments, type Attachment, type HarnessId } from "../model/session";
+import { t } from "../../../shared/i18n";
 
 type MountedClosure = ReturnType<typeof useMountedComposerClosure>;
 
@@ -40,6 +41,52 @@ export function useAttachmentSink({
   return sinkRef;
 }
 
+/** Same file added twice: the merge skips it on purpose, so it is not a loss. */
+function sameAttachment(a: Attachment, b: Attachment): boolean {
+  return (
+    a.id === b.id ||
+    !!(a.path && b.path && a.path === b.path && a.hostEnvironmentId === b.hostEnvironmentId)
+  );
+}
+
+/**
+ * Files an add left out because the draft is full. They are released, and the
+ * reader is told how many went in, instead of the extra files vanishing.
+ */
+export function releaseOverLimit(
+  previous: Attachment[],
+  next: Attachment[],
+  incoming: Attachment[],
+): string | null {
+  const fresh = incoming.filter((file) => !previous.some((item) => sameAttachment(item, file)));
+  const left = fresh.filter((file) => !next.includes(file));
+  if (left.length === 0) return null;
+  // A later duplicate of an attached file is not a loss either.
+  const dropped = left.filter((file) => !next.some((item) => sameAttachment(item, file)));
+  if (dropped.length === 0) return null;
+  dropped.forEach(revokeAttachment);
+  return t("Attached {p0} of {p1} files. A message carries up to {p2}.", {
+    p0: next.length - previous.length,
+    p1: fresh.length,
+    p2: MAX_ATTACHMENTS,
+  });
+}
+
+/**
+ * Pasted blobs that could not be read (over the embed limit, or unreadable) are
+ * left out by the reader. Says so when every pasted file was a blob.
+ */
+export function skippedPastedFiles(files: File[], attached: Attachment[]): string | null {
+  if (files.some((file) => (file as File & { path?: string }).path?.trim())) return null;
+  const skipped = files.length - attached.length;
+  if (skipped <= 0) return null;
+  return t("{p0} of {p1} pasted files could not be attached (larger than {p2} MB or unreadable).", {
+    p0: skipped,
+    p1: files.length,
+    p2: Math.round(MAX_EMBED_BYTES / (1024 * 1024)),
+  });
+}
+
 type LifecycleOptions = {
   sessionId: string | undefined;
   harness: HarnessId;
@@ -47,15 +94,13 @@ type LifecycleOptions = {
   attachmentsRef: RefObject<Attachment[]>;
   borrowedAttachmentIdsRef: RefObject<Set<string>>;
   pasteGenerationRef: RefObject<number>;
-  inputRef: RefObject<HTMLTextAreaElement | null>;
   mountedClosure: MountedClosure;
-  setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  syncHasText: (text: string) => void;
+  setPasteError: Dispatch<SetStateAction<string | null>>;
 };
 
 /**
  * The lifetime of the draft's attachment list: its saved copy, its release when
- * the Composer is retired, and its drop when the provider cannot take files.
+ * the Composer is retired, and the notice when the provider cannot take files.
  * The list, its ref and the send/paste refs stay owned by the Composer.
  */
 export function useComposerAttachmentLifecycle({
@@ -65,10 +110,8 @@ export function useComposerAttachmentLifecycle({
   attachmentsRef,
   borrowedAttachmentIdsRef,
   pasteGenerationRef,
-  inputRef,
   mountedClosure,
-  setAttachments,
-  syncHasText,
+  setPasteError,
 }: LifecycleOptions) {
   const lifecycleRef = useRef(0);
 
@@ -107,14 +150,13 @@ export function useComposerAttachmentLifecycle({
 
   useEffect(() => {
     if (harnessSupportsAttachments(harness)) return;
-    const previous = attachmentsRef.current;
-    if (previous.length === 0) return;
-    mountedClosure.changed();
-    releaseAttachments(previous, borrowedAttachmentIdsRef.current);
-    attachmentsRef.current = [];
-    setAttachments([]);
-    syncHasText(inputRef.current?.value ?? "");
-  }, [harness, syncHasText]);
+    if (attachmentsRef.current.length === 0) return;
+    // The files stay in the draft (switching back sends them); Send explains
+    // why they are not going out while this provider cannot take them.
+    setPasteError(
+      t("This provider cannot take attachments. They are kept; remove them or switch provider."),
+    );
+  }, [harness]);
 }
 
 type ReadOptions = {

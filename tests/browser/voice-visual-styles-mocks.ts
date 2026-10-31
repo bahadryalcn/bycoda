@@ -26,6 +26,7 @@ export class LocalVoice {
 export const sessionsRef = { current: [] };
 export const useSession = () => undefined;
 export const converseWithSession = () => new Promise(() => {});
+export const warmVoiceReply = async () => {};
 export const localVoiceBackend = {
   inspect: async () => ({
     ready: true,
@@ -35,4 +36,5 @@ export const localVoiceBackend = {
     ttsPath: "/fixture/tts",
   }),
   setupStatus: async () => ({ state: "idle" }),
+  cloudStatus: async () => ({ elevenlabs: false }),
 };

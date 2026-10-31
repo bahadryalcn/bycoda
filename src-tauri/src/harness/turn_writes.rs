@@ -34,15 +34,21 @@ struct Binding {
     ready: Mutex<Option<Result<(), String>>>,
     changed: Condvar,
 }
+/// Whole budget of one `bind_original` call, shared by every wait inside it.
+const BIND_BUDGET: Duration = Duration::from_secs(12);
+/// Whole budget of one controlled write, including its authority lease wait.
+const CONTROLLED_WRITE_BUDGET: Duration = Duration::from_secs(12);
+
 impl Binding {
-    fn wait(&self) -> Result<ChildTurnBinding, String> {
+    fn wait_until(&self, deadline: Instant) -> Result<ChildTurnBinding, String> {
         let ready = self
             .ready
             .lock()
             .map_err(|_| "NATIVE_TURN_BINDING_UNAVAILABLE")?;
+        let wait = deadline.saturating_duration_since(Instant::now());
         let (ready, _) = self
             .changed
-            .wait_timeout_while(ready, Duration::from_secs(12), |result| result.is_none())
+            .wait_timeout_while(ready, wait, |result| result.is_none())
             .map_err(|_| "NATIVE_TURN_BINDING_UNAVAILABLE")?;
         ready.as_ref().ok_or("Turn binding timed out; previous write may still be in flight")?.clone()?;
         Ok(self.receipt.clone())
@@ -212,6 +218,8 @@ fn bind_original(
     live: Arc<LiveChild>,
     receipt: crate::control::ControlTurnReceipt,
 ) -> Result<ChildTurnBinding, String> {
+    // Every wait below shares one deadline instead of stacking fresh ones.
+    let deadline = Instant::now() + BIND_BUDGET;
     let (target, cwd) = source(&live, issuer)?;
     let plan = crate::control::with_write_turn(
         control,
@@ -227,7 +235,7 @@ fn bind_original(
         },
     )?;
     if !plan.creator {
-        let result = plan.binding.wait()?;
+        let result = plan.binding.wait_until(deadline)?;
         crate::control::with_write_turn(control, issuer, window, &target, &cwd, &receipt, |turn| {
             let inner = host.lock_inner();
             original_current(&inner, route, &live)?;
@@ -270,12 +278,28 @@ fn bind_original(
             )
         });
         plan.binding.finish(result);
-        plan.binding.wait()
+        // `finish` settled it already; a spent budget must not turn that into a timeout.
+        plan.binding.wait_until(Instant::now() + Duration::from_secs(1))
     }
 }
 
-#[tauri::command(async)]
-pub fn harness_bind_turn(
+#[tauri::command]
+pub async fn harness_bind_turn(
+    window: tauri::WebviewWindow,
+    session_id: String,
+    construction_id: String,
+    control_turn: crate::control::ControlTurnReceipt,
+) -> Result<ChildTurnBinding, String> {
+    crate::harness::run_blocking("harness_bind_turn", move || {
+        let app = window.app_handle().clone();
+        let host = app.state::<HarnessHost>();
+        let control = app.state::<crate::control::ControlHost>();
+        harness_bind_turn_blocking(window, host, control, session_id, construction_id, control_turn)
+    })
+    .await
+}
+
+fn harness_bind_turn_blocking(
     window: tauri::WebviewWindow,
     host: State<'_, HarnessHost>,
     control: State<'_, crate::control::ControlHost>,
@@ -357,12 +381,24 @@ fn admit_original(
 
 /// The response deadline never kills P. The blocking writer retains all
 /// original permits and lease until its actual I/O and callback tail finish.
+#[cfg(test)]
 fn write_controlled(
+    live: Arc<LiveChild>,
+    line: String,
+    authority: Option<crate::session_store::authority::NativeLease>,
+    admission: StrictWrite,
+    after_io: impl FnOnce() + Send + 'static,
+) -> Result<(), String> {
+    write_controlled_within(live, line, authority, admission, after_io, CONTROLLED_WRITE_BUDGET)
+}
+
+fn write_controlled_within(
     live: Arc<LiveChild>,
     line: String,
     mut authority: Option<crate::session_store::authority::NativeLease>,
     mut admission: StrictWrite,
     after_io: impl FnOnce() + Send + 'static,
+    wait: Duration,
 ) -> Result<(), String> {
     if let Some(lease) = authority.as_mut() {
         lease.begin_external()?;
@@ -387,7 +423,7 @@ fn write_controlled(
         admission.finish(&result);
         let _ = tx.send(result);
     });
-    rx.recv_timeout(Duration::from_secs(12)).map_err(|_| "Provider stdin delivery outcome unknown; do not retry while writing".to_string())?
+    rx.recv_timeout(wait).map_err(|_| "Provider stdin delivery outcome unknown; do not retry while writing".to_string())?
 }
 
 #[tauri::command]
@@ -422,11 +458,27 @@ pub async fn harness_write_controlled(
     let target = original.output.target().to_owned();
     // Lease SQL must not run on the async command thread.
     tauri::async_runtime::spawn_blocking(move || {
-        let lease = gate.reserve_existing(&target, "provider-stdin", scope.as_ref(), false)?;
+        // The write deadline starts before the lease wait, as in `harness_write`.
+        let deadline = Instant::now() + CONTROLLED_WRITE_BUDGET;
+        let lease = reserve_authority_within(
+            gate,
+            target,
+            "provider-stdin",
+            scope,
+            false,
+            AUTHORITY_LEASE_WAIT,
+        )?;
         let line = crate::social_bridge::authorize_acp_frame(&session_id, line);
         let line = crate::runtime_logs_bridge::authorize_acp_frame(&session_id, line);
         let line = crate::conversation_tools_bridge::authorize_acp_frame(&session_id, line);
-        write_controlled(live, line, Some(lease), admission, || {})
+        write_controlled_within(
+            live,
+            line,
+            Some(lease),
+            admission,
+            || {},
+            deadline.saturating_duration_since(Instant::now()),
+        )
     })
     .await
     .map_err(|error| format!("Controlled harness write task failed: {error}"))?

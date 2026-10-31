@@ -49,6 +49,10 @@ type Intent = "details" | "stop" | "kill" | "restart";
 type Launch = { input: DevServerStart; result?: DevServerStartResult; pending?: boolean };
 const POLL_MS = 15_000;
 const MAX_FAILURES = 3;
+/** Each scan starts PowerShell on Windows, so a list that stopped changing is read less often. */
+const QUIET_SCANS = 3;
+const QUIET_POLL_MS = 30_000;
+const VERY_QUIET_POLL_MS = 60_000;
 const stateLabels = {
   starting: "Starting",
   running: "Running",
@@ -83,6 +87,16 @@ const canControl = (server: DevServer) => (server.process ? hasIdentity(server) 
 const endpointKey = (endpoint: DevServerEndpoint) => `${endpoint.address}:${endpoint.port}`;
 
 /** Mounted only for the visible tool; a changed host owns a fresh request scope. */
+function pollDelay(failures: number, quietScans: number): number {
+  const base =
+    quietScans >= QUIET_SCANS * 2
+      ? VERY_QUIET_POLL_MS
+      : quietScans >= QUIET_SCANS
+        ? QUIET_POLL_MS
+        : POLL_MS;
+  return base * Math.min(4, 2 ** failures);
+}
+
 export function DevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch }) {
   return <ProjectDevServersPanel key={cwd} cwd={cwd} launch={launch} />;
 }
@@ -128,6 +142,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const pending = useRef(false);
   const scanFlight = useRef<Promise<boolean> | undefined>(undefined);
   const failures = useRef(0);
+  const quiet = useRef({ key: "", scans: 0 });
   const detailsPanel = useRef<HTMLElement>(null);
   const previewPanel = useRef<HTMLElement>(null);
   const startForm = useRef<HTMLFormElement>(null);
@@ -161,6 +176,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         if (!alive.current) return false;
         if (result.status === "error") throw new Error(result.error || t("Scan failed"));
         failures.current = 0;
+        const key = JSON.stringify(result.servers);
+        quiet.current =
+          quiet.current.key === key ? { key, scans: quiet.current.scans + 1 } : { key, scans: 0 };
         setScanError("");
         setScan(result);
         return true;
@@ -222,7 +240,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         polling = false;
       }
       if (!stopped && !isHidden() && failures.current < MAX_FAILURES)
-        timer = setTimeout(() => void poll(), POLL_MS * Math.min(4, 2 ** failures.current));
+        timer = setTimeout(() => void poll(), pollDelay(failures.current, quiet.current.scans));
     };
     const visibilityChanged = () => {
       clearTimeout(timer);

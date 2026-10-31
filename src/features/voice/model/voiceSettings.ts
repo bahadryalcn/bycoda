@@ -1,16 +1,26 @@
 import { createStoredSetting } from "../../../shared/lib/storedSetting";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import type { VoiceDevice, VoiceEngine, VoiceRuntimeConfig } from "./localVoiceClient";
+import { DEFAULT_SPEAKERS, SPEAKER_IDS, type SpeakerEngine } from "./voiceSpeakers";
 
 export type VoiceVisual = "mark" | "wave" | "dots" | "orb";
+/** Who runs the conversation: local recognition + the session's provider, or a
+ * cloud speech-to-speech model signed in through Grok Build or Codex. */
+export type VoiceMode = "local" | "grok" | "openai";
 
 export type VoiceSettings = {
   visual: VoiceVisual;
   compact: boolean;
   enabled: boolean;
   natural: boolean;
-  /** Natural voice model: Supertonic (fast, default) or VoxCPM2 (richer, needs a GPU). */
+  mode: VoiceMode;
+  /** Natural voice model: Supertonic (fast, default), VoxCPM2 (richer, needs a
+   * GPU) or ElevenLabs (cloud; only the reply text leaves this computer). */
   engine: VoiceEngine;
+  /** ElevenLabs voice ID; empty uses the built-in multilingual default. */
+  elevenVoice: string;
+  /** Speaker voice per engine (Supertonic, Grok Voice, OpenAI Realtime). */
+  speakers: Record<SpeakerEngine, string>;
   device: VoiceDevice;
   python: string;
   whisperPath: string;
@@ -21,7 +31,10 @@ const defaults: VoiceSettings = {
   compact: false,
   enabled: false,
   natural: true,
+  mode: "local",
   engine: "supertonic",
+  elevenVoice: "",
+  speakers: DEFAULT_SPEAKERS,
   device: "auto",
   python: "",
   whisperPath: "",
@@ -41,7 +54,19 @@ const preference = createStoredSetting<VoiceSettings>({
       compact: value?.compact === true,
       enabled: value?.enabled === true,
       natural: value?.natural !== false,
-      engine: value?.engine === "voxcpm2" ? "voxcpm2" : "supertonic",
+      mode: value?.mode === "grok" || value?.mode === "openai" ? value.mode : "local",
+      engine:
+        value?.engine === "voxcpm2" || value?.engine === "elevenlabs" ? value.engine : "supertonic",
+      elevenVoice:
+        typeof value?.elevenVoice === "string" && /^[A-Za-z0-9]{0,64}$/.test(value.elevenVoice)
+          ? value.elevenVoice
+          : "",
+      speakers: Object.fromEntries(
+        (Object.keys(DEFAULT_SPEAKERS) as SpeakerEngine[]).map((engine) => {
+          const chosen = value?.speakers?.[engine];
+          return [engine, SPEAKER_IDS[engine].includes(chosen) ? chosen : DEFAULT_SPEAKERS[engine]];
+        }),
+      ) as Record<SpeakerEngine, string>,
       device: value?.device === "gpu" || value?.device === "cpu" ? value.device : "auto",
       python: typeof value?.python === "string" ? value.python : "",
       whisperPath: typeof value?.whisperPath === "string" ? value.whisperPath : "",
@@ -60,7 +85,16 @@ export function voiceRuntimeSettings(value: VoiceSettings): VoiceRuntimeConfig {
   return {
     natural: value.natural,
     // Supertonic is the Host default and is omitted.
-    ...(value.natural && value.engine === "voxcpm2" ? { engine: value.engine } : {}),
+    ...(value.natural && value.engine !== "supertonic" ? { engine: value.engine } : {}),
+    ...(value.natural && value.engine === "elevenlabs" && value.elevenVoice
+      ? { voiceId: value.elevenVoice }
+      : {}),
+    // The default speaker is omitted so existing runtime keys stay stable.
+    ...(value.natural &&
+    value.engine === "supertonic" &&
+    value.speakers.supertonic !== DEFAULT_SPEAKERS.supertonic
+      ? { voiceId: value.speakers.supertonic }
+      : {}),
     // Automatic is the Host default; omitting it keeps existing runtime keys stable.
     ...(value.device !== "auto" ? { device: value.device } : {}),
     ...(value.python.trim() ? { python: value.python.trim() } : {}),

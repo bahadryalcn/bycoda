@@ -27,10 +27,15 @@ export function FeatureHighlightMarkers() {
   const [spots, setSpots] = useState<readonly Spot[]>([]);
   useEffect(() => {
     if (!key) return;
+    // The controls found by the last measure, so a scroll can tell without
+    // reading layout whether it moved any of them.
+    const located = new Map<string, Element>();
     const measure = () => {
+      located.clear();
       const next = latest.current.flatMap((item): Spot[] => {
         const element = findUsageGuideTarget([item.target]);
         if (!element) return [];
+        located.set(item.id, element);
         const rect = element.getBoundingClientRect();
         return [{ id: item.id, x: Math.round(rect.right), y: Math.round(rect.top) }];
       });
@@ -42,18 +47,44 @@ export function FeatureHighlightMarkers() {
         if (findUsageGuideTarget([item.target])?.contains(event.target)) markHighlightSeen(item.id);
       }
     };
-    const frame = window.requestAnimationFrame(measure);
+    // Scrolling anywhere fires this, and measuring reads layout: coalesce the
+    // events to one read per frame, and read nothing while the window is hidden.
+    let frame = 0;
+    const schedule = () => {
+      if (frame || document.hidden) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    schedule();
     // Controls move with layout, scrolling and remounts; one slow tick catches the rest.
-    const timer = window.setInterval(measure, 1000);
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, true);
+    const timer = window.setInterval(schedule, 1000);
+    document.addEventListener("visibilitychange", schedule);
+    window.addEventListener("resize", schedule);
+    const onScroll = (event: Event) => {
+      const source = event.target;
+      if (source instanceof Element && located.size === latest.current.length) {
+        let moves = false;
+        for (const element of located.values()) {
+          if (source.contains(element)) {
+            moves = true;
+            break;
+          }
+        }
+        if (!moves) return;
+      }
+      schedule();
+    };
+    window.addEventListener("scroll", onScroll, true);
     document.addEventListener("click", seen, true);
     document.addEventListener("focusin", seen, true);
     return () => {
       window.cancelAnimationFrame(frame);
       window.clearInterval(timer);
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure, true);
+      document.removeEventListener("visibilitychange", schedule);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", onScroll, true);
       document.removeEventListener("click", seen, true);
       document.removeEventListener("focusin", seen, true);
     };

@@ -7,7 +7,7 @@ use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex, PoisonError,
+    Arc, Mutex, PoisonError, TryLockError,
 };
 use std::time::{Duration, Instant};
 
@@ -977,7 +977,23 @@ impl Tunnels {
         allow_connect: bool,
     ) -> Result<TunnelLease, String> {
         let slot = self.slots().entry(id.into()).or_default().clone();
-        let mut current = slot.lock().unwrap_or_else(PoisonError::into_inner);
+        // A call that may not connect (a cancel, a peek, a background poll) must not
+        // queue behind a tunnel start that holds the slot for many seconds: contention
+        // reads as unreachable, which those callers already handle.
+        let mut current = if allow_connect {
+            slot.lock().unwrap_or_else(PoisonError::into_inner)
+        } else {
+            match slot.try_lock() {
+                Ok(guard) => guard,
+                Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+                Err(TryLockError::WouldBlock) => {
+                    return Err(
+                        "Machine is unreachable right now: a connection attempt is in progress."
+                            .into(),
+                    );
+                }
+            }
+        };
         if let Some(tunnel) = current.tunnel.as_mut() {
             // A request that read the machine just before its address was edited
             // can start a tunnel to the old one; it is dropped here, not reused.

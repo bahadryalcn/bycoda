@@ -617,33 +617,43 @@ fn decorate_frame(line: String, grant: &Value) -> String {
     request.to_string()
 }
 
-#[tauri::command(async)]
-pub fn harness_conversation_tools_bridge(
+#[tauri::command]
+pub async fn harness_conversation_tools_bridge(
     app: AppHandle,
     session_id: String,
 ) -> Result<Option<Value>, String> {
-    if session_id.is_empty() {
-        return Ok(None);
-    }
-    let Ok(service) = crate::remote::NativeServiceChannel::connect(&app) else {
-        return Ok(None);
-    };
-    Ok(service
-        .project("conversation.bridge.describe", json!({}), |value| {
-            Ok(crate::session_tools_bridge::metadata(
-                value.clone(),
-                crate::session_tools_bridge::Group::Conversation,
-            ))
-        })
-        .ok())
+    crate::harness::run_blocking("harness_conversation_tools_bridge", move || {
+        if session_id.is_empty() {
+            return Ok(None);
+        }
+        // Optional metadata: a slow Host must not hold the send for 30 s.
+        let Some(deadline) = crate::session_tools_bridge::optional_host_deadline() else {
+            return Ok(None);
+        };
+        let value = crate::remote::NativeServiceChannel::connect_until(&app, Some(deadline)).and_then(
+            |service| {
+                service.project_until(
+                    "conversation.bridge.describe",
+                    json!({}),
+                    deadline,
+                    |value| {
+                        Ok(crate::session_tools_bridge::metadata(
+                            value.clone(),
+                            crate::session_tools_bridge::Group::Conversation,
+                        ))
+                    },
+                )
+            },
+        );
+        crate::session_tools_bridge::note_optional_host_outcome(deadline, value.is_ok());
+        Ok(value.ok())
+    })
+    .await
 }
 
-pub fn configure_child(
-    app: &AppHandle,
-    session_id: &str,
-    command: &mut Command,
-    stamp: (u64, u64),
-) {
+/// Local, synchronous half of the child setup. Returns the local read
+/// fallback that `issue_child_grant` merges into the Host grant.
+pub(crate) fn prepare_child(session_id: &str, command: &mut Command, stamp: (u64, u64)) -> Value {
     // Control already placed these in the child. Retain the local read fallback
     // even when this desktop session is not yet mirrored to the host.
     let mut fallback = json!({});
@@ -672,17 +682,28 @@ pub fn configure_child(
     for key in keys {
         command.env_remove(key);
     }
+    fallback
+}
+
+/// Issues, pins and caches this child's grant within `deadline`, returning
+/// the environment the child receives. Runs off the spawn thread.
+pub(crate) fn issue_child_grant(
+    app: &AppHandle,
+    session_id: &str,
+    stamp: (u64, u64),
+    fallback: &Value,
+    deadline: std::time::Instant,
+) -> Result<Vec<(&'static str, String)>, String> {
     let primary = session_id
         .rsplit_once('#')
         .filter(|(_, suffix)| !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()))
         .map(|(id, _)| id)
         .unwrap_or(session_id);
-    let Ok(service) = crate::remote::NativeServiceChannel::connect(app) else {
-        return;
-    };
-    let _ = service.project(
+    let service = crate::remote::NativeServiceChannel::connect_until(app, Some(deadline))?;
+    service.project_until(
         "conversation.access.issue",
         json!({"sessionId": primary}),
+        deadline,
         |issued| {
             let mut issued = issued.clone();
             issued["endpoint"] = json!(service.endpoint());
@@ -701,19 +722,20 @@ pub fn configure_child(
             ) else {
                 return Err("Conversation tool grant is incomplete".into());
             };
-            command
-                .env("BYCODA_CONVERSATION_TOKEN", token)
-                .env("BYCODA_CONVERSATION_ENDPOINT", endpoint)
-                .env("BYCODA_CONVERSATION_ENVIRONMENT", environment);
+            let env = vec![
+                ("BYCODA_CONVERSATION_TOKEN", token.to_owned()),
+                ("BYCODA_CONVERSATION_ENDPOINT", endpoint.to_owned()),
+                ("BYCODA_CONVERSATION_ENVIRONMENT", environment.to_owned()),
+            ];
             for field in ["appEndpoint", "appToken"] {
                 if fallback[field].is_string() {
                     grant[field] = fallback[field].clone();
                 }
             }
             crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
-            Ok(())
+            Ok(env)
         },
-    );
+    )
 }
 
 #[cfg(test)]

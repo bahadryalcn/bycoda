@@ -1066,9 +1066,18 @@ describe("finding the desktop app's session database", () => {
           mkdirSync(join(home, ...base, identifier), { recursive: true });
           writeFileSync(join(home, ...base, identifier, database!), "");
         }
-        const found = desktopDatabasePaths({}, platform, home);
-        expect(found.sort(), platform).toEqual(
-          identifiers.map((identifier) => join(home, ...base, identifier, database!)).sort(),
+        const all = identifiers.map((identifier) => join(home, ...base, identifier, database!));
+        // An installed Host reads the release database only; a development Host
+        // (or an explicit opt-in) also reads the dev app's database.
+        const release = all.filter((path) => !path.includes("desktop.dev"));
+        expect(desktopDatabasePaths({}, platform, home), platform).toEqual(release);
+        for (const env of [{ BYCODA_DESKTOP_INCLUDE_DEV: "1" }, { BYCODA_DEV_PROFILE_ID: "run" }])
+          expect(desktopDatabasePaths(env, platform, home).sort(), platform).toEqual(
+            all.slice().sort(),
+          );
+        rmSync(release[0], { force: true });
+        expect(desktopDatabasePaths({}, platform, home), platform).toEqual(
+          all.filter((path) => path.includes("desktop.dev")),
         );
       } finally {
         rmSync(home, { recursive: true, force: true });

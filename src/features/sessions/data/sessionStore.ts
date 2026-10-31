@@ -715,6 +715,80 @@ export async function upsertSessionIfUnchanged(
   return !!summary;
 }
 
+function noteSessionWriteLead(session: Session): void {
+  if (session.orchestrationLeadId) {
+    sessionWriteLeadById.set(session.id, session.orchestrationLeadId);
+  } else {
+    sessionWriteLeadById.delete(session.id);
+  }
+}
+
+/** Runs inside the session's write chain: the complete transcript under a CAS. */
+async function replaceStoredSession(
+  session: Session,
+  payload: SessionUpsertPayload,
+  outputWrite: SessionOutputWrite | null,
+  work: PersistenceWork,
+  guard?: { expectedUpdatedAt: number; expectedRevision?: number } | { expectMissing: true },
+  initialTimes?: { createdAt: number; updatedAt: number },
+): Promise<SessionSummary | null> {
+  if (deletedSessionIds.has(session.id)) {
+    failSessionOutputWrite(outputWrite);
+    // Nothing is left to persist for a deleted session; do not leave a failure behind.
+    work.confirmRecovery();
+    return null;
+  }
+  const baseline = persistenceBaselines.get(session.id);
+  const summary = await invoke<SessionSummary | null>(
+    "session_upsert",
+    prepareSessionOutputWritePayload(
+      outputWrite,
+      {
+        session: {
+          ...payload,
+          ...initialTimes,
+          blocks: payload.blocks.map((block) =>
+            block.orchestrationLeadId && deletedSessionIds.has(block.orchestrationLeadId)
+              ? { ...block, orchestrationLeadId: undefined }
+              : block,
+          ),
+        },
+        ...(guard ??
+          (baseline
+            ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
+            : {})),
+      },
+      "replace",
+    ),
+  );
+  if (summary) {
+    if (summary.id === session.id)
+      acknowledgeSessionOutputWrite(outputWrite, {
+        kind: "replace",
+        revision: summary.transcriptRevision!,
+        updatedAt: summary.updatedAt,
+        ...(summary.nativeWriteId === undefined ? {} : { nativeWriteId: summary.nativeWriteId }),
+      });
+    else failSessionOutputWrite(outputWrite);
+    persistenceBaselines.set(session.id, {
+      blocks: incrementalBlocks(session),
+      updatedAt: summary.updatedAt,
+      revision: summary.transcriptRevision,
+      writes: 0,
+      normalized: true,
+    });
+    // This command atomically replaces the complete transcript under its CAS.
+    // A later delta alone cannot recover an earlier unconfirmed write.
+    work.confirmRecovery();
+  } else {
+    failSessionOutputWrite(outputWrite);
+    // An explicit guard belongs to its caller; only our own remembered stamp is repaired.
+    if (!guard) await refreshStaleBaseline(session.id);
+    work.fail(new Error("Session changed in another window; reload before saving"));
+  }
+  return summary;
+}
+
 async function persistSession(
   session: Session,
   guard?: { expectedUpdatedAt: number; expectedRevision?: number } | { expectMissing: true },
@@ -731,72 +805,10 @@ async function persistSession(
   }
   const payload = sanitizeSessionForPersist(session);
   const outputWrite = captureSessionOutputWrite(session);
-  if (session.orchestrationLeadId) {
-    sessionWriteLeadById.set(session.id, session.orchestrationLeadId);
-  } else {
-    sessionWriteLeadById.delete(session.id);
-  }
+  noteSessionWriteLead(session);
   const summary = await enqueueSessionWrite(
     session.id,
-    async (work) => {
-      if (deletedSessionIds.has(session.id)) {
-        failSessionOutputWrite(outputWrite);
-        // Nothing is left to persist for a deleted session; do not leave a failure behind.
-        work.confirmRecovery();
-        return null;
-      }
-      const baseline = persistenceBaselines.get(session.id);
-      const summary = await invoke<SessionSummary | null>(
-        "session_upsert",
-        prepareSessionOutputWritePayload(
-          outputWrite,
-          {
-            session: {
-              ...payload,
-              ...initialTimes,
-              blocks: payload.blocks.map((block) =>
-                block.orchestrationLeadId && deletedSessionIds.has(block.orchestrationLeadId)
-                  ? { ...block, orchestrationLeadId: undefined }
-                  : block,
-              ),
-            },
-            ...(guard ??
-              (baseline
-                ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
-                : {})),
-          },
-          "replace",
-        ),
-      );
-      if (summary) {
-        if (summary.id === session.id)
-          acknowledgeSessionOutputWrite(outputWrite, {
-            kind: "replace",
-            revision: summary.transcriptRevision!,
-            updatedAt: summary.updatedAt,
-            ...(summary.nativeWriteId === undefined
-              ? {}
-              : { nativeWriteId: summary.nativeWriteId }),
-          });
-        else failSessionOutputWrite(outputWrite);
-        persistenceBaselines.set(session.id, {
-          blocks: incrementalBlocks(session),
-          updatedAt: summary.updatedAt,
-          revision: summary.transcriptRevision,
-          writes: 0,
-          normalized: true,
-        });
-        // This command atomically replaces the complete transcript under its CAS.
-        // A later delta alone cannot recover an earlier unconfirmed write.
-        work.confirmRecovery();
-      } else {
-        failSessionOutputWrite(outputWrite);
-        // An explicit guard belongs to its caller; only our own remembered stamp is repaired.
-        if (!guard) await refreshStaleBaseline(session.id);
-        work.fail(new Error("Session changed in another window; reload before saving"));
-      }
-      return summary;
-    },
+    (work) => replaceStoredSession(session, payload, outputWrite, work, guard, initialTimes),
     false,
     parent,
   ).catch((error) => {
@@ -804,6 +816,115 @@ async function persistSession(
     throw error;
   });
   return summary ? normalizeSummary(summary) : null;
+}
+
+/** Whether an earlier write of this session failed and still awaits a full replace. */
+function hasUnrecoveredWrite(sessionId: string): boolean {
+  try {
+    sessionPersistence.assertSuccessful([sessionId]);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Idle save (turn end, rename, model or context change, the 650 ms flush).
+ * With a normalized baseline it sends only the changed blocks and the
+ * metadata, like the pre-send save, instead of re-sending and re-diffing the
+ * whole transcript under the store write lock. The native side still derives
+ * the branch from Git and returns the sidebar summary. The full replace stays
+ * for a missing or unnormalized baseline, a required replacement, periodic
+ * compaction, and an earlier failed write (only a full replace confirms its
+ * recovery). Resolves to `null` when nothing was saved; `summary` is `null`
+ * when the write landed but no summary came back.
+ */
+export async function saveSessionIdle(
+  session: Session,
+): Promise<{ summary: SessionSummary | null } | null> {
+  if (
+    hostSessionBinding(session) ||
+    !shouldPersistSession(session) ||
+    deletedSessionIds.has(session.id)
+  ) {
+    return null;
+  }
+  const id = session.id;
+  const outputWrite = captureSessionOutputWrite(session);
+  noteSessionWriteLead(session);
+  return enqueueSessionWrite(id, async (work) => {
+    const baseline = persistenceBaselines.get(id);
+    if (
+      deletedSessionIds.has(id) ||
+      !baseline?.normalized ||
+      baseline.writes >= 256 ||
+      sessionOutputNeedsReplacement(session) ||
+      hasUnrecoveredWrite(id)
+    ) {
+      const summary = await replaceStoredSession(
+        session,
+        sanitizeSessionForPersist(session),
+        outputWrite,
+        work,
+      );
+      return summary ? { summary: normalizeSummary(summary) } : null;
+    }
+    const finish = startPerformanceSpan("session-save");
+    const blocks = incrementalBlocks(session);
+    const delta = buildSessionBlockDelta(baseline.blocks, blocks);
+    let ack: {
+      updatedAt: number;
+      revision: number;
+      nativeWriteId?: string;
+      summary?: SessionSummary;
+    } | null;
+    try {
+      ack = await invoke<typeof ack>(
+        "session_apply_delta",
+        prepareSessionOutputWritePayload(
+          outputWrite,
+          {
+            delta: {
+              session: { ...persistableMeta(session), blocks: [] },
+              expectedUpdatedAt: baseline.updatedAt,
+              expectedRevision: baseline.revision,
+              ...delta,
+            },
+            summary: true,
+          },
+          "delta",
+        ),
+      );
+    } catch (error) {
+      finish();
+      throw error;
+    }
+    if (!ack) {
+      finish();
+      failSessionOutputWrite(outputWrite);
+      await refreshStaleBaseline(id);
+      work.fail(new Error("Session changed in another window; reload before saving"));
+      return null;
+    }
+    persistenceBaselines.set(id, {
+      blocks,
+      updatedAt: ack.updatedAt,
+      revision: ack.revision,
+      writes: baseline.writes + 1,
+      normalized: true,
+    });
+    acknowledgeSessionOutputWrite(outputWrite, {
+      kind: "delta",
+      revision: ack.revision,
+      updatedAt: ack.updatedAt,
+      ...(ack.nativeWriteId === undefined ? {} : { nativeWriteId: ack.nativeWriteId }),
+    });
+    finish({ blocks: delta.changes.length, revision: ack.revision });
+    return { summary: ack.summary ? normalizeSummary(ack.summary) : null };
+  }).catch((error) => {
+    failSessionOutputWrite(outputWrite);
+    throw error;
+  });
 }
 
 /**

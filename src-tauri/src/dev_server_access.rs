@@ -12,7 +12,7 @@ use std::sync::{
     Arc, Mutex, OnceLock, Weak,
 };
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager};
 
 const CHUNK: usize = 256 * 1024;
 const HEADER_LIMIT: usize = 64 * 1024;
@@ -451,11 +451,10 @@ fn relay(
     result
 }
 
-#[tauri::command(async)]
+#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn remote_dev_server_url(
+pub async fn remote_dev_server_url(
     app: AppHandle,
-    state: State<'_, RemoteConnections>,
     machine_id: String,
     environment_id: String,
     project_id: String,
@@ -465,109 +464,113 @@ pub fn remote_dev_server_url(
     address: String,
     url: String,
 ) -> Result<String, String> {
-    let mut url = url::Url::parse(&url).map_err(|_| "Invalid development server URL")?;
-    if url.scheme() != "http"
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.port_or_known_default() != Some(port)
-    {
-        return Err("Private browser access requires a discovered HTTP development server. Use the host preview for HTTPS.".into());
-    }
-    let channel = NativeGatewayChannel::connect(&app, &state, &machine_id, &environment_id)?;
-    let params = json!({ "projectId": project_id, "id": server_id, "identity": identity, "port": port, "address": address });
-    let mut access = Access {
-        channel,
-        params,
-        target_origin: String::new(),
-    };
-    // Repeat discovery on the owner before reusing even an existing local listener.
-    let checked = access.call("devServers.bridgeCheck", access.params.clone())?;
-    access.target_origin = checked.project(|value| {
-        Ok(url::Url::parse(
-            value["url"]
-                .as_str()
-                .ok_or("The development server has no URL")?,
-        )
-        .map_err(|_| "The development server URL is invalid")?
-        .origin()
-        .ascii_serialization())
-    })?;
-    // Authentication replacement must never reuse a listener carrying the previous credential.
-    let key = json!([access.channel.key(), access.params]).to_string();
-    let mut gateways = GATEWAYS
-        .get_or_init(Mutex::default)
-        .lock()
-        .map_err(|_| "Development server access is unavailable")?;
-    gateways.retain(|_, gate| {
-        gate.alive.load(Ordering::SeqCst)
-            && gate
-                .channel
-                .upgrade()
-                .is_some_and(|channel| channel.is_current())
-    });
-    let gateway = if let Some(gateway) = gateways.get(&key) {
-        gateway.clone()
-    } else {
-        if gateways.len() >= 16 {
-            return Err("Too many private development server addresses are open. Close unused browser tabs and retry later.".into());
+    crate::harness::run_blocking("remote_dev_server_url", move || {
+        let state = app.state::<RemoteConnections>();
+        let mut url = url::Url::parse(&url).map_err(|_| "Invalid development server URL")?;
+        if url.scheme() != "http"
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port_or_known_default() != Some(port)
+        {
+            return Err("Private browser access requires a discovered HTTP development server. Use the host preview for HTTPS.".into());
         }
-        let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
-        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
-        let gateway = Arc::new(Gateway {
-            port: listener.local_addr().map_err(|e| e.to_string())?.port(),
-            alive: AtomicBool::new(true),
-            active: AtomicUsize::new(0),
-            touched: Mutex::new(Instant::now()),
-            channel: Arc::downgrade(&access.channel),
+        let channel = NativeGatewayChannel::connect(&app, &state, &machine_id, &environment_id)?;
+        let params = json!({ "projectId": project_id, "id": server_id, "identity": identity, "port": port, "address": address });
+        let mut access = Access {
+            channel,
+            params,
+            target_origin: String::new(),
+        };
+        // Repeat discovery on the owner before reusing even an existing local listener.
+        let checked = access.call("devServers.bridgeCheck", access.params.clone())?;
+        access.target_origin = checked.project(|value| {
+            Ok(url::Url::parse(
+                value["url"]
+                    .as_str()
+                    .ok_or("The development server has no URL")?,
+            )
+            .map_err(|_| "The development server URL is invalid")?
+            .origin()
+            .ascii_serialization())
+        })?;
+        // Authentication replacement must never reuse a listener carrying the previous credential.
+        let key = json!([access.channel.key(), access.params]).to_string();
+        let mut gateways = GATEWAYS
+            .get_or_init(Mutex::default)
+            .lock()
+            .map_err(|_| "Development server access is unavailable")?;
+        gateways.retain(|_, gate| {
+            gate.alive.load(Ordering::SeqCst)
+                && gate
+                    .channel
+                    .upgrade()
+                    .is_some_and(|channel| channel.is_current())
         });
-        let running = gateway.clone();
-        std::thread::spawn(move || {
-            let mut checked = Instant::now();
-            loop {
-                if checked.elapsed() >= Duration::from_secs(1) {
-                    let expired = running
-                        .touched
-                        .lock()
-                        .map(|time| time.elapsed() > IDLE)
-                        .unwrap_or(true);
-                    if expired || !access.current() {
-                        break;
-                    }
-                    checked = Instant::now();
-                }
-                match listener.accept() {
-                    Ok((socket, _)) => {
-                        if running.active.load(Ordering::SeqCst) >= 32 {
-                            drop(socket);
-                            continue;
-                        }
-                        running.active.fetch_add(1, Ordering::SeqCst);
-                        if let Ok(mut touched) = running.touched.lock() {
-                            *touched = Instant::now();
-                        }
-                        let (access, running) = (access.clone(), running.clone());
-                        std::thread::spawn(move || connection(socket, access, running));
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_millis(25))
-                    }
-                    Err(_) => break,
-                }
+        let gateway = if let Some(gateway) = gateways.get(&key) {
+            gateway.clone()
+        } else {
+            if gateways.len() >= 16 {
+                return Err("Too many private development server addresses are open. Close unused browser tabs and retry later.".into());
             }
-            running.alive.store(false, Ordering::SeqCst);
-        });
-        gateways.insert(key, gateway.clone());
-        gateway
-    };
-    if let Ok(mut touched) = gateway.touched.lock() {
-        *touched = Instant::now();
-    }
-    url.set_host(Some("127.0.0.1"))
-        .map_err(|_| "Invalid local browser address")?;
-    url.set_port(Some(gateway.port))
-        .map_err(|_| "Invalid local browser port")?;
-    let _admission = checked.admit()?;
-    Ok(url.into())
+            let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+            listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+            let gateway = Arc::new(Gateway {
+                port: listener.local_addr().map_err(|e| e.to_string())?.port(),
+                alive: AtomicBool::new(true),
+                active: AtomicUsize::new(0),
+                touched: Mutex::new(Instant::now()),
+                channel: Arc::downgrade(&access.channel),
+            });
+            let running = gateway.clone();
+            std::thread::spawn(move || {
+                let mut checked = Instant::now();
+                loop {
+                    if checked.elapsed() >= Duration::from_secs(1) {
+                        let expired = running
+                            .touched
+                            .lock()
+                            .map(|time| time.elapsed() > IDLE)
+                            .unwrap_or(true);
+                        if expired || !access.current() {
+                            break;
+                        }
+                        checked = Instant::now();
+                    }
+                    match listener.accept() {
+                        Ok((socket, _)) => {
+                            if running.active.load(Ordering::SeqCst) >= 32 {
+                                drop(socket);
+                                continue;
+                            }
+                            running.active.fetch_add(1, Ordering::SeqCst);
+                            if let Ok(mut touched) = running.touched.lock() {
+                                *touched = Instant::now();
+                            }
+                            let (access, running) = (access.clone(), running.clone());
+                            std::thread::spawn(move || connection(socket, access, running));
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(25))
+                        }
+                        Err(_) => break,
+                    }
+                }
+                running.alive.store(false, Ordering::SeqCst);
+            });
+            gateways.insert(key, gateway.clone());
+            gateway
+        };
+        if let Ok(mut touched) = gateway.touched.lock() {
+            *touched = Instant::now();
+        }
+        url.set_host(Some("127.0.0.1"))
+            .map_err(|_| "Invalid local browser address")?;
+        url.set_port(Some(gateway.port))
+            .map_err(|_| "Invalid local browser port")?;
+        let _admission = checked.admit()?;
+        Ok(url.into())
+    })
+    .await
 }
 
 #[cfg(test)]

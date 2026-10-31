@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::Manager;
 
 use crate::fs::{expand_home, git_checked, git_diff_files_for, path_to_js, resolve_repo_path};
 use crate::session_store::SessionStore;
@@ -130,33 +130,40 @@ fn default_root(main: &Path) -> PathBuf {
     main.with_file_name(format!("{name}-worktrees"))
 }
 
-#[tauri::command(async)]
-pub fn git_worktrees(cwd: String, store: State<'_, SessionStore>) -> Result<Worktrees, String> {
-    let mut worktrees = list(&expand_home(&cwd))?;
-    let main = worktrees.first().ok_or("No working copies found")?;
-    let default_root = path_to_js(&default_root(Path::new(&main.path)));
-    {
-        let conn = store.lock_conn()?;
+#[tauri::command]
+pub async fn git_worktrees(
+    app: tauri::AppHandle,
+    cwd: String,
+) -> Result<Worktrees, String> {
+    crate::harness::run_blocking("git_worktrees", move || {
+        let store = app.state::<SessionStore>();
+        let mut worktrees = list(&expand_home(&cwd))?;
+        let main = worktrees.first().ok_or("No working copies found")?;
+        let default_root = path_to_js(&default_root(Path::new(&main.path)));
+        {
+            let conn = store.lock_conn()?;
+            for tree in &mut worktrees {
+                tree.session_ids = session_ids(&conn, Path::new(&tree.path))?;
+            }
+        }
         for tree in &mut worktrees {
-            tree.session_ids = session_ids(&conn, Path::new(&tree.path))?;
+            let path = Path::new(&tree.path);
+            tree.missing = !path.is_dir();
+            if !tree.missing {
+                tree.dirty = git(path, &["status", "--porcelain", "--untracked-files=normal"])
+                    .ok()
+                    .map(|status| !status.is_empty());
+                tree.unpushed = git(path, &["rev-list", "--count", "HEAD", "--not", "--remotes"])
+                    .ok()
+                    .and_then(|count| count.trim().parse().ok());
+            }
         }
-    }
-    for tree in &mut worktrees {
-        let path = Path::new(&tree.path);
-        tree.missing = !path.is_dir();
-        if !tree.missing {
-            tree.dirty = git(path, &["status", "--porcelain", "--untracked-files=normal"])
-                .ok()
-                .map(|status| !status.is_empty());
-            tree.unpushed = git(path, &["rev-list", "--count", "HEAD", "--not", "--remotes"])
-                .ok()
-                .and_then(|count| count.trim().parse().ok());
-        }
-    }
-    Ok(Worktrees {
-        worktrees,
-        default_root,
+        Ok(Worktrees {
+            worktrees,
+            default_root,
+        })
     })
+    .await
 }
 
 fn create(root: &Path, branch: &str, base: &str, existing: bool) -> Result<Worktree, String> {
@@ -493,22 +500,26 @@ fn assert_legacy_workspace(conn: &rusqlite::Connection, path: &Path) -> Result<(
     Ok(())
 }
 
-#[tauri::command(async)]
-pub fn git_worktree_check_remove(
+#[tauri::command]
+pub async fn git_worktree_check_remove(
+    app: tauri::AppHandle,
     cwd: String,
     path: String,
     force: bool,
-    store: State<'_, SessionStore>,
-    terminals: State<'_, crate::pty::PtyHost>,
 ) -> Result<(), String> {
-    let path = expand_home(&path);
-    assert_legacy_workspace(&*store.lock_conn()?, &path)?;
-    check_removal(
-        &expand_home(&cwd),
-        &path,
-        force,
-        terminals.has_working_dir(&path),
-    )
+    crate::harness::run_blocking("git_worktree_check_remove", move || {
+        let store = app.state::<SessionStore>();
+        let terminals = app.state::<crate::pty::PtyHost>();
+        let path = expand_home(&path);
+        assert_legacy_workspace(&*store.lock_conn()?, &path)?;
+        check_removal(
+            &expand_home(&cwd),
+            &path,
+            force,
+            terminals.has_working_dir(&path),
+        )
+    })
+    .await
 }
 
 fn check_removal(root: &Path, path: &Path, force: bool, has_terminals: bool) -> Result<(), String> {
@@ -617,23 +628,27 @@ fn assert_removal_review(
     Ok(())
 }
 
-#[tauri::command(async)]
-pub fn git_worktree_removal_review(
+#[tauri::command]
+pub async fn git_worktree_removal_review(
+    app: tauri::AppHandle,
     cwd: String,
     path: String,
-    store: State<'_, SessionStore>,
-    terminals: State<'_, crate::pty::PtyHost>,
-    agents: State<'_, crate::harness::HarnessHost>,
 ) -> Result<WorktreeRemovalReview, String> {
-    let path = expand_home(&path);
-    let conn = store.lock_conn()?;
-    removal_review(
-        &conn,
-        &expand_home(&cwd),
-        &path,
-        terminals.has_working_dir(&path),
-        agents.has_working_dir(&path),
-    )
+    crate::harness::run_blocking("git_worktree_removal_review", move || {
+        let store = app.state::<SessionStore>();
+        let terminals = app.state::<crate::pty::PtyHost>();
+        let agents = app.state::<crate::harness::HarnessHost>();
+        let path = expand_home(&path);
+        let conn = store.lock_conn()?;
+        removal_review(
+            &conn,
+            &expand_home(&cwd),
+            &path,
+            terminals.has_working_dir(&path),
+            agents.has_working_dir(&path),
+        )
+    })
+    .await
 }
 
 fn remove(root: &Path, path: &Path, force: bool) -> Result<(), String> {
@@ -1376,169 +1391,183 @@ fn managed_cleanup_local_check(
     Ok(())
 }
 
-#[tauri::command(async)]
-pub fn managed_worktree_removal_plan(
+#[tauri::command]
+pub async fn managed_worktree_removal_plan(
     app: tauri::AppHandle,
-    store: State<'_, SessionStore>,
-    terminals: State<'_, crate::pty::PtyHost>,
-    agents: State<'_, crate::harness::HarnessHost>,
     request: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let workspace_id = request["workspaceId"]
-        .as_str()
-        .ok_or("Workspace ID is required")?;
-    let host = crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.lifecycle.v1")?;
-    host.project("workspaces.cleanup.plan", request.clone(), |plan, projection| {
-        let token = plan["token"]
+    crate::harness::run_blocking("managed_worktree_removal_plan", move || {
+        let store = app.state::<SessionStore>();
+        let terminals = app.state::<crate::pty::PtyHost>();
+        let agents = app.state::<crate::harness::HarnessHost>();
+        let workspace_id = request["workspaceId"]
             .as_str()
-            .ok_or("Host returned no cleanup preview token")?;
+            .ok_or("Workspace ID is required")?;
+        let host = crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.lifecycle.v1")?;
+        host.project("workspaces.cleanup.plan", request.clone(), |plan, projection| {
+            let token = plan["token"]
+                .as_str()
+                .ok_or("Host returned no cleanup preview token")?;
+            let path = Path::new(
+                plan["path"]
+                    .as_str()
+                    .ok_or("Host returned no cleanup path")?,
+            );
+            crate::worktree_lifecycle::validate_removal_path(path)?;
+            if plan["workspaceId"] != workspace_id
+                || plan["expectedRevision"] != request["expectedRevision"]
+            {
+                return Err("Workspace cleanup identity or revision changed; preview again".into());
+            }
+            managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
+            let raw = serde_json::to_string(plan).map_err(|e| e.to_string())?;
+            crate::remote::NativeProjection::commit(&[projection], || {
+                store.lock_conn()?.execute("INSERT INTO native_cleanup_plans(token,workspace_id,plan_json) VALUES(?1,?2,?3)
+            ON CONFLICT(token) DO UPDATE SET plan_json=excluded.plan_json WHERE native_cleanup_plans.workspace_id=excluded.workspace_id",
+                rusqlite::params![token,workspace_id,raw]).map_err(|e|e.to_string())?;
+                Ok(())
+            })?;
+            Ok(plan.clone())
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn managed_worktree_removal_apply(
+    app: tauri::AppHandle,
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    crate::harness::run_blocking("managed_worktree_removal_apply", move || {
+        let store = app.state::<SessionStore>();
+        let terminals = app.state::<crate::pty::PtyHost>();
+        let agents = app.state::<crate::harness::HarnessHost>();
+        let workspace_id = request["workspaceId"]
+            .as_str()
+            .ok_or("Workspace ID is required")?;
+        let token = request["planToken"]
+            .as_str()
+            .ok_or("Cleanup preview token is required")?;
+        let raw: String = store
+            .lock_conn()?
+            .query_row(
+                "SELECT plan_json FROM native_cleanup_plans WHERE token=?1 AND workspace_id=?2",
+                rusqlite::params![token, workspace_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Open a fresh cleanup preview on this computer before applying".to_string())?;
+        let plan: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        if plan["expectedRevision"] != request["expectedRevision"] {
+            return Err("Workspace cleanup revision changed; preview again".into());
+        }
         let path = Path::new(
             plan["path"]
                 .as_str()
                 .ok_or("Host returned no cleanup path")?,
         );
-        crate::worktree_lifecycle::validate_removal_path(path)?;
-        if plan["workspaceId"] != workspace_id
-            || plan["expectedRevision"] != request["expectedRevision"]
-        {
-            return Err("Workspace cleanup identity or revision changed; preview again".into());
-        }
+        let _reservation = crate::worktree_lifecycle::reserve_removal(path)?;
         managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
-        let raw = serde_json::to_string(plan).map_err(|e| e.to_string())?;
-        crate::remote::NativeProjection::commit(&[projection], || {
-            store.lock_conn()?.execute("INSERT INTO native_cleanup_plans(token,workspace_id,plan_json) VALUES(?1,?2,?3)
-        ON CONFLICT(token) DO UPDATE SET plan_json=excluded.plan_json WHERE native_cleanup_plans.workspace_id=excluded.workspace_id",
-            rusqlite::params![token,workspace_id,raw]).map_err(|e|e.to_string())?;
-            Ok(())
-        })?;
-        Ok(plan.clone())
+        let host = crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.lifecycle.v1")?;
+        // No native force-removal fallback. An unknown response remains the same Host operation.
+        host.project("workspaces.cleanup.apply", request.clone(), |receipt, projection| {
+            if receipt["workspaceId"] != workspace_id
+                || receipt["retainedBranchRef"] != plan["branchRef"]
+                || !receipt["workspaceRevision"]
+                    .as_i64()
+                    .is_some_and(|revision| revision > 0)
+                || !receipt["operationId"]
+                    .as_str()
+                    .is_some_and(|id| !id.is_empty())
+                || !matches!(
+                    receipt["directoryState"].as_str(),
+                    Some("present" | "pendingRemoval" | "removing" | "removed" | "blocked")
+                )
+            {
+                return Err(
+                    "Host returned a different cleanup receipt; reconnect and inspect status".into(),
+                );
+            }
+            if receipt["directoryState"] == "removed" {
+                crate::remote::NativeProjection::commit(&[projection], || {
+                    store.lock_conn()?.execute("UPDATE sessions SET worktree_removed=1,workspace_revision=?2,provider_session_id=NULL,context_used=NULL,context_window=NULL WHERE workspace_id=?1",
+                rusqlite::params![workspace_id,receipt["workspaceRevision"].as_i64()]).map_err(|e|e.to_string())?;
+                    Ok(())
+                })?;
+            }
+            Ok(receipt.clone())
+        })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn managed_worktree_removal_apply(
-    app: tauri::AppHandle,
-    store: State<'_, SessionStore>,
-    terminals: State<'_, crate::pty::PtyHost>,
-    agents: State<'_, crate::harness::HarnessHost>,
-    request: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    let workspace_id = request["workspaceId"]
-        .as_str()
-        .ok_or("Workspace ID is required")?;
-    let token = request["planToken"]
-        .as_str()
-        .ok_or("Cleanup preview token is required")?;
-    let raw: String = store
-        .lock_conn()?
-        .query_row(
-            "SELECT plan_json FROM native_cleanup_plans WHERE token=?1 AND workspace_id=?2",
-            rusqlite::params![token, workspace_id],
-            |row| row.get(0),
-        )
-        .map_err(|_| "Open a fresh cleanup preview on this computer before applying".to_string())?;
-    let plan: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-    if plan["expectedRevision"] != request["expectedRevision"] {
-        return Err("Workspace cleanup revision changed; preview again".into());
-    }
-    let path = Path::new(
-        plan["path"]
-            .as_str()
-            .ok_or("Host returned no cleanup path")?,
-    );
-    let _reservation = crate::worktree_lifecycle::reserve_removal(path)?;
-    managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
-    let host = crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.lifecycle.v1")?;
-    // No native force-removal fallback. An unknown response remains the same Host operation.
-    host.project("workspaces.cleanup.apply", request.clone(), |receipt, projection| {
-        if receipt["workspaceId"] != workspace_id
-            || receipt["retainedBranchRef"] != plan["branchRef"]
-            || !receipt["workspaceRevision"]
-                .as_i64()
-                .is_some_and(|revision| revision > 0)
-            || !receipt["operationId"]
-                .as_str()
-                .is_some_and(|id| !id.is_empty())
-            || !matches!(
-                receipt["directoryState"].as_str(),
-                Some("present" | "pendingRemoval" | "removing" | "removed" | "blocked")
-            )
-        {
-            return Err(
-                "Host returned a different cleanup receipt; reconnect and inspect status".into(),
-            );
-        }
-        if receipt["directoryState"] == "removed" {
-            crate::remote::NativeProjection::commit(&[projection], || {
-                store.lock_conn()?.execute("UPDATE sessions SET worktree_removed=1,workspace_revision=?2,provider_session_id=NULL,context_used=NULL,context_window=NULL WHERE workspace_id=?1",
-            rusqlite::params![workspace_id,receipt["workspaceRevision"].as_i64()]).map_err(|e|e.to_string())?;
-                Ok(())
-            })?;
-        }
-        Ok(receipt.clone())
-    })
-}
-
-#[tauri::command(async)]
+#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn git_worktree_remove(
+pub async fn git_worktree_remove(
+    app: tauri::AppHandle,
     cwd: String,
     path: String,
     force: bool,
     keep_sessions: Option<bool>,
     expected_review: Option<WorktreeRemovalReview>,
-    store: State<'_, SessionStore>,
-    terminals: State<'_, crate::pty::PtyHost>,
-    agents: State<'_, crate::harness::HarnessHost>,
 ) -> Result<WorktreeRemoval, String> {
-    let root = expand_home(&cwd);
-    crate::fs::with_git_mutation(&root, || {
-        let path = expand_home(&path);
-        let _reservation = crate::worktree_lifecycle::reserve_removal(&path)?;
-        if terminals.has_working_dir(&path) || agents.has_working_dir(&path) {
-            return Err(
-                "Close the terminals and agent processes using this worktree first.".into(),
-            );
-        }
-        let conn = store.lock_conn()?;
-        if let Some(expected) = expected_review.as_ref() {
-            if force {
-                return Err("Reviewed removal cannot use force".into());
+    crate::harness::run_blocking("git_worktree_remove", move || {
+        let store = app.state::<SessionStore>();
+        let terminals = app.state::<crate::pty::PtyHost>();
+        let agents = app.state::<crate::harness::HarnessHost>();
+        let root = expand_home(&cwd);
+        crate::fs::with_git_mutation(&root, || {
+            let path = expand_home(&path);
+            let _reservation = crate::worktree_lifecycle::reserve_removal(&path)?;
+            if terminals.has_working_dir(&path) || agents.has_working_dir(&path) {
+                return Err(
+                    "Close the terminals and agent processes using this worktree first.".into(),
+                );
             }
-            let current = removal_review(
-                &conn,
-                &root,
-                &path,
-                terminals.has_working_dir(&path),
-                agents.has_working_dir(&path),
-            )?;
-            assert_removal_review(expected, &current)?;
-        }
-        remove_with_sessions(&conn, &root, &path, force, keep_sessions.unwrap_or(false))
+            let conn = store.lock_conn()?;
+            if let Some(expected) = expected_review.as_ref() {
+                if force {
+                    return Err("Reviewed removal cannot use force".into());
+                }
+                let current = removal_review(
+                    &conn,
+                    &root,
+                    &path,
+                    terminals.has_working_dir(&path),
+                    agents.has_working_dir(&path),
+                )?;
+                assert_removal_review(expected, &current)?;
+            }
+            remove_with_sessions(&conn, &root, &path, force, keep_sessions.unwrap_or(false))
+        })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn git_orchestration_worktree_remove(
+#[tauri::command]
+pub async fn git_orchestration_worktree_remove(
+    app: tauri::AppHandle,
     cwd: String,
     path: String,
-    store: State<'_, SessionStore>,
-    terminals: State<'_, crate::pty::PtyHost>,
-    agents: State<'_, crate::harness::HarnessHost>,
 ) -> Result<WorktreeRemoval, String> {
-    let root = expand_home(&cwd);
-    crate::fs::with_git_mutation(&root, || {
-        let path = expand_home(&path);
-        let _reservation = crate::worktree_lifecycle::reserve_removal(&path)?;
-        if terminals.has_working_dir(&path) || agents.has_working_dir(&path) {
-            return Err(
-                "Close the terminals and agent processes using this worktree first.".into(),
-            );
-        }
-        let conn = store.lock_conn()?;
-        // Directory retirement must retain the local branch and rescue refs.
-        remove_with_sessions(&conn, &root, &path, true, true)
+    crate::harness::run_blocking("git_orchestration_worktree_remove", move || {
+        let store = app.state::<SessionStore>();
+        let terminals = app.state::<crate::pty::PtyHost>();
+        let agents = app.state::<crate::harness::HarnessHost>();
+        let root = expand_home(&cwd);
+        crate::fs::with_git_mutation(&root, || {
+            let path = expand_home(&path);
+            let _reservation = crate::worktree_lifecycle::reserve_removal(&path)?;
+            if terminals.has_working_dir(&path) || agents.has_working_dir(&path) {
+                return Err(
+                    "Close the terminals and agent processes using this worktree first.".into(),
+                );
+            }
+            let conn = store.lock_conn()?;
+            // Directory retirement must retain the local branch and rescue refs.
+            remove_with_sessions(&conn, &root, &path, true, true)
+        })
     })
+    .await
 }
 
 #[tauri::command(async)]

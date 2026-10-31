@@ -47,7 +47,7 @@ if not c.get('whisperPath'):
     c['whisperPath'] = snapshot_download('Systran/faster-whisper-small', local_dir=sys.argv[2], token=False)
 if c.get('natural', True) and c.get('engine') == 'voxcpm2' and not c.get('ttsPath'):
     c['ttsPath'] = snapshot_download('openbmb/VoxCPM2', local_dir=sys.argv[3], token=False)
-if c.get('natural', True) and c.get('engine') != 'voxcpm2':
+if c.get('natural', True) and c.get('engine') not in ('voxcpm2', 'elevenlabs'):
     # Supertonic 3 (31 languages, CPU). Pinned to the revision supertonic 1.3.1 was tested with.
     snapshot_download('Supertone/supertonic-3', revision='724fb5abbf5502583fb520898d45929e62f02c0b', local_dir=os.path.join(os.path.dirname(sys.argv[3]), 'supertonic3'), token=False)
 if len(sys.argv) > 4:
@@ -307,7 +307,8 @@ export class VoiceSetupService {
         "--no-input",
         "faster-whisper",
         "huggingface-hub",
-        ...(config.natural === false
+        // ElevenLabs synthesizes in the cloud: no local speech package.
+        ...(config.natural === false || config.engine === "elevenlabs"
           ? []
           : config.engine === "voxcpm2"
             ? ["voxcpm"]

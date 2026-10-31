@@ -158,6 +158,28 @@ def prepare_posix_node(runtime):
         staged.unlink(missing_ok=True)
     return node
 
+def prune_host_runtimes(current, previous):
+    """Removes Host runtimes other than the one just installed and the one it replaced.
+
+    The previous runtime stays: sessions started from it and a rollback may still launch
+    it. An old node.exe that is still exiting keeps its folder locked; the next install
+    removes it. Folders are compared by name, they all live directly in runtime/. A
+    failure here never fails the install."""
+    root = BASE / 'runtime'
+    keep = {pathlib.Path(current).name, pathlib.Path(previous).name}
+    removed = []
+    try:
+        entries = [entry for entry in root.iterdir() if entry.is_dir() and not entry.is_symlink()]
+    except OSError:
+        return removed
+    for entry in entries:
+        if entry.name.startswith('.') or entry.name in keep:
+            continue
+        shutil.rmtree(entry, ignore_errors=True)
+        if not entry.exists():
+            removed.append(entry.name)
+    return removed
+
 def host_install(release, manifest, report):
     source = release / 'host'
     verify_tree(source, manifest['hostHashes'])
@@ -265,7 +287,9 @@ def host_install(release, manifest, report):
                 prepare_posix_node(pathlib.Path(previous))
             run(['launchctl', 'bootstrap', domain, str(plist)])
             raise
-    report('installed', runtime=str(runtime), **installed_identity(manifest, runtime / 'bycoda-host.mjs', host=True))
+    pruned = prune_host_runtimes(runtime, previous)
+    report('installed', runtime=str(runtime), **({'prunedRuntimes': pruned} if pruned else {}),
+           **installed_identity(manifest, runtime / 'bycoda-host.mjs', host=True))
 
 def installed_identity(manifest, binary, host=False):
     """An observed executable receipt; no credentials or runtime authentication."""

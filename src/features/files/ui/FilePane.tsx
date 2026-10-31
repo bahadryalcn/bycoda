@@ -32,7 +32,7 @@ import { Play } from "../../../shared/ui/icons";
 import { BuildTargetButton } from "../../sessions/ui/SecondOpinionButton";
 import { loadDiffViewer, subscribeDiffViewer } from "../../settings/model/settings";
 import { AgentTabView } from "../../sessions/ui/AgentTabView";
-import { useSession } from "../../sessions/model/sessionsStore";
+import { usePaneSession } from "../../sessions/model/sessionsStore";
 import { MarkdownPreview } from "../../sessions/ui/AgentMarkdown";
 import { BinaryFileView } from "./BinaryFileView";
 import { DocumentView } from "./DocumentView";
@@ -216,7 +216,7 @@ function FilePaneComponent({
                 <AgentTabView
                   title={file.path}
                   session={sessions.find((entry) => entry.id === file.agent.sessionId)}
-                  visible={file.id === pane.activeFileId}
+                  visible={visible && file.id === pane.activeFileId}
                   focused={focused && file.id === pane.activeFileId}
                   onOpenFile={onOpenFile}
                 />
@@ -224,6 +224,7 @@ function FilePaneComponent({
                 <PlanSurface
                   file={file}
                   active={visible && focused && file.id === pane.activeFileId}
+                  visible={visible && file.id === pane.activeFileId}
                   sessions={sessions}
                   onOpenFile={onOpenFile}
                   onUpdatePlan={onUpdatePlan}
@@ -319,6 +320,7 @@ export const FilePane = memo(FilePaneComponent, (previous, next) => {
 function PlanSurface({
   file,
   active,
+  visible,
   sessions,
   onOpenFile,
   onUpdatePlan,
@@ -326,6 +328,7 @@ function PlanSurface({
 }: {
   file: FilePaneTab;
   active: boolean;
+  visible: boolean;
   sessions: Session[];
   onOpenFile: OpenFileFn;
   onUpdatePlan: (sessionId: string, blockId: string, text: string) => void;
@@ -335,7 +338,8 @@ function PlanSurface({
   const plan = file.plan;
   const [mode, setMode] = useMarkdownMode(file.path);
   // A streaming plan's text lives only in the store; the `sessions` prop lags.
-  const liveSession = useSession(plan?.sessionId);
+  // A hidden plan tab follows the shell instead and catches up when shown.
+  const liveSession = usePaneSession(plan?.sessionId, visible);
   const session =
     liveSession ?? (plan ? sessions.find((entry) => entry.id === plan.sessionId) : undefined);
   const block = plan ? session?.blocks.find((entry) => entry.id === plan.blockId) : undefined;

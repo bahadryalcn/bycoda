@@ -16,6 +16,7 @@ import { initSounds } from "./features/settings/model/sounds";
 import {
   abortQuit,
   askQuitConfirmation,
+  workspaceSnapshotWriteBlocked,
   commitQuit,
   loadBootWorkspace,
   reportQuitPoll,
@@ -198,6 +199,15 @@ void bootstrap(
     performance.mark("bycoda:input-ready");
     finishStartup();
     const toolWindow = readToolWindow();
+    // One line that says what this window restored from, for the next report of
+    // "it opened on the wrong project".
+    console.info("[boot] opening workspace", {
+      source: windowTransfer ? "window-transfer" : resumed ? "snapshot" : "fallback",
+      activeTabId: resumed?.activeTabId ?? null,
+      projectCwd: resumed?.projectCwd ?? windowTransfer?.projectCwd ?? null,
+      tabs: resumed?.tabs.length ?? null,
+      saveBlocked: workspaceSnapshotWriteBlocked(),
+    });
     const installedUpdate =
       windowTransfer || toolWindow || hostToolsWindow ? null : consumeInstalledUpdate();
     if (windowTransfer) restoreTransferredDrafts(windowTransfer);

@@ -81,7 +81,7 @@ it("rejects canonical extra fields/coerced identifiers/epochs but retains HTTP l
   expect(f.ports.queues.serve).not.toHaveBeenCalled();
   const legacy = { ...base, sessionId: 17, epoch: "2", extra: true };
   await f.service.get(legacy, f.context, { legacy: true });
-  expect(f.ports.sessionStatus).toHaveBeenCalledWith("17");
+  expect(f.ports.sessionStatus).toHaveBeenCalledWith("17", false);
   expect(f.ports.queues.serve).toHaveBeenCalledWith("get", "17", "desktop:one", legacy, undefined);
 });
 

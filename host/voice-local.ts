@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { localVoicePython } from "./voice-python";
 import { inspectVoiceRuntime, voiceRuntimeConfig, type VoiceRuntimeConfig } from "./voice-runtime";
-import { VoiceSpeechService } from "./voice-speech";
+import { VoiceSpeechService, type VoiceSpeechDependencies } from "./voice-speech";
 
 /** `turn`: the recognizer can judge from a pause whether the sentence is finished. */
 export type LocalVoiceInfo = { lease: string; model: string; device: string; turn?: boolean };
@@ -35,7 +35,7 @@ export function validateVoiceAudio(audio: unknown, language: unknown) {
 
 /** One on-demand recognizer per host. Leases keep other desktop windows independent. */
 export class LocalVoiceService {
-  private speech = new VoiceSpeechService();
+  private speech: VoiceSpeechService;
   private runtime: VoiceRuntimeConfig = {};
   private runtimeKey = "";
   private child?: ChildProcessWithoutNullStreams;
@@ -51,6 +51,11 @@ export class LocalVoiceService {
   >();
   private idle?: ReturnType<typeof setInterval>;
   private starting = 0;
+
+  /** `cloudKey` (Host vault) enables the ElevenLabs reply voice; omitted, it reports no key. */
+  constructor(private readonly dependencies: VoiceSpeechDependencies = {}) {
+    this.speech = new VoiceSpeechService(dependencies);
+  }
 
   /** Includes asynchronous preflight so setup cannot race a new voice connection. */
   get isActive(): boolean {
@@ -76,7 +81,10 @@ export class LocalVoiceService {
       );
     if (!this.loading) {
       if (value !== undefined) {
-        const found = await inspectVoiceRuntime(config);
+        const cloudKey = this.dependencies.cloudKey;
+        const found = await inspectVoiceRuntime(config, {
+          cloudKey: async (provider) => Boolean(await cloudKey?.(provider)),
+        });
         if (!found.ready)
           throw new Error(
             `Voice setup is incomplete: ${found.missing.join(", ")}. Open Settings → Chat → Voice companion to choose installation paths.`,

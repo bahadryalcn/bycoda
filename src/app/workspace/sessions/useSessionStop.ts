@@ -28,6 +28,7 @@ import {
 } from "../../../features/workspace/model/tabKeys";
 import { type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { notifyFinishedWorkspace } from "../helpers/workspaceNotify";
+import { isSendStarting } from "./submit/submitStarting";
 
 export interface SessionStopDeps {
   sessionsRef: MutableRefObject<Session[]>;
@@ -126,6 +127,9 @@ export function useSessionStop(deps: SessionStopDeps) {
       flushHarnessEvents();
       const generation = turnGen.current.get(sessionId) ?? 0;
       const failureBlockId = `stop-error:${sessionId}`;
+      // A send still starting has no turn yet; the last answered message is not
+      // the one being stopped, so it must not be marked "Stopped by you".
+      const noTurnYet = isSendStarting(sessionId);
       void (async () => {
         // Keep the current event generation live until cancellation is delivered.
         // A failed Stop must leave provider events and another Stop actionable.
@@ -166,7 +170,7 @@ export function useSessionStop(deps: SessionStopDeps) {
         setSessions((prev) =>
           prev.map((s) => {
             if (s.id !== sessionId) return s;
-            const stopped = s.busy
+            const stopped = s.busy && !noTurnYet
               ? markConversationTurnStopped(stopStreaming(s))
               : stopStreaming(s);
             const completed = isPreparingHandoff(stopped) ? cancelHandoff(stopped) : stopped;

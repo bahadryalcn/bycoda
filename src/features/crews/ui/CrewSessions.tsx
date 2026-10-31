@@ -83,9 +83,11 @@ export function CrewSessions({
   if (!data && !state.error) return null;
   if (data && !data.runs.length && !data.definitions.length) return null;
   return (
-    <section aria-label={t("Crew work")} className="px-2 py-2">
-      <div className="flex min-h-7 items-center gap-1 px-1">
-        <span className="min-w-0 flex-1 text-ui-caption font-medium text-(--ui-text-secondary)">
+    // A quiet section label on the list's gutter. With nothing running it is only this one
+    // line (and Manage), so an idle project spends no rows on an empty state.
+    <section aria-label={t("Crew work")} className="px-1.5 pt-1">
+      <div className="flex min-h-7 items-center gap-1 ps-2.5 pe-0.5">
+        <span className="min-w-0 flex-1 text-ui-caption font-medium text-(--ui-text-muted)">
           {t("Crew work")}
         </span>
         <Button
@@ -102,7 +104,7 @@ export function CrewSessions({
           {t("Crew host unavailable. Retry")}
         </Button>
       ) : null}
-      <div className="flex flex-col gap-px">
+      <div className="flex flex-col gap-px empty:hidden">
         {runs.map((run) => (
           <Button
             key={run.id}
@@ -123,11 +125,6 @@ export function CrewSessions({
             <ChevronRight className="icon-sm shrink-0" />
           </Button>
         ))}
-        {!runs.length ? (
-          <p className="px-1 py-1 text-ui-caption text-(--ui-text-secondary)">
-            {q ? t("No matching crew work.") : t("No ongoing crew work.")}
-          </p>
-        ) : null}
       </div>
       {opened ? (
         <CrewManagementDialog

@@ -6,8 +6,8 @@ import {
   MANAGED_DELIVERY_REVIEW_REQUIRED,
   withHostGitMutation,
 } from "./git-mutations";
-import { relative, sep } from "node:path";
-import { realpath } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
+import { readFile, realpath } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
@@ -534,14 +534,44 @@ export class BranchCache {
   }
 }
 
-export const branchCache = new BranchCache((cwd) =>
-  exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], {
+/** The branch named by a checkout's own `HEAD` file, read without spawning git.
+ * Undefined means "ask git": a subfolder, a detached or reftable HEAD, or any read problem. */
+async function headBranchFromFiles(cwd: string): Promise<string | undefined> {
+  try {
+    let gitDir = join(cwd, ".git");
+    let marker: string;
+    try {
+      marker = await readFile(gitDir, "utf8");
+    } catch (error) {
+      // `.git` is a directory in a normal checkout: read its HEAD below.
+      if ((error as NodeJS.ErrnoException).code !== "EISDIR") return undefined;
+      marker = "";
+    }
+    if (marker) {
+      const target = /^gitdir:\s*(.+?)\s*$/m.exec(marker)?.[1];
+      if (!target) return undefined;
+      gitDir = isAbsolute(target) ? target : resolvePath(cwd, target);
+    }
+    const head = (await readFile(join(gitDir, "HEAD"), "utf8")).trim();
+    const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head)?.[1];
+    // `.invalid` is the reftable placeholder; only plain local branches are answered here.
+    return ref && ref !== ".invalid" ? ref : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export const branchCache = new BranchCache(async (cwd) => {
+  const fromFiles = await headBranchFromFiles(cwd);
+  if (fromFiles !== undefined) return fromFiles;
+  const { stdout } = await exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], {
     cwd,
     timeout: 2_000,
     windowsHide: true,
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
-  }).then(({ stdout }) => stdout.trim()),
-);
+  });
+  return stdout.trim();
+});
 
 /** Runs one command in `root`, a validated working copy. */
 export async function runGitAction(

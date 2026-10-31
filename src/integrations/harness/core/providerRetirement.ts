@@ -26,6 +26,8 @@ type Keeper = {
   retained: number;
   errors: WeakSet<object>;
 };
+/** `includeFamily` narrows a drain to the families it returns true for. */
+type DrainScope = { family?: string; ownerKey?: string; includeFamily?: (family: string) => boolean };
 export type ProviderRetirementCohort = Readonly<{
   size: number;
   settled: Promise<void>;
@@ -148,6 +150,10 @@ function joined(keeper: Keeper, family: string, work: Promise<unknown>[]): Promi
 }
 
 const KILL_WAIT_MS = 20_000;
+/** When each actual kill began, so a later caller waits only for what is left of
+ * the budget instead of starting another full one behind the first caller. */
+const killStartedAt = new WeakMap<Original, number>();
+const MIN_LATE_WAIT_MS = 1_000;
 
 function attempt(
   keeper: Keeper,
@@ -158,6 +164,7 @@ function attempt(
   if (entry.state === "retired") return Promise.resolve();
   if (!entry.work || entry.state === "failed") {
     entry.state = "retiring";
+    killStartedAt.set(entry, Date.now());
     entry.work = Promise.resolve().then(() => entry.kill(entry.handle)).then(() => {
       entry.state = "retired";
       entry.error = undefined;
@@ -173,10 +180,14 @@ function attempt(
   }
   // A deadline bounds this caller, never the actual kill or its ownership record.
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const remaining = Math.max(
+    MIN_LATE_WAIT_MS,
+    KILL_WAIT_MS - (Date.now() - (killStartedAt.get(entry) ?? Date.now())),
+  );
   return Promise.race([
     entry.work,
     new Promise<void>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("The previous provider is still stopping. Retry in a moment.")), KILL_WAIT_MS);
+      timer = setTimeout(() => reject(new Error("The previous provider is still stopping. Retry in a moment.")), remaining);
     }),
   ]).finally(() => { if (timer !== undefined) clearTimeout(timer); });
 }
@@ -352,12 +363,13 @@ export function createProviderRetirementScope(data: Record<string, unknown>) {
           ),
       });
     },
-    drain(scope: { family?: string; ownerKey?: string } = {}): Promise<void> {
+    drain(scope: DrainScope = {}): Promise<void> {
       return joined(
         keeper,
         scope.family ?? "all",
         [...keeper.families]
           .filter(([family]) => scope.family === undefined || scope.family === family)
+          .filter(([family]) => scope.includeFamily?.(family) ?? true)
           .map(([family, shared]) =>
             joinOriginals(
               keeper,
@@ -395,9 +407,7 @@ export function createProviderRetirementLedger(
 ): ProviderRetirementLedger {
   return defaultScope.createLedger(family, kill);
 }
-export function drainProviderRetirements(
-  scope: { family?: string; ownerKey?: string } = {},
-): Promise<void> {
+export function drainProviderRetirements(scope: DrainScope = {}): Promise<void> {
   return defaultScope.drain(scope);
 }
 export function providerRetirementObservation() {

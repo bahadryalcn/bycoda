@@ -1,17 +1,28 @@
 import {
-  canClearConversation,
   clearConversation,
+  clearConversationBlocker,
 } from "../../../../features/sessions/model/clearConversation";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
 import { upsertClearedSession } from "../../../../features/sessions/data/sessionStore";
 import { forgetHarnessSession } from "../../../../integrations/harness";
+import { t } from "../../../../shared/i18n";
+import { showSubmitNotice } from "./submitNotice";
 import type { SubmitDeps } from "./submitTypes";
 
 export function submitClearConversation(ctx: SubmitDeps, sessionId: string): boolean {
   ctx.flushHarnessEvents();
   const snapshot = sessionsRef.current.find((session) => session.id === sessionId);
-  if (!snapshot || !canClearConversation(snapshot) || !ctx.refs.editedResends.start(sessionId))
+  if (!snapshot) return false;
+  // Say why: a bare refusal leaves the text in the composer with no explanation.
+  const blocker = clearConversationBlocker(snapshot);
+  if (blocker) {
+    showSubmitNotice(sessionId, blocker);
     return false;
+  }
+  if (!ctx.refs.editedResends.start(sessionId)) {
+    showSubmitNotice(sessionId, t("Another change to this conversation is in progress. Try clearing again in a moment."));
+    return false;
+  }
   // Hold submission until both the provider binding and durable transcript are cleared.
   ctx.refs.retiringTurns.current.set(sessionId, ctx.refs.turnGen.current.get(sessionId) ?? 0);
   void (async () => {

@@ -759,22 +759,28 @@ impl NativeRendererCheckpoints {
     }
 }
 
-#[tauri::command(async)]
-pub(crate) fn native_renderer_checkpoint(
+#[tauri::command]
+pub(crate) async fn native_renderer_checkpoint(
     window: tauri::Window,
     nonce: String,
     expected: NativeCheckpointExpectation,
 ) -> Result<NativeSqlCheckpointReceipt, String> {
-    crate::native_authority_runtime::renderer_checkpoints(window.app_handle())?
-        .checkpoint(&window, &nonce, expected)
+    crate::harness::run_blocking("native_renderer_checkpoint", move || {
+        crate::native_authority_runtime::renderer_checkpoints(window.app_handle())?
+            .checkpoint(&window, &nonce, expected)
+    })
+    .await
 }
-#[tauri::command(async)]
-pub(crate) fn native_renderer_checkpoint_status(
+#[tauri::command]
+pub(crate) async fn native_renderer_checkpoint_status(
     window: tauri::Window,
     nonce: String,
 ) -> Result<NativeCheckpointStatus, String> {
-    crate::native_authority_runtime::renderer_checkpoints(window.app_handle())?
-        .status(&window, &nonce)
+    crate::harness::run_blocking("native_renderer_checkpoint_status", move || {
+        crate::native_authority_runtime::renderer_checkpoints(window.app_handle())?
+            .status(&window, &nonce)
+    })
+    .await
 }
 
 #[cfg(all(test, windows))]

@@ -145,7 +145,12 @@ import type { SessionFolderTarget } from "../model/sessionFolders";
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
 import { RemoteSession } from "../../connections/ui/RemoteSession";
 import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
-import { usePaneSession } from "../model/sessionsStore";
+import {
+  getSessions,
+  selectSessionById,
+  usePaneSession,
+  usePaneSessionBlocks,
+} from "../model/sessionsStore";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import type { HostSession } from "../../connections/model/protocol";
 import {
@@ -371,6 +376,9 @@ export const SessionPane = memo(function SessionPane(props: SessionPaneProps) {
   // hidden pane only follows the shell, so a busy background tab does not
   // re-render on every streamed frame.
   const live = usePaneSession(props.session.id, props.visible) ?? props.session;
+  // The pane below renders from this value, which keeps its identity across
+  // streamed-text frames. Only the live transcript pieces subscribe to the text.
+  const paneSession = useStableValue(live, sameSessionIgnoringStreamingText);
   // Sessions in a project on another machine render this same pane, backed by
   // the host instead of this computer's session runtime.
   if (hostSessionBinding(props.session) || isRemoteProjectPath(props.session.cwd))
@@ -385,7 +393,7 @@ export const SessionPane = memo(function SessionPane(props: SessionPaneProps) {
         render={(remote) => <LocalSessionPane {...props} {...remote} />}
       />
     );
-  return <LocalSessionPane {...props} session={live} />;
+  return <LocalSessionPane {...props} session={paneSession} />;
 });
 
 const LocalSessionPane = memo(function LocalSessionPane({
@@ -580,8 +588,23 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const remote = remoteSession;
   const activeSessionIdRef = useRef(session.id);
   activeSessionIdRef.current = session.id;
-  const currentSessionRef = useRef(session);
-  currentSessionRef.current = session;
+  // The pane's `session` keeps its identity across streamed text, so event-time
+  // reads go to the store for the current one (a remote session is not in it).
+  const renderedSession = useRef(session);
+  renderedSession.current = session;
+  const renderedRemote = useRef(remote);
+  renderedRemote.current = remote;
+  const currentSessionRef = useMemo(
+    () => ({
+      get current(): Session {
+        const rendered = renderedSession.current;
+        return renderedRemote.current
+          ? rendered
+          : (selectSessionById(getSessions(), rendered.id) ?? rendered);
+      },
+    }),
+    [],
+  );
   const stableSession = useStableValue(session, sameSessionIgnoringStreamingText);
   const stableBlocks = useStableValue(session.blocks, sameBlocksIgnoringStreamingText);
   const lastUserMessage = useMemo(() => lastUserTurnBlock(stableBlocks), [stableBlocks]);
@@ -657,13 +680,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (requestId: number, decision: ApprovalDecision) => onApproval(session.id, requestId, decision),
     [onApproval, session.id],
   );
-  const approvalSession = useRef(session);
-  approvalSession.current = session;
   const approvalContext = useMemo(() => ({
-    get session() { return approvalSession.current; },
-    getSession: () => approvalSession.current,
+    get session() { return currentSessionRef.current; },
+    getSession: () => currentSessionRef.current,
     dispatch: onApproval,
-  }), [onApproval]);
+  }), [onApproval, currentSessionRef]);
   const replyQuestion = useCallback(
     (requestId: number, reply: UserQuestionReply) => onQuestionReply(session.id, requestId, reply),
     [onQuestionReply, session.id],
@@ -1031,7 +1052,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (provider: ProviderAccountProvider, accountId: string) =>
       onSelectProviderAccount?.(session.id, provider, accountId),
   );
-  const composerPromptHistory = useStableCallback(() => userPromptHistory(session));
+  const composerPromptHistory = useStableCallback(() => userPromptHistory(currentSessionRef.current));
   const stopDockAgent = useStableCallback((agent: DockAgent) =>
     agent.callId ? stopBackground(agent.callId) : Promise.reject(new Error("No call to stop")),
   );
@@ -1413,11 +1434,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
       className="chat-pane-background relative isolate flex h-full min-h-0 min-w-0 flex-1 flex-col"
       onMouseDown={() => onFocus(session.id)}
     >
-      <LiveBackgroundLayer
+      <LiveSessionBackground
+        sessionId={session.id}
+        fallback={session}
+        follow={!remote}
         active={focused}
         visible={visible}
-        speech={streamingReplyLength(session)}
-        activity={liveTurnActivity(session)}
       />
       {!isEmpty ? <CrewBackdrop visible={visible} session={stableSession} /> : null}
       {projectBackground?.effect === "gradient-blur" ||
@@ -1616,92 +1638,119 @@ const LocalSessionPane = memo(function LocalSessionPane({
             )
           ) : (
             <>
-              <PooledTranscript
-                pool={transcriptPool}
+              <LiveSessionBlocks
                 sessionId={session.id}
-                onMouseDown={focusPane}
-              >
-                <AgentTranscript
-                  approvalContext={approvalContext}
-                  sessionId={session.id}
-                  blocks={session.blocks}
-                  performanceTraceId={sessionPerformanceTrace(session.id)}
-                  historyLoading={session.historyLoading}
-                  historyLoadError={session.historyLoadError}
-                  remoteHistoryHasMore={remoteHistoryHasMore}
-                  remoteHistoryLoading={remoteHistoryLoading}
-                  remoteHistoryError={remoteHistoryError}
-                  onLoadRemoteHistory={onLoadRemoteHistory}
-                  onLoadRemoteBlock={onLoadRemoteBlock}
-                  canRewindMessage={canRewindMessage}
-                  onRewindMessage={rewindMessage}
-                  busy={!!session.busy}
-                  visible={visible}
-                  cwd={workCwd}
-                  harness={session.harness}
-                  model={session.model}
-                  modelSettings={session.modelSettings}
-                  providerAccountId={session.providerAccountId}
-                  pendingQuestion={!!session.pendingQuestion}
-                  questionBehavior={session.pendingQuestion?.behavior}
-                  liveStatusInDock
-                  backgroundTasks={session.backgroundTasks}
-                  backgroundAgents={session.backgroundAgents}
-                  onApproval={session.worktreeRemoved ? undefined : approve}
-                  onAddToChat={addSelectionToChat}
-                  onSaveNote={notesEnabled ? saveNote : undefined}
-                  onSendDraft={draftBlock ? sendDraft : undefined}
-                  onRemoveDraft={draftBlock ? removeDraft : undefined}
-                  onSaveSelectionNote={notesEnabled ? saveSelectionNote : undefined}
-                  onOpenFile={onOpenFile}
-                  onOpenDiff={onOpenDiff}
-                  onOpenPlan={openPlan}
-                  onBuildPlan={session.worktreeRemoved ? undefined : buildPlan}
-                  planBuildTargets={!remote}
-                  onSecondOpinion={
-                    !session.inboxAsk && !session.worktreeRemoved && onSecondOpinion
-                      ? secondOpinion
-                      : undefined
-                  }
-                  onHandoff={
-                    !session.inboxAsk && !session.worktreeRemoved && onHandoff ? handoff : undefined
-                  }
-                  onJumpToBottomChange={setShowJumpToBottom}
-                  onReadingChange={setReadingHistory}
-                  onJumpToBottomReady={onJumpToBottomReady}
-                  onRevealReady={onRevealReady}
-                  onNavigateReady={onNavigateReady}
-                  onScrollerChange={setTranscriptScroller}
-                  editingLastTurn={editingLastTurn}
-                  onEditLastTurn={undefined}
-                  latestTurnAccessory={latestTurnAccessory}
-                />
-              </PooledTranscript>
-              {!session.inboxAsk ? (
-                <TranscriptFind
-                  sessionId={session.id}
-                  onTriggerChange={setFindAction}
-                  blocks={findSearching ? session.blocks : stableBlocks}
-                  visible={visible}
-                  focused={focused}
-                  onNavigate={navigateBlock}
-                  onSearchingChange={setFindSearching}
-                  side={
-                    session.linkedWorkItemUpdateCard &&
-                    session.linkedWorkItemUpdateCard.status !== "loading"
-                      ? "left"
-                      : "right"
-                  }
-                />
-              ) : null}
-              <PromptOutline
-                blocks={outlineOpen ? session.blocks : stableBlocks}
-                onOpenChange={setOutlineOpen}
-                scope={transcriptScope}
-                scroller={transcriptScroller}
                 visible={visible}
-                revealBlock={revealBlock}
-              />
+                enabled={!remote}
+                fallback={session.blocks}
+              >
+                {(liveBlocks) => (
+                  <PooledTranscript
+                    pool={transcriptPool}
+                    sessionId={session.id}
+                    onMouseDown={focusPane}
+                  >
+                    <AgentTranscript
+                      approvalContext={approvalContext}
+                      sessionId={session.id}
+                      blocks={liveBlocks}
+                      performanceTraceId={sessionPerformanceTrace(session.id)}
+                      historyLoading={session.historyLoading}
+                      historyLoadError={session.historyLoadError}
+                      remoteHistoryHasMore={remoteHistoryHasMore}
+                      remoteHistoryLoading={remoteHistoryLoading}
+                      remoteHistoryError={remoteHistoryError}
+                      onLoadRemoteHistory={onLoadRemoteHistory}
+                      onLoadRemoteBlock={onLoadRemoteBlock}
+                      canRewindMessage={canRewindMessage}
+                      onRewindMessage={rewindMessage}
+                      busy={!!session.busy}
+                      visible={visible}
+                      cwd={workCwd}
+                      harness={session.harness}
+                      model={session.model}
+                      modelSettings={session.modelSettings}
+                      providerAccountId={session.providerAccountId}
+                      pendingQuestion={!!session.pendingQuestion}
+                      questionBehavior={session.pendingQuestion?.behavior}
+                      liveStatusInDock
+                      backgroundTasks={session.backgroundTasks}
+                      backgroundAgents={session.backgroundAgents}
+                      onApproval={session.worktreeRemoved ? undefined : approve}
+                      onAddToChat={addSelectionToChat}
+                      onSaveNote={notesEnabled ? saveNote : undefined}
+                      onSendDraft={draftBlock ? sendDraft : undefined}
+                      onRemoveDraft={draftBlock ? removeDraft : undefined}
+                      onSaveSelectionNote={notesEnabled ? saveSelectionNote : undefined}
+                      onOpenFile={onOpenFile}
+                      onOpenDiff={onOpenDiff}
+                      onOpenPlan={openPlan}
+                      onBuildPlan={session.worktreeRemoved ? undefined : buildPlan}
+                      planBuildTargets={!remote}
+                      onSecondOpinion={
+                        !session.inboxAsk && !session.worktreeRemoved && onSecondOpinion
+                          ? secondOpinion
+                          : undefined
+                      }
+                      onHandoff={
+                        !session.inboxAsk && !session.worktreeRemoved && onHandoff ? handoff : undefined
+                      }
+                      onJumpToBottomChange={setShowJumpToBottom}
+                      onReadingChange={setReadingHistory}
+                      onJumpToBottomReady={onJumpToBottomReady}
+                      onRevealReady={onRevealReady}
+                      onNavigateReady={onNavigateReady}
+                      onScrollerChange={setTranscriptScroller}
+                      editingLastTurn={editingLastTurn}
+                      onEditLastTurn={undefined}
+                      latestTurnAccessory={latestTurnAccessory}
+                    />
+                  </PooledTranscript>
+                )}
+              </LiveSessionBlocks>
+              {!session.inboxAsk ? (
+                <LiveSessionBlocks
+                  sessionId={session.id}
+                  visible={visible}
+                  enabled={findSearching && !remote}
+                  fallback={stableBlocks}
+                >
+                  {(findBlocks) => (
+                    <TranscriptFind
+                      sessionId={session.id}
+                      onTriggerChange={setFindAction}
+                      blocks={findBlocks}
+                      visible={visible}
+                      focused={focused}
+                      onNavigate={navigateBlock}
+                      onSearchingChange={setFindSearching}
+                      side={
+                        session.linkedWorkItemUpdateCard &&
+                        session.linkedWorkItemUpdateCard.status !== "loading"
+                          ? "left"
+                          : "right"
+                      }
+                    />
+                  )}
+                </LiveSessionBlocks>
+              ) : null}
+              <LiveSessionBlocks
+                sessionId={session.id}
+                visible={visible}
+                enabled={outlineOpen && !remote}
+                fallback={stableBlocks}
+              >
+                {(outlineBlocks) => (
+                  <PromptOutline
+                    blocks={outlineBlocks}
+                    onOpenChange={setOutlineOpen}
+                    scope={transcriptScope}
+                    scroller={transcriptScroller}
+                    visible={visible}
+                    revealBlock={revealBlock}
+                  />
+                )}
+              </LiveSessionBlocks>
               {showJumpToBottom ? (
                 <div className="pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center">
                   <Button
@@ -1804,6 +1853,56 @@ const LocalSessionPane = memo(function LocalSessionPane({
     </>
   );
 });
+
+/**
+ * The live blocks of a session, for the parts of a pane that follow streamed
+ * text. The pane itself renders from a session that ignores that text, so only
+ * this component re-renders on a frame. While `enabled` is off it renders
+ * `fallback` and does not subscribe.
+ */
+function LiveSessionBlocks({
+  sessionId,
+  visible,
+  enabled,
+  fallback,
+  children,
+}: {
+  sessionId: string;
+  visible: boolean;
+  enabled: boolean;
+  fallback: Block[];
+  children: (blocks: Block[]) => ReactNode;
+}) {
+  const live = usePaneSessionBlocks(sessionId, visible, enabled);
+  return <>{children(live ?? fallback)}</>;
+}
+
+/** The animated chat background, driven by the streamed text of the live session. */
+function LiveSessionBackground({
+  sessionId,
+  fallback,
+  follow,
+  active,
+  visible,
+}: {
+  sessionId: string;
+  fallback: Session;
+  /** False for a remote session, whose current state is `fallback`. */
+  follow: boolean;
+  active: boolean;
+  visible: boolean;
+}) {
+  const live = usePaneSession(sessionId, visible);
+  const session = follow ? (live ?? fallback) : fallback;
+  return (
+    <LiveBackgroundLayer
+      active={active}
+      visible={visible}
+      speech={streamingReplyLength(session)}
+      activity={liveTurnActivity(session)}
+    />
+  );
+}
 
 /** Length of the assistant reply currently streaming, or -1 when none is. */
 function streamingReplyLength(session: Session): number {

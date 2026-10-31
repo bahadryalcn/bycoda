@@ -8,16 +8,19 @@ import {
   Minimize2,
   Maximize2,
   MessageSquare,
-  Pause,
+  Mic,
+  MicOff,
   Pin,
   PinOff,
-  Play,
   Square,
+  VolumeX,
   X,
 } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { LocalVoice, type SpeechBinding } from "../model/localVoice";
+import { RealtimeVoice } from "../model/realtimeVoice";
+import { realtimeSecret, type RealtimeProvider } from "../model/realtimeVoiceClient";
 import { converseWithSession, warmVoiceReply } from "../model/voiceConversation";
 import { clampVoicePosition, voiceContext, voiceTarget } from "../model/voiceSession";
 import styles from "./VoiceCompanion.module.css";
@@ -28,7 +31,14 @@ import {
   voiceRuntimeSettings,
 } from "../model/voiceSettings";
 import { VoiceVisualizer } from "./VoiceVisualizer";
+import { VoicePanelChoices } from "./VoicePanelChoices";
 import { voiceVisualState } from "../model/voiceVisualState";
+
+/** Cloud speech-to-speech providers, signed in through Grok Build or Codex. */
+const REALTIME: Record<"grok" | "openai", { provider: RealtimeProvider; name: string }> = {
+  grok: { provider: "xai", name: "Grok Voice" },
+  openai: { provider: "openai", name: "OpenAI Realtime" },
+};
 
 /** Host RPC rejections arrive as strings; keep their reason instead of a generic fallback. */
 function voiceError(cause: unknown, fallback: string): string {
@@ -72,7 +82,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     if (open && panel.current?.contains(document.activeElement)) compactToggle.current?.focus();
   }, [compact]);
   const returnFocus = useRef(false);
-  const client = useRef<LocalVoice | null>(null);
+  const client = useRef<LocalVoice | RealtimeVoice | null>(null);
+  const realtime = settings.mode === "local" ? undefined : REALTIME[settings.mode];
   const generation = useRef(0);
   const sequence = useRef(0);
   const consumedSequence = useRef(0);
@@ -102,6 +113,19 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     setTranscript("");
     setPhase("listening");
   }
+  // Choosing another conversation or voice ends a live connection; the panel stays
+  // open and Start voice connects with the new choice.
+  const connection = JSON.stringify({
+    ...voiceRuntimeSettings(settings),
+    mode: settings.mode,
+    speaker: settings.mode === "local" ? undefined : settings.speakers[settings.mode],
+  });
+  const connected = useRef(connection);
+  useEffect(() => {
+    if (connected.current === connection) return;
+    connected.current = connection;
+    if (client.current) close();
+  }, [connection]);
   function dismiss() {
     close();
     returnFocus.current = true;
@@ -282,11 +306,80 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       if (generation.current === epoch) void warmVoiceReply(session);
     }
   }
+  /** Tools of the cloud companion, with the same readiness checks as local voice. */
+  async function realtimeTool(name: string, args: Record<string, unknown>, epoch: number) {
+    const session = currentTarget();
+    if (!session) return { error: "No session is selected." };
+    if (name === "session_context") return voiceContext(session);
+    if (name === "stop_work") {
+      latest.current.onStop(session.id);
+      return { stopped: true };
+    }
+    if (name !== "submit_work") return { error: "Unknown tool." };
+    const text = typeof args.text === "string" ? args.text.trim().slice(0, 16000) : "";
+    if (!text) return { accepted: false, error: "The request was empty." };
+    const fresh = findSession(session.id);
+    if (!fresh || fresh.historyLoading || fresh.historyLoadError || fresh.worktreeRemoved)
+      return { accepted: false, error: "The session is not ready for work." };
+    const accepted = await latest.current.onSubmit(session.id, text);
+    if (generation.current !== epoch) return { accepted: false };
+    if (accepted)
+      jobs.current.set(session.id, {
+        sawBusy: Boolean(session.busy),
+        assistantId: session.blocks.filter((block) => block.role === "assistant").slice(-1)[0]?.id,
+      });
+    return { accepted };
+  }
+  async function startRealtime(epoch: number, provider: RealtimeProvider) {
+    const voice = new RealtimeVoice(
+      provider,
+      {
+        state: (value) => {
+          if (generation.current !== epoch) return;
+          if (value === "speaking") setMessage("");
+          setPhase(value);
+        },
+        reply: (text, append) => {
+          if (generation.current === epoch)
+            setMessage((current) => (append ? current + text : text));
+        },
+        transcript: (text) => {
+          if (generation.current === epoch) setTranscript(text);
+        },
+        playback: (active) => {
+          if (generation.current === epoch) setPlayback(active);
+        },
+        tool: (name, args) => realtimeTool(name, args, epoch),
+        error: (value, fatal) => {
+          if (generation.current !== epoch) return;
+          if (fatal) close();
+          setError(t(value));
+        },
+      },
+      locale.split("-")[0],
+      audioLevel,
+      settings.speakers[settings.mode === "grok" ? "grok" : "openai"],
+    );
+    client.current = voice;
+    try {
+      const secret = await realtimeSecret(provider);
+      if (generation.current !== epoch) return;
+      await voice.connect(secret);
+      if (generation.current === epoch) setStatus("live");
+    } catch (cause) {
+      if (generation.current !== epoch) return;
+      close();
+      setError(voiceError(cause, "Voice could not connect."));
+    }
+  }
   async function start() {
     if (client.current || status === "connecting" || !currentTarget()) return;
     const epoch = ++generation.current;
     setStatus("connecting");
     setError("");
+    const mode = loadVoiceSettings().mode;
+    // Cloud modes replace local recognition, the reply provider and local speech.
+    if (mode !== "local") return startRealtime(epoch, REALTIME[mode].provider);
     // Prime native voice enumeration before the first response.
     globalThis.speechSynthesis?.getVoices();
     // The reply provider starts in parallel with the local models.
@@ -348,7 +441,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
                 ? "Receiving speech..."
                 : "Listening"
       : status === "connecting"
-        ? "Preparing local voice..."
+        ? realtime
+          ? "Connecting voice..."
+          : "Preparing local voice..."
         : "Ready to connect",
   );
   function setCompact(value: boolean) {
@@ -504,7 +599,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               setMuted(!muted);
             }}
           >
-            {muted ? <Play size={14} /> : <Pause size={14} />}
+            {muted ? <MicOff size={14} /> : <Mic size={14} />}
           </Button>
         )}
         <Button
@@ -558,19 +653,25 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             />
           </div>
         )}
-        <div className={styles.session}>
-          <span className={styles.caption}>{t(pinned ? "Pinned session" : "Active session")}</span>
-          <span className={styles.sessionName}>{target?.title || t("Select a session")}</span>
-        </div>
+        <VoicePanelChoices
+          sessions={props.sessions}
+          activeId={props.activeId}
+          pinned={pinned}
+          onPin={setPinned}
+        />
         <div role="status" className={styles.status}>
           {statusText}
         </div>
         {target?.busy ? <p className={styles.work}>{t("Agent working")}</p> : null}
         {status === "idle" && (
           <p>
-            {t(
-              "Audio is processed on this computer. Replies use the session’s signed-in provider. No API key required.",
-            )}
+            {realtime
+              ? t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
+                  p1: realtime.name,
+                })
+              : t(
+                  "Audio is processed on this computer. Replies use the session’s signed-in provider. No API key required.",
+                )}
           </p>
         )}
         {transcript && (
@@ -597,20 +698,26 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               data-voice-start
               disabled={!target}
               onClick={() => void start()}
-              startIcon={<Play size={14} />}
+              startIcon={<Mic size={14} />}
             >
               {t("Start voice")}
             </Button>
           ) : status === "connecting" ? (
             <>
               <Button loading disabled>
-                {t("Preparing local voice...")}
+                {t(realtime ? "Connecting voice..." : "Preparing local voice...")}
               </Button>
-              <Button onClick={close}>{t("Cancel")}</Button>
+              <Button iconOnly label={t("Cancel")} tooltip={t("Cancel")} onClick={close}>
+                <X size={14} />
+              </Button>
             </>
           ) : (
             <>
+              {/* Icon actions; names stay in labels and tooltips. */}
               <Button
+                iconOnly
+                label={t(muted ? "Resume" : "Pause mic")}
+                tooltip={t(muted ? "Resume" : "Pause mic")}
                 disabled={status !== "live"}
                 selected={muted}
                 aria-pressed={muted}
@@ -618,11 +725,17 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
                   client.current?.mute(!muted);
                   setMuted(!muted);
                 }}
-                startIcon={muted ? <Play size={14} /> : <Pause size={14} />}
               >
-                {t(muted ? "Resume" : "Pause mic")}
+                {muted ? <MicOff size={14} /> : <Mic size={14} />}
               </Button>
-              <Button onClick={() => client.current?.silence()}>{t("Silence")}</Button>
+              <Button
+                iconOnly
+                label={t("Silence")}
+                tooltip={t("Silence")}
+                onClick={() => client.current?.silence()}
+              >
+                <VolumeX size={14} />
+              </Button>
               <Button
                 iconOnly
                 label={t("Disconnect voice")}

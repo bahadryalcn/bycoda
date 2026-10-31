@@ -272,10 +272,11 @@ export function respondGrokQuestion(
   sessionId: string,
   requestId: number,
   reply: UserQuestionReply,
-) {
+): boolean {
   const live = liveByThread.get(sessionId);
   const pending = live?.questions.get(requestId);
-  if (!live || !pending) return;
+  // Nothing is waiting for this answer (the question was resolved or the turn ended).
+  if (!live || !pending) return false;
   deliverQuestionReply(
     pending,
     requestId,
@@ -284,6 +285,7 @@ export function respondGrokQuestion(
     () => live.questions.get(requestId) === pending && !live.cancelled && !live.muteUpdates,
     () => pending(reply),
   );
+  return true;
 }
 
 export async function cancelGrokTurn(
