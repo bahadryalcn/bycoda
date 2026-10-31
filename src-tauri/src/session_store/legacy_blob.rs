@@ -53,7 +53,9 @@ pub(super) fn assert_normalized_complete(
     if complete {
         Ok(())
     } else {
-        Err(sql_error("Normalized transcript is incomplete; legacy copy kept"))
+        Err(sql_error(
+            "Normalized transcript is incomplete; legacy copy kept",
+        ))
     }
 }
 
@@ -162,7 +164,9 @@ fn retire(conn: &Connection, id: &str, verified: Verified) -> Result<bool, Strin
         .map_err(|e| e.to_string())?;
     if restored != 1 || after != (revision, length, NORMALIZED_BLOB.len() as i64) {
         // Dropping `tx` rolls back; the blob stays.
-        return Err(format!("Legacy transcript copy of {id} kept: state did not restore"));
+        return Err(format!(
+            "Legacy transcript copy of {id} kept: state did not restore"
+        ));
     }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(true)
@@ -175,9 +179,9 @@ pub(super) fn compact(store: &SessionStore, pause: Duration) -> (usize, usize) {
     let mut retired = 0usize;
     let mut errors = 0usize;
     'batches: loop {
-        let batch = match store.with_background_conn(|conn| {
-            candidates(conn, &after).map_err(|e| e.to_string())
-        }) {
+        let batch = match store
+            .with_background_conn(|conn| candidates(conn, &after).map_err(|e| e.to_string()))
+        {
             Ok(batch) => batch,
             Err(error) => {
                 eprintln!("legacy transcript compaction: {error}");
@@ -239,9 +243,7 @@ pub(super) fn start(app: &AppHandle) {
             if let Some(store) = app.try_state::<SessionStore>() {
                 let (retired, errors) = compact(&store, PAUSE);
                 if retired > 0 || errors > 0 {
-                    eprintln!(
-                        "legacy transcript compaction: {retired} retired, {errors} errors"
-                    );
+                    eprintln!("legacy transcript compaction: {retired} retired, {errors} errors");
                 }
             }
         });

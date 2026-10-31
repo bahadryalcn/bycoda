@@ -662,7 +662,9 @@ class LocalUpdateTests(unittest.TestCase):
         for stable_service in (False, True):
             for fail in (False, True):
                 with self.subTest(stable=stable_service, fail=fail), tempfile.TemporaryDirectory() as folder:
-                    home = pathlib.Path(folder)
+                    # tempfile may return an 8.3 alias on Windows; the installer
+                    # resolves the runtime before persisting launch arguments.
+                    home = pathlib.Path(folder).resolve()
                     base = home / '.bycoda-host'
                     previous = base / 'runtime/previous'
                     (previous / 'bin').mkdir(parents=True)
@@ -881,7 +883,7 @@ class LocalUpdateTests(unittest.TestCase):
         # Exercise real recursive copies and pointer restoration, never services.
         for fail_health in (False, True):
             with self.subTest(rollback=fail_health), tempfile.TemporaryDirectory() as folder:
-                root = pathlib.Path(folder)
+                root = pathlib.Path(folder).resolve()
                 base = root / 'base'
                 (base / 'bin').mkdir(parents=True)
                 previous = base / 'runtime' / 'previous'
@@ -1164,6 +1166,11 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertIsNone(result['app']['idleGate']['activeSessions'])
 
     def test_interrupted_job_requires_explicit_same_package_resume(self):
+        for system in ('nt', 'posix'):
+            with self.subTest(system=system):
+                self.check_interrupted_job_resume(system)
+
+    def check_interrupted_job_resume(self, system):
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)
             release = root / 'release'
@@ -1172,13 +1179,24 @@ class LocalUpdateTests(unittest.TestCase):
             write_json(root / '.bycoda-host/update-jobs/host.json',
                        {'id': 'same', 'pid': 123, 'state': 'waiting', 'activeSessions': 1})
             with patch('local_update.pathlib.Path.home', return_value=root), \
+                 patch('local_update.os', SimpleNamespace(name=system)), \
                  patch('local_update.alive', return_value=False), \
-                 patch('local_update.spawn_windows_updater', return_value=456) as spawn:
+                 patch('local_update.spawn_windows_updater', return_value=456) as spawn, \
+                 patch('local_update.subprocess.Popen', return_value=SimpleNamespace(pid=456)) as popen:
                 with self.assertRaisesRegex(RuntimeError, 'interrupted'):
                     queue_install(release, ('host',))
                 spawn.assert_not_called()
+                popen.assert_not_called()
                 queue_install(release, ('host',), resume=True)
-                spawn.assert_called_once()
+                if system == 'nt':
+                    spawn.assert_called_once()
+                    popen.assert_not_called()
+                else:
+                    popen.assert_called_once()
+                    spawn.assert_not_called()
+                receipt = read_json(release / 'launch-host.json')
+                self.assertEqual(receipt['pid'], 456)
+                self.assertTrue(receipt['verified'])
             for phase in ('launching', 'installing', None):
                 with self.assertRaisesRegex(RuntimeError, 'uncertain effect'):
                     verify_interrupted_resume(release, {'id': 'same'}, 'host', {'id': 'same', 'recordedState': phase})

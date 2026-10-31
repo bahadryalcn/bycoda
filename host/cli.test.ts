@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const exec = promisify(execFile);
 
@@ -29,14 +29,15 @@ it(
     await new Promise<void>((resolve) => probe.close(() => resolve()));
     // Reproduce a provider/native handle left behind after graceful cleanup.
     const cli = join(directory, "host.mjs");
+    const sourceBundle = resolve(process.env.BYCODA_HOST_TEST_CLI ?? "build/host/bycoda-host.mjs");
     writeFileSync(
       cli,
-      readFileSync(resolve("build/host/bycoda-host.mjs"), "utf8") +
+      readFileSync(sourceBundle, "utf8") +
         '\nif (process.argv[2] === "serve") setInterval(() => {}, 60_000);\n',
     );
     // The detached bundle resolves SQLite and Notes workers relative to itself.
     for (const sidecar of ["store-worker.mjs", "host-notes-worker.mjs", "provider-guard.mjs"]) {
-      copyFileSync(resolve("build/host", sidecar), join(directory, sidecar));
+      copyFileSync(join(dirname(sourceBundle), sidecar), join(directory, sidecar));
     }
     const run = (...args: string[]) =>
       exec(process.execPath, [cli, ...args, "--data-dir", directory, "--port", String(port)], {
@@ -77,7 +78,12 @@ it(
       }
       await run("revoke", device.id);
       await expect(run("revoke", device.id)).rejects.toThrow("Device not found");
-      expect((await describe()).status).toBe(401);
+      // This CLI is a separate SQLite writer. The running Host checks external
+      // credential changes when its documented 1.5s positive cache expires.
+      await vi.waitFor(async () => expect((await describe()).status).toBe(401), {
+        timeout: 5_000,
+        interval: 100,
+      });
       expect((await run("stop")).stdout).toContain("Host is stopping");
       await vi.waitFor(() => expect(existsSync(join(directory, "running.json"))).toBe(false));
       await vi.waitFor(() => {

@@ -991,7 +991,7 @@ const gitTheme = EditorView.theme({
     userSelect: "none",
     borderRadius: "4px",
     color: "var(--color-content)",
-    background: "var(--ui-surface-raised)",
+    background: "var(--ui-surface-floating)",
     boxShadow: "0 0 0 1px var(--ui-pane-border), var(--ui-elevation-floating)",
   },
   ".cm-gitHunkBtn": {

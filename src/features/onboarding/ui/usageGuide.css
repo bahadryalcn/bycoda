@@ -7,7 +7,7 @@
   overflow: clip;
   border: 1px solid var(--ui-tone-neutral-border);
   border-radius: var(--radius-panel);
-  background: var(--ui-surface);
+  background: var(--ui-surface-floating);
   color: var(--color-content);
   box-shadow: var(--shadow-floating);
   font-family: var(--font-body);

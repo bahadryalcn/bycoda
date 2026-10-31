@@ -255,7 +255,7 @@ export function loadSkills(
     }
     entry.generation += 1;
     entry.retryAt = 0;
-    return startCatalogLoad(key, entry, normalized);
+    return startCatalogLoad(key, entry, normalized, true);
   }
 
   if (entry.inFlight?.generation === entry.generation) {
@@ -282,9 +282,10 @@ function startCatalogLoad(
   key: string,
   entry: CatalogEntry,
   context: SkillCatalogContext,
+  refreshPolicy = false,
 ): Promise<Skill[]> {
   const generation = entry.generation;
-  const promise = loadCatalog(context)
+  const promise = loadCatalog(context, refreshPolicy)
     .then((skills) => {
       if (catalogEntries.get(key) !== entry || entry.generation !== generation) {
         return catalogEntries.get(key)?.skills ?? [];
@@ -321,8 +322,8 @@ function startCatalogLoad(
   return promise;
 }
 
-async function loadCatalog(context: SkillCatalogContext): Promise<Skill[]> {
-  const policy = await loadSkillRestrictions(context.cwd);
+async function loadCatalog(context: SkillCatalogContext, refreshPolicy = false): Promise<Skill[]> {
+  const policy = await loadSkillRestrictions(context.cwd, { refresh: refreshPolicy });
   if (context.cwd.startsWith(REMOTE_PATH_PREFIX)) {
     const discovered = await listSkills(context.cwd, policy.disabledPaths);
     return discovered

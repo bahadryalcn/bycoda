@@ -91,8 +91,8 @@ pub async fn harness_runtime_logs_bridge(
         let Some(deadline) = crate::session_tools_bridge::optional_host_deadline() else {
             return Ok(None);
         };
-        let value = crate::remote::NativeServiceChannel::connect_until(&app, Some(deadline)).and_then(
-            |service| {
+        let value = crate::remote::NativeServiceChannel::connect_until(&app, Some(deadline))
+            .and_then(|service| {
                 service.project_until(
                     "runtimeLogs.bridge.describe",
                     json!({}),
@@ -104,8 +104,7 @@ pub async fn harness_runtime_logs_bridge(
                         ))
                     },
                 )
-            },
-        );
+            });
         crate::session_tools_bridge::note_optional_host_outcome(deadline, value.is_ok());
         Ok(value.ok())
     })

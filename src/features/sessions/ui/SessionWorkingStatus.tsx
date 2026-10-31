@@ -8,10 +8,16 @@ import { TerminalSpinner } from "./TerminalSpinner";
 export function SessionWorkingStatus({
   startedAt,
   showElapsed = true,
+  labelled = false,
 }: {
   startedAt?: number;
   /** Rows that print the turn time elsewhere keep only the working mark here. */
   showElapsed?: boolean;
+  /**
+   * Prints "Working" beside the mark and takes the enclosing badge's text color. Session
+   * lists hide the word on narrow sidebars (sessionList.css); the mark and time stay.
+   */
+  labelled?: boolean;
 }) {
   const t = useT();
   // A hidden pane keeps no ticker; showing it reads the clock afresh.
@@ -25,9 +31,16 @@ export function SessionWorkingStatus({
       role="img"
       aria-label={[t("Working"), elapsed].filter(Boolean).join(", ")}
       title={t("Working")}
-      className="inline-flex shrink-0 items-center gap-1 text-ui-micro text-(--color-active)"
+      className={`inline-flex shrink-0 items-center gap-1 ${
+        labelled ? "" : "text-ui-micro text-(--color-active)"
+      }`}
     >
       <TerminalSpinner />
+      {labelled ? (
+        <span aria-hidden className="session-working-label">
+          {t("Working")}
+        </span>
+      ) : null}
       {elapsed ? <span className="shrink-0 tabular-nums">{elapsed}</span> : null}
     </span>
   );

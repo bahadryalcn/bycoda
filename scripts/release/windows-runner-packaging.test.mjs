@@ -135,7 +135,10 @@ test("Windows package and warm jobs require isolation, clean checkouts and nonca
     [cache, "warm", "windows-latest"],
   ]) {
     const heavy = job(source, name);
-    assert.match(heavy, /needs: windows-route/);
+    assert.match(
+      heavy,
+      name === "package" ? /needs: \[windows-route, common-build\]/ : /needs: windows-route/,
+    );
     assert(
       heavy.includes(
         `matrix.platform == '${platform}' && fromJSON(needs.windows-route.outputs.windows_runs_on)`,

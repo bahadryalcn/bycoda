@@ -57,7 +57,9 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
+  flex: 1 1 18rem;
   inline-size: 18rem;
+  min-inline-size: 0;
   max-inline-size: 100%;
   padding: 2px;
   border-radius: var(--ui-control-radius);
@@ -69,6 +71,7 @@
   justify-content: flex-end;
   gap: 2px;
   inline-size: 100%;
+  min-inline-size: 0;
   max-inline-size: 100%;
 }
 
@@ -86,6 +89,11 @@
   flex: 0 0 28px;
   inline-size: 28px;
   block-size: 28px;
+}
+/* This is an icon status slot even when it announces an error. The generic
+   full-row alert rule must not consume the recorder's flex track. */
+.list :global(.settings-row-control) > .feedbackSlot {
+  flex: 0 0 28px;
 }
 .context {
   display: block;
@@ -140,41 +148,24 @@
   }
 }
 
-/* Command rows are a two-track collection: the command flexes and the key
-   recorder keeps a fixed-width slot. The form rule that stacks every
-   `.settings-row` under 560px does not apply here, so a short command stays on
-   one line beside its key at 800px; only a truly narrow container stacks. */
-@container (width < 560px) {
-  .list :global(.settings-row) {
-    flex-direction: row;
-    align-items: center;
-    gap: 8px 12px;
-  }
-  .list :global(.settings-row-label) {
-    flex: 1 1 0;
-    min-inline-size: 0;
-  }
-  .list :global(.settings-row-control) {
-    flex: 0 1 auto;
-    inline-size: max-content;
-    min-inline-size: 0;
-    max-inline-size: 55%;
-    align-self: center;
-    justify-content: flex-end;
-  }
+/* Wrap the complete editor below its label when the two tracks no longer fit.
+   The feedback slot and recorder actions retain their own space at every width. */
+.list :global(.settings-row) {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
 }
-@container (width < 340px) {
-  .list :global(.settings-row) {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .list :global(.settings-row-control) {
-    max-inline-size: 100%;
-    align-self: stretch;
-    justify-content: flex-start;
-  }
+.list :global(.settings-row-label) {
+  flex: 1 1 10rem;
+  min-inline-size: 0;
 }
-
 .list :global(.settings-row-control) {
+  flex: 0 1 18rem;
+  inline-size: min(100%, 18rem);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  align-self: center;
+  justify-content: flex-end;
   flex-wrap: nowrap;
 }

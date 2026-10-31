@@ -12,7 +12,22 @@ test("session preview replaces browsing tabs and keeps drafts across themes and 
   await expect(page.getByLabel("Active discussion")).toHaveText("Discussion 10");
   await expect(tabs.locator(".italic")).toHaveCount(1);
   await page.getByLabel("Draft", { exact: true }).fill("Keep this draft");
+  // The open discussion shows its own composer, so it is not marked while typing.
+  await expect(discussions.nth(9)).not.toHaveAccessibleName(/\bDraft\b/);
   await discussions.nth(0).click();
+  // Leaving it marks the discussion that still holds unsent text.
+  await expect(discussions.nth(9)).toHaveAccessibleName(/\bDraft\b/);
+  await expect(discussions.nth(0)).not.toHaveAccessibleName(/\bDraft\b/);
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await page.locator("aside").screenshot({
+      path: testInfo.outputPath(`session-draft-mark-${theme}.png`),
+    });
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("theme-light"));
   await expect(tabs).toHaveCount(2);
   await discussions.nth(1).dblclick();
   await discussions.nth(2).click();

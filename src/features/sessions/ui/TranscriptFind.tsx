@@ -199,7 +199,7 @@ export const TranscriptFind = memo(function TranscriptFind({
         <div
           role="search"
           aria-label={t("Find in conversation")}
-          className="pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-1 shadow-(--ui-elevation-floating)"
+          className="pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) p-1 shadow-(--ui-elevation-floating)"
         >
           <Search
             className="ml-1 size-3.5 shrink-0 text-(--ui-text-secondary)"

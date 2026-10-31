@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -17,7 +17,7 @@ afterEach(() => {
   for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 function fixture(sessionCapacity = 8) {
-  const directory = mkdtempSync(join(tmpdir(), "bycoda-http-target-"));
+  const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-http-target-")));
   directories.push(directory);
   const baseUrl = "http://127.0.0.1:34817",
     registry = new HostRunHttpTargets(8, sessionCapacity);

@@ -13,6 +13,7 @@ import {
 import { languageReady } from "../../src/shared/i18n";
 import { Button } from "../../src/shared/ui/Button";
 import { TextareaField } from "../../src/shared/ui/TextareaField";
+import { setComposerDraft } from "../../src/features/sessions/model/draftCache";
 import "./compact-navigation.css";
 
 // Browser-local fixture only. Actions record selections; no Host, filesystem or provider writes.
@@ -32,6 +33,9 @@ const history = Array.from({ length: 9 }, (_, index) => ({
   createdAt: Date.now() - index * 60_000,
   updatedAt: Date.now() - index * 60_000,
 }));
+// ?draft=1 leaves unsent composer text in a listed, idle discussion.
+if (new URLSearchParams(location.search).has("draft"))
+  setComposerDraft(history[7].id, "Unsent follow-up");
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const badgeCount = Number(new URLSearchParams(location.search).get("badgeCount"));
 const expandedRail = new URLSearchParams(location.search).has("expandedRail");

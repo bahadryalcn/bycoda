@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 import type { Session } from "./session";
 
 /** Why `/clear` cannot run now, in words for the person; undefined when it can. */

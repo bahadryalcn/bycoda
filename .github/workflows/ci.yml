@@ -65,8 +65,35 @@ jobs:
       - run: node scripts/checks/check-repository-hygiene.mjs
       - run: node --test .github/scripts/issue-labels.test.cjs
 
-  host:
+  preflight:
+    # Deterministic contract/format failures stop expensive VM builds and browser
+    # matrices before they start, without replacing their test evidence.
     needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+          install: ${{ needs.changes.outputs.web }}
+      - name: Verify shared Host contracts and headless boundaries
+        if: needs.changes.outputs.web == 'true'
+        run: |
+          node scripts/checks/check-host-contracts.mjs
+          node scripts/checks/check-host-runtime-boundaries.mjs
+          node scripts/checks/check-host-headless-boundaries.mjs
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        if: needs.changes.outputs.native == 'true' || needs.changes.outputs.rpm == 'true'
+        with:
+          components: rustfmt
+      - name: Check Rust formatting once before native builds
+        if: needs.changes.outputs.native == 'true' || needs.changes.outputs.rpm == 'true'
+        run: cargo fmt --all --check
+
+  host:
+    needs: [changes, preflight]
     if: github.event_name != 'pull_request' || needs.changes.outputs.host == 'true'
     strategy:
       fail-fast: false
@@ -74,15 +101,19 @@ jobs:
         # Hosted shards get independent VMs. Opt-in isolated Windows work shares
         # one non-cancelling queue; Linux/macOS retain their hosted parallelism.
         include:
-          - { os: ubuntu-latest, shard: 1, shard-count: 1 }
-          - { os: macos-latest, shard: 1, shard-count: 2 }
-          - { os: macos-latest, shard: 2, shard-count: 2 }
-          - { os: windows-latest, shard: 1, shard-count: 6 }
-          - { os: windows-latest, shard: 2, shard-count: 6 }
-          - { os: windows-latest, shard: 3, shard-count: 6 }
-          - { os: windows-latest, shard: 4, shard-count: 6 }
-          - { os: windows-latest, shard: 5, shard-count: 6 }
-          - { os: windows-latest, shard: 6, shard-count: 6 }
+          # Reviewed portable graphs run once inside Linux's full scope. Any
+          # source drift returns them to integration on every OS automatically.
+          - { os: ubuntu-latest, scope: all, shard: 1, shard-count: 1 }
+          - { os: macos-latest, scope: integration, shard: 1, shard-count: 2 }
+          - { os: macos-latest, scope: integration, shard: 2, shard-count: 2 }
+          - { os: windows-latest, scope: integration, shard: 1, shard-count: 6 }
+          - { os: windows-latest, scope: integration, shard: 2, shard-count: 6 }
+          - { os: windows-latest, scope: integration, shard: 3, shard-count: 6 }
+          - { os: windows-latest, scope: integration, shard: 4, shard-count: 6 }
+          - { os: windows-latest, scope: integration, shard: 5, shard-count: 6 }
+          - { os: windows-latest, scope: integration, shard: 6, shard-count: 6 }
+    env:
+      BYCODA_HOST_TEST_SCOPE: ${{ matrix.scope }}
     runs-on: ${{ matrix.os == 'windows-latest' && fromJSON(needs.changes.outputs.windows_runs_on) || matrix.os }}
     concurrency:
       group: ${{ matrix.os == 'windows-latest' && needs.changes.outputs.windows_self_hosted == 'true' && 'bycoda-windows-heavy' || format('ci-host-{0}-{1}-{2}-{3}', github.run_id, github.run_attempt, matrix.os, matrix.shard) }}
@@ -102,6 +133,20 @@ jobs:
       - name: Verify Host test shard coverage
         if: matrix.shard == 1
         run: node scripts/checks/check-host-test-shards.mjs ${{ matrix.shard-count }}
+      - name: Resolve this shard's runtime requirements
+        id: host-environment
+        run: node scripts/checks/host-test-environment.mjs ${{ matrix.shard }} ${{ matrix.shard-count }}
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.host-environment.outputs.chromium == 'true'
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+            ~/AppData/Local/ms-playwright
+          key: host-chromium-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Chromium only for shards that exercise the real browser
+        if: steps.host-environment.outputs.chromium == 'true'
+        run: pnpm exec playwright install --with-deps chromium
       - name: Run Host test shard
         run: >-
           pnpm run test:host --shard=${{ matrix.shard }}/${{ matrix.shard-count }}
@@ -132,7 +177,7 @@ jobs:
           if-no-files-found: warn
 
   web:
-    needs: changes
+    needs: [changes, preflight]
     if: github.event_name != 'pull_request' || needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -142,11 +187,6 @@ jobs:
       - uses: ./.github/actions/setup-deps
         with:
           node-version: 24
-      - name: Verify shared Host contracts and headless boundaries
-        run: |
-          node scripts/checks/check-host-contracts.mjs
-          node scripts/checks/check-host-runtime-boundaries.mjs
-          node scripts/checks/check-host-headless-boundaries.mjs
       - name: Check workspace package boundaries and normal package types
         run: |
           pnpm run check:packages
@@ -187,7 +227,7 @@ jobs:
           path: temp/test-results/web-ci/
 
   check:
-    needs: changes
+    needs: [changes, preflight]
     if: github.event_name != 'pull_request' || needs.changes.outputs.native == 'true'
     strategy:
       fail-fast: false
@@ -224,7 +264,6 @@ jobs:
           key: native-check
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test
       - name: Record native source and result
@@ -240,7 +279,7 @@ jobs:
           if-no-files-found: error
 
   rpm:
-    needs: changes
+    needs: [changes, preflight]
     if: github.event_name != 'pull_request' || needs.changes.outputs.rpm == 'true'
     name: RPM build (${{ matrix.image }})
     runs-on: ubuntu-latest
@@ -495,7 +534,7 @@ jobs:
           path: temp/test-results/python-ci/
 
   browser:
-    needs: changes
+    needs: [changes, preflight]
     if: github.event_name == 'pull_request' && needs.changes.outputs.browser == 'true'
     runs-on: ubuntu-latest
     env:
@@ -542,7 +581,7 @@ jobs:
 
   browser-full:
     name: Browser full (${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.count }})
-    needs: changes
+    needs: [changes, preflight]
     if: github.event_name != 'pull_request' && needs.changes.outputs.browser == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -611,6 +650,7 @@ jobs:
       [
         changes,
         repository-hygiene,
+        preflight,
         web,
         host,
         check,

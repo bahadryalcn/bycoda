@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
 import { gates } from "./ci-changes.mjs";
 import { expectedCiSelection, digest } from "./browser-ci.mjs";
 import {
@@ -14,6 +15,30 @@ import {
 } from "./ci-results.mjs";
 
 const identity = { sourceSha: "a".repeat(40), runId: "42", runAttempt: "1" };
+
+test("native/Python evidence recording does not load the uninstalled browser runner", () => {
+  const moduleUrl = new URL("./ci-results.mjs", import.meta.url).href;
+  execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+    import Module from "node:module";
+    const original = Module._resolveFilename;
+    Module._resolveFilename = function(request, ...args) {
+      if (request.startsWith("@playwright/")) throw new Error("Browser dependencies not installed");
+      return original.call(this, request, ...args);
+    };
+    const { recordEvidence } = await import(${JSON.stringify(moduleUrl)});
+    const report = recordEvidence({job: "check", variant: "windows-latest",
+      result: "failure", sourceSha: "a".repeat(40), runId: "42", runAttempt: "1"});
+    if (report.result !== "failure") throw new Error("Lost original job failure");
+  `,
+    ],
+    { windowsHide: true, stdio: "pipe" },
+  );
+});
 function passing(full = true, eventName = "push") {
   const active = (contract) =>
     (!contract.gate || full) && (!contract.events || contract.events.includes(eventName));
@@ -78,6 +103,14 @@ test("the aggregate accepts full success and only explicitly irrelevant skips", 
   const input = passing(false);
   delete input.needs.changes.outputs.browser;
   assert.equal(evaluateResults(input).success, false);
+});
+
+test("failed or missing preflight cannot qualify a release even when downstream evidence exists", () => {
+  for (const result of ["failure", "cancelled", "skipped", undefined]) {
+    const input = passing();
+    input.needs.preflight.result = result;
+    assert.equal(evaluateResults(input).success, false);
+  }
 });
 
 test("passing jobs cannot hide missing, duplicate, stale or foreign evidence", () => {

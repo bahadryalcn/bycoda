@@ -132,7 +132,7 @@ export async function main(args = process.argv.slice(2)) {
     const command = [
       "--config",
       "tests/browser/runner.playwright.config.ts",
-      ...(values.project ? ["--project", values.project] : []),
+      ...(values.project ? [`--project=${values.project}`] : []),
       ...(values.list ? ["--list", "--reporter=json"] : []),
       ...forwarded,
     ];
@@ -142,9 +142,10 @@ export async function main(args = process.argv.slice(2)) {
         [
           "--config",
           "tests/browser/runner.playwright.config.ts",
-          ...(values.project ? ["--project", values.project] : []),
+          ...(values.project ? [`--project=${values.project}`] : []),
           "--list",
           "--reporter=json",
+          ...(forwarded.length ? ["--pass-with-no-tests"] : []),
           ...forwarded,
         ],
         { env, capture: true },
@@ -153,6 +154,16 @@ export async function main(args = process.argv.slice(2)) {
         throw new Error(`Browser discovery failed: ${suite.id}: ${listed.stderr}`);
       const discoveryFile = join(suiteDirectory, "discovery.json");
       writeFileSync(discoveryFile, listed.stdout);
+      if (forwarded.length && listedCases(JSON.parse(listed.stdout)).length === 0) {
+        report.suites.push({
+          suite: suite.id,
+          code: 0,
+          filteredOut: true,
+          durationMs: Date.now() - started,
+        });
+        console.log(`${suite.id}: no cases matched the local filters; no browser started`);
+        continue;
+      }
       discovery = {
         path: relative(repositoryRoot, discoveryFile).replaceAll("\\", "/"),
         sha256: digest(listed.stdout),
@@ -196,6 +207,10 @@ export async function main(args = process.argv.slice(2)) {
       code = result.code;
       break;
     }
+  }
+  if (!values.list && report.suites.every((suite) => suite.filteredOut)) {
+    console.error("No browser cases matched the requested filters.");
+    code = 1;
   }
   report.completedAt = new Date().toISOString();
   report.code = code;

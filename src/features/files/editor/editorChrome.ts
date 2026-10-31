@@ -94,14 +94,14 @@ function editorThemeStyles(dark: boolean) {
         borderColor: "var(--color-stroke)",
       },
       ".cm-tooltip": {
-        backgroundColor: "var(--ui-surface-raised)",
+        backgroundColor: "var(--ui-surface-floating)",
         color: "var(--color-content)",
         border: "1px solid var(--ui-pane-border)",
         borderRadius: "6px",
         overflow: "hidden",
       },
       ".cm-tooltip.cm-tooltip-autocomplete": {
-        backgroundColor: "var(--ui-surface-raised)",
+        backgroundColor: "var(--ui-surface-floating)",
       },
       ".cm-tooltip-autocomplete > ul": {
         fontFamily: "var(--font-mono)",

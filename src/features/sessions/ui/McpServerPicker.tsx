@@ -83,7 +83,7 @@ export function McpServerPicker({
           onDismiss("escape");
         }
       }}
-      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) shadow-(--ui-elevation-floating)"
+      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) shadow-(--ui-elevation-floating)"
     >
       <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
         <Search className="size-3.5 shrink-0 text-(--ui-text-secondary)" />

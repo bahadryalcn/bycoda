@@ -78,7 +78,7 @@
   max-inline-size: calc(100% - 16px);
   border: 1px solid var(--ui-pane-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
+  background: var(--ui-surface-floating);
 }
 .menuTrigger {
   display: flex;

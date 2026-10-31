@@ -604,7 +604,12 @@ pub(crate) struct OutputSource {
     initial: Option<UnavailableReason>,
 }
 pub(crate) fn logical_session(route: &str) -> &str {
-    route.rsplit_once('#').filter(|(id, suffix)| !id.is_empty() && !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())).map_or(route, |(id, _)| id)
+    route
+        .rsplit_once('#')
+        .filter(|(id, suffix)| {
+            !id.is_empty() && !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())
+        })
+        .map_or(route, |(id, _)| id)
 }
 impl OutputSource {
     pub(crate) fn capture(
@@ -1191,9 +1196,15 @@ impl NativeProviderOutputRegistry {
         });
         streams.retain(|_, stream| {
             let state = stream.state.lock().unwrap_or_else(|e| e.into_inner());
-            !(state.terminal && state.terminal_enqueued && state.readers == 0 && state.in_flight == 0 && Arc::strong_count(stream) == 1)
+            !(state.terminal
+                && state.terminal_enqueued
+                && state.readers == 0
+                && state.in_flight == 0
+                && Arc::strong_count(stream) == 1)
         });
-        if streams.len() < MAX_STREAMS { self.overflow.store(false, Ordering::Release); }
+        if streams.len() < MAX_STREAMS {
+            self.overflow.store(false, Ordering::Release);
+        }
         if streams.len() >= MAX_STREAMS {
             self.overflow.store(true, Ordering::Release);
         }

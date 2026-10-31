@@ -52,8 +52,103 @@ jobs:
           WINDOWS_SELF_HOSTED_OPT_IN: ${{ vars.BYCODA_WINDOWS_SELF_HOSTED }}
         run: node scripts/checks/windows-runner-policy.mjs --scope package --github-output "$GITHUB_OUTPUT"
 
-  package:
+  common-build:
+    # Checkout LF bytes on every OS so the portable output and native compile
+    # share a verifiable source fingerprint, without changing Git's global config.
     needs: windows-route
+    runs-on: ubuntu-latest
+    env:
+      BYCODA_BUILD_MANIFEST: ${{ github.workspace }}/build/build-info.json
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected-sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tooling-sha || github.workflow_sha }}
+          path: temp/release-tools
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.candidate-artifact || format('release-candidate-{0}', inputs.expected-sha) }}
+          path: temp/test-results/release-candidate
+      - uses: ./temp/release-tools/.github/actions/setup-deps
+        with:
+          node-version: "22"
+      - name: Prepare exact source before compiling shared outputs
+        run: node temp/release-tools/scripts/release/prepare-candidate.mjs temp/test-results/release-candidate/candidate.json
+      - name: Compile portable web and Host once
+        shell: bash
+        run: |
+          started=$SECONDS
+          pnpm run build
+          echo "Web compilation: $((SECONDS-started))s" >> "$GITHUB_STEP_SUMMARY"
+          started=$SECONDS
+          pnpm run host:build
+          echo "Host compilation: $((SECONDS-started))s" >> "$GITHUB_STEP_SUMMARY"
+          node temp/release-tools/scripts/release/prepare-candidate.mjs --verify
+          node temp/release-tools/scripts/build/release-common.mjs stage temp/test-results/release-candidate/candidate.json temp/build/release-common
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-common-${{ inputs.expected-sha }}
+          path: temp/build/release-common/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  host-packages:
+    needs: common-build
+    if: inputs.channel == 'stable'
+    runs-on: ubuntu-latest
+    env:
+      BYCODA_BUILD_MANIFEST: ${{ github.workspace }}/build/build-info.json
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected-sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tooling-sha || github.workflow_sha }}
+          path: temp/release-tools
+          persist-credentials: false
+      - uses: ./temp/release-tools/.github/actions/setup-deps
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.candidate-artifact || format('release-candidate-{0}', inputs.expected-sha) }}
+          path: temp/test-results/release-candidate
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-common-${{ inputs.expected-sha }}
+          path: temp/build/release-common
+      - name: Restore verified portable outputs and package all six Host targets
+        shell: bash
+        run: |
+          started=$SECONDS
+          node temp/release-tools/scripts/release/prepare-candidate.mjs temp/test-results/release-candidate/candidate.json
+          node temp/release-tools/scripts/build/release-common.mjs restore temp/test-results/release-candidate/candidate.json temp/build/release-common
+          node host/package.mjs --all
+          node temp/release-tools/scripts/release/prepare-candidate.mjs --verify
+          node temp/release-tools/scripts/release/host-manifest.mjs temp/test-results/release-candidate/candidate.json temp/build/standalone-host-packages
+          echo "Standalone Host packaging: $((SECONDS-started))s" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: standalone-host-packages
+          path: temp/build/standalone-host-packages/
+          if-no-files-found: error
+          retention-days: 14
+
+  package:
+    needs: [windows-route, common-build]
     # Signed builds only follow an owner-created stable tag. Nonstable manual
     # candidates never receive signing keys or stable updater endpoints.
     if: >-
@@ -76,6 +171,9 @@ jobs:
       queue: max
     env:
       BYCODA_BUILD_MANIFEST: ${{ github.workspace }}/build/build-info.json
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -100,6 +198,10 @@ jobs:
       - uses: ./temp/release-tools/.github/actions/setup-deps
         with:
           node-version: "22"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-common-${{ inputs.expected-sha }}
+          path: temp/build/release-common
       - name: Prepare frozen candidate identity and metadata-only version overlay
         env:
           EXPECTED_SHA: ${{ inputs.expected-sha }}
@@ -117,16 +219,32 @@ jobs:
           assert.equal(candidate.channel,process.env.EXPECTED_CHANNEL);
           NODE
           node temp/release-tools/scripts/release/prepare-candidate.mjs temp/test-results/release-candidate/candidate.json
+          node temp/release-tools/scripts/build/release-common.mjs restore temp/test-results/release-candidate/candidate.json temp/build/release-common
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const file='temp/release-channel.json', config=JSON.parse(readFileSync(file,'utf8'));
+          config.build={beforeBuildCommand:'node temp/release-tools/scripts/build/release-common.mjs verify temp/test-results/release-candidate/candidate.json temp/build/release-common'};
+          writeFileSync(file,JSON.stringify(config));
+          NODE
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.platform == 'macos-arm64' && 'aarch64-apple-darwin' || '' }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         if: matrix.platform != 'windows-x64' || needs.windows-route.outputs.windows_self_hosted != 'true'
+        id: rust-cache
         with:
           shared-key: desktop-release-${{ matrix.runner }}
           save-if: false
       - name: Package the exact bundled Host
-        run: pnpm run host:package
+        shell: bash
+        run: |
+          started=$SECONDS
+          node host/package.mjs
+          echo "Bundled Host packaging: $((SECONDS-started))s; Rust cache hit: ${{ steps.rust-cache.outputs.cache-hit || 'persistent-local' }}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Start native package timing
+        id: native-start
+        shell: bash
+        run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
       - name: Build signed stable package
         if: inputs.channel == 'stable'
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
@@ -139,6 +257,13 @@ jobs:
       - name: Build unsigned nonstable package
         if: inputs.channel != 'stable'
         run: pnpm exec tauri build ${{ matrix.args }} --config temp/release-channel.json
+      - name: Report native build and bundle duration
+        if: always() && steps.native-start.outcome == 'success'
+        shell: bash
+        env:
+          START_EPOCH: ${{ steps.native-start.outputs.epoch }}
+        run: |
+          echo "Native build and bundle (${{ matrix.platform }}): $(($(date +%s)-START_EPOCH))s" >> "$GITHUB_STEP_SUMMARY"
       - name: Stage bounded immutable package bytes
         env:
           LOCAL_WINDOWS_PACKAGE: ${{ matrix.platform == 'windows-x64' && needs.windows-route.outputs.windows_self_hosted == 'true' }}
@@ -155,11 +280,14 @@ jobs:
             --platform ${{ matrix.platform }} --root . \
             --output temp/build/release-package/${{ matrix.platform }} "${cargo_target[@]}"
       - name: Exercise packaged application and isolated old database
-        run: >-
-          node temp/release-tools/scripts/build/package-smoke.mjs
-          --manifest temp/build/release-package/${{ matrix.platform }}/manifest.json
-          --root temp/build/release-package/${{ matrix.platform }}
-          --output temp/test-results/packaged-smoke/${{ matrix.platform }}.json
+        shell: bash
+        run: |
+          started=$SECONDS
+          trap 'echo "Packaged smoke (${{ matrix.platform }}): $((SECONDS-started))s" >> "$GITHUB_STEP_SUMMARY"' EXIT
+          node temp/release-tools/scripts/build/package-smoke.mjs \
+            --manifest temp/build/release-package/${{ matrix.platform }}/manifest.json \
+            --root temp/build/release-package/${{ matrix.platform }} \
+            --output temp/test-results/packaged-smoke/${{ matrix.platform }}.json
       - name: Require the receipt to match these exact bytes
         run: >-
           node temp/release-tools/scripts/release/package-manifest.mjs attach-smoke

@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-11-01",
+  "policy": "Only unchanged reviewed runtime graphs run once. Any source drift, missing input or unknown test falls back to all-OS integration coverage.",
+  "tests": [
+    {
+      "file": "host/browser-annotation.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/browser-annotation.test.ts": "812f628bec2769a1329c0b8cb3b30347d54487e5c9149f8b565b656ebc22e5cd",
+        "host/browser-annotation.ts": "3b962c1659dc77b654a6b4e5b70ae7c66784db30209d21ef4fc9200324e5a340"
+      }
+    },
+    {
+      "file": "host/browser-shadow-masks.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/browser-shadow-masks.test.ts": "e29f199099d99adbfa0d196e2c772d6616360be751677606a4fcbb472033435b",
+        "host/browser-shadow-masks.ts": "73f30995aeab0d30d9bab75ea5a60bf0f0022158deda1c7bd8b5a8c978bf23bf"
+      }
+    },
+    {
+      "file": "host/conversation-task-queue-tools.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/conversation-task-queue-tools.test.ts": "e973b21a78e70a42371e26a56361174783e5792cec3e9cc3af077afeb1d071c2",
+        "host/conversation-task-queue-tools.ts": "862625e3cbed035c1427e9f6417d67110a6dc9ab910b6217c0ce5fc3fa74b7fd"
+      }
+    },
+    {
+      "file": "host/domains/crews/image-capability.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/domains/crews/image-capability.test.ts": "ffa60585c55ebf768b566d3884243c7a7a45e60c9ccdcf6639e553460d2f6191",
+        "host/domains/crews/image-capability.ts": "78f5941fe7c6f294548e581ac0990205ccee02efa4d8da4630cc78d752e2f711"
+      }
+    },
+    {
+      "file": "host/domains/sessions/service.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/domains/context.ts": "4d5f78b5eefe0a552c94f314ad4a5328b5e00c57c841f7a7a0b467698f20f5ac",
+        "host/domains/sessions/service.test.ts": "b216d08f6fb63a92798bd688dc7e7d46bbe7d3409e2704b547b2bd90e405a90c",
+        "host/domains/sessions/service.ts": "8b393229177ddf89912862a35c37bca6866cd677df8d6f3de7139e547cf7487d"
+      }
+    },
+    {
+      "file": "host/inlineSessionSync.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/inlineSessionSync.test.ts": "9a649cbf9e47e1971d0e0cc405fe21ad4b3291e3b1802948383bbbee032b9cc1",
+        "host/inlineSessionSync.ts": "c76822dcfd94adb56c57aea450c2e9006f1de3926a3d8c964b4d6a8dfcf3ad5f"
+      }
+    },
+    {
+      "file": "host/model-catalog-cache.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/model-catalog-cache.test.ts": "5bf7fd68e4455cde1a58f771fe3083aea156420d337761dca3515cf0053e2d38",
+        "host/model-catalog-cache.ts": "1ee7fc26670ef0541242d900f6de02d518166b583335484dfcc03b5bb5cc6de3"
+      }
+    },
+    {
+      "file": "host/provider-lines.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/provider-lines.test.ts": "8fb0fa7888994e19ffa875824b4d44cbf70d3778b95b0154515c03e7b8f8d6c6",
+        "host/provider-lines.ts": "0e5ea2cb0aecd4101510e72de778c6e469f73ff694651682629f8fa4ea1cda51"
+      }
+    },
+    {
+      "file": "host/revisionWait.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/changeSignal.ts": "469dc87aad8d42c65fe20941a8a9c0653052444fc3741eb92858c9510a4d79ad",
+        "host/revisionWait.test.ts": "834776948fd7e0572aa95dbf5a487e3ce054fb123b13c8c23d0e4a0078723924",
+        "host/revisionWait.ts": "5dcec31af3cee5569252b6213d2bcbe6d51a72f2d3c5be8ab257a90f0c209a87"
+      }
+    },
+    {
+      "file": "host/run-lease.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/run-lease.test.ts": "f5adb636b8bdacd710a703fe16d5e35db4c8254383322db48b717aef80925d10",
+        "host/run-lease.ts": "e285eeb8428a516b552fb82b5d832787693a9b3c48e34eed0113ce21e458bb5f",
+        "src/features/sync/model/runLease.ts": "d486318f59c7825b20c858250c51f4408a6cb512d29e504351c8b163e57b5f31"
+      }
+    },
+    {
+      "file": "host/session-layout.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/session-layout.test.ts": "40ff23878e84fc32abc74910c00a1b0a8d68f5faf6e309d80f84fee153ac6348",
+        "host/session-layout.ts": "d97ff9704c30a1dc253a2ab5d9bd3a344b60746b01e0ac2711546739111da7a9"
+      }
+    },
+    {
+      "file": "host/social-delivery.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/social-delivery.test.ts": "b1ccb04e209a2cd67e3702b82fcb1da7ab26591915d97f01affe961facfd3c67",
+        "host/social-delivery.ts": "652b4ec9091632b91d6527bc8bbd711f05bb9a5ea38ae8893726e4d171a99f63"
+      }
+    },
+    {
+      "file": "host/task-handoff.test.ts",
+      "reason": "Reviewed in-memory logic; runtime graph has no external imports except Vitest and no OS/process globals.",
+      "sources": {
+        "host/task-handoff.test.ts": "cc29e52f0eee6a5a411935b33eb9f95a46af08804efa7dac9e8e30b76c9f414a",
+        "host/task-handoff.ts": "34e05d8977e52f3cfbc3e552e429b3f1d0ccc0ba75fc000fd84457308d756bb7",
+        "src/features/tasks/model/taskInstructions.ts": "6bcf0061d82c6130875a893d0b3df4300c23333cbef43324aca9730332cd8341"
+      }
+    }
+  ]
+}

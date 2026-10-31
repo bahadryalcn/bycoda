@@ -77,7 +77,10 @@ fn decorate_frame(line: String, grant: &Value) -> String {
     request.to_string()
 }
 #[tauri::command]
-pub async fn harness_social_bridge(app: AppHandle, session_id: String) -> Result<Option<Value>, String> {
+pub async fn harness_social_bridge(
+    app: AppHandle,
+    session_id: String,
+) -> Result<Option<Value>, String> {
     crate::harness::run_blocking("harness_social_bridge", move || {
         if session_id.is_empty() {
             return Ok(None);

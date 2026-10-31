@@ -49,6 +49,11 @@ for (const theme of ["light", "dark"]) {
   }, info) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width: 1280, height: 900 });
+    // Close to tray is a Windows capability; exercise it deterministically
+    // even when the browser fixture runs on a Linux CI worker.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+    });
     await page.goto(`/tests/browser/settings.html?section=general&theme=${theme}&lang=en`);
     const row = page.locator('[data-setting-id="close-to-tray"]');
     await expect(row).toBeVisible();

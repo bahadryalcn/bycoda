@@ -1,7 +1,12 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { cudaTorchIndexes } from "./voice-gpu";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.doUnmock("node:child_process");
+});
 
 it("offers only CUDA wheel indexes the installed driver can run, newest first", () => {
   const index = (tag: string) => `https://download.pytorch.org/whl/${tag}`;
@@ -15,6 +20,9 @@ it("offers only CUDA wheel indexes the installed driver can run, newest first", 
 
 it("reads the CUDA version from current and older nvidia-smi summaries", async () => {
   vi.resetModules();
+  // Exercise the driver summary parser independently of macOS's intentional
+  // no-NVIDIA short circuit. The command itself remains a synthetic fixture.
+  vi.spyOn(process, "platform", "get").mockReturnValue("linux");
   const outputs: Record<string, string> = {
     query: "NVIDIA GeForce RTX 4070\n",
     summary: "| NVIDIA-SMI 617.14   KMD Version: 617.14   CUDA UMD Version: 13.4 |",

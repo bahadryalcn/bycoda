@@ -459,7 +459,7 @@ export function NativeContextMenu({
           className="overflow-y-auto overscroll-none p-1"
         >
           {submenuSearch ? (
-            <div className="sticky top-0 z-10 bg-(--ui-surface-raised) pb-1">
+            <div className="sticky top-0 z-10 bg-(--ui-surface-floating) pb-1">
               <TextField
                 ref={searchRef}
                 label={submenuSearch.placeholder}

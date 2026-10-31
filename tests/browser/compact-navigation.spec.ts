@@ -258,3 +258,26 @@ test("navigation chrome and session rows grow with comfortable and touch density
       expect(height, `${density} session row`).toBeGreaterThanOrEqual(minimum[density] - 0.5);
   }
 });
+
+test("session rows mark discussions that hold unsent composer text", async ({ page }, testInfo) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.goto("/tests/browser/compact-navigation.html?draft=1", {
+    waitUntil: "domcontentloaded",
+  });
+  const sidebar = page.locator("aside").first();
+  await expect(page.locator("[data-session-list-panel]").first()).toBeVisible({
+    timeout: 90_000,
+  });
+  const rows = sidebar.locator("[data-session-card]");
+  await expect(rows.filter({ hasText: "Product discussion 8" })).toContainText("Draft");
+  await expect(rows.filter({ hasText: "Product discussion 9" })).not.toContainText("Draft");
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await sidebar.screenshot({ path: testInfo.outputPath(`session-draft-row-${theme}.png`) });
+  }
+});

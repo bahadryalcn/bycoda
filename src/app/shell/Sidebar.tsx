@@ -42,6 +42,7 @@ import {
 import { SidebarWorktreeSwitcher } from "../../features/source-control/ui/SidebarWorktreeSwitcher";
 import { OrchestrationSidebarAgents } from "../../features/orchestration/ui/OrchestrationSidebarAgents";
 import { CrewSidebar } from "../../features/crews/ui/CrewSessions";
+import { useUnsentComposerDraft } from "../../features/sessions/hooks/useUnsentComposerDraft";
 import type { BackgroundSessionTarget } from "../../features/tasks/model/backgroundSession";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -54,7 +55,6 @@ import {
   Bot,
   ChevronRight,
   CircleAlert,
-  CircleDashed,
   CircleDot,
   Clock,
   FileScript,
@@ -76,6 +76,7 @@ import {
   Server,
   Trash2,
   Zap,
+  PenLine,
 } from "../../shared/ui/icons";
 import {
   memo,
@@ -5043,7 +5044,10 @@ const SessionCard = memo(function SessionCard({
   const [dragging, setDragging] = useState(false);
   const [orchestrationTooltipOpen, setOrchestrationTooltipOpen] = useState(false);
   const orchestration = session.orchestration;
-  const draft = !!session.draft;
+  // A saved draft, or text typed into this session's composer and left unsent.
+  // The session being typed in already shows its composer, so only other rows are marked.
+  const unsentComposerDraft = useUnsentComposerDraft(session.id, !isActive);
+  const draft = !!session.draft || unsentComposerDraft;
   const orchestrationExpanded = !!orchestration && (isActive || isSelected || busy);
   const orchestrationDone =
     orchestration?.tasks.filter((task) => task.status === "completed").length ?? 0;
@@ -5070,13 +5074,23 @@ const SessionCard = memo(function SessionCard({
           : done
             ? "success"
             : "neutral";
+  const working = !issue && !needsApproval && busy;
   const status =
     !issue && !needsApproval && !busy && !opening && !done && !draft ? (
       <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
         <RelativeSessionTime at={session.updatedAt} />
       </span>
-    ) : !issue && !needsApproval && busy ? (
-      <SessionWorkingStatus startedAt={startedAt} />
+    ) : working ? (
+      // Same pill as Done/Failed, so a running session reads at a glance.
+      <Badge
+        size="sm"
+        tone="info"
+        appearance="subtle"
+        data-session-working-badge
+        className="shrink-0 whitespace-nowrap tabular-nums"
+      >
+        <SessionWorkingStatus startedAt={startedAt} labelled />
+      </Badge>
     ) : (
       <Badge
         size="sm"
@@ -5110,7 +5124,7 @@ const SessionCard = memo(function SessionCard({
           </>
         ) : draft ? (
           <>
-            <CircleDashed className="icon-xs" strokeWidth={1.75} />
+            <PenLine className="icon-xs" strokeWidth={1.75} />
             <span>{t("Draft")}</span>
           </>
         ) : (
@@ -5735,6 +5749,7 @@ const SessionCard = memo(function SessionCard({
                   : "text-(--ui-text-secondary) hover:text-content"
         }`}
       >
+        {working ? <span aria-hidden data-session-working-edge className="session-row-working-edge" /> : null}
         {/* The landing mark (line, group frame) is drawn on this card by setDropIndicator. */}
         {dropDwell || dropTarget ? (
           <span

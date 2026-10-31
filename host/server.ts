@@ -4356,6 +4356,10 @@ export async function createHostServer(
                   break;
                 case "sessions.desktopLive": {
                   const beat = desktop.live.beat(params);
+                  // Renew the reported epoch before queued busy bookkeeping can
+                  // implicitly reacquire an expired lease with a new epoch.
+                  // Otherwise this same heartbeat is falsely answered as lost.
+                  const renewedRunLeases = await renewRunLeases(params);
                   await withinBeat(() => heartbeatEffects, undefined);
                   result = {
                     ...beat,
@@ -4385,7 +4389,7 @@ export async function createHostServer(
                     // no longer holds is `null`: the host drains that queue itself.
                     queueLeases: await withinBeat(() => renewQueueLeases(params), undefined),
                     // And its run leases: `null` is a conversation it must stop writing to.
-                    runLeases: await renewRunLeases(params),
+                    runLeases: renewedRunLeases,
                   };
                   break;
                 }

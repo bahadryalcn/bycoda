@@ -8,7 +8,6 @@ export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const browserDirectory = join(repositoryRoot, "tests/browser");
 export const manifest = JSON.parse(readFileSync(join(browserDirectory, "suites.json"), "utf8"));
 const require = createRequire(import.meta.url);
-export const playwrightCli = require.resolve("@playwright/test/cli");
 
 export function selectSuites(names = ["all"], source = manifest) {
   const requested = names.flatMap((name) => name.split(",")).filter(Boolean);
@@ -86,6 +85,9 @@ export function artifactPath(value) {
 }
 
 export function runPlaywright(args, { env = {}, capture = false } = {}) {
+  // CI result aggregation and source-only partition planning need the manifest,
+  // not an installed browser runner (e.g. the Python/native jobs skip pnpm install).
+  const playwrightCli = require.resolve("@playwright/test/cli");
   return new Promise((done, reject) => {
     const child = spawn(process.execPath, [playwrightCli, "test", ...args], {
       cwd: repositoryRoot,

@@ -252,7 +252,9 @@ impl Inner {
             .turn_writes
             .find(receipt)
             .ok_or("NATIVE_CONTROL_TURN_SOURCE_MISSING")?;
-        if work.cwd != cwd { eprintln!("[control] process cwd differs; using authorized turn cwd"); }
+        if work.cwd != cwd {
+            eprintln!("[control] process cwd differs; using authorized turn cwd");
+        }
         if !work.matches(window, issuer, receipt) {
             return Err("NATIVE_CONTROL_TURN_SOURCE_CHANGED".into());
         }
@@ -1298,7 +1300,9 @@ pub(crate) fn finish_original_turn(
     })?;
     // No issuer/ControlHost/registry lock is held over actual writer closure.
     // This waits byte IO and its admitted callback tail, never kills a warm P.
-    if let Err(error) = work.writes.drain() { eprintln!("[control] turn settlement: {error}"); }
+    if let Err(error) = work.writes.drain() {
+        eprintln!("[control] turn settlement: {error}");
+    }
     work.complete()
 }
 
@@ -1330,12 +1334,16 @@ pub(crate) fn canonical_child_cwd(cwd: &Path) -> Result<String, String> {
 }
 
 pub(crate) fn page_reloaded(app: &AppHandle, issuer: &Arc<WindowIssuer>) {
-    let Some(host) = app.try_state::<ControlHost>() else { return };
+    let Some(host) = app.try_state::<ControlHost>() else {
+        return;
+    };
     let mut inner = host.inner.lock().unwrap_or_else(|error| error.into_inner());
     // Close admission, but retain outstanding writes until their real completion.
     // Process ownership stays in HarnessHost; reload is not retirement proof.
     inner.turn_writes.close_issuer(issuer);
-    inner.active.retain(|_, turn| !Arc::ptr_eq(&turn.issuer, issuer));
+    inner
+        .active
+        .retain(|_, turn| !Arc::ptr_eq(&turn.issuer, issuer));
 }
 
 pub fn window_closed(app: &AppHandle, label: &str) {

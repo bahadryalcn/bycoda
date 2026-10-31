@@ -85,16 +85,16 @@ for (const [theme, width] of [
         ).toBe(1);
       }
       if (section === "chat") {
-        const templates = form.locator(".settings-templates");
+        const templates = form.getByRole("region", { name: "Prompt templates", exact: true });
         await templates.scrollIntoViewIfNeeded();
-        expect(
-          await templates.evaluate((node) => {
-            const help = node.querySelector(".settings-advanced")!;
-            return (
-              help.getBoundingClientRect().left - node.parentElement!.getBoundingClientRect().left
-            );
-          }),
-        ).toBeGreaterThanOrEqual(16);
+        await expect(templates.getByRole("button", { name: "Add template", exact: true })).toBeVisible();
+        await templates.getByRole("button", { name: "How to use templates", exact: true }).click();
+        const templateHelp = page.getByRole("dialog", { name: "How to use templates", exact: true });
+        await expect(templateHelp).toContainText("Name and text are required.");
+        const helpBounds = (await templateHelp.boundingBox())!;
+        expect(helpBounds.x).toBeGreaterThanOrEqual(0);
+        expect(helpBounds.x + helpBounds.width).toBeLessThanOrEqual(width);
+        await page.keyboard.press("Escape");
         await page.screenshot({
           path: `temp/verification/2026-10-18-settings-layout/templates-${theme}-${width}.png`,
         });

@@ -13,6 +13,7 @@ const hostVariants = [
 export const jobs = {
   changes: { gate: null, variants: [] },
   "repository-hygiene": { gate: null, variants: [] },
+  preflight: { gate: null, variants: [] },
   web: {
     gate: "web",
     variants: ["linux"],

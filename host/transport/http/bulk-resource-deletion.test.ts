@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -38,7 +38,7 @@ afterEach(async () => {
 });
 
 async function setup() {
-  const directory = mkdtempSync(join(tmpdir(), "bycoda-bulk-resource-delete-"));
+  const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-bulk-resource-delete-")));
   const desktopPath = join(directory, "desktop.db");
   const db = new DatabaseSync(desktopPath);
   db.exec(`CREATE TABLE notes(id TEXT PRIMARY KEY,slug TEXT NOT NULL UNIQUE,title TEXT NOT NULL,
@@ -77,7 +77,7 @@ async function setup() {
     await store.close();
     const target = resolve(directory);
     if (
-      dirname(target) !== resolve(tmpdir()) ||
+      dirname(target) !== realpathSync.native(tmpdir()) ||
       !basename(target).startsWith("bycoda-bulk-resource-delete-")
     )
       throw new Error("Unexpected owned fixture cleanup path.");

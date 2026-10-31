@@ -68,9 +68,9 @@
   right: 0;
   left: auto;
 }
-/* Open, the surface is the shared floating family: raised surface, popup boundary and elevation. */
+/* Open, the surface is the shared floating family: floating surface, popup boundary and elevation. */
 .root[data-open] .shape {
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-floating);
   box-shadow: var(--ui-elevation-floating);
 }
 .root[data-open] .shape::after {

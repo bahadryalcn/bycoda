@@ -769,7 +769,7 @@ describe("Composer question focus", () => {
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(6);
     expect(list.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
     expect(list.querySelector('[role="option"]')?.className).toContain("bycoda-arc");
-    expect(document.querySelector("[data-mcp-picker]")?.className).toContain("--ui-surface-raised");
+    expect(document.querySelector("[data-mcp-picker]")?.className).toContain("--ui-surface-floating");
     const searchInput = document.querySelector<HTMLInputElement>(
       '[aria-label="Search MCP servers"]',
     )!;

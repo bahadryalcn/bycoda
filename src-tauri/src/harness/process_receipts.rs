@@ -118,7 +118,10 @@ mod tests {
         let pending = Arc::new(ManagedProviderExit::default());
         receipts.reserve("new-route", pending.clone());
         receipts.capacity().unwrap();
-        assert!(receipts.records.iter().any(|r| Arc::ptr_eq(&r.exit, &pending)));
+        assert!(receipts
+            .records
+            .iter()
+            .any(|r| Arc::ptr_eq(&r.exit, &pending)));
         assert_eq!(receipts.records.len(), MAX_CONSTRUCTIONS - 1);
     }
 }

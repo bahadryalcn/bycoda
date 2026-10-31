@@ -23,15 +23,17 @@ async function openVoice(page: Page, fixture: string, theme = "dark", width = 12
 
 for (const theme of ["light", "dark"]) {
   for (const width of [390, 1280]) {
-    test(`voice setup has two clear actions without technical instructions: ${theme} ${width}`, async ({
+    test(`voice setup keeps install direct and existing files in its action menu: ${theme} ${width}`, async ({
       page,
     }) => {
       const group = await openVoice(page, "missing", theme, width);
       await expect(group.getByText("Voice setup is needed", { exact: true })).toBeVisible();
       await expect(group.getByRole("button", { name: "Install", exact: true })).toBeVisible();
-      await expect(
-        group.getByRole("button", { name: "Locate existing", exact: true }),
-      ).toBeVisible();
+      const more = group.getByRole("button", { name: "More voice setup actions", exact: true });
+      await expect(more).toBeVisible();
+      await more.click();
+      await expect(page.getByRole("menuitem", { name: "Locate existing", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
       await expect(group).not.toContainText("faster-whisper");
       await expect(group).not.toContainText("pip install");
       await expect(group).not.toContainText("Missing:");
@@ -43,8 +45,10 @@ for (const theme of ["light", "dark"]) {
       await mkdir(captures, { recursive: true });
       await group.screenshot({ path: join(captures, `voice-missing-${theme}-${width}.png`) });
       const bounds = await group.boundingBox();
-      // Enable, visual style, reply voice, processing and the setup box.
-      expect(bounds!.height).toBeLessThan(490);
+      // Conversation provider and speaker are now independent controls. On a
+      // phone, labels and controls stack; the whole seven-row group still fits
+      // in the viewport without the former technical setup instructions.
+      expect(bounds!.height).toBeLessThan(width < 600 ? 800 : 560);
     });
   }
 }
@@ -77,8 +81,12 @@ test("stalled detection keeps Install available and ends with a retry", async ({
 
 test("voice locations are optional, keyboard accessible and return focus", async ({ page }) => {
   const group = await openVoice(page, "missing", "dark", 390);
-  const locate = group.getByRole("button", { name: "Locate existing", exact: true });
+  await group.getByRole("button", { name: /^Reply voice:/ }).click();
+  await page.getByRole("option", { name: "High quality (VoxCPM2)", exact: true }).click();
+  const locate = group.getByRole("button", { name: "More voice setup actions", exact: true });
   await locate.focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("menuitem", { name: "Locate existing", exact: true }).focus();
   await page.keyboard.press("Enter");
   const dialog = page.getByRole("dialog", { name: "Locate voice files", exact: true });
   await expect(dialog).toBeVisible();
@@ -117,7 +125,7 @@ test("an ongoing installation resumes with progress and prevents duplicate actio
     group.getByText("You can leave this page. Setup will continue.", { exact: true }),
   ).toBeVisible();
   await expect(group.getByRole("button", { name: "Install", exact: true })).toHaveCount(0);
-  await expect(group.getByRole("button", { name: "Locate existing", exact: true })).toHaveCount(0);
+  await expect(group.getByRole("button", { name: "More voice setup actions", exact: true })).toHaveCount(0);
   await expect(
     group.getByRole("switch", { name: "Enable voice companion", exact: true }),
   ).toBeDisabled();
@@ -131,7 +139,9 @@ test("Turkish voice setup keeps the same simple actions at a narrow width", asyn
     group.getByText("Sesli konuşma için kurulum gerekli", { exact: true }),
   ).toBeVisible();
   await expect(group.getByRole("button", { name: "Kur", exact: true })).toBeVisible();
-  await expect(group.getByRole("button", { name: "Yerini göster", exact: true })).toBeVisible();
+  await group.getByRole("button", { name: "Diğer ses kurulumu eylemleri", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Yerini göster", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(group).not.toContainText("faster-whisper");
   await expect(group).not.toContainText("pip install");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -147,7 +157,8 @@ for (const theme of ["light", "dark"]) {
     await expect(
       group.getByRole("button", { name: "Install GPU support", exact: true }),
     ).toHaveCount(0);
-    await group.getByRole("radio", { name: "High quality", exact: true }).click();
+    await group.getByRole("button", { name: /^Reply voice:/ }).click();
+    await page.getByRole("option", { name: "High quality (VoxCPM2)", exact: true }).click();
     await expect(group.getByText("Voice is ready", { exact: true })).toBeVisible();
     await expect(group.getByText("NVIDIA GeForce RTX 4070", { exact: false })).toBeVisible();
     await expect(

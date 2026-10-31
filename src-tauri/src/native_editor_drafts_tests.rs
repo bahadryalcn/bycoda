@@ -439,7 +439,10 @@ fn corrupt_stored_payload_metadata_or_undercharged_rows_never_become_absent_or_f
                         limit: 100
                     }
                 )
-                .is_ok_and(|inventory| inventory.records.iter().all(|row| row.document_id != "document")),
+                .is_ok_and(|inventory| inventory
+                    .records
+                    .iter()
+                    .all(|row| row.document_id != "document")),
             "{sql}"
         );
     }

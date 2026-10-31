@@ -23,7 +23,7 @@ export const manifestDigest = digest(
   readFileSync(new URL("../../tests/browser/suites.json", import.meta.url)),
 );
 
-export function partitionSuites(suites, project, shard = 1, count = 1) {
+export function partitionSuites(suites, project, shard = 1, count = 1, scheduling = weights) {
   assert(
     Number.isInteger(count) &&
       count > 0 &&
@@ -38,7 +38,17 @@ export function partitionSuites(suites, project, shard = 1, count = 1) {
     (suite) => !project || suite.projects.some((entry) => entry.name === project),
   );
   const bins = Array.from({ length: count }, (_, index) => ({ index, weight: 0, suites: [] }));
-  const weight = (suite) => weights.cases[suite.id]?.[project] ?? suite.files.length;
+  const weight = (suite) => {
+    const estimate =
+      scheduling.durationMs?.[suite.id]?.[project] ??
+      (scheduling.cases[suite.id]?.[project] ?? suite.files.length) *
+        (scheduling.fallbackMsPerCase ?? 1000);
+    assert(
+      Number.isFinite(estimate) && estimate > 0,
+      "Browser scheduling weights must be positive",
+    );
+    return estimate;
+  };
   for (const suite of [...eligible].sort(
     (a, b) => weight(b) - weight(a) || a.id.localeCompare(b.id),
   )) {

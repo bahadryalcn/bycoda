@@ -99,6 +99,30 @@ Changes, Repository hygiene and Check. A download error cannot turn missing requ
 evidence into success. Branch protection/rulesets must separately require the
 intended Check after delivery; YAML alone does not configure repository policy.
 
+## Release performance and retained coverage
+
+The required `preflight` job checks shared schemas/headless boundaries and Rust
+formatting before the expensive Host, web, native, RPM and browser matrices start.
+Formatting runs once; a failed preflight cannot satisfy the aggregate Check.
+Python/script fixtures remain independent so their diagnostics are still available.
+
+Host Linux runs the complete scope. macOS/Windows run
+`BYCODA_HOST_TEST_SCOPE=integration`: only unchanged, explicitly reviewed portable
+runtime graphs are omitted there. The LF-normalized source hashes in
+`scripts/checks/host-portable-tests.json` make any changed/missing graph fall back
+to all-OS integration coverage. New tests also default to integration. The shard
+checker proves disjoint/full selection, retaining serial isolated files.
+`host-test-environment.mjs` uses the installed Vitest sequencer to install Chromium
+only for shards containing real Playwright consumers. Runtime caches never cache
+test success. The Windows self-hosted heavy lane remains serial by design.
+
+Release packaging consumes a single exact-candidate web/Host JS artifact from
+`desktop-package.yml`'s common producer. Desktop jobs still package their own
+platform runtime/native output, and stable builds retain all six standalone Host
+targets. Candidate/source/byte identity, signing, old-database package smoke and
+publication receipts remain required. Phase timings and Rust cache hits appear in
+job summaries; source/fixture checks do not establish hosted speed improvements.
+
 ## Acceptance boundaries
 
 Browser smoke uses controlled fixtures, not packaged Tauri, live Host/provider,

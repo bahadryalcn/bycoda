@@ -390,7 +390,11 @@ describe("actual native-helper child stream client", () => {
     const f = await fixture("pause-input");
     const client = await f.runtime.open(address);
     const stdin = f.children[0].child.stdin;
+    // Buffer the write until it exceeds the fixture stream's high-water
+    // mark. An uncorked pipe may write synchronously and legitimately return
+    // true even for a large frame on fast macOS/Windows runners.
     (stdin as any)._writableState.highWaterMark = 1024;
+    stdin.cork();
     const original = stdin.write.bind(stdin) as (...args: any[]) => boolean;
     let release: (() => void) | undefined;
     let returnedFalse = false;
@@ -409,6 +413,11 @@ describe("actual native-helper child stream client", () => {
     const sending = client.send("x".repeat(60_000)).then(() => {
       finished = true;
     });
+    try {
+      await vi.waitFor(() => expect(returnedFalse).toBe(true));
+    } finally {
+      stdin.uncork();
+    }
     await vi.waitFor(async () => {
       expect(release).toBeTypeOf("function");
       expect((await f.audit()).some((row) => row.kind === "send")).toBe(true);

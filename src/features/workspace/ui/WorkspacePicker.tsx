@@ -323,7 +323,7 @@ function WorkspaceModePicker({
             ] as const
           ).map(([value, text, RowIcon]) => (
             <Button
-              variant="ghost"
+              variant="item"
               motion="none"
               key={value}
               type="button"
@@ -343,7 +343,7 @@ function WorkspaceModePicker({
           ))}
           {onSelectWorktree ? (
             <Button
-              variant="ghost"
+              variant="item"
               motion="none"
               ref={worktreeAnchor}
               type="button"
@@ -374,7 +374,7 @@ function WorkspaceModePicker({
           {onOpenSettings ? (
             <div className="h-9 border-t border-stroke">
               <Button
-                variant="ghost"
+                variant="item"
                 motion="none"
                 type="button"
                 title={t("Open worktree settings")}

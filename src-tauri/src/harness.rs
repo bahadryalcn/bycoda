@@ -601,7 +601,12 @@ fn emit_output_batch<P: Serialize + Clone>(
                     owner.as_ref().map(|owner| owner.epoch()),
                 );
                 let sent = app.emit_to(label.as_str(), event, make(observed)).is_ok();
-                stream.observe_prepared_delivery(metadata.as_ref(), owner.clone(), prepared.as_ref(), sent);
+                stream.observe_prepared_delivery(
+                    metadata.as_ref(),
+                    owner.clone(),
+                    prepared.as_ref(),
+                    sent,
+                );
                 delivered |= sent;
                 complete &= sent && owner.is_some();
             }
@@ -1223,9 +1228,11 @@ impl HarnessHost {
                 .children
                 .iter()
                 .filter(|(route, live)| {
-                    crate::native_provider_output::logical_session(route) == session_id || live.output
-                        .as_ref()
-                        .is_some_and(|output| output.target() == session_id)
+                    crate::native_provider_output::logical_session(route) == session_id
+                        || live
+                            .output
+                            .as_ref()
+                            .is_some_and(|output| output.target() == session_id)
                 })
                 .map(|(route, _)| route.clone()),
         );
@@ -1235,9 +1242,11 @@ impl HarnessHost {
                 .map_err(|_| "NATIVE_AUTHORITY_UNKNOWN_PROCESS")?
                 .iter()
                 .filter(|(route, live)| {
-                    crate::native_provider_output::logical_session(route) == session_id || live.output
-                        .as_ref()
-                        .is_some_and(|output| output.target() == session_id)
+                    crate::native_provider_output::logical_session(route) == session_id
+                        || live
+                            .output
+                            .as_ref()
+                            .is_some_and(|output| output.target() == session_id)
                 })
                 .map(|(route, _)| route.clone()),
         );
@@ -1262,10 +1271,14 @@ impl HarnessHost {
             // Do not capture files until the retained provider exit succeeds.
             if let Err(error) = exit.wait(deadline.saturating_duration_since(Instant::now())) {
                 if tolerate_settled_failure && exit.settled() {
-                    eprintln!("[harness] earlier provider exit settled with failure; continuing: {error}");
+                    eprintln!(
+                        "[harness] earlier provider exit settled with failure; continuing: {error}"
+                    );
                     continue;
                 }
-                return Err(format!("Provider may still be writing; cannot capture turn: {error}"));
+                return Err(format!(
+                    "Provider may still be writing; cannot capture turn: {error}"
+                ));
             }
         }
         let mut inner = self.lock_inner();
@@ -1429,7 +1442,9 @@ pub async fn harness_resolve_cursor() -> Result<CursorBinary, String> {
             .map(|path| CursorBinary {
                 path: path.to_string_lossy().into_owned(),
             })
-            .ok_or_else(|| "Cursor CLI not found. Install it and run `agent login`, then retry.".into())
+            .ok_or_else(|| {
+                "Cursor CLI not found. Install it and run `agent login`, then retry.".into()
+            })
     })
     .await
 }
@@ -1928,7 +1943,8 @@ pub async fn harness_resolve_fx() -> Result<CursorBinary, String> {
                 path: path.to_string_lossy().into_owned(),
             })
             .ok_or_else(|| {
-                "fx CLI not found. Install it from https://fx.sh and run `fx login`, then retry.".into()
+                "fx CLI not found. Install it from https://fx.sh and run `fx login`, then retry."
+                    .into()
             })
     })
     .await
@@ -2138,9 +2154,8 @@ fn configure_optional_tool_grants(
     };
     type Issued = Result<Vec<(&'static str, String)>, String>;
     let results: [(&str, Issued); 3] = std::thread::scope(|scope| {
-        let social = scope.spawn(|| {
-            crate::social_bridge::issue_child_grant(app, session_id, stamp, deadline)
-        });
+        let social = scope
+            .spawn(|| crate::social_bridge::issue_child_grant(app, session_id, stamp, deadline));
         let logs = scope.spawn(|| {
             crate::runtime_logs_bridge::issue_child_grant(app, session_id, stamp, deadline)
         });
@@ -2263,16 +2278,27 @@ fn harness_spawn_blocking(
         return Err("harness_spawn: not a resolved harness CLI".to_string());
     }
 
-    let (source, explicit) =
-        OutputSource::capture_or_unbound(&app, &window, &session_id, logical_session_id.as_deref())?;
+    let (source, explicit) = OutputSource::capture_or_unbound(
+        &app,
+        &window,
+        &session_id,
+        logical_session_id.as_deref(),
+    )?;
     let authority_target = source.target().to_owned();
     // Serialize replacement across all routes of one logical conversation.
     static SPAWNS: OnceLock<Mutex<HashMap<String, std::sync::Weak<Mutex<()>>>>> = OnceLock::new();
     let spawn_gate = {
-        let mut gates = SPAWNS.get_or_init(Mutex::default).lock().unwrap_or_else(|e| e.into_inner());
+        let mut gates = SPAWNS
+            .get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         gates.retain(|_, gate| gate.strong_count() != 0);
-        if let Some(gate) = gates.get(&authority_target).and_then(std::sync::Weak::upgrade) { gate }
-        else {
+        if let Some(gate) = gates
+            .get(&authority_target)
+            .and_then(std::sync::Weak::upgrade)
+        {
+            gate
+        } else {
             let gate = Arc::new(Mutex::new(()));
             gates.insert(authority_target.clone(), Arc::downgrade(&gate));
             gate
@@ -2452,7 +2478,11 @@ fn harness_spawn_blocking(
                 .map_err(|e| e.to_string())
                 .and(retirement)
                 .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
-            let finished = if waited { finish_spawn_authority(&child.retirement(), authority_lease) } else { Err("Provider wait failed; admission retained".into()) };
+            let finished = if waited {
+                finish_spawn_authority(&child.retirement(), authority_lease)
+            } else {
+                Err("Provider wait failed; admission retained".into())
+            };
             managed_exit.finish(result.and(finished));
         });
         return Err(SPAWN_CANCELLED.to_string());
@@ -3177,7 +3207,9 @@ fn write_child_with_deadline_waiter(
                 // Writes are serialized before this point, so this only means the
                 // stdin owner is wedged outside the queue.
                 let result = Err(PROVIDER_NOT_READING.into());
-                if let Some(lease) = authority { let _ = lease.finish(); }
+                if let Some(lease) = authority {
+                    let _ = lease.finish();
+                }
                 admission.finish(&result);
                 let _ = tx.send(result);
                 return;
@@ -3570,7 +3602,8 @@ pub(crate) fn kill_current_harness(host: &HarnessHost, session_id: &str) -> Resu
 #[tauri::command]
 pub async fn harness_retire(app: AppHandle, session_id: String) -> Result<(), String> {
     run_blocking("harness_retire", move || {
-        app.state::<HarnessHost>().retire_managed_session(&session_id)
+        app.state::<HarnessHost>()
+            .retire_managed_session(&session_id)
     })
     .await
 }
@@ -3755,8 +3788,12 @@ fn harness_sse_open_blocking(
     logical_session_id: Option<String>,
 ) -> Result<(), String> {
     assert_loopback(&url)?;
-    let (source, explicit) =
-        OutputSource::capture_or_unbound(&app, &window, &session_id, logical_session_id.as_deref())?;
+    let (source, explicit) = OutputSource::capture_or_unbound(
+        &app,
+        &window,
+        &session_id,
+        logical_session_id.as_deref(),
+    )?;
     let gate = source.control_gate(&app)?;
     gate.assert_provider_target(source.target(), &url)?;
     let scope = native_authority_scope(authority_environment_id, authority_generation)?;

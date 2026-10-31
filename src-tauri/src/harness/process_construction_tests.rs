@@ -306,9 +306,12 @@ fn naturally_exited_original_receipt_drains_idempotently_after_replacement() {
     let epoch = host.lock_inner().epochs["natural"];
     for _ in 0..2 {
         // Completed receipts may be reclaimed; a stale original must never select its replacement.
-        assert_eq!(host
-            .kill_original_session("natural", Some(&original.live.construction_id))
-            .err().unwrap(), "NATIVE_PROCESS_CONSTRUCTION_STALE");
+        assert_eq!(
+            host.kill_original_session("natural", Some(&original.live.construction_id))
+                .err()
+                .unwrap(),
+            "NATIVE_PROCESS_CONSTRUCTION_STALE"
+        );
         assert_eq!(host.lock_inner().epochs["natural"], epoch);
         assert!(Arc::ptr_eq(
             &host.get("natural").unwrap(),

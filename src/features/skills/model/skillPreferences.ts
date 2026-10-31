@@ -75,9 +75,18 @@ if (typeof window !== "undefined") {
 }
 
 /** Short-lived per-checkout policy; settings writes invalidate it immediately. */
-export async function loadSkillRestrictions(cwd = ""): Promise<SkillPolicy> {
+export async function loadSkillRestrictions(
+  cwd = "",
+  options?: { refresh?: boolean },
+): Promise<SkillPolicy> {
   if (!cwd.startsWith("remote://") && !(typeof isTauri === "function" && isTauri()))
     return cachedSkillPolicy();
+  if (options?.refresh) {
+    // Explicit catalog refresh must also read current machine authority. Fence
+    // older in-flight policy reads so they cannot restore the superseded cache.
+    policyRevision++;
+    restrictions.delete(cwd);
+  }
   const storage = JSON.stringify(cachedSkillPolicy());
   const cached = restrictions.get(cwd);
   if (cached && cached.expires > Date.now() && cached.storage === storage) return cached.policy;

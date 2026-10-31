@@ -5,6 +5,21 @@ description: Settings Keybindings inventory for focused and contextual app short
 
 # Keybindings and shortcut recording
 
+## CI regression repair, 2026-11-01
+
+Release-performance implementation found a real conflict-state layout defect:
+the shared full-row alert rule overrode the local icon feedback slot and collapsed
+the recorder under Reset. `ShortcutSettings.module.css` now retains that slot and
+lets the label/editor wrap without changing shortcut values or interaction rules.
+`tests/browser/settings.e2e.ts` asserts usable recorder width and separate Reset
+hit areas before normal keyboard/pointer interaction. Twelve scenarios passed in
+light/dark at 390/768/800/1024/1280/1440; all six conflict captures at
+390/800/1280 were opened and inspected. Twelve editor unit cases also passed.
+Evidence: `temp/verification/2026-11-01-release-performance/keybindings-conflict/`.
+Local source/fixture evidence only; baseline main/cba4505fe, uncommitted per owner
+instruction. OS shortcut registration and installed-build inclusion were not tested.
+
+
 ## Purpose and keywords
 
 Make app/context/global shortcuts discoverable, editable and recoverable without

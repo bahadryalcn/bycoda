@@ -5,6 +5,33 @@ description: Platform foundation, repository/package boundaries, CI sharding, in
 
 # Platform foundation
 
+## Release performance implementation, 2026-11-01
+
+Owner instruction in the current release-performance conversation, 2026-11-01:
+"Tamam bunları yap şimdi commit filan atma ama". Local implementation only;
+no project staging, commit, push, installation or publication by this team.
+Baseline `main/cba4505fec916c685b896e40ae85d29c825abcc1`; concurrent UI work
+and externally staged index entries were preserved. Feature-claim APIs were
+unavailable; live thread inventory established the separate UI owners. This card
+is not a reservation.
+
+| Surface | Delivered behavior and evidence boundary |
+| --- | --- |
+| Cheap CI prerequisites | `ci.yml` preflight checks schemas/headless graph and Rust format before six heavy job types; `ci-results.mjs` requires success. Actual nine Host matrix variants match aggregation. |
+| Host scopes/runtime | `host-test-selection.mjs` and reviewed normalized hashes retain all unknown/drifted tests on every OS; Linux runs all, macOS/Windows integration. 342 files = 13 portable + 329 integration; 70 portable cases passed. `host-test-environment.mjs` uses actual shard discovery to install Chromium only where needed. |
+| Browser distribution | `suites.json` splits Settings into six default groups and preserves the full `settings` alias. Complete discovery retains 94 files, 2009 default cases and 2115 including variants, with no missing/added identities. Missing field-message config registration fixed. |
+| Scheduling data | `browser-ci-timings.mjs` imports hashed complete nonflaky single-project reports into advisory median weights; dirty local timing remains advisory, never acceptance. Cases remain the fallback until measured durations are deliberately reviewed. |
+| Common release build | `desktop-package.yml` produces one exact-candidate web/Host JS artifact; `release-common.mjs` verifies source, embedded identity, bytes and bounded safe paths. Native/runtime packaging remains platform-specific; six standalone Host targets and signing/smoke/receipt gates remain. 35 focused artifact/candidate/package checks passed. |
+| CI repairs | Python fixture portability (68 tests), Host fixture/process cases (191 distinct focused tests), run-lease renewal ordering, pure translator import avoiding React in Host, and Rust formatting repaired. Linux/macOS native execution remains separate from Windows evidence. |
+
+Verification/limits: `temp/verification/2026-11-01-release-performance/README.md`,
+`2026-11-01-release-common/`, and `2026-11-01-host-test-efficiency/` contain
+actual checks and outstanding findings. The latter paths are sibling verification
+directories. Normal web, Host and browser tsc-rs checks passed. No hosted signed
+build was run, no quantified speedup is established, and installed-build inclusion
+is unknown. See `.github/CI.md` and `docs/reference/testing.md` for current commands.
+
+
 ## Standalone provider guardian boundary, 2026-10-30
 
 The Cargo workspace includes `packages/provider-process-guardian`, a private

@@ -818,9 +818,7 @@ fn import_already_stored(conn: &Connection, session: &SessionUpsert) -> rusqlite
 /// conversation, plus the id of every session an earlier import created (a
 /// read-only import has no provider binding to match on).
 #[tauri::command]
-pub async fn session_import_keys(
-    app: tauri::AppHandle,
-) -> Result<Vec<String>, String> {
+pub async fn session_import_keys(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     crate::harness::run_blocking("session_import_keys", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
@@ -980,8 +978,9 @@ pub async fn session_list_by_project(
         }
         // Git lookups can spawn processes; do them before taking any connection.
         let git = crate::fs::git_info_for(&crate::fs::expand_home(&cwd));
-        store
-            .with_read_conn(|conn| list_by_project_with_git(conn, &cwd, git).map_err(|e| e.to_string()))
+        store.with_read_conn(|conn| {
+            list_by_project_with_git(conn, &cwd, git).map_err(|e| e.to_string())
+        })
     })
     .await
 }
@@ -1015,9 +1014,7 @@ fn rebase_project(conn: &Connection, from_cwd: &str, to_cwd: &str) -> rusqlite::
 }
 
 #[tauri::command]
-pub async fn session_list_linked(
-    app: tauri::AppHandle,
-) -> Result<Vec<SessionSummary>, String> {
+pub async fn session_list_linked(app: tauri::AppHandle) -> Result<Vec<SessionSummary>, String> {
     crate::harness::run_blocking("session_list_linked", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         store.with_read_conn(|conn| list_linked(conn).map_err(|e| e.to_string()))
@@ -1080,7 +1077,9 @@ pub(super) fn reconcile_pending_before_read(
     let finish = |id: &str, done: &ReconcileDone| {
         *done.0.lock().unwrap_or_else(|error| error.into_inner()) = true;
         done.1.notify_all();
-        let mut running = RECONCILING.lock().unwrap_or_else(|error| error.into_inner());
+        let mut running = RECONCILING
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         if let Some(map) = running.as_mut() {
             if map.get(id).is_some_and(|entry| Arc::ptr_eq(entry, done)) {
                 map.remove(id);
@@ -1088,7 +1087,9 @@ pub(super) fn reconcile_pending_before_read(
         }
     };
     let (done, start) = {
-        let mut running = RECONCILING.lock().unwrap_or_else(|error| error.into_inner());
+        let mut running = RECONCILING
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let map = running.get_or_insert_with(HashMap::new);
         match map.get(session_id) {
             Some(done) => (done.clone(), false),
@@ -1108,9 +1109,10 @@ pub(super) fn reconcile_pending_before_read(
             .name("session-rewind-reconcile".into())
             .spawn(move || {
                 if let Some(store) = worker_app.try_state::<SessionStore>() {
-                    let _ = crate::native_window_lifecycle::persistence_write(&worker_window, || {
-                        rewind::reconcile_pending_native(&worker_app, &store, Some(&id))
-                    });
+                    let _ =
+                        crate::native_window_lifecycle::persistence_write(&worker_window, || {
+                            rewind::reconcile_pending_native(&worker_app, &store, Some(&id))
+                        });
                 }
                 finish(&id, &signal);
             });
@@ -1749,9 +1751,7 @@ pub async fn session_set_in_flight(
 /// Read the quit snapshot without clearing it. Vite/dev reloads must not
 /// consume the only copy.
 #[tauri::command]
-pub async fn session_list_in_flight(
-    app: tauri::AppHandle,
-) -> Result<Vec<InFlightSession>, String> {
+pub async fn session_list_in_flight(app: tauri::AppHandle) -> Result<Vec<InFlightSession>, String> {
     crate::harness::run_blocking("session_list_in_flight", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
@@ -1818,9 +1818,7 @@ pub async fn workspace_set_snapshot(
 }
 
 #[tauri::command]
-pub async fn workspace_get_snapshot(
-    app: tauri::AppHandle,
-) -> Result<Option<Value>, String> {
+pub async fn workspace_get_snapshot(app: tauri::AppHandle) -> Result<Option<Value>, String> {
     crate::harness::run_blocking("workspace_get_snapshot", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
@@ -2483,7 +2481,11 @@ fn upsert_session_in_transaction(
         if !normalized_same && stored_blocks_json != blocks_json {
             // The emptied blob is only safe next to a complete normalized copy.
             // Any doubt rolls the whole write back instead of storing neither.
-            legacy_blob::assert_normalized_complete(conn, &session.id, pieces.as_ref().map_or(0, Vec::len))?;
+            legacy_blob::assert_normalized_complete(
+                conn,
+                &session.id,
+                pieces.as_ref().map_or(0, Vec::len),
+            )?;
         }
         summary.transcript_revision = conn
             .query_row(

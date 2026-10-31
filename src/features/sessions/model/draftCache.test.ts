@@ -93,6 +93,28 @@ describe("draftCache persistence hooks", () => {
     expect(seen).toEqual(["n1", "n1"]);
   });
 
+  it("tells presence listeners about typed and restored drafts", async () => {
+    const {
+      clearComposerDraft,
+      hasUnsentComposerDraft,
+      restoreComposerDraft,
+      subscribeComposerDraftPresence,
+    } = await import("./draftCache");
+    clearComposerDraft("p1");
+    let calls = 0;
+    const stop = subscribeComposerDraftPresence(() => calls++);
+    setComposerDraft("p1", "half");
+    expect(hasUnsentComposerDraft("p1")).toBe(true);
+    clearComposerDraft("p1");
+    expect(hasUnsentComposerDraft("p1")).toBe(false);
+    // Drafts loaded from disk skip the persistence listeners but must still reach lists.
+    restoreComposerDraft("p1", { text: "saved", mcpTags: [], attachments: [] });
+    expect(hasUnsentComposerDraft("p1")).toBe(true);
+    stop();
+    setComposerDraft("p1", "");
+    expect(calls).toBe(3);
+  });
+
   it("hands a restore notice out once", async () => {
     const { restoreComposerDraft, takeComposerNotice, clearComposerDraft } =
       await import("./draftCache");

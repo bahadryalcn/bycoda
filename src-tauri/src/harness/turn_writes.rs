@@ -50,7 +50,10 @@ impl Binding {
             .changed
             .wait_timeout_while(ready, wait, |result| result.is_none())
             .map_err(|_| "NATIVE_TURN_BINDING_UNAVAILABLE")?;
-        ready.as_ref().ok_or("Turn binding timed out; previous write may still be in flight")?.clone()?;
+        ready
+            .as_ref()
+            .ok_or("Turn binding timed out; previous write may still be in flight")?
+            .clone()?;
         Ok(self.receipt.clone())
     }
     fn finish(&self, result: Result<(), String>) {
@@ -61,7 +64,8 @@ impl Binding {
         self.changed.notify_all();
     }
     fn reclaimable(&self) -> bool {
-        (self.turn.finished() || self.turn.writes.settled()) && self.ready.lock().is_ok_and(|ready| ready.is_some())
+        (self.turn.finished() || self.turn.writes.settled())
+            && self.ready.lock().is_ok_and(|ready| ready.is_some())
     }
     fn matches_source(&self, route: &str, live: &Arc<LiveChild>, turn: &Arc<TurnWork>) -> bool {
         self.route == route
@@ -251,9 +255,13 @@ fn bind_original(
         for old in &plan.predecessors {
             let result = old.writes.drain();
             let result = if old.writes.settled() {
-                if let Err(error) = &result { eprintln!("[harness] predecessor write failed: {error}"); }
+                if let Err(error) = &result {
+                    eprintln!("[harness] predecessor write failed: {error}");
+                }
                 Ok(())
-            } else { result };
+            } else {
+                result
+            };
             if drained.is_ok() {
                 drained = result;
             }
@@ -279,7 +287,8 @@ fn bind_original(
         });
         plan.binding.finish(result);
         // `finish` settled it already; a spent budget must not turn that into a timeout.
-        plan.binding.wait_until(Instant::now() + Duration::from_secs(1))
+        plan.binding
+            .wait_until(Instant::now() + Duration::from_secs(1))
     }
 }
 
@@ -294,7 +303,14 @@ pub async fn harness_bind_turn(
         let app = window.app_handle().clone();
         let host = app.state::<HarnessHost>();
         let control = app.state::<crate::control::ControlHost>();
-        harness_bind_turn_blocking(window, host, control, session_id, construction_id, control_turn)
+        harness_bind_turn_blocking(
+            window,
+            host,
+            control,
+            session_id,
+            construction_id,
+            control_turn,
+        )
     })
     .await
 }
@@ -389,7 +405,14 @@ fn write_controlled(
     admission: StrictWrite,
     after_io: impl FnOnce() + Send + 'static,
 ) -> Result<(), String> {
-    write_controlled_within(live, line, authority, admission, after_io, CONTROLLED_WRITE_BUDGET)
+    write_controlled_within(
+        live,
+        line,
+        authority,
+        admission,
+        after_io,
+        CONTROLLED_WRITE_BUDGET,
+    )
 }
 
 fn write_controlled_within(
@@ -427,7 +450,9 @@ fn write_controlled_within(
         admission.finish(&result);
         let _ = tx.send(result);
     });
-    rx.recv_timeout(wait).map_err(|_| "Provider stdin delivery outcome unknown; do not retry while writing".to_string())?
+    rx.recv_timeout(wait).map_err(|_| {
+        "Provider stdin delivery outcome unknown; do not retry while writing".to_string()
+    })?
 }
 
 #[tauri::command]

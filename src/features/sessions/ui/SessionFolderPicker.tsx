@@ -48,7 +48,7 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
       data-session-folder-picker
       role="dialog"
       aria-label={t("Choose a session folder")}
-      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-floating)"
     >
       <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-2">
         <Folder className="size-3.5 shrink-0 text-(--ui-text-secondary)" />

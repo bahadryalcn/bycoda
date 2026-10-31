@@ -101,12 +101,20 @@ runs execute the full collection instead: six Chromium and four WebKit partition
 with at most six full-browser VMs running together. Both named projects retain
 their existing per-feature setup. Each suite/project pair belongs to one
 partition; full CI deliberately includes all three alternate-fixture variants.
-The 2026-10-27 discovery snapshot has 1498 default identities and 1604
+The 2026-11-01 discovery snapshot has 2009 default browser cases and 2115
 suite/browser cases when the 106 deliberate alternate-fixture cases are included.
 This is a coverage count, not a promise about duration.
 
-`tests/browser/ci-weights.json` holds advisory measured discovery counts. Greedy
-scheduling uses these weights and stable suite IDs; stale weights can affect
+The Settings collection has six default groups sharing its existing fixture:
+`settings`, `settings-navigation`, `settings-workspace`, `settings-library`,
+`settings-subviews`, and `settings-backgrounds`. `--suite settings` remains an
+alias selecting the complete collection. Forwarded file/grep filters skip groups
+with no matching cases without launching a server; if nothing matches, the runner
+fails. This filtered local result cannot satisfy full CI evidence.
+
+`tests/browser/ci-weights.json` holds advisory expanded discovery counts. Greedy
+scheduling prefers measured `durationMs` when supplied, otherwise case counts
+times `fallbackMsPerCase` (1000 by default). Stale weights can affect
 balance but cannot remove a suite or test. Every run still performs actual
 list-only discovery before execution. Its receipt binds the manifest/selection,
 named project, partition, explicit variants, forwarded filters and the hashed
@@ -114,6 +122,18 @@ discovery/execution reports. The final Check requires every selected partition,
 its clean exact source SHA and current workflow run/attempt. It rejects missing
 reports, missing cases, duplicate partitions, all-skipped suites, hidden retries
 and a narrowed `--grep` receipt presented as the full suite.
+
+Import complete successful timing receipts without rerunning a browser:
+
+```sh
+node scripts/checks/browser-ci-timings.mjs --receipt temp/test-results/browser/run.json --output temp/verification/<id>/advisory-weights.json
+```
+
+Repeated `--receipt` inputs use medians, preserving the supplied case inventory.
+The importer verifies discovery/report hashes and full nonflaky results, rejects
+filtered/mixed-project/truncated receipts, and labels dirty local samples as
+advisory. Review the output before deliberately updating the maintained weights;
+it is scheduling data, never test-success or release authority.
 
 ```sh
 node scripts/checks/browser-test-inventory.mjs --verify-list --partitions --baseline temp/verification/<id>/before.json --output temp/verification/<id>/after.json

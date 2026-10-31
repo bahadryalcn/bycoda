@@ -45,6 +45,18 @@ async function mapLimited(items, callback, concurrency = 3) {
 
 export function checkInventory() {
   const result = validateManifest();
+  const registered = new Set(
+    [
+      ...readFileSync(join(browserDirectory, "fixture-configs.ts"), "utf8").matchAll(
+        /^\s*["']([^"']+)["']\s*:/gm,
+      ),
+    ].map((match) => match[1]),
+  );
+  for (const suite of manifest.suites)
+    if (!registered.has(suite.config))
+      result.errors.push(
+        `Suite has no registered runner configuration: ${suite.id}/${suite.config}`,
+      );
   const configurations = new Set([
     ...manifest.suites.map((suite) => suite.config),
     ...manifest.legacySelections.map((entry) => entry.config),

@@ -1,5 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -22,7 +32,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "native-buffer-history-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "native-buffer-history-")));
   roots.push(root);
   const path = join(root, "workspace"),
     sibling = join(root, "workspace-other");

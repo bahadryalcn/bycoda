@@ -105,7 +105,7 @@ export function GitGraphDialog({ title, toolbar, onClose, children, expandable =
           onKeyDown={trapTab}
           className={`${styles.dialog} relative isolate flex h-full flex-col overflow-hidden border border-[var(--color-stroke)] shadow-2xl ${maximized ? "" : "rounded-2xl"}`}
         >
-          <GlassBackdrop className="bg-[var(--ui-surface)]/55" />
+          <GlassBackdrop />
           <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
             <header className={styles.header}>
               <h2 id={titleId} className={styles.title}>

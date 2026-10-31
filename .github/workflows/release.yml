@@ -95,35 +95,5 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-  # Host packages for every supported machine, for SSH setup and Update Host.
-  host-packages:
-    needs: draft
-    runs-on: ubuntu-latest
-    env:
-      BYCODA_BUILD_MANIFEST: ${{ github.workspace }}/build/build-info.json
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: ./.github/actions/setup-deps
-        with:
-          node-version: "22"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: release-candidate-${{ github.sha }}
-          path: temp/test-results/release-candidate
-      - name: Freeze exact candidate identity
-        run: node scripts/release/prepare-candidate.mjs temp/test-results/release-candidate/candidate.json
-      - name: Package hosts for all platforms
-        run: pnpm run host:package -- --all
-      - name: Bind every standalone archive to the candidate
-        run: |
-          node scripts/release/prepare-candidate.mjs --verify
-          node scripts/release/host-manifest.mjs temp/test-results/release-candidate/candidate.json temp/build/standalone-host-packages
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: standalone-host-packages
-          path: temp/build/standalone-host-packages/
-          if-no-files-found: error
-          retention-days: 14
+  # The reusable workflow builds portable JS/web once, then packages desktop
+  # variants and all six standalone Host archives from that exact artifact.

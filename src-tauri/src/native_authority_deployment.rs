@@ -45,7 +45,9 @@ struct FingerprintCache {
 
 fn read_cache(profile: &Path) -> Option<FingerprintCache> {
     let path = profile.join(CACHE_FILE);
-    if std::fs::metadata(&path).ok()?.len() > 16 * 1024 { return None; }
+    if std::fs::metadata(&path).ok()?.len() > 16 * 1024 {
+        return None;
+    }
     serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
@@ -62,9 +64,14 @@ pub(crate) fn invalidate_cached_provision(profile: &Path) {
 
 fn deployment_digest(host: &HostBootstrap, source_profile_id: &str) -> Option<String> {
     let id = uuid::Uuid::parse_str(source_profile_id).ok()?;
-    let path = host.directory().join("native-authority").join("deployments")
+    let path = host
+        .directory()
+        .join("native-authority")
+        .join("deployments")
         .join(format!("{id}.json"));
-    if std::fs::metadata(&path).ok()?.len() > MAX_INPUT as u64 { return None; }
+    if std::fs::metadata(&path).ok()?.len() > MAX_INPUT as u64 {
+        return None;
+    }
     Some(format!("{:x}", Sha256::digest(std::fs::read(path).ok()?)))
 }
 
@@ -89,20 +96,29 @@ pub(crate) fn provision(
         .canonicalize()
         .map_err(|_| DeploymentError::Unavailable)?;
     let stat = std::fs::metadata(&executable).map_err(|_| DeploymentError::Unavailable)?;
-    let modified = stat.modified().ok()
+    let modified = stat
+        .modified()
+        .ok()
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
         .ok_or(DeploymentError::Unavailable)?;
     let stamp = (modified.as_secs(), modified.subsec_nanos());
     let cached = read_cache(&profile).filter(|cache| {
-        cache.executable == executable && cache.size == stat.len() && cache.modified == stamp
-            && cache.sha256.len() == 64 && cache.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        cache.executable == executable
+            && cache.size == stat.len()
+            && cache.modified == stamp
+            && cache.sha256.len() == 64
+            && cache.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
     });
     let mut cache = match cached {
         Some(cache) => cache,
         None => {
             let (sha256, size) = fingerprint(&executable)?;
             let cache = FingerprintCache {
-                executable: executable.clone(), size, modified: stamp, sha256, provisioned: None,
+                executable: executable.clone(),
+                size,
+                modified: stamp,
+                sha256,
+                provisioned: None,
             };
             save_cache(&profile, &cache);
             cache
@@ -128,10 +144,14 @@ pub(crate) fn provision(
         return Err(DeploymentError::Cancelled);
     }
     let input_digest = format!("{:x}", Sha256::digest(&input));
-    if cache.provisioned.as_ref().is_some_and(|(prior_input, prior_deployment)| {
-        prior_input == &input_digest
-            && deployment_digest(host, source_profile_id).as_ref() == Some(prior_deployment)
-    }) {
+    if cache
+        .provisioned
+        .as_ref()
+        .is_some_and(|(prior_input, prior_deployment)| {
+            prior_input == &input_digest
+                && deployment_digest(host, source_profile_id).as_ref() == Some(prior_deployment)
+        })
+    {
         return Ok(source_profile_id.to_string());
     }
     let node = Path::new(&launcher.node_executable)
@@ -162,8 +182,8 @@ pub(crate) fn provision(
     {
         return Err(DeploymentError::InvalidReceipt);
     }
-    cache.provisioned = deployment_digest(host, source_profile_id)
-        .map(|digest| (input_digest, digest));
+    cache.provisioned =
+        deployment_digest(host, source_profile_id).map(|digest| (input_digest, digest));
     save_cache(&profile, &cache);
     Ok(receipt.deployment_id)
 }
@@ -343,7 +363,8 @@ mod tests {
     use super::*;
     #[test]
     fn invalidating_provision_preserves_cached_fingerprint() {
-        let directory = std::env::temp_dir().join(format!("bycoda-deploy-cache-{}", uuid::Uuid::new_v4()));
+        let directory =
+            std::env::temp_dir().join(format!("bycoda-deploy-cache-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         struct Cleanup(std::path::PathBuf);
         impl Drop for Cleanup {
@@ -354,8 +375,10 @@ mod tests {
         }
         let _cleanup = Cleanup(directory.clone());
         let cache = FingerprintCache {
-            executable: directory.join("app.exe"), size: 42,
-            modified: (123, 456), sha256: "a".repeat(64),
+            executable: directory.join("app.exe"),
+            size: 42,
+            modified: (123, 456),
+            sha256: "a".repeat(64),
             provisioned: Some(("input".into(), "record".into())),
         };
         save_cache(&directory, &cache);

@@ -566,10 +566,7 @@ impl ExecutionGate {
         let reservation_id = uuid::Uuid::new_v4().to_string();
         let transient_lease = is_transient_kind(kind);
         let result = (|| {
-            let conn = self
-                .conn
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
+            let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
             lease_write(&conn, transient_lease, |tx| {
                 let generation = require_native(tx, session_id, existing_control)?;
                 match read_state(tx, session_id)? {
@@ -631,23 +628,19 @@ impl ExecutionGate {
         let mut lease = self.reserve_existing(session_id, kind, None, finishing)?;
         lease.begin_external()?;
         let result = write();
-        if let Err(error) = lease.finish() { eprintln!("[authority] completed operation lease cleanup failed: {error}"); }
+        if let Err(error) = lease.finish() {
+            eprintln!("[authority] completed operation lease cleanup failed: {error}");
+        }
         result
     }
 
     pub(crate) fn assert_checkpoint(&self, session_id: &str) -> Result<(), String> {
-        let conn = self
-            .conn
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
         assert_checkpoint(&conn, session_id)
     }
 
     pub(crate) fn has_floor(&self) -> Result<bool, String> {
-        let conn = self
-            .conn
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
         conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM native_authority_floor)",
             [],
@@ -664,10 +657,7 @@ impl ExecutionGate {
                 .admit_unqualified_write()
                 .map_err(|e| e.to_string())?;
         }
-        let conn = self
-            .conn
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
         critical(&conn, |tx| {
             let floor: bool = tx
                 .query_row(
@@ -711,10 +701,7 @@ impl ExecutionGate {
             .next()
             .map(|(_, value)| value.into_owned())
             .ok_or("NATIVE_AUTHORITY_INVALID_PROVIDER_TARGET")?;
-        let conn = self
-            .conn
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
         let conflict: bool = conn
             .query_row(
                 "SELECT EXISTS(

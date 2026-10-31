@@ -428,35 +428,41 @@ describe("trusted local native helper deployment", () => {
     },
   );
 
-  it.runIf(windows)("caps aggregate live helper leases across deployment generations", async () => {
-    const f = await fixture();
-    let first: Awaited<ReturnType<typeof f.provider.open>> | undefined;
-    for (let index = 0; index < 4; index++) {
-      if (index)
-        await writeNativeHelperDeployment(f.directory, {
-          ...f.input,
-          sourceBuildMetadata: { version: `fixture-${index}` },
-        });
-      const opened = await f.provider.open(f.input.sourceProfileId, address);
-      first ??= opened;
-    }
-    expect(f.provider.observation().activeHelpers).toBe(4);
-    await expect(f.provider.open(f.input.sourceProfileId, address)).rejects.toMatchObject({
-      code: "DEPLOYMENT_UNAVAILABLE",
-    });
-    expect(f.children).toHaveLength(4);
-    await first!.client.close();
-    await first!.client.exited;
-    await writeNativeHelperDeployment(f.directory, {
-      ...f.input,
-      sourceBuildMetadata: { version: "fixture-4" },
-    });
-    await f.provider.open(f.input.sourceProfileId, address);
-    expect(f.children).toHaveLength(5);
-    expect(f.provider.observation().activeHelpers).toBe(4);
-    await f.provider.close();
-    expect(f.provider.observation().activeHelpers).toBe(0);
-  });
+  it.runIf(windows)(
+    "caps aggregate live helper leases across deployment generations",
+    async () => {
+      const f = await fixture();
+      let first: Awaited<ReturnType<typeof f.provider.open>> | undefined;
+      for (let index = 0; index < 4; index++) {
+        if (index)
+          await writeNativeHelperDeployment(f.directory, {
+            ...f.input,
+            sourceBuildMetadata: { version: `fixture-${index}` },
+          });
+        const opened = await f.provider.open(f.input.sourceProfileId, address);
+        first ??= opened;
+      }
+      expect(f.provider.observation().activeHelpers).toBe(4);
+      await expect(f.provider.open(f.input.sourceProfileId, address)).rejects.toMatchObject({
+        code: "DEPLOYMENT_UNAVAILABLE",
+      });
+      expect(f.children).toHaveLength(4);
+      await first!.client.close();
+      await first!.client.exited;
+      await writeNativeHelperDeployment(f.directory, {
+        ...f.input,
+        sourceBuildMetadata: { version: "fixture-4" },
+      });
+      await f.provider.open(f.input.sourceProfileId, address);
+      expect(f.children).toHaveLength(5);
+      expect(f.provider.observation().activeHelpers).toBe(4);
+      await f.provider.close();
+      expect(f.provider.observation().activeHelpers).toBe(0);
+      // Five generations each perform real Windows ACL and executable verification.
+      // Keep the suite's normal deadline for ordinary cases.
+    },
+    120_000,
+  );
 
   it.runIf(windows)("a new generation never rebinds an existing live helper", async () => {
     const f = await fixture();

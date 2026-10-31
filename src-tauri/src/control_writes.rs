@@ -53,7 +53,9 @@ impl WriteScope {
             .changed
             .wait_timeout_while(state, std::time::Duration::from_secs(12), |s| s.active != 0)
             .map_err(|_| "NATIVE_TURN_WRITE_UNAVAILABLE")?;
-        if state.active != 0 { return Err("Turn write delivery outcome unknown; do not retry while writing".into()); }
+        if state.active != 0 {
+            return Err("Turn write delivery outcome unknown; do not retry while writing".into());
+        }
         state.failure.clone().map_or(Ok(()), Err)
     }
     pub(crate) fn settled(&self) -> bool {
@@ -148,7 +150,11 @@ pub(super) struct TurnLedger {
 impl TurnLedger {
     pub(super) fn capacity(&mut self) -> Result<(), String> {
         if self.records.len() >= CAPACITY {
-            if let Some(index) = self.records.iter().position(|turn| turn.finished() || turn.writes.settled()) {
+            if let Some(index) = self
+                .records
+                .iter()
+                .position(|turn| turn.finished() || turn.writes.settled())
+            {
                 self.records.remove(index);
             }
         }
@@ -166,12 +172,16 @@ impl TurnLedger {
     }
     pub(super) fn close_window(&self, window: &str) {
         for turn in &self.records {
-            if turn.window == window { turn.writes.close(); }
+            if turn.window == window {
+                turn.writes.close();
+            }
         }
     }
     pub(super) fn close_abandoned(&self, window: &str, issuer: &Arc<WindowIssuer>) {
         for turn in &self.records {
-            if !turn.issuer.is_live() || (turn.window == window && !Arc::ptr_eq(&turn.issuer, issuer)) {
+            if !turn.issuer.is_live()
+                || (turn.window == window && !Arc::ptr_eq(&turn.issuer, issuer))
+            {
                 turn.writes.close();
             }
         }
@@ -294,7 +304,13 @@ mod tests {
                 authorize(&host, &issuer, "next", &std::env::temp_dir()).unwrap();
             }
             assert!(authorize(&host, &issuer, "next", &std::env::temp_dir()).is_ok());
-            assert!(host.inner.lock().unwrap().turn_writes.find(&receipt).is_none());
+            assert!(host
+                .inner
+                .lock()
+                .unwrap()
+                .turn_writes
+                .find(&receipt)
+                .is_none());
         }
     }
 }

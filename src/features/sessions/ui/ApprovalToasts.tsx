@@ -321,7 +321,7 @@ export function ApprovalToasts({
               style={{
                 zIndex: LAYER.toast,
               }}
-              className="notification-sheet fixed end-0 flex flex-col border-s border-(--ui-pane-border) bg-(--ui-surface-raised) shadow-(--ui-elevation-floating)"
+              className="notification-sheet fixed end-0 flex flex-col border-s border-(--ui-pane-border) bg-(--ui-surface-floating) shadow-(--ui-elevation-floating)"
             >
               <div className="notification-sheet-header">
                 {/* Counts live on the tabs, once; the title stays a plain title. */}
@@ -600,7 +600,7 @@ function LockedNotice({ onDismiss }: { onDismiss?: () => void }) {
   }, [timed]);
   return (
     <article
-      className="approval-toast pointer-events-auto flex items-center gap-2 rounded-xl border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3.5 py-3 shadow-(--ui-elevation-floating)"
+      className="approval-toast pointer-events-auto flex items-center gap-2 rounded-xl border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-3.5 py-3 shadow-(--ui-elevation-floating)"
       role="status"
     >
       <CircleAlert className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
@@ -778,7 +778,7 @@ function ApprovalToastCard({
   const decision = useApprovalDecisionControl(session, requestId, onApproval);
   return (
     <article
-      className="approval-toast notification-request pointer-events-auto relative overflow-clip rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-raised) shadow-(--ui-elevation-floating)"
+      className="approval-toast notification-request pointer-events-auto relative overflow-clip rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-floating) shadow-(--ui-elevation-floating)"
       role="status"
     >
       <Button

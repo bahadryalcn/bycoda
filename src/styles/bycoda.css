@@ -323,7 +323,7 @@ html.theme-light .project-sigil {
   padding: 10px 16px;
   border: 1px solid var(--ui-pane-border);
   border-radius: var(--ui-radius-popup);
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-floating);
   box-shadow: var(--ui-elevation-floating);
   color: var(--color-content);
   font-size: 12px;

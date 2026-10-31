@@ -2,7 +2,15 @@
   "schemaVersion": 1,
   "description": "One default owner per spec/e2e; named browser projects and explicit fixture variants. Legacy configs remain compatible.",
   "aliases": {
-    "smoke": ["arc-controls"]
+    "smoke": ["arc-controls"],
+    "settings": [
+      "settings",
+      "settings-navigation",
+      "settings-workspace",
+      "settings-library",
+      "settings-subviews",
+      "settings-backgrounds"
+    ]
   },
   "suites": [
     {
@@ -15,8 +23,16 @@
         "path": "/tests/browser/composer-compact.html"
       },
       "projects": [
-        { "name": "chromium", "browser": "chromium", "files": ["composer-compact.spec.ts"] },
-        { "name": "webkit", "browser": "webkit", "files": ["composer-compact.spec.ts"] }
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["composer-compact.spec.ts"]
+        },
+        {
+          "name": "webkit",
+          "browser": "webkit",
+          "files": ["composer-compact.spec.ts"]
+        }
       ]
     },
     {
@@ -29,7 +45,11 @@
         "path": "/tests/browser/session-references.html"
       },
       "projects": [
-        { "name": "chromium", "browser": "chromium", "files": ["session-references.spec.ts"] }
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["session-references.spec.ts"]
+        }
       ]
     },
     {
@@ -732,21 +752,29 @@
     {
       "id": "settings",
       "config": "tests/browser/playwright.settings.config.ts",
+      "files": ["settings.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.settings.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/settings.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["settings.e2e.ts"]
+        }
+      ]
+    },
+    {
+      "id": "settings-navigation",
+      "config": "tests/browser/playwright.settings.config.ts",
       "files": [
-        "live-backgrounds.e2e.ts",
         "settings-dialog.e2e.ts",
         "settings-open.e2e.ts",
         "settings-organization.e2e.ts",
-        "workspace-settings.e2e.ts",
-        "terminal-settings.e2e.ts",
-        "settings.e2e.ts",
-        "policies.e2e.ts",
-        "settings-subviews.e2e.ts",
-        "settings-skills.e2e.ts",
-        "settings-notifications.e2e.ts",
         "settings-layout.e2e.ts",
-        "settings-ui-details.e2e.ts",
-        "voice-settings.e2e.ts"
+        "settings-ui-details.e2e.ts"
       ],
       "fixture": {
         "config": "tests/browser/vite.settings.config.ts",
@@ -758,21 +786,84 @@
           "name": "chromium",
           "browser": "chromium",
           "files": [
-            "live-backgrounds.e2e.ts",
-            "policies.e2e.ts",
             "settings-dialog.e2e.ts",
             "settings-layout.e2e.ts",
-            "settings-notifications.e2e.ts",
             "settings-open.e2e.ts",
             "settings-organization.e2e.ts",
-            "settings-skills.e2e.ts",
-            "settings-subviews.e2e.ts",
-            "settings-ui-details.e2e.ts",
-            "settings.e2e.ts",
-            "terminal-settings.e2e.ts",
-            "voice-settings.e2e.ts",
-            "workspace-settings.e2e.ts"
+            "settings-ui-details.e2e.ts"
           ]
+        }
+      ]
+    },
+    {
+      "id": "settings-workspace",
+      "config": "tests/browser/playwright.settings.config.ts",
+      "files": ["terminal-settings.e2e.ts", "workspace-settings.e2e.ts", "policies.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.settings.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/settings.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["policies.e2e.ts", "terminal-settings.e2e.ts", "workspace-settings.e2e.ts"]
+        }
+      ]
+    },
+    {
+      "id": "settings-library",
+      "config": "tests/browser/playwright.settings.config.ts",
+      "files": ["settings-skills.e2e.ts", "settings-notifications.e2e.ts", "voice-settings.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.settings.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/settings.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": [
+            "settings-notifications.e2e.ts",
+            "settings-skills.e2e.ts",
+            "voice-settings.e2e.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings-subviews",
+      "config": "tests/browser/playwright.settings.config.ts",
+      "files": ["settings-subviews.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.settings.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/settings.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["settings-subviews.e2e.ts"]
+        }
+      ]
+    },
+    {
+      "id": "settings-backgrounds",
+      "config": "tests/browser/playwright.settings.config.ts",
+      "files": ["live-backgrounds.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.settings.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/settings.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["live-backgrounds.e2e.ts"]
         }
       ]
     },

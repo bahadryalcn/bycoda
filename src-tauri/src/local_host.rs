@@ -200,8 +200,10 @@ fn local_device_name() -> String {
 /// a short store read and is called directly.
 #[tauri::command]
 pub async fn local_host_connect(app: AppHandle) -> Result<Option<Machine>, String> {
-    crate::harness::run_blocking("local_host_connect", move || local_host_connect_blocking(app))
-        .await
+    crate::harness::run_blocking("local_host_connect", move || {
+        local_host_connect_blocking(app)
+    })
+    .await
 }
 
 pub(crate) fn local_host_connect_blocking(app: AppHandle) -> Result<Option<Machine>, String> {

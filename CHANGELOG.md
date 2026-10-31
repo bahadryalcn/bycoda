@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0]
+
+### Reliability
+
+- Preserve run ownership when the same desktop renews an expired lease.
+- Keep shortcut recording, conflict feedback and reset actions usable in narrow Settings layouts.
+- Refresh remote skill restrictions with the catalog without persisting remote policy as local preferences.
+
+### Build and verification
+
+- Build shared web and Host JavaScript once per release candidate, while retaining platform packaging, signatures and packaged launch/migration checks.
+- Check contracts and Rust formatting before long CI jobs, and distribute browser and Host tests without dropping regression coverage.
+
 ## [0.6.94]
 
 ### Edit from here

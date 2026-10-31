@@ -40,3 +40,30 @@ test("partition scheduling is deterministic, project-bound and refuses invalid/e
     selectionPlan().selection.digest,
   );
 });
+
+test("measured durations balance elapsed work while preserving every selected owner", () => {
+  const suites = ["a", "b", "c"].map((id) => ({
+    id,
+    files: [`${id}.spec.ts`],
+    projects: [{ name: "chromium" }],
+  }));
+  const scheduling = {
+    cases: { a: { chromium: 100 }, b: { chromium: 1 }, c: { chromium: 1 } },
+    durationMs: { a: { chromium: 100 }, b: { chromium: 90 }, c: { chromium: 200 } },
+    fallbackMsPerCase: 10,
+  };
+  const first = partitionSuites(suites, "chromium", 1, 2, scheduling);
+  const second = partitionSuites(suites, "chromium", 2, 2, scheduling);
+  assert.deepEqual(
+    first.map((suite) => suite.id),
+    ["c"],
+  );
+  assert.deepEqual([...first, ...second].map((suite) => suite.id).sort(), ["a", "b", "c"]);
+  assert.deepEqual(first, partitionSuites([...suites].reverse(), "chromium", 1, 2, scheduling));
+  assert.throws(() =>
+    partitionSuites(suites, "chromium", 1, 2, {
+      ...scheduling,
+      durationMs: { a: { chromium: -1 } },
+    }),
+  );
+});

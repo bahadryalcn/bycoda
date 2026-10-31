@@ -389,6 +389,10 @@ html.theme-light {
   --ui-startup-surface: var(--palette-scrim);
   --ui-startup-text: var(--palette-solidInk);
   --ui-surface-raised: color-mix(in oklab, var(--color-content) 16%, var(--ui-tint-base));
+  /* Container role for every floating surface: dialogs, sheets, popovers, menus, tooltips, toasts
+     and floating panels (V3-040). Tinted canvases keep the raised step; the Pure background maps it
+     near the pure ground below. Controls inside keep their own field, hover and selected steps. */
+  --ui-surface-floating: var(--ui-surface-raised);
   --ui-conflict-current-surface: color-mix(
     in oklab,
     var(--color-conflict-ours) 12%,
@@ -412,7 +416,7 @@ html.theme-light {
   /* One writing surface owner: identical at rest and while typing. */
   /* The writing box is the reading surface one tier above the chat canvas, not the popup step:
      distinct from the canvas (and from a background image behind it) without a hard jump.
-     Popups, menus and modals keep --ui-surface-raised. */
+     Popups, menus and modals use --ui-surface-floating. */
   --ui-chat-canvas: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
   --ui-composer-surface: var(--ui-surface);
   --ui-composer-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-composer-surface));
@@ -648,9 +652,19 @@ html.theme-light {
 html[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureDark);
   --ui-chat-canvas: var(--color-background-base);
+  /* Every floating container (dialogs, sheets, popovers, menus, tooltips, toasts, floating panels)
+     stays near the pure ground instead of a mid gray slab; the pane border and floating elevation
+     separate it, and controls inside keep their steps (fields stay one step lighter). */
+  --ui-surface-floating: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
+  /* The composer sits one quiet step above the pure ground (about #0e0e0e on black, owner
+     2026-11-01: "1e1e1e bunun yerine 0e0e0e"); its border keeps the writing area distinct. */
+  --ui-composer-surface: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
 }
 html.theme-light[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureLight);
+  --ui-surface-floating: var(--ui-surface-raised);
+  /* Mirror of the dark step: a faint off-white on the white ground. */
+  --ui-composer-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
   /* Paper-white reading surfaces would vanish into the white canvas; one faint tint step keeps
      bubbles, code and cards readable as surfaces. Hover/pressed/selected derive from it. */
   --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
@@ -2337,7 +2351,7 @@ html.is-grabbing {
   padding: 6px 10px;
   border: 1px solid var(--ui-drop-frame);
   border-radius: 0.5rem;
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-floating);
   color: var(--color-content);
   box-shadow: var(--ui-elevation-floating);
   font-size: var(--ui-font-caption, 12px);
@@ -2390,7 +2404,7 @@ html.is-grabbing {
   padding: 2px 8px;
   border: 1px solid var(--ui-drop-frame);
   border-radius: 0.375rem;
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-floating);
   color: var(--color-content);
   box-shadow: var(--ui-elevation-floating);
   font-size: var(--ui-font-caption, 12px);
@@ -3768,16 +3782,16 @@ html:not(.theme-light) .markdown-code-token {
 
 /* Menus need a stable surface above bright buttons and custom backgrounds. */
 .popover-backdrop {
-  background: color-mix(in srgb, var(--ui-surface-raised) 95%, transparent);
+  background: color-mix(in srgb, var(--ui-surface-floating) 95%, transparent);
 }
 
 html.theme-light .popover-backdrop {
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-floating);
 }
 
 /* Opaque popover surface for live canvases; no backdrop sampling. */
 .popover-solid {
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-floating);
 }
 
 /* Animate content only; its sibling glass stays still. Finish at `none` and

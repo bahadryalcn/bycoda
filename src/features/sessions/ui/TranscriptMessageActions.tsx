@@ -88,7 +88,9 @@ export function TurnOutputActions({
     <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
       <FloatingButtonGroup
         label={t("Message actions")}
-        variant="floating"
+        // Bare icons like the user message actions: no tray surface, border or inset.
+        variant="muted"
+        style={{ padding: 0 }}
         size="sm"
         iconOnly
         items={items}

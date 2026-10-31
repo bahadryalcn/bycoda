@@ -73,7 +73,7 @@ export function ReminderNotices({
         ref={panelRef}
         aria-label={t("Due reminders")}
         style={{ zIndex: LAYER.popover - 1 }}
-        className="fixed top-3 right-3 flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg) shadow-(--ui-elevation-floating)"
+        className="fixed top-3 right-3 flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-floating) text-(--ui-tone-neutral-fg) shadow-(--ui-elevation-floating)"
       >
         <div className="flex min-h-7 items-center gap-2 px-3 pt-2">
           <Clock className="icon-sm shrink-0 text-(--ui-text-secondary)" aria-hidden />

@@ -16,7 +16,7 @@ for (const theme of ["light", "dark"]) {
       await expect(size).toHaveAccessibleName(/14/);
       // Weight and line spacing sit under the closed Advanced disclosure.
       await page
-        .locator('[data-setting-id="terminal-font-size"] ~ .settings-advanced .settings-advanced-toggle')
+        .locator('[data-setting-id="terminal-font"] ~ .settings-advanced .settings-advanced-toggle')
         .first()
         .click();
       await page.locator('[data-setting-id="terminal-font-weight"] button').click();
@@ -125,7 +125,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "About this page", exact: true }).click();
       await expect(page.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
       await page.keyboard.press("Escape");
-      await expect(general.locator(".general-detail")).toBeVisible();
+      await expect(general.locator(".general-about-value")).toBeVisible();
       const overflows = await general.evaluate((root) =>
         [
           ...root.querySelectorAll(
@@ -293,7 +293,7 @@ const sections = [
 ];
 
 for (const theme of ["light", "dark"])
-  for (const width of [390, 768, 1024, 1440]) {
+  for (const width of [390, 768, 800, 1024, 1280, 1440]) {
     test(`keybindings recording and filters: ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/settings.html?section=keybindings&theme=${theme}&lang=en`);
@@ -325,11 +325,15 @@ for (const theme of ["light", "dark"])
       const feedback = page
         .locator(".settings-row")
         .filter({ has: recorder })
-        .locator(".settings-row-feedback");
-      await expect(feedback.getByRole("status")).toContainText("Saved");
-      expect(
-        await feedback.evaluate((node) => node.clientWidth / node.parentElement!.clientWidth),
-      ).toBeGreaterThan(0.85);
+        .getByRole("status")
+        .filter({ has: page.getByRole("button", { name: "Saved", exact: true }) });
+      await expect(feedback).toContainText("Saved");
+      const savedDetails = feedback.getByRole("button", { name: "Saved", exact: true });
+      await expect(savedDetails).toBeVisible();
+      await savedDetails.click();
+      await expect(page.getByRole("dialog", { name: "Saved", exact: true })).toContainText("Saved");
+      await page.keyboard.press("Escape");
+      await expect(savedDetails).toBeFocused();
       await page.reload();
       await search.fill("Open Inbox");
       await expect(recorder).toContainText("Q");
@@ -340,6 +344,19 @@ for (const theme of ["light", "dark"])
       await page.keyboard.press("Control+k");
       await expect(page.getByRole("alert")).toContainText("Already used");
       await expect(recorder).toContainText("Q");
+      const recorderBounds = (await recorder.boundingBox())!;
+      const resetBounds = (await page.getByRole("button", {
+        name: "Reset App: Open Inbox shortcut", exact: true,
+      }).boundingBox())!;
+      // Conflict feedback must not collapse the recorder beneath its reset
+      // action and leave pointer activation waiting behind another control.
+      expect(recorderBounds.width).toBeGreaterThan(40);
+      expect(recorderBounds.x + recorderBounds.width).toBeLessThanOrEqual(resetBounds.x + 1);
+      if ([390, 800, 1280].includes(width)) {
+        const conflictCaptures = "temp/verification/2026-11-01-release-performance/keybindings-conflict";
+        mkdirSync(conflictCaptures, { recursive: true });
+        await page.screenshot({ path: `${conflictCaptures}/${theme}-${width}.png` });
+      }
       await recorder.click();
       await page.keyboard.press("Delete");
       await expect(recorder).toContainText("Disabled");

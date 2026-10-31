@@ -21,7 +21,9 @@ html[data-control-density="touch"] {
   --background: var(--color-background-base);
   --foreground: var(--color-content);
   --surface: var(--ui-surface);
-  --surface-raised: var(--ui-surface-raised);
+  /* Arc consumes the raised role only for floating panels (menus, select and combobox lists, the open
+     date-range panel, chart tooltips), so it follows the shared floating container role. */
+  --surface-raised: var(--ui-surface-floating);
   --surface-muted: var(--ui-surface-muted);
   --text-secondary: var(--ui-text-secondary);
   --text-muted: var(--ui-text-muted);

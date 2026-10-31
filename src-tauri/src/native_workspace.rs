@@ -123,7 +123,9 @@ fn requires_host_activity(
                         name.strip_prefix("wt-").is_some_and(|id| {
                             // Host ids are 12 lowercase hex digits; `wt-optimization` is a plain branch worktree.
                             id.len() == 12
-                                && id.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+                                && id
+                                    .bytes()
+                                    .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
                         })
                     });
                 if reserved {

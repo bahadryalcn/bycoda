@@ -39,6 +39,8 @@ async function fixture() {
   git(cwd, "config", "user.name", "Fixture");
   git(cwd, "config", "user.email", "fixture@example.invalid");
   git(cwd, "config", "commit.gpgsign", "false");
+  // This fixture asserts exact bytes after Git restore on every platform.
+  git(cwd, "config", "core.autocrlf", "false");
   writeFileSync(join(cwd, "source.txt"), "base\n");
   git(cwd, "add", ".");
   git(cwd, "commit", "-qm", "baseline");

@@ -5,6 +5,20 @@ description: "Skills management inventory for local/project/remote libraries, ma
 
 # Skills
 
+## Remote-policy refresh regression, 2026-11-01
+
+Release-performance CI repair reproduced a stale restriction cache after remote
+re-enable. Explicit `loadSkills({ refresh: true })` now requests fresh policy via
+`skills.ts` and `skillPreferences.ts`; the revision fence prevents older in-flight
+reads from restoring stale cache entries. Remote policy is not written to local
+preferences, and failed authority reads remain closed. Catalog/preferences tests
+passed 29/29, including re-enable, fresh-disable/offline and late-reader cases.
+Evidence: `temp/verification/2026-11-01-host-test-efficiency/skill-catalog-fixed.json`.
+Baseline main/cba4505fe; local uncommitted repair under the owner's instruction to
+implement CI fixes without committing. This is mocked-transport/source evidence,
+not a live remote-Host or installed-build acceptance claim.
+
+
 Manage skill installation inventory, owner preferences and instruction documents
 without losing drafts, machine identity or execution restrictions. Search terms:
 Skills, SKILL.md, enabled, disabled, Manual only, Automatic only, invocation,

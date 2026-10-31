@@ -18,6 +18,29 @@ H1 text-action/long-press dependencies:
 `temp/local/2026-10-28-h4-workbench/handoff.json`. Test edilmedi per RULES.md;
 native, keyboard and visual acceptance are pending the owner's morning checks.
 
+## Working state on session cards, 2026-11-01
+
+Running cards show the same subtle `Badge` as Done/Failed (tone info) holding
+`SessionWorkingStatus labelled` (bars + "Working" + turn time), plus a static
+2px `--color-active` edge (`.session-row-working-edge`). The word drops below a
+250px sidebar (320px for compact rows) via `sessionList.css`; mark and time stay.
+Fixture shots: `temp/verification/session-working/` (fixture evidence only).
+Uncommitted at the time of writing.
+
+## Unsent composer draft mark, 2026-11-01
+
+Owner request (2026-11-01, interactive session): "bunları draft olarak göstermek
+istiyorum yazı var ve gönderilmemişse". Session rows (`src/app/shell/Sidebar.tsx`
+SessionCard) now show the existing `Draft` badge, with a PenLine icon, when the
+session's composer holds unsent text or attachments; recent rail rows
+(`src/app/shell/LastSessionsSection.tsx`) show a PenLine mark and name it in
+the tooltip/accessible name. The session being typed in is not marked. Source:
+`useUnsentComposerDraft` over `draftCache.subscribeComposerDraftPresence`, which
+also fires for drafts restored from disk. Saved draft blocks keep their badge.
+Checks: `draftCache.test.ts`, `compact-navigation.spec.ts` (`?draft=1`) and
+`project-workspace-navigation.spec.ts` session preview; captures in
+`temp/verification/draft-indicator/`. Uncommitted.
+
 Find, organize and reopen conversations while preserving execution ownership and project/worktree context. Keywords: sidebar, sessions list, archive, pin, rename, delete, search, pagination, remote, recovery, worktree focus.
 
 Inventory inspected on 2026-10-26 at contracts baseline `f26ac112404e326478adb687c23ca9cc032acfef`. Paths are repository-relative. Re-run searches and inspect recent Git history before editing. This card is an acceptance inventory, not a concurrency lock: check live feature claims and session/workspace ownership across worktrees. `docs/reference/managed-workspaces.md` defines contracts; contract presence does not establish runtime capability.

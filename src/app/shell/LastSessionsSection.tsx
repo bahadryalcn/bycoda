@@ -4,7 +4,7 @@ import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "./RelativeSessionTime";
 import { getLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { ChevronDown, Clock, Internet, Pin, PinOff } from "../../shared/ui/icons";
+import { ChevronDown, Clock, Internet, PenLine, Pin, PinOff } from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
@@ -19,6 +19,7 @@ import {
 } from "./useRailSections";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import { useRecentSessions } from "../../features/sessions/hooks/useRecentSessions";
+import { useUnsentComposerDraft } from "../../features/sessions/hooks/useUnsentComposerDraft";
 import {
   buildRecentSessions,
   formatRelative,
@@ -353,11 +354,14 @@ function SessionRow({
   const model = row.model ? resolveModel(row.harness, row.model).name : "";
   const time = formatRelative(row.updatedAt, now);
   const status = row.status;
+  // Text left unsent in another session's composer; the open session shows its own.
+  const draft = useUnsentComposerDraft(row.id, !selected);
   const location = row.remote ? `${remoteProjectFor(row.cwd)?.cwd ?? row.cwd} (remote)` : row.cwd;
   const tooltip = [
     row.title,
     `${project} · ${location}`,
     model ? `${agent} · ${model}` : agent,
+    draft ? t("Draft") : "",
     status
       ? STATUS_LABEL[status]
       : time && `Last activity ${new Date(row.updatedAt).toLocaleString(getLocale())}`,
@@ -387,7 +391,13 @@ function SessionRow({
         title={tooltip}
         selected={selected}
         aria-current={selected ? "true" : undefined}
-        aria-label={[row.title, project, agent, status ? STATUS_LABEL[status].toLowerCase() : time]
+        aria-label={[
+          row.title,
+          project,
+          agent,
+          draft ? t("Draft") : "",
+          status ? STATUS_LABEL[status].toLowerCase() : time,
+        ]
           .filter(Boolean)
           .join(", ")}
         onClick={onOpen}
@@ -418,6 +428,13 @@ function SessionRow({
           )}
         </span>
         <span className="min-w-0 flex-1 truncate text-ui-secondary leading-tight">{row.title}</span>
+        {draft ? (
+          <PenLine
+            aria-hidden="true"
+            className="icon-xs shrink-0 text-(--ui-text-secondary)"
+            strokeWidth={1.75}
+          />
+        ) : null}
         {row.pinned ? (
           <Pin
             aria-label={t("Pinned")}

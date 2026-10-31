@@ -801,9 +801,7 @@ pub(crate) fn reconcile_pending_native(
 }
 
 #[tauri::command]
-pub async fn managed_rewind_reconcile(
-    app: AppHandle,
-) -> Result<Vec<String>, String> {
+pub async fn managed_rewind_reconcile(app: AppHandle) -> Result<Vec<String>, String> {
     crate::harness::run_blocking("managed_rewind_reconcile", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         reconcile_pending_native(&app, &store, None)
@@ -831,13 +829,15 @@ pub async fn managed_turn_begin(
             crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
         // A stale `starting` row from another run never captured its baseline;
         // begin_managed_turn retires it, so only later phases pin the request.
-        let pending = pending_turn(&store, &session_id)?
-            .filter(|(raw, phase)| phase != "starting" || {
+        let pending = pending_turn(&store, &session_id)?.filter(|(raw, phase)| {
+            phase != "starting" || {
                 serde_json::from_str::<ManagedTurnRequest>(raw)
                     .is_ok_and(|r| r.user_block_id == user_block_id && r.run_id == run_id)
-            });
+            }
+        });
         let request = if let Some((raw, _)) = pending {
-            let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+            let request: ManagedTurnRequest =
+                serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             if request.user_block_id != user_block_id
                 || request.run_id != run_id
                 || Some(&request.workspace_id) != record.workspace_id.as_ref()
@@ -920,10 +920,7 @@ fn validate_rewind_input(
 }
 
 #[tauri::command]
-pub async fn managed_rewind_plan(
-    app: AppHandle,
-    request: Value,
-) -> Result<Value, String> {
+pub async fn managed_rewind_plan(app: AppHandle, request: Value) -> Result<Value, String> {
     crate::harness::run_blocking("managed_rewind_plan", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         require_exact_git_rewind(&app)?;
@@ -932,7 +929,8 @@ pub async fn managed_rewind_plan(
         }
         let boundary = validate_rewind_input(&store, &request)?;
         assert_writable(&store, request["sessionId"].as_str().unwrap())?;
-        let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
+        let host =
+            crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
         host.project(
             "native.rewind.plan",
             json!({"request":request,"conversation":boundary}),
@@ -1247,28 +1245,24 @@ fn native_rewind_crash_boundary(boundary: &str) {
 fn native_rewind_crash_boundary(_: &str) {}
 
 #[tauri::command]
-pub async fn managed_rewind_apply(
-    app: AppHandle,
-    request: Value,
-) -> Result<Value, String> {
+pub async fn managed_rewind_apply(app: AppHandle, request: Value) -> Result<Value, String> {
     crate::harness::run_blocking("managed_rewind_apply", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         require_exact_git_rewind(&app)?;
-        let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
+        let host =
+            crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
         native_apply(&store, &host, request, RewindDirection::Rewind)
     })
     .await
 }
 
 #[tauri::command]
-pub async fn managed_rewind_undo(
-    app: AppHandle,
-    request: Value,
-) -> Result<Value, String> {
+pub async fn managed_rewind_undo(app: AppHandle, request: Value) -> Result<Value, String> {
     crate::harness::run_blocking("managed_rewind_undo", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         require_exact_git_rewind(&app)?;
-        let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
+        let host =
+            crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
         native_apply(&store, &host, request, RewindDirection::Undo)
     })
     .await

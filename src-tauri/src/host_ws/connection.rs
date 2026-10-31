@@ -865,9 +865,16 @@ async fn serve(
         for _ in 0..parked_controls.len() {
             let request = parked_controls.pop_front().unwrap();
             if Instant::now() >= request.admission_deadline
-                || !shared.active(&request.consumer) || shared.cancelled(&request.id) {
-                settle(request, generation, false, "RPC_WS_CANCELLED",
-                    "Native control request expired before wire admission");
+                || !shared.active(&request.consumer)
+                || shared.cancelled(&request.id)
+            {
+                settle(
+                    request,
+                    generation,
+                    false,
+                    "RPC_WS_CANCELLED",
+                    "Native control request expired before wire admission",
+                );
             } else {
                 parked_controls.push_back(request);
             }
@@ -949,12 +956,33 @@ async fn serve(
             ));
             heartbeat = Instant::now() + contracts.duration("heartbeatIntervalMs");
         }
-        let wake = pending.values().map(|request| request.deadline)
-            .chain(subscriptions.waiters.values().map(|request| request.deadline))
-            .chain(subscriptions.pending.values().map(|operation| operation.deadline))
-            .chain(parked_controls.iter().map(|request| request.admission_deadline))
-            .chain(std::iter::once(ping.as_ref().map(|(_, deadline)| *deadline).unwrap_or(heartbeat)))
-            .min().unwrap_or(heartbeat);
+        let wake = pending
+            .values()
+            .map(|request| request.deadline)
+            .chain(
+                subscriptions
+                    .waiters
+                    .values()
+                    .map(|request| request.deadline),
+            )
+            .chain(
+                subscriptions
+                    .pending
+                    .values()
+                    .map(|operation| operation.deadline),
+            )
+            .chain(
+                parked_controls
+                    .iter()
+                    .map(|request| request.admission_deadline),
+            )
+            .chain(std::iter::once(
+                ping.as_ref()
+                    .map(|(_, deadline)| *deadline)
+                    .unwrap_or(heartbeat),
+            ))
+            .min()
+            .unwrap_or(heartbeat);
         tokio::select! {
             _ = shared.changed.notified() => {},
             _ = time::sleep_until(wake.into()) => {},
@@ -1109,7 +1137,6 @@ async fn serve(
                 }
             },
         }
-
     };
     // Physical retirement invalidates every bulk grant. An inline reply already
     // delivered before the disconnect remains a completed RPC; explicit route,

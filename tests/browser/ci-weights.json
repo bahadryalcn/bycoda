@@ -1,10 +1,17 @@
 {
   "schemaVersion": 1,
-  "basis": "2026-10-27 actual list-only case counts; advisory scheduling weights, never a coverage gate",
+  "basis": "2026-11-01 expanded list-only discovery; cases are scheduling estimates, not measured durations or acceptance",
   "cases": {
+    "composer-compact": {
+      "chromium": 30,
+      "webkit": 30
+    },
+    "session-references": {
+      "chromium": 4
+    },
     "compact-navigation": {
-      "chromium": 2,
-      "webkit": 2
+      "chromium": 4,
+      "webkit": 4
     },
     "composer-host-compatibility": {
       "chromium": 10,
@@ -15,8 +22,8 @@
       "webkit": 13
     },
     "arc-controls": {
-      "chromium": 28,
-      "webkit": 28
+      "chromium": 67,
+      "webkit": 67
     },
     "automations": {
       "chromium": 4,
@@ -30,8 +37,8 @@
       "webkit": 18
     },
     "composer": {
-      "chromium": 31,
-      "webkit": 31
+      "chromium": 33,
+      "webkit": 33
     },
     "connections": {
       "chromium": 8
@@ -41,8 +48,8 @@
       "webkit": 8
     },
     "crews": {
-      "chromium": 35,
-      "webkit": 35
+      "chromium": 41,
+      "webkit": 41
     },
     "device-panel": {
       "chromium": 4
@@ -52,8 +59,8 @@
       "webkit": 1
     },
     "editor-selection": {
-      "chromium": 23,
-      "webkit": 23
+      "chromium": 64,
+      "webkit": 64
     },
     "external-mcp": {
       "chromium": 10,
@@ -66,20 +73,24 @@
       "chromium": 4,
       "webkit": 4
     },
+    "overlays": {
+      "chromium": 89,
+      "webkit": 89
+    },
     "host-tools": {
       "chromium": 32
     },
     "jira-board": {
-      "chromium": 7,
-      "webkit": 7
+      "chromium": 11,
+      "webkit": 11
     },
     "merge-conflicts": {
       "chromium": 6,
       "webkit": 6
     },
     "notes": {
-      "chromium": 12,
-      "webkit": 12
+      "chromium": 14,
+      "webkit": 14
     },
     "notifications": {
       "chromium": 7
@@ -97,8 +108,8 @@
       "webkit": 2
     },
     "question-flow": {
-      "chromium": 10,
-      "webkit": 10
+      "chromium": 26,
+      "webkit": 26
     },
     "servers": {
       "chromium": 100,
@@ -113,10 +124,25 @@
       "webkit": 31
     },
     "settings": {
-      "chromium": 222
+      "chromium": 61
+    },
+    "settings-navigation": {
+      "chromium": 36
+    },
+    "settings-workspace": {
+      "chromium": 25
+    },
+    "settings-library": {
+      "chromium": 28
+    },
+    "settings-subviews": {
+      "chromium": 48
+    },
+    "settings-backgrounds": {
+      "chromium": 36
     },
     "social": {
-      "chromium": 42
+      "chromium": 52
     },
     "sprints": {
       "chromium": 7,
@@ -151,10 +177,10 @@
       "chromium": 5
     },
     "workspace-navigation": {
-      "chromium": 12
+      "chromium": 14
     },
     "worktrees": {
-      "chromium": 37,
+      "chromium": 42,
       "webkit": 12
     },
     "session-deletion": {
@@ -178,12 +204,15 @@
       "webkit": 26
     },
     "transcript": {
-      "chromium": 42,
-      "webkit": 42
+      "chromium": 48,
+      "webkit": 48
     },
     "merge-conflicts-workspace": {
       "chromium": 1,
       "webkit": 1
+    },
+    "field-message": {
+      "chromium": 4
     }
   }
 }

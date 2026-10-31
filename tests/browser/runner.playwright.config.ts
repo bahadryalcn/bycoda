@@ -18,6 +18,7 @@ const suite = (manifest.suites as BrowserSuite[]).find(
 );
 if (!suite) throw new Error("Unknown BYCODA_BROWSER_SUITE");
 const base = fixtureConfigs[suite.config as keyof typeof fixtureConfigs];
+if (!base) throw new Error(`Browser suite ${suite.id} has no registered config: ${suite.config}`);
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const baseDirectory = dirname(resolve(root, suite.config));
 const originalPort = new URL(base.use!.baseURL!).port;

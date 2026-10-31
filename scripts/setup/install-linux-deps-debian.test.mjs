@@ -34,12 +34,16 @@ function run(t, phase, enabled = true, alwaysFail = false) {
 set -eu
 operation=""; source=""
 for value in "$@"; do
-  case "$value" in update|install) operation="$value";; Dir::Etc::sourcelist=*) source=$(printf '%s' "$value" | cut -d= -f2-);; esac
+  case "$value" in update|install) operation="$value";; Dir::Etc::sourcelist=*) source="\${value#Dir::Etc::sourcelist=}";; esac
 done
 printf '%s\\n' "$operation" >> "$TEST_APT_LOG"
-if [ -n "$source" ] && grep -q 'https://archive.ubuntu.com/ubuntu' "$source"; then printf 'https\\n' >> "$TEST_APT_LOG"; fi
+if [ -n "$source" ]; then
+  while IFS= read -r line; do
+    case "$line" in *https://archive.ubuntu.com/ubuntu*) printf 'https\\n' >> "$TEST_APT_LOG"; break;; esac
+  done < "$source"
+fi
 if [ "$operation" = "$TEST_FAIL_PHASE" ] && { [ "$TEST_ALWAYS_FAIL" = true ] || [ ! -f "$TEST_FAILED_MARKER" ]; }; then
-  touch "$TEST_FAILED_MARKER"; exit 73
+  : > "$TEST_FAILED_MARKER"; exit 73
 fi
 `,
     { mode: 0o755 },
@@ -48,6 +52,9 @@ fi
     process.platform === "win32"
       ? 'fake=$(cygpath -u "$TEST_FAKE_BIN"); export PATH="$fake:$PATH"; '
       : 'export PATH="$TEST_FAKE_BIN:$PATH"; ';
+  // Git Bash launches real MSYS processes; a concurrently running Windows
+  // fixture suite can exceed the Unix budget before the EXIT trap gets CPU.
+  const timeout = process.platform === "win32" ? 45_000 : 15_000;
   const result = spawnSync(
     bash,
     [
@@ -59,7 +66,7 @@ fi
     {
       encoding: "utf8",
       windowsHide: true,
-      timeout: 15000,
+      timeout,
       env: {
         ...process.env,
         TEST_FAKE_BIN: bin,
@@ -73,6 +80,11 @@ fi
       },
     },
   );
+  // A forced process timeout cannot exercise the helper's normal EXIT cleanup.
+  // Report its actual cause before checking cleanup; t.after still removes the
+  // owned fixture root on every assertion failure.
+  assert.ifError(result.error);
+  assert.equal(result.signal, null, `fixture shell terminated with ${result.signal}`);
   const calls = existsSync(join(root, "calls.log"))
     ? readFileSync(join(root, "calls.log"), "utf8").trim().split(/\r?\n/)
     : [];

@@ -51,6 +51,7 @@ import {
 } from "./skills";
 import type { DiscoveredSkill } from "../../../platform/tauri/fs";
 import type { PiSkillCommand } from "../../../integrations/harness/providers/pi/piSkills";
+import { loadSkillRestrictions } from "./skillPreferences";
 
 function piSkill(name: string): PiSkillCommand {
   return {
@@ -126,9 +127,37 @@ describe("provider-aware skill catalog", () => {
     expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [projectPath]);
     mocks.getSkillPolicy.mockResolvedValue({ disabledNames: [], disabledPaths: [] });
     expect((await loadSkills(context, { refresh: true }))[0].path).toBe(projectPath);
+    expect(mocks.getSkillPolicy).toHaveBeenCalledTimes(3);
+    expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, []);
     expect(loadDisabledSkillPaths()).toEqual([projectPath]);
     saveDisabledSkillPaths([]);
     vi.unstubAllGlobals();
+  });
+  it("refreshes remote restrictions before returning cached enabled skills and fails closed offline", async () => {
+    const context = { harness: "claude" as const, cwd: "remote://policy-refresh/work/repo" };
+    const path = `${context.cwd}/.agents/skills/review/SKILL.md`;
+    mocks.listSkills.mockResolvedValue([
+      { name: "review", path, description: "Review", source: "agents", scope: "project" },
+    ]);
+    expect((await loadSkills(context)).map((skill) => skill.name)).toEqual(["review"]);
+    mocks.getSkillPolicy.mockResolvedValue({ disabledNames: ["review"], disabledPaths: [path] });
+    expect(await loadSkills(context, { refresh: true })).toEqual([]);
+    expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [path]);
+    mocks.getSkillPolicy.mockRejectedValueOnce(new Error("remote unavailable"));
+    await expect(loadSkills(context, { refresh: true })).rejects.toThrow("Could not load skill restrictions");
+  });
+
+  it("does not let a late remote policy read replace an explicit refresh", async () => {
+    const cwd = "remote://policy-race/work/repo";
+    const previous = deferred<{ disabledNames: string[]; disabledPaths: string[] }>();
+    const current = { disabledNames: ["review"], disabledPaths: [] };
+    mocks.getSkillPolicy.mockReturnValueOnce(previous.promise).mockResolvedValue(current);
+    const oldRead = loadSkillRestrictions(cwd);
+    expect(await loadSkillRestrictions(cwd, { refresh: true })).toEqual(current);
+    previous.resolve({ disabledNames: [], disabledPaths: [] });
+    expect(await oldRead).toEqual(current);
+    expect(await loadSkillRestrictions(cwd)).toEqual(current);
+    expect(mocks.getSkillPolicy).toHaveBeenCalledTimes(2);
   });
   it("discovers remote skills on their machine even for native-command harnesses and shares in-flight loads", async () => {
     const pending = deferred<DiscoveredSkill[]>();

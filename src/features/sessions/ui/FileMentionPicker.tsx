@@ -62,7 +62,7 @@ export function FileMentionPicker({
   return (
     <div
       data-mention-picker
-      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-floating)"
     >
       {files.length === 0 ? (
         <p className="px-3 py-2.5 text-ui-caption text-(--ui-text-secondary)">

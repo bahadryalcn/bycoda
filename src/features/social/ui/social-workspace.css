@@ -5,7 +5,7 @@
   gap: 0.875rem;
   padding: 1rem;
   color: var(--color-content);
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-floating);
   font: var(--ui-font-secondary) var(--font-sans);
 }
 .social-help-popover p {

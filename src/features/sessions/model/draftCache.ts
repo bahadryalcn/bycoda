@@ -43,10 +43,24 @@ export function subscribeComposerDrafts(
   return () => listeners.delete(listener);
 }
 
+/** View-only listeners: also told about drafts restored from disk, which `listeners` must not rewrite. */
+const presenceListeners = new Set<() => void>();
+
+/** For lists that mark sessions holding an unsent draft. Returns the unsubscribe. */
+export function subscribeComposerDraftPresence(listener: () => void): () => void {
+  presenceListeners.add(listener);
+  return () => presenceListeners.delete(listener);
+}
+
+function notifyPresence() {
+  for (const listener of presenceListeners) listener();
+}
+
 function changed(sessionId: string, work?: PersistenceWork) {
   rendererPersistenceDrain.noteMutation([sessionId], work);
   changedAt.set(sessionId, ++revision);
   for (const listener of listeners) listener(sessionId, work);
+  notifyPresence();
 }
 
 export function getComposerDraft(sessionId: string): string | undefined {
@@ -143,6 +157,7 @@ export function restoreComposerDraft(
   if (saved.attachments.length > 0) attachments.set(sessionId, saved.attachments);
   if (saved.mode) modes.set(sessionId, saved.mode);
   if (saved.notice) notices.set(sessionId, saved.notice);
+  notifyPresence();
   return true;
 }
 

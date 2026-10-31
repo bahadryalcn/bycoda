@@ -131,10 +131,7 @@ fn default_root(main: &Path) -> PathBuf {
 }
 
 #[tauri::command]
-pub async fn git_worktrees(
-    app: tauri::AppHandle,
-    cwd: String,
-) -> Result<Worktrees, String> {
+pub async fn git_worktrees(app: tauri::AppHandle, cwd: String) -> Result<Worktrees, String> {
     crate::harness::run_blocking("git_worktrees", move || {
         let store = app.state::<SessionStore>();
         let mut worktrees = list(&expand_home(&cwd))?;
@@ -472,7 +469,9 @@ fn removal_target(root: &Path, path: &Path) -> Result<Worktree, String> {
                 // Host ids are 12 lowercase hex digits; a plain worktree for a branch such
                 // as "optimization" (`wt-optimization`) must stay removable.
                 id.len() == 12
-                    && id.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+                    && id
+                        .bytes()
+                        .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
             })
         });
     if reserved_directory

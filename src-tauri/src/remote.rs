@@ -518,10 +518,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         }
         // One 512 KiB chunk per call; allow slow SSH links.
         "attachments.upload" | "attachments.read" => ATTACHMENT_CHUNK_RPC_TIMEOUT,
-        "sessions.update"
-        | "browser.status"
-        | "browser.claim"
-        | "browser.frame"
+        "sessions.update" | "browser.status" | "browser.claim" | "browser.frame"
         | "browser.input" => INTERACTIVE_ACTION_RPC_TIMEOUT,
         // Cheap status reads for the Git panel. History, blame, PR status and
         // file diffs keep the default: the Host allows its git reads 30 s.
@@ -1828,8 +1825,9 @@ pub async fn host_connection_bulk(
                 "Native connection changed during bulk transfer",
             ));
         }
-        result
-            .and_then(|pending| with_current_ws_machine(&app, &state, &machine, || pending.disclose()))
+        result.and_then(|pending| {
+            with_current_ws_machine(&app, &state, &machine, || pending.disclose())
+        })
     })
     .await
 }
@@ -1876,13 +1874,15 @@ pub(crate) fn local_social_rpc_until(
         return Err("Unsupported native social bridge operation".into());
     }
     let channel = NativeServiceChannel::connect_until(app, deadline)?;
-    channel.request_until(method, params, deadline)?.project(|value| {
-        let mut value = value.clone();
-        if method == "social.access.issue" && value.get("endpoint").is_none() {
-            value["endpoint"] = json!(channel.endpoint());
-        }
-        Ok(value)
-    })
+    channel
+        .request_until(method, params, deadline)?
+        .project(|value| {
+            let mut value = value.clone();
+            if method == "social.access.issue" && value.get("endpoint").is_none() {
+                value["endpoint"] = json!(channel.endpoint());
+            }
+            Ok(value)
+        })
 }
 
 pub(crate) fn local_editor_format_rpc(app: &AppHandle, params: Value) -> Result<Value, String> {
@@ -2409,9 +2409,7 @@ pub(crate) fn conversation_machine_call_pinned(
 }
 
 #[tauri::command]
-pub async fn social_authority_status(
-    app: AppHandle,
-) -> Result<Value, String> {
+pub async fn social_authority_status(app: AppHandle) -> Result<Value, String> {
     crate::harness::run_blocking("social_authority_status", move || {
         let state = app.state::<RemoteConnections>();
         let source = NativeServiceChannel::connect(&app)?;
