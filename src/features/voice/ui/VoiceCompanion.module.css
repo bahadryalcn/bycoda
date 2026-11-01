@@ -43,7 +43,7 @@
   cursor: grab;
 }
 .body {
-  padding: 12px;
+  padding: 10px 12px 12px;
   overflow: auto;
   min-height: 0;
   overscroll-behavior: contain;
@@ -70,29 +70,20 @@
   margin-top: 10px;
   padding-top: 4px;
 }
-.choices {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.choice {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-inline-size: 0;
-}
-.choice > :last-child {
+.session {
   flex: 1;
   min-inline-size: 0;
 }
-.choiceIcon {
-  flex-shrink: 0;
-  color: var(--ui-text-secondary);
-}
-.choiceRow {
+.state {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+}
+.stateText {
+  display: grid;
+  flex: 1;
+  min-inline-size: 0;
 }
 .caption {
   color: var(--ui-text-secondary);
@@ -103,10 +94,6 @@
   font-size: 13px;
   font-weight: 500;
   line-height: 1.5;
-}
-.body .work {
-  margin: 3px 0 8px;
-  font-size: 12px;
 }
 .turn {
   margin: 12px 0;
@@ -130,11 +117,6 @@
 
 .body[hidden] {
   display: none;
-}
-.visual {
-  display: flex;
-  justify-content: center;
-  padding-block: 4px 8px;
 }
 .panel[data-compact] {
   inline-size: min(304px, calc(100vw - 16px));

@@ -10,8 +10,6 @@ import {
   MessageSquare,
   Mic,
   MicOff,
-  Pin,
-  PinOff,
   Square,
   VolumeX,
   X,
@@ -31,7 +29,8 @@ import {
   voiceRuntimeSettings,
 } from "../model/voiceSettings";
 import { VoiceVisualizer } from "./VoiceVisualizer";
-import { VoicePanelChoices } from "./VoicePanelChoices";
+import { VoiceOptionsMenu, VoiceSessionPicker } from "./VoicePanelChoices";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { voiceVisualState } from "../model/voiceVisualState";
 
 /** Cloud speech-to-speech providers, signed in through Grok Build or Codex. */
@@ -446,6 +445,28 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           : "Preparing local voice..."
         : "Ready to connect",
   );
+  function toggleMute() {
+    client.current?.mute(!muted);
+    setMuted(!muted);
+  }
+  // Compact mode's single control: start when idle, otherwise mute or resume.
+  const micLabel = t(status === "idle" ? "Start voice" : muted ? "Resume" : "Pause mic");
+  const micButton = (
+    <Button
+      iconOnly
+      variant={status === "idle" || (status === "live" && !muted) ? "primary" : "secondary"}
+      tone={muted ? "danger" : undefined}
+      label={micLabel}
+      tooltip={micLabel}
+      loading={status === "connecting"}
+      disabled={status === "idle" ? !target : status !== "live"}
+      selected={status === "live" && muted}
+      aria-pressed={status === "idle" ? undefined : muted}
+      onClick={() => (status === "idle" ? void start() : toggleMute())}
+    >
+      {muted ? <MicOff size={14} /> : <Mic size={14} />}
+    </Button>
+  );
   function setCompact(value: boolean) {
     saveVoiceSettings({ ...loadVoiceSettings(), compact: value });
   }
@@ -583,25 +604,21 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             <GripVertical size={14} />
           )}
         </Button>
-        <h2 className={styles.title} title={target?.title}>
-          {compact ? target?.title || t("Select a session") : t("Voice companion")}
-        </h2>
-        {compact && (
-          <Button
-            iconOnly
-            label={t(muted ? "Resume" : "Pause mic")}
-            tooltip={t(muted ? "Resume" : "Pause mic")}
-            disabled={status !== "live"}
-            selected={muted}
-            aria-pressed={muted}
-            onClick={() => {
-              client.current?.mute(!muted);
-              setMuted(!muted);
-            }}
-          >
-            {muted ? <MicOff size={14} /> : <Mic size={14} />}
-          </Button>
+        {compact ? (
+          <h2 className={styles.title} title={target?.title}>
+            {target?.title || t("Select a session")}
+          </h2>
+        ) : (
+          <div className={styles.session}>
+            <VoiceSessionPicker
+              sessions={props.sessions}
+              activeId={props.activeId}
+              pinned={pinned}
+              onPin={setPinned}
+            />
+          </div>
         )}
+        {compact ? micButton : <VoiceOptionsMenu />}
         <Button
           ref={compactToggle}
           iconOnly
@@ -613,27 +630,14 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           {compact ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
         </Button>
         {!compact && (
-          <>
-            <Button
-              iconOnly
-              label={t(pinned ? "Follow active session" : "Pin to this session")}
-              tooltip={t(pinned ? "Follow active session" : "Pin to this session")}
-              selected={Boolean(pinned)}
-              aria-pressed={Boolean(pinned)}
-              disabled={!target && !pinned}
-              onClick={() => setPinned(pinned ? null : (target?.id ?? null))}
-            >
-              {pinned ? <Pin size={14} /> : <PinOff size={14} />}
-            </Button>
-            <Button
-              iconOnly
-              label={t("Close voice companion")}
-              tooltip={t("Close voice companion")}
-              onClick={dismiss}
-            >
-              <X size={14} />
-            </Button>
-          </>
+          <Button
+            iconOnly
+            label={t("Close voice companion")}
+            tooltip={t("Close voice companion")}
+            onClick={dismiss}
+          >
+            <X size={14} />
+          </Button>
         )}
       </header>
       {compact && (
@@ -643,37 +647,32 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         </div>
       )}
       <div className={styles.body} hidden={compact}>
-        {!compact && (
-          <div className={styles.visual}>
-            <VoiceVisualizer
-              visual={settings.visual}
-              state={visualState}
-              working={Boolean(target?.busy)}
-              level={audioLevel}
-            />
+        <div className={styles.state}>
+          <VoiceVisualizer
+            visual={settings.visual}
+            state={visualState}
+            working={Boolean(target?.busy)}
+            level={audioLevel}
+            small
+          />
+          <div className={styles.stateText}>
+            <div role="status" className={styles.status}>
+              {statusText}
+            </div>
+            {target?.busy ? <span className={styles.caption}>{t("Agent working")}</span> : null}
           </div>
-        )}
-        <VoicePanelChoices
-          sessions={props.sessions}
-          activeId={props.activeId}
-          pinned={pinned}
-          onPin={setPinned}
-        />
-        <div role="status" className={styles.status}>
-          {statusText}
+          {status === "idle" && (
+            <InfoPopover label={t("About voice")} width={260}>
+              {realtime
+                ? t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
+                    p1: realtime.name,
+                  })
+                : t(
+                    "Audio is processed on this computer. Replies use the session’s signed-in provider. No API key required.",
+                  )}
+            </InfoPopover>
+          )}
         </div>
-        {target?.busy ? <p className={styles.work}>{t("Agent working")}</p> : null}
-        {status === "idle" && (
-          <p>
-            {realtime
-              ? t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
-                  p1: realtime.name,
-                })
-              : t(
-                  "Audio is processed on this computer. Replies use the session’s signed-in provider. No API key required.",
-                )}
-          </p>
-        )}
         {transcript && (
           <div className={styles.turn}>
             <span className={styles.caption}>{t("You")}</span>
@@ -713,20 +712,17 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             </>
           ) : (
             <>
-              {/* Icon actions; names stay in labels and tooltips. */}
+              {/* The mic toggle is the main live action; the rest stay icons. */}
               <Button
-                iconOnly
-                label={t(muted ? "Resume" : "Pause mic")}
-                tooltip={t(muted ? "Resume" : "Pause mic")}
+                variant={muted ? "secondary" : "primary"}
+                tone={muted ? "danger" : undefined}
                 disabled={status !== "live"}
                 selected={muted}
                 aria-pressed={muted}
-                onClick={() => {
-                  client.current?.mute(!muted);
-                  setMuted(!muted);
-                }}
+                startIcon={muted ? <MicOff size={14} /> : <Mic size={14} />}
+                onClick={toggleMute}
               >
-                {muted ? <MicOff size={14} /> : <Mic size={14} />}
+                {t(muted ? "Resume" : "Pause mic")}
               </Button>
               <Button
                 iconOnly

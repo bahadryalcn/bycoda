@@ -1,11 +1,12 @@
-import { useMemo } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { Session } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { projectDisplayName } from "../../projects/model/projectNames";
-import { Select } from "../../../shared/ui/Select";
+import { Button } from "../../../shared/ui/Button";
+import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { AudioLines, Folder, Laptop, UserRound } from "../../../shared/ui/icons";
-import { speakerEngine, speakerOptions } from "../model/voiceSpeakers";
+import { AudioLines, Laptop, SlidersHorizontal, UserRound } from "../../../shared/ui/icons";
+import { speakerEngine, speakerLabel, speakerOptions } from "../model/voiceSpeakers";
 import { t } from "../../../shared/i18n";
 import {
   loadVoiceSettings,
@@ -14,16 +15,11 @@ import {
   type VoiceMode,
   type VoiceSettings,
 } from "../model/voiceSettings";
-import styles from "./VoiceCompanion.module.css";
 
 const FOLLOW = "__follow-active__";
 
-/**
- * In-panel choices: which session (and so which project) voice talks to, who runs
- * the conversation and, for local conversations, the reply voice. Changing the
- * conversation or voice disconnects a live connection; Start voice uses the new choice.
- */
-export function VoicePanelChoices({
+/** The session (and so the project) voice talks to; following the active one by default. */
+export function VoiceSessionPicker({
   sessions,
   activeId,
   pinned,
@@ -34,20 +30,16 @@ export function VoicePanelChoices({
   pinned: string | null;
   onPin: (sessionId: string | null) => void;
 }) {
-  const settings = useVoiceSettings();
-  const change = (patch: Partial<VoiceSettings>) =>
-    saveVoiceSettings({ ...loadVoiceSettings(), ...patch });
   // Internal workers and temporary Inbox questions are not voice targets.
   const targets = useMemo(
     () => sessions.filter((session) => !session.orchestrationLeadId && !session.inboxAsk),
     [sessions],
   );
   const active = targets.find((session) => session.id === activeId);
-  const sessionOptions = useMemo(
+  const options = useMemo(
     () => [
       {
         value: FOLLOW,
-        // Names the session being followed; the pin button marks a fixed choice.
         label: active ? `${t("Active session")}: ${active.title}` : t("Follow active session"),
         description: t("Follow active session"),
       },
@@ -63,77 +55,130 @@ export function VoicePanelChoices({
     ],
     [targets, active?.title],
   );
+  return (
+    <SearchableSelect
+      label={t("Voice session")}
+      variant="transparent"
+      value={pinned ?? FOLLOW}
+      options={options}
+      searchPlaceholder={t("Search sessions or projects…")}
+      emptyLabel={t("No matching sessions")}
+      onChange={(value) => onPin(value === FOLLOW ? null : value)}
+    />
+  );
+}
+
+const MODES: { value: VoiceMode; label: () => string; icon: () => ReactNode }[] = [
+  { value: "local", label: () => t("Local"), icon: () => <Laptop size={14} /> },
+  {
+    value: "grok",
+    label: () => "Grok Voice",
+    icon: () => <HarnessIcon harness="grok" className="size-3.5" />,
+  },
+  {
+    value: "openai",
+    label: () => "OpenAI Realtime",
+    icon: () => <HarnessIcon harness="codex" className="size-3.5" />,
+  },
+];
+const REPLIES = [
+  { value: "supertonic", label: () => t("Natural") },
+  { value: "voxcpm2", label: () => t("High quality") },
+  { value: "elevenlabs", label: () => "ElevenLabs" },
+  { value: "system", label: () => t("System voice") },
+];
+
+/**
+ * Conversation, reply voice and speaker in one menu. A change disconnects a live
+ * connection; Start voice uses the new choice.
+ */
+export function VoiceOptionsMenu() {
+  const settings = useVoiceSettings();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const change = (patch: Partial<VoiceSettings>) =>
+    saveVoiceSettings({ ...loadVoiceSettings(), ...patch });
   const reply = !settings.natural ? "system" : settings.engine;
   const speaker = speakerEngine(settings);
+  const mode = MODES.find((entry) => entry.value === settings.mode) ?? MODES[0]!;
+  const items: ContextMenuItem[] = [
+    {
+      kind: "item",
+      id: "mode",
+      label: t("Conversation"),
+      description: mode.label(),
+      icon: mode.icon(),
+      submenu: MODES.map((entry) => ({
+        kind: "item" as const,
+        id: `mode:${entry.value}`,
+        label: entry.label(),
+        icon: entry.icon(),
+        checked: entry.value === settings.mode,
+      })),
+    },
+  ];
+  if (settings.mode === "local")
+    items.push({
+      kind: "item",
+      id: "reply",
+      label: t("Reply voice"),
+      description: REPLIES.find((entry) => entry.value === reply)?.label(),
+      icon: <AudioLines size={14} />,
+      submenu: REPLIES.map((entry) => ({
+        kind: "item" as const,
+        id: `reply:${entry.value}`,
+        label: entry.label(),
+        checked: entry.value === reply,
+      })),
+    });
+  if (speaker)
+    items.push({
+      kind: "item",
+      id: "speaker",
+      label: t("Speaker"),
+      description: speakerLabel(speaker, settings.speakers[speaker]),
+      icon: <UserRound size={14} />,
+      submenu: speakerOptions(speaker).map((option) => ({
+        kind: "item" as const,
+        id: `speaker:${option.value}`,
+        label: option.label,
+        checked: option.value === settings.speakers[speaker],
+      })),
+    });
   return (
-    <div className={styles.choices}>
-      <div className={styles.choice}>
-        <Folder size={14} aria-hidden className={styles.choiceIcon} />
-        <SearchableSelect
-          label={t("Voice session")}
-          variant="field"
-          value={pinned ?? FOLLOW}
-          options={sessionOptions}
-          searchPlaceholder={t("Search sessions or projects…")}
-          emptyLabel={t("No matching sessions")}
-          onChange={(value) => onPin(value === FOLLOW ? null : value)}
-        />
-      </div>
-      <div className={styles.choiceRow}>
-        <Select
-          label={t("Conversation")}
-          value={settings.mode}
-          fieldSize="sm"
-          options={[
-            { value: "local", label: t("Local"), icon: <Laptop size={14} /> },
-            {
-              value: "grok",
-              label: "Grok Voice",
-              icon: <HarnessIcon harness="grok" className="size-3.5" />,
-            },
-            {
-              value: "openai",
-              label: "OpenAI Realtime",
-              icon: <HarnessIcon harness="codex" className="size-3.5" />,
-            },
-          ]}
-          onValueChange={(mode) => change({ mode: mode as VoiceMode })}
-        />
-        {settings.mode === "local" ? (
-          <Select
-            label={t("Reply voice")}
-            value={reply}
-            fieldSize="sm"
-            options={[
-              { value: "supertonic", label: t("Natural"), icon: <AudioLines size={14} /> },
-              { value: "voxcpm2", label: t("High quality"), icon: <AudioLines size={14} /> },
-              { value: "elevenlabs", label: "ElevenLabs", icon: <AudioLines size={14} /> },
-              { value: "system", label: t("System voice"), icon: <Laptop size={14} /> },
-            ]}
-            onValueChange={(value) =>
+    <>
+      <Button
+        iconOnly
+        label={t("Voice options")}
+        tooltip={t("Voice options")}
+        aria-haspopup="menu"
+        aria-expanded={Boolean(anchor)}
+        onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
+      >
+        <SlidersHorizontal size={14} />
+      </Button>
+      {anchor && (
+        <ContextMenu
+          anchor={anchor}
+          ariaLabel={t("Voice options")}
+          align="end"
+          items={items}
+          onClose={() => setAnchor(null)}
+          onPick={(id) => {
+            const [kind, value] = id.split(":");
+            if (!value) return;
+            if (kind === "mode") change({ mode: value as VoiceMode });
+            else if (kind === "reply")
               change(
                 value === "system"
                   ? { natural: false }
                   : { natural: true, engine: value as VoiceSettings["engine"] },
-              )
-            }
-          />
-        ) : null}
-        {speaker ? (
-          <Select
-            label={t("Speaker")}
-            value={settings.speakers[speaker]}
-            fieldSize="sm"
-            options={speakerOptions(speaker).map((option) => ({
-              ...option,
-              icon: <UserRound size={14} />,
-            }))}
-            onValueChange={(value) =>
-              change({ speakers: { ...settings.speakers, [speaker]: value } })
-            }
-          />
-        ) : null}
-      </div>
-    </div>
+              );
+            else if (kind === "speaker" && speaker)
+              change({ speakers: { ...settings.speakers, [speaker]: value } });
+            setAnchor(null);
+          }}
+        />
+      )}
+    </>
   );
 }

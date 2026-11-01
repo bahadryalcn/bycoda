@@ -118,7 +118,13 @@ it("captures the target at local speech onset and follows only the next utteranc
 });
 it("pins the session and closing voice leaves the coding job running", async () => {
   const { render, onSubmit, onStop } = await setup();
-  await click("Pin to this session");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Voice session"]')!.click(),
+  );
+  const alpha = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (option) => option.textContent?.startsWith("Alpha"),
+  )!;
+  await act(async () => alpha.click());
   await render("b");
   await speech("Fix login");
   expect(onSubmit).toHaveBeenCalledWith("a", "Fix login");
