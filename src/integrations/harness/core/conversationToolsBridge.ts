@@ -7,33 +7,29 @@ export type ConversationToolsBridge = McpBridge;
 
 /** Renderer metadata has no token. Native/headless spawn supplies the grant. A slow,
  * offline or older Host is answered `null` after a short cap, reused briefly. */
-const lookup = createBridgeLookup<ConversationToolsBridge>(
-  async (sessionId) => {
-    const bridge = await invokeProviderCommand<ConversationToolsBridge | null>(
-      "harness_conversation_tools_bridge",
-      { sessionId },
-    );
-    if (
-      bridge &&
-      typeof bridge.command === "string" &&
-      bridge.command.length > 0 &&
-      Array.isArray(bridge.args) &&
-      bridge.args.every((value) => typeof value === "string")
-    )
-      // Copy only executable metadata; never forward an accidental host credential.
-      return mcpMetadata(bridge);
-    return null;
-  },
-);
+const lookup = createBridgeLookup<ConversationToolsBridge>(async (sessionId) => {
+  const bridge = await invokeProviderCommand<ConversationToolsBridge | null>(
+    "harness_conversation_tools_bridge",
+    { sessionId },
+  );
+  if (
+    bridge &&
+    typeof bridge.command === "string" &&
+    bridge.command.length > 0 &&
+    Array.isArray(bridge.args) &&
+    bridge.args.every((value) => typeof value === "string")
+  )
+    // Copy only executable metadata; never forward an accidental host credential.
+    return mcpMetadata(bridge);
+  return null;
+});
 export function conversationToolsBridge(
   sessionId: string,
 ): Promise<ConversationToolsBridge | null> {
   return lookup(sessionId.replace(/#\d+$/, ""));
 }
 
-export function conversationToolsAcpServers(
-  bridge: ConversationToolsBridge | null,
-) {
+export function conversationToolsAcpServers(bridge: ConversationToolsBridge | null) {
   return bridge
     ? [
         {
@@ -51,12 +47,7 @@ export function conversationToolsSpawnArgs(
   args: string[],
   bridge: ConversationToolsBridge | null,
 ): string[] {
-  if (
-    !bridge ||
-    args.includes("--strict-mcp-config") ||
-    args.includes("--max-turns")
-  )
-    return args;
+  if (!bridge || args.includes("--strict-mcp-config") || args.includes("--max-turns")) return args;
   const http = httpMcpArgs(
     provider,
     args,
@@ -94,10 +85,7 @@ export function conversationToolsSpawnArgs(
     ];
   }
   let commandIndex = 0;
-  while (
-    args[commandIndex] === "-c" &&
-    typeof args[commandIndex + 1] === "string"
-  )
+  while (args[commandIndex] === "-c" && typeof args[commandIndex + 1] === "string")
     commandIndex += 2;
   if (provider === "codex" && args[commandIndex] === "app-server") {
     const quote = (value: string) => JSON.stringify(value);
@@ -115,9 +103,7 @@ export function conversationToolsSpawnArgs(
 }
 
 /** Short capability line; each tool carries its own detailed rules. */
-export function conversationToolsCliHint(
-  bridge: ConversationToolsBridge | null,
-): string {
+export function conversationToolsCliHint(bridge: ConversationToolsBridge | null): string {
   if (!bridge) return "";
-  return 'Conversation Tools (MCP bycoda-conversation, CLI group conversation): other sessions in this project, tasks, notes, automations, Inbox/PR reviews, devices, machines, terminals, dev servers, logs, skills and app UI panels through direct app APIs; prefer them over Computer Use or /operator. Use them without being asked when they fit: e.g. other sessions -> sessions.read, start the app -> devServers.start, browser/server errors -> logs.read, separate work to run later or track on the board -> tasks.create (split the current request with your own subagents when you have them), schedules -> automations.create. Before using bycoda features or answering how-to questions about the app, read the bycoda skill (skills.read name "bycoda"). For feature work, search for its project feature card and read it if present; fix every affected surface including the Host operation. Scale checks, opened screenshots, cards and reporting to the T0/T1/T2 rules in AGENTS.md. Check build status/source identity before treating a screenshot as a new defect. Discover actions with conversation_tools_list (CLI tools.list); each tool describes its own rules. At the first mention of another session use its exact tool-returned markdownReference or link; never invent targets. Read before describing its work; found/read is not a coordination request or acknowledgment. Reads do not authorize sends, merges or publishing; Inbox and PR writes need native owner approval.';
+  return 'Conversation Tools (MCP bycoda-conversation, CLI group conversation): session-scoped app APIs for work, workspace, browser/devices, providers and UI. Prefer them when they fit the task; their presence does not prove target readiness. Before using bycoda features or answering how-to questions about the app, read the bycoda skill (skills.read name "bycoda"). For feature work, search for its project feature card and read it if present; fix every affected surface including the Host operation. Scale checks, opened screenshots, cards and reporting to the T0/T1/T2 rules in AGENTS.md. Check build status/source identity before treating a screenshot as a new defect. Discover narrowly with conversation_tools_search/describe/status (CLI tools.search/describe/status); conversation_tools_list remains the legacy inventory, not a full catalog to dump into context. At the first mention of another session use its exact tool-returned markdownReference or link; never invent targets. Read before describing its work; found/read is not a coordination request or acknowledgment. Reads do not authorize sends, merges or publishing; Inbox and PR writes need native owner approval.';
 }

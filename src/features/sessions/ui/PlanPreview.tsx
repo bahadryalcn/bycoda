@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -68,17 +69,19 @@ export function PlanPreview({
               type="button"
               className="block w-full truncate text-left"
               tooltip={title}
+              tooltipWhen="overflow"
               onClick={onOpen}
             >
               {title}
             </Button>
           ) : (
-            <span
-              className="block truncate font-sans text-ui-secondary font-medium text-(--ui-text-secondary)"
-              title={title}
-            >
-              {title}
-            </span>
+            <OverflowTooltip label={title}>
+              <span
+                className="block truncate font-sans text-ui-secondary font-medium text-(--ui-text-secondary)"
+              >
+                {title}
+              </span>
+            </OverflowTooltip>
           )}
           {summary ? (
             <p className="mt-0.5 line-clamp-3 font-sans text-ui-caption leading-4.5 text-(--ui-text-secondary)">

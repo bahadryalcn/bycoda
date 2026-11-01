@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -260,22 +261,25 @@ function TaskCardBody({
       <p className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-muted)">
         {task.crewDefinitionId && <span>{t("Crew")} · </span>}
         <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
-        <span title={model.name} className="min-w-0 truncate">
-          {model.name}
-        </span>
+        <OverflowTooltip label={model.name}>
+          <span  className="min-w-0 truncate">
+            {model.name}
+          </span>
+        </OverflowTooltip>
         <span className="ml-auto shrink-0 tabular-nums">{taskTimeLabel(task, now)}</span>
       </p>
       {task.branch ? (
         <p
-          title={task.merged ? t("Merged into {p0}", { p0: task.baseBranch }) : task.branch}
           className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-muted)"
         >
           <GitBranch className="icon-xs shrink-0" strokeWidth={1.75} />
-          <span className="min-w-0 truncate">
-            {task.merged
-              ? t("{p0} merged into {p1}", { p0: task.branch, p1: task.baseBranch })
-              : task.branch}
-          </span>
+          <OverflowTooltip label={task.merged ? t("{p0} merged into {p1}", { p0: task.branch, p1: task.baseBranch }) : task.branch}>
+            <span className="min-w-0 truncate">
+              {task.merged
+                ? t("{p0} merged into {p1}", { p0: task.branch, p1: task.baseBranch })
+                : task.branch}
+            </span>
+          </OverflowTooltip>
         </p>
       ) : null}
       <TaskActions task={task} compact {...actions} />

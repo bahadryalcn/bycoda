@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useId, useState, useRef, useEffect, useLayoutEffect } from "react";
 import type { SparseSheet } from "../model/spreadsheet";
@@ -212,7 +213,6 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
                           setFocused({ row: index, column });
                           scrollRef.current?.focus();
                         }}
-                        title={cell}
                         className="shrink-0 truncate border-r border-stroke text-content"
                         style={{
                           ...cellStyle,
@@ -223,7 +223,9 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
                           outlineOffset: -2,
                         }}
                       >
-                        {cell}
+                        <OverflowTooltip label={cell}>
+                          <span className="block truncate">{cell}</span>
+                        </OverflowTooltip>
                       </div>
                     );
                   })}

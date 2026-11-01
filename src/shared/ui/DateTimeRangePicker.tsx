@@ -60,6 +60,7 @@ export function DateTimeRangePicker({
         disabled={disabled}
         className="date-time-range-trigger"
         title={`${format(value.start)} – ${format(value.end)}`}
+        tooltipWhen="overflow"
         onClick={() => {
           setStart(toLocalDateTime(value.start));
           setEnd(toLocalDateTime(value.end));
@@ -97,7 +98,10 @@ export function DateTimeRangePicker({
               maxDate={maxDate ? new Date(maxDate.getTime() - 1) : undefined}
               value={
                 parsedStart && parsedEnd
-                  ? { start: parsedStart, end: new Date(parsedEnd.getTime() - 1) }
+                  ? {
+                      start: parsedStart,
+                      end: new Date(parsedEnd.getTime() - 1),
+                    }
                   : null
               }
               months={1}
@@ -135,7 +139,11 @@ export function DateTimeRangePicker({
               onChange={(event) => setEnd(event.target.value)}
             />
             <p>{t("End time is exclusive. Usage is recorded in 15-minute intervals.")}</p>
-            {!valid && <p id={alertId} role="alert">{t("End must be after start.")}</p>}
+            {!valid && (
+              <p id={alertId} role="alert">
+                {t("End must be after start.")}
+              </p>
+            )}
             <div className="date-time-range-actions">
               <Button variant="ghost" onClick={() => setOpen(false)}>
                 {t("Cancel")}

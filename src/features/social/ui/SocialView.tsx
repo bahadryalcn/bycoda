@@ -332,7 +332,6 @@ export function SocialView({
                 type="button"
                 variant="tab"
                 key={item}
-                tooltip={tabLabel(item)}
                 aria-current={tab === item ? "page" : undefined}
                 onClick={() => actions.selectTab(item)}
               >

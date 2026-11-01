@@ -1,17 +1,18 @@
+import { OverflowTooltip } from "./Tooltip";
 import { memo, type ComponentPropsWithoutRef } from "react";
 import styles from "./MiddleTruncate.module.css";
 
 export type MiddleTruncateMode = "auto" | "path" | "text";
 
 export type MiddleTruncateProps = Omit<ComponentPropsWithoutRef<"span">, "children" | "title"> & {
-  /** The complete value; it stays in the accessibility tree and in `title`. */
+  /** The complete value; it stays in the accessibility tree and in the overflow hint. */
   children: string;
   /** `path` keeps the final segment (including its separator), `text` keeps the last `tail` characters,
    *  `auto` picks `path` when the value contains a `/` or `\` separator. */
   mode?: MiddleTruncateMode;
   /** Maximum number of characters kept visible at the end. Defaults to 28 for a path segment and 10 for text. */
   tail?: number;
-  /** Native tooltip. Defaults to the full value; pass `false` when the parent already provides one. */
+  /** Full-value hint on clipping. Pass `false` when the parent already provides one. */
   title?: string | false;
 };
 
@@ -22,7 +23,9 @@ const MIN_TAIL_END = 6;
 /** Grapheme clusters rarely exceed a handful of UTF-16 units; this bounds segmentation work per call. */
 const UNITS_PER_CLUSTER = 8;
 
-type GraphemeSegmenter = { segment(value: string): Iterable<{ segment: string }> };
+type GraphemeSegmenter = {
+  segment(value: string): Iterable<{ segment: string }>;
+};
 let segmenter: GraphemeSegmenter | null | undefined;
 
 function graphemes(value: string): string[] {
@@ -101,30 +104,35 @@ export const MiddleTruncate = memo(function MiddleTruncate({
     ? lastCharacters(parts.tail, parts.tail.length > TEXT_TAIL ? TEXT_TAIL : MIN_TAIL_END)
     : "";
   // A head of one or two characters needs no reserved ellipsis room; longer ones keep room for "x...".
-  const headClass = Array.from(parts.head).length > 2 ? `${styles.head} ${styles.headReserve}` : styles.head;
+  const headClass =
+    Array.from(parts.head).length > 2 ? `${styles.head} ${styles.headReserve}` : styles.head;
   const classes = [parts.tail ? styles.root : styles.plain, className].filter(Boolean).join(" ");
   if (!parts.tail)
     return (
-      <span {...props} title={tooltip} className={classes}>
-        {children}
-      </span>
+      <OverflowTooltip label={tooltip}>
+        <span {...props} className={classes}>
+          {children}
+        </span>
+      </OverflowTooltip>
     );
   return (
-    <span {...props} title={tooltip} className={classes} data-middle-truncate="">
-      <span className={styles.full}>{children}</span>
-      <span aria-hidden="true" className={headClass}>
-        {parts.head}
+    <OverflowTooltip label={tooltip}>
+      <span {...props} className={classes} data-middle-truncate="">
+        <span className={styles.full}>{children}</span>
+        <span aria-hidden="true" className={headClass}>
+          {parts.head}
+        </span>
+        <span aria-hidden="true" className={styles.tail}>
+          {tailEnd.length < parts.tail.length ? (
+            <>
+              <span className={styles.tailHead}>{parts.tail.slice(0, -tailEnd.length)}</span>
+              <span className={styles.tailEnd}>{tailEnd}</span>
+            </>
+          ) : (
+            parts.tail
+          )}
+        </span>
       </span>
-      <span aria-hidden="true" className={styles.tail}>
-        {tailEnd.length < parts.tail.length ? (
-          <>
-            <span className={styles.tailHead}>{parts.tail.slice(0, -tailEnd.length)}</span>
-            <span className={styles.tailEnd}>{tailEnd}</span>
-          </>
-        ) : (
-          parts.tail
-        )}
-      </span>
-    </span>
+    </OverflowTooltip>
   );
 });

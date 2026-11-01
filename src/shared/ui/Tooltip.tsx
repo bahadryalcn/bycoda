@@ -1,4 +1,6 @@
 import {
+  cloneElement,
+  isValidElement,
   useEffect,
   useId,
   useLayoutEffect,
@@ -8,10 +10,14 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
+  type ReactElement,
+  type SyntheticEvent,
 } from "react";
 import type { PopoverAlign, PopoverSide } from "../lib/popover";
 import { Popover } from "./Popover";
 import { ShortcutKeys } from "./ShortcutKbd";
+import { formatShortcutLabel, usePlatform } from "./shortcut";
+import { needsOverflowTooltip } from "./tooltipVisibility";
 
 /** Time the pointer rests on a control before its tooltip opens. */
 export const TOOLTIP_DELAY_MS = 450;
@@ -112,6 +118,9 @@ export function tooltipAnchor(host: HTMLElement): HTMLElement {
 }
 
 export type TooltipContent = {
+  /** `overflow` reveals clipped/hidden labels or missing shortcuts, never a fully visible copy.
+   * Additional detail lines remain available. Layout is measured only on interaction. */
+  when?: "always" | "overflow";
   /** Title line. Falsy (and no details or shortcut) leaves the control without a tooltip. */
   label?: ReactNode;
   /** Muted lines under the title (project, branch, counts, a disabled reason...). */
@@ -133,6 +142,7 @@ export type TooltipContent = {
 };
 
 export type TooltipTriggerProps = {
+  "data-tooltip-owner"?: string;
   onPointerEnter: (event: PointerEvent<HTMLElement>) => void;
   onPointerLeave: () => void;
   onPointerDown: () => void;
@@ -196,6 +206,7 @@ function TooltipBody({
  * `disabledReason`. Nothing mounts until the hint opens.
  */
 export function useTooltip({
+  when = "always",
   label,
   details,
   shortcut,
@@ -215,12 +226,57 @@ export function useTooltip({
   hide: () => void;
 } {
   const id = useId();
+  const platform = usePlatform();
+  const [, refresh] = useState(0);
   const intent = useHoverIntent({ openDelay: delay });
   const lines = presentLines(details);
   const empty = !label && !shortcut && lines.length === 0;
   const anchor = intent.anchor;
-  const open = !!anchor && !empty;
+  const formatted = shortcut ? formatShortcutLabel(shortcut, platform) : null;
+  const shortcutInfo =
+    shortcut && formatted
+      ? {
+          raw: shortcut,
+          spoken: formatted.spoken,
+          keys: formatted.alternatives
+            .map((sequence) =>
+              sequence.map((chord) => chord.map((key) => key.label).join("")).join(" "),
+            )
+            .join(" / "),
+        }
+      : undefined;
+  const eligible = (element: HTMLElement) => {
+    // A containing control already owns full-value recovery and its extra context.
+    if (when === "overflow" && element.parentElement?.closest("[data-tooltip-owner]")) return false;
+    return (
+      when === "always" || lines.length > 0 || needsOverflowTooltip(element, label, shortcutInfo)
+    );
+  };
+  const open = !!anchor && !empty && eligible(anchor);
   const hide = intent.close;
+
+  // Recheck an active hint as its pane, text or responsive mode changes. No idle row observers.
+  useEffect(() => {
+    if (!anchor || when !== "overflow") return;
+    const update = () => refresh((value) => value + 1);
+    const observer = new ResizeObserver(update);
+    observer.observe(anchor);
+    anchor.querySelectorAll<HTMLElement>("*").forEach((element) => observer.observe(element));
+    const mutations = new MutationObserver(update);
+    mutations.observe(anchor, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["class", "style", "hidden"],
+    });
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      mutations.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [anchor, when]);
 
   // Imperative link for wrapped controls whose props this hook does not own.
   const plainLabel = typeof label === "string" ? label : undefined;
@@ -246,16 +302,19 @@ export function useTooltip({
     open,
     hide,
     trigger: {
+      "data-tooltip-owner": empty ? undefined : "",
       onPointerEnter: (event) => {
         if (event.pointerType === "touch" || empty) return;
-        intent.scheduleOpen(tooltipAnchor(event.currentTarget));
+        const target = tooltipAnchor(event.currentTarget);
+        if (eligible(target)) intent.scheduleOpen(target);
       },
       onPointerLeave: hide,
       onPointerDown: hide,
       onFocus: (event) => {
         if (empty) return;
-        if (event.target.matches(":focus-visible"))
-          intent.scheduleOpen(tooltipAnchor(event.currentTarget), 0);
+        const target = tooltipAnchor(event.currentTarget);
+        if (event.target.matches(":focus-visible") && eligible(target))
+          intent.scheduleOpen(target, 0);
       },
       onBlur: hide,
       onKeyDown: (event) => {
@@ -289,8 +348,40 @@ export function useTooltip({
  * use `useTooltip` instead. A wrapped shared `Button` takes `title=""` so it adds no hint of
  * its own; prefer the Button's own `tooltip`/`tooltipDetails`/`shortcut` props over wrapping.
  */
-export function Tooltip({ children, ...content }: TooltipContent & { children: ReactNode }) {
+export function Tooltip({
+  children,
+  asChild = false,
+  ...content
+}: TooltipContent & { children: ReactNode; asChild?: boolean }) {
   const { trigger, tooltip } = useTooltip(content);
+  if (asChild && isValidElement(children)) {
+    const child = children as ReactElement<Record<string, unknown>>;
+    const merged: Record<string, unknown> = {
+      "data-tooltip-owner": trigger["data-tooltip-owner"],
+    };
+    for (const [name, handler] of Object.entries(trigger)) {
+      if (typeof handler !== "function") continue;
+      merged[name] = (event: SyntheticEvent<HTMLElement>) => {
+        const original = child.props[name] as
+          | ((event: SyntheticEvent<HTMLElement>) => void)
+          | undefined;
+        original?.(event);
+        if (
+          !event.defaultPrevented ||
+          name === "onKeyDown" ||
+          name === "onBlur" ||
+          name === "onPointerLeave"
+        )
+          (handler as (event: SyntheticEvent<HTMLElement>) => void)(event);
+      };
+    }
+    return (
+      <>
+        {cloneElement(child, merged)}
+        {tooltip}
+      </>
+    );
+  }
   return (
     <>
       <span className="contents" data-tooltip-wrap="" {...trigger}>
@@ -299,4 +390,9 @@ export function Tooltip({ children, ...content }: TooltipContent & { children: R
       {tooltip}
     </>
   );
+}
+
+/** Full text recovery through the shared hint, without a native title or a layout box. */
+export function OverflowTooltip(props: TooltipContent & { children: ReactNode }) {
+  return <Tooltip {...props} when="overflow" asChild />;
 }

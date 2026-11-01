@@ -330,6 +330,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           aria-label={t("Switch note")}
           aria-haspopup="dialog"
           tooltip={selected?.title ?? t("Switch note")}
+          tooltipWhen={selected ? "overflow" : "always"}
           onClick={(event) => {
             event.currentTarget.focus();
             setListOpen((open) => !open);
@@ -537,6 +538,7 @@ function NoteGroup({
                 size="sm"
                 type="button"
                 tooltip={note.title}
+                tooltipWhen="overflow"
                 aria-current={note.id === activeId ? "true" : undefined}
                 onClick={() => onSelect(note.id)}
                 motion="none"

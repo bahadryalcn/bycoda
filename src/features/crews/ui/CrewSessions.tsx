@@ -114,6 +114,7 @@ export function CrewSessions({
             className="min-w-0 w-full"
             onClick={() => setOpened({ definitionId: run.definition.id, runId: run.id })}
             tooltip={crewRunTitle(run)}
+            tooltipWhen="overflow"
           >
             <span className="min-w-0 flex-1 text-start">
               <span className="block truncate font-medium">{crewRunTitle(run)}</span>

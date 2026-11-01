@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Alert } from "../../../shared/ui/Alert";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
@@ -1432,9 +1433,11 @@ function TurnDuration({
           {dot}
           <span className="flex min-w-0 items-center gap-1.5">
             {harness ? <HarnessIcon harness={harness} className="size-3.5 shrink-0" /> : null}
-            <span className="min-w-0 truncate" title={label}>
-              {label}
-            </span>
+            <OverflowTooltip label={label}>
+              <span className="min-w-0 truncate">
+                {label}
+              </span>
+            </OverflowTooltip>
           </span>
         </span>
       )}

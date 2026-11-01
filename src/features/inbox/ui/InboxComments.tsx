@@ -809,6 +809,7 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
           variant="item"
           type="button"
           tooltip={commit.url ? t("Open commit") : commit.messageHeadline}
+          tooltipWhen={commit.url ? "always" : "overflow"}
           disabled={!commit.url}
           onClick={() => void openUrl(commit.url)}
           className="w-full min-w-0 text-left"

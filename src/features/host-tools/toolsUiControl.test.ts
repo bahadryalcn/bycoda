@@ -22,12 +22,23 @@ it("validates the narrow UI contract and passes explicit targets to the register
     ["ui.tools.close", { sessionId: "foreign" }],
     ["ui.tools.open", { placement: "diagonal" }],
     ["ui.tools.open", { tab: "tasks" }],
+    ["ui.tools.open", { projectHost: "yes" }],
+    ["ui.tools.open", { projectHost: true, machineId: "mac" }],
     ["ui.tools.eval", { code: "anything" }],
   ])
     await expect(
       requestToolsUi(context, action as string, input as Record<string, unknown>),
     ).rejects.toThrow();
   expect(executor).toHaveBeenCalledTimes(1);
+});
+it("can explicitly select the project Host without a magic machine identifier", async () => {
+  const executor = vi.fn(async () => ({ open: true, placement: "right" as const, panels: [] }));
+  dispose = registerToolsUiControl(executor);
+  await requestToolsUi(context, "ui.tools.open", { tab: "browser", projectHost: true });
+  expect(executor).toHaveBeenCalledWith(context, "ui.tools.open", {
+    tab: "browser",
+    projectHost: true,
+  });
 });
 it("does not retain a closed workspace handler or claim an unavailable panel is open", async () => {
   const first = registerToolsUiControl(async () => ({

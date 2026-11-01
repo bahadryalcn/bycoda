@@ -107,6 +107,7 @@ export function CrewWorkList({
               disabled={disabled}
               onClick={() => onSelect(run.id)}
               tooltip={crewRunTitle(run)}
+              tooltipWhen="overflow"
             >
               <span className="min-w-0 flex-1 text-start">
                 <span className="block line-clamp-2 break-words font-medium">

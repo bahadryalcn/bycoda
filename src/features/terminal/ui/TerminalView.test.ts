@@ -301,7 +301,7 @@ it("keeps the actual canvas policy when SSH typography overrides change without 
     expect(instance.options).toMatchObject({
       fontSize: 15,
       lineHeight: 1.35,
-      minimumContrastRatio: 4.5,
+      minimumContrastRatio: 7,
     });
     expect(instance.options).toHaveProperty(
       "theme.background",
@@ -311,7 +311,7 @@ it("keeps the actual canvas policy when SSH typography overrides change without 
     // Omitting lineHeight changes typography only, never contrast/transparency.
     await act(async () => root.render(render(20)));
     expect(xterm.instances).toHaveLength(1);
-    expect(instance.options).toMatchObject({ fontSize: 20, minimumContrastRatio: 4.5 });
+    expect(instance.options).toMatchObject({ fontSize: 20, minimumContrastRatio: 7 });
     expect(instance.options).toHaveProperty("theme.background", "rgba(17, 34, 51, 0)");
     expect(
       native.invoke.mock.calls.filter(([command]) => command === "ssh_terminal_spawn"),

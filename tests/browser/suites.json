@@ -14,6 +14,23 @@
   },
   "suites": [
     {
+      "id": "tooltip-policy",
+      "config": "tests/browser/tooltip-policy.playwright.config.ts",
+      "files": ["tooltip-policy.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/tooltip-policy.vite.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/tooltip-policy.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["tooltip-policy.spec.ts"]
+        }
+      ]
+    },
+    {
       "id": "composer-compact",
       "config": "tests/browser/playwright.composer-compact.config.ts",
       "files": ["composer-compact.spec.ts"],

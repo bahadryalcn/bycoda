@@ -73,7 +73,9 @@ export function terminalRenderingPolicy({ canvas, fallbackCanvas, foreground, cu
     // opaque contrast pair when focus leaves the terminal, too.
     selectionInactiveBackground: selectionBackground,
     selectionForeground,
-    minimumContrastRatio: canvas.resolved ? 4.5 : 1,
+    // WCAG AAA: thin monospace text needs more than the 4.5 body-text floor,
+    // or prompt grays and light-theme cyan/green read as washed out.
+    minimumContrastRatio: canvas.resolved ? 7 : 1,
     canvasResolved: canvas.resolved,
   };
 }

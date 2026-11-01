@@ -8,7 +8,7 @@ import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { invoke } from "@tauri-apps/api/core";
 import { RemoteReconnectGroup } from "../../settings/ui/ConnectionRecoverySettings";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Surface } from "../../../shared/ui/Surface";
@@ -105,11 +105,9 @@ function MachineConnectionLine({
   const detail = kind && kind !== "connected" ? t(PROBE_DETAIL[kind]) : undefined;
   return (
     <>
-      <Tooltip label={t(kind ? PROBE_DETAIL[kind] : label)}>
-        <Badge variant="dot" size="sm" tone={tone}>
-          {t(label)}
-        </Badge>
-      </Tooltip>
+      <Badge variant="dot" size="sm" tone={tone}>
+        {t(label)}
+      </Badge>
       {detail ? (
         <span className="basis-full text-ui-caption text-(--ui-text-muted)">{detail}</span>
       ) : null}
@@ -772,17 +770,17 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                     />
                     <div className="min-w-0 flex-1 basis-48">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <Tooltip label={machine.name}>
+                        <Tooltip label={machine.name} when={isLocalSyncMachine(machine) ? "always" : "overflow"}>
                           <span className="truncate text-ui-secondary font-medium">
                             {isLocalSyncMachine(machine) ? t("This computer") : machine.name}
                           </span>
                         </Tooltip>
                         {machineContext(machines, machine) ? (
-                          <Tooltip label={machineContext(machines, machine)}>
+                          <OverflowTooltip label={machineContext(machines, machine)}>
                             <span className="min-w-0 truncate text-ui-caption text-(--ui-text-muted)">
                               {machineContext(machines, machine)}
                             </span>
-                          </Tooltip>
+                          </OverflowTooltip>
                         ) : null}
                         <span className="shrink-0 text-ui-caption text-(--ui-text-muted)">
                           {isLocalSyncMachine(machine) ? t("Local") : t("Remote computer")}

@@ -335,6 +335,7 @@ function LiveAgentCard({
       variant="item"
       type="button"
       tooltip={title}
+      tooltipWhen={remote || !flagged ? "always" : "overflow"}
       aria-label={[agent.title, project, activity, elapsed].filter(Boolean).join(", ")}
       aria-current={selected ? "true" : undefined}
       data-live-agent-card={agent.id}
@@ -380,7 +381,6 @@ function LiveAgentCard({
           {project}
         </span>
         <span
-          title={activity}
           className={`flex min-w-0 max-w-[60%] shrink-0 items-center gap-1 @max-[220px]/rail:max-w-full @max-[220px]/rail:flex-1 ${tone}`}
           data-live-agent-status
         >

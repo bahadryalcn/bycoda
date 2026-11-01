@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { InlineError } from "../../shared/ui/InlineError";
@@ -196,8 +197,19 @@ function ProjectBrowserPanel({
           resetPick();
           setNotice(t("Selection expired. Refresh the frame and select the element again."));
         }
-        if (latest.current?.navigationId && result.navigationId !== latest.current.navigationId)
+        if (
+          (latest.current?.navigationId && result.navigationId !== latest.current.navigationId) ||
+          (latest.current?.viewport &&
+            result.viewport &&
+            (latest.current.viewport.width !== result.viewport.width ||
+              latest.current.viewport.height !== result.viewport.height))
+        )
           setFrame(undefined);
+        if (result.viewport)
+          pointer.current = {
+            x: Math.min(pointer.current.x, result.viewport.width - 1),
+            y: Math.min(pointer.current.y, result.viewport.height - 1),
+          };
         result.runtime ??= latest.current?.runtime;
         latest.current = result;
         setState(result);
@@ -228,7 +240,8 @@ function ProjectBrowserPanel({
             height: result.height ?? result.viewport?.height ?? 720,
             navigationId: result.navigationId,
           });
-        else if (!result.open || method === "browser.open") setFrame(undefined);
+        else if (!result.open || method === "browser.open" || method === "browser.resize")
+          setFrame(undefined);
         return result;
       });
     serial.current = call;
@@ -690,18 +703,23 @@ function ProjectBrowserPanel({
       </div>
       {/* Visible state: page the host is on, browser/control state, in-flight
           work and why element selection may be unavailable. */}
-      <div className="host-browser-statusline" data-browser-state={
+      <div
+        className="host-browser-statusline"
+        data-browser-state={
         !state ? (error ? "unavailable" : "checking") : state.open ? "open" : "closed"
-      }>
+        }
+      >
         <span className="host-browser-state-chip" role="status">
           <span className="host-browser-state-dot" aria-hidden />
           {busy ? t("Working on the host…") : browserStatus}
         </span>
         {state?.open && state.url ? (
-          <span className="host-browser-current-url" title={state.url}>
-            <span className="host-browser-current-label">{t("Current page")}</span>
-            {state.url}
-          </span>
+          <OverflowTooltip label={state.url}>
+            <span className="host-browser-current-url">
+              <span className="host-browser-current-label">{t("Current page")}</span>
+              {state.url}
+            </span>
+          </OverflowTooltip>
         ) : null}
         {!annotationsAllowed ? (
           <span className="host-browser-restriction">
@@ -910,9 +928,11 @@ function ProjectBrowserPanel({
             className="host-browser-side-section host-browser-selection"
             aria-label={t("Selected browser element")}
           >
-            <p className="host-browser-target" title={selection.element.selector}>
-              {selection.element.selector}
-            </p>
+            <OverflowTooltip label={selection.element.selector}>
+              <p className="host-browser-target">
+                {selection.element.selector}
+              </p>
+            </OverflowTooltip>
             <TextareaField
               label={t("Explain the selected element")}
               value={comment}
@@ -970,9 +990,7 @@ function ProjectBrowserPanel({
                 {t("Remove selection")}
               </Button>
             </div>
-            {error ? (
-              <InlineError className="host-browser-target">{error}</InlineError>
-            ) : null}
+            {error ? <InlineError className="host-browser-target">{error}</InlineError> : null}
             <details className="host-browser-disclosure">
               <summary>{t("Details")}</summary>
               <BrowserAnnotationDetails annotation={selection} />
@@ -1073,7 +1091,7 @@ function ProjectBrowserPanel({
             <h4>{t("Browser controls and setup")}</h4>
             <div className="host-browser-state">
               {state?.url ? (
-                <p className="host-browser-location" title={state.url}>
+                <p className="host-browser-location">
                   {state.url}
                 </p>
               ) : null}

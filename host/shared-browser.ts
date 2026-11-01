@@ -32,6 +32,7 @@ type PageEvents = {
 
 type Page = {
   goto(url: string, options: { timeout: number }): Promise<unknown>;
+  setViewportSize?(viewport: { width: number; height: number }): Promise<void>;
   url(): string;
   screenshot(options: {
     type: "jpeg";
@@ -73,6 +74,21 @@ export type SharedBrowserOptions = {
   keepAlive?: boolean;
 };
 const fingerprint = (credential: string) => createHash("sha256").update(credential).digest("hex");
+const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
+
+/** Bound screenshot memory and coordinate work before touching Chromium. */
+export function sharedBrowserViewport(width: unknown, height: unknown) {
+  if (
+    !Number.isInteger(width) ||
+    !Number.isInteger(height) ||
+    Number(width) < 240 ||
+    Number(width) > 2560 ||
+    Number(height) < 240 ||
+    Number(height) > 2160
+  )
+    throw new Error("Browser viewport must be integer dimensions between 240x240 and 2560x2160.");
+  return { width: Number(width), height: Number(height) };
+}
 
 // This self-contained function executes on a console argument handle in Chromium.
 // Bound the returned value before Playwright serializes/transfers it to the host.
@@ -98,6 +114,7 @@ export class SharedBrowser {
   private navigationId = randomUUID();
   private pageGeneration = 0;
   private captureGeneration = 0;
+  private viewport = { ...DEFAULT_VIEWPORT };
   private logSource?: RuntimeLogSource;
   private detachPageListeners?: () => void;
   private detachLogListeners?: () => void;
@@ -135,7 +152,7 @@ export class SharedBrowser {
       this.logSource?.projectId === params.projectId &&
       this.logSource?.sessionId === params.sessionId;
     if (
-      ["browser.frame", "browser.input", "browser.close"].includes(method) ||
+      ["browser.frame", "browser.input", "browser.close", "browser.resize"].includes(method) ||
       method.startsWith("browser.annotation.")
     ) {
       if (!matches) throw new Error("Open a browser for this session before using it.");
@@ -239,9 +256,22 @@ export class SharedBrowser {
           ...this.status(owner),
           mimeType: "image/jpeg",
           data: frame.toString("base64"),
-          width: 1280,
-          height: 720,
+          width: this.viewport.width,
+          height: this.viewport.height,
         };
+      }
+      if (method === "browser.resize") {
+        this.requireLease(owner, params);
+        if (!this.page) throw new Error("Open a shared browser first");
+        const viewport = sharedBrowserViewport(params.width, params.height);
+        const page = this.page;
+        if (!page.setViewportSize)
+          throw new Error("Viewport resizing is unavailable on this host browser.");
+        await page.setViewportSize(viewport);
+        if (this.page !== page) throw new Error("Browser changed during viewport resize.");
+        this.viewport = viewport;
+        this.invalidateSelection();
+        return this.status(owner);
       }
       if (method === "browser.close") {
         this.requireLease(owner, params);
@@ -256,7 +286,14 @@ export class SharedBrowser {
         if (params.kind === "click") {
           const x = Number(params.x),
             y = Number(params.y);
-          if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1280 || y < 0 || y > 720)
+          if (
+            !Number.isFinite(x) ||
+            !Number.isFinite(y) ||
+            x < 0 ||
+            x >= this.viewport.width ||
+            y < 0 ||
+            y >= this.viewport.height
+          )
             throw new Error("Invalid click position");
           await this.page.mouse.click(x, y);
         } else if (params.kind === "scroll") {
@@ -306,7 +343,7 @@ export class SharedBrowser {
       leaseId: this.lease?.owner === owner ? this.lease.id : undefined,
       leaseExpiresAt: this.lease?.expiresAt,
       setup: "Install playwright in the host runtime and run playwright install chromium",
-      viewport: { width: 1280, height: 720 },
+      viewport: { ...this.viewport },
       navigationId: this.navigationId,
       annotationId: this.annotation?.owner === owner ? this.annotation.id : undefined,
     };
@@ -409,7 +446,14 @@ export class SharedBrowser {
       throw new Error("Unsupported annotation method");
     const x = Number(params.x),
       y = Number(params.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x >= 1280 || y < 0 || y >= 720)
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      x < 0 ||
+      x >= this.viewport.width ||
+      y < 0 ||
+      y >= this.viewport.height
+    )
       throw new Error("Invalid selection position");
     const full = method === "browser.annotation.select";
     if (full) annotation.selection = undefined;
@@ -469,8 +513,8 @@ export class SharedBrowser {
       screenshot: {
         mimeType: "image/jpeg",
         data: frame.toString("base64"),
-        width: 1280,
-        height: 720,
+        width: this.viewport.width,
+        height: this.viewport.height,
       },
     };
     return { ...this.status(owner), selection: annotation.selection };
@@ -483,7 +527,7 @@ export class SharedBrowser {
     const browser = await chromium.launch({ headless: true });
     try {
       const context = await browser.newContext({
-        viewport: { width: 1280, height: 720 },
+        viewport: { ...this.viewport },
         acceptDownloads: false,
       });
       const page = await context.newPage();
@@ -688,6 +732,7 @@ export class SharedBrowser {
     const browser = this.browser;
     this.page = undefined;
     this.browser = undefined;
+    this.viewport = { ...DEFAULT_VIEWPORT };
     this.invalidateSelection();
     await browser?.close();
   }

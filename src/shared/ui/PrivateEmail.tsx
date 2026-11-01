@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "./Tooltip";
 import { useState } from "react";
 import { useT } from "../i18n";
 import { Button } from "./Button";
@@ -19,9 +20,9 @@ export function PrivateEmail({ email }: { email: string }) {
   }
   if (!masked) {
     return (
-      <span className="min-w-0 truncate" title={email}>
-        {email}
-      </span>
+      <OverflowTooltip label={email}>
+        <span className="min-w-0 truncate">{email}</span>
+      </OverflowTooltip>
     );
   }
   const action = revealed ? t("Hide email") : t("Reveal email");

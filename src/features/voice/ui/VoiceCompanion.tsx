@@ -1,3 +1,4 @@
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Session } from "../../sessions/model/session";
 import { sessionsRef as liveSessions, useSession } from "../../sessions/model/sessionsStore";
@@ -971,13 +972,17 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         </Button>
         {compact ? (
           <div className={styles.heading}>
-            <h2 className={styles.title} title={target?.title}>
-              {scopeTitle}
-            </h2>
+            <Tooltip label={target?.title} when={target?.title && target.title !== scopeTitle ? "always" : "overflow"}>
+              <h2 className={styles.title}>
+                {scopeTitle}
+              </h2>
+            </Tooltip>
             {/* The live line; the status region below stays authoritative for readers. */}
-            <span className={styles.summary} aria-hidden="true" title={summary}>
-              {summary}
-            </span>
+            <OverflowTooltip label={summary}>
+              <span className={styles.summary} aria-hidden="true">
+                {summary}
+              </span>
+            </OverflowTooltip>
           </div>
         ) : (
           <div className={styles.session}>

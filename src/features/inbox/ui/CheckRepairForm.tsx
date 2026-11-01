@@ -184,7 +184,7 @@ export function CheckRepairForm({
                 {t("Fix with AI")}
               </p>
               <p
-                title={checks.map((check) => check.name).join(", ")}
+                title={checks.length > 1 ? checks.map((check) => check.name).join(", ") : undefined}
                 className="mt-0.5 break-words text-ui-caption text-(--ui-text-secondary)"
               >
                 {checks.length === 1
@@ -235,7 +235,7 @@ export function CheckRepairForm({
           ) : null}
           <PickerFooter align="between" className="gap-3 px-3 py-2.5">
             <div className="min-w-0 text-ui-micro leading-4">
-              <p className="break-words text-(--ui-text-secondary)" title={selectedTitle}>
+              <p className="break-words text-(--ui-text-secondary)">
                 {selectedTitle}
               </p>
               <p className="text-(--ui-text-secondary)">{t("CI details included")}</p>

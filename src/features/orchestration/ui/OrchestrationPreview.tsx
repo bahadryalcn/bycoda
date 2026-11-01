@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { MenuRow } from "../../../shared/ui/MenuRow";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -630,9 +631,11 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     ) : (
                       <ChevronRight className="icon-sm shrink-0" />
                     )}
-                    <span className="truncate text-ui-caption" title={task.title}>
-                      {task.title}
-                    </span>
+                    <OverflowTooltip label={task.title}>
+                      <span className="truncate text-ui-caption">
+                        {task.title}
+                      </span>
+                    </OverflowTooltip>
                   </Button>
                   <div className="max-w-[60%] min-w-0">
                     {editable ? (

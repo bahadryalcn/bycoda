@@ -2460,6 +2460,7 @@ function SidebarComponent({
           data-workspace-tab-churn={isChangesTab && hasChangeStats ? "" : undefined}
           aria-label={label}
           tooltip={TAB_LABELS[itemId]}
+          tooltipWhen="overflow"
           tooltipDetails={tabDetails}
           tooltipWide
           data-usage-guide={
@@ -4140,6 +4141,7 @@ function CompactRailAction({
     <Button
       {...sharedProps}
       tooltip={label}
+      tooltipWhen={caption && caption !== label ? "always" : "overflow"}
       shortcut={shortcut || undefined}
       fullWidth
       align="start"
@@ -4601,6 +4603,7 @@ function FolderRow({
       motion="none"
       type="button"
       tooltip={folder.name}
+      tooltipWhen="overflow"
       tooltipDetails={[busy ? t("Working") : null, needsApproval ? t("Needs input") : null]}
       tooltipWide
       data-folder-row=""

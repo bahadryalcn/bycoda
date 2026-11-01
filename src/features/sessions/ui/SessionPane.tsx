@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
@@ -1484,14 +1485,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
             <span
               className={`size-2 shrink-0 rounded-full ${focused ? "bg-(--ui-tone-accent-subtle)" : "bg-transparent"}`}
             />
-            <span
-              className={`min-w-0 flex-1 truncate text-ui-caption ${
-                focused ? "text-content" : "text-(--ui-text-secondary)"
-              }`}
-              title={title}
-            >
-              {title}
-            </span>
+            <OverflowTooltip label={title}>
+              <span
+                className={`min-w-0 flex-1 truncate text-ui-caption ${
+                  focused ? "text-content" : "text-(--ui-text-secondary)"
+                }`}
+              >
+                {title}
+              </span>
+            </OverflowTooltip>
           </div>
           {workingBadge}
           <div className="session-pane-header-actions">

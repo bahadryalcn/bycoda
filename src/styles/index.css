@@ -464,6 +464,9 @@ html.theme-light {
   --ui-composer-surface: var(--ui-surface);
   --ui-composer-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-composer-surface));
   --ui-composer-shadow: none;
+  /* Floating turn activity reveals the transcript while its labels stay crisp. */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--ui-surface) 68%, transparent);
+  --ui-activity-dock-blur: min(6px, var(--glass-blur));
   /* Large editable regions and boxed setting groups are identified by surface
      and caret; their edge is quieter than a 3:1 small-field border. */
   --ui-editor-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-surface));

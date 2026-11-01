@@ -22,7 +22,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { QuickConnect } from "./QuickConnect";
 import {
   useOpenQuickServerTerminal,
@@ -742,11 +742,11 @@ export function ServersView({
             >
               <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-4 py-3">
                 <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
-                <Tooltip label={selected.name}>
+                <OverflowTooltip label={selected.name}>
                   <h2 className="min-w-0 flex-1 truncate text-ui-title font-medium">
                     {selected.name}
                   </h2>
-                </Tooltip>
+                </OverflowTooltip>
                 {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
                 <Button
                   variant="ghost"

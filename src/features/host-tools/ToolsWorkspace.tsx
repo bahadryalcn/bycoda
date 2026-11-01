@@ -218,9 +218,11 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
           expectedTab =
             input.tab ?? views.current.get(expectedId)?.tab ?? existing?.initialTab ?? "devices";
           expectedMachine =
-            input.machineId === undefined
-              ? (views.current.get(expectedId)?.machine ?? existing?.initialMachine ?? "project")
-              : `machine:${input.machineId}`;
+            input.projectHost === true
+              ? "project"
+              : input.machineId === undefined
+                ? (views.current.get(expectedId)?.machine ?? existing?.initialMachine ?? "project")
+                : `machine:${input.machineId}`;
           const pane: ToolPane = {
             ...existing,
             ...context,

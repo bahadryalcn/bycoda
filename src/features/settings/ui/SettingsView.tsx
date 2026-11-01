@@ -409,6 +409,7 @@ export function SettingsView({
               onClick={onClose}
               aria-label={t("Back to workspace")}
               tooltip={t("Back to workspace")}
+              tooltipWhen="overflow"
             >
               <ArrowLeft aria-hidden="true" strokeWidth={1.75} />
               <span className="truncate">{t("Back to workspace")}</span>
@@ -458,6 +459,7 @@ export function SettingsView({
                         align="start"
                         fullWidth
                         tooltip={category.label}
+                        tooltipWhen="overflow"
                         ref={(node) => {
                           if (node) categoryRefs.current.set(category.id, node);
                           else categoryRefs.current.delete(category.id);

@@ -59,6 +59,7 @@ export function SessionRecoveryControl({
         size="sm"
         type="button"
         tooltip={`${label} (${count})`}
+        tooltipWhen={count > 99 ? "always" : "overflow"}
         tooltipSide="right"
         aria-label={`${label} (${count})`}
         className={`recovery-rail-control flex min-w-0 flex-1 items-center justify-start ${RAIL_SECTION_LABEL}`}

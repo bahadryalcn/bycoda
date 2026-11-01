@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
 import { createHostServer } from "./server";
+import { socialToolCatalog } from "./social-tools";
 import {
   parseVoiceToolCall,
   prepareVoiceToolDispatch,
@@ -210,6 +211,95 @@ describe("voice tool gateway", () => {
     expect(
       tools.find((tool) => tool.family === "runtime-logs" && tool.action === "read"),
     ).toMatchObject({ annotations: { readOnlyHint: true } });
+    expect(tools.filter((tool) => tool.family === "social")).toEqual(
+      socialToolCatalog().map((tool) => ({ ...tool, family: "social" })),
+    );
+    expect(
+      tools.find((tool) => tool.family === "social" && tool.action === "replies.send"),
+    ).toMatchObject({
+      inputSchema: { properties: { requestId: { maxLength: 200 } } },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+    });
+  });
+
+  it("preserves stable social receipt IDs without placing transport fields in the authorized payload", async () => {
+    const p = ports();
+    const input = {
+      ...request(),
+      family: "social",
+      action: "replies.send",
+      input: { id: "draft-a", requestId: "voice-retry:1" },
+    };
+    const first = await prepareVoiceToolDispatch(input, p);
+    const next = await prepareVoiceToolDispatch({ ...input, requestId: "voice-retry:1" }, p);
+    expect(first.params).toEqual({
+      action: "replies.send",
+      input: { id: "draft-a" },
+      requestId: "voice-retry:1",
+    });
+    expect(next.params).toEqual(first.params);
+    expect(first.method).toBe("social.tools.call");
+    expect(p.issuers.social.issueSessionGrant).toHaveBeenCalledTimes(2);
+    expect(p.issuers.conversation.issueSessionGrant).not.toHaveBeenCalled();
+    expect(input.input.requestId).toBe("voice-retry:1");
+    first.release();
+    next.release();
+  });
+
+  it("rejects social authority injection and conflicting receipts before issuing grants", async () => {
+    const p = ports();
+    const social = {
+      ...request(),
+      family: "social",
+      action: "replies.send",
+      input: { id: "draft-a" },
+    };
+    for (const field of ["provider", "actorId", "sessionId", "socialAccountId", "operationId"])
+      await expect(
+        prepareVoiceToolDispatch(
+          {
+            ...social,
+            input: { ...social.input, [field]: "forged" },
+          },
+          p,
+        ),
+      ).rejects.toThrow(/assigned by the host/);
+    await expect(
+      prepareVoiceToolDispatch(
+        {
+          ...social,
+          input: { ...social.input, requestId: "embedded" },
+          requestId: "different",
+        },
+        p,
+      ),
+    ).rejects.toThrow(/Conflicting/);
+    await expect(
+      prepareVoiceToolDispatch(
+        {
+          ...social,
+          input: { ...social.input, requestId: "invalid receipt" },
+        },
+        p,
+      ),
+    ).rejects.toThrow(/Invalid social requestId/);
+    expect(p.issuers.social.issueSessionGrant).not.toHaveBeenCalled();
+  });
+
+  it("routes discovery through the existing conversation grant", async () => {
+    const p = ports();
+    for (const [action, input] of [
+      ["tools.search", { query: "browser" }],
+      ["tools.describe", { ids: ["conversation:browser.open"] }],
+      ["tools.status", {}],
+    ] as const) {
+      const dispatch = await prepareVoiceToolDispatch({ ...request(), action, input }, p);
+      expect(dispatch.method).toBe("conversation.tools.call");
+      expect(dispatch.params).toEqual({ action, input });
+      dispatch.release();
+    }
+    expect(p.issuers.conversation.issueSessionGrant).toHaveBeenCalledTimes(3);
+    expect(p.issuers.social.issueSessionGrant).not.toHaveBeenCalled();
   });
 
   it("requires a project for discovery and refuses an injected identity", () => {

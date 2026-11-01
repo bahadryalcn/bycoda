@@ -6,6 +6,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tab } from "../../../shared/ui/Tabs";
+import { useTooltip } from "../../../shared/ui/Tooltip";
 import { fetchCheckDetails, hasCheckDetails } from "../model/prChecks";
 import { t, useLocale } from "../../../shared/i18n";
 import { CheckRepairForm, type CheckRepair } from "./CheckRepairForm";
@@ -259,6 +260,11 @@ function PrCheckRow({
     .find((line) => line.trim());
   const subtitle = failureMessage || (failedStep ? `Failed at ${failedStep}` : status);
   const title = `${check.name} · ${status}${duration ? `, took ${duration}` : ""}${workflow ? `, ${workflow}` : ""}`;
+  const rowHint = useTooltip({
+    label: [check.name, workflow, failureMessage || failedStep ? subtitle : undefined, status, duration,
+      failureMessage && failedStep ? t("Failed at {p0}", { p0: failedStep }) : undefined].filter(Boolean).join("\n"),
+    when: "overflow",
+  });
   const url = check.url;
   const linked = isHttpUrl(url);
   const body = (
@@ -270,7 +276,6 @@ function PrCheckRow({
         <span className="flex min-w-0 items-baseline gap-2.5">
           <span
             data-check-name
-            title={check.name}
             className={`min-w-0 ${expanded ? "break-all" : "truncate"} text-ui-secondary font-medium text-(--ui-tone-neutral-fg)`}
           >
             {check.name}
@@ -283,7 +288,6 @@ function PrCheckRow({
         </span>
         {(!repairItem || expanded) && (failureMessage || failedStep) ? (
           <span
-            title={subtitle}
             className={`mt-0.5 min-w-0 ${expanded ? "break-words" : "truncate"} text-ui-caption text-(--ui-text-secondary)`}
           >
             {subtitle}
@@ -300,6 +304,19 @@ function PrCheckRow({
     "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-left";
   return (
     <li
+      {...rowHint.trigger}
+      onPointerEnter={(event) => {
+        if (event.target instanceof Element && event.target.closest("[data-no-drag]")) return;
+        rowHint.trigger.onPointerEnter(event);
+      }}
+      onPointerOver={(event) => {
+        if (event.target instanceof Element && event.target.closest("[data-no-drag]")) rowHint.hide();
+        else rowHint.trigger.onPointerEnter(event);
+      }}
+      onFocus={(event) => {
+        if (event.target.closest("[data-no-drag]")) rowHint.hide();
+        else rowHint.trigger.onFocus(event);
+      }}
       ref={rowRef}
       tabIndex={-1}
       className={`min-w-0 rounded-(--ui-control-radius) outline-none ${expanded ? "bg-(--ui-fill-faint)" : ""}`}
@@ -328,14 +345,13 @@ function PrCheckRow({
             motion="none"
             className="w-full min-w-0 flex-1 text-left"
             type="button"
-            tooltip={title}
             aria-label={title}
             onClick={() => void openUrl(url)}
           >
             {body}
           </Button>
         ) : (
-          <div title={title} className={className}>
+          <div className={className}>
             {body}
           </div>
         )}
@@ -505,6 +521,7 @@ function PrCheckRow({
           ) : null}
         </div>
       ) : null}
+      {rowHint.tooltip}
     </li>
   );
 }

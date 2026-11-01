@@ -172,6 +172,7 @@ export function SidebarWorktreeSwitcher({
         disabled={creating}
         tooltip={focus ? (focus.branch ?? "detached") : (main?.branch ?? t("Project folder"))}
         tooltipDetails={focus ? [prettyCwd(focus.path)] : undefined}
+        tooltipWhen={!focus && (main?.branch ?? t("Project folder")) === title ? "overflow" : "always"}
         onClick={() => {
           if (open) closePicker();
           else openPicker();

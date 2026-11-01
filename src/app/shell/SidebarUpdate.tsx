@@ -175,6 +175,7 @@ export function SidebarUpdate({
       motion="none"
       label={label}
       tooltip={label}
+      tooltipWhen="overflow"
     >
       <span className="icon-md grid shrink-0 place-items-center">
         {busy ? (

@@ -13,7 +13,8 @@ import { mcpCatalog, externalMcpCatalog } from "./mcp-http";
 import { conversationToolCatalog } from "./conversation-tools";
 import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protocol";
 import { SOCIAL_TOOLS, socialToolName } from "../src/features/social/model/social";
-import { SOCIAL_TOOL_SCHEMAS } from "./social-tools";
+import { socialToolCatalog } from "./social-tools";
+import { ConversationDesktopRelay } from "./conversation-tools";
 import { SharedBrowser } from "./shared-browser";
 import { ConversationWorkspaceTools } from "./conversation-workspace-tools";
 import { parseLocalSessionLink } from "../src/features/sessions/model/localSessionReference";
@@ -103,6 +104,123 @@ async function setup(providers: Parameters<typeof createHostServer>[1] = []) {
   return { store, engine, project, foreign, server, tokens, grant, rpc, send, url, desktopPath };
 }
 
+it("keeps bounded managed discovery inside external grants and preserves complete session discovery", async () => {
+  const s = await setup();
+  const grant = await s.grant({ conversation: ["read"] });
+  const search = await s.send(grant.token, "tools/call", {
+    name: "conversation_tools_search",
+    arguments: { family: "browser", limit: 2 },
+  });
+  const external = JSON.parse(search.body.result.content[0].text);
+  expect(external.tools).toEqual([]);
+  const hidden = await s.send(grant.token, "tools/call", {
+    name: "conversation_tools_describe",
+    arguments: { ids: ["conversation:browser.open"] },
+  });
+  const hiddenDescription = JSON.parse(JSON.parse(hidden.body.result.content[0].text).content);
+  expect(hiddenDescription.tools).toEqual([
+    {
+      id: "conversation:browser.open",
+      supported: false,
+      capability: { state: "unsupported", evidence: null },
+    },
+  ]);
+  const created = await s.engine.command({
+    type: "create",
+    workspaceMode: "current",
+    commandId: "discovery-test",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "fixture",
+    runtimeMode: "supervised",
+  });
+  const token = (await s.server.conversationAccess.issueSessionGrant(created.sessionId)).token;
+  const rpc = await s.rpc(
+    "conversation.tools.call",
+    { action: "tools.search", input: { family: "browser", limit: 2 } },
+    token,
+  );
+  expect(rpc.body.result.tools).toHaveLength(2);
+  expect(rpc.body.result.nextCursor).toBeTruthy();
+  expect(rpc.body.result.tools.every((tool: any) => tool.capability === "unknown")).toBe(true);
+  const status = await s.send(token, "tools/call", {
+    name: "conversation_tools_status",
+    arguments: { ids: ["conversation:browser.preview"] },
+  });
+  expect(JSON.parse(status.body.result.content[0].text).tools[0].capability.state).toBe("unknown");
+});
+
+it("composes a scoped mobile preview and mounted project panel through the real MCP route", async () => {
+  const s = await setup();
+  const created = await s.engine.command({
+    type: "create",
+    workspaceMode: "current",
+    commandId: "preview-test",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "fixture",
+    runtimeMode: "supervised",
+  });
+  const token = (await s.server.conversationAccess.issueSessionGrant(created.sessionId)).token;
+  let viewport = { width: 1280, height: 720 };
+  const browser = vi
+    .spyOn(SharedBrowser.prototype, "dispatchForSession")
+    .mockImplementation(async (method, params) => {
+      if (method === "browser.resize")
+        viewport = { width: Number(params.width), height: Number(params.height) };
+      return {
+        open: true,
+        controlling: true,
+        leaseId: "own-lease",
+        url: "http://127.0.0.1:3000/",
+        viewport,
+        ...(method === "browser.frame"
+          ? { data: "aGVsbG8=", mimeType: "image/png", ...viewport }
+          : {}),
+      };
+    });
+  const ui = vi
+    .spyOn(ConversationDesktopRelay.prototype, "call")
+    .mockResolvedValue({
+      open: true,
+      panels: [{ id: "panel", tab: "browser", machine: "project", mounted: true }],
+    });
+  const args = {
+    requestId: "same-preview",
+    url: "http://127.0.0.1:3000/",
+    width: 390,
+    height: 844,
+  };
+  const first = await s.send(token, "tools/call", {
+    name: "conversation_browser_preview",
+    arguments: args,
+  });
+  const content = first.body.result.content;
+  expect(first.body.result.isError).toBeUndefined();
+  expect(JSON.parse(content[0].text)).toMatchObject({
+    execution: { state: "succeeded" },
+    presentation: { state: "mounted" },
+    evidence: { frame: { width: 390, height: 844 } },
+  });
+  expect(content[0].text).not.toContain("aGVsbG8=");
+  expect(content[1]).toEqual({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
+  expect(ui).toHaveBeenCalledWith(
+    "ui.tools.open",
+    { tab: "browser", projectHost: true },
+    s.project.cwd,
+    expect.objectContaining({ sessionId: created.sessionId }),
+    expect.any(Function),
+  );
+  const before = browser.mock.calls.length;
+  await s.send(token, "tools/call", { name: "conversation_browser_preview", arguments: args });
+  expect(browser).toHaveBeenCalledTimes(before);
+  expect(
+    browser.mock.calls.every(
+      ([, params]) => params.projectId === s.project.id && params.sessionId === created.sessionId,
+    ),
+  ).toBe(true);
+});
+
 it("returns the same verified Host references through scoped RPC and external MCP while preserving read authority", async () => {
   const s = await setup();
   const created = await s.engine.command({
@@ -123,20 +241,12 @@ it("returns the same verified Host references through scoped RPC and external MC
     { id: "answer", role: "assistant", text: "A".repeat(7000) },
   ];
   await s.store.save(snapshot, { type: "test" });
-  const scoped = (
-    await s.server.conversationAccess.issueSessionGrant(created.sessionId)
-  ).token;
+  const scoped = (await s.server.conversationAccess.issueSessionGrant(created.sessionId)).token;
   const external = (await s.grant({ conversation: ["read"] })).token;
   const listing = (
-    await s.rpc(
-      "conversation.tools.call",
-      { action: "sessions.list", input: {} },
-      scoped,
-    )
+    await s.rpc("conversation.tools.call", { action: "sessions.list", input: {} }, scoped)
   ).body.result;
-  const entry = listing.sessions.find(
-    (row: any) => row.id === created.sessionId,
-  );
+  const entry = listing.sessions.find((row: any) => row.id === created.sessionId);
   expect(parseLocalSessionLink(entry.link)).toEqual({
     locator: {
       kind: "host",
@@ -169,8 +279,7 @@ it("returns the same verified Host references through scoped RPC and external MC
     });
     expect(denied.body.result?.isError ?? !!denied.body.error).toBe(true);
   }
-  const foreign = (await s.grant({ conversation: ["read"] }, s.foreign.id))
-    .token;
+  const foreign = (await s.grant({ conversation: ["read"] }, s.foreign.id)).token;
   const denied = await s.send(foreign, "tools/call", {
     name: "conversation_sessions_read",
     arguments: { sessionId: created.sessionId },
@@ -182,19 +291,43 @@ it("returns Native owner references from the mixed external catalog without migr
   const s = await setup(["codex"]);
   const db = new DatabaseSync(s.desktopPath);
   try {
-    db.exec("CREATE TABLE sessions(id TEXT PRIMARY KEY,cwd TEXT,harness TEXT,model TEXT,model_settings TEXT,provider_session_id TEXT,runtime_mode TEXT,title TEXT,blocks_json TEXT,created_at INTEGER,updated_at INTEGER,has_user_message INTEGER DEFAULT 1,is_draft INTEGER DEFAULT 0); CREATE TABLE native_authority_identity(id INTEGER PRIMARY KEY,source_store_id TEXT,source_profile_id TEXT); INSERT INTO native_authority_identity VALUES(1,'native-store','native-profile')");
-    db.prepare("INSERT INTO sessions(id,cwd,harness,model,runtime_mode,title,blocks_json,created_at,updated_at) VALUES(?,?,'codex','fixture','supervised',?,?,1,1)").run("native-target", s.project.cwd, "Native title", JSON.stringify([{id: "native-turn", role: "user", text: "Read without migration"}]));
-    const { token } = await s.grant({conversation: ["read"]});
-    const list = await s.send(token, "tools/call", {name: "conversation_sessions_list", arguments: {}});
+    db.exec(
+      "CREATE TABLE sessions(id TEXT PRIMARY KEY,cwd TEXT,harness TEXT,model TEXT,model_settings TEXT,provider_session_id TEXT,runtime_mode TEXT,title TEXT,blocks_json TEXT,created_at INTEGER,updated_at INTEGER,has_user_message INTEGER DEFAULT 1,is_draft INTEGER DEFAULT 0); CREATE TABLE native_authority_identity(id INTEGER PRIMARY KEY,source_store_id TEXT,source_profile_id TEXT); INSERT INTO native_authority_identity VALUES(1,'native-store','native-profile')",
+    );
+    db.prepare(
+      "INSERT INTO sessions(id,cwd,harness,model,runtime_mode,title,blocks_json,created_at,updated_at) VALUES(?,?,'codex','fixture','supervised',?,?,1,1)",
+    ).run(
+      "native-target",
+      s.project.cwd,
+      "Native title",
+      JSON.stringify([{ id: "native-turn", role: "user", text: "Read without migration" }]),
+    );
+    const { token } = await s.grant({ conversation: ["read"] });
+    const list = await s.send(token, "tools/call", {
+      name: "conversation_sessions_list",
+      arguments: {},
+    });
     const rows = JSON.parse(list.body.result.content[0].text).sessions;
-    expect(parseLocalSessionLink(rows[0].link)?.locator).toEqual({kind: "native", sourceStoreId: "native-store", sourceProfileId: "native-profile", sessionId: "native-target"});
-    const reply = await s.send(token, "tools/call", {name: "conversation_sessions_read", arguments: {sessionId: "native-target"}});
+    expect(parseLocalSessionLink(rows[0].link)?.locator).toEqual({
+      kind: "native",
+      sourceStoreId: "native-store",
+      sourceProfileId: "native-profile",
+      sessionId: "native-target",
+    });
+    const reply = await s.send(token, "tools/call", {
+      name: "conversation_sessions_read",
+      arguments: { sessionId: "native-target" },
+    });
     const page = JSON.parse(reply.body.result.content[0].text);
     expect(page.link).toBe(rows[0].link);
     expect(parseLocalSessionLink(page.turns[0].link)?.turnId).toBe("native-turn");
     expect(await s.store.sessionAuthority("native-target")).toBeUndefined();
-    expect(db.prepare("SELECT title FROM sessions WHERE id='native-target'").get()?.title).toBe("Native title");
-  } finally { db.close(); }
+    expect(db.prepare("SELECT title FROM sessions WHERE id='native-target'").get()?.title).toBe(
+      "Native title",
+    );
+  } finally {
+    db.close();
+  }
 });
 
 it("rechecks owner authority after token creation preparation without blocking revocation", async () => {
@@ -402,7 +535,7 @@ describe("Streamable HTTP MCP", () => {
     for (const tool of SOCIAL_TOOLS) {
       expect(
         mcpCatalog("social").find((entry) => entry.name === socialToolName(tool))?.inputSchema,
-      ).toEqual(SOCIAL_TOOL_SCHEMAS[tool]);
+      ).toEqual(socialToolCatalog().find((entry) => entry.action === tool)?.inputSchema);
     }
     expect(
       (await s.send(token, "tools/list", {}, "/mcp/social")).body.result.tools.every((tool: any) =>

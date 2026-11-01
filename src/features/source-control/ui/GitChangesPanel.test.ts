@@ -2248,23 +2248,33 @@ describe("Git changed file multiple selection", () => {
     expect(gitStageFiles).toHaveBeenCalledTimes(2);
     expect(gitStageFile).not.toHaveBeenCalled();
   });
-  it("asks once before discarding a subset and respects cancellation", async () => {
-    vi.mocked(gitDiffIndex).mockResolvedValue(
-      index({ files: [changedFile("a.ts"), changedFile("b.ts"), changedFile("c.ts")] }),
-    );
-    await renderPanel();
-    await click("a.ts");
-    await click("c.ts", { ctrlKey: true });
-    vi.mocked(ask).mockResolvedValueOnce(false);
-    await menuAction("a.ts", "Discard Changes");
-    expect(ask).toHaveBeenCalledTimes(1);
-    expect(gitDiscardFile).not.toHaveBeenCalled();
-    expect(gitDiscardFiles).not.toHaveBeenCalled();
-    await menuAction("c.ts", "Discard Changes");
-    expect(ask).toHaveBeenCalledTimes(2);
-    expect(gitDiscardFiles).toHaveBeenCalledExactlyOnceWith("/repo", ["a.ts", "c.ts"]);
-    expect(gitDiscardFile).not.toHaveBeenCalled();
-  });
+  it.each(["menu", "inline"] as const)(
+    "asks once before discarding a subset via %s and respects cancellation",
+    async (source) => {
+      vi.mocked(gitDiffIndex).mockResolvedValue(
+        index({ files: [changedFile("a.ts"), changedFile("b.ts"), changedFile("c.ts")] }),
+      );
+      await renderPanel();
+      await click("a.ts");
+      await click("c.ts", { ctrlKey: true });
+      const discard = async (relative: string) => {
+        if (source === "menu") return menuAction(relative, "Discard Changes");
+        const row = container.querySelector(`[data-git-file="/repo/${relative}"]`)!.closest("li")!;
+        await act(async () =>
+          row.querySelector<HTMLButtonElement>('button[aria-label="Discard Changes"]')!.click(),
+        );
+      };
+      vi.mocked(ask).mockResolvedValueOnce(false);
+      await discard("a.ts");
+      expect(ask).toHaveBeenCalledTimes(1);
+      expect(gitDiscardFile).not.toHaveBeenCalled();
+      expect(gitDiscardFiles).not.toHaveBeenCalled();
+      await discard("c.ts");
+      expect(ask).toHaveBeenCalledTimes(2);
+      expect(gitDiscardFiles).toHaveBeenCalledExactlyOnceWith("/repo", ["a.ts", "c.ts"]);
+      expect(gitDiscardFile).not.toHaveBeenCalled();
+    },
+  );
 });
 
 it("keeps a collapsed repository summary but stops index polls until expanded", async () => {

@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "./Tooltip";
 import { useLocale, useT } from "../i18n";
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Calendar, ChevronLeft, ChevronRight, Clock } from "./icons";
@@ -499,45 +500,43 @@ export function DateTimeField({
     >
       {(control) => (
         <div ref={root} className="relative min-w-0">
-          <SelectTrigger
-            {...control}
-            ref={trigger}
-            type="button"
-            data-field-size={fieldSize ?? (fieldVariant === "compact" ? "sm" : "md")}
-            data-state={open ? "open" : "closed"}
-            data-disabled={disabled || undefined}
-            disabled={disabled}
-            aria-label={`${label}: ${shown ?? shownPlaceholder}`}
-            aria-required={required || undefined}
-            aria-haspopup="dialog"
-            aria-expanded={open}
-            aria-controls={open ? popoverId : undefined}
-            onClick={() => {
-              if (!disabled) setOpen((current) => !current);
-            }}
-            onKeyDown={(event) => {
-              if (disabled || isImeComposition(event.nativeEvent)) return;
-              if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
-                event.preventDefault();
-                setOpen(true);
-                return;
-              }
-              if (canClear && (event.key === "Backspace" || event.key === "Delete")) {
-                event.preventDefault();
-                update("");
-              }
-            }}
-            className="bycoda-arc bycoda-arc-select date-time-field-trigger"
-          >
-            <span
-              className="date-time-field-value"
-              data-placeholder={shown ? undefined : ""}
-              title={shown}
+          <OverflowTooltip label={open ? undefined : shown}>
+            <SelectTrigger
+              {...control}
+              ref={trigger}
+              type="button"
+              data-field-size={fieldSize ?? (fieldVariant === "compact" ? "sm" : "md")}
+              data-state={open ? "open" : "closed"}
+              data-disabled={disabled || undefined}
+              disabled={disabled}
+              aria-label={`${label}: ${shown ?? shownPlaceholder}`}
+              aria-required={required || undefined}
+              aria-haspopup="dialog"
+              aria-expanded={open}
+              aria-controls={open ? popoverId : undefined}
+              onClick={() => {
+                if (!disabled) setOpen((current) => !current);
+              }}
+              onKeyDown={(event) => {
+                if (disabled || isImeComposition(event.nativeEvent)) return;
+                if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+                  event.preventDefault();
+                  setOpen(true);
+                  return;
+                }
+                if (canClear && (event.key === "Backspace" || event.key === "Delete")) {
+                  event.preventDefault();
+                  update("");
+                }
+              }}
+              className="bycoda-arc bycoda-arc-select date-time-field-trigger"
             >
-              {shown ?? shownPlaceholder}
-            </span>
-            <Calendar className="date-time-field-icon size-(--ui-icon-sm)" aria-hidden="true" />
-          </SelectTrigger>
+              <span className="date-time-field-value" data-placeholder={shown ? undefined : ""}>
+                {shown ?? shownPlaceholder}
+              </span>
+              <Calendar className="date-time-field-icon size-(--ui-icon-sm)" aria-hidden="true" />
+            </SelectTrigger>
+          </OverflowTooltip>
           {hiddenInput}
           {open ? (
             <Popover

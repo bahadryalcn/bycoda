@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Popover } from "../../../shared/ui/Popover";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
@@ -337,12 +338,13 @@ function ProjectSearchContent({
                 {group.matches.length}
               </Badge>
             </div>
-            <p
-              className="truncate px-2 pb-1 text-ui-caption text-(--ui-text-secondary)"
-              title={group.relative}
-            >
-              {group.relative}
-            </p>
+            <OverflowTooltip label={group.relative}>
+              <p
+                className="truncate px-2 pb-1 text-ui-caption text-(--ui-text-secondary)"
+              >
+                {group.relative}
+              </p>
+            </OverflowTooltip>
             <ul>
               {group.matches.map((match) => (
                 <li key={`${match.path}:${match.line}:${match.column}`}>

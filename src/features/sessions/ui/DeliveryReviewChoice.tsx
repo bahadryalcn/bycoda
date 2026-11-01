@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useId, useRef } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -36,9 +37,11 @@ export function DeliveryReviewChoice({
   return (
     <div className="mt-1" data-delivery-review>
       <div className="flex flex-wrap items-center gap-1">
-        <span className="min-w-0 max-w-full flex-1 basis-40 truncate text-ui-caption" title={text}>
-          {text}
-        </span>
+        <OverflowTooltip label={text}>
+          <span className="min-w-0 max-w-full flex-1 basis-40 truncate text-ui-caption">
+            {text}
+          </span>
+        </OverflowTooltip>
         <Button
           ref={first}
           size="sm"

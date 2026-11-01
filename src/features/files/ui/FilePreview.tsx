@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { CircleDashed, X } from "../../../shared/ui/icons";
@@ -96,17 +97,19 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
             type="button"
             className="min-w-0 flex-1 truncate text-left font-mono hover:underline"
             tooltip={path}
+            tooltipWhen={path === label ? "overflow" : "always"}
             onClick={() => onOpenFile(filePath)}
           >
             {label}
           </Button>
         ) : (
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-ui-caption font-medium text-[var(--color-content)]"
-            title={path}
-          >
-            {label}
-          </span>
+          <Tooltip label={path} when={path === label ? "overflow" : "always"}>
+            <span
+              className="min-w-0 flex-1 truncate font-mono text-ui-caption font-medium text-[var(--color-content)]"
+            >
+              {label}
+            </span>
+          </Tooltip>
         )}
         {added > 0 || deleted > 0 ? (
           <span className="shrink-0 font-sans text-ui-micro font-semibold tabular-nums">

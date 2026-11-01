@@ -11,7 +11,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import {
   gitCheckout,
   gitCreateBranch,
@@ -187,7 +187,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             strokeWidth={1.75}
           />
         )}
-        <Tooltip label={reference}>
+        <OverflowTooltip label={reference}>
           <span
             className={`min-w-0 flex-1 truncate text-ui-secondary text-content ${
               isCurrent ? "font-medium" : ""
@@ -195,7 +195,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
           >
             {reference}
           </span>
-        </Tooltip>
+        </OverflowTooltip>
         {isCurrent ? null : (
           <Button
             size="sm"

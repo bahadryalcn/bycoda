@@ -211,7 +211,7 @@ function DockBody({
     <section
       aria-label={t("Turn activity")}
       data-activity-dock={dock.state}
-      className={`activity-dock mb-1.5 overflow-hidden rounded-lg bg-(--ui-surface-panel) font-sans text-ui-caption ${
+      className={`activity-dock mb-1.5 overflow-hidden rounded-lg font-sans text-ui-caption ${
         dock.state === "done" ? "activity-dock-done" : ""
       }`}
     >
@@ -372,6 +372,7 @@ function DockAgentRow({
         type="button"
         aria-label={t(agent.kind === "agent" ? "Open {p0}" : "Show {p0}", { p0: summary })}
         tooltip={agent.name}
+        tooltipWhen="overflow"
         data-dock-agent={agent.blockId}
         onClick={() => onOpen(agent)}
         className="min-w-0 flex-1 items-start text-left"

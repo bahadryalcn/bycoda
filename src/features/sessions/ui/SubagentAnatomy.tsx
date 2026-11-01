@@ -1,4 +1,5 @@
 import { t, useT } from "../../../shared/i18n";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { blockLifecycle, type DockAgentStatus } from "../model/activityDock";
 import type { AgentStep, Block } from "../model/session";
 import { subagentReport, subagentStatusLine, toolCallState } from "../model/transcriptActivity";
@@ -78,12 +79,14 @@ export function SubagentStateLine({
       </span>
       <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
       {quietMeta ? (
-        <span
-          className="min-w-0 flex-1 truncate"
-          title={model ? `${quietMeta} (${t("Model: {p0}", { p0: model })})` : quietMeta}
+        <Tooltip
+          label={model ? `${quietMeta} (${t("Model: {p0}", { p0: model })})` : quietMeta}
+          when={model ? "always" : "overflow"}
         >
-          {quietMeta}
-        </span>
+          <span className="min-w-0 flex-1 truncate">
+            {quietMeta}
+          </span>
+        </Tooltip>
       ) : null}
     </div>
   );

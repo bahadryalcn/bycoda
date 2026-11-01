@@ -64,6 +64,7 @@ function ProviderListItem({
         disabled={disabled}
         className="provider-cli-option"
         tooltip={title}
+        tooltipWhen="overflow"
         aria-current={selected ? "true" : undefined}
         aria-label={[
           title,

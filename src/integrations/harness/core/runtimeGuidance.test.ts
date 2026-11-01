@@ -18,8 +18,10 @@ import {
   harnessRuntimeHints,
   markRuntimeHintDelivered,
   pendingRuntimeHint,
+  turnCarriesRuntimeHint,
   withRuntimeHint,
 } from "./runtimeGuidance";
+import { TOOL_WORKFLOW_GUIDANCE_VERSION } from "./toolWorkflowGuidance";
 
 beforeEach(() => {
   for (const bridge of Object.values(bridges)) bridge.mockReset().mockResolvedValue(null);
@@ -71,12 +73,34 @@ it("delivers the hint once per provider thread until it changes, compacts or rew
   expect(pendingRuntimeHint("s1", codex, "")).toBe("");
 });
 
+it("refreshes delivered workflows when offered transports change without claiming domain readiness", async () => {
+  const host = { command: "node", args: ["host.mjs"] };
+  const thread = { harness: "codex" as const };
+  bridges.conversation.mockResolvedValue(host);
+  const first = await harnessRuntimeHints("workflow-freshness");
+  expect(first).toContain(TOOL_WORKFLOW_GUIDANCE_VERSION);
+  expect(first).toContain("offered transports: conversation");
+  expect(first).toContain("domain readiness: unknown until checked");
+  markRuntimeHintDelivered("workflow-freshness", thread, first);
+  expect(pendingRuntimeHint("workflow-freshness", thread, first)).toBe("");
+  bridges.social.mockResolvedValue(host);
+  const next = await harnessRuntimeHints("workflow-freshness");
+  expect(next).toContain("offered transports: conversation, social");
+  expect(pendingRuntimeHint("workflow-freshness", thread, next)).toBe(next);
+  expect(next).toContain("browser.preview");
+  expect(next).toContain("social: Read policy.get");
+  forgetRuntimeHint("workflow-freshness");
+});
+
 it("keeps a leading native command first for slash runtimes", () => {
   expect(withRuntimeHint("claude", "/compact", "hint")).toBe("/compact");
   expect(withRuntimeHint("omp", "  /skill:x do it", "hint")).toBe("  /skill:x do it");
   expect(withRuntimeHint("claude", "fix /tmp path", "hint")).toBe("hint\n\nfix /tmp path");
   expect(withRuntimeHint("hermes", "/compact", "hint")).toBe("hint\n\n/compact");
   expect(withRuntimeHint("claude", "hello", "")).toBe("hello");
+  expect(turnCarriesRuntimeHint("claude", "/compact", "/compact", "hint")).toBe(false);
+  expect(turnCarriesRuntimeHint("codex", "/goal status", "/goal status", "hint")).toBe(false);
+  expect(turnCarriesRuntimeHint("codex", "inspect", "inspect", "hint")).toBe(true);
 });
 
 it("quotes POSIX CLI paths for the shell", async () => {

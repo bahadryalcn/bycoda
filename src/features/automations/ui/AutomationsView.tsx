@@ -31,7 +31,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Surface } from "../../../shared/ui/Surface";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -771,13 +771,14 @@ function AutomationCard({
               <span className="shrink-0">{lastRun}</span>
             </>
           ) : null}
-          <span
-            title={model.name}
-            className="ml-auto flex min-w-0 max-w-28 items-center gap-1 text-(--ui-text-muted)"
-          >
-            <HarnessIcon harness={automation.harness} className="icon-sm shrink-0" />
-            <span className="min-w-0 truncate">{model.name}</span>
-          </span>
+          <OverflowTooltip label={model.name}>
+            <span
+              className="ml-auto flex min-w-0 max-w-28 items-center gap-1 text-(--ui-text-muted)"
+            >
+              <HarnessIcon harness={automation.harness} className="icon-sm shrink-0" />
+              <span className="min-w-0 truncate">{model.name}</span>
+            </span>
+          </OverflowTooltip>
         </span>
       </Button>
       <span className="absolute right-2.5 top-2 flex items-center gap-1">

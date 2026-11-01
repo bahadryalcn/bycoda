@@ -855,6 +855,7 @@ export function ModelPicker({
                     role="menuitemradio"
                     aria-checked={inheritSelected}
                     tooltip={inherit.label}
+                    tooltipWhen="overflow"
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => {
                       setActive(index);

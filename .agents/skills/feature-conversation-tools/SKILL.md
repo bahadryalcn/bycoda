@@ -14,6 +14,8 @@ Code paths below are repository-root relative.
 - `src/features/host-tools/SessionHostTools.tsx`
 - `src/features/host-tools/ToolsWorkspace.tsx`
 - `src/features/connections/model/hostFeatureClient.ts`
+- `host/tool-management.ts`, `host/conversation-preview.ts` and `host/conversation-tools.ts`
+- `src/integrations/harness/core/toolWorkflowGuidance.ts` and `runtimeGuidance.ts`
 
 ## Workflow
 
@@ -29,6 +31,10 @@ Code paths below are repository-root relative.
 - Retain listeners with unknown project association, bounded logs/samples, process review/confirmation and truthful partial results.
 - Keep pending/error/cancellation at the initiating control, target-generation guards and cleanup after navigation/close.
 - Native/mobile counterparts retain their own transport and platform contracts; desktop fixtures cannot establish device acceptance.
+- Tool metadata is not authority. Preserve legacy grant scopes independently from
+  effect/retry descriptions, and filter discovery to each caller's exposure.
+- Preview execution, frame evidence and actual panel mounting are separate results.
+  Viewport changes invalidate annotations; repeated request IDs must not renavigate.
 
 ## Verification and references
 
@@ -36,4 +42,6 @@ Code paths below are repository-root relative.
 - Use the affected UI matrix and isolated dev-Host/native/device checks when effects change. Review long labels, keyboard, annotation recovery and reduced motion as applicable.
 - Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
 - [Host contracts](../../../docs/reference/host-runtime.md)
+- [Agent tool management](../../../docs/reference/agent-tools.md)
+- [User tool guide](../../../docs/guides/agent-tools.md)
 - [Workbench behavior](../../../docs/guides/workbench.md)

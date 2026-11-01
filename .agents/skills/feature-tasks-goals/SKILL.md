@@ -29,6 +29,8 @@ Code paths below are repository-root relative.
 - Implementation completion, review PASS, acceptance, delivery/merge, installation and release are separate states with separate authority.
 - Retain attempt history, artifact/handoff manifests, findings/rechecks, goal plan approval and sprint/steward recovery/reporting/daily-limit semantics.
 - Owner UI approval binds reviewed identities; overlapping delivery must refuse without destroying unrelated dirty target work or source/recovery records.
+- Autonomy contract: reviewed tasks from any source auto-correct within the repair limits. When correction is exhausted or only external checks remain, the task finishes through the PASS path with `completedWithFindings` and `ownerNotices`, keeps the FAIL verdict and always needs owner delivery approval. Transient runtime failures retry twice; unattended clarifying questions are skipped at most twice and recorded as notices. Only owner stops, budgets, dependency cycles, permission/credential gates, preparation failures and repeated runtime failures block.
+- The reviewer FAILs only in-scope defects, regressions, failed checks and hard-constraint violations; out-of-scope edge cases are suggestions. `taskStatusLine` is the single owner-facing status/reason source for card, list and detail; notices show only after completion.
 - Worker cleanup remains bound to original process/operation identity. Optional title/catalog work or permission revocation cannot certify physical retirement.
 
 ## Verification and references

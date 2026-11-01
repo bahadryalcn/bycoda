@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useMemo, useState } from "react";
@@ -40,9 +41,11 @@ export function InlineVisual({ snapshot }: { snapshot: InlineVisualSnapshot }) {
       className="my-2 min-w-0 overflow-hidden"
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-1">
-        <span className="min-w-0 flex-1 truncate text-ui-caption" title={valid.title}>
-          {valid.title}
-        </span>
+        <OverflowTooltip label={valid.title}>
+          <span className="min-w-0 flex-1 truncate text-ui-caption">
+            {valid.title}
+          </span>
+        </OverflowTooltip>
         <Button
           variant="ghost"
           size="sm"

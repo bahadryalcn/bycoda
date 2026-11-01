@@ -1,4 +1,5 @@
-"use client";
+import { OverflowTooltip } from "../../Tooltip";
+("use client");
 import { Popover } from "../../Popover";
 import { isImeComposition } from "../../../lib/keyboard";
 import { t } from "../../../i18n";
@@ -87,17 +88,19 @@ export function ComboboxChoice({
           {icon}
         </span>
       ) : null}
-      <span className={styles.choiceBody} title={title}>
-        <span className={`${styles.choiceLabel} truncate`}>{label}</span>
-        {description ? (
-          <span
-            id={descriptionId}
-            className={`${styles.choiceDescription} bycoda-select-description`}
-          >
-            {description}
-          </span>
-        ) : null}
-      </span>
+      <OverflowTooltip label={title}>
+        <span className={styles.choiceBody}>
+          <span className={`${styles.choiceLabel} truncate`}>{label}</span>
+          {description ? (
+            <span
+              id={descriptionId}
+              className={`${styles.choiceDescription} bycoda-select-description`}
+            >
+              {description}
+            </span>
+          ) : null}
+        </span>
+      </OverflowTooltip>
     </>
   );
 }

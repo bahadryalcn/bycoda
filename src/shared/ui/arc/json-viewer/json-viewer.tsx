@@ -1,4 +1,5 @@
-"use client";
+import { OverflowTooltip } from "../../Tooltip";
+("use client");
 import { debounce } from "es-toolkit";
 import { SearchInput, SearchInputGroup } from "../../SearchInput";
 
@@ -157,10 +158,19 @@ function branchesToDepth(data: unknown, rootName: string, depth: number) {
   return out;
 }
 
-type SearchResult = { matches: string[]; ancestors: Set<string>; needed: Map<string, number> };
+type SearchResult = {
+  matches: string[];
+  ancestors: Set<string>;
+  needed: Map<string, number>;
+};
 /** Finds keys and primitive values that contain the query, the branches that hold them, and how far each page must reach. */
 function indexJson(data: unknown, rootName: string) {
-  const index: { id: string; key: string; value: string; frames: [string, number][] }[] = [];
+  const index: {
+    id: string;
+    key: string;
+    value: string;
+    frames: [string, number][];
+  }[] = [];
   const frames: [string, number][] = [];
   const visit = (value: unknown, id: string, name: string | number | null) => {
     const type = typeOf(value);
@@ -499,7 +509,11 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
   useEffect(() => {
     if (!activeRow || activeRow.kind !== "node" || lastReported.current === activeRow.id) return;
     lastReported.current = activeRow.id;
-    onSelectRef.current?.({ path: activeRow.id, value: activeRow.value, type: activeRow.type });
+    onSelectRef.current?.({
+      path: activeRow.id,
+      value: activeRow.value,
+      type: activeRow.type,
+    });
   }, [activeRow]);
 
   /* Scrolling keeps the current row in view, springing to where it will sit once rows finish unfolding. */
@@ -591,7 +605,10 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
     moveTo(rootName, false, "nearest");
   };
   const showMore = (parent: string) =>
-    setPages((current) => ({ ...current, [parent]: Math.ceil(limitOf(parent) / pageSize) + 1 }));
+    setPages((current) => ({
+      ...current,
+      [parent]: Math.ceil(limitOf(parent) / pageSize) + 1,
+    }));
 
   /* Copy. */
   const [announcement, setAnnouncement] = useState("");
@@ -600,7 +617,9 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
     try {
       await (writeText ?? writeClipboard)(text);
       setAnnouncement(
-        t(kind === "path" ? "Copied path: {p0}" : "Copied value: {p0}", { p0: row.id }),
+        t(kind === "path" ? "Copied path: {p0}" : "Copied value: {p0}", {
+          p0: row.id,
+        }),
       );
       onCopy?.({ kind, path: row.id, text });
     } catch (error) {
@@ -715,7 +734,10 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
       ? { duration: 0 }
       : {
           height: motionTokens.spring.smooth,
-          opacity: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] },
+          opacity: {
+            duration: motionTokens.duration.fast,
+            ease: [...motionTokens.ease.standard],
+          },
         };
 
   const describe = (row: Row) => {
@@ -861,7 +883,11 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                   data-active={isActive || undefined}
                   style={{ "--level": row.level - 1 } as CSSProperties}
                   initial={{ height: 0, opacity: 0, overflow: "hidden" }}
-                  animate={{ height: ROW, opacity: 1, transitionEnd: { overflow: "visible" } }}
+                  animate={{
+                    height: ROW,
+                    opacity: 1,
+                    transitionEnd: { overflow: "visible" },
+                  }}
                   exit={{ height: 0, opacity: 0, overflow: "hidden" }}
                   transition={rowTransition}
                   onFocus={(event) => {
@@ -890,7 +916,9 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                     {row.kind === "more" ? (
                       <span className={styles.more}>
                         <span className={styles.moreLabel}>
-                          {t("Show {p0} more", { p0: Math.min(pageSize, row.hidden ?? 0) })}
+                          {t("Show {p0} more", {
+                            p0: Math.min(pageSize, row.hidden ?? 0),
+                          })}
                         </span>
                         <span className={styles.muted}>{row.hidden} hidden</span>
                       </span>
@@ -994,12 +1022,13 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
 
       {showPath && activeRow ? (
         <div className={styles.pathBar}>
-          <code
-            className={styles.path}
-            title={activeRow.kind === "node" ? activeRow.id : (activeRow.parent ?? "")}
+          <OverflowTooltip
+            label={activeRow.kind === "node" ? activeRow.id : (activeRow.parent ?? "")}
           >
-            {activeRow.kind === "node" ? activeRow.id : activeRow.parent}
-          </code>
+            <code className={styles.path}>
+              {activeRow.kind === "node" ? activeRow.id : activeRow.parent}
+            </code>
+          </OverflowTooltip>
           <span className={styles.pathType}>
             {activeRow.kind === "node"
               ? isBranch(activeRow.type)

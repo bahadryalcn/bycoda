@@ -52,7 +52,11 @@ it("roves vertically across enabled commands and keeps one tab stop", () => {
   const key = (value: string) =>
     act(() =>
       document.activeElement!.dispatchEvent(
-        new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true }),
+        new KeyboardEvent("keydown", {
+          key: value,
+          bubbles: true,
+          cancelable: true,
+        }),
       ),
     );
   key("ArrowDown");
@@ -100,7 +104,7 @@ it("preserves pointer selections and exposes icon commands without hover", async
   expect(button.getAttribute("aria-label")).toBe("Copy selection");
   // The hint (name plus key caps) rides in the shared tooltip, not a native title.
   expect(button.title).toBe("");
-  expect(await tooltipText(button)).toBe("Copy selection (Ctrl+C)");
+  expect(await tooltipText(button)).toBe("Copy selectionCtrlC");
   act(() => button.click());
   expect(onSelect).toHaveBeenCalledOnce();
   expect(container.querySelectorAll('[role="toolbar"]')).toHaveLength(1);
@@ -116,7 +120,12 @@ it("hands a popup trigger to its owner while keeping roving focus and the group'
         label: "Message actions",
         iconOnly: true,
         items: [
-          { id: "copy", label: "Copy", icon: createElement("span", null, "C"), onSelect },
+          {
+            id: "copy",
+            label: "Copy",
+            icon: createElement("span", null, "C"),
+            onSelect,
+          },
           {
             id: "menu",
             label: "Handoff",
@@ -133,7 +142,12 @@ it("hands a popup trigger to its owner while keeping roving focus and the group'
                 onSelect: owner,
               }),
           },
-          { id: "last", label: "Last", icon: createElement("span", null, "L"), onSelect },
+          {
+            id: "last",
+            label: "Last",
+            icon: createElement("span", null, "L"),
+            onSelect,
+          },
         ],
       }),
     ),
@@ -152,7 +166,11 @@ it("hands a popup trigger to its owner while keeping roving focus and the group'
   act(() => buttons[0]!.focus());
   act(() => {
     buttons[0]!.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        bubbles: true,
+        cancelable: true,
+      }),
     );
   });
   expect(document.activeElement).toBe(trigger);
@@ -189,7 +207,14 @@ it("shows pending and result tones on the same icon-only item", () => {
         createElement(FloatingButtonGroup, {
           label: "Message actions",
           iconOnly: true,
-          items: [{ id: "copy", icon: createElement("span", null, "C"), onSelect, ...props }],
+          items: [
+            {
+              id: "copy",
+              icon: createElement("span", null, "C"),
+              onSelect,
+              ...props,
+            },
+          ],
         }),
       ),
     );

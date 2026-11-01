@@ -122,7 +122,7 @@ function CheckAnnotation({
       {annotation.path ? (
         <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-fill-subtle) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
           <FileTypeIcon name={annotation.path} isDir={false} />
-          <span title={location} className="min-w-0 flex-1 break-all">
+          <span className="min-w-0 flex-1 break-all">
             {location}
           </span>
           {fileUrl ? (

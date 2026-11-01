@@ -344,6 +344,7 @@ function FileRow({
         {...menuHandlers}
         type="button"
         tooltip={file.relative}
+        tooltipWhen="overflow"
         onClick={() => onOpenDiff(file.path, { sessionId, cwd })}
         className="w-full min-w-0 text-left"
       >

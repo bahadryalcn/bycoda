@@ -717,7 +717,8 @@ function PaneTreeComponent({
                       buttons?.[nextIndex]?.focus();
                     }}
                     onPointerDown={paneDragStartFor(id)}
-                    tooltip={sessionById.get(id)?.title || t("Session")}
+                    tooltip={sessionById.get(id)?.title || editorPanes.find((pane) => pane.id === id)?.files[0]?.path.split(/[\\/]/).pop() || t("Session")}
+                    tooltipWhen="overflow"
                   >
                     {sessionById.get(id)?.title ||
                       editorPanes

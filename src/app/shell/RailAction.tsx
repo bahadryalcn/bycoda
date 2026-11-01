@@ -38,6 +38,7 @@ export function RailAction({
   return (
     <Button
       tooltip={ariaLabel ?? label}
+      tooltipWhen={ariaLabel && ariaLabel !== label ? "always" : "overflow"}
       shortcut={shortcut}
       tooltipSide="right"
       selected={active}
@@ -95,6 +96,7 @@ export function RailAction({
         />
       ) : shortcut ? (
         <span
+          data-tooltip-shortcut=""
           aria-hidden
           className="shrink-0 text-ui-caption text-(--ui-text-secondary) @max-[200px]/rail:hidden"
         >
@@ -127,6 +129,7 @@ export function RailSearch({
   return (
     <Button
       tooltip={ariaLabel ?? label}
+      tooltipWhen={ariaLabel && ariaLabel !== label ? "always" : "overflow"}
       shortcut={shortcut}
       tooltipSide="right"
       data-rail-search
@@ -149,6 +152,7 @@ export function RailSearch({
       {shortcut ? (
         <span
           data-rail-search-shortcut
+          data-tooltip-shortcut=""
           aria-hidden
           className="shrink-0 text-ui-caption text-(--ui-text-secondary) @max-[200px]/rail:hidden"
         >

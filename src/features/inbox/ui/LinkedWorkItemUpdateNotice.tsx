@@ -258,6 +258,7 @@ export function LinkedWorkItemUpdateNotice({
             variant="ghost"
             type="button"
             tooltip={agentLabel}
+            tooltipWhen="overflow"
             className="min-w-0 flex-1 truncate"
             onClick={() => {
               onAcknowledge();
@@ -270,6 +271,7 @@ export function LinkedWorkItemUpdateNotice({
             variant="ghost"
             type="button"
             tooltip={openLabel}
+            tooltipWhen="overflow"
             className="min-w-0 flex-1 truncate"
             onClick={openActivity}
           >

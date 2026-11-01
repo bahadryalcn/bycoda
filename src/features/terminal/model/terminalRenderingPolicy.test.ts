@@ -15,7 +15,7 @@ const colors = {
 it("preserves a transparent canvas with the actual reference RGB for correction", () => {
   const policy = terminalRenderingPolicy({ ...colors, canvas: { resolved: true, color: "rgb(40, 50, 60)" } });
   expect(policy.background).toBe("rgba(40, 50, 60, 0)");
-  expect(policy.minimumContrastRatio).toBe(4.5);
+  expect(policy.minimumContrastRatio).toBe(7);
   expect(policy.cursorAccent).toBe("rgb(40, 50, 60)");
 });
 

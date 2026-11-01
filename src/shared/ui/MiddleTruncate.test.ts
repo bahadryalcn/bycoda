@@ -39,7 +39,10 @@ it("handles trailing separators, oversized segments and explicit tails", () => {
     head: "very-long-component-name",
     tail: ".test.tsx",
   });
-  expect(splitMiddle("abcdef", { tail: Number.NaN })).toEqual({ head: "abcdef", tail: "" });
+  expect(splitMiddle("abcdef", { tail: Number.NaN })).toEqual({
+    head: "abcdef",
+    tail: "",
+  });
 });
 
 it("never splits surrogate pairs or emoji sequences", () => {
@@ -63,7 +66,7 @@ it("exposes the exact value to assistive technology and tooltips, with decorativ
   try {
     await act(async () => root.render(createElement(MiddleTruncate, { className: "x" }, path)));
     const node = host.firstElementChild as HTMLElement;
-    expect(node.title).toBe(path);
+    expect(node.hasAttribute("title")).toBe(false);
     expect(node.classList.contains("x")).toBe(true);
     const [full, head, tail] = Array.from(node.children) as HTMLElement[];
     expect(full.textContent).toBe(path);
@@ -95,7 +98,7 @@ it("keeps a visible ellipsis and a shrinkable tail for long branch names", async
   try {
     await act(async () => root.render(createElement(MiddleTruncate, { mode: "text" }, branch)));
     const node = host.firstElementChild as HTMLElement;
-    expect(node.title).toBe(branch);
+    expect(node.hasAttribute("title")).toBe(false);
     const [full, head, tail] = Array.from(node.children) as HTMLElement[];
     expect(full.textContent).toBe(branch);
     // The head reserves room for "x..." so it can never collapse to nothing and hide the truncation.
@@ -106,7 +109,6 @@ it("keeps a visible ellipsis and a shrinkable tail for long branch names", async
     const [tailHead, tailEnd] = Array.from(tail.children) as HTMLElement[];
     expect(tailHead.textContent).toBe("head");
     expect(tailEnd.textContent).toBe("er-row");
-
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -120,8 +122,12 @@ it("does not reserve ellipsis room for a one or two character head", async () =>
   document.body.append(host);
   const root = createRoot(host);
   try {
-    await act(async () => root.render(createElement(MiddleTruncate, { mode: "text" }, "ab1234567890")));
-    const [, head, tail] = Array.from((host.firstElementChild as HTMLElement).children) as HTMLElement[];
+    await act(async () =>
+      root.render(createElement(MiddleTruncate, { mode: "text" }, "ab1234567890")),
+    );
+    const [, head, tail] = Array.from(
+      (host.firstElementChild as HTMLElement).children,
+    ) as HTMLElement[];
     expect(head.textContent).toBe("ab");
     expect(head.classList.length).toBe(1);
     expect(tail.textContent).toBe("1234567890");

@@ -369,7 +369,10 @@ export function FloatingButtonGroup({
     else if (outer) outer.current = node;
   };
 
-  const renderAction = (item: FloatingButtonGroupAction, trigger?: FloatingButtonGroupTriggerProps) => {
+  const renderAction = (
+    item: FloatingButtonGroupAction,
+    trigger?: FloatingButtonGroupTriggerProps,
+  ) => {
     const {
       id,
       label: itemLabel,
@@ -397,7 +400,9 @@ export function FloatingButtonGroup({
         selected={pressed}
         iconOnly={iconOnly}
         label={name}
-        tooltip={shortcut ? `${hint} (${shortcut})` : hint}
+        tooltip={hint}
+        tooltipWhen="overflow"
+        shortcut={shortcut}
         onMouseDown={preserveSelection ? (event) => event.preventDefault() : undefined}
         ref={(node) => setNode(id, node, trigger?.ref)}
         type="button"
@@ -488,9 +493,7 @@ export function FloatingButtonGroup({
           );
         if (!item.render) return renderAction(item);
         return (
-          <Fragment key={item.id}>
-            {item.render((trigger) => renderAction(item, trigger))}
-          </Fragment>
+          <Fragment key={item.id}>{item.render((trigger) => renderAction(item, trigger))}</Fragment>
         );
       })}
     </div>

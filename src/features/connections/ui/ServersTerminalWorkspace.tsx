@@ -413,6 +413,7 @@ export function ServersTerminalWorkspace({
                     fullWidth
                     className="min-w-0 flex-1"
                     tooltip={terminal.name}
+                    tooltipWhen="overflow"
                     role="tab"
                     id={`tab-${terminal.id}`}
                     aria-controls={`panel-${terminal.id}`}

@@ -24,6 +24,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - Reuse or extend a public adapter before adding a duplicate. Shared presentation owns size/tone/focus/disabled/loading; caller className owns placement.
 - Keep public props, ref/native form semantics, keyboard/IME/cursor/selection, free-entry distinctions and actual action permission callbacks.
 - Keep menus/overlays on the existing Popover/Modal/overlay routing; do not create a second stack, Escape handler or focus trap.
+- Do not repeat readable text in a tooltip. Use Button `tooltipWhen="overflow"`, Tooltip/useTooltip `when="overflow"` or `OverflowTooltip` for clipped/hidden labels; keep icon explanations, additional context, missing shortcuts and disabled reasons. OverflowTooltip composes onto one child without changing its DOM parent or ref.
 - Rows and inline actions retain distinct selection, pending/error, drag and action ownership. Hidden/hover presentation must remain operable by keyboard and touch.
 - Optional input observation cannot force blur, normalize drafts, commit IME or grant unrelated async work authority. Check the actual runtime contract when changing it.
 - Use semantic theme roles and density/motion settings; native trees, tabs, links and window controls retain their specialized semantics.

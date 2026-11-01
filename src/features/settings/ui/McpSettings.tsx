@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -656,9 +657,11 @@ ${query}`;
                 <ProviderIcon provider={server.provider} />
               </span>
               <div className={styles.identity}>
-                <div className={styles.name} title={server.name}>
-                  {server.name}
-                </div>
+                <OverflowTooltip label={server.name}>
+                  <div className={styles.name}>
+                    {server.name}
+                  </div>
+                </OverflowTooltip>
               </div>
               <Badge
                 className={styles.status}

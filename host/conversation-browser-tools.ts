@@ -9,8 +9,8 @@ const object = (properties: Record<string, unknown>) => ({
 });
 const point = {
   ...selection,
-  x: { type: "number", minimum: 0, maximum: 1279 },
-  y: { type: "number", minimum: 0, maximum: 719 },
+  x: { type: "number", minimum: 0, maximum: 2559 },
+  y: { type: "number", minimum: 0, maximum: 2159 },
 };
 
 export const BROWSER_ANNOTATION_TOOLS = {

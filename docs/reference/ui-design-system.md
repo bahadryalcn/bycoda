@@ -202,6 +202,18 @@ remain compatible; legacy aliases normalize at the public adapter boundary.
 Hover and keyboard hints, shortcut key caps and disabled reasons all go through the shared
 Tooltip (`tooltip`, `shortcut`, `tooltipDetails`, `disabledReason`); a native `title=` on an
 action is drift, and optional rich previews use HoverCard.
+Do not repeat a fully visible label in a hint. Remove plain duplicate hints;
+use `tooltipWhen="overflow"` on Button, `when="overflow"` on Tooltip/useTooltip,
+or `OverflowTooltip` for text that may be clipped or hidden in an icon-only mode.
+These measure the rendered control and descendants on interaction, including
+multiline clamps. Extra detail lines and missing shortcuts remain available;
+visible shortcut groups use ShortcutKeys or `data-tooltip-shortcut` on their text.
+Keep icon explanations, disabled reasons, full paths behind short filenames and
+precise times behind relative dates. Accessible names are independent of hints.
+OverflowTooltip composes trigger handlers onto its single child without adding a
+DOM wrapper, preserving direct-child layout/interaction selectors and refs.
+Put the hint on the focus-owning control for keyboard use. A parent hint owns
+full-text recovery for its descendants; nested overflow hints defer to it.
 Feature-wide migration and installed-application acceptance remain separate work.
 
 ```tsx

@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
@@ -128,9 +129,13 @@ export function GitGraphList({
 
   useEffect(() => {
     if (!scroller) return;
-    setViewport(scroller.clientHeight);
+    // Round up to whole rows so a resize re-renders on row boundaries, not on
+    // every pixel; the mounted range only changes per row anyway.
+    const measure = () =>
+      setViewport(Math.ceil(scroller.clientHeight / GRAPH_ROW_PX) * GRAPH_ROW_PX);
+    measure();
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => setViewport(scroller.clientHeight));
+    const observer = new ResizeObserver(measure);
     observer.observe(scroller);
     return () => observer.disconnect();
   }, [scroller]);
@@ -439,9 +444,11 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
           <span className={`${subjectClass(item)} pl-1`}>{commit.subject || commit.shortSha}</span>
         )}
         {workspace ? (
-          <span className={styles.author} title={commit.author}>
-            {commit.author}
-          </span>
+          <OverflowTooltip label={commit.author}>
+            <span className={styles.author}>
+              {commit.author}
+            </span>
+          </OverflowTooltip>
         ) : null}
         {!workspace ? (
           <span className={`flex min-w-0 items-center gap-1.5 pr-2 ${dim}`}>

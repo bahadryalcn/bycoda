@@ -132,7 +132,9 @@ export function monoFont(): string {
   const font = loadAppearancePreferences().terminalFont.trim();
   if (font) return `${JSON.stringify(font)}, monospace`;
   const fromCss = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim();
-  return fromCss || "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace";
+  // Chromium on Windows skips ui-monospace and lands on thin Consolas; Cascadia
+  // Mono ships with Windows 11 and is absent (skipped) elsewhere.
+  return `"Cascadia Mono", ${fromCss || "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace"}`;
 }
 
 function oscColors(scope: HTMLElement) {

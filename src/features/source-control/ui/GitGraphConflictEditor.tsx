@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -199,12 +200,13 @@ export function GitGraphConflictEditor({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
-        <span
-          title={relative}
-          className="min-w-0 flex-1 truncate text-ui-caption font-medium text-(--ui-tone-warning-fg)"
-        >
-          {relative}
-        </span>
+        <OverflowTooltip label={relative}>
+          <span
+            className="min-w-0 flex-1 truncate text-ui-caption font-medium text-(--ui-tone-warning-fg)"
+          >
+            {relative}
+          </span>
+        </OverflowTooltip>
         <Button
           variant="ghost"
           motion="none"

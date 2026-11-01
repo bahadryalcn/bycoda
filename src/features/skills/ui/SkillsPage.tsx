@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Alert } from "../../../shared/ui/Alert";
@@ -626,6 +627,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             aria-controls={previewOpen ? previewId : undefined}
             aria-expanded={selected}
             tooltip={skill.description || skill.name}
+            tooltipWhen={skill.description && skill.description !== skill.name ? "always" : "overflow"}
             disabled={saving}
             onClick={() => onPreview(skill, "name", machine)}
           >
@@ -882,10 +884,12 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             </p>
           </details>
         </div>
-        <footer className={styles.libraryFooter} title={cwd}>
-          <FolderOpen className="icon-sm" aria-hidden="true" />
-          <span className={styles.truncate}>{cwd}</span>
-        </footer>
+        <OverflowTooltip label={cwd}>
+          <footer className={styles.libraryFooter}>
+            <FolderOpen className="icon-sm" aria-hidden="true" />
+            <span className={styles.truncate}>{cwd}</span>
+          </footer>
+        </OverflowTooltip>
       </section>
       <div className={styles.workspace}>
         {adding ? (
@@ -942,7 +946,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                     : t("Project")}{" "}
                 · {previewSkill.source} · {previewMachine?.name ?? t("This computer")}
               </p>
-              <p className={styles.path} title={previewSkill.path}>
+              <p className={styles.path}>
                 {previewSkill.path}
               </p>
               {previewSkill.description ? (

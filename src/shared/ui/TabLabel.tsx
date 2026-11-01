@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { useT } from "../i18n";
 import { MiddleTruncate } from "./MiddleTruncate";
+import { OverflowTooltip } from "./Tooltip";
 
 export type TabLabelProps = {
   children: string;
@@ -53,14 +54,15 @@ export function TabLabel({
 
   const tooltip = overflow ? full : undefined;
   return (
-    <span
-      ref={ref}
-      title={tooltip}
-      data-overflow={overflow || undefined}
-      className={`tab-label min-w-0 truncate ${className}`}
-    >
-      {children}
-    </span>
+    <OverflowTooltip label={tooltip}>
+      <span
+        ref={ref}
+        data-overflow={overflow || undefined}
+        className={`tab-label min-w-0 truncate ${className}`}
+      >
+        {children}
+      </span>
+    </OverflowTooltip>
   );
 }
 

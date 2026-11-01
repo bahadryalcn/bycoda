@@ -131,7 +131,13 @@ import {
 } from "./transport/http/bulk";
 import { MobileTlsAuthority } from "./security/mobile-tls";
 import { JsonValueSchema, WS_LIMITS } from "../src/shared/model/host-contracts";
-import { McpHttp } from "./mcp-http";
+import { McpHttp, managedMcpCatalog, managedDiscoveryResult } from "./mcp-http";
+import {
+  ConversationPreviewWorkflow,
+  type ConversationPreviewInput,
+  type PreviewBrowserState,
+  type PreviewPresentation,
+} from "./conversation-preview";
 import { readHarnessSkill, searchHarnessSkills } from "./harness-skills";
 import { skillInvocationTokens } from "../src/features/skills/model/skillTokens";
 import { hostname, homedir } from "node:os";
@@ -465,8 +471,13 @@ export async function createHostServer(
   ) => {
     const entries: { id: string; workspaceId: string }[] = [];
     // The runtime relaxes only stale rewind journals when exact rewind is off.
-    const gated = kind === "mutation" || kind === "operation" ||
-      kind === "provider" || kind === "shell" || kind === "devServer" || kind === "editor";
+    const gated =
+      kind === "mutation" ||
+      kind === "operation" ||
+      kind === "provider" ||
+      kind === "shell" ||
+      kind === "devServer" ||
+      kind === "editor";
     try {
       for (const workspace of await managed.list()) {
         if (!inWorkspace(cwd, workspace.path)) continue;
@@ -592,6 +603,7 @@ export async function createHostServer(
     });
   const logMonitors = new RuntimeLogMonitors(browserRuntime.load, runtimeLogs);
   const sharedBrowser = new SharedBrowser(browserRuntime.load, Date.now, { runtimeLogs });
+  const conversationPreviews = new ConversationPreviewWorkflow();
   const devServers = new DevServersService({
     runtimeLogs,
     startActivity: (cwd, ownerId) => startWorkspaceActivity(cwd, "devServer", ownerId),
@@ -1091,7 +1103,8 @@ export async function createHostServer(
         continue;
       const current = runLeases.holder(sessionId);
       if (current && current.holder !== holder) answers[sessionId] = null;
-      else if (current) answers[sessionId] = runLeases.renew(sessionId, holder, Number(epoch)) ?? null;
+      else if (current)
+        answers[sessionId] = runLeases.renew(sessionId, holder, Number(epoch)) ?? null;
       else {
         try {
           const grant = (hostRunning: boolean) =>
@@ -1125,10 +1138,15 @@ export async function createHostServer(
     return answers;
   };
   /** Renews the drain leases a desktop reports on its heartbeat. */
-  const queueLeaseAnswers = new Map<string, {
-    lease: import("../src/features/connections/model/sharedQueue").DrainLease;
-    version: number; blocked: boolean; checkedAt: number;
-  }>();
+  const queueLeaseAnswers = new Map<
+    string,
+    {
+      lease: import("../src/features/connections/model/sharedQueue").DrainLease;
+      version: number;
+      blocked: boolean;
+      checkedAt: number;
+    }
+  >();
   const renewQueueLeases = async (params: Record<string, unknown>) => {
     if (!Array.isArray(params.queueLeases) || typeof params.clientId !== "string") return undefined;
     const holder = `desktop:${params.clientId}`;
@@ -1145,8 +1163,13 @@ export async function createHostServer(
       if (typeof sessionId !== "string" || !Number.isSafeInteger(epoch)) continue;
       const key = JSON.stringify([holder, sessionId, epoch]);
       const cached = queueLeaseAnswers.get(key);
-      if (cached && cached.version === engine.store.db.dataMutationVersion &&
-          cached.blocked === (blocked === true) && Date.now() - cached.checkedAt < 5000 && cached.lease.expiresAt > Date.now() + 5000) {
+      if (
+        cached &&
+        cached.version === engine.store.db.dataMutationVersion &&
+        cached.blocked === (blocked === true) &&
+        Date.now() - cached.checkedAt < 5000 &&
+        cached.lease.expiresAt > Date.now() + 5000
+      ) {
         leases[sessionId] = await sessionQueues.renew(sessionId, holder, Number(epoch));
         continue;
       }
@@ -1167,7 +1190,8 @@ export async function createHostServer(
           checkedAt: Date.now(),
         });
       else queueLeaseAnswers.delete(key);
-      while (queueLeaseAnswers.size > 1024) queueLeaseAnswers.delete(queueLeaseAnswers.keys().next().value!);
+      while (queueLeaseAnswers.size > 1024)
+        queueLeaseAnswers.delete(queueLeaseAnswers.keys().next().value!);
     }
     return leases;
   };
@@ -1869,6 +1893,8 @@ export async function createHostServer(
         "resources.diagnostics",
         "browser.shared.setup",
         "browser.shared",
+        "browser.shared.viewport.v1",
+        "conversation.tools.management.v1",
         "runtime.logs",
         "conversation.tools",
         "runtime.logs.monitors",
@@ -2411,7 +2437,9 @@ export async function createHostServer(
               !(await desktop.projectCwdAsync(target.sessionId))
             )
               return null;
-            const projectRow = await engine.store.db.prepare("SELECT project_id FROM session_state WHERE id=?").get(target.sessionId);
+            const projectRow = await engine.store.db
+              .prepare("SELECT project_id FROM session_state WHERE id=?")
+              .get(target.sessionId);
             const projectId = projectRow ? String(projectRow.project_id) : undefined;
             if (projectId) {
               streamProjects.set(target.sessionId, projectId);
@@ -2458,7 +2486,8 @@ export async function createHostServer(
       ...targets.flatMap((target) => (target.kind === "project" ? [target.projectId] : [])),
       ...streamProjects.values(),
     ]);
-    for (const id of streamProjectVersions.keys()) if (!projects.has(id)) streamProjectVersions.delete(id);
+    for (const id of streamProjectVersions.keys())
+      if (!projects.has(id)) streamProjectVersions.delete(id);
   };
   let unattributedVersion = engine.store.unattributedChangeVersion;
   const unsubscribeChanges = engine.store.subscribeChanges(() => {
@@ -2794,9 +2823,7 @@ export async function createHostServer(
                             model: session.model,
                             busy: session.status === "running",
                             hasDraft: !!session.draft,
-                            ...(locator
-                              ? localSessionLinkFields(locator, session.title)
-                              : {}),
+                            ...(locator ? localSessionLinkFields(locator, session.title) : {}),
                           };
                         }),
                       ),
@@ -2811,7 +2838,8 @@ export async function createHostServer(
                       await localSessionReference(target.session.id),
                     );
                   }
-                  if (!(await scopedDeviceAuthorized())) throw new Error("Session authority revoked.");
+                  if (!(await scopedDeviceAuthorized()))
+                    throw new Error("Session authority revoked.");
                 } else if (action === "skills.search")
                   result = searchHarnessSkills(
                     sessionWorkCwd((await featureMeta(boundPrincipal.sessionId)).session),
@@ -2921,6 +2949,8 @@ export async function createHostServer(
                     projectId,
                     tools: conversationToolCatalog(),
                   };
+                else if (["tools.search", "tools.describe", "tools.status"].includes(action))
+                  result = managedDiscoveryResult(action, args, managedMcpCatalog());
                 else if (
                   action.startsWith("ui.") ||
                   action.startsWith("servers.") ||
@@ -2995,6 +3025,31 @@ export async function createHostServer(
                     String(args.deviceId),
                     args.action as DeviceAction,
                     scopedDeviceEffect,
+                  );
+                else if (action === "browser.preview")
+                  result = await conversationPreviews.run(
+                    args as unknown as ConversationPreviewInput,
+                    { projectId, sessionId: boundPrincipal.sessionId, principalId: tokenHash },
+                    {
+                      authorize: async () => {
+                        if (!(await conversationAccess.principalForToken(token)))
+                          throw new Error("Session authority revoked.");
+                      },
+                      browser: async (method, params) =>
+                        (await sharedBrowser.dispatchForSession(
+                          method,
+                          { ...params, projectId, sessionId: boundPrincipal.sessionId },
+                          voiceBrowserOwner ?? token,
+                        )) as unknown as PreviewBrowserState,
+                      present: async () =>
+                        (await conversationDesktop.call(
+                          "ui.tools.open",
+                          { tab: "browser", projectHost: true },
+                          project.cwd,
+                          boundPrincipal,
+                          async () => !!(await conversationAccess.principalForToken(token)),
+                        )) as PreviewPresentation,
+                    },
                   );
                 else if (action.startsWith("browser."))
                   result = await sharedBrowser.dispatchForSession(
@@ -3940,6 +3995,7 @@ export async function createHostServer(
                 case "browser.claim":
                 case "browser.release":
                 case "browser.open":
+                case "browser.resize":
                 case "browser.frame":
                 case "browser.input":
                 case "browser.close":
@@ -3967,9 +4023,7 @@ export async function createHostServer(
                 case "browser.annotation.cancel": {
                   const projectId = String(params.projectId ?? "");
                   await engine.store.project(projectId);
-                  if (
-                    (await featureMeta(String(params.sessionId ?? ""))).projectId !== projectId
-                  )
+                  if ((await featureMeta(String(params.sessionId ?? ""))).projectId !== projectId)
                     throw new Error("Conversation belongs to another project");
                   result = await sharedBrowser.dispatch(input.method, params, token);
                   break;
@@ -4400,7 +4454,8 @@ export async function createHostServer(
                         (await desktop.stampAsync(sessionId))?.running ||
                         // A stored "running" with no live Host run is stale, not a blocker.
                         (engine.hasActiveRun(sessionId) &&
-                          (await engine.store.sessionStateMetadata(sessionId))?.status === "running")
+                          (await engine.store.sessionStateMetadata(sessionId))?.status ===
+                            "running")
                       )
                         throw new Error("Stop this session before deleting it");
                       await desktopDelete.request(
@@ -4515,19 +4570,23 @@ export async function createHostServer(
                   // already stores is known by one indexed read; only a desktop-only one
                   // needs the desktop database, whose notes worker may be busy for long.
                   await queueSessionKnown(id);
-                  result = await engine.withRetiredProviderWriter(id, () => engine.store.db.scope(async () => {
-                    if (!(await engine.store.authenticated(token)))
-                      throw new Error("Owner authority revoked; your message was not sent.");
-                    const hostRunning = writerTransfers.has(id) || (await hostRuns(id));
-                    return {
-                      lease: runLeases.acquire(id, holder, () => {
-                        // The host's own turn, or another window's, keeps it from being granted.
-                        if (hostRunning) return "host";
-                        const busy = desktop.live.busyClient(id);
-                        return busy && `desktop:${busy}` !== holder ? `desktop:${busy}` : undefined;
-                      }),
-                    };
-                  }));
+                  result = await engine.withRetiredProviderWriter(id, () =>
+                    engine.store.db.scope(async () => {
+                      if (!(await engine.store.authenticated(token)))
+                        throw new Error("Owner authority revoked; your message was not sent.");
+                      const hostRunning = writerTransfers.has(id) || (await hostRuns(id));
+                      return {
+                        lease: runLeases.acquire(id, holder, () => {
+                          // The host's own turn, or another window's, keeps it from being granted.
+                          if (hostRunning) return "host";
+                          const busy = desktop.live.busyClient(id);
+                          return busy && `desktop:${busy}` !== holder
+                            ? `desktop:${busy}`
+                            : undefined;
+                        }),
+                      };
+                    }),
+                  );
                   break;
                 }
                 case "sessions.queue.get":
@@ -5275,6 +5334,7 @@ export async function createHostServer(
                   workspace.cancelSearches(tokenHash);
                   diagnostics.revoke(token);
                   sharedBrowser.revoke(token);
+                  conversationPreviews.revoke(tokenHash);
                   // Only the caller's own credential. Sessions and other devices
                   // are unaffected; the host keeps running.
                   result = {
@@ -5544,6 +5604,7 @@ export async function createHostServer(
       drain(async () => await devicePreviews.dispose());
       drain(async () => await deviceHost.dispose());
       drain(async () => await sharedBrowser.close());
+      drain(() => conversationPreviews.close());
       drain(async () => await logMonitors.close());
       drain(async () => await tunnels.close());
       drain(async () => await desktop.closeAsync());

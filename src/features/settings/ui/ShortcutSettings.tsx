@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -411,7 +412,11 @@ function KeybindingSettingsRow({
           {modified ? <span className={styles.modified}>{t("Modified")}</span> : null}
         </span>
       }
-      scope={row.when === "Always" ? undefined : <span className={styles.context} title={t("When: {p0}", { p0: t(row.when) })}>{t("When: {p0}", { p0: t(row.when) })}</span>}
+      scope={row.when === "Always" ? undefined : (
+        <OverflowTooltip label={t("When: {p0}", { p0: t(row.when) })}>
+          <span className={styles.context}>{t("When: {p0}", { p0: t(row.when) })}</span>
+        </OverflowTooltip>
+      )}
       descriptionVisible={false}
       description={
         modified

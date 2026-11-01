@@ -9,7 +9,7 @@ import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/A
 import { Button } from "../../../shared/ui/Button";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { Minus, Plus } from "../../../shared/ui/icons";
+import { Minus, Plus, Undo2 } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { relativeDirname as dirname } from "../../../shared/lib/paths";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
@@ -62,7 +62,12 @@ export const ChangeRow = memo(function ChangeRow({
   const tree = depth !== undefined;
   const dir = tree ? "" : dirname(file.relative);
   const canOpen = file.status !== "deleted";
-  const { menu, openFrom, isOpen: menuOpen, ...menuHandlers } = useChangedFileMenu({
+  const {
+    menu,
+    openFrom,
+    isOpen: menuOpen,
+    ...menuHandlers
+  } = useChangedFileMenu({
     languageDomain: "git",
     path: file.path,
     relative: file.relative,
@@ -132,6 +137,7 @@ export const ChangeRow = memo(function ChangeRow({
           motion="none"
           type="button"
           aria-label={file.relative}
+          title={file.relative}
           data-git-file={file.path}
           onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
             event.currentTarget.focus({ preventScroll: true });
@@ -147,42 +153,58 @@ export const ChangeRow = memo(function ChangeRow({
         >
           {tree ? <span className="size-4 shrink-0" /> : null}
           <FileTypeIcon name={name} isDir={false} />
-          <span className="grid min-w-0 flex-1 grid-cols-2 items-center gap-1.5">
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
             <span
-              className={`min-w-0 truncate ${collision && dir ? "text-ui-caption text-(--ui-text-secondary)" : "max-w-full shrink text-ui-secondary font-medium"} ${
+              className={`min-w-0 max-w-full shrink-0 truncate ${collision && dir ? "text-ui-caption text-(--ui-text-secondary)" : "text-ui-secondary font-medium"} ${
                 file.status === "deleted" ? "line-through" : ""
               }`}
             >
               {name}
             </span>
             {dir ? (
-              <MiddleTruncate mode="path" title={false} className={`min-w-0 flex-1 text-ui-caption ${collision ? "font-medium text-content" : "text-(--ui-text-secondary)"}`}>
+              <MiddleTruncate
+                mode="path"
+                title={false}
+                className={`min-w-0 flex-1 text-ui-caption ${collision ? "font-medium text-content" : "text-(--ui-text-secondary)"}`}
+              >
                 {dir}
               </MiddleTruncate>
             ) : null}
           </span>
         </Button>
-        {(
+        {
           <span
-            className="hidden w-[12ch] shrink-0 grid-cols-2 items-center gap-1 text-right text-ui-micro font-medium tabular-nums @min-[22rem]/changes:grid"
+            className="flex shrink-0 items-center gap-1.5 text-ui-micro font-medium tabular-nums"
             title={t("{p0} lines added, {p1} lines removed", {
               p0: file.additions,
               p1: file.deletions,
             })}
           >
-            <span className="text-diff-add-fg">{file.additions > 0 ? `+${file.additions}` : ""}</span>
-            <span className="text-diff-del-fg">{file.deletions > 0 ? `-${file.deletions}` : ""}</span>
+            {file.additions > 0 ? (
+              <span className="text-diff-add-fg">+{file.additions}</span>
+            ) : null}
+            {file.deletions > 0 ? (
+              <span className="text-diff-del-fg">-{file.deletions}</span>
+            ) : null}
           </span>
-        )}
+        }
         <span
           title={statusLabel(file.status)}
           className={`w-3.5 shrink-0 text-center font-mono text-ui-micro font-semibold ${statusColor(file.status)}`}
         >
           {statusLetter(file.status)}
         </span>
-        {/* Fixed-width slots so the row never shifts. Stage/unstage is the frequent action and stays
-            direct; More opens the same menu as right-click and the context-menu key (discard, open,
-            copy, reveal) for touch and pointer users. Both reveal on hover, focus and selection. */}
+        {/* Reserve action slots so hover/focus never shifts the file name or counts.
+            Discard shares the menu's selection scope and confirmation path. */}
+        {kind === "unstaged" ? (
+          <div className="flex size-5 shrink-0 items-center justify-center">
+            {!busy ? (
+              <InlineAction label={t("Discard Changes")} onClick={() => perform("discard")}>
+                <Undo2 className="icon-sm" strokeWidth={1.75} />
+              </InlineAction>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex size-5 shrink-0 items-center justify-center">
           {busy ? (
             <WorkingIndicator label={t("Working")} />
@@ -195,7 +217,11 @@ export const ChangeRow = memo(function ChangeRow({
               <Minus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
           ) : (
-            <InlineAction label={t("Stage Changes")} disabled={busy} onClick={() => perform("stage")}>
+            <InlineAction
+              label={t("Stage Changes")}
+              disabled={busy}
+              onClick={() => perform("stage")}
+            >
               <Plus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
           )}

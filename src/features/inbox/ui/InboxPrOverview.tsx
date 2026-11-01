@@ -190,6 +190,7 @@ export function InboxPrChangesGlance({
                   variant="ghost"
                   type="button"
                   tooltip={file.path}
+                  tooltipWhen="overflow"
                   onClick={() => onOpenFile(file.path)}
                   align="start"
                   className="w-full min-w-0"

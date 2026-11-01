@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import {
   clampUsedPercent,
@@ -35,13 +36,14 @@ export function AccountStatusLabel({
   return (
     <span
       className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}
-      title={status.detail ? `${status.label} · ${status.detail}` : status.label}
     >
       <Badge tone={STATUS_TONE[status.tone]} size="sm">
         {status.label}
       </Badge>
       {status.detail ? (
-        <span className="min-w-0 truncate text-[var(--ui-text-muted)]">{status.detail}</span>
+        <OverflowTooltip label={status.detail}>
+          <span className="min-w-0 truncate text-[var(--ui-text-muted)]">{status.detail}</span>
+        </OverflowTooltip>
       ) : null}
     </span>
   );

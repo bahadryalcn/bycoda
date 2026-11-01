@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Folder, RotateCcw, Save } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
@@ -1375,9 +1376,11 @@ export function FileEditor({
       <footer
         className={`flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 border-t border-stroke px-2.5 text-ui-micro text-[var(--ui-text-muted)] ${saveState.status === "error" ? "flex-wrap" : ""}`}
       >
-        <span className="min-w-0 flex-1 truncate font-mono" title={path}>
-          {relativePath}
-        </span>
+        <Tooltip label={path} when={path === relativePath ? "overflow" : "always"}>
+          <span className="min-w-0 flex-1 truncate font-mono">
+            {relativePath}
+          </span>
+        </Tooltip>
         {html ? (
           <Button
             size="sm"

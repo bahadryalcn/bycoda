@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
@@ -60,13 +61,14 @@ export function EditorConflictBar({
           </span>
           <div className="flex items-center gap-1">
             {fileNote ? (
-              <span
-                className="mr-1 truncate text-[var(--ui-text-secondary)]"
-                role="status"
-                title={fileNote}
-              >
-                {fileNote}
-              </span>
+              <OverflowTooltip label={fileNote}>
+                <span
+                  className="mr-1 truncate text-[var(--ui-text-secondary)]"
+                  role="status"
+                >
+                  {fileNote}
+                </span>
+              </OverflowTooltip>
             ) : null}
             {nextFile}
             <Button
@@ -103,24 +105,27 @@ export function EditorConflictBar({
         </>
       ) : (
         <>
-          <span className="min-w-0 truncate text-[var(--ui-text-secondary)]" role="status">
-            {error ? (
-              <span className="text-(--ui-tone-danger-fg)" title={error}>
-                {error}
-              </span>
-            ) : (
-              t("All conflicts resolved")
-            )}
-          </span>
+          <OverflowTooltip label={error}>
+            <span className="min-w-0 truncate text-[var(--ui-text-secondary)]" role="status">
+              {error ? (
+                <span className="text-(--ui-tone-danger-fg)">
+                  {error}
+                </span>
+              ) : (
+                t("All conflicts resolved")
+              )}
+            </span>
+          </OverflowTooltip>
           <div className="flex shrink-0 items-center gap-1">
             {fileNote ? (
-              <span
-                className="truncate text-[var(--ui-text-secondary)]"
-                role="status"
-                title={fileNote}
-              >
-                {fileNote}
-              </span>
+              <OverflowTooltip label={fileNote}>
+                <span
+                  className="truncate text-[var(--ui-text-secondary)]"
+                  role="status"
+                >
+                  {fileNote}
+                </span>
+              </OverflowTooltip>
             ) : null}
             {nextFile}
             <Button

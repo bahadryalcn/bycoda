@@ -5,7 +5,7 @@ import {
 } from "../../settings/model/appearancePreferences";
 import { StatusBadge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t } from "../../../shared/i18n";
 import type { SshEndpoint } from "../model/serverInventory";
 import styles from "./ServerTerminalSession.module.css";
@@ -54,9 +54,9 @@ export function ServerTerminalSession({
     <div className={styles.session} data-server-terminal-session>
       <div className={styles.toolbar}>
         <div className={styles.identity}>
-          <Tooltip label={name ?? address}>
+          <OverflowTooltip label={name ?? address}>
             <span className={styles.address}>{name ?? address}</span>
-          </Tooltip>
+          </OverflowTooltip>
           <span className="shrink-0 text-ui-caption text-(--ui-text-muted)" role="status">
             {lifecycle === "opened-on-computer" ? (
               <StatusBadge status="running" />

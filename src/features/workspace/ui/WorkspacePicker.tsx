@@ -152,7 +152,7 @@ export function WorkspaceIdentity({ worktree }: { worktree: boolean }) {
   const Icon = worktree ? FolderTree : Folder;
   const label = worktree ? "Worktree" : "Current checkout";
   return (
-    <Tooltip label={t("Workspace: {p0}", { p0: label })}>
+    <Tooltip label={t(label)} when="overflow">
       <div
         aria-label={t("Workspace {p0}", { p0: label })}
         className="flex h-6 min-w-0 shrink-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)"

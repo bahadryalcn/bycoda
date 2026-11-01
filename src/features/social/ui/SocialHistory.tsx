@@ -367,7 +367,8 @@ export function JobHistory({
               return <article key={job.id} className="social-history-record min-w-0" data-status={job.status}>
                 <Button variant="item" layout="stacked" selected={selected?.id === job.id}
                   aria-current={selected?.id === job.id ? "true" : undefined}
-                  tooltip={`${jobKinds[job.kind]} · ${title}`} onClick={() => setSelectedId(job.id)} className="w-full min-w-0">
+                  tooltip={title} tooltipWhen="overflow"
+                  tooltipDetails={job.payload.text && title !== jobKinds[job.kind] ? [jobKinds[job.kind]] : undefined} onClick={() => setSelectedId(job.id)} className="w-full min-w-0">
                   <span className="line-clamp-1 min-w-0 text-ui-secondary font-medium">{title}</span>
                   <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-caption text-(--ui-text-secondary)">{job.payload.text || jobKinds[job.kind]}</span>
                   <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-micro text-(--ui-text-secondary)">

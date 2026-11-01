@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { PasswordField } from "../../../shared/ui/PasswordField";
@@ -312,19 +313,21 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
             className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-(--ui-tone-neutral-border) px-3 py-2 last:border-b-0"
           >
             <div className="min-w-0 flex-1">
-              <div
-                className="truncate text-ui-caption font-medium text-content"
-                title={config.name}
-              >
-                {config.name}
-              </div>
-              <div
-                className="truncate text-ui-caption text-(--ui-text-secondary)"
-                title={config.command}
-              >
-                {config.command} · {config.envKeys.length}
-                {t(" environment values")}
-              </div>
+              <OverflowTooltip label={config.name}>
+                <div
+                  className="truncate text-ui-caption font-medium text-content"
+                >
+                  {config.name}
+                </div>
+              </OverflowTooltip>
+              <OverflowTooltip label={config.command}>
+                <div
+                  className="truncate text-ui-caption text-(--ui-text-secondary)"
+                >
+                  {config.command} · {config.envKeys.length}
+                  {t(" environment values")}
+                </div>
+              </OverflowTooltip>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               <Button
@@ -564,13 +567,14 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                     className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2"
                   >
                     <div className="min-w-0 flex-1">
-                      <div
-                        className="truncate text-ui-caption font-medium text-content"
-                        title={`${entry.name} ${entry.version}`}
-                      >
-                        {entry.name}{" "}
-                        <span className="text-(--ui-text-secondary)">{entry.version}</span>
-                      </div>
+                      <OverflowTooltip label={`${entry.name} ${entry.version}`}>
+                        <div
+                          className="truncate text-ui-caption font-medium text-content"
+                        >
+                          {entry.name}{" "}
+                          <span className="text-(--ui-text-secondary)">{entry.version}</span>
+                        </div>
+                      </OverflowTooltip>
                       <p className="mt-0.5 text-ui-caption leading-snug text-(--ui-text-secondary)">
                         {entry.supported
                           ? entry.description

@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -35,9 +36,11 @@ export function ProjectIconPicker({
         />
         <div className="min-w-0 flex-1">
           <p className="text-ui-micro text-(--ui-text-secondary)">{t("Project icon")}</p>
-          <p className="truncate text-ui-caption text-[var(--color-content)]" title={selected.label}>
-            {selected.label}
-          </p>
+          <OverflowTooltip label={selected.label}>
+            <p className="truncate text-ui-caption text-[var(--color-content)]">
+              {selected.label}
+            </p>
+          </OverflowTooltip>
         </div>
         <Button
           variant="ghost"

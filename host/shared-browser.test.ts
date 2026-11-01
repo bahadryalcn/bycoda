@@ -3,6 +3,81 @@ import { EventEmitter } from "node:events";
 import { SharedBrowser, sharedBrowserUrl, type BrowserLoader } from "./shared-browser";
 import { RuntimeLogsService } from "./runtime-logs";
 
+it("resizes the owned session to390px, reports real frame dimensions and bounds pointer input", async () => {
+  const page = {
+    goto: vi.fn(),
+    url: () => "http://localhost:3000/",
+    setViewportSize: vi.fn(async () => {}),
+    screenshot: vi.fn(async () => Buffer.from("mobile-frame")),
+    mouse: { click: vi.fn(), wheel: vi.fn() },
+    keyboard: { type: vi.fn(), press: vi.fn() },
+  };
+  const loader: BrowserLoader = async () => ({
+    chromium: {
+      launch: async () => ({
+        newContext: async () => ({ newPage: async () => page }),
+        close: vi.fn(),
+      }),
+    },
+  });
+  const browser = new SharedBrowser(loader);
+  try {
+    const context = { projectId: "project", sessionId: "session" };
+    const claim = await browser.dispatchForSession("browser.claim", context, "agent");
+    const params = { ...context, leaseId: claim.leaseId };
+    await browser.dispatchForSession("browser.open", { ...params, url: page.url() }, "agent");
+    const original = await browser.dispatchForSession("browser.status", context, "agent");
+    const resized = await browser.dispatchForSession(
+      "browser.resize",
+      { ...params, width: 390, height: 844 },
+      "agent",
+    );
+    expect(resized.viewport).toEqual({ width: 390, height: 844 });
+    expect(resized.navigationId).not.toBe(original.navigationId);
+    expect(page.setViewportSize).toHaveBeenCalledWith({ width: 390, height: 844 });
+    expect(await browser.dispatchForSession("browser.frame", params, "agent")).toMatchObject({
+      width: 390,
+      height: 844,
+    });
+    await browser.dispatchForSession(
+      "browser.input",
+      { ...params, kind: "click", x: 389, y: 843 },
+      "agent",
+    );
+    expect(page.mouse.click).toHaveBeenCalledWith(389, 843);
+    await expect(
+      browser.dispatchForSession(
+        "browser.input",
+        { ...params, kind: "click", x: 390, y: 844 },
+        "agent",
+      ),
+    ).rejects.toThrow("position");
+    await expect(
+      browser.dispatchForSession(
+        "browser.resize",
+        { ...params, sessionId: "other", width: 390, height: 844 },
+        "agent",
+      ),
+    ).rejects.toThrow("this session");
+    await expect(
+      browser.dispatchForSession("browser.resize", { ...params, width: 0, height: 844 }, "agent"),
+    ).rejects.toThrow("dimensions");
+    await expect(
+      browser.dispatchForSession(
+        "browser.resize",
+        { ...params, width: 390.5, height: 844 },
+        "agent",
+      ),
+    ).rejects.toThrow("dimensions");
+  } finally {
+    await browser.close();
+  }
+  expect((await browser.dispatch("browser.status", {}, "agent")).viewport).toEqual({
+    width: 1280,
+    height: 720,
+  });
+});
+
 it("lets the owner explicitly take over control with a fresh lease and rejects the old controller", async () => {
   const browser = new SharedBrowser(undefined, () => 1000);
   const agent = await browser.dispatchForSession("browser.claim", {}, "agent");

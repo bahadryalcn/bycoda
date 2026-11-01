@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -109,10 +110,11 @@ export function TaskOwnerNotices({ task }: { task: HostTask }) {
               {rows.map((notice) => (
                 <li
                   key={notice.id}
-                  title={notice.message}
-                  className="line-clamp-2 break-words text-(--ui-text-secondary)"
+                  className="text-(--ui-text-secondary)"
                 >
-                  {notice.message}
+                  <OverflowTooltip label={notice.message}>
+                    <span className="line-clamp-2 break-words">{notice.message}</span>
+                  </OverflowTooltip>
                 </li>
               ))}
             </ul>

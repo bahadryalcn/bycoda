@@ -131,6 +131,7 @@ function LiveBackgroundTile({
       aria-checked={selected}
       tabIndex={tabStop ? 0 : -1}
       tooltip={label}
+      tooltipWhen="overflow"
       onClick={onSelect}
       onKeyDown={onKeyDown}
       className="flex min-w-0 flex-col gap-1"

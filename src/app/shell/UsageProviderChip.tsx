@@ -330,6 +330,7 @@ function UsageProviderDetails({
               variant="tab"
               aria-pressed={account.id === detailAccountId}
               tooltip={account.label}
+              tooltipWhen="overflow"
               className="min-w-0 max-w-full gap-1.5"
               onClick={() => {
                 setResetAction("idle");

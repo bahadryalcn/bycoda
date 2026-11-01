@@ -32,6 +32,44 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("renders a390px browser frame without stretching its coordinate system", async () => {
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
+    open: true,
+    url: "http://localhost:3000/",
+    controlling: true,
+    leaseId: "lease",
+    leaseExpiresAt: Date.now() + 30_000,
+    viewport: { width: 390, height: 844 },
+    navigationId: "mobile",
+    ...(method === "browser.frame"
+      ? { width: 390, height: 844, mimeType: "image/jpeg", data: "mobile" }
+      : {}),
+  }));
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", sessionId: "session" })),
+  );
+  const image = container.querySelector<HTMLImageElement>(".host-browser-frame")!;
+  expect(image).not.toBeNull();
+  const preview = container.querySelector<HTMLElement>(".host-browser-preview")!;
+  expect(preview.style.getPropertyValue("--host-browser-width")).toBe("390px");
+  expect(Number(preview.style.getPropertyValue("--host-browser-aspect"))).toBeCloseTo(390 / 844);
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+    left: 10,
+    top: 20,
+    width: 195,
+    height: 422,
+  } as DOMRect);
+  await act(async () =>
+    image.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 107.5, clientY: 231 })),
+  );
+  expect(hostFeatureRequest).toHaveBeenCalledWith("/project", "browser.shared", "browser.input", {
+    kind: "click",
+    x: 195,
+    y: 422,
+    leaseId: "lease",
+  });
+});
+
 it("opens an explicitly selected preview URL on the owning host after obtaining a lease", async () => {
   vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
     open: method === "browser.open" || method === "browser.frame",

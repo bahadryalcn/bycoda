@@ -46,6 +46,8 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
    *  `title`). An explicit `title` takes precedence; `title=""` means no tooltip at all, for a
    *  Button that an outer `Tooltip` already describes. Icon-only buttons fall back to `label`. */
   tooltip?: string;
+  /** Show repeated text only when clipped/hidden. Extra details and missing shortcuts stay available. */
+  tooltipWhen?: "always" | "overflow";
   /** Muted lines under the tooltip title (path, counts, state). */
   tooltipDetails?: readonly ReactNode[];
   /** Tooltip placement. Default `bottom`. */
@@ -138,6 +140,7 @@ export function Button({
   iconOnly = false,
   label,
   tooltip,
+  tooltipWhen = "always",
   tooltipDetails,
   tooltipSide = "bottom",
   tooltipAlign,
@@ -282,6 +285,7 @@ export function Button({
       : tooltipDetails;
   const hintShortcut = suppressed ? null : shortcut;
   const hint = useTooltip({
+    when: tooltipWhen,
     label: hintLabel,
     details: hintDetails,
     shortcut: hintShortcut,
@@ -305,6 +309,7 @@ export function Button({
   };
   const attributes = {
     ...props,
+    "data-tooltip-owner": hintLabel || hintShortcut || hintDetails?.length ? "" : undefined,
     type,
     // Pending is already guarded and aria-disabled. Keep the initiating control
     // focusable even when its owner also passes disabled={pending}; the same holds for a

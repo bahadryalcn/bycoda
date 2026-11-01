@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "./Tooltip";
 import { t, useT } from "../i18n";
 import {
   useEffect,
@@ -295,7 +296,7 @@ const OptionRow = memo(function OptionRow({
   onPick: (value: string) => void;
   onHover: (index: number) => void;
 }) {
-  const title = option.description ? `${option.label} - ${option.description}` : option.label;
+  const title = option.description ? `${option.label} ${option.description}` : option.label;
   return (
     <ComboboxItem
       data-value={option.value}
@@ -575,7 +576,9 @@ function SearchableSelectMenu({
   const { tooltip: triggerTooltip, ...triggerDomProps } = triggerProps ?? {};
   const tooltipSource = tooltipProp ?? triggerTooltip;
   const tooltipContent: TooltipContent =
-    typeof tooltipSource === "string" ? { label: tooltipSource } : (tooltipSource ?? {});
+    typeof tooltipSource === "string"
+      ? { label: tooltipSource }
+      : (tooltipSource ?? { label: selectedLabel, when: "overflow" });
   const hint = useTooltip({
     ...tooltipContent,
     label: open ? undefined : tooltipContent.label,
@@ -684,7 +687,6 @@ function SearchableSelectMenu({
           <span
             className={`min-w-0 truncate ${variant === "panel" ? "flex-1 text-right" : compact ? "" : "flex-1"} ${framed || !selectedLabel ? "" : "text-content"}`}
             data-placeholder={selectedLabel ? undefined : ""}
-            title={selectedLabel}
           >
             <SelectValue value={value} label={selectedLabel ?? placeholder} />
           </span>
@@ -713,23 +715,21 @@ function SearchableSelectMenu({
             const option = optionLookup.get(value);
             const name = option?.label ?? selectionLabels?.missing ?? value;
             return (
-              <span
-                key={value}
-                className={`bycoda-selection-value ${styles.value}`}
-                title={option?.description ?? value}
-              >
-                <span className={styles.valueLabel}>{name}</span>
-                <InlineAction
-                  reveal="always"
-                  label={selectionLabels?.remove?.(name) ?? `${t("Remove")}: ${name}`}
-                  disabled={disabled}
-                  onClick={() => {
-                    if (!disabled) onRemove?.(value);
-                  }}
-                >
-                  <X aria-hidden="true" />
-                </InlineAction>
-              </span>
+              <OverflowTooltip key={value} label={option?.description ?? value}>
+                <span className={`bycoda-selection-value ${styles.value}`}>
+                  <span className={styles.valueLabel}>{name}</span>
+                  <InlineAction
+                    reveal="always"
+                    label={selectionLabels?.remove?.(name) ?? `${t("Remove")}: ${name}`}
+                    disabled={disabled}
+                    onClick={() => {
+                      if (!disabled) onRemove?.(value);
+                    }}
+                  >
+                    <X aria-hidden="true" />
+                  </InlineAction>
+                </span>
+              </OverflowTooltip>
             );
           })}
         </div>

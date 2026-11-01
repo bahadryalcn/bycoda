@@ -129,7 +129,7 @@ export function TaskDetail({
           {actions.pending ? (
             <Spinner size="xs" label={t("Loading…")} />
           ) : null}
-          <Badge data-task-status={status.kind} tone={status.tone} title={t(STATUS_LABELS[task.status])}>
+          <Badge data-task-status={status.kind} tone={status.tone} title={status.label === t(STATUS_LABELS[task.status]) ? undefined : t(STATUS_LABELS[task.status])}>
             {status.label}
           </Badge>
           {task.source === "steward" ? (

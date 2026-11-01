@@ -1,4 +1,5 @@
-"use client";
+import { OverflowTooltip } from "../../Tooltip";
+("use client");
 
 import { useT } from "../../../i18n";
 
@@ -134,12 +135,24 @@ export const defaultDateRangePresets: DateRangePreset[] = [
     label: "Yesterday",
     range: (today) => ({ start: addDays(today, -1), end: addDays(today, -1) }),
   },
-  { label: "Last 7 days", range: (today) => ({ start: addDays(today, -6), end: today }) },
-  { label: "Last 30 days", range: (today) => ({ start: addDays(today, -29), end: today }) },
-  { label: "This month", range: (today) => ({ start: monthStart(today), end: today }) },
+  {
+    label: "Last 7 days",
+    range: (today) => ({ start: addDays(today, -6), end: today }),
+  },
+  {
+    label: "Last 30 days",
+    range: (today) => ({ start: addDays(today, -29), end: today }),
+  },
+  {
+    label: "This month",
+    range: (today) => ({ start: monthStart(today), end: today }),
+  },
   {
     label: "Last month",
-    range: (today) => ({ start: addMonths(today, -1), end: monthEnd(addMonths(today, -1)) }),
+    range: (today) => ({
+      start: addMonths(today, -1),
+      end: monthEnd(addMonths(today, -1)),
+    }),
   },
   {
     label: "This quarter",
@@ -150,7 +163,10 @@ export const defaultDateRangePresets: DateRangePreset[] = [
   },
   {
     label: "Year to date",
-    range: (today) => ({ start: new Date(today.getFullYear(), 0, 1), end: today }),
+    range: (today) => ({
+      start: new Date(today.getFullYear(), 0, 1),
+      end: today,
+    }),
   },
 ];
 
@@ -172,7 +188,12 @@ const standardEase = [...motionTokens.ease.standard] as Bezier;
 /** Duration springs restated as stiffness and damping, so every retarget keeps the velocity already in flight. */
 const physical = (visualDuration: number, bounce: number): Transition => {
   const root = (2 * Math.PI) / (visualDuration * 1.2);
-  return { type: "spring", stiffness: root * root, damping: 2 * (1 - bounce) * root, mass: 1 };
+  return {
+    type: "spring",
+    stiffness: root * root,
+    damping: 2 * (1 - bounce) * root,
+    mass: 1,
+  };
 };
 const GROW = physical(0.48, 0.12),
   SHRINK = physical(0.38, 0),
@@ -324,7 +345,12 @@ function Bar({ row, segment, reduced }: { row: number; segment: Segment; reduced
   return (
     <motion.span
       className={styles.bar}
-      style={{ left: leftPct, width: widthPct, opacity, top: `calc(${row} * var(--cell) + 3px)` }}
+      style={{
+        left: leftPct,
+        width: widthPct,
+        opacity,
+        top: `calc(${row} * var(--cell) + 3px)`,
+      }}
     />
   );
 }
@@ -590,8 +616,15 @@ export function DateRangePicker({
 
   const formatters = useMemo(
     () => ({
-      label: new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", year: "numeric" }),
-      title: new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }),
+      label: new Intl.DateTimeFormat(locale, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+      title: new Intl.DateTimeFormat(locale, {
+        month: "long",
+        year: "numeric",
+      }),
       day: new Intl.DateTimeFormat(locale, {
         weekday: "long",
         month: "long",
@@ -662,7 +695,10 @@ export function DateRangePicker({
   const bounds = useCallback(() => {
     const element = boundaryRef.current?.();
     const zoom = cumulativeCssZoom(rootRef.current);
-    const viewport = { left: 0, right: document.documentElement.clientWidth / zoom };
+    const viewport = {
+      left: 0,
+      right: document.documentElement.clientWidth / zoom,
+    };
     if (!element) return viewport;
     const rect = element.getBoundingClientRect();
     return {
@@ -773,7 +809,10 @@ export function DateRangePicker({
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
     if (rect.bottom < 0 || rect.top > window.innerHeight)
-      trigger.scrollIntoView({ block: "center", behavior: reduced ? "instant" : "smooth" });
+      trigger.scrollIntoView({
+        block: "center",
+        behavior: reduced ? "instant" : "smooth",
+      });
   }, [open, reduced]);
 
   /* ---------- Layout: two months when there is room, one compact month otherwise ---------- */
@@ -991,7 +1030,10 @@ export function DateRangePicker({
       (node.offsetLeft < rail.scrollLeft ||
         node.offsetLeft + node.offsetWidth > rail.scrollLeft + rail.clientWidth)
     ) {
-      rail.scrollTo({ left: node.offsetLeft - 12, behavior: reduced ? "auto" : "smooth" });
+      rail.scrollTo({
+        left: node.offsetLeft - 12,
+        behavior: reduced ? "auto" : "smooth",
+      });
     }
   }, [activePreset, compact, go, gh, gw, gx, gy, open, reduced]);
 
@@ -1002,7 +1044,9 @@ export function DateRangePicker({
   const status = !open
     ? ""
     : anchor
-      ? t("Start: {p0}. Choose an end date.", { p0: formatters.label.format(anchor) })
+      ? t("Start: {p0}. Choose an end date.", {
+          p0: formatters.label.format(anchor),
+        })
       : shown
         ? `${shownText}, ${countText}`
         : "";
@@ -1031,59 +1075,61 @@ export function DateRangePicker({
       onBlur={onRootBlur}
     >
       {/* The trigger stays in place under the panel. Its icons fade, while the value itself flies to the panel footer and back. */}
-      <button
-        ref={triggerRef}
-        type="button"
-        className={styles.trigger}
-        aria-haspopup={readOnly ? undefined : "dialog"}
-        aria-expanded={readOnly ? undefined : open}
-        aria-controls={open ? `${uid}-panel` : undefined}
-        aria-label={`${label}: ${committedText}`}
-        title={committedText}
-        disabled={!today || disabled}
-        inert={open || undefined}
-        onClick={openPanel}
-      >
-        <motion.span
-          className={styles.triggerIcon}
-          initial={false}
-          animate={quiet}
-          transition={quietTransition}
+      <OverflowTooltip label={committedText}>
+        <button
+          ref={triggerRef}
+          type="button"
+          className={styles.trigger}
+          aria-haspopup={readOnly ? undefined : "dialog"}
+          aria-expanded={readOnly ? undefined : open}
+          aria-controls={open ? `${uid}-panel` : undefined}
+          aria-label={`${label}: ${committedText}`}
+
+          disabled={!today || disabled}
+          inert={open || undefined}
+          onClick={openPanel}
         >
-          <CalendarDays size={16} strokeWidth={1.75} aria-hidden="true" />
-        </motion.span>
-        {open || !layoutId ? (
           <motion.span
-            key="resting"
-            className={styles.value}
-            data-empty={!committed || undefined}
+            className={styles.triggerIcon}
             initial={false}
-            animate={open ? { opacity: 0 } : { opacity: 1 }}
+            animate={quiet}
             transition={quietTransition}
           >
-            <Rolling text={committedText} direction={committedDirection} reduced={reduced} />
+            <CalendarDays size={16} strokeWidth={1.75} aria-hidden="true" />
           </motion.span>
-        ) : (
+          {open || !layoutId ? (
+            <motion.span
+              key="resting"
+              className={styles.value}
+              data-empty={!committed || undefined}
+              initial={false}
+              animate={open ? { opacity: 0 } : { opacity: 1 }}
+              transition={quietTransition}
+            >
+              <Rolling text={committedText} direction={committedDirection} reduced={reduced} />
+            </motion.span>
+          ) : (
+            <motion.span
+              key="shared"
+              layoutId={layoutId}
+              layout="position"
+              className={styles.value}
+              data-empty={!committed || undefined}
+              transition={SHRINK}
+            >
+              <Rolling text={committedText} direction={committedDirection} reduced={reduced} />
+            </motion.span>
+          )}
           <motion.span
-            key="shared"
-            layoutId={layoutId}
-            layout="position"
-            className={styles.value}
-            data-empty={!committed || undefined}
-            transition={SHRINK}
+            className={styles.chevron}
+            initial={false}
+            animate={quiet}
+            transition={quietTransition}
           >
-            <Rolling text={committedText} direction={committedDirection} reduced={reduced} />
+            <ChevronDown size={16} strokeWidth={1.75} aria-hidden="true" />
           </motion.span>
-        )}
-        <motion.span
-          className={styles.chevron}
-          initial={false}
-          animate={quiet}
-          transition={quietTransition}
-        >
-          <ChevronDown size={16} strokeWidth={1.75} aria-hidden="true" />
-        </motion.span>
-      </button>
+        </button>
+      </OverflowTooltip>
 
       <motion.div className={styles.surface} style={{ width, height, borderRadius: radius, x }}>
         <AnimatePresence>

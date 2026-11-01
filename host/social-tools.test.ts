@@ -3,11 +3,20 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { Readable, Writable } from "node:stream";
 import type { AddressInfo } from "node:net";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
 import { createHostServer } from "./server";
-import { authorizeSocialAcpFrame } from "./social-tools";
+import {
+  authorizeSocialAcpFrame,
+  callSocialTool,
+  normalizeSocialToolRequest,
+  runSocialMcp,
+  SOCIAL_TOOL_SCHEMAS,
+  socialAuthorizationScope,
+  socialToolCatalog,
+} from "./social-tools";
 import { SocialService } from "./social";
 import type { SocialAdapters } from "../src/integrations/social/adapter";
 import {
@@ -15,6 +24,128 @@ import {
   HOST_PROTOCOL_VERSION,
 } from "../src/features/connections/model/protocol";
 import type { SocialAccount, SocialCampaign } from "../src/features/social/model/social";
+describe("Social tool receipt transport", () => {
+  const env = {
+    BYCODA_SOCIAL_TOKEN: "synthetic-scoped-token",
+    BYCODA_SOCIAL_ENDPOINT: "http://127.0.0.1:12345",
+    BYCODA_SOCIAL_ENVIRONMENT: "synthetic-host",
+  };
+
+  async function protocol(requests: unknown[], call: typeof callSocialTool) {
+    let text = "";
+    const output = new Writable({
+      write(chunk, _encoding, done) {
+        text += String(chunk);
+        done();
+      },
+    });
+    await runSocialMcp(
+      Readable.from(requests.map((request) => `${JSON.stringify(request)}\n`)),
+      output,
+      call,
+    );
+    return text
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+  }
+
+  it("advertises one consistent catalog while keeping read authorization and receipt identity separate", async () => {
+    const catalog = socialToolCatalog();
+    expect(catalog).toHaveLength(27);
+    expect(catalog.filter((tool) => tool.annotations.readOnlyHint)).toHaveLength(12);
+    for (const tool of catalog) {
+      expect(socialAuthorizationScope(`social.${tool.action}`)).toBe(
+        tool.annotations.readOnlyHint ? "read" : "write",
+      );
+      expect(tool.annotations.destructiveHint).toBe(!tool.annotations.readOnlyHint);
+      expect(tool.annotations.idempotentHint).toBe(tool.annotations.readOnlyHint);
+      if (tool.annotations.readOnlyHint)
+        expect(tool.inputSchema.properties).not.toHaveProperty("requestId");
+      else expect(tool.inputSchema.properties).toHaveProperty("requestId");
+    }
+    const send = catalog.find((tool) => tool.action === "replies.send")!;
+    expect(send.inputSchema).toMatchObject({
+      required: ["id"],
+      properties: { requestId: { minLength: 1, maxLength: 200 } },
+    });
+    expect(SOCIAL_TOOL_SCHEMAS["replies.send"].properties).not.toHaveProperty("requestId");
+    expect(() => socialAuthorizationScope("execution.enable")).toThrow("Unsupported social tool");
+    const responses = await protocol([{ jsonrpc: "2.0", id: 1, method: "tools/list" }], vi.fn());
+    expect(responses[0].result.tools).toEqual(catalog);
+  });
+
+  it("reuses stable agent IDs on stdio retries and removes them from the signed domain payload", async () => {
+    const call = vi.fn(async () => ({ status: "draft", id: "draft-1" }));
+    const request = {
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: {
+        name: "social_replies_send",
+        arguments: { id: "draft-1", requestId: "retry:draft-1" },
+      },
+    };
+    const responses = await protocol(
+      [
+        { ...request, id: 1 },
+        { ...request, id: 2 },
+      ],
+      call,
+    );
+    expect(call).toHaveBeenNthCalledWith(1, "replies.send", { id: "draft-1" }, "retry:draft-1");
+    expect(call).toHaveBeenNthCalledWith(2, "replies.send", { id: "draft-1" }, "retry:draft-1");
+    expect(responses.every((response) => response.result.isError !== true)).toBe(true);
+  });
+
+  it("propagates receipt IDs over the existing RPC while leaving host identity and gates untouched", async () => {
+    const fetcher = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response(JSON.stringify({ result: { id: "receipt" } })),
+    );
+    const input = { id: "draft-1", requestId: "stable-request" };
+    await callSocialTool("social.replies.send", input, undefined, env, fetcher);
+    await callSocialTool("replies.send", input, "stable-request", env, fetcher);
+    for (const [, init] of fetcher.mock.calls) {
+      const rpc = JSON.parse(String(init!.body));
+      expect(rpc).toMatchObject({
+        method: "social.tools.call",
+        params: { action: "replies.send", input: { id: "draft-1" }, requestId: "stable-request" },
+      });
+      expect(rpc.params.input).not.toHaveProperty("requestId");
+      expect(rpc.params).not.toHaveProperty("provider");
+    }
+    expect(input).toEqual({ id: "draft-1", requestId: "stable-request" });
+  });
+
+  it("retains legacy generated IDs and rejects invalid or conflicting identities before dispatch", async () => {
+    const first = normalizeSocialToolRequest({ id: "draft" });
+    const next = normalizeSocialToolRequest({ id: "draft" });
+    expect(first.requestId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(first.requestId).not.toBe(next.requestId);
+    for (const requestId of ["", " ", "has space", "a".repeat(201), 7, null])
+      expect(() => normalizeSocialToolRequest({ id: "draft", requestId })).toThrow(
+        "Invalid social requestId",
+      );
+    expect(() => normalizeSocialToolRequest({ requestId: "first" }, "second")).toThrow(
+      "Conflicting",
+    );
+    const call = vi.fn();
+    const responses = await protocol(
+      [
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "social_replies_send", arguments: { id: "draft", requestId: " " } },
+        },
+      ],
+      call,
+    );
+    expect(call).not.toHaveBeenCalled();
+    expect(responses[0].result.isError).toBe(true);
+  });
+});
+
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();

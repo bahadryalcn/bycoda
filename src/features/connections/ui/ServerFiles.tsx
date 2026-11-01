@@ -7,7 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { TextField } from "../../../shared/ui/TextField";
 import { Alert } from "../../../shared/ui/Alert";
 import { Progress } from "../../../shared/ui/Progress";
@@ -443,14 +443,14 @@ export function ServerFiles({
                       }
                     }}
                   >
-                    <Tooltip label={entry.name}>
+                    <OverflowTooltip label={entry.name}>
                       <span className="truncate">{entry.name}</span>
-                    </Tooltip>
+                    </OverflowTooltip>
                   </Button>
                 ) : (
-                  <Tooltip label={entry.name}>
+                  <OverflowTooltip label={entry.name}>
                     <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                  </Tooltip>
+                  </OverflowTooltip>
                 )}
                 {entry.kind === "symlink" ? (
                   <span className="text-(--ui-text-muted)">{t("Symlink; not followed")}</span>

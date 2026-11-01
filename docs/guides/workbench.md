@@ -1,5 +1,11 @@
 # Workbench navigation
 
+Readable labels stay quiet on hover. Tooltips explain icons, missing shortcuts
+and additional context, or reveal the full text when a label is clipped. Narrow
+panes that hide tab labels keep their icon explanations. Error reasons and
+connection details remain available; accessible control names do not depend on
+whether a tooltip is visible.
+
 Conversation deletion keeps its confirmation and shows progress while work is
 pending. Successful deletion clears the progress without an extra success banner.
 Failures, skipped conversations and incomplete cleanup remain visible for review.

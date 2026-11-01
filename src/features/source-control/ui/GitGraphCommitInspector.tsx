@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, ChevronLeft, X } from "../../../shared/ui/ic
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useCallback, useMemo, useState } from "react";
 import {
   gitCommitFiles,
@@ -169,6 +169,7 @@ export function GitGraphCommitInspector({
             key={file.relative}
             size="sm"
             tooltip={file.relative}
+            tooltipWhen="overflow"
             type="button"
             aria-pressed={relative === file.relative}
             onClick={() => setPicked(file.relative)}
@@ -211,9 +212,9 @@ export function GitGraphCommitInspector({
       </div>
       {relative ? (
         <div className="flex min-w-0 shrink-0 items-center gap-1 border-b border-(--ui-pane-border) px-2 py-1 text-ui-caption">
-          <Tooltip label={relative}>
+          <OverflowTooltip label={relative}>
             <span className="min-w-0 flex-1 truncate">{relative}</span>
-          </Tooltip>
+          </OverflowTooltip>
           <span className="tabular-nums text-(--ui-text-secondary)">
             {selectedIndex < 0 ? "–" : selectedIndex + 1}/{visibleFiles.length}
           </span>

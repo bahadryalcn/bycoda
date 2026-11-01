@@ -111,7 +111,11 @@ function Item(props: ItemProps) {
     return props.item.render((trigger) => (
       <ItemButton
         {...props}
-        item={{ ...props.item, ...trigger, disabled: props.item.disabled || trigger.disabled }}
+        item={{
+          ...props.item,
+          ...trigger,
+          disabled: props.item.disabled || trigger.disabled,
+        }}
         trigger={trigger}
       />
     ));
@@ -161,6 +165,7 @@ function ItemButton({
       data-expanded={expanded || undefined}
       aria-label={item.ariaLabel ?? item.label}
       title={item.tooltip ?? item.ariaLabel ?? item.label}
+      tooltipWhen="overflow"
       shortcut={item.shortcut}
       aria-current={item.active ? "page" : undefined}
       onContextMenu={
@@ -248,7 +253,11 @@ export function ExpandingButtonGroup({
   };
   const keyFocus = useRef<string | null>(null);
   const touchOpen = useRef<string | null>(null);
-  const press = useRef<{ id: string; kind: string; wasExpanded: boolean } | null>(null);
+  const press = useRef<{
+    id: string;
+    kind: string;
+    wasExpanded: boolean;
+  } | null>(null);
   const doneRef = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
@@ -338,7 +347,11 @@ export function ExpandingButtonGroup({
     event: PointerEvent<HTMLButtonElement>,
   ) => {
     cancelHover();
-    press.current = { id: item.id, kind: event.pointerType, wasExpanded: expandedId === item.id };
+    press.current = {
+      id: item.id,
+      kind: event.pointerType,
+      wasExpanded: expandedId === item.id,
+    };
   };
 
   const onItemClick = (item: ExpandingButtonGroupItem) => {

@@ -84,8 +84,8 @@ describe("conversation browser annotation catalog", () => {
     for (const action of ["browser.annotation.hover", "browser.annotation.select"])
       for (const point of [
         { x: -1, y: 1 },
-        { x: 1280, y: 1 },
-        { x: 1, y: 720 },
+        { x: 2560, y: 1 },
+        { x: 1, y: 2160 },
         { x: Number.NaN, y: 1 },
       ])
         expect(() =>

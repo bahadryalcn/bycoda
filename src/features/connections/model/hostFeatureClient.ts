@@ -130,6 +130,7 @@ const HOST_SCOPED_TOOL_METHODS = new Set([
   "browser.claim",
   "browser.release",
   "browser.open",
+  "browser.resize",
   "browser.frame",
   "browser.input",
   "browser.close",

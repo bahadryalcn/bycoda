@@ -520,6 +520,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         "attachments.upload" | "attachments.read" => ATTACHMENT_CHUNK_RPC_TIMEOUT,
         "sessions.update" | "browser.status" | "browser.claim" | "browser.frame"
         | "browser.input" => INTERACTIVE_ACTION_RPC_TIMEOUT,
+        "browser.resize" => INTERACTIVE_ACTION_RPC_TIMEOUT,
         // Cheap status reads for the Git panel. History, blame, PR status and
         // file diffs keep the default: the Host allows its git reads 30 s.
         "workspace.run"
@@ -2588,6 +2589,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "browser.frame"
             | "browser.input"
             | "browser.open"
+            | "browser.resize"
             | "browser.release"
             | "browser.status"
             | "browser.setup"
@@ -3980,6 +3982,7 @@ mod tests {
             "browser.frame",
             "browser.input",
             "browser.open",
+            "browser.resize",
             "browser.release",
             "browser.status",
             "browser.setup",

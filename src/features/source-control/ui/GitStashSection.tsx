@@ -169,6 +169,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
                     motion="none"
                     type="button"
                     tooltip={entry.message}
+                    tooltipWhen="overflow"
                     onClick={() => onOpenCommit(stashCommit(entry))}
                     className="min-w-0 flex-1 justify-start"
                   >

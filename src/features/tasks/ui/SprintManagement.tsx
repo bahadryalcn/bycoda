@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useRef, useState } from "react";
 import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -184,7 +185,9 @@ export function SprintManagement({
       ) : (
         <>
           <div className="sprint-heading">
-            <h2 title={selected?.name}>{selected?.name ?? t("Sprints")}</h2>
+            <OverflowTooltip label={selected?.name}>
+              <h2>{selected?.name ?? t("Sprints")}</h2>
+            </OverflowTooltip>
             <div className="sprint-actions">
               {selected && fullyAccessible(selected) ? (
                 <>

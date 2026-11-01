@@ -46,6 +46,7 @@ function SessionRow({
   disabled,
   loading,
   title,
+  details,
   onClick,
 }: {
   role: CrewRole;
@@ -59,6 +60,7 @@ function SessionRow({
   disabled: boolean;
   loading: boolean;
   title?: string;
+  details?: readonly ReactNode[];
   onClick: () => void;
 }) {
   return (
@@ -70,6 +72,8 @@ function SessionRow({
       loading={loading}
       onClick={onClick}
       tooltip={title}
+      tooltipWhen="overflow"
+      tooltipDetails={details}
     >
       <CrewRoleIcon role={role} className="icon-md shrink-0" />
       <span className="min-w-0 flex-1 text-start">
@@ -187,7 +191,8 @@ export function CrewWorkSessions({
                 status={crewTaskStatusLabel(task.status)}
                 disabled={!ids.worker || !canOpen || pending}
                 loading={pendingAction === `open:worker:${task.id}`}
-                title={`${task.title}\n${task.harness} · ${task.model}\n${assignment?.reason ?? ""}`}
+                title={task.title}
+                details={[`${task.harness} · ${task.model}`, assignment?.reason].filter((value): value is string => !!value)}
                 onClick={() => ids.worker && onOpen(ids.worker, `worker:${task.id}`)}
               />
               {ids.review ? (

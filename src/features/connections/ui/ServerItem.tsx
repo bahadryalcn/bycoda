@@ -5,7 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Surface } from "../../../shared/ui/Surface";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Server, Star, Terminal } from "../../../shared/ui/icons";
 import type { ServerRecord } from "../model/serverInventory";
 import type { ServersLayout } from "./serversLayout";
@@ -192,20 +192,20 @@ export function ServerItem({
               <span className="flex min-w-0 flex-col gap-2 p-3">
                 <span className="flex min-w-0 items-center gap-2">
                   <Server aria-hidden className="icon-sm shrink-0 text-(--ui-text-muted)" />
-                  <Tooltip label={server.name}>
+                  <OverflowTooltip label={server.name}>
                     <span className="min-w-0 flex-1 truncate font-medium">{server.name}</span>
-                  </Tooltip>
+                  </OverflowTooltip>
                   {accentDot}
                   {favorite}
                 </span>
-                <Tooltip label={address}>
+                <OverflowTooltip label={address}>
                   <span
                     className={`text-ui-caption text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
                   >
                     <span className="text-(--ui-text-muted)">{kind} · </span>
                     {address}
                   </span>
-                </Tooltip>
+                </OverflowTooltip>
                 <span className="flex min-w-0 items-center justify-between gap-2">
                   <span className="flex min-w-0 flex-wrap gap-1">
                     {group ? <Badge size="sm">{group}</Badge> : null}
@@ -226,14 +226,14 @@ export function ServerItem({
             <>
               <span className="min-w-0 flex-1">
                 <span className="flex min-w-0 items-center gap-2">
-                  <Tooltip label={server.name}>
+                  <OverflowTooltip label={server.name}>
                     <span className="block min-w-0 truncate text-ui-body font-medium">
                       {server.name}
                     </span>
-                  </Tooltip>
+                  </OverflowTooltip>
                   {accentDot}
                 </span>
-                <Tooltip label={groupTags ? `${address} · ${groupTags}` : address}>
+                <OverflowTooltip label={groupTags ? `${address} · ${groupTags}` : address}>
                   <span
                     className={`block min-w-0 flex-1 text-ui-caption text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
                   >
@@ -243,7 +243,7 @@ export function ServerItem({
                       <span className="text-(--ui-text-muted)"> · {groupTags}</span>
                     ) : null}
                   </span>
-                </Tooltip>
+                </OverflowTooltip>
               </span>
               <span className="server-row-status flex shrink-0 items-center gap-2">
                 {favorite}

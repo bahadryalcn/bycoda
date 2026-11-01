@@ -368,7 +368,11 @@ function ProductLink({
         loading={pending === "open"}
         loadingLabel={t("Opening…")}
         disabled={pending !== null}
-        tooltip={address}
+        tooltip={
+          address.replace(/^https?:\/\//, "") === displayAddress.replace(/^https?:\/\//, "")
+            ? undefined
+            : address
+        }
         onClick={() => void run("open")}
       >
         {displayAddress}

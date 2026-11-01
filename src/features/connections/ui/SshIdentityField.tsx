@@ -116,7 +116,7 @@ export function SshIdentityField({
         options={[{ value: "", label: t("SSH agent and default keys") }, ...options]}
       />
       {value ? (
-        <p className="break-all text-ui-caption text-(--ui-text-muted)" title={value}>
+        <p className="break-all text-ui-caption text-(--ui-text-muted)">
           {value}
         </p>
       ) : null}

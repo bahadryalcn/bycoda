@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
@@ -241,9 +242,11 @@ export function UnifiedDiffView({
       >
         {/* Count and churn truncate first; the view and expand controls never wrap away. */}
         <span className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="min-w-0 truncate text-(--ui-text-secondary)" title={fileLabel}>
-            {fileLabel}
-          </span>
+          <OverflowTooltip label={fileLabel}>
+            <span className="min-w-0 truncate text-(--ui-text-secondary)">
+              {fileLabel}
+            </span>
+          </OverflowTooltip>
           <DiffCounts additions={additions} deletions={deletions} />
         </span>
         <span role="group" aria-label={t("Diff view")} className="ml-auto flex shrink-0 items-center gap-0.5">

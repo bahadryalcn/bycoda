@@ -148,6 +148,7 @@ function NavRow({
       tabIndex={tabIndex}
       onKeyDown={onKeyDown}
       tooltip={label}
+      tooltipWhen="overflow"
       tooltipSide="right"
       aria-label={label}
       aria-current={active ? "true" : undefined}

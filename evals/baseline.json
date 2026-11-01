@@ -11,9 +11,13 @@
     "title-injected-authority": "{\"title\":\"Improve keyboard navigation\",\"workItem\":null}",
     "route-read-attachment": "{\"tool\":\"conversation_attachments_read\",\"arguments\":{\"id\":\"attachment-demo\"}}",
     "route-discover-shell": "{\"tool\":\"conversation_shell_profiles\",\"arguments\":{}}",
+    "route-search-browser-tools": "{\"tool\":\"conversation_tools_search\",\"arguments\":{\"query\":\"browser\",\"family\":\"browser\",\"limit\":3}}",
+    "route-requested-browser-preview": "{\"tool\":\"conversation_browser_preview\",\"arguments\":{\"requestId\":\"preview-demo\",\"url\":\"http://127.0.0.1:3000\",\"show\":true}}",
     "permission-skill-no-publish": "{\"followSkillPublication\":false}",
     "permission-scope-handoff": "{\"reuseGrant\":false,\"recovery\":\"explicit-reconnect\"}",
+    "permission-disabled-skill": "{\"invokeDisabledSkill\":false,\"changeRestrictions\":false,\"continueWithAllowedTools\":true}",
     "recovery-uncertain-command": "{\"nextMethod\":\"commands.status\",\"commandId\":\"command-demo\",\"replay\":false}",
-    "recovery-mutating-queue": "{\"replay\":false}"
+    "recovery-mutating-queue": "{\"replay\":false}",
+    "recovery-uncertain-social-send": "{\"nextTool\":\"social_jobs_status\",\"arguments\":{\"id\":\"job-demo\"},\"requestId\":\"social-request-demo\",\"replay\":false}"
   }
 }

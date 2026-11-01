@@ -273,6 +273,9 @@ export function GitChangesPanel({
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [graphHeight, setGraphHeight] = useState(loadGraphPanelHeight);
   const [graphExpanded, setGraphExpanded] = useState(graphOpen);
+  // A drag paints the graph box directly; re-rendering the whole panel every
+  // frame made the sash lag behind the pointer. State updates once, on release.
+  const graphBoxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!status) return;
@@ -679,7 +682,9 @@ export function GitChangesPanel({
       {!embedded && graphExpanded ? (
         <GraphResizeSash
           height={graphHeight}
-          onHeightPaint={setGraphHeight}
+          onHeightPaint={(next) => {
+            if (graphBoxRef.current) graphBoxRef.current.style.height = `${next}px`;
+          }}
           onHeightCommit={(next) => {
             setGraphHeight(next);
             saveGraphPanelHeight(next);
@@ -693,6 +698,7 @@ export function GitChangesPanel({
       ) : null}
       {!embedded ? (
         <div
+          ref={graphBoxRef}
           className={`shrink-0 overflow-hidden border-t border-stroke ${
             graphExpanded ? "min-h-0" : "h-7"
           }`}
@@ -2032,6 +2038,7 @@ export function FileSection({
           type="button"
           aria-expanded={open}
           tooltip={title}
+          tooltipWhen="overflow"
           onClick={onToggle}
           className="flex min-w-28 flex-1 basis-28 items-center gap-1 text-left"
         >
@@ -2101,7 +2108,7 @@ export function FileSection({
                 motion="none"
                 key={action.title}
                 type="button"
-                tooltip={action.title}
+                tooltip={action.title === action.label ? undefined : action.title}
                 aria-label={action.title}
                 onClick={action.onClick}
                 className="shrink-0"

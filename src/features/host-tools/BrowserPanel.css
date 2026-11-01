@@ -170,7 +170,7 @@
 }
 
 .host-browser-panel .host-browser-preview[data-actual-size="true"] .host-browser-surface {
-  inline-size: max(100%, var(--host-browser-width));
+  inline-size: var(--host-browser-width);
 }
 
 .host-browser-panel .host-browser-empty {

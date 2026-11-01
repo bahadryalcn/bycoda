@@ -339,7 +339,6 @@ export function GitlabSettings() {
         {connected && !editing ? (
           <div className="inbox-account-fields" data-state="summary">
             <span
-              title={savedUrl}
               className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)"
             >
               {savedUrl}
@@ -525,7 +524,6 @@ export function AzureDevOpsSettings() {
         {connected && !editing ? (
           <div className="inbox-account-fields" data-state="summary">
             <span
-              title={savedUrl}
               className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)"
             >
               {savedUrl}

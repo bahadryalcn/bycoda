@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Badge } from "../../../shared/ui/Badge";
@@ -210,6 +211,10 @@ export function WorktreesPage({
                         tree,
                         liveSessions,
                       ).length;
+                      const folderName = projectName(tree.path);
+                      const identityHint = liveSessions.find((session) =>
+                        worktreeSessionIds(tree, liveSessions).includes(session.id),
+                      )?.title || tree.branch || folderName;
                       const blocked = tree.locked
                         ? t("Unlock this worktree in Git first")
                         : !tree.branch
@@ -231,12 +236,14 @@ export function WorktreesPage({
                             className={`settings-collection-main ${styles.identity}`}
                           >
                             <div className={styles.name}>
-                              <span
-                                className={styles.nameText}
-                                title={liveSessions.find((session) => worktreeSessionIds(tree, liveSessions).includes(session.id))?.title || tree.branch || projectName(tree.path)}
+                              <Tooltip
+                                label={identityHint}
+                                when={identityHint === folderName ? "overflow" : "always"}
                               >
-                                {projectName(tree.path)}
-                              </span>
+                                <span className={styles.nameText}>
+                                  {folderName}
+                                </span>
+                              </Tooltip>
                               {pathKey(tree.path) === pathKey(project) && (
                                 <Badge size="sm" tone="info">
                                   {t("Selected project folder")}
@@ -260,16 +267,18 @@ export function WorktreesPage({
                                 aria-hidden="true"
                                 className="icon-xs shrink-0"
                               />
-                              <span
-                                className={styles.branchText}
-                                title={tree.branch ?? tree.head}
+                              <Tooltip
+                                label={tree.branch ?? tree.head}
+                                when={tree.branch ? "overflow" : "always"}
                               >
-                                {tree.branch
-                                  ? tree.branch
-                                  : t("Detached at {p0}", {
-                                      p0: tree.head.slice(0, 7),
-                                    })}
-                              </span>
+                                <span className={styles.branchText}>
+                                  {tree.branch
+                                    ? tree.branch
+                                    : t("Detached at {p0}", {
+                                        p0: tree.head.slice(0, 7),
+                                      })}
+                                </span>
+                              </Tooltip>
                             </p>
                             <div className={styles.metadata}>
                               <span>

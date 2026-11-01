@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "./Tooltip";
 import {
   useEffect,
   useId,
@@ -104,10 +105,8 @@ export function Select({
   if (disabled && open) setOpen(false);
   const expanded = open && !disabled;
   // Keyboard cursor restarts on open / committed-value change, not on a new `options` array.
-  const [active, setActive] = useKeyedActiveIndex(
-    `${open}:${value}`,
-    options.length,
-    () => initialActive(options, value),
+  const [active, setActive] = useKeyedActiveIndex(`${open}:${value}`, options.length, () =>
+    initialActive(options, value),
   );
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -190,60 +189,63 @@ export function Select({
 
   const select = (
     <div ref={root} className={composed ? "relative" : "relative max-w-52"}>
-      <SelectTrigger
-        {...triggerProps}
-        id={composed ? triggerId : triggerProps.id}
-        aria-invalid={error ? true : triggerProps["aria-invalid"]}
-        aria-describedby={
-          fieldDescribedBy(triggerId, { description, error }, triggerProps["aria-describedby"])
-        }
-        type={triggerProps.type ?? "button"}
-        ref={(node) => {
-          trigger.current = node;
-          if (typeof ref === "function") return ref(node);
-          if (ref) ref.current = node;
-        }}
-        data-field-size={fieldSize ?? (fieldVariant === "compact" ? "sm" : "md")}
-        data-state={expanded ? "open" : "closed"}
-        data-disabled={disabled || undefined}
-        disabled={disabled}
-        aria-label={triggerProps["aria-label"] ?? `${label}: ${selected?.label ?? value}`}
-        aria-expanded={expanded}
-        aria-haspopup="listbox"
-        aria-controls={expanded ? listId : undefined}
-        onKeyDown={(event) => {
-          if (disabled || trigger.current?.matches(":disabled")) return;
-          onKeyDown?.(event);
-          if (event.defaultPrevented) return;
-          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-          event.preventDefault();
-          if (!open) onOpen?.();
-          setOpen(true);
-        }}
-        onClick={(event) => {
-          if (disabled || trigger.current?.matches(":disabled")) return;
-          onClick?.(event);
-          if (event.defaultPrevented) return;
-          if (!open) onOpen?.();
-          setOpen(!open);
-        }}
-        className={["bycoda-arc bycoda-arc-select", className].filter(Boolean).join(" ")}
-      >
-        <span
-          className="flex min-w-0 flex-1 items-center gap-1.5"
-          data-placeholder={selected || value ? undefined : ""}
-          title={selected?.label ?? value}
+      <OverflowTooltip label={expanded ? undefined : (selected?.label ?? value)}>
+        <SelectTrigger
+          {...triggerProps}
+          id={composed ? triggerId : triggerProps.id}
+          aria-invalid={error ? true : triggerProps["aria-invalid"]}
+          aria-describedby={fieldDescribedBy(
+            triggerId,
+            { description, error },
+            triggerProps["aria-describedby"],
+          )}
+          type={triggerProps.type ?? "button"}
+          ref={(node) => {
+            trigger.current = node;
+            if (typeof ref === "function") return ref(node);
+            if (ref) ref.current = node;
+          }}
+          data-field-size={fieldSize ?? (fieldVariant === "compact" ? "sm" : "md")}
+          data-state={expanded ? "open" : "closed"}
+          data-disabled={disabled || undefined}
+          disabled={disabled}
+          aria-label={triggerProps["aria-label"] ?? `${label}: ${selected?.label ?? value}`}
+          aria-expanded={expanded}
+          aria-haspopup="listbox"
+          aria-controls={expanded ? listId : undefined}
+          onKeyDown={(event) => {
+            if (disabled || trigger.current?.matches(":disabled")) return;
+            onKeyDown?.(event);
+            if (event.defaultPrevented) return;
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            event.preventDefault();
+            if (!open) onOpen?.();
+            setOpen(true);
+          }}
+          onClick={(event) => {
+            if (disabled || trigger.current?.matches(":disabled")) return;
+            onClick?.(event);
+            if (event.defaultPrevented) return;
+            if (!open) onOpen?.();
+            setOpen(!open);
+          }}
+          className={["bycoda-arc bycoda-arc-select", className].filter(Boolean).join(" ")}
         >
-          {selected?.icon ? (
-            <span className="grid size-4 shrink-0 place-items-center">{selected.icon}</span>
-          ) : null}
-          <SelectValue value={value} label={selected ? selected.label : value} />
-        </span>
-        <ChevronDown
-          className={`bycoda-arc-select-chevron size-3.5 shrink-0 ${open ? "rotate-180" : ""}`}
-          strokeWidth={1.75}
-        />
-      </SelectTrigger>
+          <span
+            className="flex min-w-0 flex-1 items-center gap-1.5"
+            data-placeholder={selected || value ? undefined : ""}
+          >
+            {selected?.icon ? (
+              <span className="grid size-4 shrink-0 place-items-center">{selected.icon}</span>
+            ) : null}
+            <SelectValue value={value} label={selected ? selected.label : value} />
+          </span>
+          <ChevronDown
+            className={`bycoda-arc-select-chevron size-3.5 shrink-0 ${open ? "rotate-180" : ""}`}
+            strokeWidth={1.75}
+          />
+        </SelectTrigger>
+      </OverflowTooltip>
       {expanded ? (
         <Popover
           id={listId}

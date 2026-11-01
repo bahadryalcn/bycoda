@@ -1,6 +1,6 @@
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useState } from "react";
 import { MessageSquarePlus, X } from "../../../shared/ui/icons";
@@ -53,11 +53,11 @@ export function DiffCommentComposer({
         }}
       >
         <div className="mb-1.5 flex items-center gap-2 px-0.5">
-          <Tooltip label={location}>
+          <OverflowTooltip label={location}>
             <span className="min-w-0 flex-1 truncate font-mono text-ui-caption text-(--ui-text-secondary)">
               {location}
             </span>
-          </Tooltip>
+          </OverflowTooltip>
           <Button
             size="sm"
             iconOnly

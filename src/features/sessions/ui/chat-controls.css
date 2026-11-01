@@ -36,6 +36,28 @@ html [data-activity-dock] {
   background: var(--ui-surface);
 }
 
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  html [data-activity-dock] {
+    background: var(--ui-activity-dock-glass);
+    -webkit-backdrop-filter: blur(var(--ui-activity-dock-blur));
+    backdrop-filter: blur(var(--ui-activity-dock-blur));
+  }
+}
+
+html[data-performance-no-blur] [data-activity-dock] {
+  background: var(--ui-surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  html [data-activity-dock] {
+    background: var(--ui-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 /* Transcript activity is part of the reading flow: no frame, fill or stripe. */
 .transcript-activity-group {
   margin-block: 0;
@@ -351,7 +373,6 @@ html [data-activity-dock] {
   gap: 0.5rem;
   padding-inline: 0.25rem;
   margin-inline-start: -0.25rem;
-  background: var(--ui-surface);
 }
 .activity-dock {
   container: activity-dock / inline-size;

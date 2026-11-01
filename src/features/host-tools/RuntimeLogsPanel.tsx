@@ -3,7 +3,7 @@ import { Alert } from "../../shared/ui/Alert";
 import { Popover } from "../../shared/ui/Popover";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Badge } from "../../shared/ui/Badge";
-import { Tooltip } from "../../shared/ui/Tooltip";
+import { Tooltip, OverflowTooltip } from "../../shared/ui/Tooltip";
 import { Switch } from "../../shared/ui/Switch";
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
 import { Select } from "../../shared/ui/Select";
@@ -807,6 +807,7 @@ function ScopedRuntimeLogsPanel({
                       className="runtime-logs-monitor-name"
                       aria-pressed={!!monitor.sourceId && sourceIds.includes(monitor.sourceId)}
                       tooltip={monitor.url}
+                      tooltipWhen="overflow"
                       disabled={!monitor.sourceId}
                       onClick={() => {
                         const id = monitor.sourceId;
@@ -1052,9 +1053,11 @@ const RuntimeLogRow = memo(function RuntimeLogRow({
               {time}
             </time>
             <span className="runtime-log-level">{LEVEL_LABELS[runtimeLogDisplayLevel(entry)]}</span>
-            <span className="runtime-log-source-label" title={sourceLabel}>
-              {sourceLabel}
-            </span>
+            <OverflowTooltip label={sourceLabel}>
+              <span className="runtime-log-source-label">
+                {sourceLabel}
+              </span>
+            </OverflowTooltip>
             {group.entries.length > 1 ? (
               <Tooltip label={t("{p0} repeated events", { p0: group.entries.length })}>
                 <Badge

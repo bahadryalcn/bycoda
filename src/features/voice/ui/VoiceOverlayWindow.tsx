@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";
@@ -156,13 +157,17 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
       <header className={styles.header}>
         {handle}
         <div className={styles.heading}>
-          <h1 className={styles.title} title={state?.title}>
-            {state?.title ?? t("Voice companion")}
-          </h1>
+          <OverflowTooltip label={state?.title}>
+            <h1 className={styles.title}>
+              {state?.title ?? t("Voice companion")}
+            </h1>
+          </OverflowTooltip>
           {compact && (
-            <span className={styles.summary} aria-hidden="true" title={summary}>
-              {summary}
-            </span>
+            <OverflowTooltip label={summary}>
+              <span className={styles.summary} aria-hidden="true">
+                {summary}
+              </span>
+            </OverflowTooltip>
           )}
         </div>
         {compact && (

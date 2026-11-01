@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Group, Row, SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
@@ -410,9 +411,11 @@ export function ProviderAccountsSettings({
                       <AccountColorDot account={account} className="size-2.5" />
                       <div className="provider-account-main">
                         <div className="provider-account-identity">
-                          <span title={account.label} className="provider-account-name">
-                            {displayLabel}
-                          </span>
+                          <OverflowTooltip label={account.label}>
+                            <span className="provider-account-name">
+                              {displayLabel}
+                            </span>
+                          </OverflowTooltip>
                           {account.isDefault && !autoDefaultLabel ? (
                             <Badge size="sm" className="shrink-0">
                               {t("Default account")}

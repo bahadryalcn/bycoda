@@ -1311,6 +1311,7 @@ const InboxCard = memo(function InboxCard({
       className="w-full min-w-0"
       type="button"
       tooltip={item.title}
+      tooltipWhen="overflow"
       aria-current={active ? "true" : undefined}
       selected={active}
       aria-label={`${status.label} ${kindLabel.toLowerCase()} ${inboxItemRef(

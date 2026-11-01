@@ -2,6 +2,11 @@
 
 This harness exercises production prompts, tool schemas, parser behavior and policy-backed decisions without a provider, credentials or tool execution. It belongs to normal source CI. Passing it proves the sanitized corpus and graders work; it does not prove any model behaves well.
 
+Tool management cases cover bounded discovery, explicitly requested integrated
+preview, disabled-skill restrictions and uncertain Social send reconciliation.
+Their paired controls distinguish valid but inappropriate tool choices from
+invalid input. The baseline remains synthetic; passing is not a live-model result.
+
 ```sh
 pnpm exec vitest run --config evals/vitest.config.ts
 pnpm exec tsc-rs --noEmit -p evals/tsconfig.json

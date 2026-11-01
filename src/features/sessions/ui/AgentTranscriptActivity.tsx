@@ -34,6 +34,7 @@ import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { SubagentReport, SubagentStateLine } from "./SubagentAnatomy";
 import { Button } from "../../../shared/ui/Button";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
@@ -312,6 +313,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
         selected={open}
         aria-expanded={open}
         tooltip={title}
+        tooltipWhen="overflow"
         aria-label={
           open
             ? t("Hide the steps for {p0}", { p0: title })
@@ -343,12 +345,11 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
             {compactCommand ? (
               <div className="flex min-w-0 items-start gap-1.5 px-2 pt-1 pb-1.5 text-ui-caption text-(--ui-text-secondary)">
                 <Terminal className="mt-0.5 icon-xs shrink-0" aria-hidden="true" />
-                <span
-                  className="line-clamp-1 break-all font-mono"
-                  title={toolCallLabel(compactCommand, cwd)}
-                >
-                  {toolCallLabel(compactCommand, cwd)}
-                </span>
+                <OverflowTooltip label={toolCallLabel(compactCommand, cwd)}>
+                  <span className="line-clamp-1 break-all font-mono">
+                    {toolCallLabel(compactCommand, cwd)}
+                  </span>
+                </OverflowTooltip>
               </div>
             ) : null}
             <div
@@ -892,12 +893,13 @@ function ActivityStatusRow({ block }: { block: Block }) {
   return (
     <div className="flex min-w-0 items-center gap-1.5 py-1">
       {running ? <Spinner size="xs" className="shrink-0" /> : null}
-      <span
-        title={block.text}
-        className={`min-w-0 flex-1 truncate font-sans text-ui-body ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
-      >
-        {block.text.trim()}
-      </span>
+      <OverflowTooltip label={block.text.trim()}>
+        <span
+          className={`min-w-0 flex-1 truncate font-sans text-ui-body ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+        >
+          {block.text.trim()}
+        </span>
+      </OverflowTooltip>
       {elapsed ? (
         <span className="shrink-0 text-ui-micro text-(--ui-text-secondary) tabular-nums">
           {elapsed}
@@ -1538,18 +1540,19 @@ function ToolCallSummary({
   );
   if (!action || !target) {
     return (
-      <span
-        className={`min-w-0 flex-1 ${wrap ? "tool-command-label line-clamp-3" : "truncate"} font-mono text-ui-secondary ${
-          failed
-            ? "text-(--ui-tone-danger-fg)"
-            : chip
-              ? "text-(--ui-text-secondary)"
-              : "text-(--ui-text-secondary)"
-        }`}
-        title={label}
-      >
-        {label}
-      </span>
+      <OverflowTooltip label={label}>
+        <span
+          className={`min-w-0 flex-1 ${wrap ? "tool-command-label line-clamp-3" : "truncate"} font-mono text-ui-secondary ${
+            failed
+              ? "text-(--ui-tone-danger-fg)"
+              : chip
+                ? "text-(--ui-text-secondary)"
+                : "text-(--ui-text-secondary)"
+          }`}
+        >
+          {label}
+        </span>
+      </OverflowTooltip>
     );
   }
   const openFile =
@@ -1595,6 +1598,7 @@ function ToolCallSummary({
             type="button"
 
             tooltip={target}
+            tooltipWhen="overflow"
             onClick={(event) => {
               event.stopPropagation();
               openFile?.(filePath);
@@ -1604,23 +1608,25 @@ function ToolCallSummary({
             <span className="min-w-0 truncate">{target}</span>
           </Button>
         ) : (
-          <span
-            className={`flex min-w-0 items-center gap-1 rounded px-1 ${
-              chip ? `max-w-full bg-(--ui-surface-raised) ${targetTone}` : `flex-1 ${targetTone}`
-            }`}
-            title={target}
-          >
-            <FileTypeIcon name={fileName} isDir={action === "List"} />
-            <span className="min-w-0 truncate">{target}</span>
-          </span>
+          <OverflowTooltip label={target}>
+            <span
+              className={`flex min-w-0 items-center gap-1 rounded px-1 ${
+                chip ? `max-w-full bg-(--ui-surface-raised) ${targetTone}` : `flex-1 ${targetTone}`
+              }`}
+            >
+              <FileTypeIcon name={fileName} isDir={action === "List"} />
+              <span className="min-w-0 truncate">{target}</span>
+            </span>
+          </OverflowTooltip>
         )
       ) : (
-        <span
-          className={`flex min-w-0 flex-1 items-center gap-1.5 pl-1 ${targetTone}`}
-          title={target}
-        >
-          <span className="min-w-0 truncate">{target}</span>
-        </span>
+        <OverflowTooltip label={target}>
+          <span
+            className={`flex min-w-0 flex-1 items-center gap-1.5 pl-1 ${targetTone}`}
+          >
+            <span className="min-w-0 truncate">{target}</span>
+          </span>
+        </OverflowTooltip>
       )}
     </span>
   );

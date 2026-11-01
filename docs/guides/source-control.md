@@ -13,6 +13,12 @@ results count staged and unstaged **entries**. Filtering changes the displayed l
 **All** operations still affect the entire repository, including hidden entries.
 Selected-entry actions retain their own narrower scope and existing confirmations.
 
+Unstaged rows offer **Discard Changes** directly beside **Stage Changes**, as well
+as in the file menu. Row actions appear on hover, keyboard focus or selection and
+remain available on touch devices. Discard keeps its confirmation and selected-entry
+scope. File names take priority over directory labels; added/removed line counts
+stay together, and the full relative path is available on the file tooltip.
+
 The commit field retains its checkout draft. Message generation remains cancellable
 and allows staging. Commit variants are unavailable while generation is pending;
 if the draft or index changes, an obsolete generated result does not replace the

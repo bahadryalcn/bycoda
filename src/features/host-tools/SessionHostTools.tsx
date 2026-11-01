@@ -254,6 +254,7 @@ function ConversationHostTools({
                       value={id}
                       aria-label={t(toolLabels[id])}
                       tooltip={t(toolLabels[id])}
+                      tooltipWhen="overflow"
                       icon={<Icon className="icon-sm" aria-hidden />}
                       className="host-tools-nav-tab"
                     >

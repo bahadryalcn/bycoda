@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "./Tooltip";
 import { useT } from "../i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -38,7 +39,16 @@ export function ImageLightbox(props: Props) {
   return <ImageLightboxContent key={props.resetKey ?? props.src} {...props} />;
 }
 
-function ImageLightboxContent({ src, alt, onClose, actions, loading = false, error, notice, onRetry }: Props) {
+function ImageLightboxContent({
+  src,
+  alt,
+  onClose,
+  actions,
+  loading = false,
+  error,
+  notice,
+  onRetry,
+}: Props) {
   const t = useT();
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -46,7 +56,10 @@ function ImageLightboxContent({ src, alt, onClose, actions, loading = false, err
   const retryRef = useRef<HTMLButtonElement>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [comparison, setComparison] = useState<{ url: string; name: string } | null>(null);
+  const [comparison, setComparison] = useState<{
+    url: string;
+    name: string;
+  } | null>(null);
   const [compareError, setCompareError] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const unavailable = !loading && !!error;
@@ -63,7 +76,8 @@ function ImageLightboxContent({ src, alt, onClose, actions, loading = false, err
     const finished = wasLoading.current && !loading;
     wasLoading.current = loading;
     const focused = document.activeElement;
-    const inDialog = !!focused && (focused === document.body || !!dialogRef.current?.contains(focused));
+    const inDialog =
+      !!focused && (focused === document.body || !!dialogRef.current?.contains(focused));
     if (!finished || !inDialog) return;
     (viewportRef.current ?? retryRef.current)?.focus();
   }, [loading]);
@@ -97,11 +111,14 @@ function ImageLightboxContent({ src, alt, onClose, actions, loading = false, err
       onClick={(event) => event.stopPropagation()}
     >
       {/* The shared modal scrim, behind the viewer controls (they keep the media-on-dark ink). */}
-      <div aria-hidden="true" className="modal-backdrop pointer-events-none absolute inset-0 -z-10" />
+      <div
+        aria-hidden="true"
+        className="modal-backdrop pointer-events-none absolute inset-0 -z-10"
+      />
       <div className="flex shrink-0 items-center justify-between gap-3">
-        <p title={alt} className="text-ui-secondary text-on-solid min-w-0 flex-1 truncate">
-          {alt}
-        </p>
+        <OverflowTooltip label={alt}>
+          <p className="text-ui-secondary text-on-solid min-w-0 flex-1 truncate">{alt}</p>
+        </OverflowTooltip>
         <MediaToolbar label={t("Image actions")} className="shrink-0">
           {actions}
           <MediaToolbarButton
@@ -203,10 +220,7 @@ function ImageLightboxContent({ src, alt, onClose, actions, loading = false, err
       <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">
         {viewing ? (
           <MediaToolbar label={t("Zoom")}>
-            <MediaToolbarButton
-              label={t("Zoom out")}
-              onClick={() => imageZoom.zoom(1 / 1.5)}
-            >
+            <MediaToolbarButton label={t("Zoom out")} onClick={() => imageZoom.zoom(1 / 1.5)}>
               <Minus className="icon-sm" aria-hidden />
             </MediaToolbarButton>
             <span

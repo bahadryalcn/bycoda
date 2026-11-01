@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { Button } from "../../../shared/ui/Button";
@@ -189,10 +190,12 @@ export function RemoteShellSuggestions({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={snapshot ? () => void accept(value) : undefined}
               >
-                <span className={styles.text} title={value}>
-                  <span className={styles.match}>{value.slice(0, shownPrefix.length)}</span>
-                  {value.slice(shownPrefix.length)}
-                </span>
+                <OverflowTooltip label={value}>
+                  <span className={styles.text}>
+                    <span className={styles.match}>{value.slice(0, shownPrefix.length)}</span>
+                    {value.slice(shownPrefix.length)}
+                  </span>
+                </OverflowTooltip>
               </Button>
             ))}
             {snapshot && !suggestions.length ? (

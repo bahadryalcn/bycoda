@@ -148,11 +148,21 @@ it("preserves native trigger refs and descriptions, cancellation and disabled me
     label: "Account",
     value: "private",
     options: [
-      { value: "private", label: "Private", disabled: true, description: "Permission required" },
+      {
+        value: "private",
+        label: "Private",
+        disabled: true,
+        description: "Permission required",
+      },
     ],
 
     onChange,
-    triggerProps: { ref, id: "account", "aria-describedby": "help", onClick: cancel },
+    triggerProps: {
+      ref,
+      id: "account",
+      "aria-describedby": "help",
+      onClick: cancel,
+    },
   };
 
   await act(async () => root.render(createElement(SearchableSelect, props)));
@@ -185,7 +195,11 @@ it("preserves native trigger refs and descriptions, cancellation and disabled me
 
   await act(async () =>
     input.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
     ),
   );
 
@@ -457,7 +471,10 @@ it("distinguishes an empty source from a filtered-out query", async () => {
   expect(document.body.querySelector('[role="status"]')?.textContent).toBe("No projects yet");
   await act(async () =>
     root.render(
-      createElement(SearchableSelect, { ...props, options: [{ value: "a", label: "Alpha" }] }),
+      createElement(SearchableSelect, {
+        ...props,
+        options: [{ value: "a", label: "Alpha" }],
+      }),
     ),
   );
   await search("zzz");
@@ -497,7 +514,8 @@ it("accents matched text, truncates long labels and keeps the full text availabl
   const option = document.body.querySelector('[role="option"]')!;
   expect(option.querySelectorAll("[data-match]").length).toBeGreaterThan(0);
   expect(option.textContent).toContain(long);
-  expect(option.querySelector<HTMLElement>("[title]")?.title).toBe(long);
+  // Full text remains readable to assistive technology without an unconditional native bubble.
+  expect(option.querySelector("[title]")).toBeNull();
 });
 
 it("renders a large list and moves to the last choosable option", async () => {

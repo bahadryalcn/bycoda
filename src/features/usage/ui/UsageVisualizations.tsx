@@ -208,7 +208,7 @@ export function Contribution({
       <div className="usage-contributions">
         {rows.slice(0, 5).map((row) => (
           <div className="usage-contribution" key={row.key}>
-            <Button variant="link" onClick={() => onSelect(row.key)} tooltip={row.label}>
+            <Button variant="link" onClick={() => onSelect(row.key)}>
               {row.label}
             </Button>
             <span>

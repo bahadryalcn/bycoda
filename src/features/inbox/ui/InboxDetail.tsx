@@ -327,7 +327,6 @@ export function InboxDetail({
             >
               <header className={`flex flex-col ${panel ? "gap-2" : "gap-2.5"}`}>
                 <h1
-                  title={item.title}
                   className={`break-words font-medium leading-tight text-(--ui-tone-neutral-fg) ${
                     panel ? "text-ui-heading" : "text-ui-heading"
                   }`}

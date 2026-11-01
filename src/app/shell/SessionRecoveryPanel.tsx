@@ -419,7 +419,7 @@ export function SessionRecoveryPanel({
                   />
                   <HarnessIcon harness={stub.harness} className="size-4 shrink-0" />
                   <div className="min-w-0 basis-48 flex-1">
-                    <div className="break-words text-ui-secondary font-medium" title={title}>
+                    <div className="break-words text-ui-secondary font-medium">
                       {title}
                     </div>
                     <details

@@ -10,8 +10,11 @@ import {
 } from "./ToolsWorkspace";
 import { useDockedTools } from "./toolPaneState";
 import type { ToolsTab } from "./toolsUiControl";
+import { requestToolsUi } from "./toolsUiControl";
 
-const toolViews = vi.hoisted(() => new Map<string, (view: { tab: ToolsTab; machine: string }) => void>());
+const toolViews = vi.hoisted(
+  () => new Map<string, (view: { tab: ToolsTab; machine: string }) => void>(),
+);
 
 function DockState({ sessionId }: { sessionId: string }) {
   const active = useDockedTools({ cwd: "/one", sessionId });
@@ -19,7 +22,13 @@ function DockState({ sessionId }: { sessionId: string }) {
 }
 
 vi.mock("./SessionHostTools", () => ({
-  SessionHostTools: ({ cwd, onViewChange }: { cwd: string; onViewChange: (view: { tab: ToolsTab; machine: string }) => void }) => {
+  SessionHostTools: ({
+    cwd,
+    onViewChange,
+  }: {
+    cwd: string;
+    onViewChange: (view: { tab: ToolsTab; machine: string }) => void;
+  }) => {
     toolViews.set(cwd, onViewChange);
     return createElement("div", null, cwd);
   },
@@ -51,19 +60,66 @@ afterEach(() => {
   window.history.replaceState({}, "", "/");
 });
 
+it("preserves an existing remote target by default and can explicitly mount its project Host", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const context = { cwd: "/one", sessionId: "one", title: "One" };
+  try {
+    await act(async () => root.render(createElement(ToolsWorkspace, null, "Workspace")));
+    await act(async () =>
+      dockHostTools({ ...context, initialTab: "browser", initialMachine: "machine:mac" }),
+    );
+    toolViews.get("/one")!({ tab: "browser", machine: "machine:mac" });
+    let reused!: ReturnType<typeof requestToolsUi>;
+    await act(async () => {
+      reused = requestToolsUi(context, "ui.tools.open", { tab: "browser" });
+    });
+    expect((await reused).panels[0]).toMatchObject({ machine: "machine:mac", mounted: true });
+    let forced!: ReturnType<typeof requestToolsUi>;
+    await act(async () => {
+      forced = requestToolsUi(context, "ui.tools.open", { tab: "browser", projectHost: true });
+    });
+    toolViews.get("/one")!({ tab: "browser", machine: "project" });
+    expect((await forced).panels[0]).toMatchObject({
+      tab: "browser",
+      machine: "project",
+      mounted: true,
+    });
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
 it("detaches the current dock tab and machine rather than its original context", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   const root = createRoot(container);
   try {
     await act(async () => root.render(createElement(ToolsWorkspace, null, "Workspace")));
-    await act(async () => dockHostTools({ cwd: "/current", sessionId: "session", title: "Current", initialTab: "devices", initialMachine: "project" }));
+    await act(async () =>
+      dockHostTools({
+        cwd: "/current",
+        sessionId: "session",
+        title: "Current",
+        initialTab: "devices",
+        initialMachine: "project",
+      }),
+    );
     toolViews.get("/current")!({ tab: "resources", machine: "machine:mac" });
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Open in new window"]')!.click());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Open in new window"]')!.click(),
+    );
     const options = created.mock.calls[0][1];
-    expect(readHostToolsWindow(new URL(options.url, "https://bycoda.local").search)).toMatchObject({ initialTab: "resources", initialMachine: "machine:mac" });
+    expect(readHostToolsWindow(new URL(options.url, "https://bycoda.local").search)).toMatchObject({
+      initialTab: "resources",
+      initialMachine: "machine:mac",
+    });
     expect(container.querySelector(".tools-workspace-pane")).toBeNull();
-  } finally { await act(async () => root.unmount()); }
+  } finally {
+    await act(async () => root.unmount());
+  }
 });
 
 it("retains multiple project panes while moving the reserved workspace region", async () => {

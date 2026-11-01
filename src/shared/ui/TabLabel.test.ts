@@ -56,7 +56,7 @@ it("fades only real overflow, remeasures resize/rename and disconnects observers
   }
 });
 
-it("offers the full title only while clipped, keeps the file extension in middle mode and names the dirty mark", () => {
+it("keeps clipped text accessible without native titles, preserves the extension and names the dirty mark", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let textWidth = 80;
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => 100);
@@ -77,9 +77,9 @@ it("offers the full title only while clipped, keeps the file extension in middle
     act(() =>
       root.render(createElement(TabLabel, { title: true }, "Quarterly-report.final.v2.tsx")),
     );
-    expect(container.querySelector("span")!.getAttribute("title")).toBe(
-      "Quarterly-report.final.v2.tsx",
-    );
+    expect(container.querySelector("span")!.hasAttribute("title")).toBe(false);
+    expect(container.querySelector("span")!.textContent).toBe("Quarterly-report.final.v2.tsx");
+    expect(container.querySelector("span")!.getAttribute("data-overflow")).toBe("true");
     act(() =>
       root.render(
         createElement(

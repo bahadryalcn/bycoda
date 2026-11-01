@@ -4,6 +4,8 @@ import { TextareaField } from "./TextareaField";
 import { useT } from "../i18n";
 import { useRef, useState, type ReactNode } from "react";
 import { Select } from "./Select";
+import { OverflowTooltip } from "./Tooltip";
+import { MiddleTruncate } from "./MiddleTruncate";
 import { Switch } from "./Switch";
 import { Slider } from "./Slider";
 import { SegmentedControl } from "./SegmentedControl";
@@ -199,6 +201,27 @@ function StateMatrix({ layout }: { layout: ControlMatrixLayout }) {
         </Cell>
         <Cell state="password disabled">
           <PasswordField label={t("Password")} defaultValue="preview" disabled />
+        </Cell>
+      </Family>
+
+      <Family name="Tooltip visibility">
+        <Cell state="readable label, no repeated hint">
+          <Button tooltip={t("Preview")} tooltipWhen="overflow">
+            {t("Preview")}
+          </Button>
+        </Cell>
+        <Cell state="full text on actual clipping" narrow>
+          <OverflowTooltip label={LONG}>
+            <span className="min-w-0 truncate">{LONG}</span>
+          </OverflowTooltip>
+        </Cell>
+        <Cell state="middle truncation, no native title" narrow>
+          <MiddleTruncate>{LONG}</MiddleTruncate>
+        </Cell>
+        <Cell state="extra details remain available">
+          <Button tooltip={t("Preview")} tooltipWhen="overflow" tooltipDetails={[t("Required")]}>
+            {t("Preview")}
+          </Button>
         </Cell>
       </Family>
 

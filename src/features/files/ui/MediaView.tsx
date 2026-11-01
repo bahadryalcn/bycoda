@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -204,9 +205,11 @@ export function MediaView({
         )}
       </div>
       <footer className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-pane-border) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
-        <span className="min-w-0 flex-1 truncate" title={path}>
-          {basename(path)}
-        </span>
+        <OverflowTooltip label={path}>
+          <span className="min-w-0 flex-1 truncate">
+            {basename(path)}
+          </span>
+        </OverflowTooltip>
         {isVideo ? (
           <>
             {metadata?.width && metadata.height ? (

@@ -6,7 +6,12 @@ export type ToolsUiAction =
   | "ui.tools.open"
   | "ui.tools.place"
   | "ui.tools.close";
-export type ToolsUiInput = { tab?: ToolsTab; placement?: ToolsPlacement; machineId?: string };
+export type ToolsUiInput = {
+  tab?: ToolsTab;
+  placement?: ToolsPlacement;
+  machineId?: string;
+  projectHost?: boolean;
+};
 export type ToolsUiState = {
   open: boolean;
   placement: ToolsPlacement;
@@ -40,7 +45,7 @@ export async function requestToolsUi(
     throw new Error("Unsupported tools UI request.");
   const allowed =
     action === "ui.tools.open"
-      ? ["tab", "placement", "machineId"]
+      ? ["tab", "placement", "machineId", "projectHost"]
       : action === "ui.tools.place"
         ? ["placement"]
         : [];
@@ -61,6 +66,10 @@ export async function requestToolsUi(
     (typeof input.machineId !== "string" || !input.machineId.trim() || input.machineId.length > 300)
   )
     throw new Error("Invalid tools machine.");
+  if (input.projectHost !== undefined && typeof input.projectHost !== "boolean")
+    throw new Error("Invalid project Host selection.");
+  if (input.projectHost === true && input.machineId !== undefined)
+    throw new Error("Choose either the project Host or an explicit machine.");
   if (!handler) throw new Error("Conversation Tools workspace is not mounted in this window.");
   return handler(context, action as ToolsUiAction, input as ToolsUiInput);
 }

@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
 import {
@@ -891,9 +892,11 @@ function MessageQueue({
                   <ListEnd className="icon-sm shrink-0" />
                 )}
                 <div className="min-w-0 py-1">
-                  <div className="truncate text-(--ui-text-secondary)" title={label}>
-                    {label}
-                  </div>
+                  <OverflowTooltip label={label}>
+                    <div className="truncate text-(--ui-text-secondary)">
+                      {label}
+                    </div>
+                  </OverflowTooltip>
                   {attachmentGone ? (
                     <span
                       className="block [overflow-wrap:anywhere] text-(--ui-tone-warning-fg)"
