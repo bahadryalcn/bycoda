@@ -443,6 +443,29 @@ it("clamps resized viewports below min and allows keyboard reset", async () => {
   expect(separator.getAttribute("aria-valuemin")).toBe("150");
 });
 
+it("keeps the live Sash drag width when the container resizes mid-drag", async () => {
+  let sash: ReturnType<typeof useDragResize>["sashProps"] | null = null;
+  function Example() {
+    const resize = useDragResize({ min: 200, max: () => 600, initial: 400, defaultWidth: 240 });
+    sash = resize.sashProps;
+    return createElement("div", { ref: resize.setPaneRef });
+  }
+  await act(async () => root.render(createElement(Example)));
+  const pane = container.firstElementChild as HTMLElement;
+  await act(async () => {
+    sash!.onResizeStart();
+    sash!.onResize(60);
+  });
+  expect(pane.style.width).toBe("460px");
+  // The pane's parent resizes with each frame; that must not snap back to 400.
+  await act(async () => window.dispatchEvent(new Event("resize")));
+  expect(pane.style.width).toBe("460px");
+  await act(async () =>
+    sash!.onResizeEnd(60, { cancelled: false, moved: true, keyboard: false }),
+  );
+  expect(pane.style.width).toBe("460px");
+});
+
 it("changes resize axis without retaining the previous dimension", async () => {
   function Example({ vertical }: { vertical: boolean }) {
     const resize = useDragResize({

@@ -201,7 +201,11 @@ export function useDragResize({
 
   useEffect(() => {
     const resize = () => {
-      const next = clamp(stopDrag.current ? widthRef.current : preferredWidthRef.current);
+      // The pane's parent resizes with every drag frame. While a drag (pointer or
+      // shared Sash) is live, keep its width; snapping back to the saved width here
+      // made the pane flicker between the old and new size until release.
+      const dragging = stopDrag.current !== null || sashStart.current !== null;
+      const next = clamp(dragging ? widthRef.current : preferredWidthRef.current);
       if (next !== widthRef.current) {
         apply(next);
         setWidth(next);
