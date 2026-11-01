@@ -3645,7 +3645,7 @@ describe("shared queued messages", () => {
         const reviewing = (await scheduler.get("blocked-review-continuation"))!;
         const sessionId = reviewing.reviewer!.sessionId!;
         s.turn().onEvent({ type: "session.providerBound", providerSessionId: "original-review-thread" });
-        s.turn().onEvent({ type: "message.delta", text: "VERDICT: FAIL - Report is incomplete." });
+        s.turn().onEvent({ type: "message.delta", text: "Report is incomplete." });
         s.turn().onEvent({ type: "message.completed" });
         s.finish();
         await s.engine.waitForRun(sessionId, reviewing.reviewer!.runId);
