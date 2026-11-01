@@ -174,7 +174,10 @@
       "webkit": 15
     },
     "voice-visual-styles": {
-      "chromium": 5
+      "chromium": 11
+    },
+    "global-voice": {
+      "chromium": 4
     },
     "workspace-navigation": {
       "chromium": 14

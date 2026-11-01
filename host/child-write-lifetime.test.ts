@@ -83,7 +83,8 @@ setInterval(()=>{},1000);`,
         delay?: number,
         ...args: unknown[]
       ) => {
-        if (delay === 12_000) physicalDeadline = () => callback(...args);
+        // Host physical stdin deadline (PROVIDER_WRITE_TIMEOUT_MS) and JsonRpc caller deadline.
+        if (delay === 90_000) physicalDeadline = () => callback(...args);
         if (delay === 15_000) callerDeadline = () => callback(...args);
         return originalSetTimeout(callback, delay, ...args);
       }) as typeof setTimeout);

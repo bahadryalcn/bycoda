@@ -9,6 +9,22 @@ import {
 } from "./storage/persistence-health";
 
 export type StoreRow = Record<string, any>;
+/**
+ * Structured clone ships a typed-array view's entire backing ArrayBuffer. A 64 KiB
+ * chunk sliced from a 64 MiB artifact would otherwise copy 64 MiB per statement, so
+ * partial views are copied to exact-size bytes before crossing to the store worker.
+ */
+const exactBytes = (value: SQLInputValue): SQLInputValue =>
+  ArrayBuffer.isView(value) &&
+  (value.byteOffset !== 0 || value.byteLength !== value.buffer.byteLength)
+    ? new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength))
+    : value;
+const workerParams = (
+  params: SQLInputValue[] | SQLInputValue[][],
+): SQLInputValue[] | SQLInputValue[][] =>
+  params.map((param) =>
+    Array.isArray(param) ? param.map(exactBytes) : exactBytes(param as SQLInputValue),
+  ) as SQLInputValue[] | SQLInputValue[][];
 type Owner = { id: string; phase: "open" | "closing" | "closed" };
 type AuthorizationCheck = () => boolean | Promise<boolean>;
 export type StoreAuthorization =
@@ -106,7 +122,12 @@ export class StoreDatabase {
             /\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i.test(request.sql)
           ) {
             this.dataMutationVersion++;
-            if (request.mutation || !/^\s*(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+(?:sessions|session_state|session_journal|session_journal_blocks|session_events)\b/i.test(request.sql))
+            if (
+              request.mutation ||
+              !/^\s*(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+(?:sessions|session_state|session_journal|session_journal_blocks|session_events)\b/i.test(
+                request.sql,
+              )
+            )
               this.unattributedMutationVersion++;
           }
           if (request.mutation && request.sql)
@@ -157,7 +178,9 @@ export class StoreDatabase {
       // it reports its own error. Stop holding every write back once probes keep finding
       // it busy, instead of probing forever.
       else if (next.reason === "busy" && ++this.busyFailures > 6) {
-        console.warn("Host database stayed busy; accepting writes again, each reports its own failure.");
+        console.warn(
+          "Host database stayed busy; accepting writes again, each reports its own failure.",
+        );
         next = { state: "ready" };
         this.busyFailures = 0;
         this.recoveryAttempts = 0;
@@ -428,7 +451,8 @@ export class StoreDatabase {
   ): Promise<any> {
     if (this.failed) return Promise.reject(this.failed);
     const writes =
-      method === "runMany" || method === "run" ||
+      method === "runMany" ||
+      method === "run" ||
       method === "exec" ||
       ((method === "get" || method === "all" || method === "cursorOpen") &&
         !/^\s*(?:SELECT\b|PRAGMA\b|EXPLAIN\b)/i.test(sql ?? ""));
@@ -448,11 +472,13 @@ export class StoreDatabase {
         reject,
         owner,
         sql,
-        mutation: !this.internal.getStore() && (method === "runMany" || method === "run" || method === "exec"),
+        mutation:
+          !this.internal.getStore() &&
+          (method === "runMany" || method === "run" || method === "exec"),
         write: writes,
       });
       try {
-        this.worker.postMessage({ id, owner: owner.id, method, sql, params });
+        this.worker.postMessage({ id, owner: owner.id, method, sql, params: workerParams(params) });
       } catch (error) {
         this.pending.delete(id);
         reject(error);

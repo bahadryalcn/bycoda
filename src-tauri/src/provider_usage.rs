@@ -329,7 +329,7 @@ fn forget_cache(path: &Path) {
 fn keep_cache(path: &Path, cache: ScanCache, saved_at: Option<Instant>, unsaved: bool) {
     let mut saved_at = saved_at;
     let mut unsaved = unsaved;
-    if unsaved && saved_at.map_or(true, |at| at.elapsed() >= SAVE_INTERVAL) {
+    if unsaved && saved_at.is_none_or(|at| at.elapsed() >= SAVE_INTERVAL) {
         save_cache(path, &cache);
         saved_at = Some(Instant::now());
         unsaved = false;

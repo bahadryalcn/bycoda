@@ -565,7 +565,7 @@ impl ExecutionGate {
         };
         let reservation_id = uuid::Uuid::new_v4().to_string();
         let transient_lease = is_transient_kind(kind);
-        let result = (|| {
+        let result = {
             let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
             lease_write(&conn, transient_lease, |tx| {
                 let generation = require_native(tx, session_id, existing_control)?;
@@ -587,7 +587,7 @@ impl ExecutionGate {
                 VALUES(?1,?2,?3,?4,'RESERVED',?5,?6)",params![reservation_id,session_id,generation as i64,kind,std::process::id(),now_millis()]).map_err(|error|error.to_string())?;
                 Ok(generation)
             })
-        })(); // SQL mutex is released BEFORE operation settlement/Drop.
+        }; // SQL mutex is released BEFORE operation settlement/Drop.
         let generation = match result {
             Ok(generation) => generation,
             Err(error) => {
@@ -813,7 +813,7 @@ impl NativeLease {
         Ok(())
     }
     fn release(&mut self) -> Result<(), String> {
-        let result = (|| {
+        let result = {
             let conn = self
                 .gate
                 .conn
@@ -827,7 +827,7 @@ impl NativeLease {
                 .map_err(|error| error.to_string())?;
                 Ok(())
             })
-        })();
+        };
         // Never settle under SQL: checkpoint consumers lock barrier then Store.
         // On error retain the lease for a real retry/unknown Drop; a successful
         // delete plus FULL commit/restore is the actual known settlement.

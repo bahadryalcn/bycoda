@@ -580,10 +580,10 @@ pub async fn session_upsert(
 fn upsert_git_info(session: &SessionUpsert) -> crate::fs::GitInfo {
     // Scope by cwd and the caller's branch hint. Read HEAD as well so an
     // external branch switch invalidates the longer save-path cache promptly.
+    type Key = (PathBuf, Option<String>, Option<Vec<u8>>);
     type Entry = (std::time::Instant, crate::fs::GitInfo);
-    static CACHE: std::sync::OnceLock<
-        Mutex<std::collections::HashMap<(PathBuf, Option<String>, Option<Vec<u8>>), Entry>>,
-    > = std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<Mutex<std::collections::HashMap<Key, Entry>>> =
+        std::sync::OnceLock::new();
     let root = crate::fs::expand_home(
         session
             .worktree_cwd

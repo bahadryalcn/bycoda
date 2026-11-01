@@ -374,7 +374,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     // model reply. Keep the current utterance out of its own previous exchanges.
     history.current.set(historyKey, [...exchanges, { role: "user", text }].slice(-12));
     const recordResponse = (entry: { role: string; text: string }) => {
-      history.current.set(historyKey, [...(history.current.get(historyKey) ?? []), entry].slice(-12));
+      history.current.set(
+        historyKey,
+        [...(history.current.get(historyKey) ?? []), entry].slice(-12),
+      );
     };
     try {
       if (latest.current.workspace) {
@@ -972,10 +975,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         </Button>
         {compact ? (
           <div className={styles.heading}>
-            <Tooltip label={target?.title} when={target?.title && target.title !== scopeTitle ? "always" : "overflow"}>
-              <h2 className={styles.title}>
-                {scopeTitle}
-              </h2>
+            <Tooltip
+              asChild
+              label={target?.title}
+              when={target?.title && target.title !== scopeTitle ? "always" : "overflow"}
+            >
+              <h2 className={styles.title}>{scopeTitle}</h2>
             </Tooltip>
             {/* The live line; the status region below stays authoritative for readers. */}
             <OverflowTooltip label={summary}>

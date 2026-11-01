@@ -321,7 +321,7 @@ impl ProcessOwner {
                     // Retirement is best-effort: unproven job drain is logged, never a failed wait.
                     let retirement = Ok(());
                     #[cfg(windows)]
-                    let result = result.map(|status| {
+                    let result = result.inspect(|_| {
                         if let Some(job) = job {
                             job.terminate();
                             match job.drain() {
@@ -335,7 +335,6 @@ impl ProcessOwner {
                                 }
                             }
                         }
-                        status
                     });
                     #[cfg(windows)]
                     if let Some(error) = &signal_error {

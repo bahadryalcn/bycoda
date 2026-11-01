@@ -49,6 +49,7 @@ import c47 from "./playwright.session-references.config.ts";
 import c48 from "./playwright.composer-compact.config.ts";
 import c49 from "./playwright.field-message.config.ts";
 import c50 from "./tooltip-policy.playwright.config.ts";
+import c51 from "./playwright.global-voice.config.ts";
 
 export const fixtureConfigs = {
   "tests/browser/compact-navigation.playwright.config.ts": c0,
@@ -102,4 +103,5 @@ export const fixtureConfigs = {
   "tests/browser/playwright.composer-compact.config.ts": c48,
   "tests/browser/playwright.field-message.config.ts": c49,
   "tests/browser/tooltip-policy.playwright.config.ts": c50,
+  "tests/browser/playwright.global-voice.config.ts": c51,
 };

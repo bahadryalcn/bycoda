@@ -154,8 +154,20 @@ function ancestors(path: string): string[] {
   }
   return result;
 }
-function privateWindowsScript(paths: string[], privatePaths: string[]): string {
-  return `
+function privateWindowsScript(paths: string[], privatePaths: string[], claimed?: string): string {
+  // An elevated administrator token creates files owned by BUILTIN Administrators,
+  // not by the user. Only this writer's freshly created ("wx") file is re-owned to
+  // the current user; every path is then verified with the unchanged strict rules.
+  const claim = claimed
+    ? `
+$claimed = Get-Item -LiteralPath ${psQuote(claimed)} -Force -ErrorAction Stop
+if ($claimed.PSIsContainer -or ($claimed.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Unavailable' }
+$claimedAcl = New-Object Security.AccessControl.FileSecurity
+$claimedAcl.SetOwner([Security.Principal.WindowsIdentity]::GetCurrent().User)
+$claimed.SetAccessControl($claimedAcl)
+`
+    : "";
+  return `${claim}
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $allowed = @($sid, 'S-1-5-18', 'S-1-5-32-544')
 foreach ($p in @(${[...new Set(paths.flatMap(ancestors))].map(psQuote).join(",")})) {
@@ -184,9 +196,13 @@ async function assertCanonical(path: string, directory: boolean): Promise<string
     unavailable();
   return canonical;
 }
-async function assertProtected(paths: string[], privatePaths: string[]): Promise<void> {
+async function assertProtected(
+  paths: string[],
+  privatePaths: string[],
+  claimed?: string,
+): Promise<void> {
   if (process.platform === "win32") {
-    await runPowerShell(privateWindowsScript(paths, privatePaths));
+    await runPowerShell(privateWindowsScript(paths, privatePaths, claimed));
   } else {
     for (const path of privatePaths) {
       const stat = await lstat(path);
@@ -358,6 +374,7 @@ export async function writeNativeHelperDeployment(
     await assertProtected(
       [profile, executable, ...privatePaths, temporary],
       [...privatePaths, temporary],
+      temporary,
     );
     checkExpected(await fingerprint(executable), record);
     await rename(temporary, target);

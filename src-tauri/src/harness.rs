@@ -370,17 +370,11 @@ struct TestOwnedChild {
 }
 #[cfg(all(test, unix))]
 impl TestOwnedChild {
-    fn id(&self) -> u32 {
-        self.process.id()
-    }
     fn kill(&mut self) -> std::io::Result<()> {
         self.process.request_stop()
     }
     fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
         self.process.wait_actual()
-    }
-    fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
-        self.process.try_wait()
     }
 }
 #[cfg(all(test, unix))]

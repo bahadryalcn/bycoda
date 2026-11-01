@@ -45,6 +45,9 @@ beforeAll(async () => {
     define: { "import.meta.hot": "undefined" },
     logLevel: "silent",
   });
+  // Populate the module analysis cache that isolated CLI children reuse.
+  if (process.platform === "win32")
+    await runPowerShell("Get-Acl -LiteralPath $env:SystemRoot | Out-Null");
 });
 
 afterAll(async () => {
@@ -104,6 +107,17 @@ async function runCli(f: Fixture, input: Uint8Array) {
       ["systemroot", "windir", "temp", "tmp"].includes(key.toLowerCase()),
     ),
   );
+  // The isolated LOCALAPPDATA has no Windows PowerShell module analysis cache, so
+  // every ACL helper call would rescan all installed modules (about 20 s on hosted
+  // runners). Reuse the caller's cache file; Bycoda state stays in the fresh home.
+  if (process.platform === "win32" && process.env.LOCALAPPDATA)
+    env.PSModuleAnalysisCachePath = join(
+      process.env.LOCALAPPDATA,
+      "Microsoft",
+      "Windows",
+      "PowerShell",
+      "ModuleAnalysisCache",
+    );
   const child = spawn(process.execPath, [bundle, "native-authority-deploy", "--data-dir", f.host], {
     cwd: f.directory,
     env: {

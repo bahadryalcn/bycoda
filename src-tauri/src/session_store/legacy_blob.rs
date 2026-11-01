@@ -77,7 +77,8 @@ fn candidates(conn: &Connection, after: &str) -> rusqlite::Result<Vec<String>> {
 /// One statement, so one snapshot: the normalized rows are complete, every row
 /// is a JSON object, and the view's reconstruction equals the stored blob.
 fn verify(conn: &Connection, id: &str) -> rusqlite::Result<Option<Verified>> {
-    let row: Option<(i64, i64, i64, i64, Option<i64>, Option<i64>, i64, bool)> = conn
+    type Row = (i64, i64, i64, i64, Option<i64>, Option<i64>, i64, bool);
+    let row: Option<Row> = conn
         .query_row(
             "SELECT st.revision, st.length, octet_length(s.blocks_json),
                (SELECT count(*) FROM session_blocks b WHERE b.session_id=s.id),

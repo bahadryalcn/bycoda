@@ -187,7 +187,8 @@ it("preserves the12s read default and chooses the declared30s Native deadline", 
   const f = await fixture(),
     client = await f.connect(),
     spy = vi.spyOn(globalThis, "setTimeout");
-  expect((await client.request("projects.list")).result).toEqual([]);
+  // projects.* reads now declare the 30 s slow-read deadline; environment.describe keeps the default.
+  expect((await client.request("environment.describe")).error).toBeUndefined();
   expect(spy.mock.calls.map((args) => args[1])).toContain(12_000);
   spy.mockClear();
   expect(
