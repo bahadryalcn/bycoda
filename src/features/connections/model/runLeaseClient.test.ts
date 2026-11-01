@@ -93,6 +93,12 @@ it("does not start without ownership ACK from a retirement-capable Host", async 
   expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed" });
 });
 
+it("starts a conversation the retirement-capable Host does not know yet", async () => {
+  configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+  answer = () => { throw new Error("Host rejected request: Session not found on this machine"); };
+  expect(await acquireRunLease("chat")).toEqual({ kind: "unavailable" });
+});
+
 it("discovers retirement capability and retains it when a later connection probe fails", async () => {
   vi.useFakeTimers();
   try {

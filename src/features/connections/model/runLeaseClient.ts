@@ -279,6 +279,10 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
     }
     if (isLeaseHeld(error)) return { kind: "held", text: leaseHeldText(error) };
     const text = error instanceof Error ? error.message : String(error);
+    // The Host checks existence before any writer retirement. A conversation it
+    // does not know (a brand-new one, or one outside its projects) has no Host
+    // writer to hand over, so the turn starts as before.
+    if (/\bSession not found on this machine\b/.test(text)) return { kind: "unavailable" };
     if (/HOST_WRITER_RETIREMENT_(?:FAILED|PENDING)/.test(text) || retirement)
       return {
         kind: "failed",
