@@ -26,10 +26,10 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
         .evaluateAll((items) => items.every((item) => (item as HTMLCanvasElement).width > 100)),
     )
     .toBe(true);
-  await dialog.locator('input[name="onboarding-crew"][value="star-wars"]').locator("..").click();
+  await dialog.locator("#onboarding-crew-star-wars").click();
   await dialog.getByRole("radio", { name: "Light", exact: true }).click();
   await expect(page.locator("html")).toHaveClass(/theme-light/);
-  await expect(dialog.locator('input[name="onboarding-crew"][value="none"]')).toBeInViewport();
+  await expect(dialog.locator("#onboarding-crew-none")).toBeInViewport();
   await expect(dialog.getByRole("switch", { name: "Decorative animations" })).toBeInViewport();
   await page.screenshot({ path: `${captures}/appearance-light.png` });
   await dialog.getByRole("button", { name: /3\s*Agents/ }).click();
@@ -53,7 +53,7 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
     dialog.locator(".onboarding-feature").filter({ hasText: "Social Media" }).getByRole("checkbox"),
   ).not.toBeChecked();
   await dialog.getByRole("button", { name: /2\s*Appearance/ }).click();
-  await expect(dialog.locator('input[name="onboarding-crew"][value="star-wars"]')).toBeChecked();
+  await expect(dialog.locator("#onboarding-crew-star-wars")).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Light", exact: true })).toBeChecked();
   await dialog.getByRole("button", { name: /3\s*Agents/ }).click();
   await expect(dialog.locator(".onboarding-agent")).toHaveCount(0);
@@ -77,9 +77,7 @@ test("finds existing accounts, links another profile and lets the user choose a 
   ).toHaveCount(0);
   await expect(codex.getByRole("status")).toHaveText("Not signed in");
   await expect(codex.getByRole("button", { name: "Sign in to Codex", exact: true })).toBeEnabled();
-  await claude
-    .getByRole("button", { name: "More options for Claude Code", exact: true })
-    .click();
+  await claude.getByRole("button", { name: "More options for Claude Code", exact: true }).click();
   await page.getByRole("button", { name: "Terminal account profiles", exact: true }).click();
   await expect(page.getByText("D:/profiles/claude", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Use account", exact: true }).click();
@@ -93,7 +91,15 @@ test("finds existing accounts, links another profile and lets the user choose a 
       ),
     )
     .toBe("terminal-work");
+  // Escape closes one layer at a time: the profiles popover, then the provider's options.
   await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("dialog", { name: "Terminal account profiles", exact: true }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("dialog", { name: "More options for Claude Code", exact: true }),
+  ).toHaveCount(0);
   await codex.getByRole("button", { name: "More options for Codex", exact: true }).click();
   await page.getByRole("button", { name: "Show Codex CLI details", exact: true }).click();
   await page.getByRole("button", { name: "Edit Codex CLI path", exact: true }).click();
@@ -135,7 +141,7 @@ test("keeps navigation and footer accessible at narrow and short viewports", asy
     await expect(dialog.getByRole("button", { name: /5\s*Projeler/ })).toBeInViewport();
     await dialog.getByRole("button", { name: /2\s*Görünüm/ }).click();
     await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();
-    await dialog.locator('input[name="onboarding-crew"][value="none"]').locator("..").click();
+    await dialog.locator("#onboarding-crew-none").click();
     await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();
     await page.screenshot({ path: `${captures}/appearance-tr-${viewport.width}.png` });
     const bounds = await dialog.boundingBox();

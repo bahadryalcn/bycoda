@@ -3,8 +3,34 @@ import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
   for (const width of [390, 768, 1024, 1440]) {
-    test(`external MCP lifecycle ${theme} ${width}`, async ({ page, context }) => {
-      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    test(`external MCP lifecycle ${theme} ${width}`, async ({
+      page,
+      context,
+      browserName,
+    }, testInfo) => {
+      if (browserName === "webkit") {
+        // WebKit cannot grant clipboard permissions through Playwright. Capture the actual
+        // clipboard API payload; Chromium still checks its real clipboard.
+        testInfo.annotations.push({
+          type: "clipboard",
+          description:
+            "WebKit verifies clipboard API payloads with a fixture shim; Chromium verifies the real clipboard.",
+        });
+        await page.addInitScript(() => {
+          let clipboardText = "";
+          Object.defineProperty(navigator, "clipboard", {
+            configurable: true,
+            value: {
+              writeText: async (text: string) => {
+                clipboardText = text;
+              },
+              readText: async () => clipboardText,
+            },
+          });
+        });
+      } else {
+        await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      }
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/external-mcp.html?theme=${theme}`);
@@ -57,16 +83,24 @@ for (const theme of ["light", "dark"])
       );
       await page.keyboard.press("Escape");
       const revoke = page.getByRole("button", { name: "Revoke token" });
+      // Revoking asks in place first; declining the question revokes nothing.
       await revoke.click();
-      await expect(page.locator("body")).toHaveAttribute("data-confirmations", "1");
+      await expect(
+        page.getByText("Connected clients will lose access immediately.").first(),
+      ).toBeVisible();
+      const cancel = page.getByRole("button", { name: "Cancel", exact: true });
+      await cancel.click();
+      await expect(cancel).toHaveCount(0);
       await expect(page.locator("body")).not.toHaveAttribute("data-revokes");
-      await page.evaluate(() => {
-        document.body.dataset.confirm = "yes";
-      });
-      await revoke.evaluate((button: HTMLButtonElement) => {
-        button.click();
-        button.click();
-      });
+      await revoke.click();
+      // A press right after the question opens is its own tail, not an answer.
+      await page.waitForTimeout(400);
+      await page
+        .getByRole("button", { name: "Revoke token", exact: true })
+        .evaluate((button: HTMLButtonElement) => {
+          button.click();
+          button.click();
+        });
       await expect(page.locator("body")).toHaveAttribute("data-revokes", "1");
       await expect(revoke).toHaveCount(0);
       await expect(page.getByText("Revoked", { exact: false })).toHaveCount(3);

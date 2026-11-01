@@ -266,7 +266,11 @@ test("paused work keeps cancellation available while its coordinator is running"
       window as unknown as { crewFixtureReleaseOperation: () => void }
     ).crewFixtureReleaseOperation(),
   );
-  await expect(work.getByRole("status")).toHaveText("Work is paused. Nothing is running.");
+  // The pending "Stopping…" status can remain briefly beside the paused state.
+  await expect(work.getByRole("status").filter({ hasText: "paused" })).toHaveText(
+    "Work is paused. Nothing is running.",
+  );
+  await expect(work.getByRole("status")).toHaveCount(1);
   await expect(work.getByRole("button", { name: "Stop work", exact: true })).toHaveCount(0);
 });
 for (const theme of ["light", "dark"] as const) {

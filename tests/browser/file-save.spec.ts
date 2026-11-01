@@ -7,7 +7,7 @@ test("native draft save reporting never marks edits made during an older disk wr
   page,
 }) => {
   await page.goto("/tests/browser/file-save.html?native-draft&hold-write");
-  await page.getByRole("tab", { name: "Source", exact: true }).click();
+  await page.getByRole("radio", { name: "Source", exact: true }).click();
   const editor = page.locator(".cm-content:visible");
   await editor.click();
   await page.keyboard.press("Control+End");
@@ -47,7 +47,7 @@ test("native draft save reporting never marks edits made during an older disk wr
   await expect(page.getByLabel("Disk writes")).toContainText("1: ");
   await expect(page.getByLabel("Disk writes")).not.toContainText("Newer unsaved edit");
   await expect(page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ })).toHaveAttribute(
-    "title",
+    "aria-description",
     /Unsaved changes/,
   );
   expect(
@@ -67,7 +67,7 @@ test("native draft fixture retains actual source edits and retries storage witho
 }, info) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/file-save.html?native-draft&draft-error");
-  await page.getByRole("tab", { name: "Source", exact: true }).click();
+  await page.getByRole("radio", { name: "Source", exact: true }).click();
   const editor = page.locator(".cm-content:visible");
   await editor.click();
   await page.keyboard.press("Control+End");
@@ -140,7 +140,7 @@ for (const width of [1280, 800]) {
       await expect(saveStatus(page)).toContainText("Unsaved changes");
       await expect(
         page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
-      ).toHaveAttribute("title", /Unsaved changes/);
+      ).toHaveAttribute("aria-description", /Unsaved changes/);
       await expect(page.getByLabel("Disk writes")).toHaveText("0");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -164,9 +164,10 @@ test("same-name file tabs keep independent drafts and expose their full path fro
   await page.setViewportSize({ width: 390, height: 700 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/file-save.html?same-name");
-  await page.getByRole("tab", { name: "Source", exact: true }).click();
-  const first = page.locator('[role="tab"][title^="/fixture/notes.md"]');
-  const second = page.locator('[role="tab"][title^="/fixture/archive/notes.md"]');
+  await page.getByRole("radio", { name: "Source", exact: true }).click();
+  // Both tabs are named notes.md; the fixture opens /fixture/notes.md before /fixture/archive/notes.md.
+  const first = page.getByRole("tab", { name: /^notes\.md/ }).nth(0);
+  const second = page.getByRole("tab", { name: /^notes\.md/ }).nth(1);
   const editor = page.locator(".cm-content:visible");
   await editor.click();
   await page.keyboard.press("Control+End");
@@ -175,7 +176,11 @@ test("same-name file tabs keep independent drafts and expose their full path fro
   await page.keyboard.press("ArrowRight");
   await expect(second).toBeFocused();
   await expect(second).toHaveAttribute("aria-selected", "true");
-  await page.getByRole("tab", { name: "Source", exact: true }).click();
+  // Keyboard focus opens the shared tab tooltip with the full path; Escape dismisses it.
+  await expect(page.getByRole("tooltip")).toContainText("/fixture/archive/notes.md");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await page.getByRole("radio", { name: "Source", exact: true }).click();
   await expect(editor).toContainText("Archived text");
   await editor.click();
   await page.keyboard.press("Control+End");
@@ -194,12 +199,12 @@ test("same-name file tabs keep independent drafts and expose their full path fro
   await page.keyboard.press("ArrowLeft");
   await expect(editor).toContainText("First unsaved draft");
   await expect(editor).not.toContainText("Second unsaved draft");
-  await expect(first).toHaveAttribute("title", /Unsaved changes/);
-  await expect(second).toHaveAttribute("title", /Unsaved changes/);
+  await expect(first).toHaveAttribute("aria-description", /Unsaved changes/);
+  await expect(second).toHaveAttribute("aria-description", /Unsaved changes/);
   await page.getByRole("button", { name: "Save", exact: true }).filter({ visible: true }).click();
   await expect(page.getByLabel("Disk writes")).toContainText("First unsaved draft");
-  await expect(first).not.toHaveAttribute("title", /Unsaved changes/);
-  await expect(second).toHaveAttribute("title", /Unsaved changes/);
+  await expect(first).not.toHaveAttribute("aria-description", /Unsaved changes/);
+  await expect(second).toHaveAttribute("aria-description", /Unsaved changes/);
   await first.focus();
   await page.keyboard.press("ArrowRight");
   await expect(editor).toContainText("Second unsaved draft");
@@ -212,7 +217,7 @@ for (const light of [false, true]) {
   }, info) => {
     await page.setViewportSize({ width: 320, height: 700 });
     await page.goto(`/tests/browser/file-save.html?save-error${light ? "&light" : ""}`);
-    await page.getByRole("tab", { name: "Source", exact: true }).click();
+    await page.getByRole("radio", { name: "Source", exact: true }).click();
     const editor = page.locator(".cm-content");
     await editor.click();
     await page.keyboard.press("Control+End");
@@ -236,7 +241,7 @@ for (const light of [false, true]) {
     await expect(editor).toContainText("Keep my failed draft");
     await expect(
       page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
-    ).toHaveAttribute("title", /Unsaved changes/);
+    ).toHaveAttribute("aria-description", /Unsaved changes/);
     await expect(page.getByLabel("Disk writes")).toHaveText("0");
     await page.screenshot({
       path: info.outputPath(`save-error-${light ? "light" : "dark"}-320.png`),
@@ -253,7 +258,7 @@ for (const light of [false, true]) {
     await expect(editor).toContainText("Keep my failed draft");
     await expect(
       page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
-    ).not.toHaveAttribute("title", /Unsaved changes/);
+    ).not.toHaveAttribute("aria-description", /Unsaved changes/);
   });
 }
 
@@ -264,15 +269,15 @@ test("save works from editor, Explorer and preview without taking over chat", as
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/tests/browser/file-save.html");
   const save = page.getByRole("button", { name: "Save", exact: true });
-  const source = page.getByRole("tab", { name: "Source", exact: true });
-  const preview = page.getByRole("tab", { name: "Preview", exact: true });
+  const source = page.getByRole("radio", { name: "Source", exact: true });
+  const preview = page.getByRole("radio", { name: "Preview", exact: true });
   await source.click();
   const editor = page.locator(".cm-content");
   await editor.click();
   await page.keyboard.press("Control+End");
   await page.keyboard.type("First edit");
   await expect(page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ })).toHaveAttribute(
-    "title",
+    "aria-description",
     /Unsaved changes/,
   );
   await expect(
@@ -285,7 +290,7 @@ test("save works from editor, Explorer and preview without taking over chat", as
   await expect(writes).toContainText("First edit");
   await expect(
     page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
-  ).not.toHaveAttribute("title", /Unsaved changes/);
+  ).not.toHaveAttribute("aria-description", /Unsaved changes/);
   await page.keyboard.type(" second");
   await page.locator("button[data-explorer-root]").click();
   await page.keyboard.press("Control+s");
@@ -334,6 +339,6 @@ test("save works from editor, Explorer and preview without taking over chat", as
   await expect(writes).toContainText("autosaved");
   await expect(
     page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
-  ).not.toHaveAttribute("title", /Unsaved changes/);
+  ).not.toHaveAttribute("aria-description", /Unsaved changes/);
   expect(errors).toEqual([]);
 });

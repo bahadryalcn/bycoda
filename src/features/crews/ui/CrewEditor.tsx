@@ -279,7 +279,10 @@ function ConnectedCrewEditor({
 
   const latest = data.definitions.find((d) => d.id === draft?.id);
   const missing = !!draft?.updatedAt && !latest;
-  const conflict = !!draft?.updatedAt && (missing || latest?.updatedAt !== draft.updatedAt);
+  // Only a newer stored version is a conflict. Right after this editor saves, the listed
+  // definition can still be the older copy until the crew list refetches.
+  const conflict =
+    !!draft?.updatedAt && (missing || (!!latest && latest.updatedAt > draft.updatedAt));
   const isNew = !!draft && !draft.updatedAt;
   const dirty =
     !!draft &&

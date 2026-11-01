@@ -1233,10 +1233,12 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
       .filter({ has: page.getByText(name, { exact: true }) });
   const choose = async (name: string, option: string) => {
     await main.click();
-    await row(name).click();
-    await page
-      .getByRole("menuitemradio", { name: option, exact: true })
-      .click();
+    // Hovering a row opens its flyout; at narrow widths the flyout may cover the row itself,
+    // so only click the row when hovering did not open it.
+    await row(name).hover();
+    const flyout = page.getByRole("menu", { name, exact: true });
+    await flyout.waitFor({ timeout: 1000 }).catch(() => row(name).click());
+    await flyout.getByRole("menuitemradio", { name: option, exact: true }).click();
   };
   await expect(main).toBeInViewport();
   await expect(

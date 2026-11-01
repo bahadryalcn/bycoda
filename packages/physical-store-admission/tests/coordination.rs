@@ -10,14 +10,22 @@ use std::{
     process::{Child, ChildStdin, Command, Stdio},
     sync::{
         atomic::{AtomicU64, Ordering},
-        mpsc,
+        mpsc, Mutex, MutexGuard, PoisonError,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-struct Fixture(PathBuf);
+/// Fixtures run one at a time. A child spawned by `Peer` briefly inherits every
+/// descriptor of this process between fork and exec, and Unix lock ownership
+/// follows the open file description, so a concurrent test's lock released in
+/// that window would stay held. `Command::spawn` returns only after exec, so
+/// serializing fixtures keeps every release observable immediately.
+static SERIAL: Mutex<()> = Mutex::new(());
+
+struct Fixture(PathBuf, #[allow(dead_code)] MutexGuard<'static, ()>);
 impl Fixture {
     fn new() -> Self {
+        let serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
             "bycoda-physical-admission-test-{}-{}-{}",
@@ -38,7 +46,7 @@ impl Fixture {
         };
         builder.create(&path).unwrap();
         fs::write(path.join("store.db"), b"not a SQLite attestation").unwrap();
-        Self(path)
+        Self(path, serial)
     }
     fn database(&self) -> PathBuf {
         self.0.join("store.db")

@@ -1,7 +1,7 @@
 use super::native_workspace_transport::NativeWorkspaceChannel;
 use super::*;
 use crate::host_ws::native_profile::NativeProfileBroker;
-use crate::host_ws::tests::{accept, hello, next, result, Server};
+use crate::host_ws::tests::{accept, hello, next, result, try_accept, try_hello, try_next, Server};
 use crate::session_store::{authority, native_delivery as journal, SessionStore};
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
@@ -234,6 +234,27 @@ async fn await_done(socket: &mut WebSocketStream<tokio::net::TcpStream>, done: m
     }
 }
 
+/// After the fixture drops a socket, the pre-restart broker's reconnect
+/// scheduler may reach the listener before `fixture.restart()` shuts it down.
+/// That superseded connection never issues a request and closes on shutdown,
+/// so the restored connection is the first one that sends a request.
+async fn restored_connection(
+    listener: &tokio::net::TcpListener,
+    methods: &[&str],
+) -> (WebSocketStream<tokio::net::TcpStream>, Value) {
+    loop {
+        let Some(mut socket) = try_accept(listener).await else {
+            continue;
+        };
+        if !try_hello(&mut socket, methods, "host.1").await {
+            continue;
+        }
+        if let Some(request) = try_next(&mut socket).await {
+            return (socket, request);
+        }
+    }
+}
+
 fn retired(params: &Value) -> Value {
     let mut value = params.clone();
     value["state"] = json!("retired");
@@ -303,9 +324,7 @@ fn v2_buffer_compaction_keeps_exact_semantic_barrier_after_reopen_and_downgrade(
         );
         result(&mut socket, &compact, epoch_description(&open_id, 1, 1)).await;
         drop(socket);
-        let mut restored = accept(&listener).await;
-        hello(&mut restored, &methods, "host.1").await;
-        let reopen = next(&mut restored).await;
+        let (mut restored, reopen) = restored_connection(&listener, &methods).await;
         assert_eq!(reopen["method"], EPOCH_OPEN);
         assert_eq!(reopen["params"]["openId"], open_id);
         result(&mut restored, &reopen, epoch_description(&open_id, 1, 1)).await;
@@ -398,9 +417,7 @@ fn v2_buffer_lost_compaction_reply_reopens_to_floor_only_without_effect_or_consu
         assert_eq!(compact["method"], EPOCH_COMPACT);
         socket.close(None).await.unwrap();
         drop(socket);
-        let mut restored = accept(&listener).await;
-        hello(&mut restored, &methods, "host.1").await;
-        let reopen = next(&mut restored).await;
+        let (mut restored, reopen) = restored_connection(&listener, &methods).await;
         assert_eq!(reopen["method"], EPOCH_OPEN);
         assert_eq!(reopen["params"]["openId"], open_id);
         result(&mut restored, &reopen, epoch_description(&open_id, 1, 1)).await;
@@ -681,9 +698,7 @@ fn lost_remote_ack_reopens_to_ack_only_without_replaying_original_or_consumer() 
         assert_eq!(first_ack["method"], ACK);
         socket.close(None).await.unwrap();
         drop(socket);
-        let mut restored = accept(&listener).await;
-        hello(&mut restored, &[APPLY, STATUS, ACK], "host.1").await;
-        let retry = next(&mut restored).await;
+        let (mut restored, retry) = restored_connection(&listener, &[APPLY, STATUS, ACK]).await;
         assert_eq!(
             retry["method"], ACK,
             "restart must not apply/status/consume the old report"
@@ -1075,9 +1090,7 @@ fn lost_accepted_reply_reopen_recovers_by_status_without_freshening_current_raw_
         let binding = identity(&accepted["params"]);
         first.close(None).await.unwrap();
         drop(first);
-        let mut restored = accept(&listener).await;
-        hello(&mut restored, &[APPLY, STATUS], "host.1").await;
-        let status = next(&mut restored).await;
+        let (mut restored, status) = restored_connection(&listener, &[APPLY, STATUS]).await;
         assert_eq!(
             status["method"], STATUS,
             "a restored original must never APPLY again"

@@ -270,7 +270,8 @@ test("selected code has a clickable chat action, shortcut and dismiss behavior",
   await page.keyboard.press("Shift+ArrowDown");
   await expect(toolbar).toBeVisible();
   await expect(editor).toBeFocused();
-  await expect(toolbar).toContainText("Ctrl+L");
+  // The shortcut renders as separate key caps.
+  await expect(toolbar.locator("kbd")).toHaveText(["Ctrl", "L"]);
   // The action and shortcut remain on one row, as in the editor reference.
   await expect(toolbar.getByRole("button")).toHaveCSS("white-space", "nowrap");
   await page.screenshot({ path: info.outputPath("selected-code-chat-action.png") });

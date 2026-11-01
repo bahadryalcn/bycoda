@@ -6,6 +6,7 @@ import { NOTIFICATION_HISTORY_KEY } from "../../src/features/notifications/model
 import { rememberNotificationProjects } from "../../src/features/notifications/model/notificationProjects";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { setLanguagePreference } from "../../src/shared/i18n";
+import { createApprovalOccurrenceId } from "../../src/shared/model/approvalOccurrence";
 import "../../src/styles/index.css";
 
 // Synthetic requests only; native actions cannot reach the owner's host.
@@ -39,7 +40,18 @@ const notices: Notice[] = titles.map((title, index) => ({
     model: "",
     modelSettings: {},
     runtimeMode: "supervised",
-    blocks: [],
+    // Decisions bind to the open approval occurrence in the session, as in the real app.
+    blocks:
+      index === 1
+        ? [
+            {
+              id: `approval-${index}`,
+              role: "approval",
+              text: label,
+              approval: { requestId: 1, occurrenceId: createApprovalOccurrenceId() },
+            },
+          ]
+        : [],
   },
 }));
 if (!localStorage.getItem(NOTIFICATION_HISTORY_KEY)) {

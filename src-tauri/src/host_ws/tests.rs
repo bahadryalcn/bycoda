@@ -501,9 +501,16 @@ impl Drop for Server {
 }
 
 type ServerSocket = WebSocketStream<TcpStream>;
+pub(crate) async fn accept(listener: &TcpListener) -> ServerSocket {
+    try_accept(listener)
+        .await
+        .expect("fixture websocket handshake")
+}
+/// Like `accept`, but a peer that disconnects during the upgrade yields `None`.
+/// Restart fixtures use it to skip a superseded broker's reconnect attempt.
 // Tungstenite fixes this callback's error type to its HTTP upgrade response.
 #[allow(clippy::result_large_err)]
-pub(crate) async fn accept(listener: &TcpListener) -> ServerSocket {
+pub(crate) async fn try_accept(listener: &TcpListener) -> Option<ServerSocket> {
     let (stream, _) = listener.accept().await.unwrap();
     accept_hdr_async(
         stream,
@@ -525,7 +532,7 @@ pub(crate) async fn accept(listener: &TcpListener) -> ServerSocket {
         },
     )
     .await
-    .unwrap()
+    .ok()
 }
 
 pub(crate) async fn next(socket: &mut ServerSocket) -> Value {
@@ -535,6 +542,18 @@ pub(crate) async fn next(socket: &mut ServerSocket) -> Value {
             Message::Ping(data) => socket.send(Message::Pong(data)).await.unwrap(),
             Message::Pong(_) => {}
             message => panic!("unexpected fixture message {message:?}"),
+        }
+    }
+}
+/// Like `next`, but a peer close or reset yields `None` instead of panicking.
+pub(crate) async fn try_next(socket: &mut ServerSocket) -> Option<Value> {
+    loop {
+        match socket.next().await {
+            Some(Ok(Message::Text(text))) => return Some(serde_json::from_str(&text).unwrap()),
+            Some(Ok(Message::Ping(data))) => socket.send(Message::Pong(data)).await.ok()?,
+            Some(Ok(Message::Pong(_))) => {}
+            Some(Ok(Message::Close(_))) | Some(Err(_)) | None => return None,
+            Some(Ok(message)) => panic!("unexpected fixture message {message:?}"),
         }
     }
 }
@@ -549,6 +568,27 @@ pub(crate) async fn result(socket: &mut ServerSocket, request: &Value, result: V
         .unwrap();
 }
 pub(crate) async fn hello(socket: &mut ServerSocket, methods: &[&str], environment: &str) {
+    let request = next(socket).await;
+    answer_hello(socket, &request, methods, environment).await;
+}
+/// Like `hello`, but returns false when the peer closes before its hello.
+pub(crate) async fn try_hello(
+    socket: &mut ServerSocket,
+    methods: &[&str],
+    environment: &str,
+) -> bool {
+    let Some(request) = try_next(socket).await else {
+        return false;
+    };
+    answer_hello(socket, &request, methods, environment).await;
+    true
+}
+async fn answer_hello(
+    socket: &mut ServerSocket,
+    request: &Value,
+    methods: &[&str],
+    environment: &str,
+) {
     let contracts = Contracts::get().unwrap();
     let mut capabilities = std::collections::BTreeSet::from(["transport.ws.read.v2".to_owned()]);
     for method in methods {
@@ -560,8 +600,9 @@ pub(crate) async fn hello(socket: &mut ServerSocket, methods: &[&str], environme
             capabilities.insert(capability.clone());
         }
     }
-    hello_capabilities(
+    answer_hello_capabilities(
         socket,
+        request,
         methods,
         environment,
         capabilities.into_iter().collect(),
@@ -575,11 +616,20 @@ async fn hello_capabilities(
     capabilities: Vec<String>,
 ) {
     let request = next(socket).await;
+    answer_hello_capabilities(socket, &request, methods, environment, capabilities).await;
+}
+async fn answer_hello_capabilities(
+    socket: &mut ServerSocket,
+    request: &Value,
+    methods: &[&str],
+    environment: &str,
+    capabilities: Vec<String>,
+) {
     assert_eq!(request["method"], "connection.hello");
     assert_eq!(request["params"]["environmentId"], "host.1");
     result(
         socket,
-        &request,
+        request,
         json!({"environmentId":environment, "wireVersion":2,"schemaVersion":1,
         "connectionId":"connection.fixture", "capabilities":capabilities, "methods":methods}),
     )

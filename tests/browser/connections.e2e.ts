@@ -27,10 +27,13 @@ for (const theme of ["light", "dark"]) {
         "https://saved.example.com",
       );
       await url.locator("summary").click();
-      const details = root.locator("details.connection-details").last();
-      await expect(details).not.toHaveAttribute("open", "");
-      await details.locator("summary").click();
-      await expect(details).toContainText("owner@studio-tailnet");
+      // Connection details stay hidden until requested from the machine's action menu.
+      await expect(root.locator(".connection-details")).toHaveCount(0);
+      await root.getByRole("button", { name: "Actions for Studio Mac", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Connection details", exact: true }).click();
+      await expect(root.locator(".connection-details").last()).toContainText(
+        "owner@studio-tailnet",
+      );
       await root.getByRole("button", { name: "Add machine", exact: true }).click();
       const address = root.getByRole("textbox", { name: "SSH address", exact: true });
       await address.fill("owner@new-machine");
@@ -56,7 +59,7 @@ for (const theme of ["light", "dark"]) {
       await expect(helpDialog).toContainText("A hostname works too");
       await page.keyboard.press("Escape");
       await expect(helpDialog).toHaveCount(0);
-      const machines = root.getByRole("radio", { name: "Your machines", exact: true });
+      const machines = root.getByRole("tab", { name: "Your machines", exact: true });
       await machines.focus();
       await page.keyboard.press("ArrowRight");
       await expect(
@@ -77,7 +80,7 @@ for (const theme of ["light", "dark"]) {
       expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
       await page.screenshot({ path: `${evidence}/phone-${theme}-${width}.png` });
       await dialog.getByRole("button", { name: "Close", exact: true }).click();
-      await root.getByRole("radio", { name: "Connect your phone", exact: true }).focus();
+      await root.getByRole("tab", { name: "Connect your phone", exact: true }).focus();
       await page.keyboard.press("ArrowRight");
       const tunnels = root.getByRole("region", { name: "External tunnels", exact: true });
       await expect(
@@ -91,15 +94,15 @@ for (const theme of ["light", "dark"]) {
       );
       expect(gap).toBeLessThan(40);
       await tunnels.locator("input").first().fill("4567");
-      await root.getByRole("radio", { name: "Your machines", exact: true }).click();
+      await root.getByRole("tab", { name: "Your machines", exact: true }).click();
       await expect(address).toHaveValue("owner@new-machine");
-      await root.getByRole("radio", { name: "Sharing", exact: true }).click();
+      await root.getByRole("tab", { name: "Sharing", exact: true }).click();
       await expect(tunnels.locator("input").first()).toHaveValue("4567");
       expect(await root.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
       await page.screenshot({
         path: `${evidence}/${theme}-${width}-tunnels.png`,
       });
-      await root.getByRole("radio", { name: "Your machines", exact: true }).click();
+      await root.getByRole("tab", { name: "Your machines", exact: true }).click();
       await root.getByRole("button", { name: "Cancel", exact: true }).click();
       await page.screenshot({
         path: `${evidence}/${theme}-${width}-machines.png`,

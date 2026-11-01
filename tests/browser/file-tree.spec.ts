@@ -150,9 +150,9 @@ for (const theme of ["dark", "light"] as const) {
     await page.keyboard.press("Escape");
     await expect(badge).toHaveCount(0);
     await expect(marks).toHaveCount(0);
-    expect(await page.evaluate(() => document.documentElement.classList.contains("is-grabbing"))).toBe(
-      false,
-    );
+    expect(
+      await page.evaluate(() => document.documentElement.classList.contains("is-grabbing")),
+    ).toBe(false);
     await page.mouse.up();
     expect(
       await page.evaluate(
@@ -185,7 +185,9 @@ for (const theme of ["dark", "light"] as const) {
     await expect(newFile).toBeDisabled();
     await expect(newFolder).toBeDisabled();
     await expect(newFile).toHaveAttribute("aria-label", /This machine is unreachable/);
-    await expect(newFile).toHaveAttribute("title", /This machine is unreachable/);
+    // The shared tooltip (not a native title bubble) shows the reason to pointer users.
+    await newFile.hover();
+    await expect(page.getByRole("tooltip")).toContainText("This machine is unreachable");
     await page.screenshot({
       path: `${shotDir}/explorer-create-disabled-header-${theme}-1280x800.png`,
       clip: { x: 0, y: 0, width: 640, height: 200 },
@@ -194,16 +196,26 @@ for (const theme of ["dark", "light"] as const) {
     const item = page.getByRole("menuitem", { name: /^New File/ });
     await expect(item).toContainText("This machine is unreachable");
     await expect(item).toBeDisabled();
-    await page.screenshot({ path: `${shotDir}/explorer-create-disabled-menu-${theme}-1280x800.png` });
+    await page.screenshot({
+      path: `${shotDir}/explorer-create-disabled-menu-${theme}-1280x800.png`,
+    });
   });
 }
 
 const imeShotDir = "temp/verification/vis-explorer-2";
-type ImeWindow = Window & { imeLog: string[]; treeOperations: { command: string; args: Record<string, unknown> }[] };
+type ImeWindow = Window & {
+  imeLog: string[];
+  treeOperations: { command: string; args: Record<string, unknown> }[];
+};
 
 test("inline name editor keeps IME composition: Enter and Escape during composition neither commit nor cancel", async ({
   page,
+  browserName,
 }) => {
+  test.skip(
+    browserName !== "chromium",
+    "IME key events are dispatched through a Chromium CDP session",
+  );
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/tests/browser/file-tree.html?theme=dark");
   const cdp = await page.context().newCDPSession(page);
@@ -234,7 +246,9 @@ test("inline name editor keeps IME composition: Enter and Escape during composit
     const field = document.activeElement as HTMLInputElement;
     for (const type of ["compositionstart", "compositionupdate", "compositionend"])
       field.addEventListener(type, () => log.push(type));
-    field.addEventListener("keydown", (e) => log.push(`keydown:${e.key}:${e.isComposing}:${e.keyCode}`));
+    field.addEventListener("keydown", (e) =>
+      log.push(`keydown:${e.key}:${e.isComposing}:${e.keyCode}`),
+    );
   });
 
   // Composition in progress: the candidate text is pending, not part of the name yet.
@@ -273,7 +287,13 @@ test("inline name editor keeps IME composition: Enter and Escape during composit
   await second.evaluate((field) => {
     field.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true }));
     field.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, isComposing: false, bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        keyCode: 229,
+        isComposing: false,
+        bubbles: true,
+        cancelable: true,
+      }),
     );
   });
   await expect(second).toBeVisible();
@@ -289,7 +309,13 @@ type RowGeometry = {
   theme: string;
   referenceRow: number;
   nameRow: number;
-  input: { width: number; height: number; topInset: number; bottomInset: number; centerOffset: number };
+  input: {
+    width: number;
+    height: number;
+    topInset: number;
+    bottomInset: number;
+    centerOffset: number;
+  };
   iconCenterOffset: number;
   messageGap: number | null;
   messageToNext: number | null;
@@ -298,12 +324,24 @@ type RowGeometry = {
   horizontalOverflow: boolean;
 };
 
-const measureNameRow = ({ label, density, theme }: { label: string; density: string; theme: string }): RowGeometry => {
+const measureNameRow = ({
+  label,
+  density,
+  theme,
+}: {
+  label: string;
+  density: string;
+  theme: string;
+}): RowGeometry => {
   const wrapper = document.querySelector<HTMLElement>("[data-name-row]")!;
   const line = wrapper.firstElementChild as HTMLElement;
   const input = wrapper.querySelector<HTMLInputElement>("input")!;
-  const icon = line.querySelector<SVGElement>("svg:not(.lucide-chevron-right)") ?? line.querySelectorAll("svg")[1];
-  const reference = document.querySelector<HTMLElement>('[role="treeitem"][title$="/logo.svg"], [role="treeitem"][title$="/a.ts"]')!;
+  const icon =
+    line.querySelector<SVGElement>("svg:not(.lucide-chevron-right)") ??
+    line.querySelectorAll("svg")[1];
+  const reference = document.querySelector<HTMLElement>(
+    '[role="treeitem"][title$="/logo.svg"], [role="treeitem"][title$="/a.ts"]',
+  )!;
   const lineRect = line.getBoundingClientRect();
   const inputRect = input.getBoundingClientRect();
   const message = wrapper.querySelector<HTMLElement>('[role="alert"], [role="status"]');
@@ -325,10 +363,18 @@ const measureNameRow = ({ label, density, theme }: { label: string; density: str
       bottomInset: lineRect.bottom - inputRect.bottom,
       centerOffset: inputRect.top + inputRect.height / 2 - (lineRect.top + lineRect.height / 2),
     },
-    iconCenterOffset: iconRect ? iconRect.top + iconRect.height / 2 - (inputRect.top + inputRect.height / 2) : NaN,
+    iconCenterOffset: iconRect
+      ? iconRect.top + iconRect.height / 2 - (inputRect.top + inputRect.height / 2)
+      : NaN,
     messageGap: messageRect ? messageRect.top - lineRect.bottom : null,
     messageToNext: messageRect && nextRect ? nextRect.top - messageRect.bottom : null,
-    messageInsetMatchesInput: messageRect ? Math.abs(parseFloat(getComputedStyle(message!).paddingInlineStart) + messageRect.left - inputRect.left) < 1.5 : null,
+    messageInsetMatchesInput: messageRect
+      ? Math.abs(
+          parseFloat(getComputedStyle(message!).paddingInlineStart) +
+            messageRect.left -
+            inputRect.left,
+        ) < 1.5
+      : null,
     textClipped: input.scrollHeight > input.clientHeight + 1,
     horizontalOverflow:
       inputRect.right > scroller.getBoundingClientRect().right + 0.5 ||
@@ -346,7 +392,10 @@ for (const theme of ["dark", "light"] as const)
     const results: RowGeometry[] = [];
     for (const density of ["compact", "comfortable", "touch"] as const) {
       await page.goto(`/tests/browser/file-tree.html?theme=${theme}`);
-      await page.evaluate((density) => (document.documentElement.dataset.controlDensity = density), density);
+      await page.evaluate(
+        (density) => (document.documentElement.dataset.controlDensity = density),
+        density,
+      );
       const row = (path: string) => page.locator(`[role="treeitem"][title="/fixture/${path}"]`);
       const field = page.getByRole("textbox", { name: /^Type file name/ });
       const shot = (name: string) =>
@@ -355,7 +404,10 @@ for (const theme of ["dark", "light"] as const)
           clip: { x: 0, y: 0, width: 420, height: 480 },
         });
       const measure = async (label: string) => {
-        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        await page.evaluate(
+          () =>
+            new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+        );
         results.push(await page.evaluate(measureNameRow, { label, density, theme }));
       };
       await row("assets").click();
@@ -371,7 +423,9 @@ for (const theme of ["dark", "light"] as const)
       await shot("create-validation");
       await field.fill("denied.ts");
       await field.press("Enter");
-      await expect(page.locator('[data-name-row] [role="alert"]')).toContainText("Permission denied");
+      await expect(page.locator('[data-name-row] [role="alert"]')).toContainText(
+        "Permission denied",
+      );
       await measure("create-submit-error");
       await shot("create-submit-error");
       await field.press("Escape");
@@ -402,9 +456,13 @@ for (const theme of ["dark", "light"] as const)
       expect(r.input.bottomInset, `${where} bottom inset`).toBeGreaterThanOrEqual(0);
       expect(Math.abs(r.input.centerOffset), `${where} input centered`).toBeLessThanOrEqual(0.5);
       if (!Number.isNaN(r.iconCenterOffset))
-        expect(Math.abs(r.iconCenterOffset), `${where} icon centered on input`).toBeLessThanOrEqual(1);
-      if (r.messageGap !== null) expect(r.messageGap, `${where} message under row`).toBeGreaterThanOrEqual(-0.5);
-      if (r.messageToNext !== null) expect(r.messageToNext, `${where} message above next row`).toBeGreaterThanOrEqual(-0.5);
+        expect(Math.abs(r.iconCenterOffset), `${where} icon centered on input`).toBeLessThanOrEqual(
+          1,
+        );
+      if (r.messageGap !== null)
+        expect(r.messageGap, `${where} message under row`).toBeGreaterThanOrEqual(-0.5);
+      if (r.messageToNext !== null)
+        expect(r.messageToNext, `${where} message above next row`).toBeGreaterThanOrEqual(-0.5);
       expect(r.textClipped, `${where} text not clipped`).toBe(false);
       expect(r.horizontalOverflow, `${where} no horizontal overflow`).toBe(false);
     }
