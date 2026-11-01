@@ -1891,9 +1891,12 @@ pub async fn mcp_provider_login(
             return mcp_auth::login(binary, args, cwd, Duration::from_secs(180));
         }
         mcp_command(binary, args, cwd, Duration::from_secs(180))
-        // OAuth stdout/stderr can contain callback URLs, state and challenges.
-        // Never propagate that credential-bearing transcript to Settings.
-        .map_err(|_| "MCP sign-in did not complete. Retry and finish authorization in your browser.".to_string())?;
+            // OAuth stdout/stderr can contain callback URLs, state and challenges.
+            // Never propagate that credential-bearing transcript to Settings.
+            .map_err(|_| {
+                "MCP sign-in did not complete. Retry and finish authorization in your browser."
+                    .to_string()
+            })?;
         Ok(())
     })
     .await

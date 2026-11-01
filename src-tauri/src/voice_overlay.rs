@@ -8,8 +8,8 @@
 
 use serde::Deserialize;
 use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, Monitor, PhysicalPosition, WebviewUrl,
-    WebviewWindow, WebviewWindowBuilder,
+    AppHandle, Emitter, LogicalSize, Manager, Monitor, PhysicalPosition, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
 };
 
 use crate::window::is_workspace_window;
@@ -154,7 +154,10 @@ pub async fn voice_overlay_open(
     let scale = window.scale_factor().map_err(|error| error.to_string())?;
     let (x, y) = if placement.from_cursor {
         let cursor = app.cursor_position().map_err(|error| error.to_string())?;
-        (cursor.x - placement.x * scale, cursor.y - placement.y * scale)
+        (
+            cursor.x - placement.x * scale,
+            cursor.y - placement.y * scale,
+        )
     } else {
         let origin = window.inner_position().map_err(|error| error.to_string())?;
         (
@@ -217,7 +220,14 @@ pub fn voice_overlay_fit(
     overlay_only(&window)?;
     let (width, height) = clamp_size(width, height)?;
     let origin = window.outer_position().map_err(|error| error.to_string())?;
-    place(&app, &window, origin.x as f64, origin.y as f64, width, height)
+    place(
+        &app,
+        &window,
+        origin.x as f64,
+        origin.y as f64,
+        width,
+        height,
+    )
 }
 
 /// Keyboard movement for the drag handle, in logical pixels.
