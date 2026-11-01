@@ -25,12 +25,18 @@ const KEY = "bycoda.notifications";
 export const NOTIFICATIONS_DEFAULT = false;
 
 export const NOTIFICATIONS_CHANGE_EVENT = "bycoda:notifications-change";
-export const subscribeNotificationsEnabled = (onChange: () => void) => subscribePreferenceChanges([KEY], NOTIFICATIONS_CHANGE_EVENT, onChange);
+export const subscribeNotificationsEnabled = (onChange: () => void) =>
+  subscribePreferenceChanges([KEY], NOTIFICATIONS_CHANGE_EVENT, onChange);
 
 /** Rust emits this with the session id when a notification is clicked. */
 export const NOTIFICATION_CLICK_EVENT = "bycoda:notification-click";
 
-export type NotificationPermission = "prompt" | "granted" | "denied" | "unsupported" | "unavailable";
+export type NotificationPermission =
+  | "prompt"
+  | "granted"
+  | "denied"
+  | "unsupported"
+  | "unavailable";
 
 export function loadNotificationsEnabled(): boolean {
   try {
@@ -84,7 +90,9 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
   const epoch = ++permissionEpoch;
   let result: NotificationPermission;
   try {
-    result = permissionResult(await invoke<NotificationPermission>("request_notification_permission"));
+    result = permissionResult(
+      await invoke<NotificationPermission>("request_notification_permission"),
+    );
   } catch {
     result = "unavailable";
   }
@@ -139,22 +147,20 @@ function markUnseen(sessionId: string) {
 }
 
 /**
- * A banner only earns its place while the user is looking elsewhere: another
- * app, or another session. The transcript already shows the change on the
- * session that is on screen.
+ * OS banners are for when the user is in another app. In-app attention
+ * indicators remain independent of desktop delivery.
  */
 export function shouldNotify({
   enabled,
   permission,
   windowFocused,
-  sessionVisible,
 }: {
   enabled: boolean;
   permission: NotificationPermission;
   windowFocused: boolean;
   sessionVisible: boolean;
 }): boolean {
-  if (!enabled || (windowFocused && sessionVisible)) return false;
+  if (!enabled || windowFocused) return false;
   return permission === "granted" || permission === "prompt";
 }
 
@@ -235,15 +241,16 @@ export function setNotificationBatchDelay(ms: number) {
 const batcher = createNotificationBatcher(deliver, () => batchDelayMs);
 
 async function deliver(payload: NotificationPayload): Promise<boolean> {
+  // Recheck after batching: the owner may have returned during the delay.
+  if (windowFocused) return false;
   try {
-    await invoke("show_notification", {
+    return await invoke<boolean>("show_notification", {
       sessionId: payload.sessionId,
       title: payload.title,
       subtitle: payload.subtitle,
       body: payload.body,
       sound: loadSoundsEnabled(),
     });
-    return true;
   } catch {
     return false;
   }
@@ -303,8 +310,8 @@ export async function notifyDailySummary(headline: string): Promise<boolean> {
 
 /**
  * A task or background automation on some machine changed in a way the owner
- * should hear about. Sent whether or not the window is focused, since no view
- * shows it unasked; the global switch and the event's own setting still apply.
+ * should hear about. Desktop delivery requires an unfocused app; the global
+ * switch and the event's own setting still apply.
  */
 export async function notifyBackground(transition: {
   target: Exclude<keyof typeof BACKGROUND_NOTIFICATION_TARGETS, "summary">;
@@ -358,13 +365,13 @@ const announcedIssues = new Map<string, string>();
 export async function announceSessionIssue(
   session: Session,
   issue: "retrying" | "failed",
-  _sessionVisible: boolean,
+  sessionVisible: boolean,
 ): Promise<void> {
   const key = `${turnKey(session)}:${issue}`;
   if (announcedIssues.get(session.id) === key) return;
   if (announcedIssues.size >= 1000) announcedIssues.delete(announcedIssues.keys().next().value!);
   announcedIssues.set(session.id, key);
-  await notifySession(session, "failed", false);
+  await notifySession(session, "failed", sessionVisible);
 }
 
 export async function announceSessionFinished(
@@ -421,6 +428,8 @@ async function notifyProjectSession(
     },
   );
   if (!payload) return false;
+  // Preserve unread attention for other chats even when foreground delivery
+  // is suppressed by deliver(). The active chat was excluded above.
   if (kind !== "input") markUnseen(session.id);
   return batcher.enqueue(isProjectLocked(session.cwd) ? maskLockedNotification(payload) : payload);
 }

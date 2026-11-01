@@ -20,6 +20,7 @@ import { VoiceCloudCredentials } from "./voice-cloud-credentials";
 import { LocalVoiceService } from "./voice-local";
 import { inspectVoiceRuntime } from "./voice-runtime";
 import { VoiceSetupService } from "./voice-setup";
+import { prepareVoiceToolDispatch, validateVoiceToolList, voiceToolCatalog } from "./voice-tools";
 import { readSessionUsage } from "./usage-report";
 import {
   desktopActorId,
@@ -53,7 +54,10 @@ import {
 import { probeNativeCodexImageCapability } from "./social-images";
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { sessionConversationPage } from "../src/features/agent-app/model/sessionConversation";
-import { localSessionLinkFields, type LocalSessionLocator } from "../src/features/sessions/model/localSessionReference";
+import {
+  localSessionLinkFields,
+  type LocalSessionLocator,
+} from "../src/features/sessions/model/localSessionReference";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createEnvironmentService } from "./domains/environment/service";
 import { createProjectsService } from "./domains/projects/service";
@@ -596,7 +600,10 @@ export async function createHostServer(
   });
   // Cloud voice keys (ElevenLabs) live in their own OS-encrypted vault.
   const voiceCloud = new VoiceCloudCredentials(
-    new OsSocialCredentials(join(featureDirectory, "voice", "credentials"), engine.store.environmentId),
+    new OsSocialCredentials(
+      join(featureDirectory, "voice", "credentials"),
+      engine.store.environmentId,
+    ),
   );
   const localVoice = new LocalVoiceService({ cloudKey: (provider) => voiceCloud.get(provider) });
   const voiceSetup = new VoiceSetupService();
@@ -635,9 +642,7 @@ export async function createHostServer(
   const inHost = async (id: string) => {
     return !!(await engine.store.sessionAuthority(id));
   };
-  const localSessionReference = async (
-    id: string,
-  ): Promise<LocalSessionLocator | undefined> =>
+  const localSessionReference = async (id: string): Promise<LocalSessionLocator | undefined> =>
     (await inHost(id))
       ? {
           kind: "host",
@@ -1017,7 +1022,9 @@ export async function createHostServer(
               const running = await hostRuns(id);
               if (desktop.live.busyClient(id) !== clientId) return;
               const existing = runLeases.holder(id);
-              runLeases.acquire(id, holder, () => (running ? "host" : undefined));
+              runLeases.acquire(id, holder, () =>
+                running || engine.hasRetainedProviderWriter(id) ? "host" : undefined,
+              );
               // An implicit grant can happen after this beat was accepted.
               // Include that grant in its idle cutoff, but never a newer
               // explicit grant that appeared while the database was read.
@@ -1089,7 +1096,8 @@ export async function createHostServer(
         try {
           const grant = (hostRunning: boolean) =>
             runLeases.acquire(sessionId, holder, () => {
-              if (hostRunning) return "host";
+              // Heartbeats observe ownership; they cannot retire a Host writer.
+              if (hostRunning || engine.hasRetainedProviderWriter(sessionId)) return "host";
               const busy = desktop.live.busyClient(sessionId);
               return busy && `desktop:${busy}` !== holder ? `desktop:${busy}` : undefined;
             });
@@ -1151,7 +1159,13 @@ export async function createHostServer(
         ? await sessionQueues.release(sessionId, holder, Number(epoch))
         : await sessionQueues.renew(sessionId, holder, Number(epoch));
       const lease = leases[sessionId];
-      if (lease) queueLeaseAnswers.set(key, { lease, version: engine.store.db.dataMutationVersion, blocked: blocked === true, checkedAt: Date.now() });
+      if (lease)
+        queueLeaseAnswers.set(key, {
+          lease,
+          version: engine.store.db.dataMutationVersion,
+          blocked: blocked === true,
+          checkedAt: Date.now(),
+        });
       else queueLeaseAnswers.delete(key);
       while (queueLeaseAnswers.size > 1024) queueLeaseAnswers.delete(queueLeaseAnswers.keys().next().value!);
     }
@@ -1798,6 +1812,7 @@ export async function createHostServer(
         "sessions.desktop",
         "sessions.desktopLive",
         "sessions.desktop-writer-retirement.v1",
+        "sessions.host-writer-retirement.v1",
         "sessions.queue",
         "sessions.queue.lease",
         "sessions.runLease",
@@ -1862,6 +1877,7 @@ export async function createHostServer(
         "dev.servers.private-access",
         "voice.realtime.v1",
         "voice.realtime.v2",
+        "voice.tools.v1",
         "voice.local.v1",
         "voice.cloud.v1",
         "voice.local.setup.v1",
@@ -2383,7 +2399,10 @@ export async function createHostServer(
           let kind: "snapshot" | "delta" = "snapshot";
           if (target.kind === "environment") value = { projects: await projectsService.list() };
           else if (target.kind === "project") {
-            streamProjectVersions.set(target.projectId, engine.store.projectVersion(target.projectId));
+            streamProjectVersions.set(
+              target.projectId,
+              engine.store.projectVersion(target.projectId),
+            );
             const current = await projectSessionList(target.projectId);
             value = { etag: current.etag, sessions: current.list };
           } else {
@@ -2431,10 +2450,12 @@ export async function createHostServer(
   const streamProjectVersions = new Map<string, number>();
   const pruneStreamVersions = () => {
     const targets = subscriptionHub.targets();
-    const sessions = new Set(targets.flatMap((target) => target.kind === "session" ? [target.sessionId] : []));
+    const sessions = new Set(
+      targets.flatMap((target) => (target.kind === "session" ? [target.sessionId] : [])),
+    );
     for (const id of streamProjects.keys()) if (!sessions.has(id)) streamProjects.delete(id);
     const projects = new Set([
-      ...targets.flatMap((target) => target.kind === "project" ? [target.projectId] : []),
+      ...targets.flatMap((target) => (target.kind === "project" ? [target.projectId] : [])),
       ...streamProjects.values(),
     ]);
     for (const id of streamProjectVersions.keys()) if (!projects.has(id)) streamProjectVersions.delete(id);
@@ -2462,10 +2483,16 @@ export async function createHostServer(
   const heldPolls = new Map<{ revoked: boolean }, string>();
   const unsubscribeAuthorization = engine.store.subscribeAuthorizationChanges(() => {
     for (const [state, token] of heldPolls)
-      void engine.store.authenticated(token).then((valid) => {
-        state.revoked = !valid;
-        if (!valid) signal.notify();
-      }, () => { state.revoked = true; signal.notify(); });
+      void engine.store.authenticated(token).then(
+        (valid) => {
+          state.revoked = !valid;
+          if (!valid) signal.notify();
+        },
+        () => {
+          state.revoked = true;
+          signal.notify();
+        },
+      );
   });
   const unsubscribeAuthority = engine.store.subscribeAuthorityChanges((change) => {
     bulkTransfers.invalidate(`session:${change.sessionId}`);
@@ -2531,6 +2558,8 @@ export async function createHostServer(
         let dispatchStarted: number | undefined;
         let dispatchMethod: unknown;
         let deviceEffectAdmitted = false;
+        let releaseVoiceTool: (() => void) | undefined;
+        let voiceBrowserOwner: string | undefined;
         try {
           if (await bulkHandler(request, response)) return;
           if (await mobilePairing.handle(request, response)) return;
@@ -2547,7 +2576,7 @@ export async function createHostServer(
               .end(JSON.stringify({ error: "Unsupported request origin or route" }));
             return;
           }
-          const token = request.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
+          let token = request.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
           let socialPrincipal = token ? await social.principalForToken(token) : undefined;
           let runtimePrincipal = token
             ? await runtimeLogAccess.principalForToken(token)
@@ -2610,10 +2639,11 @@ export async function createHostServer(
             input.environmentId !== engine.store.environmentId
           )
             throw new Error("Host identity changed; reconnect this machine explicitly");
-          const params =
+          let params =
             input.params && typeof input.params === "object" && !Array.isArray(input.params)
               ? (input.params as Record<string, unknown>)
               : {};
+          const transportToken = token;
           const resultAuthorities: Array<() => Promise<boolean>> = [];
           const domainContext = {
             deviceEffectAdmitted: () => {
@@ -2631,10 +2661,12 @@ export async function createHostServer(
               method: string,
               params: Record<string, unknown>,
               authorize: () => Promise<void>,
-            ) => devServerAccess.handle(method, params, token, authorize),
+            ) => devServerAccess.handle(method, params, transportToken, authorize),
             retargetTask: (id: string, target: unknown, autoMerge: unknown) =>
-              withWorkspaceOwner(token, (owner) => tasks.retarget(id, target, autoMerge, owner)),
-            authorized: async () => await engine.store.authenticated(token),
+              withWorkspaceOwner(transportToken, (owner) =>
+                tasks.retarget(id, target, autoMerge, owner),
+              ),
+            authorized: async () => await engine.store.authenticated(transportToken),
             closing: () => closing || response.destroyed,
           };
           // Scope the timer to dispatch, including all early returns and failures.
@@ -2645,13 +2677,70 @@ export async function createHostServer(
           if (await mcpHttp.rpc(input.method, params, token, response)) return;
           if (peerIdentity) {
             result = await engine.store.db.withAuthorization(
-              async () => !!(await socialPeers.authenticated(token)),
+              async () => !!(await socialPeers.authenticated(transportToken)),
               () => socialPeers.peerRpc(peerIdentity, String(input.method), params),
             );
             if (!(await socialPeers.authenticated(token)))
               throw new Error("Peer authority revoked.");
             response.end(JSON.stringify({ result }));
             return;
+          }
+          if (input.method === "voice.tools.list" || input.method === "voice.tools.call") {
+            // Voice is an owner-started desktop surface, never an escalation route
+            // for a provider, social peer or browser-origin request.
+            if (
+              request.headers.origin ||
+              socialPrincipal ||
+              runtimePrincipal ||
+              conversationPrincipal ||
+              !(await engine.store.authenticated(token))
+            )
+              throw new Error("Native owner device required for voice tools.");
+            const ownerToken = token;
+            if (input.method === "voice.tools.list") {
+              validateVoiceToolList(params);
+              const project = await engine.store.project(String(params.projectId));
+              if (params.sessionId !== undefined) {
+                const own = await featureMeta(String(params.sessionId));
+                if (own.projectId !== project.id)
+                  throw new Error("Voice tool session belongs to another project.");
+              }
+              if (!(await engine.store.authenticated(ownerToken)))
+                throw new Error("Native owner authority revoked.");
+              response.end(JSON.stringify({ result: { tools: voiceToolCatalog() } }));
+              return;
+            }
+            const delegated = await prepareVoiceToolDispatch(params, {
+              authorized: async () =>
+                !response.destroyed && (await engine.store.authenticated(ownerToken)),
+              environmentId: engine.store.environmentId,
+              deviceHash: tokenHash,
+              sessionIdentity: async (sessionId) => {
+                const own = await featureMeta(sessionId);
+                await engine.store.project(own.projectId);
+                return { projectId: own.projectId, provider: own.session.harness };
+              },
+              issuers: {
+                conversation: conversationAccess,
+                social,
+                "runtime-logs": runtimeLogAccess,
+              },
+            });
+            releaseVoiceTool = delegated.release;
+            voiceBrowserOwner = delegated.browserOwner;
+            response.once("close", delegated.release);
+            if (response.destroyed) {
+              delegated.release();
+              throw new Error("Voice tool connection closed.");
+            }
+            token = delegated.token;
+            input.method = delegated.method;
+            params = delegated.params;
+            if (delegated.family === "conversation")
+              conversationPrincipal = await conversationAccess.principalForToken(token);
+            else if (delegated.family === "social")
+              socialPrincipal = await social.principalForToken(token);
+            else runtimePrincipal = await runtimeLogAccess.principalForToken(token);
           }
           if (socialPrincipal && input.method !== "social.tools.call")
             throw new Error("Session social credentials cannot access other host operations.");
@@ -2697,9 +2786,7 @@ export async function createHostServer(
                       cwd: project.cwd,
                       sessions: await Promise.all(
                         list.map(async (session) => {
-                          const locator = await localSessionReference(
-                            session.id,
-                          );
+                          const locator = await localSessionReference(session.id);
                           return {
                             id: session.id,
                             title: session.title,
@@ -2789,10 +2876,18 @@ export async function createHostServer(
                   const own = await featureMeta(boundPrincipal.sessionId);
                   if (own.projectId !== projectId)
                     throw new Error("Conversation belongs to another project.");
-                  const root = await resolveHostWorktreeAsync(project.cwd, sessionWorkCwd(own.session));
-                  result = await callVisualConversationTool(root, action, args, scopedDeviceAuthorized, browserRuntime.load);
-                }
-                else if (isFileConversationTool(action)) {
+                  const root = await resolveHostWorktreeAsync(
+                    project.cwd,
+                    sessionWorkCwd(own.session),
+                  );
+                  result = await callVisualConversationTool(
+                    root,
+                    action,
+                    args,
+                    scopedDeviceAuthorized,
+                    browserRuntime.load,
+                  );
+                } else if (isFileConversationTool(action)) {
                   const own = await featureMeta(boundPrincipal.sessionId);
                   if (own.projectId !== projectId)
                     throw new Error("Conversation belongs to another project.");
@@ -2807,11 +2902,7 @@ export async function createHostServer(
                     async (command, input) => {
                       if (!(await conversationAccess.principalForToken(token)))
                         throw new Error("Session authority revoked.");
-                      return await workspace.run(
-                        command,
-                        input,
-                        tokenHash,
-                      );
+                      return await workspace.run(command, input, tokenHash);
                     },
                   );
                   if (!(await conversationAccess.principalForToken(token)))
@@ -2909,7 +3000,7 @@ export async function createHostServer(
                   result = await sharedBrowser.dispatchForSession(
                     action,
                     { ...args, projectId, sessionId: boundPrincipal.sessionId },
-                    token,
+                    voiceBrowserOwner ?? token,
                   );
                 else if (action.startsWith("tasks.")) {
                   const list = (await tasks.list()).filter((task) => task.projectId === projectId);
@@ -4424,7 +4515,9 @@ export async function createHostServer(
                   // already stores is known by one indexed read; only a desktop-only one
                   // needs the desktop database, whose notes worker may be busy for long.
                   await queueSessionKnown(id);
-                  result = await engine.store.db.scope(async () => {
+                  result = await engine.withRetiredProviderWriter(id, () => engine.store.db.scope(async () => {
+                    if (!(await engine.store.authenticated(token)))
+                      throw new Error("Owner authority revoked; your message was not sent.");
                     const hostRunning = writerTransfers.has(id) || (await hostRuns(id));
                     return {
                       lease: runLeases.acquire(id, holder, () => {
@@ -4434,7 +4527,7 @@ export async function createHostServer(
                         return busy && `desktop:${busy}` !== holder ? `desktop:${busy}` : undefined;
                       }),
                     };
-                  });
+                  }));
                   break;
                 }
                 case "sessions.queue.get":
@@ -4861,18 +4954,11 @@ export async function createHostServer(
                             : "CHANGE_PR_STATE")
                   )
                     throw new Error("This inbox write requires an explicit owner action.");
-                  result = await providerInbox.request(
-                    tokenHash,
-                    params.requestId,
-                    operation,
-                  );
+                  result = await providerInbox.request(tokenHash, params.requestId, operation);
                   break;
                 }
                 case "inbox.provider.result":
-                  result = await providerInbox.result(
-                    tokenHash,
-                    params.requestId,
-                  );
+                  result = await providerInbox.result(tokenHash, params.requestId);
                   break;
                 case "inbox.list": {
                   const projectId =
@@ -5232,12 +5318,7 @@ export async function createHostServer(
                     );
                     break;
                   }
-                  result =
-                    (await workspace.run(
-                      params.command,
-                      params.args,
-                      tokenHash,
-                    )) ?? null;
+                  result = (await workspace.run(params.command, params.args, tokenHash)) ?? null;
                   break;
                 case "files.search":
                   result = await fileService.search(params, domainContext, { legacy: true });
@@ -5302,6 +5383,7 @@ export async function createHostServer(
                 }),
               );
         } finally {
+          releaseVoiceTool?.();
           if (dispatchStarted !== undefined)
             perfMetrics.recordDuration(dispatchMethod, performance.now() - dispatchStarted);
         }

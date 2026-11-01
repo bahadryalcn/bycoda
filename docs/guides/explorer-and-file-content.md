@@ -1,5 +1,13 @@
 # Explorer and file content
 
+Files opened from a conversation appear beside the conversation, with the viewer
+chosen for the format: rendered HTML, PDF and Markdown previews, or a source
+editor for text and code. Image links retain their image dialog; video links
+open a media dialog with playback controls. The conversation and its composer
+draft remain available. Opening a file beside the conversation again reuses its
+pane. File opens outside the conversation continue to follow the saved file-tab
+preference.
+
 The Explorer header identifies the current tree root, which may be a worktree
 branch rather than the project name. Its full path remains available separately
 from workspace switching. Use the root control to collapse or expand the tree;

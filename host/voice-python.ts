@@ -1,6 +1,6 @@
 /** Offline worker: cached public Whisper models only, no credentials or downloads. */
 export const localVoicePython = String.raw`
-import os, re, sys, json, base64, time
+import os, re, sys, json, base64, time, math
 os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
 os.environ['HF_HUB_DISABLE_IMPLICIT_TOKEN'] = '1'
@@ -94,6 +94,29 @@ def turn_complete(audio):
 # Coding vocabulary: helps these words inside Turkish or English speech; neutral
 # on general speech (FLEURS en/tr WER within noise).
 HOTWORDS = 'commit, branch, rebase, merge, pull request, README, TypeScript, JavaScript, WebSocket, pnpm, npm, API, useState, dev server, main, build, deploy, test, bug'
+
+def accepted_transcript(segments):
+    """Reject failed decoding even when Whisper returns text after its retries.
+
+    These are Whisper's normal decoding-quality thresholds, applied to the final
+    result as well. No word-count/duration floor: a confident "no" or "dur" is
+    as valid as a sentence. VAD remains necessary; confident hallucinations cannot
+    be identified from decoder confidence alone.
+    """
+    accepted = []
+    for segment in segments:
+        scores = (segment.no_speech_prob, segment.avg_logprob, segment.compression_ratio)
+        if not all(math.isfinite(value) for value in scores):
+            return ''
+        if not (0 <= segment.no_speech_prob < 0.6 and segment.avg_logprob >= -1.0 and 0 <= segment.compression_ratio <= 2.4):
+            # Do not splice around an uncertain clause: dropping a negation
+            # could turn "do not stop" into an actionable "stop".
+            return ''
+        text = segment.text.strip()
+        if text:
+            accepted.append(text)
+    return ' '.join(accepted)
+
 for line in sys.stdin:
     req = {}
     try:
@@ -117,7 +140,7 @@ for line in sys.stdin:
         # the better choice then. A confident other language is kept.
         if hint and info.language != hint and info.language_probability < 0.75:
             segments, info = model.transcribe(audio, language=hint, **options)
-        text = ' '.join(s.text.strip() for s in segments if s.no_speech_prob < 0.7).strip()
+        text = accepted_transcript(segments)
         print(json.dumps({'id': req['id'], 'text': text, 'language': info.language, 'inferenceMs': round((time.monotonic()-started)*1000), **({} if probability is None else {'complete': True, 'probability': round(probability, 3)})}), flush=True)
     except Exception:
         print(json.dumps({'id': req.get('id') if isinstance(req, dict) else None, 'error': 'Local speech recognition failed.'}), flush=True)

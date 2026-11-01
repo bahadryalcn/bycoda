@@ -5,24 +5,35 @@ import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Check, Copy, ExternalLink, FolderOpen } from "../../../shared/ui/icons";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { MediaToolbarButton } from "../../../shared/ui/MediaToolbar";
+import { Modal } from "../../../shared/ui/Modal";
+import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
+import { lazySurface } from "../../../shared/ui/lazySurface";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { basename, readBinaryFile, revealPath } from "../../../platform/tauri/fs";
 import { localExplorerPath } from "../../../shared/lib/remoteExplorerPaths";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { resolveFileOpenRequest } from "../../files/model/fileIndex";
 import { sniffDocumentImageMime } from "../../files/model/filePreview";
+import { mediaKind } from "../../files/model/mediaPreview";
 import { REVEAL_LABEL } from "../../files/ui/explorerMenuItems";
 
 /** Image formats a transcript file click previews in a dialog before any tab opens. */
 const PREVIEW_IMAGE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)$/i;
+
+const MediaView = lazySurface(
+  async () => ({ default: (await import("../../files/ui/MediaView")).MediaView }),
+  { fallback: <SurfaceLoading /> },
+);
 
 export function isTranscriptImagePath(path: string): boolean {
   return PREVIEW_IMAGE.test(path.trim());
 }
 
 /**
- * Image files that a transcript opens go to a dialog first; every other file keeps opening in a
- * tab. Ctrl/Cmd+click skips the dialog. The transcript root reports each click's modifiers
+ * Images and videos that a transcript opens go to their media dialog first. Other files
+ * follow the caller's file routing. Ctrl/Cmd+click skips the dialog. The transcript root reports each click's modifiers
  * through `noteClick` (capture phase, before the row's own handler runs), because the file
  * handlers receive only a path.
  */
@@ -35,7 +46,10 @@ export function useTranscriptImageOpen(
   const open = useStableCallback(
     onOpenFile
       ? (target: string, ...rest: unknown[]) => {
-          if (!isTranscriptImagePath(target) || performance.now() < directUntil.current) {
+          if (
+            (!isTranscriptImagePath(target) && mediaKind(target) !== "video") ||
+            performance.now() < directUntil.current
+          ) {
             // Markdown links also pass editor navigation: forward everything unchanged.
             (onOpenFile as (...args: unknown[]) => void)(target, ...rest);
             return;
@@ -50,7 +64,7 @@ export function useTranscriptImageOpen(
   };
   const preview: ReactNode =
     path !== null && onOpenFile ? (
-      <TranscriptImagePreview
+      <TranscriptMediaPreview
         key={path}
         path={path}
         cwd={cwd}
@@ -59,6 +73,85 @@ export function useTranscriptImageOpen(
       />
     ) : null;
   return { open, noteClick, preview };
+}
+
+function TranscriptMediaPreview(props: Parameters<typeof TranscriptImagePreview>[0]) {
+  return mediaKind(props.path) === "video" ? (
+    <TranscriptVideoPreview key={`${props.cwd ?? ""}:${props.path}`} {...props} />
+  ) : (
+    <TranscriptImagePreview {...props} />
+  );
+}
+
+/** Uses the existing player and native file grants; closing unmounts and pauses playback. */
+function TranscriptVideoPreview({
+  path,
+  cwd,
+  onClose,
+  onOpenTab,
+}: Parameters<typeof TranscriptImagePreview>[0]) {
+  const t = useT();
+  const [attempt, setAttempt] = useState(0);
+  const [source, setSource] = useState<{ path: string } | { error: string }>();
+  useEffect(() => {
+    let cancelled = false;
+    void (cwd ? resolveFileOpenRequest(cwd, path) : Promise.resolve(path)).then(
+      (resolved) => {
+        if (!cancelled) setSource({ path: resolved });
+      },
+      (reason: unknown) => {
+        if (!cancelled)
+          setSource({ error: reason instanceof Error ? reason.message : String(reason) });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd, path, attempt]);
+  return (
+    <Modal
+      title={basename(path)}
+      onClose={onClose}
+      size="xl"
+      fitViewport
+      expandable
+      className="h-[min(760px,85dvh)]"
+      toolbar={
+        <MediaToolbarButton
+          label={t("Open in new tab")}
+          onClick={() => {
+            onClose();
+            window.setTimeout(onOpenTab, 0);
+          }}
+        >
+          <ExternalLink className="icon-sm" aria-hidden />
+        </MediaToolbarButton>
+      }
+    >
+      <div className="h-full min-h-0">
+        {!source ? (
+          <SurfaceLoading />
+        ) : "path" in source ? (
+          <MediaView path={source.path} />
+        ) : (
+          <div className="flex flex-col gap-2 p-3">
+            <InlineError>
+              {t("Could not read {p0}: {p1}", { p0: basename(path), p1: source.error })}
+            </InlineError>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSource(undefined);
+                setAttempt((value) => value + 1);
+              }}
+            >
+              {t("Retry")}
+            </Button>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
 }
 
 type LoadState =

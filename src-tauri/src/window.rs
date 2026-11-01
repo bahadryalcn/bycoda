@@ -487,7 +487,9 @@ pub fn destroy_window(window: WebviewWindow) -> Result<(), String> {
 }
 
 pub fn is_workspace_window(label: &str) -> bool {
-    label != QUICK_COMPOSER_LABEL && label != QUICK_COMPOSER_GIT_LABEL
+    label != QUICK_COMPOSER_LABEL
+        && label != QUICK_COMPOSER_GIT_LABEL
+        && !crate::voice_overlay::is_voice_overlay(label)
 }
 
 /// Every workspace window, sorted by label.

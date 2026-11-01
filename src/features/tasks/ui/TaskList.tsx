@@ -1,31 +1,13 @@
 import { useT } from "../../../shared/i18n";
-import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { bulkTaskKey } from "../model/taskBulkActions";
 import type { BoardTask } from "../model/taskClient";
+import { taskStatusLine } from "../model/taskStatusLine";
 import { useId, useState } from "react";
 
 const TASK_PAGE_SIZE = 50;
-
-const STATUS_LABEL: Record<BoardTask["status"], string> = {
-  todo: "To do",
-  queued: "Queued",
-  running: "Running",
-  verifying: "Verifying",
-  review: "Review",
-  done: "Done",
-  blocked: "Blocked",
-};
-const STATUS_TONE: Record<BoardTask["status"], BadgeTone> = {
-  todo: "neutral",
-  queued: "neutral",
-  running: "info",
-  verifying: "info",
-  review: "warning",
-  done: "success",
-  blocked: "danger",
-};
 
 export function TaskList({
   tasks,
@@ -57,7 +39,9 @@ export function TaskList({
   return (
     <>
       <ul id={listId} className="task-management-list" aria-label={t("Tasks")}>
-        {pageTasks.map((task, index) => (
+        {pageTasks.map((task, index) => {
+          const status = taskStatusLine(task);
+          return (
           <li
             key={bulkTaskKey(task)}
             aria-setsize={tasks.length}
@@ -93,13 +77,27 @@ export function TaskList({
               {planningLabel?.(task) ? (
                 <span className="task-planning-caption">{planningLabel(task)}</span>
               ) : null}
-              {task.error ? <p className="task-list-error">{task.error}</p> : null}
+              {status.detail ? (
+                <p
+                  data-task-status-detail
+                  title={task.error ?? task.mergeError ?? status.detail}
+                  className="task-list-error line-clamp-1"
+                  data-tone={status.tone}
+                >
+                  {status.detail}
+                </p>
+              ) : null}
             </div>
-            <Badge tone={STATUS_TONE[task.status]} className="task-list-status">
-              {t(STATUS_LABEL[task.status])}
+            <Badge
+              tone={status.tone}
+              data-task-status={status.kind}
+              className="task-list-status"
+            >
+              {status.label}
             </Badge>
           </li>
-        ))}
+          );
+        })}
       </ul>
       {tasks.length > TASK_PAGE_SIZE ? (
         <nav aria-label={t("Tasks")} className="flex flex-wrap items-center justify-end gap-2 py-2">

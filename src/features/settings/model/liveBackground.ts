@@ -21,6 +21,7 @@ export type LiveBackground =
   | "neural-tree"
   | "latent-face"
   | "code-visage"
+  | "serene-face"
   | "thought-weaver"
   | "ascii-mask"
   | "dot-grid"
@@ -36,6 +37,7 @@ export const LIVE_BACKGROUNDS: readonly LiveBackground[] = [
   "neural-tree",
   "latent-face",
   "code-visage",
+  "serene-face",
   "thought-weaver",
   "ascii-mask",
   "dot-grid",
@@ -86,6 +88,8 @@ export function liveBackgroundLabel(value: LiveBackground): string {
       return t("Latent face");
     case "code-visage":
       return t("Code visage");
+    case "serene-face":
+      return t("Serene face");
     case "thought-weaver":
       return t("Thought weaver");
     case "ascii-mask":
@@ -117,6 +121,8 @@ export function liveBackgroundDescription(value: LiveBackground): string {
       return t("A silhouette of falling code that appears only while the AI replies.");
     case "code-visage":
       return t("A dark figure in front of falling code that appears only while the AI replies.");
+    case "serene-face":
+      return t("A calm, softly lit face that surfaces from the dark while the AI replies.");
     case "thought-weaver":
       return t("A small digital loom weaves delicate threads while the AI replies.");
     case "ascii-mask":

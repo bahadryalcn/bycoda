@@ -52,6 +52,7 @@ async function fixture(t) {
   const files = {
     "dist/index.html": "main",
     "dist/quick-composer.html": "quick",
+    "dist/voice-overlay.html": "voice",
     "dist/build-info.json": JSON.stringify(identity),
   };
   for (const name of [

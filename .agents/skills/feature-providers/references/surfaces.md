@@ -1,0 +1,12 @@
+# Provider surface map
+
+Paths are repository-root relative. Read only the branch needed for the changed workflow; process construction and warm writer protocols remain in `docs/reference/host-runtime.md`.
+
+- UI/settings: `src/features/providers/ui/` provider list, status, usage, Generic ACP and update notices; `src/features/settings/ui/` provider settings and binary/setup dialogs. Search actual rendered imports to locate the current section composition.
+- Choices: `src/features/sessions/ui/ModelPicker.tsx`, `ModelFlyout.tsx`, `ProviderAccountMenu.tsx`, `ProviderAccountRecoveryDialog.tsx`, sign-in dialogs; quick composer and task/crew model consumers. Provider UI state must not rewrite retained session IDs.
+- `src/features/providers/model/providerAccounts.ts`, `providerAccountRegistration.ts`, `providerAccountIdentity.ts`, `providerAccountControl.ts`, `providerAccountCredentials.ts`: identity, verification and account lifecycle (basenames share the model directory).
+- In that directory, `providerManagementControl.ts`, `providerPreferenceOutcome.ts`, `providerBinaryPaths.ts`, `harnessUpdates.ts`, `harnessUpdateActions.ts`, `catalogReceipts.ts` and catalog/model preferences own operation outcome and persistence. Search their actual consumers for resets/inheritance.
+- `src/integrations/harness/providers/` and `src/integrations/harness/core/` contain actual provider discovery, protocol adapters, model IDs, sign-in/CLI process access and shared runtime policy. `host/`/`src-tauri/src/` counterparts own the selected backend effects.
+- Remote model discovery uses the selected Host's `models.list` and capability policy. Inspect actual mobile custom-model/Host-fallback callers under `mobile/`; desktop preference synchronization or updater parity must be verified separately.
+- Focused tests are adjacent to catalog/preferences/account/update modules; `src/features/providers/ui/ProviderAccountUsage.test.ts`, `HarnessUpdateNotice.test.ts`, `GenericAcpSettings.test.ts` cover representative consumers. Add changed picker/settings regression checks rather than rerunning unrelated usage suites.
+- Locale families include enabled/disabled models, inherited/global/project defaults, account sign-in/removal, checking/updating/current version, configured path/restart and recoverable errors. Search actual sentence keys and override catalogs.

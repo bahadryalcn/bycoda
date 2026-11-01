@@ -196,7 +196,9 @@ export function useSessionPaneProps({
     onApproval: useKeepSessionAction(onApproval, onKeepSession)!,
     onQuestionReply: useKeepSessionAction(onQuestionReply, onKeepSession)!,
     onQuestionInteraction: useKeepSessionAction(onQuestionInteraction, onKeepSession),
-    onOpenFile,
+    onOpenFile: useStableCallback<Parameters<P["onOpenFile"]>, void>((path, navigation, options) =>
+      onOpenFile(path, navigation, { ...options, placement: "pane" }),
+    ),
     onOpenDiff,
     onOpenPlan,
     onBuildPlan: useKeepSessionAction(onBuildPlan, onKeepSession)!,

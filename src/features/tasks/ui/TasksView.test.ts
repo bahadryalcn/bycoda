@@ -266,6 +266,9 @@ const buttonName = (entry: HTMLButtonElement) =>
 // A control that explains why it is off stays focusable and reports aria-disabled.
 const isDisabled = (entry: HTMLButtonElement) =>
   entry.disabled || entry.getAttribute("aria-disabled") === "true";
+/** The card's one-line status, which opens the full task details. */
+const statusLine = (scope: ParentNode) =>
+  scope.querySelector<HTMLButtonElement>("button[data-task-status-line]")!;
 const button = (scope: ParentNode, label: string) =>
   Array.from(scope.querySelectorAll("button")).find(
     (entry) => buttonName(entry) === label || buttonText(entry) === label,
@@ -524,7 +527,7 @@ it("lays tasks out in six columns with the actions each status allows", async ()
   expect(actions("running")).toEqual(["Stop"]);
   expect(actions("review")).toEqual(["Approve", "More actions"]);
   expect(actions("done")).toEqual(["Run again", "More actions"]);
-  expect(actions("blocked")).toEqual(["Task failed", "Retry", "More actions"]);
+  expect(actions("blocked")).toEqual(["Failed · Not signed in", "Retry", "More actions"]);
   await act(async () => button(column("blocked"), "More actions")!.click());
   expect(Array.from(document.body.querySelectorAll('[role="menu"] button'), buttonName)).toEqual([
     "Move to To do",
@@ -535,8 +538,9 @@ it("lays tasks out in six columns with the actions each status allows", async ()
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
   );
   expect(column("running").textContent).toContain("Needs input");
-  expect(column("blocked").textContent).not.toContain("Not signed in");
-  await act(async () => button(column("blocked"), "Task failed")!.click());
+  // The reason is one clamped line on the card; the full text stays in the dialog.
+  expect(column("blocked").textContent).toContain("Not signed in");
+  await act(async () => statusLine(column("blocked")).click());
   expect(document.body.textContent).toContain("Not signed in");
   await act(async () => button(document.body.querySelector('[role="dialog"]')!, "Close")!.click());
   expect(column("queued").textContent).toContain("on this computer");
@@ -868,7 +872,8 @@ it("offers to merge a reviewed branch and shows what was checked", async () => {
   expect(card.textContent).toContain("mc/abcd1234");
   expect(card.textContent).not.toContain("1 file changed");
   expect(card.textContent).toContain("Delivery is blocked");
-  await act(async () => button(card, "Delivery is blocked")!.click());
+  expect(statusLine(card).textContent).toContain("The project has uncommitted changes.");
+  await act(async () => statusLine(card).click());
   const details = document.body.querySelector('[role="dialog"]')!;
   expect(details.textContent).toContain("Check command passed");
   expect(details.textContent).toContain("Reviewer passed · Covers the week.");
@@ -899,7 +904,8 @@ it("confirms before discarding the branch of an unmerged task", async () => {
     }),
   ]);
   await render();
-  await act(async () => button(column("blocked"), "Task failed")!.click());
+  expect(statusLine(column("blocked")).textContent).toContain("Checks failed");
+  await act(async () => statusLine(column("blocked")).click());
   expect(document.body.textContent).toContain("Check command failed (exit code 1)");
   await act(async () => button(document.body.querySelector('[role="dialog"]')!, "Close")!.click());
   await pickAction(column("blocked"), "Delete");
@@ -1225,8 +1231,8 @@ it("does not label a continuous runtime failure as an exhausted correction budge
     }),
   ]);
   await render();
-  expect(column("blocked").textContent).not.toContain("Provider disconnected");
-  await act(async () => button(column("blocked"), "Task failed")!.click());
+  expect(statusLine(column("blocked")).textContent).toContain("Failed · Provider disconnected");
+  await act(async () => statusLine(column("blocked")).click());
   expect(document.body.textContent).toContain("Provider disconnected");
   expect(column("blocked").textContent).not.toContain("attempt limit reached");
   expect(button(column("blocked"), "Retry")).toBeTruthy();
@@ -1632,7 +1638,7 @@ it("asks for instructions only after the independent takeover failed", async () 
     ["tasks", "tasks.todo", "tasks.review-recheck"],
   );
   await render();
-  expect(card("Ship the report").textContent).toContain("Waiting for your instructions");
+  expect(card("Ship the report").textContent).toContain("Needs an external check");
   await act(async () => card("Ship the report").click());
   const history = panel()!.querySelector('[aria-label="Attempt history"]')!;
   await act(async () =>
@@ -1640,11 +1646,14 @@ it("asks for instructions only after the independent takeover failed", async () 
   );
   expect(history.textContent).toContain("Fixed reset and ran unit checks.");
   expect(history.textContent).toContain("Review: Acceptance missing");
-  expect(history.textContent).toContain("Provide an Android device");
+  // The stop reason and next step live in the panel's single status alert.
+  const reason = panel()!.querySelector("[data-task-status-reason]")!;
+  expect(reason.textContent).toContain("Needs an external check");
+  expect(reason.textContent).toContain("Provide an Android device");
   expect(button(panel()!, "Recheck review")).toBeUndefined();
   expect(button(panel()!, "Retry")).toBeUndefined();
   expect(button(panel()!, "Update instructions")).toBeDefined();
-  expect(history.textContent).toContain("Update the task description");
+  expect(reason.textContent).toContain("Update the task description");
   expect(requests.filter((request) => request.method === "tasks.review.recheck")).toEqual([]);
   expect(requests.some((request) => request.method === "tasks.move")).toBe(false);
 });

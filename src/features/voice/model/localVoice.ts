@@ -7,10 +7,14 @@ import {
 } from "./localVoiceClient";
 import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
+import { speechTranscript } from "./voiceTranscript";
 
 export type SpeechBinding = { sessionId?: string; sequence: number };
 type Callbacks = {
+  /** Snapshot the target at onset without cancelling the current reply. */
   start: () => SpeechBinding;
+  /** Promote a snapshot only after recognition accepted actual words. */
+  accept?: (binding: SpeechBinding) => SpeechBinding | undefined;
   transcript: (result: LocalVoiceTranscript, binding: SpeechBinding) => void;
   state: (state: "speaking" | "transcribing" | "listening") => void;
   error: (message: string, fatal?: boolean) => void;
@@ -33,6 +37,9 @@ export class LocalVoice {
   private muted = false;
   private requests = 0;
   private speechEpoch = 0;
+  /** Only accepted words (or explicit mic reset) supersede pending ASR. */
+  private acceptedSpeechEpoch = 0;
+  private bindings = new Set<SpeechBinding>();
   private binding?: SpeechBinding;
   private playbackEpoch = 0;
   private speechId?: string;
@@ -80,14 +87,17 @@ export class LocalVoice {
         this.audio.sampleRate,
         () => {
           this.speechEpoch++;
-          this.silence();
-          this.binding = this.callbacks.start();
+          this.binding = { ...this.callbacks.start() };
+          this.bindings.add(this.binding);
           this.callbacks.state("speaking");
         },
         (audio) => {
           if (this.binding) void this.transcribe(audio, this.binding, this.speechEpoch);
         },
-        () => this.callbacks.state("listening"),
+        () => {
+          if (this.binding) this.bindings.delete(this.binding);
+          this.callbacks.state("listening");
+        },
         // With Smart Turn, a finished sentence ends after ~0.2 s instead of 0.6 s,
         // and a mid-sentence pause keeps listening up to 1.3 s.
         this.info.turn
@@ -136,6 +146,7 @@ export class LocalVoice {
   private async transcribe(audio: Int16Array, binding: SpeechBinding, epoch: number) {
     if (!this.info || this.closed) return;
     if (this.requests >= 2) {
+      this.bindings.delete(binding);
       this.callbacks.error("Speech recognition is busy. Please speak again.");
       return;
     }
@@ -147,15 +158,13 @@ export class LocalVoice {
         pcmBase64(resamplePcm(audio, this.audio!.sampleRate)),
         /^[a-z]{2}$/.test(this.hint) ? this.hint : undefined,
       );
-      // A correction spoken while ASR is running supersedes its older result.
-      if (!this.closed && epoch === this.speechEpoch && result.text.trim()) {
-        if (/^[a-z]{2}$/.test(result.language)) this.language = result.language;
-        this.callbacks.transcript(result, binding);
-      }
+      if (!this.closed && epoch > this.acceptedSpeechEpoch)
+        this.acceptTranscript(result, binding, epoch);
     } catch {
       if (!this.closed)
         this.callbacks.error("Local speech recognition failed. Please speak again.");
     } finally {
+      this.bindings.delete(binding);
       this.requests--;
       if (!this.closed && !this.requests) this.callbacks.state("listening");
     }
@@ -182,15 +191,30 @@ export class LocalVoice {
       // The speaker may have continued while the check ran; then the turn goes on.
       if (!this.vad?.commit(pauseId)) return;
       ended = true;
-      if (!result.text.trim()) return;
-      if (/^[a-z]{2}$/.test(result.language)) this.language = result.language;
-      this.callbacks.transcript(result, binding);
+      this.acceptTranscript(result, binding, epoch);
+      this.bindings.delete(binding);
     } catch {
       // The fallback silence still transcribes the turn.
     } finally {
       this.requests--;
       if (ended && !this.closed && !this.requests) this.callbacks.state("listening");
     }
+  }
+
+  private acceptTranscript(result: LocalVoiceTranscript, binding: SpeechBinding, epoch: number) {
+    const text = speechTranscript(result.text);
+    if (!text || epoch <= this.acceptedSpeechEpoch) return;
+    const accepted = this.callbacks.accept ? this.callbacks.accept(binding) : binding;
+    if (!accepted) return;
+    this.acceptedSpeechEpoch = epoch;
+    // Other in-flight candidates took the same UI sequence snapshot. Carry our
+    // own promotion forward; external cancellation still fails callbacks.accept.
+    for (const pending of this.bindings)
+      if (pending !== binding && pending.sequence === binding.sequence)
+        pending.sequence = accepted.sequence;
+    this.silence();
+    if (/^[a-z]{2}$/.test(result.language)) this.language = result.language;
+    this.callbacks.transcript({ ...result, text }, accepted);
   }
 
   /** Speaks `text`, replacing current speech, or after it with `append` (streamed replies). */
@@ -331,6 +355,8 @@ export class LocalVoice {
     this.level.current = 0;
     this.vad?.reset();
     this.speechEpoch++;
+    this.acceptedSpeechEpoch = this.speechEpoch;
+    this.bindings.clear();
     this.stream?.getAudioTracks().forEach((track) => {
       track.enabled = !value;
     });
@@ -355,6 +381,7 @@ export class LocalVoice {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.bindings.clear();
     this.level.current = 0;
     this.silence();
     this.vad?.reset();

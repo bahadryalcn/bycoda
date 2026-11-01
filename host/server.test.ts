@@ -2942,6 +2942,7 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
     codex: {
       send,
       stop: async () => finish(),
+      retireOriginal: async () => finish(),
       cancel: async () => finish(),
       bind: () => {},
       approve: () => {},
@@ -3618,6 +3619,52 @@ describe("shared queued messages", () => {
       expect((await acquire(s, sessionId, "desktop:win1")).value.result.lease).toMatchObject({
         holder: "desktop:win1",
       });
+    });
+
+    it("retires a settled review writer before owner follow-up lease admission", async () => {
+      const s = await setup();
+      const observe = vi.spyOn(HostTasks.prototype, "tick");
+      try {
+        const saved = await s.call("tasks.save", { task: {
+          id: "blocked-review-continuation", title: "Review continuation", prompt: "Prepare report",
+          projectId: s.project.id, harness: "codex", model: "codex:test", modelSettings: {},
+          runtimeMode: "supervised", maxRunMinutes: 0, isolate: false, review: true, status: "todo",
+        } });
+        expect(saved.value.error).toBeUndefined();
+        const started = await s.call("tasks.start", { taskId: "blocked-review-continuation" });
+        expect(started.value.error).toBeUndefined();
+        const scheduler = observe.mock.contexts.at(-1)!;
+        await s.started;
+        const worker = await s.store.session(s.turn().sessionId);
+        s.finish();
+        await s.engine.waitForRun(worker.session.id, worker.runId);
+        await scheduler.tick();
+        await scheduler.idle();
+        expect(await scheduler.get("blocked-review-continuation")).toMatchObject({ status: "verifying" });
+        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2));
+        const reviewing = (await scheduler.get("blocked-review-continuation"))!;
+        const sessionId = reviewing.reviewer!.sessionId!;
+        s.turn().onEvent({ type: "session.providerBound", providerSessionId: "original-review-thread" });
+        s.turn().onEvent({ type: "message.delta", text: "VERDICT: FAIL - Report is incomplete." });
+        s.turn().onEvent({ type: "message.completed" });
+        s.finish();
+        await s.engine.waitForRun(sessionId, reviewing.reviewer!.runId);
+        await scheduler.tick();
+        await scheduler.idle();
+        expect(await scheduler.get("blocked-review-continuation")).toMatchObject({ status: "blocked" });
+        expect(s.engine.hasRetainedProviderWriter(sessionId)).toBe(true);
+        // A lapsed desktop heartbeat is observation, never takeover authority.
+        expect((await beat(s, sessionId, "win1", 1))[sessionId]).toBeNull();
+        const transfer = vi.spyOn(s.engine, "withRetiredProviderWriter");
+        const lease = await acquire(s, sessionId, "desktop:win1");
+        expect(lease.value.error).toBeUndefined();
+        expect(lease.value.result.lease.holder).toBe("desktop:win1");
+        expect(transfer).toHaveBeenCalledWith(sessionId, expect.any(Function));
+        expect(s.engine.hasRetainedProviderWriter(sessionId)).toBe(false);
+        expect((await s.store.session(sessionId)).session.providerSessionId).toBe("original-review-thread");
+      } finally {
+        observe.mockRestore();
+      }
     });
 
     it("keeps a throttled hidden window's lease across its longest gap between beats", async () => {

@@ -1,0 +1,323 @@
+import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { AddressInfo } from "node:net";
+import { DatabaseSync } from "node:sqlite";
+import { HostStore } from "./store";
+import { HostEngine } from "./engine";
+import { createHostServer } from "./server";
+import {
+  parseVoiceToolCall,
+  prepareVoiceToolDispatch,
+  validateVoiceToolList,
+  voiceToolCatalog,
+  type VoiceToolDispatchPorts,
+} from "./voice-tools";
+
+const request = () => ({
+  projectId: "project-a",
+  sessionId: "session-a",
+  family: "conversation",
+  action: "notes.create",
+  input: { id: "note-a", body: "Unsent voice note" },
+});
+
+it("routes real owner voice RPCs through scoped tools without leaking or retaining grants", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-voice-tools-"));
+  const desktopPath = join(directory, "desktop.db");
+  const desktop = new DatabaseSync(desktopPath);
+  desktop.exec(
+    `CREATE TABLE notes(id TEXT PRIMARY KEY,slug TEXT NOT NULL UNIQUE,title TEXT NOT NULL,body TEXT NOT NULL DEFAULT '',tags_json TEXT NOT NULL DEFAULT '[]',source_session_id TEXT,source_cwd TEXT,slug_pending INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)`,
+  );
+  desktop.close();
+  vi.stubEnv("BYCODA_DESKTOP_DB", desktopPath);
+  const store = new HostStore(join(directory, "host.db"));
+  const engine = new HostEngine(store, {
+    codex: {
+      send: async () => {},
+      stop: async () => {},
+      cancel: async () => {},
+      bind: () => {},
+      approve: () => {},
+      answer: () => {},
+    },
+  });
+  const project = await engine.openProject(directory);
+  const server = await createHostServer(engine, ["codex"]);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const owner = await store.issueDevice("Voice fixture owner");
+    const created = await engine.command({
+      type: "create",
+      workspaceMode: "current",
+      commandId: "voice-controller-fixture",
+      projectId: project.id,
+      harness: "codex",
+      model: "gpt",
+      runtimeMode: "supervised",
+    });
+    const endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
+    const call = async (method: string, params: Record<string, unknown>, token = owner.token) => {
+      const reply = await fetch(endpoint, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ version: 1, environmentId: store.environmentId, method, params }),
+      });
+      return (await reply.json()) as { result?: any; error?: string };
+    };
+    const target = { projectId: project.id, sessionId: created.sessionId };
+    const catalog = await call("voice.tools.list", { projectId: project.id });
+    expect(catalog.error).toBeUndefined();
+    expect(catalog.result.tools.some((tool: { family: string }) => tool.family === "social")).toBe(
+      true,
+    );
+    const mint = vi.spyOn(server.conversationAccess, "issueSessionGrant");
+    const note = await call("voice.tools.call", {
+      ...target,
+      family: "conversation",
+      action: "notes.create",
+      input: {
+        id: "voice-note-fixture",
+        title: "Voice note",
+        body: "Saved through the real tools dispatcher.",
+      },
+    });
+    expect(note.error).toBeUndefined();
+    expect(note.result).toMatchObject({
+      id: "voice-note-fixture",
+      body: "Saved through the real tools dispatcher.",
+    });
+    const minted = await mint.mock.results[0].value;
+    expect(JSON.stringify(note)).not.toContain(minted.token);
+    expect(await server.conversationAccess.principalForToken(minted.token)).toBeUndefined();
+    const read = await call("voice.tools.call", {
+      ...target,
+      family: "conversation",
+      action: "notes.read",
+      input: { id: "voice-note-fixture" },
+    });
+    expect(read.result.body).toBe("Saved through the real tools dispatcher.");
+    const social = await call("voice.tools.call", {
+      ...target,
+      family: "social",
+      action: "accounts.list",
+      input: {},
+      requestId: "voice-accounts-fixture",
+    });
+    expect(social.error).toBeUndefined();
+    const logs = await call("voice.tools.call", {
+      ...target,
+      family: "runtime-logs",
+      action: "sources",
+      input: {},
+    });
+    expect(logs.error).toBeUndefined();
+    const claim = () =>
+      call("voice.tools.call", {
+        ...target,
+        family: "conversation",
+        action: "browser.claim",
+        input: {},
+      });
+    const firstClaim = await claim();
+    const secondClaim = await claim();
+    expect(firstClaim.error).toBeUndefined();
+    expect(firstClaim.result.leaseId).toBeTruthy();
+    expect(secondClaim.error).toBeUndefined();
+    expect(secondClaim.result.leaseId).toBe(firstClaim.result.leaseId);
+    const released = await call("voice.tools.call", {
+      ...target,
+      family: "conversation",
+      action: "browser.release",
+      input: { leaseId: firstClaim.result.leaseId },
+    });
+    expect(released.error).toBeUndefined();
+    const sibling = await server.conversationAccess.issueSessionGrant(created.sessionId!);
+    const attemptedEscalation = await call(
+      "voice.tools.list",
+      { projectId: project.id },
+      sibling.token,
+    );
+    expect(attemptedEscalation.error).toMatch(/owner device/);
+    const mismatched = await call("voice.tools.call", {
+      ...target,
+      projectId: "other-project",
+      family: "conversation",
+      action: "notes.list",
+      input: {},
+    });
+    expect(mismatched.error).toMatch(/another project/);
+    const missingContext = await call("voice.tools.call", {
+      projectId: project.id,
+      family: "conversation",
+      action: "notes.list",
+      input: {},
+    });
+    expect(missingContext.error).toMatch(/explicit verified project and session/);
+    await store.revokeToken(owner.token);
+    expect((await call("voice.tools.list", { projectId: project.id })).error).toMatch(
+      /invalid or revoked/,
+    );
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await server.closeResources();
+    await engine.close();
+    await store.close();
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+function ports() {
+  const issuer = () => ({
+    issueSessionGrant: vi.fn(async () => ({
+      token: "private-request-bound-grant",
+      scope: {
+        projectId: "project-a",
+        sessionId: "session-a",
+        provider: "codex",
+        environmentId: "host-a",
+      },
+    })),
+    revokeSessionGrant: vi.fn(),
+  });
+  return {
+    authorized: vi.fn(async () => true),
+    environmentId: "host-a",
+    deviceHash: "verified-owner-device-hash",
+    sessionIdentity: vi.fn(async () => ({ projectId: "project-a", provider: "codex" })),
+    issuers: { conversation: issuer(), social: issuer(), "runtime-logs": issuer() },
+  } satisfies VoiceToolDispatchPorts;
+}
+
+describe("voice tool gateway", () => {
+  it("discovers all three families while retaining authoritative schemas", () => {
+    const tools = voiceToolCatalog();
+    expect(new Set(tools.map((tool) => tool.family))).toEqual(
+      new Set(["conversation", "social", "runtime-logs"]),
+    );
+    expect(tools.find((tool) => tool.action === "notes.update")?.inputSchema).toMatchObject({
+      required: ["id", "expectedUpdatedAt"],
+    });
+    expect(
+      tools.find((tool) => tool.family === "social" && tool.action === "policy.get"),
+    ).toBeDefined();
+    expect(
+      tools.find((tool) => tool.family === "runtime-logs" && tool.action === "read"),
+    ).toMatchObject({ annotations: { readOnlyHint: true } });
+  });
+
+  it("requires a project for discovery and refuses an injected identity", () => {
+    expect(() => validateVoiceToolList({ projectId: "project-a" })).not.toThrow();
+    expect(() => validateVoiceToolList({})).toThrow(/verified project/);
+    expect(() => validateVoiceToolList({ projectId: "project-a", principal: "owner" })).toThrow();
+  });
+
+  it("refuses missing session, unknown family/action and protected envelope fields", () => {
+    for (const input of [
+      { ...request(), sessionId: undefined },
+      { ...request(), family: "owner" },
+      { ...request(), action: "host.settings.set" },
+      { ...request(), provider: "owner" },
+      { ...request(), token: "attacker-token" },
+      { ...request(), requestId: " " },
+    ])
+      expect(() => parseVoiceToolCall(input)).toThrow();
+  });
+
+  it("validates Conversation Tool schemas before issuing any authority", async () => {
+    const p = ports();
+    await expect(
+      prepareVoiceToolDispatch({ ...request(), input: { id: "note-a" } }, p),
+    ).rejects.toThrow();
+    expect(p.issuers.conversation.issueSessionGrant).not.toHaveBeenCalled();
+  });
+
+  it("does not mint authority when owner access or project identity fails", async () => {
+    const denied = ports();
+    denied.authorized.mockResolvedValue(false);
+    await expect(prepareVoiceToolDispatch(request(), denied)).rejects.toThrow(/owner/);
+    expect(denied.sessionIdentity).not.toHaveBeenCalled();
+    const foreign = ports();
+    foreign.sessionIdentity.mockResolvedValue({ projectId: "project-b", provider: "codex" });
+    await expect(prepareVoiceToolDispatch(request(), foreign)).rejects.toThrow(/another project/);
+    expect(foreign.issuers.conversation.issueSessionGrant).not.toHaveBeenCalled();
+  });
+
+  it("delegates the exact verified scope and releases only its own sibling grant once", async () => {
+    const p = ports();
+    const dispatch = await prepareVoiceToolDispatch(request(), p);
+    expect(p.issuers.conversation.issueSessionGrant).toHaveBeenCalledExactlyOnceWith(
+      "session-a",
+      "verified-owner-device-hash",
+      {
+        projectId: "project-a",
+        provider: "codex",
+        environmentId: "host-a",
+        sessionId: "session-a",
+      },
+    );
+    expect(dispatch.method).toBe("conversation.tools.call");
+    const sibling = await prepareVoiceToolDispatch(request(), p);
+    expect(dispatch.browserOwner).toBe(sibling.browserOwner);
+    expect(dispatch.browserOwner).not.toContain(dispatch.token);
+    const otherSession = await prepareVoiceToolDispatch(
+      { ...request(), sessionId: "session-b" },
+      p,
+    );
+    expect(otherSession.browserOwner).not.toBe(dispatch.browserOwner);
+    expect(dispatch.params).toEqual({ action: "notes.create", input: request().input });
+    dispatch.release();
+    dispatch.release();
+    expect(p.issuers.conversation.revokeSessionGrant).toHaveBeenCalledExactlyOnceWith(
+      "private-request-bound-grant",
+    );
+    expect(p.issuers.social.revokeSessionGrant).not.toHaveBeenCalled();
+    sibling.release();
+    otherSession.release();
+  });
+
+  it("rechecks owner access after asynchronous grant creation and revokes on refusal", async () => {
+    const p = ports();
+    p.authorized.mockResolvedValueOnce(true).mockResolvedValue(false);
+    await expect(prepareVoiceToolDispatch(request(), p)).rejects.toThrow(/revoked/);
+    expect(p.issuers.conversation.revokeSessionGrant).toHaveBeenCalledExactlyOnceWith(
+      "private-request-bound-grant",
+    );
+  });
+
+  it("keeps social and read-only runtime-log authority isolated and preserves request IDs", async () => {
+    const p = ports();
+    const social = await prepareVoiceToolDispatch(
+      {
+        ...request(),
+        family: "social",
+        action: "accounts.list",
+        input: {},
+        requestId: "same-operation",
+      },
+      p,
+    );
+    expect(social.method).toBe("social.tools.call");
+    expect(social.params.requestId).toBe("same-operation");
+    expect(p.issuers.conversation.issueSessionGrant).not.toHaveBeenCalled();
+    const logs = await prepareVoiceToolDispatch(
+      {
+        ...request(),
+        family: "runtime-logs",
+        action: "sources",
+        input: {},
+      },
+      p,
+    );
+    expect(logs.method).toBe("runtimeLogs.tools.call");
+    expect(p.issuers["runtime-logs"].issueSessionGrant).toHaveBeenCalledOnce();
+    social.release();
+    logs.release();
+  });
+});

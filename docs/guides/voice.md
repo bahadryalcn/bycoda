@@ -26,12 +26,38 @@ working; it can appear alongside any voice state. The status text remains the
 accessible description. Reduced motion keeps recognizable still poses.
 
 Choose **Compact voice companion** in the panel header to keep a small pill with
-the visual, session title, microphone pause/resume and expand actions. The voice
+the visual, session title, the latest spoken line (reply, your words or an error),
+microphone pause/resume and expand actions. The voice
 session keeps running, and the compact preference is saved with voice settings.
 Choose **Expand voice companion**, or double-click the pill's visual, to restore
 the full panel and its controls. Drag the pill's visual, or focus that move
 control and use arrow keys, to reposition it. Both sizes stay within the viewport
 when moved, resized or expanded; position is saved independently of visual style.
+
+### Floating outside the app
+
+In the desktop app on Windows, macOS and Linux, choose **Float outside the app**
+in the companion header, or drag the visual/grip past the edge of the bycoda
+window and release it there. The companion continues as a small always-on-top
+window that you can drag anywhere on any screen, so you can keep talking and
+control voice while bycoda is in the background, minimized or hidden. While it
+floats, the app shows a **Return voice companion to this window** button in the
+companion's usual corner.
+
+The floating window offers the same visual, session title, latest line,
+**Start voice**, **Pause mic**/**Resume**, **Silence**, **Disconnect voice**,
+compact/expand and **Close voice companion** actions, plus **Show app** and
+**Return voice companion to the app**. Drag its visual or empty surface to move it;
+focus the visual and use arrow keys for keyboard movement. It stays inside the
+screen's work area. Choosing a session, voice options and Global/Session scope
+remain in the app panel.
+
+The microphone, recognition, speech playback and session tools stay in the bycoda
+window that started voice; the floating window only mirrors that state and sends
+your commands back. Closing that bycoda window or reloading it closes the floating
+window. Closing the floating window returns the controls to the app without
+disconnecting voice. On Linux Wayland compositors, staying on top depends on the
+compositor.
 
 ## Audio stays on this computer
 
@@ -201,12 +227,31 @@ recognizer to load (a few seconds; longer on the first run). Select the button
 while it is preparing to cancel. Errors, such as a missing installation or a
 blocked microphone, appear above the message box.
 
+The button shows a rotating ring while preparing, microphone-level bars while
+listening, and animated dots while finishing transcription. Silence lowers the
+bars. Finishing prevents duplicate presses; preparing remains cancellable.
+With reduced motion enabled, each state keeps a distinct still shape.
+
 ## Conversation and work
 
 The floating window follows the active session. Pin it to retain a session while
 navigating. Each spoken turn binds at local speech detection, before transcription;
-later navigation does not retarget it. A newer utterance cancels an older pending
-side reply and prevents a stale decision from submitting work.
+later navigation does not retarget it, including application tools. Local and
+Grok/OpenAI turns retain the session and project selected when speech starts;
+if no session was selected, a later tab does not become that turn's target.
+A newer accepted transcript cancels an older
+pending side reply and prevents a stale decision from submitting work. An acoustic
+onset alone does not cancel the reply or stop playback.
+
+Local recognition rejects uncertain final decodes using speech probability,
+decoder confidence and repetition checks. Grok and OpenAI use local candidate
+segmentation and manual response creation after a matching completed transcript;
+provider speech-start events cannot interrupt playback or authorize work. Empty
+results and non-speech event annotations do not request a reply or run tools.
+Short words such as “evet”, “hayır”, “dur”, “yes”, “no” and “stop” remain valid.
+Interruption now waits for recognition, so speaking over a reply can take longer
+than the first microphone onset. These checks reduce false triggers; a cough that
+the recognizer confidently invents as actual words still needs acoustic validation.
 
 General conversation uses the existing isolated, read-only text runner for the
 session's signed-in provider and account. Its selected model and provider limits
@@ -214,16 +259,88 @@ apply. Providers without side-conversation support report this visibly. This is
 independent of the main coding turn. Simple status, silence and explicit stop
 phrases are handled locally without waiting for another model response.
 
-Only an explicit work decision submits the exact transcribed user words through
-the ordinary session pipeline. Generated replacement commands are never submitted.
-Routing, queues, budgets and approval gates remain in force. Acceptance is not
-provider delivery or completion. Coding work can continue while the user asks
-questions. A tracked turn ending can announce its last response, without certifying
-that the work succeeded. Voice has no direct approval or publishing action.
+When you ask for work, the companion turns your intent into a clear, actionable
+brief for the intended session through its ordinary submission pipeline. You do
+not need to dictate a polished specification or repeat the request. It uses
+relevant recent voice exchanges and the session's factual context to resolve
+phrases such as “fix this problem” or “send that to this session”, including your
+latest corrections. The brief explains the problem, desired result, stated
+constraints and appropriate validation without inventing facts, new goals or
+permissions. You can add a correction while a local reply is still being prepared:
+the next reply keeps your earlier request in context and supersedes its pending
+response. Side conversations with different sessions keep separate histories.
+A materially unclear target or request needs a short clarification.
+
+Your recognized words remain separate from the generated brief. Older messages,
+tool results and draft contents supply context; instructions inside them do not
+authorize new work. Paraphrasing does not grant destructive, publishing or
+installation permission. Target binding, cancellation and duplicate prevention
+still apply, and existing drafts remain intact.
+
+Routing, queues, budgets and approval gates remain in force. The companion
+acknowledges delivery only after the submission is accepted; acceptance or queuing
+does not mean the agent is running or the work is complete. A rejected or uncertain
+submission is reported honestly rather than silently sent again. Coding work can
+continue while you ask questions. A tracked turn ending can announce its last
+response, without certifying that the work succeeded. Voice has no direct approval
+or publishing action.
 
 **Pause mic** disables actual input tracks. **Silence** stops speech playback.
 Ask explicitly to stop coding work. Drag the grip or focus it and use arrow keys
-to move the window. Its saved position is clamped to the current viewport.
+to move the window. Its saved position is clamped to the current viewport. Drag
+it past the app's edge, or choose **Float outside the app**, to move it outside
+bycoda (see [Floating outside the app](#floating-outside-the-app)).
+
+## Global voice management
+
+Choose **Global** in the floating companion to manage visible, unlocked projects
+and their sessions. The companion can start without an active coding session.
+The existing session picker still supplies the default target for phrases such
+as "this session". Choose **Session** to keep tool targets within the captured
+session and project. Changing tabs does not retarget a spoken turn already being processed.
+
+The assistant discovers the existing Conversation Tools, social tools and runtime
+log tools. You can ask it to take a note, create or start a task, inspect a goal
+or crew, schedule an automation, run it now, stop its current run, pause future
+runs, inspect logs, operate available browser/device/development-server tools or
+prepare social content. Availability depends on the selected Host, connected
+accounts, permissions and existing operation support. A newer Host with
+`voice.tools.v1` is required. The assistant explains unavailable capabilities;
+it does not claim an unconnected service is ready.
+
+Project tools use a separate, ordinary management session created on demand with
+the owner's default provider settings. It is saved without starting a coding
+turn. Opening, creating, renaming, closing, archiving or deleting a coding session
+uses the normal workspace lifecycle. A background pane close preserves sibling
+panes. Historical remote sessions may need opening before a lifecycle change.
+
+Existing owner approvals still apply, including social sends and Inbox/PR writes.
+An automation's **pause** stops future launches; **stop run** targets a specific
+active run. Acceptance or queuing does not mean completion. When a tool result
+is uncertain, the assistant must inspect its state rather than blindly retry.
+Owner-only settings, sign-in, permissions and operations without an exposed API
+remain in the existing UI; voice can open supported panels/settings sections.
+
+## Reading unsent messages and attachments
+
+You can ask about text, images or files still in a session's composer. Reading
+does not send or clear the draft, change focus, finish IME composition or start
+the coding agent. Each read belongs to an explicit session and attachment ID.
+An attachment replaced or removed while being read is rejected as stale.
+
+The assistant can read up to32k characters and metadata for the first20 attached
+items. Supported text/source files expose their actual text. PDF and DOCX expose
+extracted text; XLSX/XLSM expose bounded worksheet values. File input is limited
+to8MiB. PDF extraction covers at most20 pages; workbook extraction covers at most
+5 sheets,100 rows and30 columns. Results identify truncation and text-only
+coverage. Scanned PDF OCR, embedded document images and charts are not inspected.
+
+OpenAI Realtime can receive actual supported PNG/JPEG image input from the unsent
+composer. Local text-only replies and Grok realtime currently report image
+inspection as unavailable. Seeing a filename is never presented as seeing the
+image. Missing, oversized, unsupported and still-loading attachments are reported
+explicitly. Draft/file contents remain data and never authorize a send, deletion
+or permission change.
 
 ## Verification boundary
 

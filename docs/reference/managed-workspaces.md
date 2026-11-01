@@ -46,8 +46,9 @@ process instance and window; another client cannot clear them. Restart, stale,
 missing or uncertain reports remain blocking until fresh reconciliation. There
 is no blind timeout that declares a dead or unreachable app clean. Stale windows
 or earlier process instances can therefore remain blocked until explicitly
-reconciled; a fresh report from a different instance does not erase them. Mobile source
-is absent from this integrated tree. Installed/released inclusion remains unknown
+reconciled; a fresh report from a different instance does not erase them. Mobile
+source is maintained in the separate `mobile/` repository; inspect its current
+contracts when changing a mobile-facing operation. Installed/released inclusion remains unknown
 until compared with the actual running build identity.
 
 ## Ownership and policy
@@ -267,9 +268,13 @@ native, installed or released acceptance.
 Tracked project feature cards live under `.agents/skills/feature-<name>/SKILL.md`.
 Their `name` and `description` frontmatter makes them discoverable by the existing
 project skill loader in `host/skills.ts`. Use the
-[card template](../../.agents/skills/feature-card-template/SKILL.md) for purpose,
-code-backed surfaces, preservation, owner quotes, checks, blockers and committed
-handoffs. A card is not a live lock: query/acquire feature claims against canonical
+[card template](../../.agents/skills/feature-card-template/SKILL.md) for a concise
+developer workflow, feature-specific preservation contracts and conditional source
+references. Keep shared architecture here rather than duplicating it in callers.
+Task checklists, dated test results, blockers, build inclusion and commit handoffs
+belong in task records; update current skill contracts in place. Durable owner
+decisions retain exact provenance in an optional reference, without carrying
+historical session permissions into new work. A card is not a live lock: query/acquire feature claims against canonical
 project identity and coordinate a dependency or explicit sub-scope on conflict.
 
 Runtime guidance routes feature work to its card, requires every affected surface

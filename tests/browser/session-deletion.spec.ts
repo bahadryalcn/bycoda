@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["light", "dark"]) {
-  test(`deletion stays visible until a real outcome in ${theme}`, async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 800 });
+  test(`deletion clears success and preserves actionable outcomes in ${theme}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/session-deletion.html?theme=${theme}`);
     const notice = page.locator("[data-session-deletion-detail]");
@@ -18,11 +20,16 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: "Fail", exact: true }).click();
     await expect(notice.getByRole("alert")).toContainText("Storage unavailable");
     await expect(notice).not.toContainText("Conversation deleted.");
-    await page.getByRole("button", { name: "Complete", exact: true }).click();
-    await expect(notice).toContainText("Conversation deleted.");
-    await expect(notice).not.toContainText("Still working…");
     await notice.getByRole("button").focus();
     await page.keyboard.press("Enter");
     await expect(notice).toHaveCount(0);
+    await page.getByRole("button", { name: "Keep worktree warning", exact: true }).click();
+    await expect(notice).toContainText("Conversation deleted. Its worktree was kept.");
+    await expect(notice).toContainText("Worktree cleanup unavailable");
+    await page.screenshot({ path: test.info().outputPath(`cleanup-warning-${theme}.png`) });
+    await page.getByRole("button", { name: "Complete", exact: true }).click();
+    await expect(notice).toHaveCount(0);
+    await expect(page.getByText("Conversation deleted.", { exact: true })).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath(`completed-${theme}.png`) });
   });
 }

@@ -1,5 +1,9 @@
 # Workbench navigation
 
+Conversation deletion keeps its confirmation and shows progress while work is
+pending. Successful deletion clears the progress without an extra success banner.
+Failures, skipped conversations and incomplete cleanup remain visible for review.
+
 Question answers are retained locally while you switch conversations or hide a
 form. The local question store has a shared limit of 64 question drafts and 4 MiB,
 with at most 1 MiB per question. When full, a new question stays read-only and
@@ -50,6 +54,8 @@ Alt or F10 still opens them from the keyboard. The Changes tab always shows how
 many files changed; the added and removed line totals appear when the tab has
 room, and its tooltip names both counts. Keyboard focus on a session row opens
 a small detail card with the title, model, branch or worktree, path and status.
+The card closes when you scroll its list, resize the window or switch away from
+the app. Focus the row again or hover it to reopen the details.
 
 Hints and previews are consistent across the app. Hover an icon button for about half a
 second, or focus it with the keyboard, to see its name, its shortcut as key caps and, for
@@ -71,6 +77,12 @@ The notifications sheet lists pending requests and **Recent requests** (the last
 100). A recent request opens its conversation when it is still available. Clearing
 the list happens only after it is saved; if saving fails, the list stays and offers
 Retry. Allow and Deny show their progress and any error on the request itself.
+
+Desktop banners appear only while bycoda is in the background. While any bycoda
+window is focused, conversation updates, pending requests and reminders remain
+inside the app, including updates from other conversations. Returning to bycoda
+before a queued banner is sent cancels that banner; it is not replayed when you
+leave. Sound preferences and in-app attention indicators remain independent.
 
 The project menu groups remote machine reconnection and editing under Machine.
 Recovery lists retain their open and clear actions, including local pending and

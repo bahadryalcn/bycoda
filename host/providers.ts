@@ -47,6 +47,8 @@ export interface HostProvider {
   rewind?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
   cancel(id: string, context?: HarnessOperationContext): Promise<void>;
   stop(id: string, context?: HarnessOperationContext): Promise<void>;
+  /** Retire only this settled original writer; no by-session fallback or history reset. */
+  retireOriginal?(id: string, context: HarnessOperationContext): Promise<void>;
   /** Exact provider task only; omission must never mean cancel the whole turn. */
   stopItem?(id: string, callId: string, context?: HarnessOperationContext): Promise<void>;
   bind(id: string, providerId: string, cwd: string, providerAccountId?: string): void;
@@ -87,6 +89,7 @@ const providers: Record<RemoteProvider, HostProvider> = {
     rewind: codex.rewindCodexLastTurn,
     cancel: codex.cancelCodexTurn,
     stop: codex.forgetCodexSession,
+    retireOriginal: codex.retireOriginalCodexWriter,
     bind: codex.bindCodexSession,
     approve: codex.respondCodexApproval,
     answer: codex.respondCodexQuestion,

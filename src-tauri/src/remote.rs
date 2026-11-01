@@ -554,6 +554,8 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         "voice.local.inspect" => std::time::Duration::from_secs(60),
         "voice.local.start" => std::time::Duration::from_secs(180),
         "voice.local.transcribe" => std::time::Duration::from_secs(40),
+        // Tool calls may await an existing native owner approval dialog.
+        "voice.tools.call" => std::time::Duration::from_secs(250),
         "devices.start" => std::time::Duration::from_secs(60),
         "devices.boot" => std::time::Duration::from_secs(240),
         "devices.action" => std::time::Duration::from_secs(180),
@@ -2555,6 +2557,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "voice.local.speechNext"
             | "voice.local.speechCancel"
             | "voice.realtime.secret"
+            | "voice.tools.list"
+            | "voice.tools.call"
             | "voice.cloud.status"
             | "voice.cloud.setKey"
             | "social.oauth.availability"
@@ -4137,6 +4141,8 @@ mod tests {
             "voice.local.speechNext",
             "voice.local.speechCancel",
             "voice.realtime.secret",
+            "voice.tools.list",
+            "voice.tools.call",
             "voice.cloud.status",
             "voice.cloud.setKey",
         ] {
@@ -4144,6 +4150,8 @@ mod tests {
         }
         assert!(!supported_remote_method("voice.local.install"));
         assert!(!supported_remote_method("voice.local.exec"));
+        assert!(!supported_remote_method("voice.tools.exec"));
+        assert!(rpc_timeout("voice.tools.call", &json!({})) >= Duration::from_secs(250));
         assert!(rpc_timeout("voice.local.start", &json!({})) >= Duration::from_secs(180));
         assert!(rpc_timeout("voice.local.inspect", &json!({})) >= Duration::from_secs(60));
         assert!(rpc_timeout("voice.local.transcribe", &json!({})) >= Duration::from_secs(40));

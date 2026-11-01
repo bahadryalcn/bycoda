@@ -7,7 +7,10 @@ import { Button } from "../../../shared/ui/Button";
 import { taskWorkspaceState } from "../../workspaces/model/taskWorkspaceState";
 import { TextField } from "../../../shared/ui/TextField";
 import { type BoardTask, taskTimeLabel } from "../model/taskClient";
-import { canEditTask, taskRequiresInstructions, type TaskStatus } from "../model/hostTasks";
+import { canEditTask, type TaskStatus } from "../model/hostTasks";
+import { taskStatusLine } from "../model/taskStatusLine";
+import { TaskOutcomeSummary, TaskOwnerNotices } from "./TaskStatusLine";
+import { TaskStatusReason } from "./TaskStatusReason";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
@@ -79,6 +82,7 @@ export function TaskDetail({
   const [prompt, setPrompt] = useState(task.prompt);
   const [saving, setSaving] = useState(false);
   const model = resolveModel(task.harness, task.model);
+  const status = taskStatusLine(task);
   const description = task.prompt.trim();
   const editable = canEditTask(task.status);
   const canSave =
@@ -125,14 +129,9 @@ export function TaskDetail({
           {actions.pending ? (
             <Spinner size="xs" label={t("Loading…")} />
           ) : null}
-          <Badge tone="neutral" className="">
-            {t(STATUS_LABELS[task.status])}
+          <Badge data-task-status={status.kind} tone={status.tone} title={t(STATUS_LABELS[task.status])}>
+            {status.label}
           </Badge>
-          {task.needsInput || taskRequiresInstructions(task) ? (
-            <Badge tone="warning" className="">
-              {t("Needs input")}
-            </Badge>
-          ) : null}
           {task.source === "steward" ? (
             <Badge data-task-suggested tone="info" className="">
               {t("Suggested")}
@@ -228,16 +227,9 @@ export function TaskDetail({
               </div>
             </>
           )}
-          {task.status === "blocked" && task.error ? (
-            <Alert tone="danger" role="alert" className="break-words">
-              {task.error}
-            </Alert>
-          ) : null}
-          {task.mergeError ? (
-            <Alert tone="danger" role="alert" className="break-words">
-              {task.mergeError}
-            </Alert>
-          ) : null}
+          <TaskStatusReason task={task} status={status} />
+          <TaskOwnerNotices task={task} />
+          <TaskOutcomeSummary task={task} />
           {task.deliveryNote ? (
             <p role="status" className="break-words text-ui-caption text-(--ui-tone-warning-fg)">
               {task.deliveryNote}
@@ -336,12 +328,6 @@ export function TaskDetail({
               <DetailRow label={t("Completed")}>{formatTime(task.completedAt)}</DetailRow>
             ) : null}
             <DetailRow label={t("Duration")}>{taskTimeLabel(task, now)}</DetailRow>
-            {task.repairAttempts ? (
-              <DetailRow label={t("Automatic correction")}>
-                {t("Attempt ")}
-                {task.repairAttempts} · {task.repairNote}
-              </DetailRow>
-            ) : null}
             {task.verifyCommand ? (
               <DetailRow label={t("Check command")}>
                 <code className="font-mono text-ui-micro">{task.verifyCommand}</code>

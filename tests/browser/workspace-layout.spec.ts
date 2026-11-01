@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     localStorage.setItem("bycoda.language", "en");
     Object.assign(window, {
@@ -11,16 +11,73 @@ test.beforeEach(async ({ page }) => {
         },
         transformCallback: () => 1,
         unregisterCallback: () => {},
+        convertFileSrc: (path: string, protocol: string) => `http://${protocol}.localhost/${path}`,
         invoke: async (command: string) => {
           if (command === "plugin:event|listen") return 1;
           if (command === "plugin:event|unlisten") return;
+          if (new URLSearchParams(location.search).has("html-link")) {
+            if (command === "inspect_paths") return [{ isDir: false, size: 100 }];
+            if (command === "read_text_file")
+              return "<!doctype html><html><body><h1>Canım anam</h1><p>Yolların sonu yok, anamın duası çok.</p></body></html>";
+            if (command === "create_html_preview") return "fixture-html";
+            if (command === "native_editor_draft_open")
+              return { version: 1, qualified: false, ownerEpoch: "a".repeat(64) };
+            if (command === "native_editor_draft_read_current")
+              return { version: 1, qualified: false, record: null };
+            if (command === "stat_files")
+              return [{ path: "/fixture/canim-anam.html", isDir: false, mtimeMs: 1 }];
+            if (command === "list_project_files") return [];
+            return null;
+          }
           throw new Error(`No native host in layout fixture: ${command}`);
         },
       },
     });
   });
+  if (testInfo.title === "conversation HTML links retain the chat and draft beside a reusable preview")
+    return;
   await page.goto("/tests/browser/workspace-layout.html");
   await expect(page.getByRole("separator")).toHaveCount(2);
+});
+
+test("conversation HTML links retain the chat and draft beside a reusable preview", async ({
+  page,
+}) => {
+  await page.route("http://html-preview.localhost/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><html><body><h1>Canım anam</h1><p>Yolların sonu yok, anamın duası çok.</p></body></html>",
+    }),
+  );
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/workspace-layout.html?html-link=1&theme=${theme}`, {
+        waitUntil: "domcontentloaded",
+      });
+      const draft = page.getByRole("textbox").first();
+      await draft.fill("Keep this unsent conversation draft");
+      const link = page.getByRole("link", { name: "Open updated HTML", exact: true });
+      await link.click();
+      await expect(page.getByRole("separator", { name: "Resize columns" })).toHaveCount(1);
+      await expect(page.getByTestId("html-workspace-count")).toHaveText("1");
+      await expect(page.getByTestId("html-editor-count")).toHaveText("1");
+      await expect(draft).toBeVisible();
+      await expect(draft).toHaveValue("Keep this unsent conversation draft");
+      await expect(
+        page
+          .frameLocator('iframe[title="HTML live preview"]')
+          .getByRole("heading", { name: "Canım anam" }),
+      ).toBeVisible();
+      await link.click();
+      await expect(page.getByTestId("html-editor-count")).toHaveText("1");
+      await expect(page.getByTestId("html-workspace-count")).toHaveText("1");
+      await expect(draft).toHaveValue("Keep this unsent conversation draft");
+      await page.screenshot({
+        path: `temp/verification/2026-11-01-html-side-panel/${theme}-${width}.png`,
+      });
+    }
+  }
 });
 
 test("pane maximization preserves ratios and mounted drafts, and restores the split", async ({

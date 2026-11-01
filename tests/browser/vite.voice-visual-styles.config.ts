@@ -14,7 +14,9 @@ export default defineConfig({
   build: {
     outDir: "temp/build/voice-visual-styles",
     emptyOutDir: false,
-    rolldownOptions: { input: "tests/browser/voice-visual-styles.html" },
+    rolldownOptions: {
+      input: ["tests/browser/voice-visual-styles.html", "tests/browser/voice-overlay.html"],
+    },
   },
   server: { host: "127.0.0.1", port: 1497, strictPort: true },
   preview: { host: "127.0.0.1", port: 1497, strictPort: true },

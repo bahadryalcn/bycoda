@@ -1,244 +1,46 @@
 ---
 name: feature-shared-ui
-description: Shared UI redesign inventory for public bycoda controls, task-sized geometry, surfaces/states, form and choice contracts, menus/overlays, rows, feedback, content adapters and the real ControlSpecimen reference. Read before shared component redesign or claiming cross-screen consistency.
+description: "Choose, extend and verify bycoda shared controls and Arc adapters, preserving public APIs, native semantics, interaction state and representative consumers."
 ---
 
-# Shared UI components and redesign
+# Shared UI development
 
-## V2 2026-10-30: overlays, empty/loading states, row actions (uncommitted)
+## When and scope
 
-Source delivered in the shared checkout; fixture/unit evidence only.
+Use for reusable actions, fields, choices, rows, feedback, overlays and layout primitives. Features own domain data/drafts/permissions/layout; theme owns semantic roles. This skill routes to existing design references rather than duplicating their catalog.
 
-- Modal backdrop (V2-004): one shared blur/dim on the lowest `[data-modal-layer]` only; nested layers get a
-  light tint without blur. Roles `--ui-overlay-backdrop-blur|soft|nested` in `src/styles/index.css`; full dim
-  fallback without `backdrop-filter`, under forced colors, reduced transparency and no-blur mode.
-  `GitGraphDialog` and `ImageLightbox` use the same scrim.
-- Focus return (V2-012) has one owner, `overlay.ts`: opener, else the opener of the popover it came from
-  (menu → dialog), else the first control in the nearest surviving container (max 3 levels, never a direct
-  child of `body`), always `preventScroll`, never blurring a field the user moved to. Modal no longer keeps a
-  second fallback. `native-context-menu.tsx` focus calls use `preventScroll`.
-- Popover default `flow` is now `auto` (V2-007): content scrolls vertically only when it exceeds the bound
-  (`Popover.module.css`, components layer, so consumer overflow utilities win); `flow="intrinsic"` stays the
-  explicit clip option. This closes the open "Popover `flow` adoption by consumers" item below.
-- EmptyState (V2-005): `kind` empty/filtered/unavailable with `onReset`/`onRetry`, implied role and glyph;
-  consumers fixed: Tasks, Automations, Inbox, Notes, Servers, MCP settings, Skills, DevServers,
-  CrewMemberPicker, AdditionalDirsDialog. Inventory: `temp/local/2026-10-30-ui-refinements-2/v2-005/inventory.md`.
-- Loading (V2-006): `lazySurface(..., { fallback })`, shared `SurfaceLoading` (indeterminate, 150 ms delay),
-  `SettingsLoadingSurface` keeps the section title and dialog close visible inside one mounted Modal.
-- Row actions (V2-009/011): `InlineMoreAction` in `ActionHost.tsx` (menu semantics, opens the row's existing
-  menu); adopted by source-control `ChangeRow`, `ServerItem`, `JiraBoardView`, `CrewRailSection`. Container
-  queries replace window breakpoints in the terminal list, inbox discussion panel and task evaluation grid.
-  Collapse slot: overlay form via `data-action-yield` (LastSessions, Notes) replaces secondary metadata
-  instead of shifting it; ProjectRail group header reserves its action slot at rest (owner decision
-  2026-10-30: “Reserve space at rest (Recommended)”). Measured 0 px shift in `temp/verification/v2-final-c/`.
-- Evidence: `temp/verification/v2-004/`, `v2-005/`, `v2-006/`, `v2-007/`, `v2-009/`, `v2-final/`.
+## Source starts
 
-## Optional observed text controls, 2026-10-29
+Full paths are repository-root relative; adjacent abbreviated names share the preceding
+directory. Follow current imports and callers; this map is not a completeness claim.
 
-InlineEdit and TagInput retain their ordinary unregistered callback/ref/keyboard
-contracts. Their optional private Native input observer can close a real mounted
-control without forcing blur, normalization, save or IME completion. Exact original
-publication tokens are consumed once after the corresponding React layout; old
-async work cannot grant replacement controls or unrelated prop refreshes authority.
+- `src/shared/ui/`: public controls and reusable interactions; `ControlSpecimen.tsx` is the real reference consumer.
+- `src/shared/ui/arc/`: registry source and reviewed local adaptations; application consumers use public adapters.
+- `src/styles/arc.css`, `index.css`, `bycoda.css`: semantic role mapping and shared presentation.
+- `tests/browser/arc-controls*` and affected feature consumers: verification entry points.
 
-Observed TagInput waits for both the actual callback Promise and its original view
-publication. Failure or retirement before publication conserves exact raw text and
-requested tags as plain data. The local16-record/1MiB conservative data charge
-refuses new callback effects when full, keeps typing/selection/copy available and
-does not evict/replay unknown originals. Callback success never reports Native save.
-Shared FieldMessage extraction by the concurrent React refactor is preserved.
+## Preserve
 
-Final narrow author102/10, independent unchanged reproduction1/1 and control29/2
-passed; counts overlap. The40-case Notes fixture exercised ordinary unregistered
-shared controls and observed Notes inputs in both themes at1280/800. All40
-captures were source-bound; exact raw artifacts also passed a separate checked
-Native FULL library test. Evidence is under
-`temp/verification/2026-10-29-notes-input-closure/`. Concurrent VIS23 focus CSS
-is preserved as a read-only dependency. Installed/platform/release acceptance
-and complete input census remain separate.
+- Reuse or extend a public adapter before adding a duplicate. Shared presentation owns size/tone/focus/disabled/loading; caller className owns placement.
+- Keep public props, ref/native form semantics, keyboard/IME/cursor/selection, free-entry distinctions and actual action permission callbacks.
+- Keep menus/overlays on the existing Popover/Modal/overlay routing; do not create a second stack, Escape handler or focus trap.
+- Rows and inline actions retain distinct selection, pending/error, drag and action ownership. Hidden/hover presentation must remain operable by keyboard and touch.
+- Optional input observation cannot force blur, normalize drafts, commit IME or grant unrelated async work authority. Check the actual runtime contract when changing it.
+- Use semantic theme roles and density/motion settings; native trees, tabs, links and window controls retain their specialized semantics.
 
-## Purpose and keywords
+## Workflow
 
-Give shared components their own design/acceptance contract, alongside screen
-layouts. Keywords: Button, fields, Select, search/filter, checkbox/switch, tree
-row, menu/popover/modal/sheet, feedback, component state matrix and specimen.
-Reuse Arc through bycoda adapters; no second UI library or global reset.
+1. Use the component catalog to choose the interaction; inspect the public adapter and callers before changing its API.
+2. Implement the reusable gap once at the owning shared layer; migrate affected consumers without replacing domain state owners.
+3. Update the real specimen and public API reference when behavior changes; exercise representative consumers and exceptional native semantics.
 
-## Surface inventory
+## Focused checks
 
-Inspected2026-10-28, main@d8bf868fae841b8b391ce148487cd7d373ea9762, source0.6.94,
-dirty shared checkout. Search roots: src/shared/ui, src/styles, docs/reference,
-representative feature consumers and tests/browser/arc-controls*.69 public root
-TSX modules are indexed in20 families; that is not a claim every state/leaf is
-rendered or reviewed. Full explicit module list and family acceptance:
-temp/local/2026-10-28-shared-components-redesign/INVENTORY.md.
+Run focused tests for the changed primitive plus representative consumers. Use `pnpm check:web` for applicable TypeScript/web checks; use the project normal compiler commands and label any explicit fast mode.
+Inspect keyboard, narrow/short panes, light/dark/custom accent, density, reduced motion, disabled/pending/error and nested overlay states. A specimen inventory alone is not consumer acceptance.
 
-- UIF01 actions: Button, SecondaryButton, SplitButton, ButtonGroup, Floating/
-  ExpandingButtonGroup, ConfirmMorph.
-- UIF02–08 fields/choices: TextField, TextareaField, PasswordField, InlineEdit,
-  SearchInput, ExpandingSearch, Select/SearchableSelect/NativeSearchableSelect/
-  MorphSelect/TagInput, Checkbox/Switch/RadioGroup/SegmentedControl, NumberField,
-  Slider/ElasticSlider, DateRange/DateTime/DateTimeRange and ColorPickerPopover.
-- UIF09–12 navigation/collections/overlays: TabLabel/Stepper, TreeRow, ContextMenu/
-  DropdownMenu/MenuRow, Popover/Modal/InfoPopover/ConfirmDialog/NativePopupHost.
-- UIF13–16 feedback/containers: Alert/Badge/TransientNotice/WorkingIndicator,
-  EmptyState/FailureState/RecoveryBoundary, Progress/Skeleton/Shimmer, ExpandableCard.
-- UIF17–19 data/media/text: Charts/SortableDataTable/Timeline/UsageMeter,
-  ImageAnnotationCanvas/ImageCompare/ImageLightbox, JsonViewer/MatchText/SlotText/
-  ParticleText/PrivateEmail/Timestamp/ShortcutKbd/ShortcutRecorder/icons.
-- UIF20 reference/support: ControlSpecimen and lazySurface; fixture integration
-  tests/browser/arc-controls.tsx and arc-controls.spec.ts. Existing sample is used
-  by browser fixtures; do not claim a production Appearance specimen route exists.
-- Owning roles: src/styles/index.css, arc.css, palette.css, bycoda.css. Public
-  adapter-specific styles and Arc source stay under src/shared/ui. Thin wrapper
-  imports do not prove local adapter geometry/state/API is complete.
-- Overlay state: shared overlay.ts, Popover/Modal/native context menu and existing
-  NativePopupHost routing; feature sheets retain domain state/permission ownership.
-- Platform/native boundary: shared controls preserve native button/ref/drag/focus,
-  popup/window routing and feature callbacks. This package adds no Host/RPC/tool/
-  Rust operation or new permission. Feature/mobile adapters remain separate;
-  desktop control appearance is not automatically routed to Expo components.
-- Locales: shared t/useT, labels/help/error/empty/progress/copy and date/number/
-  shortcut families; preserve locale and exact content/privacy semantics.
-- Tests: shared Button/SplitButton, Select/SearchableSelect/NativeSearchableSelect/
-  MorphSelect, PasswordField/NumberField/SearchInput/RadioGroup, TreeRow,
-  ContextMenu/DropdownMenu/MenuRow, Popover/Modal/overlay, arcAdapters,
-  loadingAdapters/RecoveryBoundary and feature consumers. Full tests/source
-  evidence is recorded under temp/verification/2026-10-28-shared-components-redesign.
+## Read when needed
 
-## Owner decisions
-
-2026-10-28, T3 thread0567326f-aade-4baa-89f3-b44c6256ae9e, exact quote:
-
-> genel componentler üzerine bir redesign yok sanırım ama demi? ekranların var genel componentlerimizide iyileştirmemiz gerekmezmi?
-
-The owner requires shared components to improve as well as screens. Detailed
-target choices remain proposals in REDESIGN.md until implemented/accepted; do
-not infer new appearance defaults or blanket accent coloring.
-
-## Behavior to preserve
-
-Current APIs/ref/native forms, draft/IME/cursor/password/numeric behavior,
-short/searchable/multiple/free-entry distinctions, selected/on/mixed/disabled/
-readonly/pending roles, split independent gates, native/menu semantics, anchor/
-focus/Escape/scroll/nesting, data/media/privacy meaning and reduced motion.
-Feature controllers retain selection/fetch/authorization/retry authority. Existing
-custom fonts/palettes/scale/density and shared-control work must survive.
-
-## Checks and visual scenarios
-
-14 CMP source/design records and20 UIF delivery families are tracked in the
-common TODO. Use real ControlSpecimen/consumer state matrices, light/dark1280/800,
-custom accents, narrow/short panes, keyboard, reduced motion and applicable native/
-mobile boundaries. Include explicit Button alignment, row selected-versus-drop,
-full diagnostic copy, disabled/async choice state and popup bounded scrolling.
-Do not use static schematics or audit-time tests to close implemented redesign.
-
-## Known blockers and evidence limits
-
-No app implementation or redesigned captures in this audit. Four source findings
-are distinguished from eight contracts, one API gap and one coverage gap. Existing
-screen records EXP-02/DT-01/SEL-04/SEL-08/CMD-03 stay independently scoped. Real
-contrast/native/reader/installed acceptance remains unverified; implementing owners
-must supply proof. Claims API unavailable; concurrent Button/Badge work preserved.
-
-## Delivered core-control implementation (Session 2, 2026-10-28)
-
-Uncommitted on main over 83053d6b8 (shared checkout); no commit/build/install.
-
-- Actions (CMP-02/03, UIF-01): explicit `align` beats tab/item defaults; 14/16px
-  icon slots; string labels truncate inside bounded containers; ButtonGroup and
-  SplitButton share seams, end radii, unclipped focus and independent gates.
-- Choices (CMP-06, UIF-05): drawn native Checkbox (on/mixed/invalid/disabled/forced
-  colors); Radio, Checkbox and Switch share `--control-on`; `Segment.disabled`.
-- Fields (CMP-01/04, UIF-02/03): one frame/focus owner; error before helper in
-  aria-describedby; read-only distinct from disabled; fields no longer stretch in
-  grids; `SearchInputGroup size` / `SearchInput fieldSize` `sm|md`.
-- Select/SearchableSelect (CMP-05, UIF-04, T3UI-03): option `disabled` with keyboard
-  skip; `loading/error/onRetry/noOptionsLabel`; framed value chips. No MultiSelect and
-  no windowing (no consumer above a few hundred options). CreateWorktreeDialog is
-  wired to loading/error.
-- Rows/tabs/text (CMP-08, UIF-09/10/19, T3UI-01): drop target is an accent edge,
-  distinct from selection; TreeRow slots; TabLabel `truncate="middle"` and
-  TabDirtyDot; new MiddleTruncate; MatchText weight plus accent ink and `data-match`.
-- T3UI-05: no wizard (2 Stepper consumers). T3UI-08: mobile does not import src/shared/ui.
-- Reference (CMP-07, UIF-20): fixture matrix tests/browser/arc-controls-matrix.tsx
-  (`arc-controls.html?view=matrix`) with specs in arc-controls.spec.ts.
-  Evidence, requests and open items: temp/local/2026-10-28-shared-controls-impl/
-  (handoff-A..D.md, REQUESTS.md, INVENTORY-CONSUMERS.md) and
-  temp/verification/2026-10-28-shared-controls-impl/. Fixture captures are not
-  installed/native acceptance. Feature adoption (FileTree, tab strips, path consumers,
-  async pickers) stays with owning sessions.
-
-H1 night pass (2026-10-28, uncommitted over 4de508dea, NOT tested per owner rule):
-
-- Button reserves no empty icon slot for icon-less `loading` text actions.
-- `ActionHost` + `InlineAction` (Button `inset`) for row/tab/card actions: one host
-  highlight, transparent compact action, reveal on hover/focus/selection/touch.
-  Adopted by SearchInput clear, PasswordField reveal, TagInput/SearchableSelect chips
-  and TreeRow; feature migrations belong to their lines.
-- F3 contract: caller className sets placement only (`@layer components`).
-- UIF-06/07/08/16/19 and FloatingButtonGroup, ExpandingButtonGroup, ConfirmMorph,
-  InlineEdit, MorphSelect passes.
-  Handoff: temp/local/2026-10-28-h1-shared-controls/handoff.json (+ handoff-F1/F2.md).
-
-## Committed handoff references
-
-No new commit/build/install/release. Local brief:
-temp/local/2026-10-28-shared-components-redesign/{AUDIT.md,REDESIGN.md,INVENTORY.md}.
-Source baseline/hash and focused checks are evidence only, not installed inclusion.
-
-## Proposals and ownership
-
-Owner request, 2026-10-28: “tüm ui componentleri için yapalım birde eksik ihtiyacımız olan daha iyi tasarlanmış componentlerde olabilir t3code dan karşılaştıraiblirsin bunları orda olup bizde olmayan daha iyi olabilecek şeyler olabilir”. T3UI-01–08 in `temp/local/2026-10-28-t3-shared-ui-comparison/AUDIT.md` add source-backed comparison candidates and feature/mobile coverage gates. These are open evaluation and delivery records, not proof of missing controls or accepted redesign. T3 upstream snapshot is `5e9d56416f6b395095c772c597e79cd5f94e3052`; installed version identity relative to that snapshot is unknown. Preserve the ownership below; extend existing primitives and overlay routing when a concrete need is confirmed.
-
-Session1 owns semantic roles/metrics. Session2 owns core/reference and data/text
-families, Session5 overlay/menu/feedback/media families. ControlSpecimen and its
-shared browser fixture have a single writer, Session2; Session5 supplies scenarios
-through its own files/handoff. Sessions3/4/6 consume, not restyle shared primitives.
-UIF01–15/20 are immediate priority; UIF16–19 remain explicit follow-up delivery
-with existing capabilities preserved, not blanket rewrites or silently accepted.
-
-## Session 5 overlay/feedback/media delivery, 2026-10-28 (uncommitted)
-
-Owner, 2026-10-28, Session 5 overlays conversation, exact quote:
-
-> Bu bir uygulama görevidir; yalnızca audit veya dokümantasyonla bitirme. Mevcut componentlerin görünümünü ve etkileşimlerini gerçekten iyileştir.
-
-Delivered in the shared checkout (main, uncommitted, fixture-verified only):
-UIF-11 one compact/described menu row and role-based states for DropdownMenu,
-native ContextMenu, MenuRow and the Arc menu (CMP-09/14); UIF-12 raised Modal
-surface, compact/task title hierarchy and pane-style end sheet (CMP-11), explicit
-Popover `flow` (CMP-10), ConfirmDialog in-flight guard and Alert failure, InfoPopover
-focus/Escape return; UIF-13 Alert action slot, Badge count/dot grammar, sticky
-danger TransientNotice with pending action, labelled WorkingIndicator; UIF-14
-EmptyState `context`, FailureState full-copy/manual fallback/pending retry
-(CMP-12/13), RecoveryBoundary reset keys; UIF-15 moving unknown progress, no early
-100%, reduced/decorative-off motion; UIF-18 theme-independent ImageCompare chrome
-(styling-architecture F6), lightbox zoom/compare/retry and annotation fallback.
-Fixtures: `tests/browser/overlay-{popups,menus,feedback,media}.*` (suite
-`overlays`). Handoff, consumer inventory and open requests:
-`temp/local/2026-10-28-session5-overlays/`. Open: dark raised-plane hover/pressed
-role (Session 1), Button reserved spinner slot (Session 2), EmptyState `context`
-and Popover `flow` adoption by consumers, real native popup windows, touch devices,
-screen readers and installed inclusion.
-
-Follow-up H2-1b (2026-10-28, uncommitted, untested by owner rule "test yapmasınlar
-en iyisi kodları yazsınlar en son testi biz yaparız"): WorkingIndicator owns its
-color (`--color-active`, bars no longer follow currentColor) and `size="xs|sm|md"`
-on the icon scale; consumer color/width/font classes are inert. Consumer cleanup
-and `TerminalSpinner` size forwarding belong to the owning lines; see
-`temp/local/2026-10-28-overlays-impl/handoff.json`.
-
-## UI standards round 2026-11-01 (uncommitted)
-
-Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
-
-Shared primitives built and rules set in this round. API, when-to-use and "replaces" notes are in `docs/reference/ui-component-catalog.md` (including "Layout and structure" and "Control-choice boundaries"); tokens in `ui-design-system.md` ("Global tokens"); enforcement in "UI drift ratchet" there.
-
-- New or extended shared parts: `Tabs`/`TabStrip`, `PaneHeader`/`WindowChromeInset`, `SectionLabel`, `Surface`, `Divider`, `Sash`, `Meter`, `ToastRegion`/`Toast`/`ToastSlot`/`useToast`, `Sheet`, `InlineError`/`InlineMessage`, `EmptyState size="inline"`, `Spinner`/`LoadingText`, ConfirmDialog extensions, `ModalActions`, `Popover kind="dialog"`, TextareaField autosize/monospace, `PromptField`, `PopoverSearchHeader`, the picker kit, SearchableSelect icon/meta/group, `StatusBadge` and `Badge xs`, `DateTimeField`/`DateTimePicker` modes, identity icons, the shared Tooltip (shortcut, delay), `HoverCard`, the one shortcut formatter.
-- Tokens: one focus contract (`data-ui-focus-quiet`), one disabled model, `--layer-*`, `--motion-*`, `--ui-fill-*`, status utilities, global radius/space aliases, `--ui-surface-floating`.
-- Enforcement: `scripts/checks/check-ui-drift.mjs` with `scripts/checks/ui-drift-baseline.json` (1,964 findings at creation, 243 after wave 2); wired into `check:staged` and `check:changed`. CI wiring (`.github/workflows/ci.yml` preflight) is requested, not added.
-- Owner decisions recorded in `docs/reference/DESIGN.md` (2026-11-01, owner chat): "tamam düzeltmelere başla lütfen hepsini"; composer surface "buranın rengi 1e1e1e bunun yerine 0e0e0e ve light modda da tam tersi yada uygun şekilde".
-- Open requests from the handoffs: `Tab` `iconOnly`/`label`; `FileTypeIcon` size token; `SegmentedControl` leading icon per segment; `useDragResize` Sash props; `Skeleton` inline span; `ActionHost as`; `ColorSwatchRow showCustom`; `--layer-pane-overlay`/in-pane layer scale; a translucent native-popup colour role; SearchableSelect `triggerProps` tooltip; SkillPromptField on PromptField; browser specs that read native `title`, `[role="radio"]` section switches or Sash centres.
-- Unverified: no native run; fixture captures only for w1 tokens, layout, feedback, fields and w2-git (`temp/verification/ui-standards/`). The full vitest suite and `check-ui-boundaries` were not part of this round.
+- [Component selection](../../../docs/reference/ui-component-catalog.md) before choosing/adding a control.
+- [UI contracts and ownership](../../../docs/reference/ui-design-system.md) for public APIs, feedback, fields and semantic roles.
+- [Arc integration](../../../docs/reference/arc-ui.md) for registry/adapters and local adaptations; [Theme](../feature-theme-foundation/SKILL.md) for new semantic roles.

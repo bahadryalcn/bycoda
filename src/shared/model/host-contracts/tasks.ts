@@ -162,6 +162,17 @@ const metadataFields = {
   repairStop: z
     .strictObject({ reason: z.enum(["external", "no_progress", "limit"]), message: z.string() })
     .optional(),
+  ownerNotices: z
+    .array(
+      z.strictObject({
+        id: z.string(),
+        kind: z.enum(["remaining_finding", "external_check", "auto_continued", "info"]),
+        message: z.string(),
+        at: z.number(),
+      }),
+    )
+    .optional(),
+  completedWithFindings: z.boolean().optional(),
   attemptHistory: z
     .array(
       z.strictObject({

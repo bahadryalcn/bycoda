@@ -36,6 +36,8 @@ export type EditorNavigationTarget = EditorNavigation & {
 };
 
 export type FileOpenOptions = {
+  /** Keep contextual previews beside the conversation, regardless of file-tab preference. */
+  placement?: "pane";
   /** The caller obtained this concrete path from the filesystem or file index. */
   exact?: boolean;
   /** Open as a permanent tab instead of the pane's preview tab. */

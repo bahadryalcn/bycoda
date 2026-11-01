@@ -130,7 +130,7 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
         };
         const pin = !!options?.pin;
         const foreground = request === openRequest.current;
-        if (checkout || loadFileTabMode() === "workspace") {
+        if (checkout || (options?.placement !== "pane" && loadFileTabMode() === "workspace")) {
           // Built once: the updater may run twice in StrictMode.
           const created = newEditorWorkspaceTab(pin ? file : { ...file, preview: true });
           let target: { tabId: string; paneId?: string } | undefined;

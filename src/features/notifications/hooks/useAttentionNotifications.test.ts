@@ -151,18 +151,28 @@ it("leaves the taskbar alone when the taskbar setting is off", async () => {
   expect(calls("set_taskbar_attention")).toEqual([]);
 });
 
-it("announces retry and failure once each even for the visible chat", async () => {
-  const working = { ...session({ busy: true }), id: "retry-warning" };
-  setWindowFocused(true);
-  await render([working], working.id);
+it.each([
+  [true, true],
+  [true, false],
+  [false, true],
+])("routes retry and failure by app focus (focused: %s, visible: %s)", async (focused, visible) => {
+  const working = { ...session({ busy: true }), id: `retry-warning-${focused}-${visible}` };
+  setWindowFocused(focused);
+  const activeId = visible ? working.id : "another-chat";
+  await render([working], activeId);
   const retry = { ...working, retryMessage: "Reconnecting... 1/5" };
-  await render([retry], working.id);
-  await render([{ ...retry, retryMessage: "Reconnecting... 2/5" }], working.id);
-  expect(calls("show_notification")).toHaveLength(1);
-  expect(calls("show_notification")[0]).toMatchObject({
-    title: "Retrying · app",
-    body: "Reconnecting... 1/5",
-  });
+  await render([retry], activeId);
+  await render([{ ...retry, retryMessage: "Reconnecting... 2/5" }], activeId);
+  expect(calls("show_notification")).toEqual(
+    focused
+      ? []
+      : [
+          expect.objectContaining({
+            title: "Retrying · app",
+            body: "Reconnecting... 1/5",
+          }),
+        ],
+  );
   const failed = {
     ...working,
     busy: false,
@@ -176,13 +186,16 @@ it("announces retry and failure once each even for the visible chat", async () =
       },
     ],
   };
-  await render([failed], working.id);
-  await render([{ ...failed, title: "renamed" }], working.id);
-  expect(calls("show_notification")).toHaveLength(2);
-  expect(calls("show_notification")[1]).toMatchObject({
-    title: "Failed · app",
-    body: "Connection failed",
-  });
+  await render([failed], activeId);
+  await render([{ ...failed, title: "renamed" }], activeId);
+  expect(calls("show_notification")).toEqual(
+    focused
+      ? []
+      : [
+          expect.objectContaining({ title: "Retrying · app", body: "Reconnecting... 1/5" }),
+          expect.objectContaining({ title: "Failed · app", body: "Connection failed" }),
+        ],
+  );
 });
 
 const askingSession = () =>

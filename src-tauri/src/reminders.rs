@@ -513,6 +513,7 @@ pub(crate) fn init(app: &AppHandle) {
                     "Reminder: continue this conversation.".into(),
                     sound,
                 ))
+                .map(|_| ())
             },
         );
         if let Err(error) = result {

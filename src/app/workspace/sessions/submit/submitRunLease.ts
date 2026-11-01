@@ -5,6 +5,7 @@ import {
   firstRunLeaseLook,
   releaseRunLease,
   runLeaseMachine,
+  isRunLeaseDiscoveryPending,
 } from "../../../../features/connections/model/runLeaseClient";
 import {
   holdUndeliveredFollowUp,
@@ -14,6 +15,7 @@ import { setSessions } from "../../../../features/sessions/model/sessionsStore";
 import type { SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import { queueSubmittedFollowUp } from "./submitBusySteer";
 import { beginSendStarting, claimStartingGeneration } from "./submitStarting";
+import { showSubmitNotice } from "./submitNotice";
 
 /** Conversations whose send is waiting for its lease, by the generation that owns the wait. */
 const starting = new Map<string, number>();
@@ -105,10 +107,25 @@ export function gateRunLease(
     try {
       if (firstLook) {
         await firstLook;
-        if (!runLeaseMachine()) return await startWhenCurrent();
+        if (!runLeaseMachine()) {
+          if (!isRunLeaseDiscoveryPending()) return await startWhenCurrent();
+          if (!options?.managed && !options?.appRequestId && !options?.ciRepair) recoverUnstarted();
+          else options?.onSendRejected?.();
+          const text = "Message not sent: Host ownership discovery is still pending. Your message is retained; check the Host connection before continuing.";
+          showSubmitNotice(sessionId, text, "error");
+          options?.onSettled?.({ status: "failed", text: "", error: text });
+          return false;
+        }
       }
       const outcome = await acquireRunLease(sessionId);
       granted = outcome.kind === "granted";
+      if (outcome.kind === "failed") {
+        if (!options?.managed && !options?.appRequestId && !options?.ciRepair) recoverUnstarted();
+        else options?.onSendRejected?.();
+        showSubmitNotice(sessionId, outcome.text, "error");
+        options?.onSettled?.({ status: "failed", text: "", error: outcome.text });
+        return false;
+      }
       if (outcome.kind !== "held") return await startWhenCurrent();
       // The other computer's turn is what the queue waits for: the dispatcher
       // reads this as a wait, not as a refused send.

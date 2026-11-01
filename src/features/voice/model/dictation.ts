@@ -9,6 +9,8 @@ type Callbacks = {
   text: (text: string) => void;
   state: (state: DictationState) => void;
   error: (message: string) => void;
+  /** Normalized microphone RMS; zero after capture stops. */
+  level?: (level: number) => void;
 };
 
 /**
@@ -60,8 +62,14 @@ export class Dictation {
       );
       this.source = this.audio.createMediaStreamSource(this.stream);
       this.capture = new AudioWorkletNode(this.audio, "bycoda-voice-capture");
-      this.capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) =>
-        this.vad?.push(new Int16Array(event.data));
+      this.capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+        if (this.closed) return;
+        const frame = new Int16Array(event.data);
+        let squares = 0;
+        for (const sample of frame) squares += (sample / 32768) ** 2;
+        this.callbacks.level?.(frame.length ? Math.min(1, Math.sqrt(squares / frame.length)) : 0);
+        this.vad?.push(frame);
+      };
       this.source.connect(this.capture);
       this.capture.connect(this.audio.destination);
       this.heartbeat = setInterval(() => {
@@ -110,6 +118,7 @@ export class Dictation {
   }
 
   private stopCapture() {
+    this.callbacks.level?.(0);
     if (this.heartbeat) clearInterval(this.heartbeat);
     this.heartbeat = undefined;
     this.stream?.getTracks().forEach((track) => track.stop());

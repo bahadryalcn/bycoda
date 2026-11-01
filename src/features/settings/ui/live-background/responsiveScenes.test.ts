@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createCodeVisageScene, createLatentFaceScene, mouthOpening } from "./latentFace";
+import {
+  createCodeVisageScene,
+  createLatentFaceScene,
+  createSereneFaceScene,
+  mouthOpening,
+} from "./latentFace";
 import { createNeuralTreeScene } from "./neuralTree";
 import { createThoughtWeaverScene } from "./thoughtWeaver";
 import type { LiveBackgroundPalette } from "./types";
@@ -28,6 +33,7 @@ function recordingContext() {
 const scenes = [
   ["latent face", createLatentFaceScene],
   ["code visage", createCodeVisageScene],
+  ["serene face", createSereneFaceScene],
   ["neural tree", createNeuralTreeScene],
   ["thought weaver", createThoughtWeaverScene],
 ] as const;
@@ -73,6 +79,7 @@ describe.each(scenes)("%s conversation response", (_name, createScene) => {
 describe.each([
   ["latent face", createLatentFaceScene],
   ["code visage", createCodeVisageScene],
+  ["serene face", createSereneFaceScene],
 ] as const)("%s figure", (_name, createScene) => {
   const glyphs = (calls: unknown[][]) => calls.filter(([name]) => name === "fillText").length;
 

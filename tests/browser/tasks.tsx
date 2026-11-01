@@ -191,6 +191,91 @@ if (query.has("managedDelivery"))
       },
     },
   ];
+// ?autonomy: one task per owner-facing status line (fixture data only).
+if (query.has("autonomy")) {
+  const at = Date.now();
+  const base = {
+    prompt: "Fixture instructions",
+    projectId: "local-project",
+    harness: "claude",
+    model: "claude:fixture",
+    modelSettings: {},
+    runtimeMode: "auto",
+    maxRunMinutes: 0,
+    createdAt: at - 3_600_000,
+    updatedAt: at,
+  } as const;
+  tasks["machine-local"] = [
+    {
+      ...base,
+      id: "auto-correcting",
+      title: "Fix flaky playback test",
+      status: "running",
+      startedAt: at - 600_000,
+      repairAttempts: 2,
+      repairNote: "The seek test still fails on resume. It expects 4 seconds but gets 0.",
+    },
+    { ...base, id: "auto-verifying", title: "Add export button", status: "verifying", startedAt: at - 300_000 },
+    {
+      ...base,
+      id: "auto-notes",
+      title: "Localize onboarding screens",
+      status: "review",
+      startedAt: at - 3_000_000,
+      completedAt: at - 60_000,
+      completedWithFindings: true,
+      diffStat: " src/onboarding.tsx | 40 ++++---\n src/i18n/tr.json | 12 +++\n 2 files changed, 44 insertions(+), 8 deletions(-)",
+      ownerNotices: [
+        { id: "n1", kind: "remaining_finding", message: "The Japanese welcome title still wraps on narrow screens.", at },
+        { id: "n2", kind: "external_check", message: "Check the onboarding flow on a physical iPhone.", at },
+        { id: "n3", kind: "auto_continued", message: "The run limit was reached once and the task continued automatically.", at },
+      ],
+      attemptHistory: [
+        {
+          attempt: 0,
+          at: at - 1_200_000,
+          reviewerSessionId: "auto-review-1",
+          workerSessionId: "auto-worker-1",
+          workerSummary:
+            "## Changes\n- Moved onboarding copy into the shared catalog.\n- Added Turkish and Japanese translations for all **12** strings.\n- Updated the welcome layout to wrap long titles.\n\n## Checks\n- `pnpm typecheck` passed.\n- Focused onboarding tests passed.",
+          verdict: "fail",
+          note: "The Japanese welcome title wraps badly at 320 px. Everything else matches the acceptance criteria, including the Turkish copy review and the catalog check.",
+          findings: ["Japanese title wraps"],
+        },
+      ],
+    },
+    {
+      ...base,
+      id: "auto-budget",
+      title: "Refactor billing module",
+      status: "blocked",
+      completedAt: at - 120_000,
+      budgetStop: "Agent minutes reached 30 of 30.",
+      awaitingOwnerRestart: true,
+      error: "Run budget: Agent minutes reached 30 of 30.",
+    },
+    {
+      ...base,
+      id: "auto-failed",
+      title: "Upgrade database driver",
+      status: "blocked",
+      completedAt: at - 200_000,
+      continueUntilDone: true,
+      error:
+        "The provider disconnected while applying the migration and the session could not be resumed after three reconnect attempts; inspect the migration log under temp/db before retrying.",
+    },
+    {
+      ...base,
+      id: "auto-external",
+      title: "Verify TalkBack reset",
+      status: "blocked",
+      completedAt: at - 400_000,
+      continueUntilDone: true,
+      repairStop: { reason: "external", message: "Provide an Android device to test TalkBack reset. The emulator does not expose the gesture." },
+      error: "Review failed: TalkBack reset was not verified.",
+    },
+  ];
+}
 const limits = new Map<string, { maxRunningTasks: number; dailyAgentMinutes: number }>();
 if (query.has("boardControls")) {
   const defaults: HostTaskInput = {

@@ -131,7 +131,6 @@ export const ChangeRow = memo(function ChangeRow({
           variant="item"
           motion="none"
           type="button"
-          tooltip={file.relative}
           aria-label={file.relative}
           data-git-file={file.path}
           onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -157,7 +156,7 @@ export const ChangeRow = memo(function ChangeRow({
               {name}
             </span>
             {dir ? (
-              <MiddleTruncate mode="path" className={`min-w-0 flex-1 text-ui-caption ${collision ? "font-medium text-content" : "text-(--ui-text-secondary)"}`}>
+              <MiddleTruncate mode="path" title={false} className={`min-w-0 flex-1 text-ui-caption ${collision ? "font-medium text-content" : "text-(--ui-text-secondary)"}`}>
                 {dir}
               </MiddleTruncate>
             ) : null}

@@ -24,6 +24,8 @@ use crate::native_provider_output::{
 };
 use crate::passwd_identity;
 
+#[cfg(windows)]
+mod mcp_auth;
 pub(crate) mod process_lifecycle;
 mod process_receipts;
 pub(crate) mod turn_writes;
@@ -1883,12 +1885,15 @@ pub async fn mcp_provider_login(
             _ => return Err("Unsupported MCP provider".into()),
         };
         let binary = resolve_mcp_binary(&provider, binary_path.as_deref())?;
-        mcp_command(
-            binary,
-            args.into_iter().map(String::from).chain([name]).collect(),
-            cwd,
-            Duration::from_secs(180),
-        )?;
+        let args = args.into_iter().map(String::from).chain([name]).collect();
+        #[cfg(windows)]
+        if provider == "claude" {
+            return mcp_auth::login(binary, args, cwd, Duration::from_secs(180));
+        }
+        mcp_command(binary, args, cwd, Duration::from_secs(180))
+        // OAuth stdout/stderr can contain callback URLs, state and challenges.
+        // Never propagate that credential-bearing transcript to Settings.
+        .map_err(|_| "MCP sign-in did not complete. Retry and finish authorization in your browser.".to_string())?;
         Ok(())
     })
     .await

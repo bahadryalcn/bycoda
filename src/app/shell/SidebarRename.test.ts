@@ -721,15 +721,9 @@ describe("sidebar session bulk actions", () => {
       finish(true);
     });
     expect(container.textContent).not.toContain("Deleting conversations…");
-    expect(container.querySelector("[data-session-delete-status]")?.textContent).toContain(
-      "3 conversations deleted.",
-    );
+    expect(container.querySelector("[data-session-delete-status]")).toBeNull();
     expect(container.textContent).toContain("Sessions you start will show up here");
     expect(selectedIds()).toEqual([]);
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Dismiss deletion result"]')!.click(),
-    );
-    expect(container.querySelector("[data-session-delete-status]")).toBeNull();
   });
 
   it("shows local loading and load failure before empty state", async () => {

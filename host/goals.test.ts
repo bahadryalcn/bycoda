@@ -1532,11 +1532,21 @@ describe("goal tasks", () => {
       await finish((await planned()).a.sessionId!);
       const reviewing = (await planned()).a;
       // Simulate a persisted failure from a host predating automatic correction.
+      // Current hosts still block an explicit recheck (reviewOnly) on FAIL.
       await store.db
         .prepare("UPDATE tasks SET value=? WHERE id=?")
-        .run(JSON.stringify({ ...reviewing, goalId: undefined, source: undefined }), reviewing.id);
+        .run(
+          JSON.stringify({ ...reviewing, goalId: undefined, source: undefined, reviewOnly: true }),
+          reviewing.id,
+        );
       await finish(reviewing.reviewer!.sessionId!, "VERDICT: FAIL - Friday is missing.");
-      const legacy = { ...(await tasks.get(reviewing.id))!, goalId: "goal" };
+      const legacy = {
+        ...(await tasks.get(reviewing.id))!,
+        goalId: "goal",
+        reviewOnly: undefined,
+        repairStop: undefined,
+        needsInput: undefined,
+      };
       if (cancelled) await goals.cancel("goal");
       await store.db
         .prepare("UPDATE tasks SET value=? WHERE id=?")

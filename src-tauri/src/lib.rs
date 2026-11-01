@@ -115,6 +115,7 @@ mod trackpad_zoom;
 mod tray;
 mod turn_probe;
 mod turn_steps;
+mod voice_overlay;
 mod window;
 mod window_fullscreen;
 mod window_transfer;
@@ -391,6 +392,8 @@ pub fn run() {
                     window::QUICK_COMPOSER_LABEL,
                     window::QUICK_COMPOSER_GIT_LABEL,
                 ])
+                // The voice window keeps its own place; never restore it as a workspace.
+                .with_filter(|label| !voice_overlay::is_voice_overlay(label))
                 .build(),
         )
         .manage(harness::HarnessHost::new())
@@ -958,6 +961,11 @@ pub fn run() {
             window::quit_ready,
             window::set_window_glass_enabled,
             window_fullscreen::set_window_fullscreen,
+            voice_overlay::voice_overlay_open,
+            voice_overlay::voice_overlay_fit,
+            voice_overlay::voice_overlay_nudge,
+            voice_overlay::voice_overlay_close,
+            voice_overlay::voice_overlay_show_owner,
             #[cfg(target_os = "macos")]
             quick_composer::quick_composer_set_enabled,
             #[cfg(target_os = "macos")]
@@ -1052,6 +1060,7 @@ pub fn run() {
             event: tauri::WindowEvent::Destroyed,
             ..
         } => {
+            voice_overlay::window_destroyed(handle, &label);
             window_transfer::window_closed(handle, &label);
             handle
                 .state::<remote::RemoteConnections>()

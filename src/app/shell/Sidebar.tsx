@@ -5045,7 +5045,9 @@ const SessionCard = memo(function SessionCard({
           ? "info"
           : done
             ? "success"
-            : "neutral";
+            : draft && !opening
+              ? "warning"
+              : "neutral";
   const working = !issue && !needsApproval && busy;
   const status =
     !issue && !needsApproval && !busy && !opening && !done && !draft ? (
@@ -5525,13 +5527,34 @@ const SessionCard = memo(function SessionCard({
       setDetailOpen(true);
     }, SESSION_DETAIL_DELAY_MS);
   };
-  const hideDetail = () => {
+  const hideDetail = useCallback(() => {
     if (detailTimer.current != null) {
       window.clearTimeout(detailTimer.current);
       detailTimer.current = null;
     }
     setDetailOpen(false);
-  };
+  }, []);
+  useEffect(() => {
+    const root = detailRootRef.current;
+    if (!root) return;
+    const doc = root.ownerDocument;
+    const view = doc.defaultView;
+    if (!view) return;
+    // Scrolling can move or clip a row without delivering pointerleave. Cancel
+    // the pending open too, so a delayed card cannot appear after the row moved.
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (target === doc || (target instanceof Node && target.contains(root))) hideDetail();
+    };
+    doc.addEventListener("scroll", onScroll, true);
+    view.addEventListener("resize", hideDetail);
+    view.addEventListener("blur", hideDetail);
+    return () => {
+      doc.removeEventListener("scroll", onScroll, true);
+      view.removeEventListener("resize", hideDetail);
+      view.removeEventListener("blur", hideDetail);
+    };
+  }, [hideDetail]);
   const detailVisible = detailOpen && !dragging && !pressing && !selectionMode && !orchestration;
 
   const archiveLabel = session.archived ? "Unarchive" : "Archive";
@@ -5715,7 +5738,6 @@ const SessionCard = memo(function SessionCard({
                   : "text-(--ui-text-secondary) hover:text-content"
         }`}
       >
-        {working ? <span aria-hidden data-session-working-edge className="session-row-working-edge" /> : null}
         {/* The landing mark (line, group frame) is drawn on this card by setDropIndicator. */}
         {/* Actions sit beside the row's button, never inside it. */}
         <span className="relative flex min-h-5 min-w-0 items-center gap-1.5">
@@ -5861,6 +5883,8 @@ const SessionCard = memo(function SessionCard({
           maxHeight={280}
           role="tooltip"
           id={detailId}
+          passive
+          restoreFocus={false}
           className="pointer-events-none overflow-hidden p-2.5"
         >
           <p className="line-clamp-2 break-words text-ui-secondary font-medium leading-snug text-content">

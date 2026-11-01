@@ -4,13 +4,14 @@ const effects = [
   "neural-tree",
   "latent-face",
   "code-visage",
+  "serene-face",
   "thought-weaver",
   "ascii-mask",
   "dot-grid",
   "code-rain",
 ] as const;
 /** Code figures leave the pane untouched at rest and only appear while a reply streams. */
-const restsEmpty: readonly string[] = ["latent-face", "code-visage"];
+const restsEmpty: readonly string[] = ["latent-face", "code-visage", "serene-face"];
 const preferenceKey = "bycoda.liveBackground.v1";
 const ambientEffects = ["threads", "silk", "dark-veil", "soft-aurora", "floating-lines"];
 const sceneChoices = ["none", ...ambientEffects, ...effects];

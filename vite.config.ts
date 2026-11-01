@@ -65,6 +65,7 @@ export default defineConfig(async ({ mode }) => {
         input: {
           main: "index.html",
           quickComposer: "quick-composer.html",
+          voiceOverlay: "voice-overlay.html",
         },
       },
     },

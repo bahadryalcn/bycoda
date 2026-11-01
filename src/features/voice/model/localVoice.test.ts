@@ -98,6 +98,219 @@ function callbacks() {
     playback: vi.fn(),
   };
 }
+
+it.each(["", "[cough]", "(boğaz temizleme)"])(
+  "keeps playback and the pending reply intact for rejected recognition %j",
+  async (text) => {
+    setup();
+    const events = { ...callbacks(), accept: vi.fn((binding) => binding) };
+    backend.transcribe.mockResolvedValueOnce({ text, language: "tr", inferenceMs: 1 });
+    const voice = new LocalVoice(events, "tr");
+    await voice.connect();
+    const cancel = vi.mocked(speechSynthesis.cancel);
+    cancel.mockClear();
+    for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+    expect(events.start).toHaveBeenCalledOnce();
+    expect(cancel).not.toHaveBeenCalled();
+    for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events.accept).not.toHaveBeenCalled();
+    expect(events.transcript).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    voice.close();
+  },
+);
+
+it.each(["", "[cough]", "(boğaz temizleme)"])(
+  "retains pending real speech across a later rejected candidate %j",
+  async (noise) => {
+    setup();
+    let finish!: (result: any) => void;
+    let rejectNoise!: (result: any) => void;
+    backend.transcribe.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    backend.transcribe.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          rejectNoise = resolve;
+        }),
+    );
+    const events = { ...callbacks(), accept: vi.fn((binding) => ({ ...binding, sequence: 2 })) };
+    const voice = new LocalVoice(events, "tr");
+    await voice.connect();
+    const speech = () => {
+      for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+    };
+    const end = () => {
+      for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+    };
+    speech();
+    end();
+    speech(); // A second acoustic onset must not invalidate the first ASR.
+    vi.mocked(speechSynthesis.cancel).mockClear();
+    finish({ text: "evet", language: "tr", inferenceMs: 1 });
+    await vi.waitFor(() => expect(events.transcript).toHaveBeenCalledOnce());
+    end();
+    rejectNoise({ text: noise, language: "tr", inferenceMs: 1 });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events.transcript).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ text: "evet" }),
+      { sessionId: "a", sequence: 2 },
+    );
+    expect(events.accept).toHaveBeenCalledOnce();
+    expect(speechSynthesis.cancel).toHaveBeenCalledOnce();
+    voice.close();
+  },
+);
+
+it.each(["older-first", "newer-first", "cancelled"])(
+  "orders overlapping real recognitions without bypassing cancellation: %s",
+  async (order) => {
+    setup();
+    const finish: ((result: any) => void)[] = [];
+    for (let i = 0; i < 2; i++)
+      backend.transcribe.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish.push(resolve);
+          }),
+      );
+    let sequence = 1;
+    const events = {
+      ...callbacks(),
+      start: vi.fn(() => ({ sessionId: "a", sequence })),
+      accept: vi.fn((binding) =>
+        binding.sequence === sequence ? { ...binding, sequence: ++sequence } : undefined,
+      ),
+    };
+    const voice = new LocalVoice(events, "tr");
+    await voice.connect();
+    for (let turn = 0; turn < 2; turn++) {
+      for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+      for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+    }
+    const resolve = async (index: number) => {
+      finish[index]({ text: index ? "hayır" : "evet", language: "tr", inferenceMs: 1 });
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+    if (order === "cancelled") sequence++; // An external close/retarget is not our promotion.
+    await resolve(order === "newer-first" ? 1 : 0);
+    await resolve(order === "newer-first" ? 0 : 1);
+    const words = events.transcript.mock.calls.map(([result]) => result.text);
+    expect(words).toEqual(
+      order === "cancelled" ? [] : order === "newer-first" ? ["hayır"] : ["evet", "hayır"],
+    );
+    voice.close();
+  },
+);
+
+it("invalidates pending recognition across mute and resume", async () => {
+  setup();
+  let finish!: (result: any) => void;
+  backend.transcribe.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const events = { ...callbacks(), accept: vi.fn((binding) => binding) };
+  const voice = new LocalVoice(events, "tr");
+  await voice.connect();
+  for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+  for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+  voice.mute(true);
+  voice.mute(false);
+  finish({ text: "stop", language: "en", inferenceMs: 1 });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(events.accept).not.toHaveBeenCalled();
+  expect(events.transcript).not.toHaveBeenCalled();
+  voice.close();
+});
+
+it("interrupts only after accepted words and retains the onset target", async () => {
+  setup();
+  const events = { ...callbacks(), accept: vi.fn((binding) => ({ ...binding, sequence: 2 })) };
+  const voice = new LocalVoice(events, "tr");
+  await voice.connect();
+  vi.mocked(speechSynthesis.cancel).mockClear();
+  for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+  expect(speechSynthesis.cancel).not.toHaveBeenCalled();
+  for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(events.accept).toHaveBeenCalledWith({ sessionId: "a", sequence: 1 });
+  expect(speechSynthesis.cancel).toHaveBeenCalledOnce();
+  expect(events.transcript).toHaveBeenCalledWith(expect.anything(), {
+    sessionId: "a",
+    sequence: 2,
+  });
+  voice.close();
+});
+
+it.each(["evet", "hayır", "dur", "yes", "no", "stop"])(
+  "admits recognized short speech %j without a word-count or length gate",
+  async (text) => {
+    setup();
+    backend.transcribe.mockResolvedValueOnce({ text, language: "tr", inferenceMs: 1 });
+    const events = callbacks();
+    const voice = new LocalVoice(events, "tr");
+    await voice.connect();
+    for (let i = 0; i < 2; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+    for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events.transcript).toHaveBeenCalledWith(
+      expect.objectContaining({ text }),
+      expect.anything(),
+    );
+    voice.close();
+  },
+);
+
+it("keeps playback on an empty endpoint result and drops speech accepted after mute", async () => {
+  setup();
+  backend.start.mockResolvedValueOnce({
+    lease: "local",
+    model: "small",
+    device: "cuda",
+    turn: true,
+  } as any);
+  backend.endpoint.mockResolvedValueOnce({ text: "", language: "tr", inferenceMs: 1 });
+  const events = { ...callbacks(), accept: vi.fn((binding) => binding) };
+  const voice = new LocalVoice(events, "tr");
+  await voice.connect();
+  vi.mocked(speechSynthesis.cancel).mockClear();
+  for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+  for (let i = 0; i < 4; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(events.accept).not.toHaveBeenCalled();
+  expect(speechSynthesis.cancel).not.toHaveBeenCalled();
+  let finish!: (result: any) => void;
+  backend.endpoint.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+  for (let i = 0; i < 4; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+  voice.mute(true);
+  finish({ text: "stop the work", language: "en", inferenceMs: 1 });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(events.transcript).not.toHaveBeenCalled();
+  expect(events.accept).not.toHaveBeenCalled();
+  voice.close();
+});
 it("releases the local recognizer if closed during startup without opening a microphone", async () => {
   const getUserMedia = setup();
   let ready!: (value: any) => void;

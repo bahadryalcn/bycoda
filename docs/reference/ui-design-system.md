@@ -775,7 +775,17 @@ Changes to shared presentation must not reset these preferences.
 
 Appearance now uses real shared control specimens, compact preference groups and
 scoped resets. Existing storage/default/sync owners remain. The following contract
-continues to apply as remaining consumer and acceptance work is reconciled:
+is retained below as historical design input while consumer and acceptance work
+is reconciled. Its always-visible advanced-fields requirement differs from the
+Appearance feature's later source-delivery record, which describes custom colors
+under a closed Advanced row. This is an unresolved design/source documentation
+difference, not permission to change product behavior during a documentation edit.
+Check the current Appearance source and attributable owner decisions before
+changing disclosure placement; preserve fields, values and deep-link reveal.
+The general `AdvancedSettings` component contract above describes its API/defaults,
+not evidence that this historical Appearance requirement was accepted or superseded.
+
+Historical Appearance requirement:
 
 1. Group theme/color, typography, density/accessibility and background/layout
    settings into compact, always-visible sections with per-section reset. Settings

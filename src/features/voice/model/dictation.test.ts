@@ -104,3 +104,20 @@ it("reports a start failure and leaves nothing running", async () => {
   expect(events.state).toHaveBeenLastCalledWith("idle");
   expect(backend.release).not.toHaveBeenCalled();
 });
+
+it("reports real microphone level, silence and zero on stop without accepting stale audio", async () => {
+  const events = { ...setup(), level: vi.fn() };
+  const dictation = new Dictation(events, "tr");
+  await dictation.start();
+  const captured = port.onmessage!;
+  captured({ data: voicedFrame().buffer });
+  expect(events.level.mock.lastCall?.[0]).toBeGreaterThan(0.05);
+  expect(events.level.mock.lastCall?.[0]).toBeLessThan(1);
+  captured({ data: new Int16Array(1024).buffer });
+  expect(events.level).toHaveBeenLastCalledWith(0);
+  dictation.cancel();
+  expect(events.level).toHaveBeenLastCalledWith(0);
+  events.level.mockClear();
+  captured({ data: voicedFrame().buffer });
+  expect(events.level).not.toHaveBeenCalled();
+});

@@ -34,18 +34,6 @@
   }
 }
 
-/* A running session carries a thin active edge, readable while scanning the list.
-   Static on purpose: the badge's working mark already pulses (compositor-only). */
-.session-row-working-edge {
-  position: absolute;
-  inset-block: 6px;
-  inset-inline-start: 0;
-  inline-size: 2px;
-  border-radius: 999px;
-  background: var(--color-active);
-  pointer-events: none;
-}
-
 /* The working badge drops its word first as the sidebar narrows; mark and time stay. */
 @container session-list (max-width: 250px) {
   [data-session-working-badge] .session-working-label {
@@ -57,13 +45,6 @@
 @container session-list (max-width: 320px) {
   [data-session-density="compact"] [data-session-working-badge] .session-working-label {
     display: none;
-  }
-}
-
-@media (forced-colors: active) {
-  .session-row-working-edge {
-    forced-color-adjust: none;
-    background: Highlight;
   }
 }
 

@@ -147,3 +147,25 @@ it("measures pitch periodicity: voiced speech high, breath noise low", () => {
   expect(frameFeatures(voicedFrame(), 16000).periodicity).toBeGreaterThan(0.9);
   expect(frameFeatures(breathFrame(3), 16000).periodicity).toBeLessThan(0.35);
 });
+
+it("retains a short voiced word once sustained onset passed", () => {
+  const end = vi.fn();
+  const vad = new VoiceVad(16000, vi.fn(), end);
+  vad.push(voicedFrame());
+  vad.push(voicedFrame()); // 128 ms: previously onset passed but final text was discarded.
+  for (let i = 0; i < 10; i++) vad.push(new Int16Array(1024));
+  expect(end).toHaveBeenCalledOnce();
+});
+
+it("does not mistake silence or impulsive keyboard clicks for voiced onset", () => {
+  const start = vi.fn(),
+    end = vi.fn();
+  const vad = new VoiceVad(16000, start, end);
+  for (let i = 0; i < 60; i++) {
+    const frame = new Int16Array(1024);
+    if (i % 8 === 0) frame[100] = 28000;
+    vad.push(frame);
+  }
+  expect(start).not.toHaveBeenCalled();
+  expect(end).not.toHaveBeenCalled();
+});

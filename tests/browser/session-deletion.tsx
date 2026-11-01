@@ -34,6 +34,17 @@ createRoot(document.getElementById("root")!).render(
         </Button>
         <Button
           onClick={() =>
+            setSessionDeletionStatus({
+              ...base,
+              outcome: "deleted",
+              error: "Worktree cleanup unavailable",
+            })
+          }
+        >
+          Keep worktree warning
+        </Button>
+        <Button
+          onClick={() =>
             setSessionDeletionStatus({ ...base, outcome: "failed", error: "Storage unavailable" })
           }
         >

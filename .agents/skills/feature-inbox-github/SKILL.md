@@ -1,215 +1,44 @@
 ---
 name: feature-inbox-github
-description: GitHub Inbox issue and pull request collection, repository/type/state filters, read counts, selection/drafts, Summary/Code/Checks, diff files/context/layout, CI evidence/repair, public comments, Ask, PR actions, exact-head review and native/mobile provider delivery. Read before GitHub Inbox redesign or workflow changes.
+description: "Change GitHub Inbox collection, issue/PR details, code review, checks and actions with exact-record identity, retained drafts and provider approval gates."
 ---
 
-# GitHub Inbox and PR review
+# GitHub Inbox changes
 
-Help the owner distinguish issues, PR lifecycle and unread work; read code/CI
-and act on the exact record without losing drafts, selection or provider truth.
-Keywords: GitHub, Inbox, issues, pull request, PR, Summary, Code, Checks, diff,
-Hunks, Full file, side-by-side, loaded count, review, public comment, merge.
-This is a T2 inventory/design card, not delivered product behavior.
+## When and scope
 
-Baseline inspected2026-10-27: dirty shared `main @
-0a42b1ab4fd891ccec5ca0fa238d7356b396b13c`. Search roots: src/features/inbox,
-source-control, settings, connections, app/workspace/layout, shared UI/styles,
-src-tauri/src, host, tests/browser and mobile/src/features/inbox. Recent history:
-8d7e83ad,4454ce32,29d534f9,cf3944cf. Check live feature claims before product
-work; card is not a lock. Claims RPC unavailable in this session; Git/worktree/
-native session state inspected without claiming cross-machine reservation.
+Use for GitHub issues and pull requests inside Inbox, including compact cards and linked details. Connection setup belongs to Inbox settings; Git repository operations and shared diff rendering have separate contracts.
 
-Read related feature-workbench-design, feature-source-control and
-feature-inbox-jira cards plus docs/reference/DESIGN.md, arc-ui.md,
-ui-design-system.md and ui-component-catalog.md. Preserve dirty concurrent
-updater/sidebar/shared Button/ButtonGroup/Host work. One writer per file.
+## Source starts
 
-## Surface inventory and coverage
+Full paths are repository-root relative; adjacent abbreviated names share the preceding
+directory. Follow current imports and callers; this map is not a completeness claim.
 
-Full16-family checklist and17 findings are in
-`temp/local/2026-10-27-github-redesign/AUDIT.md`; brief is adjacent REDESIGN.md.
-Audit done means read/design inspection; product implementation is pending.
+- `src/features/inbox/ui/InboxView.tsx`, `InboxDetail.tsx`, `InboxPrDiff.tsx`, `InboxPrChecks.tsx`, `InboxPrActions.tsx`: collection/detail/actions.
+- `src/features/inbox/model/githubTasks.ts` and adjacent provider/read-gate/freshness models: fetching and cached identity.
+- `src/features/source-control/ui/UnifiedDiffView.tsx`: Inbox code review rendering.
+- `src-tauri/src/`, `host/`: search exact `git_github_` commands and `inbox.provider.*` routes before changing delivery.
 
-| Surface                            | Explicit implementation / test owners                                                                                                                                                                                                                                                                                                                  | Audit coverage                                                                                                       |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| Shell/providers/filters/collection | `src/app/workspace/layout/WorkspaceToolPanels.tsx`; `src/features/inbox/ui/InboxView.tsx`, `InboxView.css`, `InboxFiltersMenu.tsx`, `InboxConnectMenu.tsx`, `InboxPresentation.tsx`, `InboxProviderMark.tsx`                                                                                                                                           | Screenshot/source; kind/status, labels/repo, read scopes, filters, selection/retained scroll.                        |
-| Other linked/compact entrypoints   | `src/features/inbox/ui/InboxMiniCard.tsx`; linked work-item panel in InboxView; `src/features/inbox/ui/InboxNotificationMenu.tsx`                                                                                                                                                                                                                      | Shared integration inventory; exercise actual consumers if shared controls change.                                   |
-| Detail/header/tabs                 | `src/features/inbox/ui/InboxDetail.tsx`, `useInboxDetailData.ts`, `InboxPrOverview.tsx`                                                                                                                                                                                                                                                                | Code screenshot/source; Summary lifetime/read contracts source-reviewed.                                             |
-| Comments/timeline/media            | `src/features/inbox/ui/InboxComments.tsx`, `InboxMedia.tsx`                                                                                                                                                                                                                                                                                            | Public/reply/draft ownership and success-versus-refresh source chain.                                                |
-| PR operations                      | `src/features/inbox/ui/InboxPrActions.tsx`; native fs                                                                                                                                                                                                                                                                                                  | Merge/squash/rebase/draft/ready/close/reopen and confirmation; no actual write.                                      |
-| Code/files/diff                    | `src/features/inbox/ui/InboxPrDiff.tsx`; `src/features/source-control/ui/UnifiedDiffView.tsx`, `UnifiedDiffView.css`, `DiffLayoutToggle.tsx`, `DiffOverviewRuler.tsx`                                                                                                                                                                                  | Width/tool ownership, file navigation/rename/expansion, context/revision, auto layout and syntax/readability risks.  |
-| Checks/evidence/repair             | `src/features/inbox/ui/InboxPrChecks.tsx`, `CheckEvidence.tsx`, `CheckRepairForm.tsx`, `CheckRepairProgress.tsx`; `src/features/inbox/hooks/useGithubPrChecks.ts`                                                                                                                                                                                      | Existing failure-first groups, head-bound evidence and stale refresh/repair behavior.                                |
-| Ask/related agent work             | `src/features/inbox/ui/InboxDiscussionPanel.tsx`; `src/features/inbox/model/inboxAsk.ts`, `inboxContext.ts`                                                                                                                                                                                                                                            | Wiring/state-owner inventory; regular session pane owns chat. No agent launched.                                     |
-| Fetch/filter/retained state        | `src/features/inbox/model/githubTasks.ts`, `githubReadGate.ts`, `inboxFilters.ts`, `inboxSeen.ts`, `inboxPrefetch.ts`, `inboxPolling.ts`, `githubPrChecks.ts`, `ciRepairTracking.ts`; `src/features/inbox/hooks/useInboxUnseen.ts`                                                                                                                     | Capped arrays, local search/window, partial errors, cache/concurrency/read gate and identity.                        |
-| Diff models/theme/preferences      | `src/features/source-control/model/prDiff.ts`, `diffHighlightSource.ts`; `src/features/settings/model/settings.ts`; `src/styles/index.css`                                                                                                                                                                                                             | Shared auto/global choice/code zoom and semantic/high-contrast/colorblind roles; no measured renderer contrast pass. |
-| Native/Host delivery               | `src-tauri/src/fs.rs`, `github_review.rs`, `desktop_inbox_review.rs`; `src/features/inbox/model/remoteInbox.ts`; `src/features/connections/model/desktopLive.ts`, `useDesktopLive.ts`; `host/provider-inbox.ts`, `server.ts`, `conversation-workspace-tools.ts`                                                                                        | Specific read/write/guard paths and routing inventory; no isolated native/Host or live acceptance.                   |
-| Native mobile                      | `mobile/app/(tabs)/inbox.tsx`; `mobile/src/features/inbox/provider-inbox-screen.tsx`, `provider-list.tsx`, `provider-detail.tsx`, `provider-conversation.tsx`, `provider-composer.tsx`, `provider-pr-review.tsx`, `provider-review-model.ts`, `provider-review-draft.ts`, `provider-review-delivery.ts`, `provider-protocol.ts`, `provider-queries.ts` | Entrypoint/contracts inventory; phone design and native/device checks remain separate.                               |
+## Preserve
 
-Native commands include `git_github_work_items`, `git_github_work_item`,
-`git_github_work_item_details`, `git_github_work_item_thread`,
-`git_github_work_item_comment`, `git_github_pr_action`, `git_github_pr_diff`,
-`git_github_pr_review_context`, `git_github_pr_review`. Follow current
-githubTasks/checks/native dispatch before changing command shapes. Host provider
-jobs route through `inbox.provider.status`, `inbox.provider.request`,
-`inbox.provider.result`; project tool facade includes `inbox.providers.status`
-and `inbox.providers.list`. Remote operation union distinguishes details,
-thread, comment, pr-action, review-context and review; no arbitrary native call.
-Retain request receipts/uncertain writes and exact approval/HEAD/window/project
-validation. Contract inventory is not evidence of installed Host capability.
+- Keep provider/account/repository/kind/key/cwd and exact PR head identity through reads, drafts and writes. An old head cannot authorize a newer review.
+- Unread, lifecycle and needs-review are distinct. Shown counts/local reveal are not proof of complete provider results or full-body search.
+- Retain saved filters, selected detail/tab/file, comment/Ask/repair drafts and responsive detail/back navigation.
+- Keep bounded fetching, cache/in-flight deduplication, late-response rejection, good data on error and operation-specific recovery.
+- Public comments, reviews, merge and repair actions retain their native owner approval and provider gates; reads and drafts grant no write authority.
 
-Locale families use actual sentence keys: Inbox, Filter inbox, Pull request,
-Issue, Summary, Code, Checks, Hunks, Full file, Automatic, Inline, Side-by-side
-view, Mark all as read, Ask, Comment, Reply, merge options and check evidence.
-Re-enumerate calls and en/tr overrides when implementing; do not add a local
-translation system. Reuse shared Button/SplitButton/SegmentedControl/Select,
-SearchableSelect, fields, Alert, DropdownMenu, Popover/Modal and theme adapters.
+## Workflow
 
-## Owner decisions
+1. Trace the requested GitHub flow across collection, detail, model and actual provider dispatcher; inspect compact/linked entry points.
+2. Separate shared Inbox chrome changes from GitHub paging/revision behavior and Jira-specific decisions.
+3. Exercise the exact target revision, incomplete/error data, retained drafts and uncertain write results with disposable data.
 
-2026-10-27, current conversation `0567326f-aade-4baa-89f3-b44c6256ae9e`:
-"github kısmı bu şekilde gözüküyor buralarıda toparlıyabiliriz daha yugn gösterimler daha ayırıcı işler verebiliriz. Tasarımıda yine düzenlememiz gerkiyor."
+## Focused checks
 
-This authorizes the audit/design extension. No new GitHub default grouping,
-sort, polling or diff layout selected. Jira's demand-scroll/right-detail choices
-do not independently change GitHub native paging or stored global diff choice.
+Run affected Inbox/model suites, starting with `pnpm exec vitest run src/features/inbox/ui/InboxView.test.ts src/features/inbox/ui/InboxDetail.tabs.test.ts src/features/inbox/model/githubTasks.test.ts`.
+Code-review changes need `UnifiedDiffViewSplit.test.ts`/markers tests and a real Inbox consumer. A CodeMirror diff fixture alone does not verify Inbox review. Check Summary/Code/Checks, long file lists and narrow detail/back.
 
-## Behavior to preserve
+## Read when needed
 
-- Keep provider/repo/kind/key/cwd/account identity, saved filters/selection/read
-  state and container-responsive list/detail/back. Never infer needs-review from
-  open, or unread from lifecycle. Clarify bulk provider-read scope versus count.
-- GitHub array limits are40/default,100/max per repo/kind; local scroll reveals
-  already fetched records. Local metadata search does not search body/comments
-  or prove all server results. True continuation/search needs real typed/native
-  contracts. Preserve cache/in-flight dedup, bounded concurrency4, conservative
-  polling/read gate, good data on error and late-response rejection.
-- Retain drafts by exact originating target through tabs/navigation and failed
-  writes. Public comment is not Ask. Keep issue Send to agent/execution project
-  and related-session ownership. Do not invent a PR send action from issue UI.
-- Retain all PR operations, shared confirmations and exact reviewed-head merge;
-  native --match-head-commit is essential. Keep queued/auto-merge versus merged
-  distinction, write success versus failed read-back, and uncertain outcome.
-- Automatic diff is already default and uses actual width below900; preserve
-  explicit global inline/split. Keep full context provider request, binary/size/
-  truncation, exact copy, syntax limits, shared zoom and +/- semantics. Reconcile
-  expanded/focused files safely across revisions without stale line anchors.
-- Keep checks failure-first/attention/all, cancelled/unknown/skipped states,
-  evidence/retry/annotations/progress, visibility/open polling and head-bound
-  scope epochs. Saved green data is not current evidence; stale repair blocked.
-- Shared diff/header/component changes require representative Git/Jira/GitLab/
-  ADO/Linear/linked consumers. No local palette/overlay/control duplication.
-
-## Checks and visual scenarios
-
-Relevant source tests (inspect current scripts, run normal tsc-rs when editing):
-InboxView.test/persistence, InboxDetail.tabs, InboxComments, InboxPrActions,
-InboxPrOverview, InboxPrChecks/Repair, useInboxDetailData, InboxDiscussionPanel,
-githubTasks/test/providers/repositories/concurrency/progressive, githubReadGate,
-githubWorkItemFreshness, useGithubPrChecks/revision/provider and
-UnifiedDiffViewSplit/markers. Paths follow the source owners above.
-`tests/browser/responsive-diff.spec.ts` tests editable CodeMirror, **not** Inbox
-UnifiedDiffView. Add/exercise a real Inbox fixture rather than claiming that
-suite proves this screen. Native review/Host tests: github_review and
-desktop_inbox_review modules, `host/provider-inbox.test.ts`; mobile review/model/
-draft/delivery tests preserve remote exact-content/HEAD semantics.
-
-Actual changed surfaces: light/dark1280/800 plus narrow containers, keyboard/
-focus/resize/touch/reduced motion, long title/labels/path/rename, code zoom/custom
-themes and semantic diff modes. Fake-provider cases: duplicate numbers/repos,
-all lifecycle/read states, capped/partial/empty/late data, filtered bulk read and
-selected detail, drafts across tabs, failed write versus successful write/failed
-read, stale green checks/new HEAD/annotation/repair. Never destructive acceptance
-on owner repositories. Save/open captures under temp/verification/<id>.
-
-## Settings connection extension, 2026-10-27
-
-Cross-provider Settings Inbox audit: read
-`.agents/skills/feature-inbox-settings/SKILL.md` and
-`temp/local/2026-10-27-settings-inbox-audit/`. Five owner captures;11 records/
-14 families, two native read-only reviews plus root. GitHub retains the separate
-this-computer gh installed/authentication/check-error contract and existing
-keyboard/search/draft behavior. No account name or last-verified timestamp is
-returned by current git_github_status; do not invent these as summary data.
-Bound connection detail width and nearby actions without adding token fields.
-60 existing provider/settings tests pass; no product/live/credential operation.
-This extends Settings design, not the issue/PR review workflow findings above.
-
-## Proposals, blockers and committed handoff references
-
-Propose task-first mixed collection with visible type/state, honest loaded/read
-scopes, deliberate selection, compact contextual header and a wider Code area
-with one toolbar/scalable file navigation. Retain Summary reading measure and
-existing automatic diff. Promote saved-result freshness and local recovery.
-Details remain proposals in REDESIGN; no product behavior shipped by this card.
-
-Local card/audit/brief/concept delivered uncommitted at baseline above; no commit
-reference for implementation. Source manifest/document checks are separate from
-actual product acceptance. Screenshot/build inclusion UNKNOWN; owner build stamp
-absent. Live claims API, installed/provider and physical mobile evidence absent.
-No source test, build, install, release or live GitHub operation run for this
-documentation-only extension. Update user guides when behavior is delivered.
-
-## H7 implementation, 2026-10-28 (supersedes audit-only status for this scope)
-
-Owner request in session `28955f17-306b-4eee-b0e0-99d148ba36c3`, exact quote:
-"Inbox'taki GitHub ve Jira ekranlarını yeniden tasarım belgelerine göre uygula."
-Package: `2026-10-28-inbox-impl`; shared dirty main baseline
-`c03fa98d4819494a53ebfa61ff74320105bd05fc`, uncommitted. No immutable delivery
-commit, build, installation or release is claimed.
-
-- InboxView/Presentation/MiniCard: title-first rows, visible type/lifecycle,
-  separate unread/selection, repository identity, label overflow count and
-  full-label access through record details/accessibility. PR kind choice stays
-  direct; growing filters retain the named popover, persisted IDs and reset.
-  Counts/search/bulk-read name their loaded selected-provider scope. Filters
-  keep the selected allowed record and show an outside-filter notice rather
-  than silently retargeting a public-comment composer.
-- InboxDetail/Comments/PrActions/PrOverview: compact title/lifecycle header,
-  separate agent working folder/public-comment consequence, subdued Reopen,
-  full-width Code and Code-local context/branch controls. Comment/reply drafts
-  use existing window-lifetime retained state, scoped by project/checkout/record
-  and reply; this is not disk persistence or a bounded new draft database.
-  Active comment requests remain guarded across composer remounts. A confirmed
-  comment followed by failed refresh has a read-only retry; failed writes retain
-  the originating draft. Native PR uncertain-write/read-back ambiguity remains
-  an explicit dependency, not solved by UI copy.
-- githubTasks: repository/kind source receipts live with their final query cache.
-  Partial failures name the source and retain only its cached rows; successful
-  sources remove missing rows. Targeted retry reuses healthy GitHub receipts and
-  does not reread other providers. Cache generations, concurrency, read gate and
-  provider error boundaries remain. New regression definitions are unexecuted.
-- InboxPrDiff: shared searchable file selector above six files, complete path/
-  rename/churn options and repeatable focus requests. Stable file identity and
-  revision/range fold identity replace context/revision remounts. No shared
-  viewer clone or saved layout override. Unknown HEAD remains unknown.
-- InboxPrChecks/Evidence/Repair: compact outcome and checked revision beside
-  saved-results/error/retry state; cached rows remain readable, stale repair
-  remains blocked. Long annotation and repair names wrap. Existing checks hook
-  epochs, coalescing and polling authority are unchanged.
-
-Dependencies: H5 owns UnifiedDiffView's missing toolbar-content slot, long path
-geometry, old/new labels, exact copy/zoom and measured diff contrast. H3 owns
-Inbox settings. Native/Host/mobile true GitHub continuation/remote search and
-PR mutation receipts are not fabricated by this desktop implementation.
-
-Every audit record is **test edilmedi** under the overnight RULES.md. No suite,
-fixture, dev server or screenshot was run. The single permitted compiler stage
-was `pnpm exec tsc-rs --noEmit --fast`, because `check:web:fast` also runs Vitest.
-It reported three Inbox diagnostics (two Array.at uses and one duplicate prop),
-corrected afterward, plus an out-of-scope shared shortcut-recorder unused `t`.
-It was not rerun; no clean compiler pass is claimed. Morning acceptance must
-exercise all GH-H/L/R records, exact-target draft/pending navigation, partial
-repository recovery, Code context/focus and stale checks in light/dark at
-1280/800/narrow widths. Full record ledger, file fingerprints and exact blockers:
-`temp/local/2026-10-28-inbox-impl/handoff.json`. Live claims API unavailable;
-project sessions inspected, native subagents used with exclusive file ownership.
-
-## UI standards round 2026-11-01 (uncommitted)
-
-Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
-
-Inbox (`src/features/inbox/**`, with notifications), from `HANDOFF-w2-work-inbox.md`. Drift 51 -> 0 in the folder (four non-flagged leftovers named there).
-
-- Done: PR tabs on `Tabs panels="shared"` (`DetailBody` is the shared-panels example) and the source tablist on `Tabs` (roving arrows now work); InboxView and InboxDiscussionPanel headers on `PaneHeader` + chrome inset (header height now the standard); CheckRepairForm on the picker kit; filter popovers on `FilterTrigger`; `ActionHost` check rows; counts on `Badge count` (99+); `Spinner`/`LoadingText`, `InlineError`, `EmptyState size="inline"`; every `title=` converted to `tooltip`/`label`/`disabledReason`.
-- Left: three `useDragResize` handles use `Sash` only as the shell (no Escape cancel, needs Sash-ready props in `useDragResize`); `InboxMedia` pulse placeholder stays a `span`; `InboxView.css` local `z-index: 10`.
-- Unverified: no screenshots or native run.
+- [Inbox connection settings](../feature-inbox-settings/SKILL.md) for authentication/configured-versus-verified state.
+- [Source control](../feature-source-control/SKILL.md) when shared diff controls change; [Jira](../feature-inbox-jira/SKILL.md) when shared Inbox shell changes.

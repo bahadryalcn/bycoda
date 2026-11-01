@@ -25,9 +25,11 @@ import {
   type HostTask,
   type HostTaskInput,
   type TaskDeliveryReview,
+  type TaskOwnerNotice,
   type TaskVerification,
 } from "../src/features/tasks/model/hostTasks";
 import { DEFAULT_MAX_RUNNING_TASKS } from "../src/features/tasks/model/hostSettings";
+import { hasPendingApproval } from "../src/features/sessions/model/session";
 import { blockedHandoff, taskContract } from "./task-handoff";
 import { readTaskInstructions } from "../src/features/tasks/model/taskInstructions";
 import {
@@ -205,14 +207,20 @@ function reviewPrompt(task: HostTask): string {
     "What was asked:",
     taskContract(task),
     "",
-    `Review ${changes} and judge whether they do what was asked, completely and correctly.`,
-    "Fail for concrete missing or incorrect deliverables and explain actionable fixes. A worker reporting an unavailable physical-device, release or external-service acceptance check is not by itself a code defect: inspect the implementation and available evidence. Fail for missing acceptance evidence only when the task explicitly requires that evidence; never claim an unperformed check passed.",
+    `Review ${changes} and judge whether they do what was asked.`,
+    "FAIL only for: (1) a defect inside the requested scope that breaks or omits the asked behavior, (2) a regression introduced by this change, (3) a failed configured check, or (4) a violation of an explicit hard constraint (security, data loss, permission/approval gates, repository rules such as AGENTS.md). Explain an actionable fix for each. New edge cases outside the asked scope, pre-existing issues, style preferences and improvements are non-blocking: record them with kind \"suggestion\" and do not FAIL for them.",
+    "A worker reporting an unavailable physical-device, release or external-service acceptance check is not by itself a code defect: inspect the implementation and available evidence. Fail for missing acceptance evidence only when the task explicitly requires that evidence; never claim an unperformed check passed.",
+    ...((task.repairAttempts ?? 0) > 0
+      ? [
+          "This is a correction round. Focus on verifying that the earlier findings are fixed and that the correction introduced no regression. Raise a new required finding only for a severe in-scope defect; anything else is a suggestion.",
+        ]
+      : []),
     openReviewNotesPrompt(task.reviewNotes),
     acceptanceReviewInstructions(readTaskInstructions(task.prompt)?.acceptance ?? []),
     'Before the final verdict, include a fenced json block {"reviewNotes":[{"finding":"specific defect, with file/location when known","suggestion":"actionable correction","kind":"finding"}]}. Use one entry per distinct finding. Use kind "suggestion" for optional improvements, which must not cause FAIL. On PASS all earlier open findings must be verified fixed; only optional suggestions may remain. Do not invent notes when there are none.',
     "Reuse the wording of an earlier finding when the same defect remains, so its history is retained rather than creating a duplicate.",
     'In that same JSON block include "resolvedNoteIds":["earlier-note-id"] only for earlier findings you verified fixed against code and checks. Resolve verified fixes even when another finding keeps this review at FAIL. Never resolve an unavailable acceptance check or a worker claim without verification. Absence from the new findings does not automatically resolve an old note.',
-    'For every required finding add category "code" (locally fixable deliverable) or "external" (only an explicitly required acceptance check needs unavailable device/access/user input), and an actionable suggestion. Use external only after checking that no local implementation or test fix can address that finding. An external finding must name the unavailable resource and the exact next check. Mixed reviews keep code defects as code; never hide missing functionality as external. Both categories still require FAIL until satisfied.',
+    'For every required finding add category "code" (locally fixable deliverable) or "external" (only an explicitly required acceptance check needs unavailable device/access/user input), and an actionable suggestion. Use external only after checking that no local implementation or test fix can address that finding. An external finding must name the unavailable resource and the exact next check. Mixed reviews keep code defects as code; never hide missing functionality as external. Both categories still require FAIL; the host keeps correcting code findings and reports external checks to the owner after the task finishes.',
     "",
     "End your reply with exactly one final line, either",
     "VERDICT: PASS",
@@ -223,7 +231,16 @@ function reviewPrompt(task: HostTask): string {
 /** The task's prompt, led by where to work when the task has a worktree of
  * its own: an agent told to work in the project folder would otherwise edit
  * the main checkout, leaving the task's branch empty. */
+/** Unattended workers decide within scope and report briefly; the owner reads
+ * this after the task finishes instead of being interrupted while it runs. */
+const WORKER_COMPLETION_GUIDANCE = [
+  "This task runs unattended and the owner is unavailable while it runs. Do not stop to ask questions: when something is ambiguous, choose the most reasonable option within the task scope, record the assumption, and finish the work. Stop only when a permission, credential or destructive action you are not authorized to take is required.",
+  "End with a short final summary of at most about 8 lines: what changed, checks run with their results, and anything the owner must know (assumptions, unavailable checks, remaining risks).",
+].join("\n");
 function workerPrompt(task: HostTask, projectCwd: string, sharedEdits: string[] = []): string {
+  return `${workerInstructions(task, projectCwd, sharedEdits)}\n\n${WORKER_COMPLETION_GUIDANCE}`;
+}
+function workerInstructions(task: HostTask, projectCwd: string, sharedEdits: string[] = []): string {
   const shared = sharedEdits.length
     ? `Files with uncommitted edits by other sessions in ${projectCwd} (information only; they are not part of your base and must not be copied): ${sharedEdits.join(", ")}. Avoid editing these unless the task requires it; then keep your change minimal and self-contained so both can be reconciled on delivery.`
     : "";
@@ -271,7 +288,7 @@ function workerPrompt(task: HostTask, projectCwd: string, sharedEdits: string[] 
     "",
     "Previous verification feedback:",
     task.retryFeedback,
-    "Summarize the changes actually made, checks run with their results, which findings remain, and any unavailable resource plus the concrete next action. If an earlier correction did not address a finding, explain why and choose a different approach. Do not just repeat the previous completion claim or retry an unavailable physical acceptance test.",
+    "Briefly summarize the changes actually made, checks run with their results, which findings remain, and any unavailable resource plus the concrete next action. If an earlier correction did not address a finding, explain why and choose a different approach. Do not just repeat the previous completion claim or retry an unavailable physical acceptance test.",
   ].join("\n");
 }
 /** The verdict of the reviewer's last turn: from its latest message that
@@ -298,6 +315,86 @@ function reviewerReply(
         .join("\n\n");
   }
   return "";
+}
+const OWNER_NOTICE_LIMIT = 30;
+/** Automatic retries of a worker run that failed for a transient runtime reason. */
+export const MAX_RUNTIME_RETRIES = 2;
+/** Automatic continuations when an unattended worker asks the owner a question. */
+export const MAX_QUESTION_CONTINUATIONS = 2;
+const RUNTIME_RETRY_NOTICE = "runtime-retry:";
+const QUESTION_NOTICE = "question:";
+/** One short plain sentence for an owner notice. */
+function noticeText(text: string): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  const sentence = line.match(/^.{20,}?[.!?](?=\s|$)/)?.[0] ?? line;
+  return sentence.length > 240 ? `${sentence.slice(0, 237).trimEnd()}...` : sentence;
+}
+function ownerNotice(kind: TaskOwnerNotice["kind"], message: string, at: number, id?: string) {
+  return { id: id ?? randomUUID(), kind, message: noticeText(message), at } as TaskOwnerNotice;
+}
+/** A worker run succeeded and left a usable failed review or check result. */
+function completableWithFindings(task: HostTask): boolean {
+  if (task.crewRunId || task.mergeRepair || task.reviewOnly || !task.sessionId) return false;
+  const { review, command } = task.verification ?? {};
+  return Boolean(
+    (review?.verdict === "fail" && review.note !== NO_VERDICT) ||
+    (command && !command.timedOut && command.exitCode !== null && command.exitCode !== 0),
+  );
+}
+function completionNotices(
+  task: HostTask,
+  error: string,
+  now: number,
+  reason: "external" | "no_progress" | "limit",
+): TaskOwnerNotice[] {
+  const open = (task.reviewNotes ?? []).filter(
+    (note) => note.kind === "finding" && note.resolvedAt === undefined,
+  );
+  const notices = open.map((note) =>
+    note.category === "external"
+      ? ownerNotice("external_check", note.suggestion ?? note.finding, now)
+      : ownerNotice("remaining_finding", note.finding, now),
+  );
+  const command = task.verification?.command;
+  if (command && !command.timedOut && command.exitCode !== 0)
+    notices.push(
+      ownerNotice(
+        "remaining_finding",
+        `The check command still fails (exit code ${command.exitCode}).`,
+        now,
+      ),
+    );
+  if (!notices.length)
+    notices.push(ownerNotice("remaining_finding", error.replace(/^Review failed:\s*/, ""), now));
+  const external = open.length > 0 && open.every((note) => note.category === "external");
+  notices.push(
+    ownerNotice(
+      "auto_continued",
+      reason === "external" || (external && !command)
+        ? "Finished without the external checks listed; run them before relying on this work."
+        : reason === "no_progress"
+          ? "Automatic correction stopped making progress, so the task finished with the open findings listed."
+          : `Automatic correction reached its limit after ${task.repairAttempts ?? 0} attempts, so the task finished with the open findings listed.`,
+      now,
+    ),
+  );
+  return notices;
+}
+/** Provider, network and session failures that a fresh attempt can overcome.
+ * Owner stops, budgets, limits, permission/credential gates and host stops are not. */
+function isTransientRunFailure(task: HostTask, error: string | undefined): boolean {
+  if (task.error || !error || error === HOST_INTERRUPTED || error === STOPPED_BY_USER) return false;
+  if (error === "The run's session was deleted.") return false;
+  return !/permission|approv|denied|credential|unauthori[sz]ed|forbidden|budget|billing|sign(?:ed)?[- ]?(?:in|out)|log(?:ged)?[- ]?(?:in|out)|api key|persist|time limit|run limit/i.test(
+    error,
+  );
+}
+function runtimeRetryCount(task: HostTask): number {
+  return (task.ownerNotices ?? []).filter((notice) => notice.id.startsWith(RUNTIME_RETRY_NOTICE))
+    .length;
+}
+function questionContinuationCount(task: HostTask): number {
+  return (task.ownerNotices ?? []).filter((notice) => notice.id.startsWith(QUESTION_NOTICE)).length;
 }
 /** Works through this machine's task backlog with no desktop open. Explicit
  * direct tasks share the selected checkout; other tasks require an isolated
@@ -1169,6 +1266,8 @@ export class HostTasks {
         autoMerged,
         mergedAt,
         deliveredCommit: _deliveredCommit,
+        ownerNotices: _ownerNotices,
+        completedWithFindings,
         ...rest
       } = task;
       if (!task.merged)
@@ -1176,7 +1275,9 @@ export class HostTasks {
           ...rest,
           ...(rest.mergeRepair ? { mergeRepair: { ...rest.mergeRepair, attempts: 0 } } : {}),
           retryFeedback: await this.retryFeedback(task),
-          repairAttempts: task.repairAttempts,
+          // An owner rerun of work finished with findings gets a fresh correction budget.
+          repairAttempts: completedWithFindings ? 0 : task.repairAttempts,
+          ...(completedWithFindings ? { reviewFailureCount: 0 } : {}),
           repairNote: task.repairNote,
           repairStop: task.repairStop,
           status: to,
@@ -2179,21 +2280,22 @@ export class HostTasks {
     });
   }
   /** Correct failed deliverables in unattended work without releasing dependencies.
-   * Runtime failures, cancellation, missing verdicts and unavailable checks stay stopped. */
+   * Every reviewed task corrects itself within a bounded number of attempts. When
+   * correction is exhausted, the task finishes with its open findings reported to
+   * the owner instead of stopping. Explicit rechecks, crew assignments, merge
+   * repairs and failures without a usable verdict or check result stay stopped. */
   private async repairOrBlock(task: HostTask, error: string, now: number): Promise<HostTask> {
-    if (task.blockedTakeover && !task.continueUntilDone)
-      return await this.block(
-        {
-          ...task,
-          repairStop: {
-            reason: "no_progress",
-            message:
-              "The independent recovery agent could not complete this task. Provide the missing resource or update the instructions using the worker's concrete request.",
-          },
-        },
-        error,
-        now,
-      );
+    const canFinish = completableWithFindings(task);
+    if (task.blockedTakeover && !task.continueUntilDone) {
+      const stop = {
+        reason: "no_progress" as const,
+        message:
+          "The independent recovery agent could not complete this task. Provide the missing resource or update the instructions using the worker's concrete request.",
+      };
+      return canFinish
+        ? await this.completeWithFindings(task, error, now, stop.reason)
+        : await this.block({ ...task, repairStop: stop }, error, now);
+    }
     if (
       !task.continueUntilDone &&
       taskReviewFailureCount(task) >= MAX_TASK_REVIEW_FAILURES &&
@@ -2203,21 +2305,26 @@ export class HostTasks {
     if (task.reviewOnly && !task.repairStop)
       task = { ...task, repairStop: { reason: "no_progress", message: TASK_INPUT_REQUIRED } };
     const attempts = task.repairAttempts ?? 0;
-    if (task.repairStop || task.reviewOnly) return await this.block(task, error, now);
-    if (
-      !(
-        task.continueUntilDone ||
-        task.autoMerge ||
-        task.goalId ||
-        task.source === "goal" ||
-        task.source === "steward"
-      ) ||
-      (!task.continueUntilDone && attempts >= MAX_REPAIR_ATTEMPTS)
-    )
+    if (task.reviewOnly) return await this.block(task, error, now);
+    if (task.repairStop)
+      return canFinish
+        ? await this.completeWithFindings(task, error, now, task.repairStop.reason)
+        : await this.block(task, error, now);
+    // Crew assignments keep their coordinator-owned correction policy.
+    const corrects =
+      !task.crewRunId ||
+      task.continueUntilDone ||
+      task.autoMerge ||
+      task.goalId ||
+      task.source === "goal" ||
+      task.source === "steward";
+    const exhausted = !task.continueUntilDone && attempts >= MAX_REPAIR_ATTEMPTS;
+    if (!corrects || exhausted) {
+      if (exhausted && canFinish) return await this.completeWithFindings(task, error, now, "limit");
       return await this.block(
         {
           ...task,
-          ...(!task.continueUntilDone && attempts >= MAX_REPAIR_ATTEMPTS
+          ...(exhausted
             ? {
                 repairStop: {
                   reason: "limit" as const,
@@ -2230,6 +2337,7 @@ export class HostTasks {
         error,
         now,
       );
+    }
     const failed = { ...task, error };
     return await this.write({
       ...task,
@@ -2246,6 +2354,35 @@ export class HostTasks {
       verification: undefined,
       needsInput: undefined,
       updatedAt: now,
+    });
+  }
+  /** Finish a task whose worker succeeded but whose automatic correction is
+   * exhausted. The failed review stays recorded (PASS is never claimed), open
+   * findings become owner notices, and delivery always waits for the owner. */
+  private async completeWithFindings(
+    task: HostTask,
+    error: string,
+    now: number,
+    reason: "external" | "no_progress" | "limit",
+  ): Promise<HostTask> {
+    const notices = completionNotices(task, error, now, reason);
+    const diffStat = await this.diffStat(task);
+    return await this.enterReview({
+      ...task,
+      error: undefined,
+      repairStop: undefined,
+      repairNote: error,
+      completedWithFindings: true,
+      ownerNotices: [...(task.ownerNotices ?? []), ...notices].slice(-OWNER_NOTICE_LIMIT),
+      ...(hasUnmergedBranch(task) || task.workspaceId ? { deliveryApprovalRequired: true } : {}),
+      ...(task.autoMerge || task.deliveryRequested
+        ? {
+            autoMerge: undefined,
+            deliveryRequested: undefined,
+            deliveryState: task.merged ? ("merged" as const) : ("awaitingOwner" as const),
+          }
+        : {}),
+      diffStat,
     });
   }
   /** Only infrastructure interruptions may resume without owner intervention.
@@ -2844,6 +2981,7 @@ export class HostTasks {
       now,
     );
     if (outcome.state === "running") {
+      if (outcome.needsInput && (await this.continueUnansweredQuestion(task, now))) return;
       if (outcome.needsInput !== Boolean(task.needsInput))
         await this.write({
           ...task,
@@ -2872,11 +3010,101 @@ export class HostTasks {
         await this.requeueInterrupted(task, now);
         return;
       }
+      if (
+        outcome.status === "failed" &&
+        !task.crewRunId &&
+        isTransientRunFailure(task, outcome.error) &&
+        runtimeRetryCount(task) < MAX_RUNTIME_RETRIES
+      ) {
+        await this.retryTransientFailure(task, outcome.error!, now);
+        return;
+      }
       await this.block(
         task,
         outcome.status === "cancelled" ? STOPPED_BY_USER : (outcome.error ?? "The run failed."),
         now,
       );
+    }
+  }
+  /** A transient provider/network/session failure gets a fresh worker run that
+   * continues from the retained working copy, a bounded number of times. */
+  private async retryTransientFailure(task: HostTask, error: string, now: number): Promise<void> {
+    const attempt = runtimeRetryCount(task) + 1;
+    const note = `The previous run stopped with a runtime error (${error.slice(0, 500)}). Continue the same task from the existing work in the checkout; do not restart finished parts.`;
+    await this.write({
+      ...task,
+      status: "queued",
+      retryFeedback: [task.retryFeedback, note]
+        .filter(Boolean)
+        .join("\n\n")
+        .slice(-RETRY_FEEDBACK_LIMIT),
+      ownerNotices: [
+        ...(task.ownerNotices ?? []),
+        ownerNotice(
+          "auto_continued",
+          `Retried automatically after a runtime error (${attempt}/${MAX_RUNTIME_RETRIES}).`,
+          now,
+          `${RUNTIME_RETRY_NOTICE}${randomUUID()}`,
+        ),
+      ].slice(-OWNER_NOTICE_LIMIT),
+      sessionId: undefined,
+      runId: undefined,
+      startedAt: undefined,
+      completedAt: undefined,
+      error: undefined,
+      reviewer: undefined,
+      verification: undefined,
+      needsInput: undefined,
+      updatedAt: now,
+    });
+  }
+  /** An unattended worker waiting on a clarifying question is told to decide
+   * itself. Approval prompts, non-skippable questions and repeated questions
+   * still wait for the owner. */
+  private async continueUnansweredQuestion(task: HostTask, now: number): Promise<boolean> {
+    if (task.crewRunId || questionContinuationCount(task) >= MAX_QUESTION_CONTINUATIONS)
+      return false;
+    try {
+      const session = await this.store.session(task.sessionId ?? "");
+      const question = session.session.pendingQuestion;
+      if (
+        session.status !== "running" ||
+        session.runId !== task.runId ||
+        !question ||
+        hasPendingApproval(session.session.blocks) ||
+        ["sending", "queued", "unknown"].includes(question.delivery ?? "") ||
+        (question.dismissAction !== undefined && question.dismissAction !== "skip")
+      )
+        return false;
+      const asked = question.questions
+        .map((entry) => entry.prompt)
+        .join(" ")
+        .trim();
+      await this.engine.command({
+        type: "answer",
+        commandId: randomUUID(),
+        sessionId: task.sessionId!,
+        runId: session.runId,
+        requestId: question.requestId,
+        reply: { kind: "skipped" },
+      });
+      await this.write({
+        ...task,
+        needsInput: undefined,
+        ownerNotices: [
+          ...(task.ownerNotices ?? []),
+          ownerNotice(
+            "info",
+            `The worker asked "${asked.slice(0, 160) || "a question"}" and continued with its own judgment.`,
+            now,
+            `${QUESTION_NOTICE}${randomUUID()}`,
+          ),
+        ].slice(-OWNER_NOTICE_LIMIT),
+        updatedAt: now,
+      });
+      return true;
+    } catch {
+      return false;
     }
   }
   /** Runs the task's checks in the background: commits what the agent left,
@@ -3392,6 +3620,7 @@ export class HostTasks {
         verification,
         reviewNotes: reviewed.reviewNotes,
         repairStop: undefined,
+        completedWithFindings: undefined,
         attemptHistory,
         diffStat,
       });
@@ -3661,7 +3890,9 @@ export class HostTasks {
       throw new Error("The delivery plan does not belong to this task.");
     if (!["review", "done"].includes(task.status))
       throw new Error("Finish task verification before delivery.");
-    const blocker = autoMergeBlocker(task);
+    // A task finished with open findings has no PASS by design; this owner-
+    // authorized delivery is the explicit approval its notices ask for.
+    const blocker = task.completedWithFindings ? undefined : autoMergeBlocker(task);
     if (blocker) throw new Error(blocker);
     if (this.delivering.has(id)) throw new Error("This task is already being delivered.");
     this.delivering.add(id);

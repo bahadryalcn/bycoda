@@ -39,15 +39,24 @@ include an applicable card path.
   meaningful completeness check before reporting.
 
 For named features, search skills and read recent Git history.
-For T1/T2, read its existing `.agents/skills/feature-<name>/SKILL.md`. Check
+For T1/T2, read its existing `.agents/skills/feature-<name>/SKILL.md` and only
+the linked references needed for the affected scope. Feature skills are concise
+developer workflows and preservation contracts, not chronological work logs. Check
 live feature claims across worktrees; a tracked card is not a concurrency lock.
 Continue existing work or record an explicit dependency/sub-scope. If claim APIs
 are unavailable, report the coordination gap and inspect available session state;
 do not pretend a local card reserves a feature. Create cards only for T2 using
-`.agents/skills/feature-card-template/SKILL.md`. Card updates include delivered
-behavior and commit references. Record owner decisions only with an
-exact quote, date and session/source; label agent ideas as proposals. Update user
+`.agents/skills/feature-card-template/SKILL.md`. Update current contracts and source
+maps in place; reuse canonical architecture/user docs rather than copying them.
+Keep task checklists, delivered scope, commit references, verification results and
+build inclusion in the task handoff, not repeated dated sections in the skill.
+Record durable owner decisions only with an exact quote, date and session/source
+in a conditional reference; historical permissions do not authorize a new task.
+Label agent ideas as proposals. Update user
 guides when behavior changes.
+For feature-skill documentation changes, run
+`node scripts/checks/check-feature-skills.mjs` and review preserved contracts;
+structural checks do not validate historical runtime or acceptance claims.
 
 A requested capability includes the Host, API, tool and Rust work it needs behind
 existing permission gates. Preserve functions, drafts, persistence, validation,

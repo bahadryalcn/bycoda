@@ -8,12 +8,14 @@ import { newSession } from "../../../../features/sessions/model/session";
 const client = vi.hoisted(() => ({
   machine: "local" as string | undefined,
   firstLook: undefined as Promise<void> | undefined,
+  discoveryPending: false,
   acquire: vi.fn(),
   release: vi.fn(async () => undefined),
 }));
 vi.mock("../../../../features/connections/model/runLeaseClient", () => ({
   runLeaseMachine: () => client.machine,
   firstRunLeaseLook: () => client.firstLook,
+  isRunLeaseDiscoveryPending: () => client.discoveryPending,
   acquireRunLease: client.acquire,
   releaseRunLease: client.release,
   isRunLeasePending: () => false,
@@ -46,6 +48,7 @@ const pre = {
 beforeEach(() => {
   client.machine = "local";
   client.firstLook = undefined;
+  client.discoveryPending = false;
   client.acquire.mockReset();
   client.release.mockClear();
   resetSessionsStore([session]);
@@ -57,6 +60,18 @@ it("starts the turn exactly as before when there is no host that grants leases",
   expect(gateRunLease(ctx, input(), pre, start)).toBeUndefined();
   expect(start).not.toHaveBeenCalled();
   expect(client.acquire).not.toHaveBeenCalled();
+});
+
+it("does not treat a still-pending initial ownership probe as permission to start", async () => {
+  client.machine = undefined;
+  client.firstLook = Promise.resolve();
+  client.discoveryPending = true;
+  const start = vi.fn(() => true);
+  expect(await gateRunLease(ctx, input(), pre, start)).toBe(false);
+  expect(start).not.toHaveBeenCalled();
+  expect(client.acquire).not.toHaveBeenCalled();
+  expect(getSessions()[0].queueStatus).toBe("paused");
+  expect(getSessions()[0].blocks.at(-1)).toMatchObject({ notice: "error", text: expect.stringContaining("discovery is still pending") });
 });
 
 it("starts the turn once the lease is granted, and keeps it for the turn", async () => {
@@ -84,6 +99,31 @@ it("starts the turn when the host cannot be asked", async () => {
   const start = vi.fn(() => true);
   expect(await gateRunLease(ctx, input(), pre, start)).toBe(true);
   expect(start).toHaveBeenCalledOnce();
+});
+
+it("retains an unsent message and displays retirement failure without starting or automatically queueing it", async () => {
+  client.acquire.mockResolvedValue({ kind: "failed", text: "Previous Host writer retirement is unconfirmed" });
+  const start = vi.fn(() => true);
+  const request = input();
+  request.attachments = [{ id: "retained", name: "draft.txt" } as never];
+  expect(await gateRunLease(ctx, request, pre, start)).toBe(false);
+  expect(start).not.toHaveBeenCalled();
+  expect(client.release).not.toHaveBeenCalled();
+  const current = getSessions()[0];
+  expect(current.queuedMessages).toMatchObject([{ text: "typed on the desktop", attachments: request.attachments }]);
+  expect(current.queueStatus).toBe("paused");
+  expect(current.blocks.at(-1)).toMatchObject({ role: "system", notice: "error", text: "Previous Host writer retirement is unconfirmed" });
+  expect(current.busy).toBeFalsy();
+});
+
+it("reports managed retirement failure to its caller without creating an interactive queue row", async () => {
+  client.acquire.mockResolvedValue({ kind: "failed", text: "Retirement failed" });
+  const onSettled = vi.fn();
+  const start = vi.fn(() => true);
+  expect(await gateRunLease(ctx, input({ managed: true, onSettled } as never), pre, start)).toBe(false);
+  expect(start).not.toHaveBeenCalled();
+  expect(onSettled).toHaveBeenCalledWith({ status: "failed", text: "", error: "Retirement failed" });
+  expect(getSessions()[0].queuedMessages ?? []).toEqual([]);
 });
 
 it("queues the message while another computer runs a turn: nothing started, nothing paused", async () => {

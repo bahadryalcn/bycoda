@@ -14,7 +14,8 @@
   "bycoda": {
     "entrypoints": {
       "index.html": "./src/main.ts",
-      "quick-composer.html": "./src/quick-composer.ts"
+      "quick-composer.html": "./src/quick-composer.ts",
+      "voice-overlay.html": "./src/voice-overlay.ts"
     }
   }
 }

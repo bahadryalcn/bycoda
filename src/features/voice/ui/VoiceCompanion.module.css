@@ -119,13 +119,32 @@
   display: none;
 }
 .panel[data-compact] {
-  inline-size: min(304px, calc(100vw - 16px));
+  inline-size: min(380px, calc(100vw - 16px));
   grid-template-rows: auto;
   border-radius: 999px;
 }
 .panel[data-compact] .header {
   border-block-end: 0;
-  padding: 5px 8px;
+  gap: 6px;
+  padding: 5px 6px 5px 4px;
+}
+/* Released here, the panel continues as a floating window outside the app. */
+.panel[data-detaching] {
+  border-color: var(--ui-focus-ring-color);
+}
+.heading {
+  display: grid;
+  flex: 1;
+  min-inline-size: 0;
+  line-height: 1.3;
+}
+.summary {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-secondary);
+  font-size: 11.5px;
 }
 .panel[data-compact] .drag {
   block-size: auto;

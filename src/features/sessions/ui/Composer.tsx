@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
 import {
   DeliveryProgressNotice,
   deliveryIsPending,
@@ -1790,6 +1791,18 @@ export const Composer = memo(function Composer({
     applyExternalDraftRef.current = applyExternalDraft;
   });
   const composingRef = useRef(false);
+  useEffect(
+    () =>
+      sessionId
+        ? registerVoiceDraftReader(sessionId, () => ({
+            text: ref.current?.value ?? draftTextRef.current,
+            attachments: attachmentsRef.current,
+            composing: composingRef.current,
+            attachmentsPending: !!pasteFlightRef.current,
+          }))
+        : undefined,
+    [sessionId],
+  );
   const deferredExternalDraftRef = useRef<DeferredExternalDraft | null>(null);
   useEffect(() => {
     const el = ref.current;
@@ -4497,6 +4510,8 @@ export function ComposerAction({
           </>
         ) : null}
         <Button
+          variant="primary"
+          tone="danger"
           motion="none"
           iconOnly
           label={t("Stop")}

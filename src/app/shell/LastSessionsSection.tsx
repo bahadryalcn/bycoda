@@ -431,7 +431,7 @@ function SessionRow({
         {draft ? (
           <PenLine
             aria-hidden="true"
-            className="icon-xs shrink-0 text-(--ui-text-secondary)"
+            className="icon-xs shrink-0 text-(--ui-tone-warning-fg)"
             strokeWidth={1.75}
           />
         ) : null}

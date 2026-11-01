@@ -40,7 +40,7 @@ export function VoiceSessionPicker({
     () => [
       {
         value: FOLLOW,
-        label: active ? `${t("Active session")}: ${active.title}` : t("Follow active session"),
+        label: active ? active.title || t("Untitled session") : t("Follow active session"),
         description: t("Follow active session"),
       },
       ...targets.map((session) => {

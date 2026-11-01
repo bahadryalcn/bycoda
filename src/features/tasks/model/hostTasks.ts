@@ -74,6 +74,18 @@ export type TaskVerification = {
   acceptance?: TaskAcceptanceReport;
 };
 
+export type TaskOwnerNotice = {
+  id: string;
+  /** remaining_finding: correction limit reached with this finding open.
+   * external_check: needs a device/access/credential the task could not get.
+   * auto_continued: a stop condition was converted into continued work.
+   * info: anything else the owner should know after completion. */
+  kind: "remaining_finding" | "external_check" | "auto_continued" | "info";
+  /** One short sentence for the owner, plain language. */
+  message: string;
+  at: number;
+};
+
 export type TaskReviewNote = {
   id: string;
   finding: string;
@@ -235,6 +247,13 @@ export type HostTask = HostTaskInput & {
     reason: "external" | "no_progress" | "limit";
     message: string;
   };
+  /** Non-blocking items the owner should see once the task finishes (remaining
+   * findings, unavailable external checks, auto-continued limits). The task
+   * keeps running instead of stopping for them. */
+  ownerNotices?: TaskOwnerNotice[];
+  /** The task finished after exhausting automatic correction with open
+   * findings; review PASS is not claimed. */
+  completedWithFindings?: boolean;
   /** Bounded, durable outcomes; worker summaries are claims, not acceptance evidence. */
   attemptHistory?: {
     attempt: number;

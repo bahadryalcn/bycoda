@@ -4,6 +4,8 @@ import { sessionsRef as liveSessions, useSession } from "../../sessions/model/se
 import { Button } from "../../../shared/ui/Button";
 import { hasActiveOverlay, useOverlay } from "../../../shared/ui/overlay";
 import {
+  AppWindow,
+  ExternalLink,
   GripVertical,
   Minimize2,
   Maximize2,
@@ -19,7 +21,11 @@ import { errorText } from "../../../shared/lib/errors";
 import { LocalVoice, type SpeechBinding } from "../model/localVoice";
 import { RealtimeVoice } from "../model/realtimeVoice";
 import { realtimeSecret, type RealtimeProvider } from "../model/realtimeVoiceClient";
-import { converseWithSession, warmVoiceReply } from "../model/voiceConversation";
+import {
+  converseWithSession,
+  warmVoiceReply,
+  immediateVoiceDecision,
+} from "../model/voiceConversation";
 import { clampVoicePosition, voiceContext, voiceTarget } from "../model/voiceSession";
 import styles from "./VoiceCompanion.module.css";
 import {
@@ -31,13 +37,38 @@ import {
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { VoiceOptionsMenu, VoiceSessionPicker } from "./VoicePanelChoices";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { createVoiceController } from "../model/voiceController";
+import { converseWithAssistant } from "../model/voiceAssistant";
+import { voiceTools } from "../model/realtimeVoice";
+import type { VoiceWorkspaceProject } from "../model/voiceWorkspaceActions";
+import type { useVoiceWorkspaceActions } from "../../../app/workspace/bridges/useVoiceWorkspaceActions";
 import { voiceVisualState } from "../model/voiceVisualState";
+import { voiceWorkText } from "../model/voiceWork";
+import {
+  closeVoiceOverlay,
+  hasNativeWindows,
+  openVoiceOverlay,
+  pointerOutsideWindow,
+  voiceSummaryLine,
+  VOICE_OVERLAY_COMPACT_SIZE,
+  VOICE_OVERLAY_EXPANDED_WIDTH,
+  type VoiceOverlayCommand,
+  type VoiceOverlayPlacement,
+} from "../model/voiceOverlay";
+import { useVoiceOverlayHost } from "./useVoiceOverlayHost";
 
 /** Cloud speech-to-speech providers, signed in through Grok Build or Codex. */
 const REALTIME: Record<"grok" | "openai", { provider: RealtimeProvider; name: string }> = {
   grok: { provider: "xai", name: "Grok Voice" },
   openai: { provider: "openai", name: "OpenAI Realtime" },
 };
+
+type SpeechTarget = { sessionId?: string; projectPath: string };
+// LocalVoice copies bindings while recognition is pending; carry the immutable
+// onset target with that copy without changing the accepted-turn owner yet.
+const speechTarget = Symbol("voiceSpeechTarget");
+type CapturedSpeechBinding = SpeechBinding & { [speechTarget]: SpeechTarget };
 
 /** Host RPC rejections arrive as strings; keep their reason instead of a generic fallback. */
 function voiceError(cause: unknown, fallback: string): string {
@@ -49,6 +80,11 @@ export type VoiceCompanionProps = {
   sessions: Session[];
   onSubmit: (sessionId: string, text: string) => boolean | Promise<boolean>;
   onStop: (sessionId: string) => void;
+  workspace?: ReturnType<typeof useVoiceWorkspaceActions>;
+  projects?: readonly VoiceWorkspaceProject[];
+  projectPath?: string;
+  ensureToolSession?: (projectPath: string) => Promise<string>;
+  assistantSession?: Session;
 };
 export function VoiceCompanion(props: VoiceCompanionProps) {
   const locale = useLocale();
@@ -64,6 +100,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     "listening",
   );
   const [pinned, setPinned] = useState<string | null>(null);
+  const [globalScope, setGlobalScope] = useState(true);
+  const scopeRef = useRef(globalScope);
+  scopeRef.current = globalScope;
+  const turnSessionId = useRef<string | undefined>(undefined);
+  const turnProjectPath = useRef("");
+  const turnCaptured = useRef(false);
+  const turnRevision = useRef(0);
   const pinnedRef = useRef(pinned);
   useLayoutEffect(() => {
     latest.current = props;
@@ -74,6 +117,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState("");
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  // The session stays here; `detached` only moves its controls to a native
+  // always-on-top window that can float over other applications.
+  const [detached, setDetached] = useState(false);
+  const [detaching, setDetaching] = useState(false);
+  const canDetach = hasNativeWindows();
   const panel = useRef<HTMLElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const compactToggle = useRef<HTMLButtonElement>(null);
@@ -89,6 +137,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const sideRequest = useRef<AbortController | null>(null);
   const history = useRef(new Map<string, { role: string; text: string }[]>());
   const jobs = useRef(new Map<string, { sawBusy: boolean; assistantId?: string }>());
+  const workAttempt = useRef<{
+    sessionId: string;
+    text: string;
+    result: Promise<{ accepted: boolean }>;
+  } | null>(null);
   const drag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const shellTarget = voiceTarget(props.activeId, pinned, props.sessions);
   const target = useSession(open ? shellTarget?.id : undefined) ?? shellTarget;
@@ -96,8 +149,84 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     liveSessions.current.find((item) => item.id === id) ??
     latest.current.sessions.find((item) => item.id === id);
   const currentTarget = () => findSession(pinnedRef.current ?? latest.current.activeId);
+  const controller = useRef<ReturnType<typeof createVoiceController> | null>(null);
+  if (!controller.current)
+    controller.current = createVoiceController(() => ({
+      getScope: () => (scopeRef.current ? "global" : "session"),
+      getProjects: () =>
+        (latest.current.projects ?? []).filter(
+          (project) =>
+            scopeRef.current ||
+            project.path ===
+              findSession(turnCaptured.current ? turnSessionId.current : currentTarget()?.id)?.cwd,
+        ),
+      getSessions: () => [
+        ...latest.current.sessions.filter(
+          (item) => !liveSessions.current.some((live) => live.id === item.id),
+        ),
+        ...liveSessions.current,
+      ],
+      getProjectPath: () =>
+        turnCaptured.current
+          ? turnProjectPath.current
+          : (latest.current.projectPath ?? currentTarget()?.cwd ?? ""),
+      getTargetId: () => (turnCaptured.current ? turnSessionId.current : currentTarget()?.id),
+      workspace: latest.current.workspace ?? {
+        tools: [],
+        execute: async () => {
+          throw new Error("Workspace actions are unavailable.");
+        },
+      },
+      ensureToolSession: latest.current.ensureToolSession,
+      image: (dataUrl) =>
+        client.current instanceof RealtimeVoice
+          ? client.current.addImage(dataUrl)
+          : { accepted: false, error: "This voice provider cannot inspect images." },
+    }));
+  function currentSpeechTarget(): SpeechTarget {
+    const session = currentTarget();
+    return {
+      sessionId: session?.id,
+      projectPath: session?.cwd ?? latest.current.projectPath ?? "",
+    };
+  }
+  function captureTurn(snapshot: SpeechTarget) {
+    turnRevision.current++;
+    workAttempt.current = null;
+    turnCaptured.current = true;
+    turnSessionId.current = snapshot.sessionId;
+    turnProjectPath.current = snapshot.projectPath;
+    if (latest.current.workspace) controller.current!.captureTurn();
+  }
+  function submitWork(session: Session, text: string, epoch: number, active: () => boolean) {
+    const previous = workAttempt.current;
+    if (previous) {
+      if (previous.sessionId === session.id && previous.text === text) return previous.result;
+      return Promise.resolve({
+        accepted: false,
+        error:
+          "Work was already attempted for this spoken turn. Check the session before retrying.",
+      });
+    }
+    // Store before invoking the callback, including ambiguous failures. Rephrasing
+    // or retrying a tool call is not a second user authorization.
+    const result = Promise.resolve().then(async () => {
+      if (generation.current !== epoch || !active()) return { accepted: false };
+      const accepted = await latest.current.onSubmit(session.id, text);
+      if (generation.current === epoch && accepted)
+        jobs.current.set(session.id, {
+          sawBusy: Boolean(session.busy),
+          assistantId: session.blocks.filter((block) => block.role === "assistant").slice(-1)[0]
+            ?.id,
+        });
+      return { accepted };
+    });
+    workAttempt.current = { sessionId: session.id, text, result };
+    return result;
+  }
   function close() {
     generation.current++;
+    turnCaptured.current = false;
     sequence.current++;
     sideRequest.current?.abort();
     sideRequest.current = null;
@@ -130,7 +259,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     returnFocus.current = true;
     setOpen(false);
   }
-  useOverlay(panel, false, undefined, open, undefined, false, true);
+  useOverlay(panel, false, undefined, open && !detached, undefined, false, true);
   useLayoutEffect(() => {
     if (open)
       (compact
@@ -142,6 +271,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       returnFocus.current = false;
     }
   }, [open]);
+  useEffect(() => {
+    // A reloaded page lost the session a floating window was mirroring.
+    if (canDetach) void closeVoiceOverlay().catch(() => undefined);
+  }, []);
   useEffect(
     () => () => {
       generation.current++;
@@ -212,7 +345,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       observer.disconnect();
       window.removeEventListener("resize", clamp);
     };
-  }, [open]);
+  }, [open, detached]);
   async function onSpeech(text: string, binding: SpeechBinding, epoch: number) {
     if (
       generation.current !== epoch ||
@@ -221,7 +354,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     )
       return;
     consumedSequence.current = binding.sequence;
-    const session = findSession(binding.sessionId);
+    const session =
+      findSession(binding.sessionId) ??
+      (latest.current.workspace ? latest.current.assistantSession : undefined);
     if (!session) {
       setError(t("Select a session and speak again."));
       return;
@@ -232,8 +367,58 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     const controller = new AbortController();
     sideRequest.current?.abort();
     sideRequest.current = controller;
+    const historyKey = latest.current.workspace ? "global" : session.id;
+    const exchanges = history.current.get(historyKey) ?? [];
+    // Accepted speech is context even if a correction supersedes its pending
+    // model reply. Keep the current utterance out of its own previous exchanges.
+    history.current.set(historyKey, [...exchanges, { role: "user", text }].slice(-12));
+    const recordResponse = (entry: { role: string; text: string }) => {
+      history.current.set(historyKey, [...(history.current.get(historyKey) ?? []), entry].slice(-12));
+    };
     try {
-      const exchanges = history.current.get(session.id) ?? [];
+      if (latest.current.workspace) {
+        const immediate = immediateVoiceDecision(text, session);
+        if (immediate?.action === "silence") {
+          client.current?.silence();
+          return;
+        }
+        if (immediate?.action === "stop" && binding.sessionId) {
+          latest.current.onStop(binding.sessionId);
+          reply(immediate.reply, session);
+          return;
+        }
+        const decision = await converseWithAssistant({
+          session,
+          transcript: text,
+          context: thisController().context(),
+          history: exchanges,
+          signal: controller.signal,
+          tools: voiceTools,
+          execute: async (name, args) => {
+            if (
+              controller.signal.aborted ||
+              generation.current !== epoch ||
+              binding.sequence !== sequence.current
+            )
+              throw new Error("The spoken request is no longer active.");
+            return realtimeTool(
+              name,
+              args,
+              epoch,
+              () => !controller.signal.aborted && binding.sequence === sequence.current,
+            );
+          },
+        });
+        if (
+          controller.signal.aborted ||
+          generation.current !== epoch ||
+          binding.sequence !== sequence.current
+        )
+          return;
+        recordResponse({ role: "assistant", text: decision.reply });
+        reply(decision.reply);
+        return;
+      }
       let streamed = false;
       const decision = await converseWithSession(
         session,
@@ -266,14 +451,39 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         const fresh = findSession(session.id);
         if (!fresh || fresh.historyLoading || fresh.historyLoadError || fresh.worktreeRemoved)
           throw new Error(t("The session is not ready for work."));
-        const accepted = await latest.current.onSubmit(session.id, text);
+        const brief = voiceWorkText(decision.text ?? text);
+        const receipt = {
+          role: "assistant",
+          text: JSON.stringify({ handoff: brief, status: "submitting" }),
+        };
+        recordResponse(receipt);
+        const recordReceipt = (outcome: object) => {
+          if (generation.current !== epoch) return;
+          // Update only this receipt. A newer discussion/correction owns its
+          // own history, even when the original submission resolves later.
+          history.current.set(
+            session.id,
+            (history.current.get(session.id) ?? []).map((entry) =>
+              entry === receipt
+                ? { role: "assistant", text: JSON.stringify({ handoff: brief, ...outcome }) }
+                : entry,
+            ),
+          );
+        };
+        let accepted: boolean;
+        try {
+          ({ accepted } = await submitWork(
+            session,
+            brief,
+            epoch,
+            () => !controller.signal.aborted && binding.sequence === sequence.current,
+          ));
+          recordReceipt({ accepted });
+        } catch (cause) {
+          recordReceipt({ status: "uncertain" });
+          throw cause;
+        }
         if (generation.current !== epoch) return;
-        if (accepted)
-          jobs.current.set(session.id, {
-            sawBusy: Boolean(session.busy),
-            assistantId: session.blocks.filter((block) => block.role === "assistant").slice(-1)[0]
-              ?.id,
-          });
         if (binding.sequence === sequence.current)
           reply(
             t(
@@ -284,12 +494,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             session,
           );
       } else {
-        history.current.set(
-          session.id,
-          [...exchanges, { role: "user", text }, { role: "assistant", text: decision.reply }].slice(
-            -6,
-          ),
-        );
+        recordResponse({ role: "assistant", text: decision.reply });
         // A streamed reply is already shown and queued for speech.
         if (!streamed) reply(decision.reply, session);
       }
@@ -305,29 +510,58 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       if (generation.current === epoch) void warmVoiceReply(session);
     }
   }
+  function thisController() {
+    return controller.current!;
+  }
   /** Tools of the cloud companion, with the same readiness checks as local voice. */
-  async function realtimeTool(name: string, args: Record<string, unknown>, epoch: number) {
-    const session = currentTarget();
+  async function realtimeTool(
+    name: string,
+    args: Record<string, unknown>,
+    epoch: number,
+    active: () => boolean = () => true,
+  ) {
+    const revision = turnRevision.current;
+    const isActive = () => active() && turnRevision.current === revision;
+    if (generation.current !== epoch || !isActive())
+      return { error: "The voice connection is no longer active." };
+    if (
+      latest.current.workspace &&
+      [
+        "app_context",
+        "app_tools_list",
+        "app_tool_call",
+        "composer_context",
+        "composer_attachment",
+      ].includes(name)
+    )
+      return thisController().execute(name, args, () => generation.current === epoch && isActive());
+    const session = findSession(turnCaptured.current ? turnSessionId.current : currentTarget()?.id);
     if (!session) return { error: "No session is selected." };
-    if (name === "session_context") return voiceContext(session);
+    if (name === "session_context")
+      return {
+        ...voiceContext(session),
+        ...(latest.current.workspace ? { app: thisController().context() } : {}),
+      };
     if (name === "stop_work") {
       latest.current.onStop(session.id);
-      return { stopped: true };
+      return { accepted: true, status: "stop_requested" };
     }
     if (name !== "submit_work") return { error: "Unknown tool." };
-    const text = typeof args.text === "string" ? args.text.trim().slice(0, 16000) : "";
-    if (!text) return { accepted: false, error: "The request was empty." };
+    let text: string;
+    try {
+      if (Object.keys(args).some((key) => key !== "text"))
+        throw new Error("Unexpected work brief fields.");
+      text = voiceWorkText(args.text);
+    } catch (cause) {
+      return { accepted: false, error: voiceError(cause, "The voice work brief is invalid.") };
+    }
     const fresh = findSession(session.id);
     if (!fresh || fresh.historyLoading || fresh.historyLoadError || fresh.worktreeRemoved)
       return { accepted: false, error: "The session is not ready for work." };
-    const accepted = await latest.current.onSubmit(session.id, text);
-    if (generation.current !== epoch) return { accepted: false };
-    if (accepted)
-      jobs.current.set(session.id, {
-        sawBusy: Boolean(session.busy),
-        assistantId: session.blocks.filter((block) => block.role === "assistant").slice(-1)[0]?.id,
-      });
-    return { accepted };
+    const result = await submitWork(session, text, epoch, isActive);
+    // Once dispatch began, cancellation cannot undo acceptance. The realtime
+    // response owner suppresses stale speech; retain the actual delivery receipt.
+    return result;
   }
   async function startRealtime(epoch: number, provider: RealtimeProvider) {
     const voice = new RealtimeVoice(
@@ -344,6 +578,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         },
         transcript: (text) => {
           if (generation.current === epoch) setTranscript(text);
+        },
+        captureTurn: () => {
+          const snapshot = currentSpeechTarget();
+          return () => captureTurn(snapshot);
         },
         playback: (active) => {
           if (generation.current === epoch) setPlayback(active);
@@ -372,7 +610,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     }
   }
   async function start() {
-    if (client.current || status === "connecting" || !currentTarget()) return;
+    if (
+      client.current ||
+      status === "connecting" ||
+      (!currentTarget() && (!latest.current.workspace || !scopeRef.current))
+    )
+      return;
     const epoch = ++generation.current;
     setStatus("connecting");
     setError("");
@@ -382,18 +625,28 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     // Prime native voice enumeration before the first response.
     globalThis.speechSynthesis?.getVoices();
     // The reply provider starts in parallel with the local models.
-    void warmVoiceReply(currentTarget()!);
+    const warmTarget = currentTarget() ?? latest.current.assistantSession;
+    if (warmTarget) void warmVoiceReply(warmTarget);
     const voice = new LocalVoice(
       {
         start: () => {
+          const session = currentTarget();
+          // No-op when already warm; otherwise the provider starts while the user talks.
+          if (session) void warmVoiceReply(session);
+          return {
+            sessionId: session?.id,
+            sequence: sequence.current,
+            [speechTarget]: currentSpeechTarget(),
+          } satisfies CapturedSpeechBinding;
+        },
+        accept: (binding) => {
+          if (generation.current !== epoch || binding.sequence !== sequence.current) return;
           sequence.current++;
           sideRequest.current?.abort();
           sideRequest.current = null;
           setMessage("");
-          const session = currentTarget();
-          // No-op when already warm; otherwise the provider starts while the user talks.
-          if (session) void warmVoiceReply(session);
-          return { sessionId: session?.id, sequence: sequence.current };
+          captureTurn((binding as CapturedSpeechBinding)[speechTarget]);
+          return { ...binding, sequence: sequence.current };
         },
         transcript: (result, binding) => {
           void onSpeech(result.text, binding, epoch);
@@ -459,7 +712,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       label={micLabel}
       tooltip={micLabel}
       loading={status === "connecting"}
-      disabled={status === "idle" ? !target : status !== "live"}
+      disabled={
+        status === "idle" ? !target && (!props.workspace || !globalScope) : status !== "live"
+      }
       selected={status === "live" && muted}
       aria-pressed={status === "idle" ? undefined : muted}
       onClick={() => (status === "idle" ? void start() : toggleMute())}
@@ -470,6 +725,87 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   function setCompact(value: boolean) {
     saveVoiceSettings({ ...loadVoiceSettings(), compact: value });
   }
+  async function popOut(placement: Omit<VoiceOverlayPlacement, "width" | "height">) {
+    if (!canDetach) return;
+    try {
+      // The floating window measures and fits its own content after loading.
+      await openVoiceOverlay({
+        ...placement,
+        width: compact ? VOICE_OVERLAY_COMPACT_SIZE.width : VOICE_OVERLAY_EXPANDED_WIDTH,
+        height: compact
+          ? VOICE_OVERLAY_COMPACT_SIZE.height
+          : Math.max(VOICE_OVERLAY_COMPACT_SIZE.height, panel.current?.offsetHeight ?? 0),
+      });
+      setDetached(true);
+    } catch (cause) {
+      setError(voiceError(cause, "The floating voice window could not open."));
+    }
+  }
+  function dock() {
+    setDetached(false);
+    void closeVoiceOverlay().catch(() => undefined);
+  }
+  function onOverlayCommand(command: VoiceOverlayCommand) {
+    if (command === "start") void start();
+    else if (command === "toggleMute") {
+      if (status === "live") toggleMute();
+    } else if (command === "silence") client.current?.silence();
+    else if (command === "disconnect") close();
+    else if (command === "dock") dock();
+    else if (command === "close") {
+      dock();
+      dismiss();
+    }
+  }
+  const scopeTitle =
+    props.workspace && globalScope ? t("Global") : target?.title || t("Select a session");
+  useVoiceOverlayHost({
+    detached: open && detached,
+    level: audioLevel,
+    state: {
+      status,
+      visualState,
+      statusText,
+      title: scopeTitle,
+      muted,
+      working: Boolean(target?.busy),
+      canStart: Boolean(target) || Boolean(props.workspace && globalScope),
+      transcript,
+      message,
+      error,
+      privacy: realtime
+        ? t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
+            p1: realtime.name,
+          })
+        : t(
+            "Audio is processed on this computer. Replies use the session’s signed-in provider. No API key required.",
+          ),
+    },
+    onCommand: onOverlayCommand,
+    // Closed natively, or its owner reloaded: bring the controls home.
+    onClosed: () => setDetached(false),
+  });
+  const summary = voiceSummaryLine({ message, transcript, error, statusText });
+  const moveLabel = t(
+    canDetach
+      ? "Move voice window. Drag outside the app to float it. Use arrow keys to reposition."
+      : "Move voice window. Use arrow keys to reposition.",
+  );
+  if (open && detached)
+    return (
+      <div className={styles.launcher}>
+        <Button
+          ref={launcher}
+          iconOnly
+          selected
+          label={t("Return voice companion to this window")}
+          tooltip={t("Return voice companion to this window")}
+          onClick={dock}
+        >
+          <AppWindow size={16} />
+        </Button>
+      </div>
+    );
   if (!open)
     return (
       <div className={styles.launcher}>
@@ -507,6 +843,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       aria-label={t("Voice companion")}
       className={styles.panel}
       data-compact={compact || undefined}
+      data-detaching={detaching || undefined}
       data-voice-state={visualState}
       tabIndex={-1}
       onKeyDown={(event) => {
@@ -523,8 +860,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       <header className={styles.header}>
         <Button
           iconOnly
-          label={t("Move voice window. Use arrow keys to reposition.")}
-          tooltip={t("Move voice window. Use arrow keys to reposition.")}
+          variant="ghost"
+          label={moveLabel}
+          tooltip={moveLabel}
           className={styles.drag}
           onDoubleClick={() => {
             if (compact) setCompact(false);
@@ -541,6 +879,15 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           }}
           onPointerMove={(event) => {
             if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+            setDetaching(
+              canDetach &&
+                pointerOutsideWindow(
+                  event.clientX,
+                  event.clientY,
+                  window.innerWidth,
+                  window.innerHeight,
+                ),
+            );
             const rect = panel.current!.getBoundingClientRect();
             setPosition(
               clampVoicePosition(
@@ -553,8 +900,25 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               ),
             );
           }}
-          onPointerUp={() => {
+          onPointerUp={(event) => {
+            const grab = drag.current;
             drag.current = null;
+            setDetaching(false);
+            // Released beyond the app: continue as a native floating window
+            // under the pointer, keeping the same grab point.
+            if (
+              grab &&
+              canDetach &&
+              pointerOutsideWindow(
+                event.clientX,
+                event.clientY,
+                window.innerWidth,
+                window.innerHeight,
+              )
+            ) {
+              void popOut({ fromCursor: true, x: grab.x, y: grab.y });
+              return;
+            }
             if (position)
               try {
                 localStorage.setItem("bycoda:voice-position", JSON.stringify(position));
@@ -564,6 +928,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           }}
           onPointerCancel={() => {
             drag.current = null;
+            setDetaching(false);
           }}
           onKeyDown={(event) => {
             const moves: Record<string, [number, number]> = {
@@ -605,9 +970,15 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           )}
         </Button>
         {compact ? (
-          <h2 className={styles.title} title={target?.title}>
-            {target?.title || t("Select a session")}
-          </h2>
+          <div className={styles.heading}>
+            <h2 className={styles.title} title={target?.title}>
+              {scopeTitle}
+            </h2>
+            {/* The live line; the status region below stays authoritative for readers. */}
+            <span className={styles.summary} aria-hidden="true" title={summary}>
+              {summary}
+            </span>
+          </div>
         ) : (
           <div className={styles.session}>
             <VoiceSessionPicker
@@ -619,6 +990,19 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           </div>
         )}
         {compact ? micButton : <VoiceOptionsMenu />}
+        {canDetach && (
+          <Button
+            iconOnly
+            label={t("Float outside the app")}
+            tooltip={t("Float outside the app")}
+            onClick={() => {
+              const rect = panel.current?.getBoundingClientRect();
+              void popOut({ fromCursor: false, x: rect?.x ?? 0, y: rect?.y ?? 0 });
+            }}
+          >
+            <ExternalLink size={14} />
+          </Button>
+        )}
         <Button
           ref={compactToggle}
           iconOnly
@@ -647,6 +1031,19 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         </div>
       )}
       <div className={styles.body} hidden={compact}>
+        {props.workspace && (
+          <SegmentedControl
+            label={t("Voice scope")}
+            value={globalScope ? "global" : "session"}
+            onValueChange={(value) => {
+              setGlobalScope(value === "global");
+            }}
+            options={[
+              { value: "global", label: t("Global") },
+              { value: "session", label: t("Session") },
+            ]}
+          />
+        )}
         <div className={styles.state}>
           <VoiceVisualizer
             visual={settings.visual}
@@ -695,7 +1092,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             <Button
               variant="primary"
               data-voice-start
-              disabled={!target}
+              disabled={!target && (!props.workspace || !globalScope)}
               onClick={() => void start()}
               startIcon={<Mic size={14} />}
             >

@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { loadRemoteCapabilities } from "./connections";
 import { newSession } from "../../sessions/model/session";
-import { resetSessionsStore, setSessions } from "../../sessions/model/sessionsStore";
+import { getShellSessions, resetSessionsStore, setSessions } from "../../sessions/model/sessionsStore";
 import { LeaseHeldError } from "../../sync/model/runLease";
 import {
   acquireRunLease,
@@ -12,7 +14,9 @@ import {
   releaseAllRunLeases,
   releaseRunLease,
   RUN_LEASE_IDLE_RELEASE_MS,
+  RUN_LEASE_ACQUIRE_TIMEOUT_MS,
   runLeaseMachine,
+  probeRunLease,
 } from "./runLeaseClient";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
@@ -32,6 +36,8 @@ const transport = (async (_machine: string, method: string, params: Record<strin
 beforeEach(() => {
   calls.length = 0;
   answer = () => ({ lease });
+  vi.mocked(invoke).mockResolvedValue([]);
+  vi.mocked(loadRemoteCapabilities).mockResolvedValue([]);
   resetSessionsStore([]);
   configureRunLeaseClient({ transport, machineId: "local" });
 });
@@ -72,6 +78,175 @@ it("never blocks local work: no host, an older host or a failed call start the t
   expect(runLeaseMachine()).toBeUndefined();
   expect(await acquireRunLease("chat")).toEqual({ kind: "unavailable" });
   expect(calls).toHaveLength(2);
+});
+
+it("keeps explicit retirement refusals closed even across the error wire", async () => {
+  answer = () => { throw new Error("Host rejected: HOST_WRITER_RETIREMENT_FAILED: old writer unknown"); };
+  expect(await acquireRunLease("chat")).toMatchObject({
+    kind: "failed", text: expect.stringContaining("old writer unknown"),
+  });
+});
+
+it("does not start without ownership ACK from a retirement-capable Host", async () => {
+  configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+  answer = () => { throw new Error("RPC_HOST_UNAVAILABLE"); };
+  expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed" });
+});
+
+it("discovers retirement capability and retains it when a later connection probe fails", async () => {
+  vi.useFakeTimers();
+  try {
+    configureRunLeaseClient({ transport });
+    vi.mocked(invoke).mockResolvedValue([{ id: "local", environmentId: "env", localHost: true, endpoint: "http://127.0.0.1:1" }]);
+    vi.mocked(loadRemoteCapabilities).mockResolvedValue(["sessions.runLease", "sessions.host-writer-retirement.v1"]);
+    expect(await probeRunLease()).toBe("local");
+    await vi.advanceTimersByTimeAsync(15_001);
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("connection probe failed"));
+    expect(await probeRunLease()).toBe("local");
+    answer = () => { throw new Error("offline"); };
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed" });
+  } finally { vi.useRealTimers(); }
+});
+
+it("holds a pending retirement and returns a late grant by its original epoch", async () => {
+  vi.useFakeTimers();
+  try {
+    configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+    let finish!: (value: unknown) => void;
+    answer = (params) => params.action === "acquire"
+      ? new Promise((resolve) => { finish = resolve; }) : {};
+    const pending = acquireRunLease("chat");
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    expect(await pending).toMatchObject({ kind: "failed", text: expect.stringContaining("unconfirmed") });
+    expect(isRunLeasePending("chat")).toBe(false);
+    // A retry cannot reuse the abandoned request's same-holder lease before
+    // its late grant is returned, otherwise that release could cancel the retry.
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed", text: expect.stringContaining("still pending") });
+    expect(calls).toHaveLength(1);
+    finish({ lease });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].params).toMatchObject({ sessionId: "chat", action: "release", epoch: 7 });
+    expect(heldRunLeases()).toEqual([]);
+  } finally { vi.useRealTimers(); }
+});
+
+it("retains unknown ownership if returning an abandoned late lease fails", async () => {
+  vi.useFakeTimers();
+  try {
+    configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+    let finish!: (value: unknown) => void;
+    answer = (params) => {
+      if (params.action === "acquire") return new Promise((resolve) => { finish = resolve; });
+      throw new Error("release acknowledgement lost");
+    };
+    const pending = acquireRunLease("chat");
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    expect(await pending).toMatchObject({ kind: "failed" });
+    finish({ lease });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed", text: expect.stringContaining("unknown") });
+    expect(calls).toHaveLength(2);
+  } finally { vi.useRealTimers(); }
+});
+
+it.each([
+  "HOST_WRITER_RETIREMENT_PENDING: original writer is still stopping",
+  "HOST_WRITER_RETIREMENT_FAILED: original writer cleanup failed",
+  "LEASE_HELD: another writer owns the session",
+])("allows a fresh ownership check after a late definitive refusal: %s", async (refusal) => {
+  vi.useFakeTimers();
+  try {
+    configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+    const session = { ...newSession("codex", "/repo"), id: "chat", busy: false, providerSessionId: "original-thread" };
+    resetSessionsStore([session]);
+    let reject!: (error: Error) => void;
+    let retired = false;
+    answer = () => new Promise((_, fail) => { reject = fail; });
+    const first = acquireRunLease("chat");
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    expect(await first).toMatchObject({ kind: "failed" });
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed" });
+    expect(calls).toHaveLength(1);
+
+    reject(new Error(`Host rejected request: ${refusal}`));
+    await vi.advanceTimersByTimeAsync(0);
+    // No lease was granted: do not release anything or replay the unsent message.
+    expect(calls).toHaveLength(1);
+    answer = () => {
+      if (!retired) throw new Error(`Host rejected request: ${refusal}`);
+      return { lease: { ...lease, epoch: 8 } };
+    };
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: refusal.startsWith("LEASE_HELD") ? "held" : "failed" });
+    expect(calls).toHaveLength(2);
+    retired = true;
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "granted", lease: { epoch: 8 } });
+    expect(calls.map((call) => call.params.action)).toEqual(["acquire", "acquire", "acquire"]);
+    expect(calls.every((call) => call.params.sessionId === "chat")).toBe(true);
+    expect(calls.every((call) => call.params.clientId === calls[0].params.clientId)).toBe(true);
+    expect(getShellSessions()[0]).toMatchObject({ providerSessionId: "original-thread", busy: false });
+  } finally { vi.useRealTimers(); }
+});
+
+it("keeps a late transport failure guarded because it cannot exclude a grant", async () => {
+  vi.useFakeTimers();
+  try {
+    configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+    let reject!: (error: Error) => void;
+    answer = () => new Promise((_, fail) => { reject = fail; });
+    const first = acquireRunLease("chat");
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    expect(await first).toMatchObject({ kind: "failed" });
+    reject(new Error("RPC_HOST_UNAVAILABLE: response lost"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed", text: expect.stringContaining("unknown") });
+    expect(calls).toHaveLength(1);
+  } finally { vi.useRealTimers(); }
+});
+
+it("waits for the abandoned grant's release ACK before allowing a newer epoch", async () => {
+  vi.useFakeTimers();
+  try {
+    configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+    let grant!: (value: unknown) => void;
+    let release!: (value: unknown) => void;
+    answer = (params) => new Promise((resolve) => {
+      if (params.action === "acquire") grant = resolve;
+      else release = resolve;
+    });
+    const first = acquireRunLease("chat");
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    expect(await first).toMatchObject({ kind: "failed" });
+    grant({ lease });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls[1].params).toMatchObject({ action: "release", epoch: 7 });
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed" });
+    expect(calls).toHaveLength(2);
+    release({});
+    await vi.advanceTimersByTimeAsync(0);
+    answer = () => ({ lease: { ...lease, epoch: 8 } });
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "granted", lease: { epoch: 8 } });
+    expect(calls.map((call) => call.params.action)).toEqual(["acquire", "release", "acquire"]);
+  } finally { vi.useRealTimers(); }
+});
+
+it("does not mistake a late grant's release refusal for an acquisition refusal", async () => {
+  vi.useFakeTimers();
+  try {
+    configureRunLeaseClient({ transport, machineId: "local", retirement: true });
+    let finish!: (value: unknown) => void;
+    answer = (params) => {
+      if (params.action === "acquire") return new Promise((resolve) => { finish = resolve; });
+      throw new Error("HOST_WRITER_RETIREMENT_FAILED: release not acknowledged");
+    };
+    const first = acquireRunLease("chat");
+    await vi.advanceTimersByTimeAsync(RUN_LEASE_ACQUIRE_TIMEOUT_MS + 1);
+    expect(await first).toMatchObject({ kind: "failed" });
+    finish({ lease });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await acquireRunLease("chat")).toMatchObject({ kind: "failed", text: expect.stringContaining("unknown") });
+    expect(calls.map((call) => call.params.action)).toEqual(["acquire", "release"]);
+  } finally { vi.useRealTimers(); }
 });
 
 it("gives the lease back when the turn it was taken for ends", async () => {

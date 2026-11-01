@@ -2,6 +2,7 @@ import { useSidebarActions } from "./workspace/layout/useSidebarActions";
 import { useLocalSessionReferences } from "./workspace/sessions/useLocalSessionReferences";
 import { LocalSessionReferenceProvider } from "../features/sessions/ui/LocalSessionReferenceContext";
 import { VoiceCompanionGate } from "../features/voice/ui/VoiceCompanionGate";
+import { useVoiceAppBridge } from "./workspace/bridges/useVoiceAppBridge";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
 import {
   createConversationTerminalControl,
@@ -130,7 +131,7 @@ import { HAS_NATIVE_GLASS, IS_MAC } from "../platform/tauri/platform";
 import { useLinkedWorkspaceGroups } from "../features/projects/hooks/useLinkedWorkspaceGroups";
 import { additionalDirsForSession } from "../features/projects/model/additionalDirs";
 import { setAdditionalDirsResolver } from "../integrations/harness/core/additionalDirs";
-import { leafIds } from "../features/workspace/model/layout";
+import { leafIds, newTab } from "../features/workspace/model/layout";
 import { idleWorkspaceTabIds } from "../features/workspace/model/idleTabs";
 import { useCloseForeignEmptyTabs } from "./workspace/tabs/useCloseForeignEmptyTabs";
 import { composerDraftOf } from "../features/sessions/model/draftCache";
@@ -1911,6 +1912,33 @@ function Workspace({
     setRecents,
   });
   useQuickComposerLaunches(launchQuickSession);
+  const voiceApp = useVoiceAppBridge({
+    projects: visibleRecents,
+    sessions,
+    projectPath: projectCwd,
+    activeId: activeSessionId,
+    launch: launchQuickSession,
+    appendEmpty: (session) => {
+      setSessions((current) =>
+        current.some((entry) => entry.id === session.id) ? current : [...current, session],
+      );
+      appendTab(newTab(session.id), session.cwd);
+      setProjectCwd(session.cwd);
+    },
+    onSelectProject,
+    onOpen: onSelectHistorySession,
+    onOpenRemote: (path, sessionId) => onSelectRemoteSession(path, sessionId),
+    onClose: (sessionId) => {
+      const tab = tabsRef.current.find((entry) => leafIds(entry.layout).includes(sessionId));
+      if (!tab) return false;
+      onClosePane(sessionId, tab.id);
+    },
+    onRename: onRenameHistorySession,
+    onArchive: onArchiveHistorySession,
+    onDelete: onDeleteHistorySession,
+    onSubmit: submitSession,
+    onStop: (sessionId) => onStopRef.current(sessionId),
+  });
   const launchQuickSessionRef = useRef(launchQuickSession);
   launchQuickSessionRef.current = launchQuickSession;
   const submitSessionRef = useRef(submitSession);
@@ -2932,8 +2960,8 @@ function Workspace({
           >
             {compactTitleBar ? workspaceTitleBar : null}
             <VoiceCompanionGate
+              {...voiceApp}
               activeId={activeSessionId}
-              sessions={sessions}
               onSubmit={submitSession}
               onStop={onStop}
             />

@@ -66,9 +66,7 @@ describe("bulk session delete", () => {
     expect(bulkDeleteOutcome(result)).toBe(
       "1 conversation deleted. 1 running conversation was skipped. 1 conversation could not be deleted: disk full.",
     );
-    expect(bulkDeleteOutcome({ deleted: ["a", "b"], skipped: [], failed: [] })).toBe(
-      "2 conversations deleted.",
-    );
+    expect(bulkDeleteOutcome({ deleted: ["a", "b"], skipped: [], failed: [] })).toBe("");
   });
 
   it("words the confirmation for the count and the skipped ones", () => {

@@ -154,3 +154,56 @@
     display: none;
   }
 }
+
+/*
+ * A project with a working agent reads at a glance: a soft active tint, and a band of light that sweeps
+ * across the row. The layer sits above the row's ground and state fills but below its content, so a custom
+ * row colour, hover and selection all stay visible. Reduced motion and the no-shimmer performance switch
+ * keep the tint and stop the sweep; the spinner and the "Working" name and tooltip carry the state as well.
+ */
+[data-project-row][data-project-working] {
+  isolation: isolate;
+}
+
+[data-project-row][data-project-working]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--ui-working-row-sweep-layer), var(--ui-working-row-tint-layer);
+  background-size:
+    250% 100%,
+    auto;
+  background-repeat: no-repeat;
+  background-position:
+    150% 0,
+    0 0;
+  animation: project-row-working-sweep 2.4s linear infinite;
+}
+
+@keyframes project-row-working-sweep {
+  from {
+    background-position:
+      150% 0,
+      0 0;
+  }
+  to {
+    background-position:
+      -100% 0,
+      0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-project-row][data-project-working]::before {
+    animation: none;
+    background: var(--ui-working-row-tint-layer);
+  }
+}
+
+:root[data-performance-no-shimmer] [data-project-row][data-project-working]::before {
+  animation: none;
+  background: var(--ui-working-row-tint-layer);
+}

@@ -25,6 +25,9 @@ export function canEditTask(status: TaskStatus): boolean {
   return status === "todo" || status === "queued" || status === "blocked";
 }
 
+/** After this many consecutive failed reviews the host stops correcting. A task
+ * whose worker succeeded then finishes with owner notices (completedWithFindings)
+ * instead of blocking; only tasks that still end blocked need new instructions. */
 export const MAX_TASK_REVIEW_FAILURES = 3;
 
 export const TASK_INPUT_REQUIRED =

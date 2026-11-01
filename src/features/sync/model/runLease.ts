@@ -9,6 +9,7 @@
  * pause the queue or fork the conversation.
  */
 export const RUN_LEASE_CAPABILITY = "sessions.runLease";
+export const HOST_WRITER_RETIREMENT_CAPABILITY = "sessions.host-writer-retirement.v1";
 /**
  * A desktop lease ends this long after its last heartbeat. A busy window beats
  * every 1.5 s, but a hidden, throttled one only about once a minute; a lease

@@ -1,8 +1,9 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { Timeline } from "../../../shared/ui/Timeline";
+import { firstSentence } from "../model/taskStatusLine";
+import { ClampedMarkdown } from "./TaskStatusLine";
 import {
-  TASK_INPUT_REQUIRED,
   canTakeOverBlockedTask,
   taskRequiresInstructions,
   type HostTask,
@@ -34,34 +35,13 @@ export function TaskAttemptHistory({
   isOpeningSession?: (sessionId: string) => boolean;
 }) {
   useLocale();
-  const stop = repairStopLabel(task);
-  if (!stop && !task.attemptHistory?.length) return null;
+  if (!task.attemptHistory?.length) return null;
+  // The current stop reason lives in the detail panel's status alert.
   return (
     <section
       aria-label={t("Attempt history")}
       className="space-y-2 border-t border-(--ui-tone-neutral-border) pt-3"
     >
-      {stop ? (
-        <div className="space-y-1 text-ui-caption text-(--ui-tone-warning-fg)">
-          <p className="font-medium">{stop}</p>
-          <p className="whitespace-pre-wrap break-words">
-            {canTakeOverBlockedTask(task)
-              ? t(
-                  "A fresh AI session will inspect the previous attempts and continue the retained work automatically when capacity is available.",
-                )
-              : task.blockedTakeover && task.status !== "blocked"
-                ? t("The recovery agent must pass the original checks and review before delivery.")
-                : (task.repairStop?.message ??
-                  t("Inspect the previous worker and review before retrying."))}
-          </p>
-          <p className="text-(--ui-text-secondary)">
-            {taskRequiresInstructions(task) ? `${TASK_INPUT_REQUIRED} ` : ""}
-            {t(
-              "Dependent tasks stay queued until this task passes its checks and is delivered. Independent queued tasks can continue.",
-            )}
-          </p>
-        </div>
-      ) : null}
       {task.attemptHistory?.length ? (
         <>
           <h3 className="text-ui-caption font-medium text-(--ui-text-secondary)">
@@ -87,17 +67,7 @@ export function TaskAttemptHistory({
               ].join(" · "),
               tone: entry.verdict === "pass" ? ("success" as const) : ("danger" as const),
               meta: new Date(entry.at).toLocaleString(getLocale()),
-              detail: (
-                <>
-                  <p className="whitespace-pre-wrap break-words text-(--ui-text-secondary)">
-                    {entry.workerSummary}
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap break-words text-(--ui-text-secondary)">
-                    {t("Review: ")}
-                    {entry.note}
-                  </p>
-                </>
-              ),
+              detail: <AttemptDetail summary={entry.workerSummary} note={entry.note} />,
               actions: (
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-ui-micro text-(--ui-tone-info-fg)">
                   {entry.workerSessionId ? (
@@ -131,5 +101,25 @@ export function TaskAttemptHistory({
         </>
       ) : null}
     </section>
+  );
+}
+
+/** A worker's markdown summary and the review note, short until expanded. */
+function AttemptDetail({ summary, note }: { summary: string; note: string }) {
+  useLocale();
+  const shortNote = firstSentence(note, 160) ?? "";
+  const noteLine = (text: string) => (
+    <p className="mt-1.5 whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+      {t("Review: ")}
+      {text}
+    </p>
+  );
+  return (
+    <ClampedMarkdown
+      text={summary.trim() || t("No summary.")}
+      long={shortNote !== note.replace(/\s+/g, " ").trim()}
+      collapsedExtra={noteLine(shortNote)}
+      extra={noteLine(note)}
+    />
   );
 }

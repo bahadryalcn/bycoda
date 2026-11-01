@@ -99,6 +99,7 @@ export function validateCommonArtifact(candidate, artifact) {
   for (const required of [
     "dist/index.html",
     "dist/quick-composer.html",
+    "dist/voice-overlay.html",
     "dist/build-info.json",
     "build/build-info.json",
     "build/host/host.mjs",

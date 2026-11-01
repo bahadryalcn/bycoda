@@ -1424,7 +1424,7 @@ for (const width of [390, 768, 1440]) {
       await expect(page.getByRole("menuitem", { name: "Delete", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(actions).toBeFocused();
-      await complete.getByRole("button", { name: "Delivery is blocked", exact: true }).click();
+      await complete.locator("button[data-task-status-line]").click();
       const error = page.getByRole("dialog", { name: "Task details", exact: true });
       await expect(error).toContainText("The project has uncommitted changes.");
       await page.keyboard.press("Escape");

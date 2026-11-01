@@ -1221,6 +1221,111 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
+describe("Host writer transfer after settled task review", () => {
+  it("retires the exact completed turn before desktop continuation and preserves resume history", async () => {
+    const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+    const receipt = await engine.command({ type: "send", commandId: "review", sessionId: id, text: "Read-only review" });
+    await waitForTurnStart();
+    turns[0].input.onEvent({ type: "session.providerBound", providerSessionId: "review-thread" });
+    turns[0].finish();
+    await engine.waitForRun(id, receipt.runId);
+    const before = await store.session(id);
+    expect(before.status).toBe("idle");
+    expect(engine.hasRetainedProviderWriter(id)).toBe(true);
+    let release!: () => void;
+    vi.mocked(provider.stop).mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    const grant = vi.fn(async () => "desktop-lease");
+    const transfer = engine.withRetiredProviderWriter(id, grant);
+    await vi.waitFor(() => expect(provider.stop).toHaveBeenCalledOnce());
+    expect(provider.stop).toHaveBeenCalledWith(id, turns[0].input.operationContext);
+    expect(grant).not.toHaveBeenCalled();
+    expect(engine.hasRetainedProviderWriter(id)).toBe(true);
+    release();
+    expect(await transfer).toBe("desktop-lease");
+    expect(grant).toHaveBeenCalledOnce();
+    expect(engine.hasRetainedProviderWriter(id)).toBe(false);
+    expect((await store.session(id)).session).toEqual(before.session);
+    expect(provider.bind).toHaveBeenLastCalledWith(id, "review-thread", before.session.cwd, undefined);
+  });
+
+  it("refuses continuation after failed retirement, retaining the original receipt on retry", async () => {
+    const { engine, id, provider, turns, waitForTurnStart } = await setup();
+    const receipt = await engine.command({ type: "send", commandId: "review-fail", sessionId: id, text: "Review" });
+    await waitForTurnStart();
+    turns[0].finish();
+    await engine.waitForRun(id, receipt.runId);
+    vi.mocked(provider.stop).mockRejectedValueOnce(new Error("original writer retirement failed"));
+    const grant = vi.fn(async () => "unsafe");
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow("HOST_WRITER_RETIREMENT_FAILED");
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow("HOST_WRITER_RETIREMENT_FAILED");
+    expect(provider.stop).toHaveBeenCalledOnce();
+    expect(engine.hasRetainedProviderWriter(id)).toBe(true);
+    expect(grant).not.toHaveBeenCalled();
+  });
+
+  it("never retires an active turn to grant a desktop continuation", async () => {
+    const { engine, id, provider, waitForTurnStart } = await setup();
+    await engine.command({ type: "send", commandId: "active-review", sessionId: id, text: "Review" });
+    await waitForTurnStart();
+    const grant = vi.fn(async () => "unsafe");
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow("LEASE_HELD");
+    expect(provider.stop).not.toHaveBeenCalled();
+    expect(grant).not.toHaveBeenCalled();
+  });
+
+  it("keeps a timed-out retirement guarded and joins its original completion on owner retry", async () => {
+    const { engine, id, provider, turns, waitForTurnStart } = await setup();
+    const receipt = await engine.command({ type: "send", commandId: "pending-review", sessionId: id, text: "Review" });
+    await waitForTurnStart();
+    turns[0].finish();
+    await engine.waitForRun(id, receipt.runId);
+    const entered = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    vi.mocked(provider.stop).mockImplementationOnce(async () => {
+      entered.resolve();
+      await released.promise;
+    });
+    const grant = vi.fn(async () => "lease");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const transfer = engine.withRetiredProviderWriter(id, grant).catch((error: unknown) => error);
+      await entered.promise;
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(await transfer).toMatchObject({ message: expect.stringContaining("HOST_WRITER_RETIREMENT_PENDING") });
+      expect(grant).not.toHaveBeenCalled();
+      expect(engine.hasRetainedProviderWriter(id)).toBe(true);
+      await expect(engine.command({ type: "send", commandId: "unsafe-replacement", sessionId: id, text: "Must wait" })).rejects.toThrow("HOST_WRITER_RETIREMENT_PENDING");
+      expect(provider.send).toHaveBeenCalledOnce();
+      released.resolve();
+      expect(await engine.withRetiredProviderWriter(id, grant)).toBe("lease");
+      expect(provider.stop).toHaveBeenCalledOnce();
+      expect(engine.hasRetainedProviderWriter(id)).toBe(false);
+    } finally {
+      released.resolve();
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses the latest settled Host turn receipt and refuses unsupported transfer", async () => {
+    const { engine, id, provider, turns, waitForTurnStart } = await setup();
+    for (let index = 0; index < 2; index++) {
+      const receipt = await engine.command({ type: "send", commandId: `warm-${index}`, sessionId: id, text: "Review" });
+      await waitForTurnStart(index + 1);
+      turns[index].finish();
+      await engine.waitForRun(id, receipt.runId);
+    }
+    const hook = provider.retireOriginal;
+    delete provider.retireOriginal;
+    const grant = vi.fn(async () => "lease");
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow("HOST_WRITER_RETIREMENT_FAILED");
+    expect(provider.stop).not.toHaveBeenCalled();
+    expect(grant).not.toHaveBeenCalled();
+    provider.retireOriginal = hook;
+    await engine.withRetiredProviderWriter(id, grant);
+    expect(provider.stop).toHaveBeenCalledExactlyOnceWith(id, turns[1].input.operationContext);
+  });
+});
+
 async function setup(
   harness: RemoteProvider = "codex",
   overrides: Partial<Record<RemoteProvider, HostProvider>> = {},
@@ -1265,6 +1370,7 @@ async function setup(
     approve: vi.fn(),
     answer: vi.fn(),
   };
+  provider.retireOriginal = provider.stop;
   const engine = new HostEngine(
     store,
     Object.fromEntries(REMOTE_PROVIDERS.map((id) => [id, overrides[id] ?? provider])),

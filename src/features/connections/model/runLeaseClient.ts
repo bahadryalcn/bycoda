@@ -4,6 +4,7 @@ import {
   isLeaseHeld,
   leaseHeldText,
   RUN_LEASE_CAPABILITY,
+  HOST_WRITER_RETIREMENT_CAPABILITY,
   type RunLease,
 } from "../../sync/model/runLease";
 import { loadRemoteCapabilities, remoteRequest } from "./connections";
@@ -16,13 +17,14 @@ import type { RemoteMachine } from "./protocol";
  * home host is asked for the conversation's lease (a loopback call). If another
  * computer already runs a turn of it, the host answers `LEASE_HELD`: the
  * message is queued, never sent, and the conversation never forks. Everything
- * else (no host, an older host, a failed call) lets the turn start as before:
- * the lease protects a conversation, it never blocks local work.
+ * Legacy hosts keep their offline fallback. Hosts advertising writer retirement
+ * must acknowledge ownership transfer before this window starts a provider.
  */
 export type RunLeaseOutcome =
   | { kind: "granted"; lease: RunLease }
   /** The host does not offer leases, or could not be asked. */
   | { kind: "unavailable" }
+  | { kind: "failed"; text: string }
   | { kind: "held"; text: string };
 
 type Transport = <T>(
@@ -40,16 +42,19 @@ export const RUN_LEASE_ACQUIRE_TIMEOUT_MS = 4_000;
 /** A lease whose turn never becomes busy here (it failed to start) is given back after this. */
 export const RUN_LEASE_IDLE_RELEASE_MS = 30_000;
 
-let machine: { id: string | undefined; checkedAt: number } | undefined;
+let machine: { id: string | undefined; checkedAt: number; retirement?: boolean } | undefined;
 let probing: Promise<string | undefined> | undefined;
 let transport: Transport = (id, method, params) => remoteRequest(id, method, params);
 
 /** Replaces the host transport and forgets what was learned (tests). */
-export function configureRunLeaseClient(next?: { transport?: Transport; machineId?: string }) {
+export function configureRunLeaseClient(next?: { transport?: Transport; machineId?: string; retirement?: boolean }) {
   transport = next?.transport ?? ((id, method, params) => remoteRequest(id, method, params));
-  machine = next?.machineId ? { id: next.machineId, checkedAt: Infinity } : undefined;
+  machine = next?.machineId
+    ? { id: next.machineId, checkedAt: Infinity, retirement: next.retirement }
+    : undefined;
   probing = undefined;
   pending.clear();
+  retirementWaits.clear();
   for (const state of tracked.values()) clearTimeout(state.idleTimer);
   tracked.clear();
 }
@@ -59,10 +64,22 @@ async function discover(): Promise<string | undefined> {
     const machines = await invoke<RemoteMachine[]>("remote_machines");
     const found = (Array.isArray(machines) ? machines : []).find(isLocalSyncMachine);
     const capabilities = found && (await loadRemoteCapabilities(found.environmentId));
+    if (machine?.retirement && (!found || (found.id === machine.id && !capabilities))) {
+      machine = { ...machine, checkedAt: Date.now() };
+      return machine.id;
+    }
     const id = found && capabilities?.includes(RUN_LEASE_CAPABILITY) ? found.id : undefined;
-    machine = { id, checkedAt: Date.now() };
+    machine = {
+      id,
+      checkedAt: Date.now(),
+      retirement: capabilities?.includes(HOST_WRITER_RETIREMENT_CAPABILITY),
+    };
     return id;
   } catch {
+    if (machine?.retirement) {
+      machine = { ...machine, checkedAt: Date.now() };
+      return machine.id;
+    }
     machine = { id: undefined, checkedAt: Date.now() };
     return undefined;
   } finally {
@@ -78,6 +95,9 @@ export function runLeaseMachine(): string | undefined {
   probing ??= discover();
   return machine?.id;
 }
+
+/** No ownership decision exists yet; a slow first probe is not offline proof. */
+export const isRunLeaseDiscoveryPending = (): boolean => !machine && !!probing;
 
 /**
  * While the very first look at the host is under way (nothing is known yet),
@@ -101,6 +121,8 @@ export async function probeRunLease(): Promise<string | undefined> {
 
 /** Conversations whose lease is being asked for: a second submit waits for the first. */
 const pending = new Set<string>();
+/** Abandoned transfer requests still own their eventual grant until returned. */
+const retirementWaits = new Map<string, Promise<unknown>>();
 export const isRunLeasePending = (sessionId: string): boolean => pending.has(sessionId);
 
 /** Leases this window took, until their turn ends. */
@@ -191,6 +213,11 @@ function trackLease(sessionId: string, lease: RunLease, late = false) {
 export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcome> {
   const id = runLeaseMachine();
   if (!id) return { kind: "unavailable" };
+  if (retirementWaits.has(sessionId)) return {
+    kind: "failed",
+    text: "Message not sent: the previous ownership transfer is still pending or unknown. Your message is retained. Check the task repair state or Host connection before continuing.",
+  };
+  const retirement = machine?.retirement === true;
   pending.add(sessionId);
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -213,6 +240,32 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
     return { kind: "granted", lease };
   } catch (error) {
     if (timedOut) {
+      if (retirement) {
+        // No provider started. A late lease belongs to this abandoned request,
+        // never to a later send; return only that epoch without tracking it.
+        const cleanup = request.then(
+          ({ lease }) => transport(id, "sessions.runLease", {
+            sessionId, clientId: holder(), action: "release", epoch: lease.epoch,
+          }),
+          (error: unknown) => {
+            // These acquire refusals precede a grant. Retirement may still be
+            // pending on the Host, but a fresh query cannot reuse a late lease.
+            // Handle only the acquire rejection here: a release failure after
+            // a grant must remain guarded even if it carries the same code.
+            const text = error instanceof Error ? error.message : String(error);
+            if (isLeaseHeld(error) || /\bHOST_WRITER_RETIREMENT_(?:FAILED|PENDING):/.test(text)) return;
+            throw error;
+          },
+        );
+        retirementWaits.set(sessionId, cleanup);
+        void cleanup.then(() => {
+          if (retirementWaits.get(sessionId) === cleanup) retirementWaits.delete(sessionId);
+        }, () => {}); // Uncertain grant/release remains held, never reused by a new send.
+        return {
+          kind: "failed",
+          text: "Message not sent: the previous Host writer's retirement is still unconfirmed. Your message is retained. Check the task or Host connection before continuing.",
+        };
+      }
       // The grant may still arrive: keep it for the turn that started without it
       // (renewed by the heartbeat while busy, given back if it never runs) rather
       // than leaving it on the host until it runs out.
@@ -225,6 +278,12 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
       return { kind: "unavailable" };
     }
     if (isLeaseHeld(error)) return { kind: "held", text: leaseHeldText(error) };
+    const text = error instanceof Error ? error.message : String(error);
+    if (/HOST_WRITER_RETIREMENT_(?:FAILED|PENDING)/.test(text) || retirement)
+      return {
+        kind: "failed",
+        text: `Message not sent: Host writer ownership could not be confirmed. Your message is retained. Check the task repair state or Host connection. ${text}`,
+      };
     // The host is unreachable or does not know leases: start the turn as before.
     return { kind: "unavailable" };
   } finally {

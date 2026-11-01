@@ -38,12 +38,22 @@ import {
   Undo2,
   X,
 } from "../../../shared/ui/icons";
-import { repairStopLabel } from "./TaskAttemptHistory";
+import { taskStatusLine, type TaskStatusKind } from "../model/taskStatusLine";
+import { TaskStatusText } from "./TaskStatusLine";
 import { unreadReviewNotes } from "../model/taskReviewNotes";
 import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
 import { resolveModel } from "../../sessions/model/models";
 import { taskInstructionsSummary } from "../model/taskInstructions";
 import { isStewardProposal } from "../model/stewardClient";
+
+const QUIET_STATUS: ReadonlySet<TaskStatusKind> = new Set([
+  "todo",
+  "queued",
+  "running",
+  "finished",
+  "done",
+  "blocked",
+]);
 
 export const TaskCard = memo(function TaskCard({
   task,
@@ -120,17 +130,15 @@ function TaskCardBody({
   const description = taskInstructionsSummary(task.prompt);
   const unread = unreadReviewNotes(task.reviewNotes);
   // Exceptional state leads the card; machine, model and branch are ambient.
+  const status = taskStatusLine(task);
+  const hasFailureDetails = Boolean(
+    task.error || task.mergeError || task.budgetStop || task.repairStop || task.verification,
+  );
+  // The column already names plain states; the line names everything else.
+  const showStatus = !QUIET_STATUS.has(status.kind) || (status.kind === "blocked" && hasFailureDetails);
   const statusBadges =
-    task.source === "steward" ||
-    task.autoMerged ||
-    task.status === "verifying" ||
-    task.needsInput ||
-    taskRequiresInstructions(task) ? (
+    task.source === "steward" || task.autoMerged ? (
       <>
-        {task.needsInput || taskRequiresInstructions(task) ? (
-          <Badge tone="warning">{t("Needs input")}</Badge>
-        ) : null}
-        {task.status === "verifying" ? <Badge tone="info">{t("Verifying")}</Badge> : null}
         {task.autoMerged ? (
           <Badge data-task-auto-merged tone="success">
             {t("Merged automatically")}
@@ -183,29 +191,12 @@ function TaskCardBody({
       {statusBadges ? (
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">{statusBadges}</div>
       ) : null}
-      {repairStopLabel(task) ? (
-        <p className="task-recovery-status">{repairStopLabel(task)}</p>
-      ) : null}
-      {task.error || task.mergeError || task.verification?.review?.verdict === "fail" ? (
-        <p className="text-ui-secondary">
-          <Button
-            variant="link"
-            tone="danger"
-            layout="text"
-            align="start"
-            data-no-drag=""
-            onClick={(event) => {
-              event.stopPropagation();
-              setFailureOpen(true);
-            }}
-          >
-            {task.mergeError
-              ? t("Delivery is blocked")
-              : task.verification?.review?.verdict === "fail"
-                ? t("Review failed")
-                : t("Task failed")}
-          </Button>
-        </p>
+      {showStatus ? (
+        <TaskStatusText
+          className="mbs-1"
+          status={status}
+          onOpen={hasFailureDetails ? () => setFailureOpen(true) : undefined}
+        />
       ) : null}
       {task.branch || taskWorkspaceState(task).workspaceId ? (
         <div className="mbs-1 flex flex-wrap gap-x-2 text-ui-micro">
@@ -293,6 +284,9 @@ function TaskCardBody({
           <Modal title={t("Task details")} onClose={() => setFailureOpen(false)}>
             <div className="task-status-details">
               <h3>{task.title}</h3>
+              <TaskStatusText status={{ ...status, detail: undefined }} />
+              {task.budgetStop ? <p>{task.budgetStop}</p> : null}
+              {task.repairStop?.message ? <p>{task.repairStop.message}</p> : null}
               {task.error ? <p>{task.error}</p> : null}
               {task.mergeError ? <p>{task.mergeError}</p> : null}
               {task.verification ? <VerificationSummary verification={task.verification} /> : null}

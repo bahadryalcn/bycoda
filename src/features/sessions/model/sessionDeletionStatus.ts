@@ -26,9 +26,11 @@ export const subscribeSessionDeletionStatus = (listener: () => void) => {
 };
 
 export function setSessionDeletionStatus(status: SessionDeletionStatus) {
+  // Successful removal is already visible in the list. Keep only progress and
+  // outcomes that need attention, without requiring a second dismissal.
   snapshot = [
     ...snapshot.filter((entry) => !entry.outcome && entry.sessionId !== status.sessionId),
-    status,
+    ...(status.outcome === "deleted" && !status.error ? [] : [status]),
   ];
   listeners.forEach((listener) => listener());
 }

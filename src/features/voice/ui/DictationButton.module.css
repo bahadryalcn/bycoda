@@ -1,0 +1,84 @@
+/* Icon content only: the shared Button owns geometry, tones and interaction. */
+.visual {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+
+.ring {
+  width: 14px;
+  height: 14px;
+  border: 1.75px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  animation: dictation-spin 900ms linear infinite;
+}
+
+.wave,
+.dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 16px;
+}
+
+.wave i {
+  width: 2px;
+  height: 14px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: scaleY(calc(0.2 + var(--dictation-level, 0) * 0.8));
+  transition: transform 100ms ease-out;
+}
+
+.wave i:nth-child(2),
+.wave i:nth-child(4) {
+  height: 10px;
+}
+.wave i:first-child,
+.wave i:last-child {
+  height: 6px;
+}
+
+.dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dictation-dot 1000ms ease-in-out infinite;
+}
+.dots i:nth-child(2) {
+  animation-delay: 120ms;
+}
+.dots i:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+@keyframes dictation-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes dictation-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring,
+  .dots i {
+    animation: none;
+  }
+  .wave i {
+    transform: none;
+    transition: none;
+  }
+}

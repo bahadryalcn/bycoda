@@ -386,6 +386,20 @@ async function setup(verifyTimeoutMs?: number) {
     await vi.waitFor(() => expect(turns.at(-1)!.input.text).toContain("VERDICT: PASS"));
     return await task(started.id);
   };
+  /** Older hosts blocked the first failed review. Recreate that persisted state:
+   * an explicit recheck still blocks on FAIL, then its markers are removed. */
+  const legacyFailedReview = async (reply: string, id = "main") => {
+    await store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.reviewOnly', json('true')) WHERE id=?")
+      .run(id);
+    await finish((await task(id)).reviewer!.sessionId!, reply);
+    await store.db
+      .prepare(
+        "UPDATE tasks SET value=json_remove(value, '$.reviewOnly', '$.repairStop', '$.needsInput') WHERE id=?",
+      )
+      .run(id);
+    return await task(id);
+  };
   /** Orchestrator fixture: the separately tested delivery service owns Git. */
   const approve = async (id = "main") => {
     const result = await task(id);
@@ -438,6 +452,7 @@ async function setup(verifyTimeoutMs?: number) {
     run,
     review,
     reviewing,
+    legacyFailedReview,
     approve,
     advance,
     finish,
@@ -1346,6 +1361,71 @@ describe("host tasks", () => {
     clock.now += MINUTE;
     await tasks.tick();
     expect(await task()).toMatchObject({ status: "blocked", error: "Not signed in" });
+    expect((await task()).ownerNotices).toBeUndefined();
+  });
+  it("retries a transient runtime failure twice in a fresh session, then blocks", async () => {
+    const { tasks, run, task, turns, settled, clock } = await setup();
+    await run();
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const session = (await task()).sessionId!;
+      turns.at(-1)!.fail(new Error("Provider overloaded (529). Try again later."));
+      await settled(session);
+      clock.now += MINUTE;
+      await tasks.tick();
+      expect((await task()).status).toBe("running");
+      expect((await task()).sessionId).not.toBe(session);
+      expect((await task()).repairAttempts).toBeUndefined();
+      expect((await task()).ownerNotices).toHaveLength(attempt);
+      expect((await task()).ownerNotices!.at(-1)).toMatchObject({ kind: "auto_continued" });
+      expect(turns.at(-1)!.input.text).toContain("Provider overloaded (529)");
+    }
+    const session = (await task()).sessionId!;
+    turns.at(-1)!.fail(new Error("Provider overloaded (529). Try again later."));
+    await settled(session);
+    clock.now += MINUTE;
+    await tasks.tick();
+    expect(await task()).toMatchObject({ status: "blocked" });
+    expect((await task()).error).toContain("Provider overloaded (529)");
+  });
+  it("continues an unattended worker question and reports it after completion", async () => {
+    const { tasks, run, task, turns, provider, store, clock, finish } = await setup();
+    const started = await run();
+    const turn = turns.at(-1)!;
+    turn.input.onEvent({
+      type: "question.asked",
+      requestId: 7,
+      questions: [
+        {
+          id: "q1",
+          prompt: "Which report format should I use?",
+          multiSelect: false,
+          allowCustom: true,
+          options: [{ id: "md", label: "Markdown" }],
+        },
+      ],
+    });
+    await vi.waitFor(async () =>
+      expect((await store.session(started.sessionId!)).session.pendingQuestion?.requestId).toBe(
+        7,
+      ),
+    );
+    clock.now += MINUTE;
+    await tasks.tick();
+    await vi.waitFor(() =>
+      expect(provider.answer).toHaveBeenCalledWith(started.sessionId, 7, { kind: "skipped" }),
+    );
+    expect((await task()).status).toBe("running");
+    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).ownerNotices).toEqual([
+      expect.objectContaining({
+        kind: "info",
+        message: expect.stringContaining("Which report format should I use?"),
+      }),
+    ]);
+    turn.input.onEvent({ type: "question.resolved", requestId: 7, decision: "skipped" });
+    await finish(started.sessionId!, "Used Markdown, the format of earlier reports.");
+    expect((await task()).status).toBe("done");
+    expect((await task()).ownerNotices).toHaveLength(1);
   });
   it("stops a task that passes its time limit and blocks it", async () => {
     const { tasks, run, task, provider, settled, clock } = await setup();
@@ -2151,22 +2231,20 @@ describe("task verification", () => {
     const s = await setup();
     const started = await s.reviewing({ prompt: acceptancePrompt });
     await s.finish(started.reviewer!.sessionId!, "VERDICT: PASS");
-    expect(await s.task()).toMatchObject({
-      status: "blocked",
-      verification: {
-        review: { verdict: "fail" },
-        acceptance: { criteria: [{ verdict: "unresolved" }, { verdict: "unresolved" }] },
-      },
-    });
-    expect((await s.task()).error).toContain("Acceptance evidence is incomplete");
+    // The failed acceptance is corrected automatically with its evidence attached.
+    expect(await s.task()).toMatchObject({ status: "running", repairAttempts: 1 });
+    expect((await s.task()).attemptHistory?.at(-1)?.verdict).toBe("fail");
+    expect((await s.task()).repairNote).toContain("Acceptance evidence is incomplete");
+    expect((await s.task()).retryFeedback).toContain('"verdict":"unresolved"');
   });
   it("retains unresolved evidence even when the reviewer writes PASS", async () => {
     const s = await setup();
     const started = await s.reviewing({ prompt: acceptancePrompt });
     await s.finish(started.reviewer!.sessionId!, acceptanceReply("unresolved"));
-    expect((await s.task()).status).toBe("blocked");
-    expect((await s.task()).verification?.acceptance?.criteria[0].verdict).toBe("verified");
-    expect((await s.task()).verification?.acceptance?.criteria[1].verdict).toBe("unresolved");
+    expect((await s.task()).status).toBe("running");
+    expect((await s.task()).repairNote).toContain("Acceptance evidence is incomplete");
+    expect((await s.task()).retryFeedback).toContain('"verdict":"verified"');
+    expect((await s.task()).retryFeedback).toContain('"verdict":"unresolved"');
   });
   it("invalidates criterion evidence when the workspace changes during review", async () => {
     const s = await setup();
@@ -2199,8 +2277,9 @@ describe("task verification", () => {
     const s = await setup();
     const started = await s.reviewing({ prompt: acceptancePrompt });
     await s.finish(started.reviewer!.sessionId!, acceptanceReply("unresolved"));
-    await s.tasks.move(started.id, "queued");
+    // The automatic correction starts from the recorded evidence.
     const queued = await s.task();
+    expect(queued.repairAttempts).toBe(1);
     expect(queued.verification).toBeUndefined();
     expect(queued.retryFeedback).toContain("Recorded acceptance evidence from the previous result");
     expect(queued.retryFeedback).toContain("report.txt:1");
@@ -2309,7 +2388,7 @@ describe("task verification", () => {
     SHELL_TEST_MS,
   );
   it(
-    "blocks a task whose check command fails, keeping its output",
+    "corrects a task whose check command fails, keeping its output",
     async () => {
       const { review, addRepo } = await setup();
       const repo = await addRepo("repo");
@@ -2320,11 +2399,11 @@ describe("task verification", () => {
         },
         { "report.md": "# Report\n" },
       );
-      expect(blocked.status).toBe("blocked");
-      expect(blocked.error).toMatch(/^The check command failed \(exit code \d+\)\.$/);
-      expect(blocked.verification!.command).toMatchObject({ timedOut: false });
-      expect(blocked.verification!.command!.exitCode).not.toBe(0);
-      expect(blocked.verification!.command!.output).toContain("boom");
+      // Every reviewed task corrects a failed check automatically.
+      expect(blocked).toMatchObject({ status: "queued", repairAttempts: 1 });
+      expect(blocked.error).toBeUndefined();
+      expect(blocked.repairNote).toMatch(/^The check command failed \(exit code \d+\)\.$/);
+      expect(blocked.retryFeedback).toContain("boom");
       // The work is still on its branch.
       expect(git(repo.cwd, "log", "-1", "--format=%s", blocked.branch!)).toBe("Ship the report");
       expect(existsSync(blocked.worktreeCwd!)).toBe(true);
@@ -2371,7 +2450,7 @@ describe("task verification", () => {
     });
     expect((await task()).reviewer).toBeUndefined();
   });
-  it("blocks a task the reviewer fails, with its reason", async () => {
+  it("corrects a task the reviewer fails, with its reason", async () => {
     const { reviewing, task, turns, finish } = await setup();
     const verifying = await reviewing();
     // Not on a branch: the reviewer looks at the uncommitted changes.
@@ -2380,13 +2459,27 @@ describe("task verification", () => {
       verifying.reviewer!.sessionId!,
       "Looked at it.\nVERDICT: FAIL - The report skips Friday.",
     );
+    // A manual task corrects itself without owner intervention.
     expect(await task()).toMatchObject({
-      status: "blocked",
-      error: "Review failed: The report skips Friday.",
-      verification: {
-        review: { verdict: "fail", note: "The report skips Friday." },
-      },
+      status: "running",
+      repairAttempts: 1,
+      repairNote: "Review failed: The report skips Friday.",
     });
+    expect((await task()).attemptHistory?.at(-1)).toMatchObject({
+      verdict: "fail",
+      note: "The report skips Friday.",
+    });
+    expect(turns.at(-1)!.input.text).toContain("The report skips Friday.");
+    expect(turns.at(-1)!.input.text).toContain("short final summary");
+  });
+  it("corrects review failures of conversation-created tasks", async () => {
+    const { reviewing, task, finish } = await setup();
+    // Agent-tool defaults: no continuation, no automatic delivery, no goal.
+    const verifying = await reviewing({ autoMerge: false, continueUntilDone: false });
+    await finish(verifying.reviewer!.sessionId!, "VERDICT: FAIL - Friday is missing.");
+    expect(await task()).toMatchObject({ status: "running", repairAttempts: 1 });
+    expect((await task()).autoMerge).toBeUndefined();
+    expect((await task()).deliveryRequested).toBeUndefined();
   });
   it("repairs goal work on its existing branch, keeps dependents waiting, then delivers", async () => {
     const { tasks, input, reviewing, task, turns, finish, addRepo } = await setup();
@@ -2416,8 +2509,8 @@ describe("task verification", () => {
     expect(await task()).toMatchObject({ status: "review", deliveryApprovalRequired: true });
     expect((await task("dependent")).status).toBe("queued");
   });
-  it("hands blocked work to one independent worker before asking for instructions", async () => {
-    const { tasks, store, engine, clock, reviewing, task, finish } = await setup();
+  it("finishes with owner notices instead of blocking after the correction limit", async () => {
+    const { tasks, store, engine, clock, reviewing, task, finish, turns } = await setup();
     await reviewing({ goalId: "goal" });
     for (let attempt = 1; attempt < MAX_REPAIR_ATTEMPTS; attempt++) {
       await finish((await task()).reviewer!.sessionId!, `VERDICT: FAIL - Missing item ${attempt}.`);
@@ -2431,13 +2524,45 @@ describe("task verification", () => {
       await finish((await task()).sessionId!);
     }
     await finish((await task()).reviewer!.sessionId!, "VERDICT: FAIL - Friday is still missing.");
+    // Shared-checkout work finishes like a PASS would, but never claims PASS.
     expect(await task()).toMatchObject({
-      status: "blocked",
+      status: "done",
+      completedWithFindings: true,
       repairAttempts: MAX_REPAIR_ATTEMPTS - 1,
-      reviewFailureCount: 3,
+      verification: { review: { verdict: "fail", note: "Friday is still missing." } },
     });
-    const previousSession = (await task()).sessionId;
+    expect((await task()).error).toBeUndefined();
+    expect((await task()).repairStop).toBeUndefined();
     expect((await task()).needsInput).toBeUndefined();
+    const notices = (await task()).ownerNotices!;
+    expect(
+      notices.filter((notice) => notice.kind === "remaining_finding").map((n) => n.message),
+    ).toContain("Friday is still missing.");
+    expect(notices.at(-1)).toMatchObject({ kind: "auto_continued" });
+    expect(notices.every((notice) => notice.message.length <= 240)).toBe(true);
+    expect(
+      (await new HostTasks(store, engine, () => clock.now).get("main"))!.ownerNotices,
+    ).toEqual(notices);
+    const count = turns.length;
+    await tasks.tick();
+    expect((await task()).blockedTakeover).toBeUndefined();
+    expect(turns).toHaveLength(count);
+    // An owner rerun starts with a fresh correction budget and the open findings.
+    await tasks.move("main", "queued");
+    expect((await task()).repairAttempts).toBe(0);
+    expect((await task()).reviewFailureCount).toBe(0);
+    expect((await task()).ownerNotices).toBeUndefined();
+    expect((await task()).completedWithFindings).toBeUndefined();
+    expect((await task()).attemptHistory).toHaveLength(3);
+    expect((await task()).retryFeedback).toContain("Friday is still missing.");
+  });
+  it("still hands legacy blocked work to one independent worker", async () => {
+    const { tasks, store, engine, clock, reviewing, legacyFailedReview, task, finish } =
+      await setup();
+    await reviewing({ goalId: "goal" });
+    await legacyFailedReview("VERDICT: FAIL - Friday is still missing.");
+    expect((await task()).status).toBe("blocked");
+    const previousSession = (await task()).sessionId;
     await tasks.tick();
     expect(await task()).toMatchObject({
       status: "running",
@@ -2445,34 +2570,11 @@ describe("task verification", () => {
     });
     expect((await task()).sessionId).not.toBe(previousSession);
     await finish((await task()).sessionId!);
+    // The takeover's own failure finishes with notices instead of a second stop.
     await finish((await task()).reviewer!.sessionId!, "VERDICT: FAIL - Friday is still missing.");
-    expect((await task()).status).toBe("blocked");
-    expect((await task()).needsInput).toBe(true);
+    expect(await task()).toMatchObject({ status: "done", completedWithFindings: true });
     await new HostTasks(store, engine, () => clock.now).tick();
-    expect((await task()).status).toBe("blocked");
-    await expect(tasks.move("main", "queued")).rejects.toThrow("Update the task description");
-    await expect((async () => await tasks.recheckReview("main"))()).rejects.toThrow(
-      "Update the task description",
-    );
-    await tasks.save({
-      ...(await task()),
-      status: undefined,
-      title: "Renamed",
-      prompt: `  ${(await task()).prompt}  `,
-    });
-    await expect(tasks.move("main", "queued")).rejects.toThrow("Update the task description");
-    await tasks.save({
-      ...(await task()),
-      status: undefined,
-      prompt: "Include Friday; its figures are now in the supplied report.",
-    });
-    await tasks.recoverGoalReview("main", "goal");
-    expect((await task()).status).toBe("blocked");
-    await tasks.move("main", "queued");
-    expect((await task()).repairAttempts).toBe(0);
-    expect((await task()).reviewFailureCount).toBe(0);
-    expect((await task()).attemptHistory).toHaveLength(4);
-    expect((await task()).retryFeedback).toContain("Friday is still missing.");
+    expect((await task()).status).toBe("done");
   });
   it("continues manual tasks beyond the old repair limit while changing failures are actionable", async () => {
     const { reviewing, task, finish, tasks, turns, store, engine, clock } = await setup();
@@ -2561,24 +2663,13 @@ describe("task verification", () => {
       (await task()).reviewer!.sessionId!,
       "VERDICT: FAIL - The report remains incomplete.",
     );
-    expect(await task()).toMatchObject({
-      status: "blocked",
-      repairStop: { reason: "no_progress" },
-    });
-    await tasks.tick();
-    expect((await task()).blockedTakeover).toBeDefined();
-    await finish((await task()).sessionId!, "The same report was inspected, without changes.");
-    await finish(
-      (await task()).reviewer!.sessionId!,
-      "VERDICT: FAIL - The report remains incomplete.",
-    );
-    expect(await task()).toMatchObject({
-      status: "blocked",
-      needsInput: true,
-      repairStop: { reason: "no_progress" },
-    });
+    expect(await task()).toMatchObject({ status: "done", completedWithFindings: true });
+    expect((await task()).repairStop).toBeUndefined();
+    expect((await task()).ownerNotices!.at(-1)).toMatchObject({ kind: "auto_continued" });
+    expect((await task()).ownerNotices!.at(-1)!.message).toContain("stopped making progress");
     const count = turns.length;
     await tasks.tick();
+    expect((await task()).blockedTakeover).toBeUndefined();
     expect(turns).toHaveLength(count);
   });
   it("does not mistake changing review wording for implementation progress", async () => {
@@ -2596,10 +2687,8 @@ describe("task verification", () => {
       (await task()).reviewer!.sessionId!,
       "VERDICT: FAIL - A differently worded defect remains.",
     );
-    expect(await task()).toMatchObject({
-      status: "blocked",
-      repairStop: { reason: "no_progress" },
-    });
+    expect(await task()).toMatchObject({ status: "done", completedWithFindings: true });
+    expect((await task()).ownerNotices!.at(-1)!.message).toContain("stopped making progress");
   });
   it("repairs a missing reviewer verdict in the same review conversation with a bounded budget", async () => {
     const { reviewing, task, finish, turns } = await setup();
@@ -2622,7 +2711,7 @@ describe("task verification", () => {
     });
   });
   it(
-    "stops unchanged check failures in continuous mode and preserves the owner's stop",
+    "finishes unchanged check failures in continuous mode with owner notices",
     async () => {
       const { run, task, finish, tasks, turns } = await setup();
       await run({
@@ -2634,15 +2723,16 @@ describe("task verification", () => {
       expect(await task()).toMatchObject({ status: "running", repairAttempts: 1 });
       await finish((await task()).sessionId!);
       expect(await task()).toMatchObject({
-        status: "blocked",
-        repairStop: { reason: "no_progress" },
+        status: "done",
+        completedWithFindings: true,
+        verification: { command: { exitCode: 1 } },
       });
-      await tasks.tick();
-      expect((await task()).blockedTakeover).toBeDefined();
-      await tasks.move("main", "blocked");
+      expect((await task()).ownerNotices!.map((notice) => notice.message)).toContain(
+        "The check command still fails (exit code 1).",
+      );
       const count = turns.length;
       await tasks.tick();
-      expect(await task()).toMatchObject({ status: "blocked", error: "Stopped by you." });
+      expect((await task()).blockedTakeover).toBeUndefined();
       expect(turns).toHaveLength(count);
     },
     SHELL_TEST_MS,
@@ -2680,13 +2770,52 @@ describe("task verification", () => {
     expect(turns).toHaveLength(1);
   });
   it(
-    "automatically takes over blocked work in its existing checkout and delivers after review",
+    "finishes external-only findings with owner notices and waits for owner delivery",
     async () => {
-      const { reviewing, tasks, task, finish, turns, input, addRepo } = await setup();
-      const repo = await addRepo("takeover");
+      const { reviewing, tasks, task, finish, turns, input, addRepo, approve } = await setup();
+      const repo = await addRepo("external-finish");
       await reviewing({ projectId: repo.id, source: "goal", autoMerge: true });
+      await tasks.save(input({ id: "dependent", projectId: repo.id, dependsOn: ["main"] }));
       await finish(
         (await task()).reviewer!.sessionId!,
+        '```json\n{"reviewNotes":[{"finding":"Need an alternative local check.","category":"external","suggestion":"Inspect available test tools."}]}\n```\nVERDICT: FAIL - Evidence missing.',
+      );
+      expect(await task()).toMatchObject({
+        status: "review",
+        completedWithFindings: true,
+        deliveryApprovalRequired: true,
+        verification: { review: { verdict: "fail" } },
+      });
+      expect((await task()).autoMerge).toBeUndefined();
+      expect((await task()).repairAttempts).toBeUndefined();
+      expect((await task()).ownerNotices).toEqual([
+        expect.objectContaining({
+          kind: "external_check",
+          message: "Inspect available test tools.",
+        }),
+        expect.objectContaining({ kind: "auto_continued" }),
+      ]);
+      const count = turns.length;
+      await tasks.tick();
+      expect((await task()).status).toBe("review");
+      expect((await task()).blockedTakeover).toBeUndefined();
+      expect((await task("dependent")).status).toBe("queued");
+      expect(turns).toHaveLength(count);
+      // Only the owner's explicit delivery approval moves it on; no PASS is required.
+      expect(await approve()).toMatchObject({ status: "done", merged: true });
+      await tasks.tick();
+      expect((await task("dependent")).status).toBe("running");
+    },
+    SHELL_TEST_MS,
+  );
+  it(
+    "automatically takes over legacy blocked work in its existing checkout and delivers after review",
+    async () => {
+      const { reviewing, legacyFailedReview, tasks, task, finish, turns, input, addRepo } =
+        await setup();
+      const repo = await addRepo("takeover");
+      await reviewing({ projectId: repo.id, source: "goal", autoMerge: true });
+      await legacyFailedReview(
         '```json\n{"reviewNotes":[{"finding":"Need an alternative local check.","category":"external","suggestion":"Inspect available test tools."}]}\n```\nVERDICT: FAIL - Evidence missing.',
       );
       const blocked = await task();
@@ -2720,10 +2849,9 @@ describe("task verification", () => {
     SHELL_TEST_MS,
   );
   it("holds takeover for daily limits and respects cancelled goals", async () => {
-    const { reviewing, tasks, task, finish, store, clock } = await setup();
+    const { reviewing, legacyFailedReview, tasks, task, store, clock } = await setup();
     await reviewing({ goalId: "goal" });
-    await finish(
-      (await task()).reviewer!.sessionId!,
+    await legacyFailedReview(
       '```json\n{"reviewNotes":[{"finding":"Need device evidence.","category":"external","suggestion":"Provide a device for the required test."}]}\n```\nVERDICT: FAIL - Evidence missing.',
     );
     await tasks.limits.save({ dailyAgentMinutes: 1, maxRunningTasks: 1 });
@@ -2743,7 +2871,7 @@ describe("task verification", () => {
     await tasks.tick();
     expect((await task()).status).toBe("running");
   });
-  it("stops unchanged findings after a correction and records both worker outcomes", async () => {
+  it("finishes unchanged findings after a correction and records both worker outcomes", async () => {
     const { reviewing, task, finish, tasks, store, engine, clock } = await setup();
     await reviewing({ goalId: "goal" });
     await finish((await task()).reviewer!.sessionId!, "VERDICT: FAIL - Friday is missing.");
@@ -2753,20 +2881,26 @@ describe("task verification", () => {
     );
     await finish((await task()).reviewer!.sessionId!, "VERDICT: FAIL - Friday is missing.");
     expect(await task()).toMatchObject({
-      status: "blocked",
+      status: "done",
+      completedWithFindings: true,
       repairAttempts: 1,
-      repairStop: { reason: "no_progress" },
     });
+    expect((await task()).repairStop).toBeUndefined();
+    expect((await task()).ownerNotices).toEqual([
+      expect.objectContaining({ kind: "remaining_finding", message: "Friday is missing." }),
+      expect.objectContaining({ kind: "auto_continued" }),
+    ]);
     expect((await task()).attemptHistory).toHaveLength(2);
     expect((await task()).attemptHistory!.at(-1)!.workerSummary).toContain("Changed the parser");
     expect(
       (await new HostTasks(store, engine, () => clock.now).get("main"))!.attemptHistory,
     ).toHaveLength(2);
     await tasks.move("main", "todo");
-    await expect(tasks.move("main", "queued")).rejects.toThrow("Update the task description");
-    expect((await task()).repairStop?.reason).toBe("no_progress");
+    expect((await task()).ownerNotices).toBeUndefined();
+    await tasks.move("main", "queued");
+    expect((await task()).status).toBe("queued");
   });
-  it("does not retry external-only acceptance or release dependent work, but starts independent work", async () => {
+  it("finishes external-only acceptance with owner notices instead of retrying", async () => {
     const { reviewing, task, finish, tasks, input } = await setup();
     await reviewing({ goalId: "goal", autoMerge: true });
     await tasks.save(input({ id: "dependent", dependsOn: ["main"] }));
@@ -2775,13 +2909,23 @@ describe("task verification", () => {
       (await task()).reviewer!.sessionId!,
       '```json\n{"reviewNotes":[{"finding":"TalkBack acceptance missing.","category":"external","suggestion":"Provide an Android device with TalkBack; exercise reset, search and favorites and record results."}]}\n```\nVERDICT: FAIL - Device acceptance missing.',
     );
+    // Shared-checkout work is finished; the owner sees the unavailable check afterwards.
     expect(await task()).toMatchObject({
-      status: "blocked",
-      repairStop: { reason: "external" },
+      status: "done",
+      completedWithFindings: true,
+      verification: { review: { verdict: "fail" } },
     });
     expect((await task()).repairAttempts).toBeUndefined();
-    expect((await task("dependent")).status).toBe("queued");
+    expect((await task()).ownerNotices![0]).toMatchObject({
+      kind: "external_check",
+      message:
+        "Provide an Android device with TalkBack; exercise reset, search and favorites and record results.",
+    });
+    // Finished shared-checkout work releases its dependents like a normal completion.
     expect((await task("independent")).status).toBe("running");
+    await finish((await task("independent")).sessionId!);
+    await tasks.tick();
+    expect((await task("dependent")).status).toBe("running");
   });
   it("still repairs code defects when the review also requires external acceptance", async () => {
     const { reviewing, task, finish } = await setup();
@@ -2811,18 +2955,19 @@ describe("task verification", () => {
         }) +
         "\n```\nVERDICT: FAIL - TalkBack acceptance missing.",
     );
-    expect(await task()).toMatchObject({
-      status: "blocked",
-      repairStop: { reason: "external" },
-    });
+    expect(await task()).toMatchObject({ status: "done", completedWithFindings: true });
+    expect((await task()).ownerNotices).toEqual([
+      expect.objectContaining({ kind: "external_check", message: "Test on Android." }),
+      expect.objectContaining({ kind: "auto_continued" }),
+    ]);
     expect(
       (await task()).reviewNotes!.find((note) => note.id === fixedId)!.resolvedAt,
     ).toBeDefined();
   });
   it("rechecks a failed review without another worker, even when the review still fails", async () => {
-    const { reviewing, task, finish, tasks, turns, store } = await setup();
+    const { reviewing, legacyFailedReview, task, finish, tasks, turns, store } = await setup();
     await reviewing();
-    await finish((await task()).reviewer!.sessionId!, "VERDICT: FAIL - Friday is missing.");
+    await legacyFailedReview("VERDICT: FAIL - Friday is missing.");
     const worker = (await task()).sessionId;
     const before = turns.length;
     await tasks.save({
@@ -2883,9 +3028,9 @@ describe("task verification", () => {
     },
   );
   it("recovers a legacy goal review failure once and refuses a stopped task", async () => {
-    const { tasks, store, reviewing, task, finish } = await setup();
-    const original = await reviewing();
-    await finish(original.reviewer!.sessionId!, "VERDICT: FAIL - Friday is missing.");
+    const { tasks, store, reviewing, legacyFailedReview, task } = await setup();
+    await reviewing();
+    await legacyFailedReview("VERDICT: FAIL - Friday is missing.");
     const takeover = { ...(await task()), goalId: "goal" };
     await store.db
       .prepare("UPDATE tasks SET value=? WHERE id=?")
@@ -2907,7 +3052,7 @@ describe("task verification", () => {
       .run(JSON.stringify({ ...legacy, error: "Stopped by you." }), "main");
     expect((await tasks.recoverGoalReview("main", "goal"))!.status).toBe("blocked");
   });
-  it("persists review notes across retries, read updates and successful verification", async () => {
+  it("persists review notes across corrections, read updates and successful verification", async () => {
     const { tasks, store, engine, clock, reviewing, task, turns, finish } = await setup();
     await reviewing();
     const firstReviewer = (await task()).reviewer!.sessionId!;
@@ -2923,6 +3068,9 @@ describe("task verification", () => {
       suggestion: "Include the Friday totals.",
       sessionId: firstReviewer,
     });
+    // The automatic correction receives the structured finding.
+    expect((await task()).status).toBe("running");
+    expect(turns.at(-1)!.input.text).toContain("Include the Friday totals.");
     await tasks.readNotes("main", [id]);
     const recreated = new HostTasks(store, engine, () => clock.now);
     expect((await recreated.get("main"))!.reviewNotes![0].readAt).toBe(clock.now);
@@ -2933,25 +3081,18 @@ describe("task verification", () => {
       "Invalid review note status",
     );
     await tasks.resolveNote("main", id, true);
-    expect((await task()).status).toBe("blocked");
+    expect((await task()).status).toBe("running");
     await tasks.resolveNote("main", id, false);
-    await tasks.move("main", "queued");
-    await tasks.tick();
-    expect(turns.at(-1)!.input.text).toContain("bycoda.blocked-handoff.v1");
-    expect(turns.at(-1)!.input.text).toContain("Include the Friday totals.");
     await finish((await task()).sessionId!);
     await finish(
       (await task()).reviewer!.sessionId!,
       `${finding}\nVERDICT: FAIL - Friday is missing.`,
     );
+    // The same finding after a correction finishes the work and reports it.
+    expect(await task()).toMatchObject({ status: "done", completedWithFindings: true });
     expect((await task()).reviewNotes).toHaveLength(1);
     expect((await task()).reviewNotes![0]).toMatchObject({ id, occurrences: 2 });
     expect((await task()).reviewNotes![0].sessionIds).toHaveLength(2);
-    await tasks.save({
-      ...(await task()),
-      status: undefined,
-      prompt: `${(await task()).prompt}\nFriday totals are in the new input.`,
-    });
     await tasks.move("main", "queued");
     await tasks.tick();
     await finish((await task()).sessionId!);
@@ -2968,12 +3109,9 @@ describe("task verification", () => {
     expect((await task()).reviewNotes![1].readAt).toBeUndefined();
   });
   it("backfills available legacy review findings once without changing task status", async () => {
-    const { tasks, store, reviewing, task, finish } = await setup();
-    const original = await reviewing();
-    await finish(
-      original.reviewer!.sessionId!,
-      "file.ts:42 skips Friday.\nVERDICT: FAIL - Friday is missing.",
-    );
+    const { tasks, store, reviewing, legacyFailedReview, task } = await setup();
+    await reviewing();
+    await legacyFailedReview("file.ts:42 skips Friday.\nVERDICT: FAIL - Friday is missing.");
     const { reviewNotes, ...legacy } = await task();
     await store.db
       .prepare("UPDATE tasks SET value=? WHERE id=?")
@@ -3020,30 +3158,28 @@ describe("task verification", () => {
     await settled(verifying.reviewer!.sessionId!);
     await advance();
     expect(await task()).toMatchObject({
-      status: "blocked",
-      error: "Review failed: The report skips Friday.",
+      status: "running",
+      repairNote: "Review failed: The report skips Friday.",
     });
   });
   for (const isolated of [false, true])
     it(
-      `passes failed review details to the retry worker (isolated: ${isolated})`,
+      `passes failed review details to the correction worker (isolated: ${isolated})`,
       async () => {
-        const { tasks, reviewing, task, turns, finish, addRepo, store } = await setup();
+        const { reviewing, task, turns, finish, addRepo, store } = await setup();
         const repo = isolated ? await addRepo("repo") : undefined;
         const verifying = await reviewing(repo ? { projectId: repo.id } : {});
         const reviewer = verifying.reviewer!.sessionId!;
+        const originalPrompt = verifying.prompt;
         await finish(
           reviewer,
           "package.ts:42 keeps the old selection after rollback.\nVERDICT: FAIL - Package versions disagree.",
         );
-        const originalPrompt = (await task()).prompt;
-        // Going through To do must preserve the finding after verification is cleared.
-        const todo = await tasks.move("main", "todo");
-        expect(todo.verification).toBeUndefined();
-        expect(todo.retryFeedback).toContain("package.ts:42");
-        expect(todo.retryFeedback!.length).toBeLessThanOrEqual(12000);
-        await tasks.move("main", "queued");
-        await tasks.tick();
+        // The correction starts automatically; verification is cleared, the finding kept.
+        expect(await task()).toMatchObject({ status: "running", repairAttempts: 1 });
+        expect((await task()).verification).toBeUndefined();
+        expect((await task()).retryFeedback).toContain("package.ts:42");
+        expect((await task()).retryFeedback!.length).toBeLessThanOrEqual(12000);
         expect((await task()).prompt).toBe(originalPrompt);
         expect((await task()).sessionId).not.toBe(verifying.sessionId);
         expect((await task()).branch).toBe(verifying.branch);
@@ -3065,10 +3201,10 @@ describe("task verification", () => {
       isolated && process.platform === "win32" ? 120000 : undefined,
     );
   it("retries a failed review even when its session is unavailable", async () => {
-    const { tasks, reviewing, task, turns, finish, store } = await setup();
+    const { tasks, reviewing, legacyFailedReview, task, turns, store } = await setup();
     const verifying = await reviewing();
     const reviewer = verifying.reviewer!.sessionId!;
-    await finish(reviewer, "VERDICT: FAIL - Friday is missing.");
+    await legacyFailedReview("VERDICT: FAIL - Friday is missing.");
     await store.deleteSession(reviewer);
     await tasks.move("main", "queued");
     await tasks.tick();

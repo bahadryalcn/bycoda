@@ -79,3 +79,49 @@ it("cancels dictation when the composer becomes unavailable", async () => {
   );
   expect(mock.cancel).toHaveBeenCalled();
 });
+
+it("keeps preparation cancellable and blocks duplicate stop while transcribing", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), enabled: true });
+  const { button } = await render();
+  await act(async () => button()!.click());
+  await act(async () => mock.callbacks.state("starting"));
+  expect(button()?.getAttribute("aria-label")).toBe("Preparing dictation…");
+  expect(button()?.getAttribute("aria-busy")).toBe("true");
+  expect(button()?.getAttribute("aria-disabled")).not.toBe("true");
+  await act(async () => button()!.click());
+  expect(mock.stop).toHaveBeenCalledOnce();
+  await act(async () => mock.callbacks.state("finishing"));
+  expect(button()?.getAttribute("aria-label")).toBe("Transcribing…");
+  expect(button()?.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => button()!.click());
+  expect(mock.stop).toHaveBeenCalledOnce();
+  await act(async () => mock.callbacks.state("idle"));
+  expect(button()?.getAttribute("aria-label")).toBe("Dictate");
+  expect(button()?.getAttribute("aria-busy")).toBeNull();
+});
+
+it("responds to microphone level, resets on stop, and ignores an old capture", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), enabled: true });
+  const { button } = await render();
+  await act(async () => button()!.click());
+  const old = mock.callbacks;
+  await act(async () => old.state("listening"));
+  const visual = () => button()!.querySelector<HTMLElement>("[data-state]")!;
+  expect(visual().getAttribute("aria-hidden")).toBe("true");
+  old.level(0.1);
+  expect(Number(visual().style.getPropertyValue("--dictation-level"))).toBeCloseTo(0.7);
+  old.level(2);
+  expect(visual().style.getPropertyValue("--dictation-level")).toBe("1");
+  old.level(-1);
+  expect(visual().style.getPropertyValue("--dictation-level")).toBe("0");
+  old.level(0.1);
+  await act(async () => old.state("finishing"));
+  expect(visual().style.getPropertyValue("--dictation-level")).toBe("0");
+  await act(async () => old.state("idle"));
+  await act(async () => button()!.click());
+  await act(async () => mock.callbacks.state("listening"));
+  old.level(1);
+  await act(async () => old.state("finishing"));
+  expect(button()?.getAttribute("data-dictation-state")).toBe("listening");
+  expect(visual().style.getPropertyValue("--dictation-level")).toBe("0");
+});

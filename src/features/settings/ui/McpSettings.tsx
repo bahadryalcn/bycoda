@@ -32,7 +32,7 @@ import { ExternalMcpAccess } from "./ExternalMcpAccess";
 import { Modal } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
 import { Globe, Plus, RefreshCw, ListFilter, MoreHorizontal } from "../../../shared/ui/icons";
-import { MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
+import { canSignInMcp, isMcpConnected, MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
 import { AdvancedSettings, Row } from "./settingsControls";
 import {
   getCachedMcpSettings,
@@ -441,7 +441,7 @@ ${query}`;
   }, [visible.length, visibleCount, revealMore]);
 
   async function login(server: ServerRow) {
-    if (busyRef.current) return;
+    if (busyRef.current || !canSignInMcp(server)) return;
     busyRef.current = true;
     setBusy({ server: serverRowKey(server), action: "login" });
     setError("");
@@ -669,7 +669,7 @@ ${query}`;
                     ? "warning"
                     : /failed|error|disconnected/i.test(server.status)
                       ? "danger"
-                      : /^(?:✔\s*)?connected$/i.test(server.status.trim())
+                      : isMcpConnected(server.status)
                         ? "success"
                         : "neutral"
                 }
@@ -691,9 +691,7 @@ ${query}`;
                 ) : null}
               </div>
               <div className={styles.rowActions}>
-                {server.provider !== "claude_desktop" && server.transport &&
-                  !["stdio", "local", "ws"].includes(server.transport) &&
-                  /needs authentication|unknown/i.test(server.status) ? (
+                {canSignInMcp(server) && !isMcpConnected(server.status) ? (
                     <Button stableWidth type="button"
                       loading={busy?.server === serverRowKey(server) && busy.action === "login"}
                       disabled={loading || busy !== null}
@@ -741,7 +739,7 @@ ${query}`;
       {menu ? <DropdownMenu anchor={menu.anchor} label={t("Actions for {p0}", { p0: menu.server.name })}
         onClose={() => setMenu(null)}
         items={[
-          ...(menu.server.provider !== "claude_desktop" && menu.server.transport && !["stdio", "local", "ws"].includes(menu.server.transport) && !/needs authentication|unknown/i.test(menu.server.status)
+          ...(canSignInMcp(menu.server) && isMcpConnected(menu.server.status)
             ? [{ kind: "item" as const, id: "login", label: t("Sign in again"), disabled: loading || busy !== null }] : []),
           { kind: "item", id: "reveal", label: t("Show config"), disabled: !menu.server.configPath },
           { kind: "item", id: "copy", label: t("Copy config path"), disabled: !menu.server.configPath },

@@ -9,7 +9,7 @@
 //! runtime permission prompt: toasts are controlled from Windows Settings.
 
 use serde::Serialize;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 /// Emitted to every window when the user clicks a notification. Payload is
 /// the session id; the window that owns that session handles it.
@@ -54,9 +54,8 @@ pub async fn request_notification_permission(app: AppHandle) -> Permission {
     platform::request_permission(&app).await
 }
 
-/// Resolves only once the platform reports the banner as scheduled: the
-/// frontend skips its own turn-finished cue on success, so returning early
-/// would silence a turn that never got a notification.
+/// Returns true only once the platform reports the banner as scheduled.
+/// Foreground suppression returns false so the frontend retains its in-app cue.
 #[tauri::command]
 pub async fn show_notification(
     app: AppHandle,
@@ -65,8 +64,19 @@ pub async fn show_notification(
     subtitle: String,
     body: String,
     sound: bool,
-) -> Result<(), String> {
-    platform::show(&app, &session_id, &title, &subtitle, &body, sound).await
+) -> Result<bool, String> {
+    // Check every bycoda window: another workspace or the quick composer also
+    // means the user is already in the app. Do not trust a webview's cached focus.
+    if app
+        .webview_windows()
+        .into_values()
+        .any(|window| window.is_focused().unwrap_or(false))
+    {
+        return Ok(false);
+    }
+    platform::show(&app, &session_id, &title, &subtitle, &body, sound)
+        .await
+        .map(|()| true)
 }
 
 /// Opens the app's page in the OS notification settings, where the user can
@@ -398,8 +408,9 @@ mod platform {
         unsafe impl NSObjectProtocol for Delegate {}
 
         unsafe impl UNUserNotificationCenterDelegate for Delegate {
-            /// Without this macOS drops banners while the app is frontmost,
-            /// and a finished background session deserves one either way.
+            /// macOS calls this when a notification arrives in the foreground.
+            /// The app may have gained focus after scheduling; retain in-app
+            /// attention without a duplicate system banner or sound.
             #[unsafe(method(userNotificationCenter:willPresentNotification:withCompletionHandler:))]
             fn will_present(
                 &self,
@@ -407,9 +418,7 @@ mod platform {
                 _notification: &UNNotification,
                 completion: &block2::DynBlock<dyn Fn(UNNotificationPresentationOptions)>,
             ) {
-                completion.call((UNNotificationPresentationOptions::Banner
-                    | UNNotificationPresentationOptions::List
-                    | UNNotificationPresentationOptions::Sound,));
+                completion.call((UNNotificationPresentationOptions::empty(),));
             }
 
             #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]

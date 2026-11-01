@@ -4,7 +4,7 @@ import { createAmbientFallbackScene } from "./ambientFallback";
 import { createCodeRainScene } from "./codeRain";
 import { createDotGridScene } from "./dotGrid";
 import { createNeuralTreeScene } from "./neuralTree";
-import { createCodeVisageScene, createLatentFaceScene } from "./latentFace";
+import { createCodeVisageScene, createLatentFaceScene, createSereneFaceScene } from "./latentFace";
 import { createThoughtWeaverScene } from "./thoughtWeaver";
 import type { LiveBackgroundPalette, LiveBackgroundScene } from "./types";
 
@@ -28,6 +28,8 @@ export function createLiveBackgroundScene(
       return createLatentFaceScene(palette);
     case "code-visage":
       return createCodeVisageScene(palette);
+    case "serene-face":
+      return createSereneFaceScene(palette);
     case "thought-weaver":
       return createThoughtWeaverScene(palette);
     case "ascii-mask":

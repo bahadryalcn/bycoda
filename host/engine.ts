@@ -609,6 +609,61 @@ export class HostEngine {
   private recoveryWork = new Map<string, Promise<void>>();
   /** Warm lightweight providers still belong to this engine and drain at shutdown. */
   private retainedProviders = new Map<string, Set<HostProvider>>();
+  /** Original turn receipts retained for an explicit Host-to-desktop transfer. */
+  private retainedWriterTurns = new Map<string, ActiveHostTurn>();
+
+  hasRetainedProviderWriter(id: string): boolean {
+    return this.retainedWriterTurns.has(id);
+  }
+
+  /** Idle is not physical retirement. Keep the session operation locked until
+   * the original provider has acknowledged cleanup and the caller grants its lease. */
+  async withRetiredProviderWriter<T>(id: string, grant: () => Promise<T>): Promise<T> {
+    await this.ready;
+    return this.operations.run(id, async () => {
+      if (this.closing || this.hasActiveRun(id)) throw new LeaseHeldError("host");
+      const original = this.retainedWriterTurns.get(id);
+      if (original) {
+        if (!original.cleanup) {
+          const retire = original.provider.retireOriginal;
+          const context = original.operationContext;
+          if (!retire || !context || !original.activity)
+            throw new Error("HOST_WRITER_RETIREMENT_FAILED: This provider cannot safely retire its previous Host writer. Continue through the task repair workflow; your message was not sent.");
+          original.cleanup = this.store.db.outsideScope(() =>
+            original.activity!.retire(async () => {
+              await this.store.assertAuthority(id, original.authorityGeneration);
+              await retire.call(original.provider, id, context);
+            }),
+          );
+          void original.cleanup.catch(() => {});
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            original.cleanup.then(() => original.activity?.release()),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error(
+                "HOST_WRITER_RETIREMENT_PENDING: The previous Host provider writer is still stopping. Your message was not sent; retry after retirement completes.",
+              )), 20_000);
+            }),
+          ]);
+        } catch (error) {
+          if (error instanceof Error && error.message.startsWith("HOST_WRITER_RETIREMENT_PENDING:")) throw error;
+          throw new Error("HOST_WRITER_RETIREMENT_FAILED: The previous Host writer could not be retired. Your message was not sent. Inspect the connection or continue through the task repair workflow.", { cause: error });
+        } finally {
+          clearTimeout(timer);
+        }
+        this.retainedWriterTurns.delete(id);
+        this.retainedProviders.get(id)?.delete(original.provider);
+        // Keep only the persisted resume identity; never create a new history.
+        const current = (await this.store.session(id)).session;
+        if (current.providerSessionId)
+          original.provider.bind(id, current.providerSessionId, current.cwd, current.providerAccountId);
+      }
+      if (this.closing) throw new LeaseHeldError("host");
+      return grant();
+    });
+  }
   private closing = false;
   private closePromise?: Promise<void>;
   /** A turn ended and the session is idle again, and how it ended (the host drains its queue). */
@@ -624,6 +679,8 @@ export class HostEngine {
   async busyReason(sessionId: string): Promise<string | undefined> {
     await this.ready;
     if (this.closing) return "Host is stopping";
+    if (this.retainedWriterTurns.get(sessionId)?.cleanup)
+      return "The previous Host writer retirement is pending or failed. Complete the ownership transfer before continuing.";
     if (this.rewinding.has(sessionId)) return "A conversation change is in progress";
     try {
       const value = await this.store.session(sessionId);
@@ -2130,6 +2187,8 @@ export class HostEngine {
                     saved.authorityGeneration,
                   );
               } else if (command.type === "send" || command.type === "compact") {
+                if (this.retainedWriterTurns.get(command.sessionId)?.cleanup)
+                  throw new Error("HOST_WRITER_RETIREMENT_PENDING: The previous Host writer retirement is pending or failed. Your message was not sent; complete the ownership transfer before continuing.");
                 // Legacy storage may contain a mixed provider/model identity.
                 // Refuse it before consuming handoff/replay or dispatching a turn.
                 assertModelProvider(value.session.harness, value.session.model);
@@ -3748,10 +3807,14 @@ export class HostEngine {
           active.activity.evict();
         } else if (cold) {
           if (active.hostRun) this.runWriters.closeAdmission(active.hostRun);
-          if (active.activity) this.retainProvider(session.id, provider);
+          if (active.activity) {
+            this.retainProvider(session.id, provider);
+            this.retainedWriterTurns.set(session.id, active);
+          }
           await soft("retirement", () => this.stopOriginalTurn(session.id, active));
         } else {
           this.retainProvider(session.id, provider);
+          this.retainedWriterTurns.set(session.id, active);
         }
         active.failureStage = "persistence";
         await this.store.assertAuthority(session.id, active.authorityGeneration);
@@ -3859,6 +3922,8 @@ export class HostEngine {
               if (this.running.get(session.id) === active) {
                 if (cold && active.activity && !cleanupFailed)
                   this.retainedProviders.get(session.id)?.delete(provider);
+                if (cold && !cleanupFailed && this.retainedWriterTurns.get(session.id) === active)
+                  this.retainedWriterTurns.delete(session.id);
                 this.running.delete(session.id);
               }
             }

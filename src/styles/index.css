@@ -299,6 +299,17 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-info-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-info-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-info-disabled-border: var(--ui-control-disabled-border);
+  /* A row whose agent is working: a translucent active tint over the row's own ground, and the brighter
+     band of light that sweeps across it. Translucent so custom row colours and states show through. */
+  --ui-working-row-tint: color-mix(in srgb, var(--color-active) 8%, transparent);
+  --ui-working-row-sweep: color-mix(in srgb, var(--color-active) 20%, transparent);
+  --ui-working-row-tint-layer: linear-gradient(var(--ui-working-row-tint), var(--ui-working-row-tint));
+  --ui-working-row-sweep-layer: linear-gradient(
+    100deg,
+    transparent 30%,
+    var(--ui-working-row-sweep) 50%,
+    transparent 70%
+  );
   --ui-tone-success-fg: color-mix(in srgb, var(--color-success) calc(100% - var(--ui-status-ink-strength)), var(--color-content));
   --ui-tone-success-solid: var(--color-success);
   --ui-tone-success-on-solid: var(--ui-tone-status-on-solid);

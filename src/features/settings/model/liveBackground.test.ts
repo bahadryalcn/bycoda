@@ -42,6 +42,7 @@ describe("live background preference", () => {
     "neural-tree",
     "latent-face",
     "code-visage",
+    "serene-face",
     "thought-weaver",
     "ascii-mask",
     "dot-grid",

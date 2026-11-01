@@ -15,6 +15,7 @@ import { isRemoteProjectPath } from "../../projects/model/recents";
 import { homeDir } from "../../../platform/tauri/fs";
 import { t } from "../../../shared/i18n";
 import { voiceContext } from "./voiceSession";
+import { voiceWorkText } from "./voiceWork";
 
 export type VoiceDecision = {
   action: "reply" | "submit" | "stop" | "silence";
@@ -116,20 +117,32 @@ export function parseVoiceDecision(output: string, transcript: string): VoiceDec
     .replace(/^```(?:json|text)?\s*/i, "")
     .replace(/\s*```$/, "")
     .trim();
-  // The recognizer's exact user words authorize work. Never execute model-invented instructions.
-  if (/^SUBMIT[.!]?\s*$/i.test(source.split("\n")[0]))
-    return { action: "submit", text: transcript, reply: "" };
+  // Legacy providers may still return a bare marker. Never accept trailing work.
+  if (/^SUBMIT[.!]?$/i.test(source))
+    return { action: "submit", text: voiceWorkText(transcript), reply: "" };
   const spoken = /^REPLY:\s*/i.exec(source);
   if (spoken) {
     const reply = speakable(source.slice(spoken[0].length));
     if (reply) return { action: "reply", reply: reply.slice(0, REPLY_LIMIT) };
   }
   try {
-    // Older JSON shape, kept for providers that ignore the streamed format.
-    const result = JSON.parse(source) as Record<string, unknown>;
-    if (result.action === "submit") return { action: "submit", text: transcript, reply: "" };
-    if (result.action === "reply" && typeof result.reply === "string" && result.reply.trim())
-      return { action: "reply", reply: result.reply.slice(0, REPLY_LIMIT) };
+    const result: unknown = JSON.parse(source);
+    if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error();
+    const value = result as Record<string, unknown>;
+    if (
+      value.action === "submit" &&
+      Object.keys(value).every((key) => key === "action" || key === "text")
+    )
+      return {
+        action: "submit",
+        // Missing text is the legacy JSON marker; malformed text must fail closed.
+        text: voiceWorkText(
+          Object.prototype.hasOwnProperty.call(value, "text") ? value.text : transcript,
+        ),
+        reply: "",
+      };
+    if (value.action === "reply" && typeof value.reply === "string" && value.reply.trim())
+      return { action: "reply", reply: value.reply.slice(0, REPLY_LIMIT) };
   } catch {
     /* Invalid output can never start work. */
   }

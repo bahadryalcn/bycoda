@@ -44,6 +44,22 @@ cleanup can join the retained old process after its route closes without touchin
 a replacement. Missing records and uncertain cleanup remain errors. Admission
 reserves bounded record capacity before stopping an existing process.
 
+Host-to-desktop continuation keeps the settled original turn receipt after a
+lightweight provider stays warm. Explicit desktop run-lease acquisition waits
+for exact provider retirement; idle/busy flags and blocked task status do not
+prove release. Codex's transfer hook refuses missing, stale or active ownership
+and preserves the provider resume identity. Providers without that exact hook
+refuse transfer and direct the owner to task repair. Heartbeats cannot perform
+this transfer. The `sessions.host-writer-retirement.v1` capability makes desktop
+clients retain unsent input on refusal, timeout or uncertain transport rather
+than starting a second provider. A late grant is returned by its original epoch;
+the abandoned request remains guarded until that return is acknowledged.
+A late acquire refusal (`HOST_WRITER_RETIREMENT_PENDING`,
+`HOST_WRITER_RETIREMENT_FAILED` or `LEASE_HELD`) confirms no lease was granted,
+so a later owner attempt may query the Host again. It does not authorize a
+provider start or replay the retained input. A transport failure or a failed
+release after a late grant still leaves ownership unknown and guarded.
+
 The provider retirement ledger retains captured handles and failed cleanup after
 provider Live-map removal. Host activity release callbacks belong to the original
 provider cohort, including optional title/branch work. Shutdown joins accepted

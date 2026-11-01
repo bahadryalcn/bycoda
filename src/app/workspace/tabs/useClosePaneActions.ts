@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
   closeLeaf,
   findSurfacePane,
@@ -55,47 +50,49 @@ export function useClosePaneActions({
   setTabs,
   setComposerFocused,
 }: ClosePaneActionDeps) {
-
   const onClosePane = useCallback(
-    (sessionId?: string) => {
+    (sessionId?: string, targetTabId?: string) => {
       // The project terminal is shared by every workspace tab in the project.
       // Keep the global close command scoped to workspace tabs and panes even
       // while the dock has focus; terminal tabs have their own close buttons.
-      if (!activeTab) return;
-      const focusedSurface = findSurfacePane(activeTab, activeTab.focusedId);
-      if (windowTransferPendingRef.current || movingTabIds.current.has(activeTab.id)) return;
+      const closingTab = targetTabId
+        ? tabsRef.current.find((tab) => tab.id === targetTabId)
+        : activeTab;
+      if (!closingTab) return;
+      const focusedSurface = findSurfacePane(closingTab, closingTab.focusedId);
+      if (windowTransferPendingRef.current || movingTabIds.current.has(closingTab.id)) return;
       if (sessionId === undefined && focusedSurface) {
         onCloseFile(focusedSurface.pane.id, focusedSurface.pane.activeFileId);
         return;
       }
-      const closingId = sessionId ?? activeTab.focusedId;
-      const ids = leafIds(activeTab.layout);
+      const closingId = sessionId ?? closingTab.focusedId;
+      const ids = leafIds(closingTab.layout);
       const sessionIds = ids.filter((paneId) =>
         sessionsRef.current.some((session) => session.id === paneId),
       );
       if (!sessionIds.includes(closingId)) return;
-      const nextTab = closeLeaf(activeTab, closingId);
+      const nextTab = closeLeaf(closingTab, closingId);
       if (!nextTab) {
         const closePlan = planWorkspaceTabClose({
           tabs: tabsRef.current,
           sessions: sessionsRef.current,
-          closingTabId: activeTab.id,
+          closingTabId: closingTab.id,
           scope: tabCloseScope,
           worktreeOf: tabWorktreeOf,
         });
-        if (closePlan.action === "keep") onClearTabSession(activeTab.id);
-        else onCloseTab(activeTab.id);
+        if (closePlan.action === "keep") onClearTabSession(closingTab.id);
+        else onCloseTab(closingTab.id);
         return;
       }
       persistSession(sessionsRef.current.find((s) => s.id === closingId));
       setTabs((prev) =>
         prev.map((t) =>
-          t.id === activeTab.id
+          t.id === closingTab.id
             ? { ...t, layout: nextTab.layout, focusedId: nextTab.focusedId }
             : t,
         ),
       );
-      if (closingId === activeTab.focusedId) {
+      if (closingTab.id === activeTabIdRef.current && closingId === closingTab.focusedId) {
         setComposerFocused(
           nextTab && sessionsRef.current.some((session) => session.id === nextTab.focusedId),
         );

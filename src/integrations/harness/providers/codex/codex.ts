@@ -722,6 +722,29 @@ export async function stopCodexSession(
     : retirements.retireOwner(sessionId, handles));
 }
 
+/** Host-to-desktop ownership transfer is stricter than delete/provider switch.
+ * A stale operation must never fall back to the latest session writer, and an
+ * empty stop target is not evidence that the original writer was retired. */
+export async function retireOriginalCodexWriter(
+  sessionId: string,
+  context: HarnessOperationContext,
+): Promise<void> {
+  const live = liveByThread.get(sessionId);
+  const startup = startingByThread.get(sessionId);
+  if (
+    !context?.operation ||
+    !live ||
+    startup ||
+    !ownsOperation(context, live.handle, live.operation)
+  )
+    throw new Error("The original Codex writer cannot be verified; continuation remains guarded.");
+  if (live.activeTurnId || live.pendingTurnStart)
+    throw new Error("The original Codex writer still has active work; continuation remains guarded.");
+  // stopCodexSession captures the matching handle synchronously, before waiting
+  // for retirement. Unlike forget, it preserves the persisted resume identity.
+  await stopCodexSession(sessionId, context);
+}
+
 export async function forgetCodexSession(
   sessionId: string,
   context?: HarnessOperationContext,

@@ -103,7 +103,7 @@ it("keeps MCP progress on the exact action and server even when providers share 
   const signIns = [...container.querySelectorAll<HTMLButtonElement>("button")].filter(
     (button) => button.textContent === "Sign in",
   );
-  expect(signIns).toHaveLength(1);
+  expect(signIns).toHaveLength(2);
   await act(async () => signIns[0].click());
   expect(signIns[0].getAttribute("aria-busy")).toBe("true");
   expect(
@@ -224,11 +224,8 @@ it("filters connections by provider", async () => {
   await act(async () => codex.click());
   expect(container.textContent).toContain("docs");
   expect(container.textContent).not.toContain("sentry");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Actions for docs"]')!.click(),
-  );
-  const signIn = [...document.querySelectorAll("button")].find(
-    (button) => button.textContent === "Sign in again",
+  const signIn = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Sign in",
   )!;
   await act(async () => signIn.click());
   expect(invoke).toHaveBeenCalledWith("mcp_provider_login", {
@@ -400,6 +397,42 @@ it("hides Sign in when a server has no known transport", async () => {
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Sign in"),
   ).toBe(false);
+});
+
+it("exposes configured remote sign-in per provider without offering it to disabled or local tools", async () => {
+  const connections = [
+    ...(["claude", "codex", "cursor", "opencode"] as const).map((provider) => ({
+      provider, name: `${provider}-cloudflare`, scope: "user", configPath: `/config/${provider}`, transport: "http",
+    })),
+    { provider: "codex", name: "disabled", scope: "user", configPath: "/config/codex", transport: "http", enabled: false },
+    { provider: "claude", name: "local-tool", scope: "user", configPath: "/config/claude", transport: "stdio" },
+    { provider: "claude_desktop", name: "desktop", scope: "user", configPath: "/config/desktop", transport: "http" },
+  ];
+  invoke.mockImplementation(async (command: string) => command === "mcp_discover" ? connections : "");
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  const signIns = [...container.querySelectorAll<HTMLButtonElement>("button")].filter((button) => button.textContent === "Sign in");
+  expect(signIns).toHaveLength(4);
+  for (const provider of ["claude", "codex", "cursor", "opencode"]) {
+    const actions = container.querySelector(`[aria-label="Actions for ${provider}-cloudflare"]`)!;
+    const signIn = [...actions.parentElement!.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Sign in")!;
+    await act(async () => signIn.click());
+    expect(invoke).toHaveBeenCalledWith("mcp_provider_login", { cwd: "/repo", provider, name: `${provider}-cloudflare` });
+  }
+  expect(container.textContent).toContain("Configured");
+  expect(container.textContent).not.toContain("Connected");
+});
+
+it("keeps repeat sign-in in the connected row menu", async () => {
+  invoke.mockImplementation(async (command: string) => command === "mcp_discover"
+    ? [{ provider: "claude", name: "connected", scope: "user", configPath: "/config/claude", transport: "http" }]
+    : command === "claude_mcp_list" ? "connected: https://example.test/mcp - ✔ Connected" : undefined);
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Sign in")).toBe(false);
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Actions for connected"]')!.click());
+  const signIn = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === "Sign in again")!;
+  expect(signIn).toBeDefined();
+  await act(async () => signIn.click());
+  expect(invoke).toHaveBeenCalledWith("mcp_provider_login", { cwd: "/repo", provider: "claude", name: "connected" });
 });
 
 it("shows only configured provider chips until the filter button reveals all", async () => {

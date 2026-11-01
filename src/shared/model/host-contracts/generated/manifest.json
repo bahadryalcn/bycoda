@@ -2466,6 +2466,7 @@
           "cleanupError": { "type": "string" },
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
+          "completedWithFindings": { "type": "boolean" },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -2605,6 +2606,23 @@
             "type": "object"
           },
           "needsInput": { "type": "boolean" },
+          "ownerNotices": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "id": { "type": "string" },
+                "kind": {
+                  "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                  "type": "string"
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["id", "kind", "message", "at"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "position": { "type": "number" },
           "preflight": {
             "additionalProperties": false,
@@ -5309,6 +5327,7 @@
                 "cleanupError": { "type": "string" },
                 "cleanupRetryAfter": { "type": "number" },
                 "completedAt": { "type": "number" },
+                "completedWithFindings": { "type": "boolean" },
                 "continueUntilDone": { "type": "boolean" },
                 "createdAt": { "type": "number" },
                 "crewDefinitionId": { "type": "string" },
@@ -5454,6 +5473,23 @@
                   "type": "object"
                 },
                 "needsInput": { "type": "boolean" },
+                "ownerNotices": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": { "type": "number" },
+                      "id": { "type": "string" },
+                      "kind": {
+                        "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                        "type": "string"
+                      },
+                      "message": { "type": "string" }
+                    },
+                    "required": ["id", "kind", "message", "at"],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
                 "position": { "type": "number" },
                 "preflight": {
                   "additionalProperties": false,
@@ -9123,6 +9159,7 @@
                       "cleanupError": { "type": "string" },
                       "cleanupRetryAfter": { "type": "number" },
                       "completedAt": { "type": "number" },
+                      "completedWithFindings": { "type": "boolean" },
                       "continueUntilDone": { "type": "boolean" },
                       "createdAt": { "type": "number" },
                       "crewDefinitionId": { "type": "string" },
@@ -9268,6 +9305,28 @@
                         "type": "object"
                       },
                       "needsInput": { "type": "boolean" },
+                      "ownerNotices": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": { "type": "number" },
+                            "id": { "type": "string" },
+                            "kind": {
+                              "enum": [
+                                "remaining_finding",
+                                "external_check",
+                                "auto_continued",
+                                "info"
+                              ],
+                              "type": "string"
+                            },
+                            "message": { "type": "string" }
+                          },
+                          "required": ["id", "kind", "message", "at"],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
                       "position": { "type": "number" },
                       "preflight": {
                         "additionalProperties": false,
@@ -29827,6 +29886,7 @@
           "cleanupError": { "type": "string" },
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
+          "completedWithFindings": { "type": "boolean" },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -29966,6 +30026,23 @@
             "type": "object"
           },
           "needsInput": { "type": "boolean" },
+          "ownerNotices": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "id": { "type": "string" },
+                "kind": {
+                  "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                  "type": "string"
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["id", "kind", "message", "at"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "position": { "type": "number" },
           "preflight": {
             "additionalProperties": false,
@@ -30395,6 +30472,7 @@
             "cleanupError": { "type": "string" },
             "cleanupRetryAfter": { "type": "number" },
             "completedAt": { "type": "number" },
+            "completedWithFindings": { "type": "boolean" },
             "continueUntilDone": { "type": "boolean" },
             "createdAt": { "type": "number" },
             "crewDefinitionId": { "type": "string" },
@@ -30534,6 +30612,23 @@
               "type": "object"
             },
             "needsInput": { "type": "boolean" },
+            "ownerNotices": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "kind", "message", "at"],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "position": { "type": "number" },
             "preflight": {
               "additionalProperties": false,
@@ -30896,6 +30991,7 @@
           "cleanupError": { "type": "string" },
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
+          "completedWithFindings": { "type": "boolean" },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -31035,6 +31131,23 @@
             "type": "object"
           },
           "needsInput": { "type": "boolean" },
+          "ownerNotices": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "id": { "type": "string" },
+                "kind": {
+                  "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                  "type": "string"
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["id", "kind", "message", "at"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "position": { "type": "number" },
           "preflight": {
             "additionalProperties": false,
@@ -31392,6 +31505,7 @@
           "cleanupError": { "type": "string" },
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
+          "completedWithFindings": { "type": "boolean" },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -31531,6 +31645,23 @@
             "type": "object"
           },
           "needsInput": { "type": "boolean" },
+          "ownerNotices": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "id": { "type": "string" },
+                "kind": {
+                  "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                  "type": "string"
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["id", "kind", "message", "at"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "position": { "type": "number" },
           "preflight": {
             "additionalProperties": false,
@@ -31889,6 +32020,7 @@
           "cleanupError": { "type": "string" },
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
+          "completedWithFindings": { "type": "boolean" },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -32028,6 +32160,23 @@
             "type": "object"
           },
           "needsInput": { "type": "boolean" },
+          "ownerNotices": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "id": { "type": "string" },
+                "kind": {
+                  "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                  "type": "string"
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["id", "kind", "message", "at"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "position": { "type": "number" },
           "preflight": {
             "additionalProperties": false,
@@ -32380,6 +32529,7 @@
               "cleanupError": { "type": "string" },
               "cleanupRetryAfter": { "type": "number" },
               "completedAt": { "type": "number" },
+              "completedWithFindings": { "type": "boolean" },
               "continueUntilDone": { "type": "boolean" },
               "createdAt": { "type": "number" },
               "crewDefinitionId": { "type": "string" },
@@ -32565,6 +32715,7 @@
                   "cleanupError": { "type": "string" },
                   "cleanupRetryAfter": { "type": "number" },
                   "completedAt": { "type": "number" },
+                  "completedWithFindings": { "type": "boolean" },
                   "continueUntilDone": { "type": "boolean" },
                   "createdAt": { "type": "number" },
                   "crewDefinitionId": { "type": "string" },
@@ -32710,6 +32861,23 @@
                     "type": "object"
                   },
                   "needsInput": { "type": "boolean" },
+                  "ownerNotices": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": { "type": "number" },
+                        "id": { "type": "string" },
+                        "kind": {
+                          "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                          "type": "string"
+                        },
+                        "message": { "type": "string" }
+                      },
+                      "required": ["id", "kind", "message", "at"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "position": { "type": "number" },
                   "preflight": {
                     "additionalProperties": false,
@@ -33040,6 +33208,23 @@
                 "type": "object"
               },
               "needsInput": { "type": "boolean" },
+              "ownerNotices": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": { "type": "number" },
+                    "id": { "type": "string" },
+                    "kind": {
+                      "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                      "type": "string"
+                    },
+                    "message": { "type": "string" }
+                  },
+                  "required": ["id", "kind", "message", "at"],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "position": { "type": "number" },
               "preflight": {
                 "additionalProperties": false,
@@ -33423,6 +33608,7 @@
             "cleanupError": { "type": "string" },
             "cleanupRetryAfter": { "type": "number" },
             "completedAt": { "type": "number" },
+            "completedWithFindings": { "type": "boolean" },
             "continueUntilDone": { "type": "boolean" },
             "createdAt": { "type": "number" },
             "crewDefinitionId": { "type": "string" },
@@ -33562,6 +33748,23 @@
               "type": "object"
             },
             "needsInput": { "type": "boolean" },
+            "ownerNotices": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "kind": {
+                    "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                    "type": "string"
+                  },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "kind", "message", "at"],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "position": { "type": "number" },
             "preflight": {
               "additionalProperties": false,
@@ -33930,6 +34133,7 @@
           "cleanupError": { "type": "string" },
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
+          "completedWithFindings": { "type": "boolean" },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -34069,6 +34273,23 @@
             "type": "object"
           },
           "needsInput": { "type": "boolean" },
+          "ownerNotices": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "id": { "type": "string" },
+                "kind": {
+                  "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                  "type": "string"
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["id", "kind", "message", "at"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "position": { "type": "number" },
           "preflight": {
             "additionalProperties": false,
@@ -34423,6 +34644,7 @@
           "cleanupError": { "type": "string" },
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
+          "completedWithFindings": { "type": "boolean" },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -34562,6 +34784,23 @@
             "type": "object"
           },
           "needsInput": { "type": "boolean" },
+          "ownerNotices": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "id": { "type": "string" },
+                "kind": {
+                  "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                  "type": "string"
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["id", "kind", "message", "at"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "position": { "type": "number" },
           "preflight": {
             "additionalProperties": false,
@@ -34914,6 +35153,7 @@
               "cleanupError": { "type": "string" },
               "cleanupRetryAfter": { "type": "number" },
               "completedAt": { "type": "number" },
+              "completedWithFindings": { "type": "boolean" },
               "continueUntilDone": { "type": "boolean" },
               "createdAt": { "type": "number" },
               "crewDefinitionId": { "type": "string" },
@@ -35099,6 +35339,7 @@
                   "cleanupError": { "type": "string" },
                   "cleanupRetryAfter": { "type": "number" },
                   "completedAt": { "type": "number" },
+                  "completedWithFindings": { "type": "boolean" },
                   "continueUntilDone": { "type": "boolean" },
                   "createdAt": { "type": "number" },
                   "crewDefinitionId": { "type": "string" },
@@ -35244,6 +35485,23 @@
                     "type": "object"
                   },
                   "needsInput": { "type": "boolean" },
+                  "ownerNotices": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": { "type": "number" },
+                        "id": { "type": "string" },
+                        "kind": {
+                          "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                          "type": "string"
+                        },
+                        "message": { "type": "string" }
+                      },
+                      "required": ["id", "kind", "message", "at"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "position": { "type": "number" },
                   "preflight": {
                     "additionalProperties": false,
@@ -35574,6 +35832,23 @@
                 "type": "object"
               },
               "needsInput": { "type": "boolean" },
+              "ownerNotices": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": { "type": "number" },
+                    "id": { "type": "string" },
+                    "kind": {
+                      "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                      "type": "string"
+                    },
+                    "message": { "type": "string" }
+                  },
+                  "required": ["id", "kind", "message", "at"],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "position": { "type": "number" },
               "preflight": {
                 "additionalProperties": false,
@@ -35912,6 +36187,7 @@
           "cleanupError": { "type": "string" },
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
+          "completedWithFindings": { "type": "boolean" },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -36051,6 +36327,23 @@
             "type": "object"
           },
           "needsInput": { "type": "boolean" },
+          "ownerNotices": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "id": { "type": "string" },
+                "kind": {
+                  "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                  "type": "string"
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["id", "kind", "message", "at"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "position": { "type": "number" },
           "preflight": {
             "additionalProperties": false,
@@ -36451,6 +36744,7 @@
           "cleanupError": { "type": "string" },
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
+          "completedWithFindings": { "type": "boolean" },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -36590,6 +36884,23 @@
             "type": "object"
           },
           "needsInput": { "type": "boolean" },
+          "ownerNotices": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "id": { "type": "string" },
+                "kind": {
+                  "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                  "type": "string"
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["id", "kind", "message", "at"],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "position": { "type": "number" },
           "preflight": {
             "additionalProperties": false,
@@ -45360,6 +45671,7 @@
                     "cleanupError": { "type": "string" },
                     "cleanupRetryAfter": { "type": "number" },
                     "completedAt": { "type": "number" },
+                    "completedWithFindings": { "type": "boolean" },
                     "continueUntilDone": { "type": "boolean" },
                     "createdAt": { "type": "number" },
                     "crewDefinitionId": { "type": "string" },
@@ -45549,6 +45861,7 @@
                         "cleanupError": { "type": "string" },
                         "cleanupRetryAfter": { "type": "number" },
                         "completedAt": { "type": "number" },
+                        "completedWithFindings": { "type": "boolean" },
                         "continueUntilDone": { "type": "boolean" },
                         "createdAt": { "type": "number" },
                         "crewDefinitionId": { "type": "string" },
@@ -45694,6 +46007,28 @@
                           "type": "object"
                         },
                         "needsInput": { "type": "boolean" },
+                        "ownerNotices": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "at": { "type": "number" },
+                              "id": { "type": "string" },
+                              "kind": {
+                                "enum": [
+                                  "remaining_finding",
+                                  "external_check",
+                                  "auto_continued",
+                                  "info"
+                                ],
+                                "type": "string"
+                              },
+                              "message": { "type": "string" }
+                            },
+                            "required": ["id", "kind", "message", "at"],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "position": { "type": "number" },
                         "preflight": {
                           "additionalProperties": false,
@@ -46050,6 +46385,28 @@
                       "type": "object"
                     },
                     "needsInput": { "type": "boolean" },
+                    "ownerNotices": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": { "type": "number" },
+                          "id": { "type": "string" },
+                          "kind": {
+                            "enum": [
+                              "remaining_finding",
+                              "external_check",
+                              "auto_continued",
+                              "info"
+                            ],
+                            "type": "string"
+                          },
+                          "message": { "type": "string" }
+                        },
+                        "required": ["id", "kind", "message", "at"],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
                     "position": { "type": "number" },
                     "preflight": {
                       "additionalProperties": false,
@@ -46640,6 +46997,7 @@
                     "cleanupError": { "type": "string" },
                     "cleanupRetryAfter": { "type": "number" },
                     "completedAt": { "type": "number" },
+                    "completedWithFindings": { "type": "boolean" },
                     "continueUntilDone": { "type": "boolean" },
                     "createdAt": { "type": "number" },
                     "crewDefinitionId": { "type": "string" },
@@ -46829,6 +47187,7 @@
                         "cleanupError": { "type": "string" },
                         "cleanupRetryAfter": { "type": "number" },
                         "completedAt": { "type": "number" },
+                        "completedWithFindings": { "type": "boolean" },
                         "continueUntilDone": { "type": "boolean" },
                         "createdAt": { "type": "number" },
                         "crewDefinitionId": { "type": "string" },
@@ -46974,6 +47333,28 @@
                           "type": "object"
                         },
                         "needsInput": { "type": "boolean" },
+                        "ownerNotices": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "at": { "type": "number" },
+                              "id": { "type": "string" },
+                              "kind": {
+                                "enum": [
+                                  "remaining_finding",
+                                  "external_check",
+                                  "auto_continued",
+                                  "info"
+                                ],
+                                "type": "string"
+                              },
+                              "message": { "type": "string" }
+                            },
+                            "required": ["id", "kind", "message", "at"],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "position": { "type": "number" },
                         "preflight": {
                           "additionalProperties": false,
@@ -47330,6 +47711,28 @@
                       "type": "object"
                     },
                     "needsInput": { "type": "boolean" },
+                    "ownerNotices": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": { "type": "number" },
+                          "id": { "type": "string" },
+                          "kind": {
+                            "enum": [
+                              "remaining_finding",
+                              "external_check",
+                              "auto_continued",
+                              "info"
+                            ],
+                            "type": "string"
+                          },
+                          "message": { "type": "string" }
+                        },
+                        "required": ["id", "kind", "message", "at"],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
                     "position": { "type": "number" },
                     "preflight": {
                       "additionalProperties": false,
@@ -51578,5 +51981,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "2302288d8992db47664f2699efd190912c9861350ea3e69c705dd84856cb3fec"
+  "schemaHash": "ce7eb8e33f9d2e2a6c8f2f26f00bd2533834704c390505311818d24bb1ce2d7c"
 }

@@ -1,131 +1,39 @@
 ---
 name: feature-session-references
-description: Stable local session links and Markdown citations, Host and Native origin resolution, sessions.list/read results, transcript and Notes routing, copy actions, lazy preview and cited-turn navigation.
+description: "Change stable local conversation links/citations, origin resolution, sessions.list/read references, copy actions, lazy previews and cited-turn navigation."
 ---
 
 # Local session references
 
-## Purpose and keywords
+Own a versioned address to existing authorized local content. Link activation is not a send, unarchive, migration, execution-workspace change or public upload. Mobile/remote/OS scheme launch require their own explicit implementation and authority.
 
-Open an exact existing local conversation from a saved reference, reuse its tab,
-copy plain/Markdown links, inspect authorized details and navigate to a cited user
-turn. Local desktop only; no OS protocol registration, mobile/remote expansion,
-new send permission or migration initiation. Read `feature-host-runtime`,
-`feature-sessions-sidebar`, `feature-notes` and the current `.artifact` before changes.
+## Source entry points
 
-Source inventory refreshed 2026-10-30, shared `main`: started at `654256cb2`,
-then an external actor integrated corrections in `7c18b5b14` during verification.
-The final worker Find-trigger/footer and fixture refinements follow that commit.
-This lane performed no Git writes. Preserve unrelated staged/unstaged work.
-Search roots: `src/app/`, `src/features/{sessions,agent-app,connections,notes}/`,
-`src/integrations/harness/`, `host/`, `src-tauri/src/`, `tests/browser/`,
-`src/shared/i18n/`. Existing dirty/staged work belongs to other workstreams.
-Live feature-claim APIs were unavailable; current T3 thread and worktree state
-were inspected before assigning disjoint writers. This card is not a live lock.
+Code paths below are repository-root relative.
 
-## Surface inventory and completeness
+- `src/features/sessions/model/localSessionReference.ts`
+- `src/app/workspace/sessions/useLocalSessionReferences.ts`
+- `docs/guides/local-session-references.md`
 
-| Surface | Owner paths | Delivery / evidence |
-| --- | --- | --- |
-| Stable contract | `src/features/sessions/model/localSessionReference.ts` | Versioned strict `bycoda://session/v1/host/<environment>/<session>` and `native/<store>/<profile>/<session>`; optional `?turn=`; escaped labels; adjacent tests |
-| Native identity | `src-tauri/src/session_store/references.rs`, registration in `session_store.rs` / `lib.rs`; `nativeSessionReference.ts` | Read-only current-origin metadata commands `session_reference_get` / `session_reference_resolve`; committed mappings only; tests exclude initialization/migration/metadata reads for wrong origin |
-| Agent results | `host/server.ts`, `host/mcp-http.ts`, `host/desktopSessions.ts`, worker, `src/features/agent-app/model/{agentApp,sessionConversation}.ts`, `src/app/workspace/control/useAppControlRequests.ts` | Additive verified references on existing list/read and cited user turns; unavailable/unsaved owners never get guessed links; strict unrelated RPC schemas retained |
-| Agent guidance | `src/integrations/harness/core/conversationToolsBridge.ts`, `host/app-skills/bycoda/references/work.md` | Exact returned first-mention reference; found/read/requested/acknowledged distinguished |
-| Markdown | `AgentMarkdown.tsx`, `remarkLocalSessionLinks.ts`, `LocalSessionReferenceContext.tsx`, `LocalSessionReferenceLink.tsx` | Actual sanitize/streaming route, shared lazy Popover and actions, local pending/retry, invalid internal URIs never externally launched |
-| Navigation/state | `localSessionNavigation.ts`, `src/app/workspace/sessions/useLocalSessionReferences.ts`, `src/app/App.tsx`, `SessionPane.tsx`, `useCitedTurnHistory.ts` | Validated local origin, visibility rechecks, existing history/tab/worker navigation and side-by-side owner, stale click guards, stable user-turn requests and demand-loaded older pages |
-| Worker transcript | `AgentTabView.tsx`, `useReadOnlyHostSession.ts`, `src/app/workspace/bridges/useOrchestrationWorkerPanes.ts`, `useOpenSessionActions.ts` | Lead/worker editor reuse, guarded asynchronous pane publication, exact worker turn paging; Host reader mounts bounded read helpers only, with no queue/drain/recovery/send lifecycle |
-| Copy | `src/app/shell/Sidebar.tsx` | Local single-session context menu plain/Markdown actions; initiating menu progress/success/error; existing ID actions retained |
-| Documents | Existing `NoteEditablePreview`, `MarkdownPreview`, `MarkdownDocumentPreview` via shared AgentMarkdown | Shared provider covers workspace and retained transcript outlet; Notes anchor/button boundary retains editing state |
-| Locales | `src/shared/i18n/locales/{en,tr,de,fr,es,pt,zh-CN,ja}.json` | New link/details/copy/recovery labels in all eight desktop locales |
-| Guide | `docs/guides/local-session-references.md`, `workbench.md` | Copy, reference semantics, permissions, recovery and scope |
+## Workflow
 
-AgentMarkdown caller inventory also includes AgentTranscript, AgentTranscriptActivity,
-SubagentSheet, SubagentAnatomy, TaskDetail/TaskSessionSheet, InboxDetail/InboxComments/
-InboxPrOverview, PoliciesSettings, WhatsNewDialog and ReleaseNotesSurface. Consumers
-outside an authorized provider show an unavailable action and never invoke OS launch.
+1. Trace the returned reference from persistent Host environment or Native store/profile identity through strict parsing, Markdown sanitization and existing tab/history routing.
+2. Use exact tool-returned reference/link/markdownReference on first mention; read the conversation before describing its work. Found/read does not establish a message or acknowledgement.
+3. Keep details lazy/read-only, with visibility checks before disclosure and after awaited history loading. Retain original target/turn identity through loading and tab insertion.
+4. Check invalid/wrong-origin/locked/missing references, existing-tab/worker reuse, archived targets, older cited turns, copy failure and navigation races.
 
-## Owner decisions
+## Preserve
 
-2026-10-29, T3 conversation `d33140e6-93b7-4e25-bf6a-06c2a93a9c6b`, user request:
+- Never construct a target from title, provider ID, cwd, unsent shell or guessed origin. Host environment and Native store/profile/session identity remain authoritative.
+- Wrong-origin mismatch has no authority fallback. Native resolution may use existing verified migration receipts but must not initialize a store or start migration.
+- Preserve project bounds, private reasoning exclusion, bounded pages/cursors/prose, drafts/caret/selection, archive membership and existing history/split/worker navigation.
+- Invalid internal links must not fall through to OS launch. Consumers outside an authorized provider expose unavailable actions rather than inventing access.
+- Preview caches retain only appropriate in-flight work and invalidate on privacy-context change. Worker references navigate to the worker transcript/turn rather than silently focusing its lead.
 
-> Gerekli Host/API/Native işlerini tamamla; linkleme için migration başlatma.
+## Verification and references
 
-> Oturumlar arası mesajlaşma yetkisini genişletme.
-
-> Build/install/release yapma; commit/push yapma.
-
-Scope follows `temp/local/2026-10-29-session-references-plan/LOCAL-PLAN.md`;
-the broader `PLAN.md` is research, not authorization to implement mobile/OS links.
-
-2026-10-30, T3 conversation `7bd70718-c924-4e7a-a551-b64fa19cf422`, user request:
-
-> Aşağıda vereceğim plana bakarmısın link gibi paylaşılabilir olsun ilerde webten yönlendirebilelim filan istiyorum
-
-> Önce temel akışı uçtan uca tamamla, ardından plandaki yerel
-> önizleme ve konuşma turuna gitme adımlarını ele al.
-
-> Build/install/release yapma; commit/push yapma.
-
-Current scope implements the local plan and documents the versioned URI as the
-future web handoff target. OS registration and public web content sharing remain
-separate capabilities.
-
-## Behavior to preserve
-
-Persistent store/profile/environment identity, project visibility and authentication;
-list/read project bounds, pages, cursors, prose caps and private reasoning exclusion;
-existing send gates; drafts, caret, selection, retained transcript/Notes state;
-history/tab/worker routing; archived membership; execution-workspace identity.
-Do not create a link from a provider ID, unsent shell, title, cwd or guessed origin.
-No authority fallback after a mismatch. Preview caches only in-flight reads and
-is invalidated when privacy context changes. Opening never unarchives or migrates.
-
-## Checks and visual scenarios
-
-Focused suites cover URI encoding/collisions/labels, Native read-only identity and
-verified migration receipts, bounded tools, actual DOM sanitizer/streaming/Notes
-interaction, navigation races/visibility and existing tab ownership. Browser fixture:
-`tests/browser/session-references.spec.ts` with dedicated dev-server config, both
-themes at 1280/800, keyboard/details/retry and selection/edit boundaries.
-Evidence is recorded under `temp/verification/2026-10-29-session-references/`.
-Fixtures are not isolated Native/Host or installed acceptance. Final check results
-and concrete blockers are recorded in that packet's `DELIVERY.md` and
-`RENDERER-UI.md`. That packet records the original implementation, including its
-then-blocked browser attempts. Current correction evidence belongs under
-`temp/verification/2026-10-30-session-references/`; see its `DELIVERY.md`,
-`BACKEND.md`, `NAVIGATION.md` and `RENDERER-UI.md` for final commands and limits.
-Normal desktop/Host types passed earlier snapshots; the last desktop snapshot
-reports unrelated concurrent Social UI unused-import/local diagnostics (exact
-files in the current delivery report). Focused reference, navigation, worker,
-renderer, Sidebar and isolated Host checks passed. Browser acceptance
-uses actual Markdown/Popover/Notes/Sidebar components with fixture metadata and
-navigation. Bounded Tailwind scanning/dependency discovery and a test-only local
-HTTP transport shim resolve the earlier loading blocker. Captures are inspected
-at 1280/800 in both themes. Fixture evidence does not establish Native GUI or
-installed acceptance.
-
-Current corrections also cover a Native authority phase check before advertising
-a link, synchronous duplicate-open prevention, action-specific pending feedback,
-revocation during delegated history loading, refreshed archived Host shell
-metadata and exact worker panes instead of lead-only focus.
-
-## Known blockers and evidence limits
-
-New Native IPC commands require an executable containing the source change. The
-owner prohibited builds and installations, so real new-command Native UI acceptance
-cannot be claimed from an existing binary. Fixture screenshots and Rust unit tests
-are separate evidence. Installed inclusion is unknown; release is not requested.
-
-## Committed handoff references
-
-Original implementation is present in `654256cb2`. Another actor integrated the
-reference corrections with admission work in `7c18b5b14`; final footer/fixture
-and evidence refinements follow it. This lane did not stage, commit, push,
-build, install or release. Check current source hashes/status in the delivery
-packet; a shared checkout can move during verification.
-
-## Proposals
-
-Mobile/remote-machine navigation, external OS scheme launch and composer session
-mentions remain separate later scopes. Inter-session messaging needs its own
-authority/lifecycle specification.
+- Select URI/parser, actual Markdown/sanitizer/Notes interaction, navigation/visibility race, worker and Sidebar copy tests; new Native metadata needs read-only wrong-origin coverage.
+- Use the session-references browser family for changed UI, then isolated Host/Native origin and history-loading checks. Existing binaries cannot establish acceptance of a new IPC command.
+- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
+- [Reference behavior and URI format](../../../docs/guides/local-session-references.md)
+- [Host origin authority](../../../docs/reference/host-runtime.md)

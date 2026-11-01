@@ -16,6 +16,9 @@ export const VAD_TUNING = {
   /** Normal onset: this much voiced speech within the window (seconds). */
   onsetVoiced: 0.13,
   onsetWindow: 0.26,
+  /** A short word that already passed sustained onset must survive the end gate.
+   * Two 64 ms voiced frames are enough for e.g. a brief yes/no. */
+  minUtteranceVoiced: 0.12,
   /** While the assistant speaks: longer speech and a louder margin. */
   strictVoiced: 0.26,
   strictWindow: 0.39,
@@ -149,7 +152,7 @@ export class VoiceVad {
       this.options.pause &&
       !this.paused &&
       this.quiet >= this.rate * 0.2 &&
-      this.voiced >= this.rate * 0.2
+      this.voiced >= this.rate * VAD_TUNING.minUtteranceVoiced
     ) {
       this.paused = true;
       this.options.pause(this.audio(), this.pauseId);
@@ -173,7 +176,8 @@ export class VoiceVad {
   /** Ends the current utterance now, e.g. when dictation stops mid-sentence. */
   flush() {
     if (!this.talking) return this.reset();
-    const result = this.voiced >= this.rate * 0.2 ? this.audio() : undefined;
+    const result =
+      this.voiced >= this.rate * VAD_TUNING.minUtteranceVoiced ? this.audio() : undefined;
     this.reset();
     if (result) this.end(result);
     else this.discard?.();
