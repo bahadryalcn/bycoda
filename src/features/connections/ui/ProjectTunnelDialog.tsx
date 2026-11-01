@@ -1,3 +1,4 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -88,7 +89,7 @@ export function ProjectTunnelDialog({
           </Button>
         </div>
       ) : (
-        <p role="status">{t("Checking tunnel access…")}</p>
+        <LoadingText>{t("Checking tunnel access…")}</LoadingText>
       )}
     </Modal>
   );

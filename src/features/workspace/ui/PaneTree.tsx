@@ -19,6 +19,7 @@ import {
   type DropPlacement,
 } from "../../../shared/lib/drag";
 import { Maximize2 } from "../../../shared/ui/icons";
+import { Sash as ResizeSash } from "../../../shared/ui/Sash";
 import {
   isPointerOutsideWindow,
   pointerWindowMovePosition,
@@ -716,7 +717,7 @@ function PaneTreeComponent({
                       buttons?.[nextIndex]?.focus();
                     }}
                     onPointerDown={paneDragStartFor(id)}
-                    title={sessionById.get(id)?.title || t("Session")}
+                    tooltip={sessionById.get(id)?.title || t("Session")}
                   >
                     {sessionById.get(id)?.title ||
                       editorPanes
@@ -727,7 +728,7 @@ function PaneTreeComponent({
                     {drop?.overId === id && drop.tabPosition ? (
                       <span
                         data-pane-tab-drop={drop.tabPosition}
-                        className={`pointer-events-none absolute inset-y-0 w-0.5 ${drop.tabPosition === "before" ? "start-0" : "end-0"} ${drop.invalid ? "bg-danger" : "bg-accent"}`}
+                        className={`pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) rounded-full ${drop.tabPosition === "before" ? "start-0" : "end-0"} ${drop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`}
                       />
                     ) : null}
                   </Button>
@@ -741,14 +742,13 @@ function PaneTreeComponent({
                 variant="ghost"
                 motion="none"
                 type="button"
-                title={t(maximum ? "Restore panel layout" : "Maximize panel")}
                 aria-label={t(maximum ? "Restore panel layout" : "Maximize panel")}
                 aria-pressed={Boolean(maximum)}
                 data-pane-maximize={leaf.id}
                 onClick={() => toggleMaximum(leaf.id)}
-                className="absolute [inset-block-start:0.25rem] end-2 z-10 grid place-items-center"
+                className="absolute [inset-block-start:0.25rem] end-2 z-1 grid place-items-center"
               >
-                <Maximize2 className="size-3.5" />
+                <Maximize2 className="icon-sm" />
               </Button>
             ) : null}
             <div
@@ -864,7 +864,7 @@ function PaneTreeComponent({
         );
       })}
       {sashes.map((sash) => (
-        <Sash
+        <PaneSash
           key={`${sash.splitId}:${sash.index}`}
           sash={sash}
           containerRef={treeRef}
@@ -996,7 +996,7 @@ function paneDropMark(
   };
 }
 
-function Sash({
+function PaneSash({
   sash,
   containerRef,
   onPreview,
@@ -1010,37 +1010,47 @@ function Sash({
   onCancel: () => void;
 }) {
   useLocale();
-  const cancelDrag = useRef<(() => void) | null>(null);
-  const [dragging, setDragging] = useState(false);
-  useEffect(() => () => cancelDrag.current?.(), []);
+  const gesture = useRef({ start: 0, span: 0 });
   const row = sash.dir === "right";
   const boundary = sash.sizes.slice(0, sash.index + 1).reduce((sum, size) => sum + size, 0);
   const before = sash.sizes.slice(0, sash.index).reduce((sum, size) => sum + size, 0);
   const pairSize = sash.sizes[sash.index] + sash.sizes[sash.index + 1];
   const minimum = Math.min(MIN_PANE_RATIO, pairSize / 2);
   const group = sash.group;
+  const ratioAt = (delta: number) =>
+    gesture.current.start + (gesture.current.span > 0 ? delta / gesture.current.span : 0);
 
   return (
-    <div
-      role="separator"
-      tabIndex={0}
-      aria-label={t(row ? "Resize columns" : "Resize rows")}
-      aria-orientation={row ? "vertical" : "horizontal"}
-      aria-valuemin={Math.round((before + minimum) * 100)}
-      aria-valuemax={Math.round((before + pairSize - minimum) * 100)}
-      aria-valuenow={Math.round(boundary * 100)}
-      className={`absolute z-10 bg-stroke focus-visible:outline-2 focus-visible:outline-accent hover:bg-accent active:bg-accent ${dragging ? "bg-accent" : ""} ${row ? "w-px cursor-col-resize" : "h-px cursor-row-resize"}`}
+    <ResizeSash
+      orientation={row ? "vertical" : "horizontal"}
+      label={t(row ? "Resize columns" : "Resize rows")}
+      value={Math.round(boundary * 100)}
+      min={Math.round((before + minimum) * 100)}
+      max={Math.round((before + pairSize - minimum) * 100)}
+      className="absolute"
+      onResizeStart={() => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        gesture.current = {
+          start: boundary,
+          span: rect ? (row ? group.w * rect.width : group.h * rect.height) : 0,
+        };
+      }}
+      onResize={(delta) => {
+        if (gesture.current.span > 0) onPreview(ratioAt(delta));
+      }}
+      onResizeEnd={(delta, { cancelled, moved }) => {
+        if (cancelled || !moved || gesture.current.span <= 0) onCancel();
+        else onCommit(ratioAt(delta));
+      }}
       onKeyDown={(event) => {
-        const before = sash.sizes.slice(0, sash.index).reduce((sum, size) => sum + size, 0);
-        const pair = sash.sizes[sash.index] + sash.sizes[sash.index + 1];
         const decrease = row ? "ArrowLeft" : "ArrowUp";
         const increase = row ? "ArrowRight" : "ArrowDown";
         let next: number;
         if (event.key === decrease) next = boundary - (event.shiftKey ? 0.1 : 0.02);
         else if (event.key === increase) next = boundary + (event.shiftKey ? 0.1 : 0.02);
         else if (event.key === "Home") next = before;
-        else if (event.key === "End") next = before + pair;
-        else if (event.key === "Enter") next = before + pair / 2;
+        else if (event.key === "End") next = before + pairSize;
+        else if (event.key === "Enter") next = before + pairSize / 2;
         else return;
         event.preventDefault();
         event.stopPropagation();
@@ -1049,8 +1059,7 @@ function Sash({
       onDoubleClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        const before = sash.sizes.slice(0, sash.index).reduce((sum, size) => sum + size, 0);
-        onCommit(before + (sash.sizes[sash.index] + sash.sizes[sash.index + 1]) / 2);
+        onCommit(before + pairSize / 2);
       }}
       style={
         row
@@ -1065,93 +1074,6 @@ function Sash({
               width: `${group.w * 100}%`,
             }
       }
-    >
-      <div
-        className={
-          row
-            ? "absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize touch-none"
-            : "absolute inset-x-0 -top-1.5 -bottom-1.5 cursor-row-resize touch-none"
-        }
-        onPointerDown={(e) => {
-          if (e.button !== 0) return;
-          cancelDrag.current?.();
-          e.preventDefault();
-          e.stopPropagation();
-          const handle = e.currentTarget;
-          const parent = containerRef.current;
-          if (!parent) return;
-          setDragging(true);
-          handle.setPointerCapture(e.pointerId);
-          const rect = parent.getBoundingClientRect();
-          const restoreSelection = suppressTextSelection();
-          const previousCursor = document.body.style.cursor;
-          document.body.style.cursor = row ? "col-resize" : "row-resize";
-          const origin = row ? rect.left + group.x * rect.width : rect.top + group.y * rect.height;
-          const span = row ? group.w * rect.width : group.h * rect.height;
-          let nextBoundary = boundary;
-          let moved = false;
-          let frame: number | null = null;
-          let finished = false;
-
-          const move = (ev: PointerEvent) => {
-            if (ev.pointerId !== e.pointerId) return;
-            const pos = row ? ev.clientX : ev.clientY;
-            if (span <= 0) return;
-            moved = true;
-            nextBoundary = (pos - origin) / span;
-            if (frame != null) return;
-            frame = requestAnimationFrame(() => {
-              frame = null;
-              onPreview(nextBoundary);
-            });
-          };
-          const finish = (commit: boolean) => {
-            if (finished) return;
-            finished = true;
-            cancelDrag.current = null;
-            if (frame != null) {
-              cancelAnimationFrame(frame);
-              frame = null;
-            }
-            handle.removeEventListener("pointermove", move);
-            handle.removeEventListener("pointerup", up);
-            handle.removeEventListener("pointercancel", cancel);
-            handle.removeEventListener("lostpointercapture", cancel);
-            window.removeEventListener("keydown", keydown);
-            window.removeEventListener("blur", cancel);
-            if (handle.hasPointerCapture(e.pointerId)) {
-              handle.releasePointerCapture(e.pointerId);
-            }
-            restoreSelection();
-            document.body.style.cursor = previousCursor;
-            setDragging(false);
-            if (!moved) {
-              onCancel();
-              return;
-            }
-            if (commit) onCommit(nextBoundary);
-            else onCancel();
-          };
-          const up = (event: PointerEvent) => {
-            if (event.pointerId !== e.pointerId) return;
-            move(event);
-            finish(true);
-          };
-          const cancel = () => finish(false);
-          const keydown = (event: KeyboardEvent) => {
-            if (event.key !== "Escape") return;
-            event.preventDefault();
-            finish(false);
-          };
-          handle.addEventListener("pointermove", move);
-          handle.addEventListener("pointerup", up);
-          handle.addEventListener("pointercancel", cancel);
-          handle.addEventListener("lostpointercapture", cancel);
-          window.addEventListener("keydown", keydown);
-          window.addEventListener("blur", cancel);
-          cancelDrag.current = cancel;
-        }}
-      />
-    </div>
+    />
   );
 }

@@ -119,7 +119,7 @@ it("keeps a machine draft when moving between connection views", async () => {
   await act(async () => button("Add machine").click());
   await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "me@new-host");
   const choose = (value: string) =>
-    container.querySelector<HTMLButtonElement>(`[role="radio"][data-value="${value}"]`)!;
+    container.querySelector<HTMLButtonElement>(`[role="tab"][data-tab-value="${value}"]`)!;
   await act(async () => choose("phone").click());
   expect(container.querySelector(".connections-view:not([hidden])")?.textContent).toContain(
     "Scan a QR code",

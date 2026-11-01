@@ -130,7 +130,7 @@ function LiveBackgroundTile({
       role="radio"
       aria-checked={selected}
       tabIndex={tabStop ? 0 : -1}
-      title={label}
+      tooltip={label}
       onClick={onSelect}
       onKeyDown={onKeyDown}
       className="flex min-w-0 flex-col gap-1"

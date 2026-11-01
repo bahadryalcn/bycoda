@@ -28,8 +28,10 @@ export const rules = {
   "icon-stroke-width": "strokeWidth other than 1.75 or 2",
   "lucide-import": "direct lucide-react import outside src/shared/ui/icons.tsx",
   "loading-motion": "animate-spin/pulse without motion-safe:/motion-reduce: on the element",
-  layer: "literal layer: z-[n], z-10..50, CSS z-index > 10",
-  "color-base-hue": "base hue utility/var (text|bg|border-danger…, var(--color-accent…))",
+  layer:
+    "literal layer: z-[n], z-10..50, CSS z-index > 10 (use LAYER from shared/lib/layers.ts or var(--layer-*))",
+  "color-base-hue":
+    "raw base hue var in feature CSS (var(--color-accent…)); the text|bg|border-danger… utilities are semantic and allowed",
   "color-base-opacity": "opacity-modified base token (bg-background-base/45, border-stroke/60…)",
   "native-title": "title= on Button/InlineAction or interactive DOM (use tooltip=/Tooltip)",
   "role-alert-text": "<p role=alert> / <span role=alert> (use the shared inline error)",
@@ -38,7 +40,8 @@ export const rules = {
   "hover-bg": "hover:bg-* recipe in TSX (use shared interaction states)",
   "disabled-opacity": "opacity-30..60 used as the disabled state",
   "fixed-control-size": "fixed h-7/h-8/size-7/size-8 on Button/ActionHost (breaks density)",
-  "motion-literal": "literal cubic-bezier( or Nms transition/animation outside :root tokens",
+  "motion-literal":
+    "literal cubic-bezier( or Nms transition/animation outside :root tokens (use var(--motion-duration-*) / var(--motion-ease-*))",
 };
 
 /** Variables set at runtime with computed names, or by third-party code. */
@@ -307,11 +310,8 @@ const twRules = [
   ["typography", tw(String.raw`text-(?:\[length:|\(length:)`)],
   ["radius-size", tw(String.raw`rounded(?:-[a-z]{1,2})?-\[[^\]\s]+\]`)],
   ["radius-size", tw(String.raw`(?:h|w|size)-\[\d+(?:\.\d+)?px\]`)],
-  ["layer", tw(String.raw`-?z-(?:\[[^\]\s]+\]|10|20|30|40|50)` + end)],
-  [
-    "color-base-hue",
-    tw(String.raw`(?:text|bg|border)-(?:danger|warning|success|info|accent)(?![\w\-])`),
-  ],
+  // z-[var(--layer-*)] is the token form of a layer; any other literal is drift.
+  ["layer", tw(String.raw`-?z-(?:\[(?!var\(--layer-)[^\]\s]+\]|10|20|30|40|50)` + end)],
   [
     "color-base-opacity",
     tw(

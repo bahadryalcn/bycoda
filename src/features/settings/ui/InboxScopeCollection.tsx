@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { CollectionToolbar } from "./SettingsCollection";
 
@@ -96,14 +98,18 @@ export function InboxScopeCollection({
         aria-busy={loading || undefined}
       >
         {matching.length === 0 ? (
-          <div className="settings-collection-empty">
-            <p role="status">{loading ? t("Loading…") : items.length === 0 ? emptyLabel : noMatchLabel}</p>
-            {query ? (
-              <Button variant="ghost" size="sm" onClick={() => setQuery("")}>
-                {t("Clear search")}
-              </Button>
-            ) : null}
-          </div>
+          loading ? (
+            <LoadingText className="settings-collection-empty">{t("Loading…")}</LoadingText>
+          ) : (
+            <EmptyState
+              size="inline"
+              kind={query ? "filtered" : "empty"}
+              className="settings-collection-empty"
+              description={items.length === 0 ? emptyLabel : noMatchLabel}
+              resetLabel={t("Clear search")}
+              onReset={query ? () => setQuery("") : undefined}
+            />
+          )
         ) : null}
         {matching.map((item) => (
           <label key={item.id} className="settings-collection-row inbox-scope-row">

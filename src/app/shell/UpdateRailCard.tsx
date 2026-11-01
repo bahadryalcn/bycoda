@@ -51,7 +51,7 @@ export function UpdateRailCard({ update, onOpen, onDismiss }: Props) {
           onClick={onDismiss}
           className="shrink-0"
         >
-          <X className="size-3.5" strokeWidth={1.75} />
+          <X className="icon-sm" strokeWidth={1.75} />
         </Button>
       </ButtonGroup>
     </section>

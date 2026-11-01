@@ -62,7 +62,7 @@ export function CheckoutList({
           data-session={isSession || undefined}
           selected={isSession}
           aria-current={isSession ? "location" : undefined}
-          title={tree.path}
+          tooltip={tree.path}
           onClick={() => onSelect(tree.path)}
         >
           <span className={styles.identity}>
@@ -74,7 +74,7 @@ export function CheckoutList({
           <span className={styles.badges}>
             {tree.locked ? (
               <span role="img" title={t("Locked")} aria-label={t("Locked")}>
-                <Lock className="size-3" />
+                <Lock className="icon-xs" />
               </span>
             ) : null}
             {tree.dirty ? (
@@ -86,14 +86,14 @@ export function CheckoutList({
               />
             ) : null}
             <Stat
-              icon={<ArrowUp aria-hidden className="size-3" />}
+              icon={<ArrowUp aria-hidden className="icon-xs" />}
               count={unpushed}
               label={t(unpushed === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", {
                 p0: unpushed,
               })}
             />
             <Stat
-              icon={<MessageSquare aria-hidden className="size-3" />}
+              icon={<MessageSquare aria-hidden className="icon-xs" />}
               count={sessions}
               label={t(
                 sessions === 1 ? "{p0} session in this checkout" : "{p0} sessions in this checkout",
@@ -106,7 +106,7 @@ export function CheckoutList({
           <InlineAction
             label={t("Delete worktree")}
             disabled={!enabled || tree.locked || !tree.branch}
-            title={
+            tooltip={
               tree.locked
                 ? t("Unlock this worktree in Git first")
                 : !tree.branch
@@ -115,7 +115,7 @@ export function CheckoutList({
             }
             onClick={() => requestWorktreeManagement(cwd, tree.path)}
           >
-            <Trash2 aria-hidden className="size-3.5" />
+            <Trash2 aria-hidden className="icon-sm" />
           </InlineAction>
         ) : (
           <span className={styles.deleteSlot} aria-hidden />
@@ -145,9 +145,9 @@ export function CheckoutList({
             onClick={() => setIdleOpen((open) => !open)}
           >
             {idleOpen ? (
-              <ChevronDown className="size-3 shrink-0" />
+              <ChevronDown className="icon-xs shrink-0" />
             ) : (
-              <ChevronRight className="size-3 shrink-0" />
+              <ChevronRight className="icon-xs shrink-0" />
             )}
             {t("Idle ({p0})", { p0: groups.idle.length })}
           </Button>

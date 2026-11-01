@@ -281,13 +281,13 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
   }
 
   const label = active ? (
-    <Shimmer className="min-w-0 flex-1 truncate font-sans text-sm" duration={1.6}>
+    <Shimmer className="min-w-0 flex-1 truncate font-sans text-ui-body" duration={1.6}>
       {title}
     </Shimmer>
   ) : (
     // Dimmed to sit with the icons: the work is chrome around the answer, and
     // only the answer reads at full strength.
-    <span className="min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
+    <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
       {title}
     </span>
   );
@@ -311,7 +311,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
         type="button"
         selected={open}
         aria-expanded={open}
-        title={title}
+        tooltip={title}
         aria-label={
           open
             ? t("Hide the steps for {p0}", { p0: title })
@@ -333,7 +333,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
         </span>
         {label}
         <ChevronRight
-          className={`size-3.5 shrink-0 text-(--ui-text-secondary) ${open ? "rotate-90" : ""}`}
+          className={`icon-sm shrink-0 text-(--ui-text-secondary) ${open ? "rotate-90" : ""}`}
           strokeWidth={1.75}
         />
       </Button>
@@ -342,7 +342,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
           <>
             {compactCommand ? (
               <div className="flex min-w-0 items-start gap-1.5 px-2 pt-1 pb-1.5 text-ui-caption text-(--ui-text-secondary)">
-                <Terminal className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+                <Terminal className="mt-0.5 icon-xs shrink-0" aria-hidden="true" />
                 <span
                   className="line-clamp-1 break-all font-mono"
                   title={toolCallLabel(compactCommand, cwd)}
@@ -614,12 +614,12 @@ function SubagentPanel({
   // a provider that names a run with its whole brief cannot push the row off the
   // pane. State, clock and model sit on the line below, as in the detached sheet.
   const label = active ? (
-    <Shimmer className="min-w-0 flex-1 truncate text-start font-sans text-sm" duration={1.6}>
+    <Shimmer className="min-w-0 flex-1 truncate text-start font-sans text-ui-body" duration={1.6}>
       {name}
     </Shimmer>
   ) : (
     <span
-      className={`min-w-0 flex-1 truncate text-start font-sans text-sm transition-colors duration-200 ${
+      className={`min-w-0 flex-1 truncate text-start font-sans text-ui-body transition-colors duration-200 ${
         state === "rejected"
           ? "text-(--ui-tone-danger-fg)"
           : "text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg)"
@@ -648,7 +648,7 @@ function SubagentPanel({
           variant="item"
           type="button"
           aria-label={t("Open {p0} in its own panel", { p0: name })}
-          title={brief}
+          tooltip={brief}
           onClick={() => requestViewSubagent(block.id)}
           className="-mx-1.5 min-w-0"
         >
@@ -674,7 +674,7 @@ function SubagentPanel({
           aria-label={
             open ? t("Hide {p0}'s work", { p0: name }) : t("Show {p0}'s work", { p0: name })
           }
-          title={brief}
+          tooltip={brief}
           onClick={onToggle}
           // An open row keeps the wash it lit up under the cursor, so the panel
           // below reads as hanging off it rather than off the transcript.
@@ -695,7 +695,7 @@ function SubagentPanel({
           variant="ghost"
           type="button"
           aria-label={t("Open {p0} in its own panel", { p0: name })}
-          title={t("Open in panel")}
+          tooltip={t("Open in panel")}
           onClick={() => requestViewSubagent(block.id)}
           className="shrink-0"
         >
@@ -894,7 +894,7 @@ function ActivityStatusRow({ block }: { block: Block }) {
       {running ? <Spinner size="xs" className="shrink-0" /> : null}
       <span
         title={block.text}
-        className={`min-w-0 flex-1 truncate font-sans text-sm ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+        className={`min-w-0 flex-1 truncate font-sans text-ui-body ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
       >
         {block.text.trim()}
       </span>
@@ -923,7 +923,7 @@ function ActivityInterjectionRow({ block }: { block: Block }) {
   const chrome = interjectionChrome(meta);
   const summary = proseSummary(block.text);
   const label = (
-    <span className="min-w-0 flex-1 truncate font-sans text-sm">
+    <span className="min-w-0 flex-1 truncate font-sans text-ui-body">
       <span className="text-(--ui-text-secondary)">{chrome.label}</span>
       {chrome.severityText ? (
         <span className={`text-ui-micro ${chrome.severityClass}`}> {chrome.severityText}</span>
@@ -998,11 +998,11 @@ export function ActivityThinkingRow({
   // reasoning streams in — the line itself does.
   const pulse = block.streaming ? "zen-thinking-pulse" : "";
   const icon = bare ? null : (
-    <Minus className={`size-3.5 shrink-0 text-(--ui-text-secondary) ${pulse}`} strokeWidth={1.75} />
+    <Minus className={`icon-sm shrink-0 text-(--ui-text-secondary) ${pulse}`} strokeWidth={1.75} />
   );
   const label = (
     <span
-      className={`min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary) ${bare ? pulse : ""}`}
+      className={`min-w-0 flex-1 truncate font-sans text-ui-body text-(--ui-text-secondary) ${bare ? pulse : ""}`}
     >
       {text}
     </span>
@@ -1034,7 +1034,7 @@ export function ActivityThinkingRow({
       >
         {icon}
         <span
-          className={`min-w-0 flex-1 truncate font-sans text-sm font-normal text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary) ${
+          className={`min-w-0 flex-1 truncate font-sans text-ui-body font-normal text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary) ${
             bare ? pulse : ""
           }`}
         >
@@ -1076,7 +1076,7 @@ function ActivityNoteRow({
   const [open, setOpen] = useRetainedDisclosure<boolean>(`ActivityNoteRow:${block.id}`, false);
   const text = proseSummary(block.text);
   const icon = bare ? null : (
-    <Minus className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+    <Minus className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
   );
 
   if (!expandable) {
@@ -1086,7 +1086,7 @@ function ActivityNoteRow({
         className="flex min-w-0 items-center gap-1.5 py-1"
       >
         {icon}
-        <span className="line-clamp-2 min-w-0 flex-1 font-sans text-sm font-normal text-(--ui-text-secondary)">
+        <span className="line-clamp-2 min-w-0 flex-1 font-sans text-ui-body font-normal text-(--ui-text-secondary)">
           {text}
         </span>
       </div>
@@ -1106,7 +1106,7 @@ function ActivityNoteRow({
         className={ACTIVITY_LINE_BUTTON}
       >
         {icon}
-        <span className="line-clamp-2 min-w-0 flex-1 text-left font-sans text-sm font-normal text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-tone-neutral-fg)">
+        <span className="line-clamp-2 min-w-0 flex-1 text-left font-sans text-ui-body font-normal text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-tone-neutral-fg)">
           {text}
         </span>
       </Button>
@@ -1261,7 +1261,7 @@ function BycodaCallRow({
   const summary = (
     <>
       <span
-        className={`shrink-0 font-sans text-sm ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+        className={`shrink-0 font-sans text-ui-body ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
       >
         {verb}
       </span>
@@ -1275,7 +1275,7 @@ function BycodaCallRow({
       <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />
       {hasResult ? (
         <ChevronRight
-          className={`size-3.5 shrink-0 ${hasError ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} transition-transform ${errorOpen ? "rotate-90" : ""}`}
+          className={`icon-sm shrink-0 ${hasError ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} transition-transform ${errorOpen ? "rotate-90" : ""}`}
           strokeWidth={1.75}
         />
       ) : null}
@@ -1324,13 +1324,13 @@ function ActivityToolIcon({ state, live = false }: { state: ToolCallState; live?
   if (state === "pending") {
     return (
       <CircleDashed
-        className={`size-3.5 shrink-0 text-(--ui-text-secondary) ${live ? "zen-tool-spin" : ""}`}
+        className={`icon-sm shrink-0 text-(--ui-text-secondary) ${live ? "zen-tool-spin" : ""}`}
         strokeWidth={1.75}
       />
     );
   }
 
-  return <Minus className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />;
+  return <Minus className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />;
 }
 
 /** Failure stays marked. Running and success do not get a trailing icon. */
@@ -1351,7 +1351,7 @@ function ToolCallStatusIcon({
     );
   }
   if (state === "rejected") {
-    return <X className="size-3.5 shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
+    return <X className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
   return null;
 }
@@ -1476,7 +1476,7 @@ export function ToolCall({
             onOpenFile={onOpenFile}
           />
           <ChevronRight
-            className={`size-3.5 shrink-0 text-(--ui-text-secondary) transition-transform ${open ? "rotate-90" : ""}`}
+            className={`icon-sm shrink-0 text-(--ui-text-secondary) transition-transform ${open ? "rotate-90" : ""}`}
             strokeWidth={1.75}
           />
         </Button>
@@ -1569,7 +1569,7 @@ function ToolCallSummary({
 
   return (
     <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-ui-secondary">
-      <span className={`shrink-0 font-sans text-sm ${actionTone}`}>{action}</span>
+      <span className={`shrink-0 font-sans text-ui-body ${actionTone}`}>{action}</span>
       {isFile ? (
         canPreview ? (
           <ToolDiffPreview
@@ -1580,9 +1580,7 @@ function ToolCallSummary({
             onOpen={openFile && filePath ? () => openFile(filePath) : undefined}
             onOpenFile={onOpenFile}
             className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-left hover:text-(--ui-tone-info-fg) ${
-              chip
-                ? `max-w-full bg-(--ui-surface-raised) hover:bg-(--ui-surface-raised) ${targetTone}`
-                : `flex-1 hover:bg-(--ui-surface-raised) ${targetTone}`
+              chip ? `max-w-full bg-(--ui-surface-raised) ${targetTone}` : `flex-1 ${targetTone}`
             }`}
           >
             <FileTypeIcon name={fileName} isDir={false} />
@@ -1596,7 +1594,7 @@ function ToolCallSummary({
             variant="item"
             type="button"
 
-            title={target}
+            tooltip={target}
             onClick={(event) => {
               event.stopPropagation();
               openFile?.(filePath);
@@ -1631,11 +1629,11 @@ function ToolCallSummary({
 function ToolCallIcon({ state }: { state: ToolCallState }) {
   useLocale();
   if (state === "rejected") {
-    return <X className="size-3.5 shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
+    return <X className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
   if (state === "pending") {
     return (
-      <CircleDashed className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+      <CircleDashed className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
     );
   }
   return null;
@@ -1771,7 +1769,7 @@ export function HandoffDivider({ block }: { block: Block }) {
             </>
           ) : terminal ? (
             <>
-              <X aria-hidden="true" className="size-3.5 shrink-0" />
+              <X aria-hidden="true" className="icon-sm shrink-0" />
               <span>{label}</span>
             </>
           ) : (

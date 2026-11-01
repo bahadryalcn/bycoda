@@ -21,6 +21,7 @@ import {
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { LAYER } from "../../../shared/lib/layers";
 import { Popover } from "../../../shared/ui/Popover";
+import { useHoverIntent } from "../../../shared/ui/Tooltip";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { MOD } from "../../../platform/tauri/platform";
 
@@ -76,12 +77,12 @@ export function CwdPicker({
   useLocale();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [moreOpen, setMoreOpen] = useState(false);
   const [active, setActive] = useState(0);
   const root = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
-  const closeMoreTimer = useRef<number | null>(null);
+  const moreIntent = useHoverIntent({ group: "cwd-more", openDelay: 0, closeDelay: HOVER_CLOSE_MS, warmMs: 0 });
+  const moreOpen = moreIntent.anchor !== null;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -120,30 +121,16 @@ export function CwdPicker({
   const dismiss = (restore = false) => {
     setOpen(false);
     setQuery("");
-    setMoreOpen(false);
+    moreIntent.close();
     setActive(0);
-    if (closeMoreTimer.current != null) {
-      window.clearTimeout(closeMoreTimer.current);
-      closeMoreTimer.current = null;
-    }
     if (restore) onCloseRef.current?.();
   };
 
   const openMore = () => {
-    if (closeMoreTimer.current != null) {
-      window.clearTimeout(closeMoreTimer.current);
-      closeMoreTimer.current = null;
-    }
-    setMoreOpen(true);
+    if (moreRef.current) moreIntent.scheduleOpen(moreRef.current, 0);
   };
 
-  const scheduleCloseMore = () => {
-    if (closeMoreTimer.current != null) window.clearTimeout(closeMoreTimer.current);
-    closeMoreTimer.current = window.setTimeout(() => {
-      closeMoreTimer.current = null;
-      setMoreOpen(false);
-    }, HOVER_CLOSE_MS);
-  };
+  const scheduleCloseMore = () => moreIntent.scheduleClose();
 
   const pick = (row: Row) => {
     if (row.kind === "more") return;
@@ -184,7 +171,7 @@ export function CwdPicker({
     if (e.key === "ArrowLeft") {
       if (moreOpen) {
         e.preventDefault();
-        setMoreOpen(false);
+        moreIntent.close();
       }
     }
     if (e.key === "Enter") {
@@ -207,7 +194,7 @@ export function CwdPicker({
         variant="item"
         motion="none"
         type="button"
-        title={cwd}
+        tooltip={cwd}
         aria-label={t("Project {p0}", { p0: label })}
         selected={open}
         aria-expanded={open}
@@ -231,16 +218,17 @@ export function CwdPicker({
         {children ?? (
           <>
             <ProjectLogoIcon path={projectLogoPath} fallbackStrokeWidth={1.5} />
-            <span className="truncate font-mono text-[12px]">{label}</span>
+            <span className="truncate font-mono text-ui-caption">{label}</span>
           </>
         )}
         {chevron ? (
           <ChevronDown
-            className={`size-3 shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""}`}
+            className={`icon-xs shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""}`}
             strokeWidth={1.75}
           />
         ) : null}
       </Button>
+      {/* Popover role="menu" kept: one keyboard model across trigger and search field, plus a hover flyout that DropdownMenu does not cover. */}
       {open ? (
         <Popover
           anchor={root}
@@ -262,7 +250,7 @@ export function CwdPicker({
               onChange={(event) => {
                 setQuery(event.target.value);
                 setActive(0);
-                setMoreOpen(false);
+                moreIntent.close();
               }}
               onKeyDown={onKeyDown}
             />
@@ -270,24 +258,24 @@ export function CwdPicker({
           <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none py-1">
             {inProject ? (
               <>
-                <p className="px-2.5 pb-1 pt-2 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
+                <p className="px-2.5 pb-1 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)">
                   {t("Current project")}
                 </p>
                 <div className="px-2.5 py-1.5 text-(--ui-text-secondary)">
-                  <p className="truncate text-[13px] text-content">
+                  <p className="truncate text-ui-secondary text-content">
                     {renderProjectLabel?.(cwd) ?? basename(cwd)}
                   </p>
-                  <p className="truncate font-mono text-[11px]">{prettyParent(cwd)}</p>
+                  <p className="truncate font-mono text-ui-micro">{prettyParent(cwd)}</p>
                 </div>
               </>
             ) : null}
             {previewRecents.length > 0 || mode === "move" ? (
               <>
-                <p className="px-2.5 pb-1 pt-2 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
+                <p className="px-2.5 pb-1 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)">
                   {mode === "move" ? t("Move to project") : t("Recent projects")}
                 </p>
                 {mode === "move" && previewRecents.length === 0 ? (
-                  <p className="px-2.5 py-2 text-[13px] text-(--ui-text-secondary)">
+                  <p className="px-2.5 py-2 text-ui-secondary text-(--ui-text-secondary)">
                     {t("No other projects")}
                   </p>
                 ) : null}
@@ -300,10 +288,10 @@ export function CwdPicker({
                     ref={active === index ? activeRef : undefined}
                     type="button"
                     role="menuitem"
-                    title={item.path}
+                    tooltip={item.path}
                     onMouseDown={(e) => e.stopPropagation()}
                     onMouseEnter={() => {
-                      setMoreOpen(false);
+                      moreIntent.close();
                       setActive(index);
                     }}
                     onClick={() => pick({ kind: "recent", path: item.path })}
@@ -311,10 +299,10 @@ export function CwdPicker({
                       active === index ? "" : ""
                     }  `}
                   >
-                    <span className="min-w-0 truncate text-[13px]">
+                    <span className="min-w-0 truncate text-ui-secondary">
                       {renderProjectLabel?.(item.path) ?? basename(item.path)}
                     </span>
-                    <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-(--ui-text-secondary)">
+                    <span className="max-w-28 shrink-0 truncate font-mono text-ui-micro text-(--ui-text-secondary)">
                       {prettyParent(item.path)}
                     </span>
                   </Button>
@@ -345,8 +333,8 @@ export function CwdPicker({
                   active === moreIndex || moreOpen ? "" : ""
                 }  `}
               >
-                <span className="text-[13px]">{t("More Projects")}</span>
-                <ChevronRight className="size-3.5 shrink-0" strokeWidth={1.75} />
+                <span className="text-ui-secondary">{t("More Projects")}</span>
+                <ChevronRight className="icon-sm shrink-0" strokeWidth={1.75} />
               </Button>
             ) : null}
           </div>
@@ -359,7 +347,7 @@ export function CwdPicker({
                 role="menuitem"
                 onMouseDown={(e) => e.stopPropagation()}
                 onMouseEnter={() => {
-                  setMoreOpen(false);
+                  moreIntent.close();
                   setActive(newTerminalIndex);
                 }}
                 selected={active === newTerminalIndex}
@@ -368,8 +356,8 @@ export function CwdPicker({
                   active === newTerminalIndex ? "" : ""
                 }  `}
               >
-                <span className="text-[13px]">{t("New terminal")}</span>
-                <span className="shrink-0 font-mono text-[11px] text-(--ui-text-secondary)">
+                <span className="text-ui-secondary">{t("New terminal")}</span>
+                <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-secondary)">
                   {MOD}`
                 </span>
               </Button>
@@ -377,6 +365,7 @@ export function CwdPicker({
           ) : null}
         </Popover>
       ) : null}
+      {/* The "More" flyout of the menu above; same keyboard model. */}
       {open && moreOpen ? (
         <Popover
           anchor={moreRef}
@@ -399,15 +388,15 @@ export function CwdPicker({
               key={item.path}
               type="button"
               role="menuitem"
-              title={item.path}
+              tooltip={item.path}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() => pick({ kind: "recent", path: item.path })}
               className="flex w-full items-center justify-between gap-3 text-left"
             >
-              <span className="min-w-0 truncate text-[13px]">
+              <span className="min-w-0 truncate text-ui-secondary">
                 {renderProjectLabel?.(item.path) ?? basename(item.path)}
               </span>
-              <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-(--ui-text-secondary)">
+              <span className="max-w-28 shrink-0 truncate font-mono text-ui-micro text-(--ui-text-secondary)">
                 {prettyParent(item.path)}
               </span>
             </Button>

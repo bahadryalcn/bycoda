@@ -1,11 +1,16 @@
 import { memo, useMemo, useSyncExternalStore } from "react";
+import { IDENTITY_SIZE_CLASS, type IdentitySize } from "../../../shared/ui/identity/identitySize";
 
 type Props = {
   name: string;
   isDir: boolean;
   isOpen?: boolean;
   isRoot?: boolean;
-  size?: number;
+  /** Shared icon scale (`xs` 12, `sm` 14, `md` 16, `lg` 20 px: `icon-*`) or a pixel size.
+   *  Prefer the token; the number stays for existing callers. Default 16px (`md`). */
+  size?: IdentitySize | number;
+  /** Placement or colour classes; the size comes from `size`. */
+  className?: string;
 };
 
 type IconPack = typeof import("react-material-icon-theme");
@@ -47,6 +52,7 @@ export const FileTypeIcon = memo(function FileTypeIcon({
   isOpen = false,
   isRoot = false,
   size = 16,
+  className,
 }: Props) {
   const icons = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
@@ -62,17 +68,26 @@ export const FileTypeIcon = memo(function FileTypeIcon({
   // subtree even when the glyph is unchanged (for example, on resize).
   const markup = useMemo(() => ({ __html: svg }), [svg]);
 
+  const sizeClass = typeof size === "number" ? undefined : IDENTITY_SIZE_CLASS[size];
+  const sizeStyle = typeof size === "number" ? { width: size, height: size } : undefined;
+
   if (!icons) {
     return (
-      <span aria-hidden className="inline-block shrink-0" style={{ width: size, height: size }} />
+      <span
+        aria-hidden
+        className={["inline-block shrink-0", sizeClass, className].filter(Boolean).join(" ")}
+        style={sizeStyle}
+      />
     );
   }
 
   return (
     <span
       aria-hidden
-      className="material-icon inline-block shrink-0 align-middle"
-      style={{ width: size, height: size }}
+      className={["material-icon inline-block shrink-0 align-middle", sizeClass, className]
+        .filter(Boolean)
+        .join(" ")}
+      style={sizeStyle}
       dangerouslySetInnerHTML={markup}
     />
   );

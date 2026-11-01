@@ -3,6 +3,7 @@ import { Alert } from "../../shared/ui/Alert";
 import { Popover } from "../../shared/ui/Popover";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Badge } from "../../shared/ui/Badge";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { Switch } from "../../shared/ui/Switch";
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
 import { Select } from "../../shared/ui/Select";
@@ -616,13 +617,15 @@ function ScopedRuntimeLogsPanel({
             iconOnly
             label={t("Add to conversation")}
             tooltip={t("Add to conversation")}
+            tooltipDetails={[
+              t("Selected logs or visible errors are added to your draft for review."),
+              attachScope,
+            ]}
             size="sm"
             type="button"
             disabled={!chosen.length && !visibleEntries.length}
             loading={inspecting}
             onClick={inspect}
-            title={`${t("Selected logs or visible errors are added to your draft for review.")}
-${attachScope}`}
           >
             <Bot className="icon-sm" />
           </Button>
@@ -772,8 +775,8 @@ ${attachScope}`}
                 type="submit"
                 disabled={monitorBusy || !monitorUrl.trim()}
                 loading={monitorOperation?.method === "start"}
-                title={t("Open website and capture logs")}
-                aria-label={t("Open website and capture logs")}
+                label={t("Open website and capture logs")}
+                tooltip={t("Open website and capture logs")}
               >
                 <Play className="icon-sm" />
                 <span className="runtime-logs-sr">{t("Capture website logs")}</span>
@@ -786,8 +789,8 @@ ${attachScope}`}
                 disabled={monitorBusy}
                 loading={monitorOperation?.method === "list"}
                 onClick={() => void monitorAction("list")}
-                title={t("Load monitors")}
-                aria-label={t("Load monitors")}
+                label={t("Load monitors")}
+                tooltip={t("Load monitors")}
               >
                 <RefreshCw className="icon-sm" />
               </Button>
@@ -803,7 +806,7 @@ ${attachScope}`}
                       type="button"
                       className="runtime-logs-monitor-name"
                       aria-pressed={!!monitor.sourceId && sourceIds.includes(monitor.sourceId)}
-                      title={monitor.url}
+                      tooltip={monitor.url}
                       disabled={!monitor.sourceId}
                       onClick={() => {
                         const id = monitor.sourceId;
@@ -827,8 +830,8 @@ ${attachScope}`}
                       loading={
                         monitorOperation?.method === "stop" && monitorOperation.id === monitor.id
                       }
-                      title={t("Stop monitor")}
-                      aria-label={t("Stop monitor")}
+                      label={t("Stop monitor")}
+                      tooltip={t("Stop monitor")}
                       onClick={() => void monitorAction("stop", { id: monitor.id })}
                     >
                       <Square className="icon-sm" />
@@ -1053,12 +1056,17 @@ const RuntimeLogRow = memo(function RuntimeLogRow({
               {sourceLabel}
             </span>
             {group.entries.length > 1 ? (
-              <span
-                className="runtime-log-count"
-                title={t("{p0} repeated events", { p0: group.entries.length })}
-              >
-                ×{group.entries.length}
-              </span>
+              <Tooltip label={t("{p0} repeated events", { p0: group.entries.length })}>
+                <Badge
+                  variant="count"
+                  size="xs"
+                  tone="neutral"
+                  className="runtime-log-count"
+                  label={t("{p0} repeated events", { p0: group.entries.length })}
+                >
+                  ×{group.entries.length}
+                </Badge>
+              </Tooltip>
             ) : null}
             <span className="runtime-log-details-trigger">{t("Details")}</span>
           </div>

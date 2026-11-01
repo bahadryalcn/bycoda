@@ -3,10 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Modal } from "../../../shared/ui/Modal";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { Alert } from "../../../shared/ui/Alert";
 import {
   saveSshConnection,
@@ -127,297 +129,285 @@ export function SshSettings({
   return (
     <Modal title={t("SSH settings")} onClose={() => onClose()} size="lg">
       <div className="flex flex-col gap-4 p-4">
-        <p className="text-xs text-(--ui-text-muted)">{t("Local SSH keys and known hosts.")}</p>
-        <SegmentedControl
-          label={t("SSH settings sections")}
-          selectionRole="pressed"
-          value={securityPanel}
-          onValueChange={setSecurityPanel}
-          options={[
-            { value: "keys", label: t("Keys") },
-            { value: "hosts", label: t("Known hosts") },
-            { value: "import", label: t("Import SSH config") },
-          ]}
-        />
-        {error ? (
-          <Alert tone="danger" role="alert">
-            {error}
-          </Alert>
-        ) : null}
-        <section id={`${panelId}-security-keys`} hidden={securityPanel !== "keys"}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-medium">{t("Keys")}</h3>
-            {generateKey ? (
-              <Button
-                disabled={busy}
-                loading={generating}
-                onClick={() =>
-                  void act(async () => {
-                    setGenerating(true);
-                    try {
-                      const path = await save({
-                        title: t("Generate SSH key"),
-                        defaultPath: "id_ed25519_bycoda",
-                      });
-                      if (path) {
-                        onClose();
-                        generateKey(path);
-                      }
-                    } finally {
-                      setGenerating(false);
-                    }
-                  })
-                }
-              >
-                {t("Generate SSH key")}
-              </Button>
-            ) : null}
-          </div>
-          {agentInventory.loading ? (
-            <p role="status" className="mbs-2 text-ui-caption text-(--ui-text-muted)">
-              {t("SSH agent")}: {t("Loading\u2026")}
-            </p>
-          ) : null}
-          {agentInventory.error ? (
+        <p className="text-ui-caption text-(--ui-text-muted)">{t("Local SSH keys and known hosts.")}</p>
+        <Tabs id={panelId} value={securityPanel} onValueChange={setSecurityPanel}>
+          <TabList label={t("SSH settings sections")}>
+            <Tab value="keys">{t("Keys")}</Tab>
+            <Tab value="hosts">{t("Known hosts")}</Tab>
+            <Tab value="import">{t("Import SSH config")}</Tab>
+          </TabList>
+          {error ? (
             <Alert tone="danger" role="alert">
-              {t("SSH agent")}: {agentInventory.error}
-              <Button loading={agentInventory.loading} onClick={agentInventory.retry}>{t("Retry")}</Button>
+              {error}
             </Alert>
           ) : null}
-          {agent ? (
-            <div className="mbs-2 text-xs">
-              <span>
-                {t("SSH agent")}:{" "}
-                {t(
-                  agent.status === "available"
-                    ? "Available"
-                    : agent.status === "empty"
-                      ? "No identities"
-                      : "Unavailable",
-                )}
-              </span>
-              {agent.identities.map((identity, index) => (
-                <p className="mbs-1 break-all" key={index}>
-                  {identity.keyType} · {identity.fingerprint}
+          <TabPanel value="keys" keepMounted>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-ui-body font-medium">{t("Keys")}</h3>
+              {generateKey ? (
+                <Button
+                  disabled={busy}
+                  loading={generating}
+                  onClick={() =>
+                    void act(async () => {
+                      setGenerating(true);
+                      try {
+                        const path = await save({
+                          title: t("Generate SSH key"),
+                          defaultPath: "id_ed25519_bycoda",
+                        });
+                        if (path) {
+                          onClose();
+                          generateKey(path);
+                        }
+                      } finally {
+                        setGenerating(false);
+                      }
+                    })
+                  }
+                >
+                  {t("Generate SSH key")}
+                </Button>
+              ) : null}
+            </div>
+            {agentInventory.loading ? (
+              <LoadingText className="mbs-2">
+                {t("SSH agent")}: {t("Loading\u2026")}
+              </LoadingText>
+            ) : null}
+            {agentInventory.error ? (
+              <Alert tone="danger" role="alert">
+                {t("SSH agent")}: {agentInventory.error}
+                <Button loading={agentInventory.loading} onClick={agentInventory.retry}>{t("Retry")}</Button>
+              </Alert>
+            ) : null}
+            {agent ? (
+              <div className="mbs-2 text-ui-caption">
+                <span>
+                  {t("SSH agent")}:{" "}
+                  {t(
+                    agent.status === "available"
+                      ? "Available"
+                      : agent.status === "empty"
+                        ? "No identities"
+                        : "Unavailable",
+                  )}
+                </span>
+                {agent.identities.map((identity, index) => (
+                  <p className="mbs-1 break-all" key={index}>
+                    {identity.keyType} · {identity.fingerprint}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            <p className="mbs-1 text-ui-caption text-(--ui-text-muted)">
+              {t("Private keys stay in OpenSSH or your OS agent.")}
+            </p>
+            <JumpAuthenticationHelp />
+            {canAssignKey ? (
+              <p className="mbs-2 break-all text-ui-caption">
+                {t("Select a key for")}: {server?.name}
+              </p>
+            ) : null}
+            {canAssignKey && selectedIdentity ? (
+              <div className="mbs-2 flex min-w-0 flex-wrap items-center gap-2">
+                <p role="status" className="min-w-0 flex-1 break-all text-ui-caption">
+                  {inheritedIdentity ? t("SSH key") : t("Assigned")}: {selectedIdentity}
                 </p>
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void act(async () => {
+                      await assignIdentity();
+                    })
+                  }
+                >
+                  {t("Use SSH defaults")}
+                </Button>
+              </div>
+            ) : null}
+            <SearchInput
+              type="search"
+              value={keySearch}
+              onChange={(event) => setKeySearch(event.target.value)}
+              appearance="field"
+              placeholder={t("Search SSH keys…")}
+              aria-label={t("Search SSH keys…")}
+            />
+            {keyInventory.error ? (
+              <Alert tone="danger" role="alert">
+                {t("Keys")}: {keyInventory.error}
+                <Button loading={keyInventory.loading} onClick={keyInventory.retry}>{t("Retry")}</Button>
+              </Alert>
+            ) : null}
+            {keyInventory.loading && keys.length === 0 ? (
+              <LoadingText className="mbs-2" />
+            ) : null}
+            {!keyInventory.loading && !keyInventory.error && keys.length === 0 ? (
+              <EmptyState size="inline" className="mbs-2" description={t("No SSH keys found.")} />
+            ) : null}
+            {keys.length > 0 && matchingKeys.length === 0 ? (
+              <EmptyState
+                size="inline"
+                kind="filtered"
+                className="mbs-2"
+                description={t("No matching SSH keys.")}
+                onReset={() => setKeySearch("")}
+              />
+            ) : null}
+            <div className="max-h-64 overflow-y-auto">
+              {matchingKeys.map((key) => (
+                <div
+                  className="mbs-2 flex min-w-0 flex-wrap items-center gap-2"
+                  key={`${key.identityFile}:${key.fingerprint}`}
+                >
+                  <div className="min-w-0 flex-1 text-ui-caption">
+                    <p className="break-all text-ui-body font-medium">
+                      {key.identityFile?.split(/[\\/]/).pop() ?? key.keyType}
+                    </p>
+                    <p className="break-all text-(--ui-text-muted)">{key.identityFile}</p>
+                    <p className="break-all text-(--ui-text-muted)">
+                      {key.keyType} · {key.fingerprint}
+                    </p>
+                  </div>
+                  {canAssignKey && key.identityFile ? (
+                    <Button
+                      variant="secondary"
+                      aria-label={`${t("Assign key")}: ${key.identityFile} (${server?.name})`}
+                      tooltip={`${t("Select a key for")}: ${server?.name}`}
+                      aria-pressed={!inheritedIdentity && selectedIdentity === key.identityFile}
+                      disabled={busy || (!inheritedIdentity && selectedIdentity === key.identityFile)}
+                      onClick={() => {
+                        void act(async () => {
+                          await assignIdentity(key.identityFile);
+                        });
+                      }}
+                    >
+                      {!inheritedIdentity && selectedIdentity === key.identityFile
+                        ? t("Assigned")
+                        : t("Assign key")}
+                    </Button>
+                  ) : null}
+                </div>
               ))}
             </div>
-          ) : null}
-          <p className="mbs-1 text-xs text-(--ui-text-muted)">
-            {t("Private keys stay in OpenSSH or your OS agent.")}
-          </p>
-          <JumpAuthenticationHelp />
-          {canAssignKey ? (
-            <p className="mbs-2 break-all text-xs">
-              {t("Select a key for")}: {server?.name}
-            </p>
-          ) : null}
-          {canAssignKey && selectedIdentity ? (
-            <div className="mbs-2 flex min-w-0 flex-wrap items-center gap-2">
-              <p role="status" className="min-w-0 flex-1 break-all text-xs">
-                {inheritedIdentity ? t("SSH key") : t("Assigned")}: {selectedIdentity}
-              </p>
-              <Button
-                variant="secondary"
-                disabled={busy}
-                onClick={() =>
-                  void act(async () => {
-                    await assignIdentity();
-                  })
-                }
-              >
-                {t("Use SSH defaults")}
-              </Button>
-            </div>
-          ) : null}
-          <SearchInput
-            type="search"
-            value={keySearch}
-            onChange={(event) => setKeySearch(event.target.value)}
-            appearance="field"
-            placeholder={t("Search SSH keys…")}
-            aria-label={t("Search SSH keys…")}
-          />
-          {keyInventory.error ? (
-            <Alert tone="danger" role="alert">
-              {t("Keys")}: {keyInventory.error}
-              <Button loading={keyInventory.loading} onClick={keyInventory.retry}>{t("Retry")}</Button>
-            </Alert>
-          ) : null}
-          {keyInventory.loading && keys.length === 0 ? (
-            <p role="status" className="mbs-2 text-xs text-(--ui-text-muted)">
-              {t("Loading…")}
-            </p>
-          ) : null}
-          {!keyInventory.loading && !keyInventory.error && keys.length === 0 ? (
-            <p className="mbs-2 text-xs text-(--ui-text-muted)">{t("No SSH keys found.")}</p>
-          ) : null}
-          {keys.length > 0 && matchingKeys.length === 0 ? (
-            <p className="mbs-2 text-xs text-(--ui-text-muted)">{t("No matching SSH keys.")}</p>
-          ) : null}
-          <div className="max-h-64 overflow-y-auto">
-            {matchingKeys.map((key) => (
-              <div
-                className="mbs-2 flex min-w-0 flex-wrap items-center gap-2"
-                key={`${key.identityFile}:${key.fingerprint}`}
-              >
-                <div className="min-w-0 flex-1 text-ui-caption">
-                  <p className="break-all text-ui-body font-medium">
-                    {key.identityFile?.split(/[\\/]/).pop() ?? key.keyType}
-                  </p>
-                  <p className="break-all text-(--ui-text-muted)">{key.identityFile}</p>
-                  <p className="break-all text-(--ui-text-muted)">
-                    {key.keyType} · {key.fingerprint}
-                  </p>
-                </div>
-                {canAssignKey && key.identityFile ? (
-                  <Button
-                    variant="secondary"
-                    aria-label={`${t("Assign key")}: ${key.identityFile} (${server?.name})`}
-                    tooltip={`${t("Select a key for")}: ${server?.name}`}
-                    aria-pressed={!inheritedIdentity && selectedIdentity === key.identityFile}
-                    disabled={busy || (!inheritedIdentity && selectedIdentity === key.identityFile)}
-                    onClick={() => {
-                      void act(async () => {
-                        await assignIdentity(key.identityFile);
-                      });
-                    }}
-                  >
-                    {!inheritedIdentity && selectedIdentity === key.identityFile
-                      ? t("Assigned")
-                      : t("Assign key")}
-                  </Button>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </section>
-        <section
-          id={`${panelId}-security-hosts`}
-          hidden={securityPanel !== "hosts"}
-          className="flex min-w-0 flex-col gap-3"
-        >
-          <h3 className="text-sm font-medium">
-            {t("Known hosts")}{hostInventory.value ? ` (${hosts.length})` : ""}
-          </h3>
-          <SearchInput
-            appearance="field"
-            aria-label={t("Search known hosts")}
-            placeholder={t("Search known hosts")}
-            value={hostSearch}
-            onChange={(event) => setHostSearch(event.target.value)}
-          />
-          {hostInventory.loading ? (
-            <p role="status" className="text-ui-caption text-(--ui-text-muted)">
-              {t("Loading\u2026")}
-            </p>
-          ) : null}
-          {hostsError ? (
-            <Alert tone="danger" role="alert">
-              {hostsError}
-              <Button loading={hostInventory.loading} onClick={hostInventory.retry}>{t("Retry")}</Button>
-            </Alert>
-          ) : null}
-          {!hosts.length && !hostInventory.loading && !hostsError ? (
-            <p className="text-xs text-(--ui-text-muted)">{t("No known hosts yet.")}</p>
-          ) : null}
-          {hosts
-            .filter((host) =>
-              `${host.hostPatterns} ${host.keyType} ${host.fingerprint}`
-                .toLocaleLowerCase()
-                .includes(hostSearch.trim().toLocaleLowerCase()),
-            )
-            .map((host, index) => (
-              <p key={index} className="mbs-2 break-all text-xs">
-                {host.hostPatterns} · {host.keyType} · {host.fingerprint}
-              </p>
-            ))}
-        </section>
-        <section
-          id={`${panelId}-security-import`}
-          hidden={securityPanel !== "import"}
-          className="flex flex-col gap-3"
-        >
-          <h3 className="text-sm font-medium">{t("Import SSH config")}</h3>
-          <TextareaField
-            label={t("SSH config")}
-            value={config}
-            onChange={(event) => {
-              setConfig(event.target.value);
-              setPreview(undefined);
-            }}
-            rows={6}
-          />
-          <Button
-            loading={busy}
-            onClick={() =>
-              void act(async () =>
-                setPreview(await invoke<Preview>("ssh_config_preview", { content: config })),
+          </TabPanel>
+          <TabPanel value="hosts" keepMounted className="flex min-w-0 flex-col gap-3">
+            <h3 className="text-ui-body font-medium">
+              {t("Known hosts")}{hostInventory.value ? ` (${hosts.length})` : ""}
+            </h3>
+            <SearchInput
+              appearance="field"
+              aria-label={t("Search known hosts")}
+              placeholder={t("Search known hosts")}
+              value={hostSearch}
+              onChange={(event) => setHostSearch(event.target.value)}
+            />
+            {hostInventory.loading ? <LoadingText /> : null}
+            {hostsError ? (
+              <Alert tone="danger" role="alert">
+                {hostsError}
+                <Button loading={hostInventory.loading} onClick={hostInventory.retry}>{t("Retry")}</Button>
+              </Alert>
+            ) : null}
+            {!hosts.length && !hostInventory.loading && !hostsError ? (
+              <EmptyState size="inline" description={t("No known hosts yet.")} />
+            ) : null}
+            {hosts
+              .filter((host) =>
+                `${host.hostPatterns} ${host.keyType} ${host.fingerprint}`
+                  .toLocaleLowerCase()
+                  .includes(hostSearch.trim().toLocaleLowerCase()),
               )
-            }
-          >
-            {t("Preview")}
-          </Button>
-          {preview?.warnings.map((warning, index) => (
-            <p key={index} className="text-xs text-(--ui-text-muted)">
-              {warning}
-            </p>
-          ))}
-          {preview?.hosts.map((host, index) => {
-            const existing = servers.filter(
-              (candidate) =>
-                candidate.kind === "ssh" &&
-                (candidate.effectiveSshEndpoint ?? candidate.sshEndpoint) &&
-                sameSshEndpoint(
-                  (candidate.effectiveSshEndpoint ?? candidate.sshEndpoint)!,
-                  host.endpoint,
-                ),
-            );
-            const skip = () =>
-              setPreview(
-                (previous) =>
-                  previous && {
-                    ...previous,
-                    hosts: previous.hosts.filter((_, i) => i !== index),
-                  },
+              .map((host, index) => (
+                <p key={index} className="mbs-2 break-all text-ui-caption">
+                  {host.hostPatterns} · {host.keyType} · {host.fingerprint}
+                </p>
+              ))}
+          </TabPanel>
+          <TabPanel value="import" keepMounted className="flex flex-col gap-3">
+            <h3 className="text-ui-body font-medium">{t("Import SSH config")}</h3>
+            <TextareaField
+              label={t("SSH config")}
+              value={config}
+              onChange={(event) => {
+                setConfig(event.target.value);
+                setPreview(undefined);
+              }}
+              rows={6}
+            />
+            <Button
+              loading={busy}
+              onClick={() =>
+                void act(async () =>
+                  setPreview(await invoke<Preview>("ssh_config_preview", { content: config })),
+                )
+              }
+            >
+              {t("Preview")}
+            </Button>
+            {preview?.warnings.map((warning, index) => (
+              <p key={index} className="text-ui-caption text-(--ui-text-muted)">
+                {warning}
+              </p>
+            ))}
+            {preview?.hosts.map((host, index) => {
+              const existing = servers.filter(
+                (candidate) =>
+                  candidate.kind === "ssh" &&
+                  (candidate.effectiveSshEndpoint ?? candidate.sshEndpoint) &&
+                  sameSshEndpoint(
+                    (candidate.effectiveSshEndpoint ?? candidate.sshEndpoint)!,
+                    host.endpoint,
+                  ),
               );
-            return (
-              <ConfigImportChoices
-                key={`${host.alias}:${index}`}
-                host={host}
-                existing={existing}
-                busy={busy}
-                onSkip={skip}
-                onUse={
-                  onUseServer
-                    ? (candidate) => {
-                        onClose();
-                        onUseServer(candidate.id);
-                      }
-                    : undefined
-                }
-                onEdit={
-                  onEditServer
-                    ? (candidate) => {
-                        onClose();
-                        onEditServer(candidate);
-                      }
-                    : undefined
-                }
-                onImport={() =>
-                  void act(async () => {
-                    await saveSshConnection({
-                      name: host.alias,
-                      endpoint: host.endpoint,
-                      importOnly: true,
-                    });
-                    skip();
-                  })
-                }
-              />
-            );
-          })}
-        </section>
+              const skip = () =>
+                setPreview(
+                  (previous) =>
+                    previous && {
+                      ...previous,
+                      hosts: previous.hosts.filter((_, i) => i !== index),
+                    },
+                );
+              return (
+                <ConfigImportChoices
+                  key={`${host.alias}:${index}`}
+                  host={host}
+                  existing={existing}
+                  busy={busy}
+                  onSkip={skip}
+                  onUse={
+                    onUseServer
+                      ? (candidate) => {
+                          onClose();
+                          onUseServer(candidate.id);
+                        }
+                      : undefined
+                  }
+                  onEdit={
+                    onEditServer
+                      ? (candidate) => {
+                          onClose();
+                          onEditServer(candidate);
+                        }
+                      : undefined
+                  }
+                  onImport={() =>
+                    void act(async () => {
+                      await saveSshConnection({
+                        name: host.alias,
+                        endpoint: host.endpoint,
+                        importOnly: true,
+                      });
+                      skip();
+                    })
+                  }
+                />
+              );
+            })}
+          </TabPanel>
+        </Tabs>
       </div>
     </Modal>
   );

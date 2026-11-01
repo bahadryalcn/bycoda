@@ -2,6 +2,8 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { ChevronDown, ChevronRight, ChevronLeft, X } from "../../../shared/ui/icons";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useCallback, useMemo, useState } from "react";
 import {
   gitCommitFiles,
@@ -84,12 +86,13 @@ export function GitGraphCommitInspector({
   const deleted = files.data?.find((file) => file.relative === relative)?.status === "deleted";
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="shrink-0 border-b border-stroke p-3">
+      <header className="shrink-0 border-b border-(--ui-pane-border) p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <code className="select-all text-[12px] text-accent">{commit.shortSha}</code>
+          <code className="select-all text-ui-caption text-(--ui-tone-accent-fg)">{commit.shortSha}</code>
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
+              size="sm"
               motion="none"
               type="button"
               onClick={onBranch}
@@ -100,36 +103,38 @@ export function GitGraphCommitInspector({
             {onClose ? (
               <Button
                 variant="ghost"
+                size="sm"
                 motion="none"
                 iconOnly
                 label={t("Close commit details")}
                 onClick={onClose}
               >
-                <X className="size-3.5" />
+                <X className="icon-sm" />
               </Button>
             ) : null}
           </div>
         </div>
-        <h3 className="break-words text-[14px] font-medium text-content">{commit.subject}</h3>
-        <p className="mt-1 text-[12px] text-[var(--ui-text-secondary)]">
+        <h3 className="break-words text-ui-body font-medium text-content">{commit.subject}</h3>
+        <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
           {commit.author} · {new Date(commit.timestamp * 1000).toLocaleString()}
         </p>
-        <p className="flex gap-2 text-xs tabular-nums text-[var(--ui-text-secondary)]">
+        <p className="flex gap-2 text-ui-caption tabular-nums text-(--ui-text-secondary)">
           <span>
             {files.data?.length ?? "…"} {t("files")}
           </span>
-          <span className="text-success">+{totals.additions}</span>
-          <span className="text-danger">−{totals.deletions}</span>
+          <span className="text-diff-add-fg">+{totals.additions}</span>
+          <span className="text-diff-del-fg">−{totals.deletions}</span>
         </p>
       </header>
-      <div className="flex shrink-0 items-center gap-2 border-b border-stroke px-2 py-1">
+      <div className="flex shrink-0 items-center gap-2 border-b border-(--ui-pane-border) px-2 py-1">
         <Button
           variant="ghost"
+          size="sm"
           motion="none"
           aria-expanded={filesOpen}
           onClick={() => setFilesOpen(!filesOpen)}
         >
-          {filesOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          {filesOpen ? <ChevronDown className="icon-sm" /> : <ChevronRight className="icon-sm" />}
           {t("Changed files")}
         </Button>
         {filesOpen ? (
@@ -154,7 +159,7 @@ export function GitGraphCommitInspector({
       <section
         hidden={!filesOpen}
         aria-label={t("Changed files")}
-        className="max-h-[30%] min-h-0 shrink-0 overflow-y-auto border-b border-stroke"
+        className="max-h-[30%] min-h-0 shrink-0 overflow-y-auto border-b border-(--ui-pane-border)"
       >
         {files.loading && !files.data ? <GitLoading text="Loading…" /> : null}
         {visibleFiles.map((file) => (
@@ -162,26 +167,29 @@ export function GitGraphCommitInspector({
             variant="item"
             motion="none"
             key={file.relative}
+            size="sm"
+            tooltip={file.relative}
             type="button"
             aria-pressed={relative === file.relative}
             onClick={() => setPicked(file.relative)}
-            className={" flex h-8 w-full items-center gap-2 text-left "}
+            className="flex w-full items-center justify-start gap-2"
           >
-            <FileTypeIcon name={file.relative} isDir={false} size={14} />
-            <span title={file.relative} className="min-w-0 flex-1 truncate">
-              {file.relative}
-            </span>
-            <span className="text-success">+{file.additions}</span>
-            <span className="text-danger">−{file.deletions}</span>
+            <FileTypeIcon name={file.relative} isDir={false} size="sm" />
+            <span className="min-w-0 flex-1 truncate">{file.relative}</span>
+            <span className="text-diff-add-fg">+{file.additions}</span>
+            <span className="text-diff-del-fg">−{file.deletions}</span>
           </Button>
         ))}
         {files.data && visibleFiles.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-[var(--ui-text-secondary)]">
-            {t(fileQuery ? "No matching files" : "No changed files")}
-          </p>
+          <EmptyState
+            size="inline"
+            kind={fileQuery ? "filtered" : "empty"}
+            className="px-3"
+            description={t(fileQuery ? "No matching files" : "No changed files")}
+          />
         ) : null}
       </section>
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-stroke px-3 text-[11px] text-[var(--ui-text-secondary)]">
+      <div className="flex min-h-9 shrink-0 items-center justify-between border-b border-(--ui-pane-border) px-3 text-ui-caption text-(--ui-text-secondary)">
         <span>
           {mode === "blame"
             ? deleted
@@ -202,32 +210,34 @@ export function GitGraphCommitInspector({
         ) : null}
       </div>
       {relative ? (
-        <div className="flex min-w-0 shrink-0 items-center gap-1 border-b border-stroke px-2 py-1 text-xs">
-          <span title={relative} className="min-w-0 flex-1 truncate">
-            {relative}
-          </span>
-          <span className="tabular-nums text-[var(--ui-text-secondary)]">
+        <div className="flex min-w-0 shrink-0 items-center gap-1 border-b border-(--ui-pane-border) px-2 py-1 text-ui-caption">
+          <Tooltip label={relative}>
+            <span className="min-w-0 flex-1 truncate">{relative}</span>
+          </Tooltip>
+          <span className="tabular-nums text-(--ui-text-secondary)">
             {selectedIndex < 0 ? "–" : selectedIndex + 1}/{visibleFiles.length}
           </span>
           <Button
             variant="ghost"
+            size="sm"
             motion="none"
             iconOnly
             label={t("Previous file")}
             disabled={selectedIndex <= 0}
             onClick={() => setPicked(visibleFiles[selectedIndex - 1].relative)}
           >
-            <ChevronLeft className="size-3.5" />
+            <ChevronLeft className="icon-sm" />
           </Button>
           <Button
             variant="ghost"
+            size="sm"
             motion="none"
             iconOnly
             label={t("Next file")}
             disabled={selectedIndex < 0 || selectedIndex >= visibleFiles.length - 1}
             onClick={() => setPicked(visibleFiles[selectedIndex + 1].relative)}
           >
-            <ChevronRight className="size-3.5" />
+            <ChevronRight className="icon-sm" />
           </Button>
         </div>
       ) : null}

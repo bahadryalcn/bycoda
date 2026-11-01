@@ -173,24 +173,16 @@ it("keeps worktree deletion locked until completion and allows retry after failu
       }),
     ),
   );
-  await act(async () =>
-    document
-      .querySelector("form")!
-      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
-  );
+  await act(async () => button("Delete worktree").click());
   expect(onRemove).toHaveBeenCalledExactlyOnceWith("/repo", tree.path, true, false);
-  expect(button("Delete worktree").disabled).toBe(true);
+  expect(button("Delete worktree").getAttribute("aria-disabled")).toBe("true");
   expect(button("Cancel").disabled).toBe(true);
   await act(async () => rejectRemoval(new Error("Removal failed")));
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("Removal failed");
-  expect(button("Delete worktree").disabled).toBe(false);
+  expect(button("Delete worktree").getAttribute("aria-disabled")).toBeNull();
   expect(onDeleted).not.toHaveBeenCalled();
   onRemove.mockImplementationOnce(async () => {});
-  await act(async () =>
-    document
-      .querySelector("form")!
-      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
-  );
+  await act(async () => button("Delete worktree").click());
   expect(onDeleted).toHaveBeenCalledOnce();
 });
 
@@ -226,9 +218,9 @@ it("keeps worktree creation pending until its async completion callback settles"
   );
   expect(createWorktree).toHaveBeenCalledWith("/repo", "feature", "HEAD", false);
   expect(onCreated).toHaveBeenCalledWith(tree);
-  expect(button("Create worktree").disabled).toBe(true);
+  expect(button("Create worktree").getAttribute("aria-disabled")).toBe("true");
   await act(async () => finish());
-  expect(button("Create worktree").disabled).toBe(false);
+  expect(button("Create worktree").getAttribute("aria-disabled")).toBeNull();
 });
 
 const type = (input: HTMLInputElement, value: string) => {
@@ -299,11 +291,6 @@ it("selects a draft workspace without opening the creation dialog", async () => 
     '[aria-label="Open worktree settings"]',
   )!;
   expect(settings.textContent).toContain("Worktree settings");
-  expect(settings.parentElement?.className).toContain("border-t");
-  expect(settings.parentElement?.className).toContain("h-9");
-  expect(settings.className).toContain("h-full");
-  expect(settings.parentElement?.className).not.toContain("mt-1");
-  expect(settings.parentElement?.className).not.toContain("pt-1");
   await act(async () => settings.click());
   expect(onOpenSettings).toHaveBeenCalledOnce();
   expect(document.querySelector('[aria-label="Open worktree settings"]')).toBeNull();
@@ -339,7 +326,7 @@ it("selects an existing worktree from the draft workspace menu", async () => {
   expect(document.querySelector('[aria-label="Existing worktrees"]')).not.toBeNull();
   expect(existingWorktree.getAttribute("aria-expanded")).toBe("true");
   expect(listWorktrees).toHaveBeenCalledWith("/existing-worktree-picker");
-  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
     (item) => item.textContent?.includes(tree.path),
   )!;
   expect(option.textContent).toContain("feature");
@@ -580,7 +567,7 @@ it.each([
     expect(trigger.querySelector("svg")?.outerHTML).toBe(
       renderToStaticMarkup(
         createElement(executionCwd === "/repo" ? GitBranch : FolderTree, {
-          className: "size-3.5 shrink-0",
+          className: "icon-sm shrink-0",
         }),
       ),
     );
@@ -590,13 +577,13 @@ it.each([
       expect(options[index].querySelector("svg")?.outerHTML).toBe(
         renderToStaticMarkup(
           createElement(Icon, {
-            className: "size-3.5 shrink-0 text-[var(--ui-text-secondary)]",
+            className: "icon-sm shrink-0 text-(--ui-text-secondary)",
           }),
         ),
       );
     }
     expect(button("Switch branch in this working copy…").querySelector("svg")?.outerHTML).toBe(
-      renderToStaticMarkup(createElement(GitBranch, { className: "size-3.5" })),
+      renderToStaticMarkup(createElement(GitBranch, { className: "icon-sm" })),
     );
     await act(async () => button("Switch branch in this working copy…").click());
     const branchTrigger = container.querySelector<HTMLButtonElement>("button")!;

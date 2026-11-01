@@ -1,3 +1,4 @@
+import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Button } from "../../../shared/ui/Button";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
@@ -449,7 +450,7 @@ function VerifiedFileRevealButton({ path }: { path: string }) {
       variant="ghost"
       type="button"
       aria-label={t("Open containing folder")}
-      title={t("Open containing folder: {p0}", { p0: path })}
+      tooltip={t("Open containing folder: {p0}", { p0: path })}
       className="ml-1 shrink-0"
       onClick={(event) => {
         event.preventDefault();
@@ -457,7 +458,7 @@ function VerifiedFileRevealButton({ path }: { path: string }) {
         onRevealFile?.(path);
       }}
     >
-      <FolderOpen className="size-3.5" />
+      <FolderOpen className="icon-sm" />
     </Button>
   );
 }
@@ -474,7 +475,7 @@ function EmailCopyButton({ text }: { text: string }) {
       motion="none"
       variant="ghost"
       type="button"
-      title={label}
+      tooltip={label}
       aria-label={label}
       className="shrink-0"
       onClick={(event) => {
@@ -488,7 +489,7 @@ function EmailCopyButton({ text }: { text: string }) {
         );
       }}
     >
-      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      {copied ? <Check className="icon-sm" /> : <Copy className="icon-sm" />}
       <span className="sr-only" role="status" aria-live="polite">
         {failed || copied ? label : ""}
       </span>
@@ -564,7 +565,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
         >
           {fileName && file ? (
             <span aria-hidden="true">
-              <FileTypeIcon name={fileName} isDir={/[\\/]$/.test(text)} size={14} />
+              <FileTypeIcon name={fileName} isDir={/[\\/]$/.test(text)} size="sm" />
             </span>
           ) : null}
           {children}
@@ -676,7 +677,7 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
         variant="ghost"
         type="button"
 
-        title={label}
+        tooltip={label}
         aria-label={label}
         className="markdown-code-copy markdown-code-toggle"
         aria-expanded={!collapsed}
@@ -693,7 +694,7 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
           variant="item"
           type="button"
 
-          title={label}
+          tooltip={label}
           aria-label={`${label}: ${summary.preview}`}
           className="markdown-code-summary"
           aria-expanded={false}
@@ -740,7 +741,7 @@ function CodeCopyButton({
       variant="ghost"
       className={`markdown-code-copy${copied ? " is-copied" : ""}${failed ? " is-failed" : ""} ${className}`}
       type="button"
-      title={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
+      tooltip={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
       aria-label={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
 
       onClick={() => {
@@ -1204,7 +1205,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
               ) : (
                 <Streamdown
                   BlockComponent={DirectionalBlock}
-                  className={`agent-markdown min-w-0 font-sans text-sm leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
+                  className={`agent-markdown min-w-0 font-sans text-ui-body leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
                   components={MARKDOWN_COMPONENTS}
                   controls={false}
                   isAnimating={!!streaming || paced.revealing}
@@ -1391,9 +1392,7 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
   }
 
   if (!svg) {
-    return (
-      <div className="h-32 animate-pulse rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)" />
-    );
+    return <Skeleton lines={5} className="h-32 rounded-xl" />;
   }
 
   return (
@@ -1497,7 +1496,7 @@ function MarkdownCodePath({ path, startLine }: { path: string; startLine?: numbe
 
         style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}
         className="markdown-code-path-link"
-        title={file.path}
+        tooltip={file.path}
         onClick={() => onOpenFile(file.path, navigation)}
         onContextMenu={(event) => onFileContextMenu?.(event, file.path, navigation)}
       >

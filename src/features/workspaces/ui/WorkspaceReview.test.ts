@@ -15,6 +15,7 @@ vi.mock("../model/workspaceClient", () => ({
 vi.mock("../../../shared/ui/Modal", () => ({
   Modal: ({ title, children, footer }: { title: string; children: ReactNode; footer: ReactNode }) =>
     createElement("div", { role: "dialog", "aria-label": title }, children, footer),
+  ModalActions: ({ children }: { children: ReactNode }) => createElement("div", null, children),
 }));
 vi.mock("../../../shared/i18n", () => ({
   useT: () => (text: string, params?: Record<string, string>) =>

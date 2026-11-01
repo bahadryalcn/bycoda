@@ -1,3 +1,4 @@
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
@@ -41,17 +42,17 @@ export function EditFromHereDialog({
     >
       <div className="flex min-w-0 flex-col gap-4 p-4">
         {planLoading ? (
-          <p role="status" className="text-sm text-content-secondary">
+          <p role="status" className="text-ui-body text-content-secondary">
             {t("Checking session file history…")}
           </p>
         ) : plan && !plan.unavailable ? (
-          <div className="flex min-w-0 flex-col gap-2 text-sm">
+          <div className="flex min-w-0 flex-col gap-2 text-ui-body">
             <p>{t("Session files: {p0}", { p0: plan.files.length })}</p>
             {conflicts.length ? (
               <div className="flex min-w-0 flex-col gap-1">
-                <p className="text-warning">
+                <InlineMessage tone="warning" live="off">
                   {t("These files will be skipped because they changed:")}
-                </p>
+                </InlineMessage>
                 <ul className="flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto">
                   {conflicts.map((file) => (
                     <li key={file.path} className="break-words [overflow-wrap:anywhere]">
@@ -65,13 +66,9 @@ export function EditFromHereDialog({
             ) : null}
           </div>
         ) : (
-          <p className="text-sm text-content-secondary">{unavailable}</p>
+          <p className="text-ui-body text-content-secondary">{unavailable}</p>
         )}
-        {error ? (
-          <p role="alert" className="text-sm text-danger">
-            {error}
-          </p>
-        ) : null}
+        {error ? <InlineError>{error}</InlineError> : null}
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button variant="secondary" disabled={!!pending} onClick={onCancel}>
             {t("Cancel")}

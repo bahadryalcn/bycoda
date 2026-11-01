@@ -74,7 +74,7 @@
   inline-size: 6px;
   block-size: 6px;
   border-radius: 50%;
-  background: var(--color-warning);
+  background: var(--ui-tone-warning-solid);
 }
 
 /* Delete stays reachable but recedes until its row is hovered or focused. */

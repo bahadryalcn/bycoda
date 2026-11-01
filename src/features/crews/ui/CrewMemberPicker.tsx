@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -195,10 +196,8 @@ export function CrewMemberPicker({
                 {matches.map((agent) => {
                   const checked = selected.includes(agent.id);
                   return (
-                    <li key={agent.id}>
-                      <label
-                        className={`grid min-w-0 cursor-pointer grid-cols-[auto_minmax(0,1fr)_minmax(0,auto)] items-center gap-3 rounded-(--radius-control) px-3 py-2 hover:bg-(--ui-surface-hover) ${checked ? "bg-(--ui-surface-selected)" : ""}`}
-                      >
+                    <ActionHost as="li" key={agent.id} selected={checked}>
+                      <label className="grid min-w-0 flex-1 cursor-pointer grid-cols-[auto_minmax(0,1fr)_minmax(0,auto)] items-center gap-3 px-3 py-2">
                         <Checkbox
                           checked={checked}
                           onChange={(event) => toggle(agent, event.target.checked)}
@@ -219,7 +218,7 @@ export function CrewMemberPicker({
                           </span>
                         ) : null}
                       </label>
-                    </li>
+                    </ActionHost>
                   );
                 })}
               </ul>

@@ -5,6 +5,9 @@ import { t, useLocale } from "../../shared/i18n/technical";
 import type { ConversationTools } from "./SessionHostTools";
 import { lazySurface } from "../../shared/ui/lazySurface";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
+import { PaneHeader } from "../../shared/ui/PaneHeader";
+import { Sash } from "../../shared/ui/Sash";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { useDragResize } from "../../shared/hooks/useDragResize";
 import {
   CircleX,
@@ -52,16 +55,16 @@ function PlacementButton({
       <Button
         variant="ghost"
         size="sm"
+        iconOnly
         ref={trigger}
         type="button"
         className="tools-workspace-icon"
-        aria-label={`${t("Placement")}: ${t(label)}`}
-        title={`${t("Placement")}: ${t(label)}`}
+        label={`${t("Placement")}: ${t(label)}`}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((previous) => !previous)}
       >
-        <Icon className="size-4" aria-hidden />
+        <Icon className="icon-sm" aria-hidden />
       </Button>
       {open ? (
         <DropdownMenu
@@ -77,7 +80,7 @@ function PlacementButton({
               kind: "item",
               id: side,
               label: t(option.label),
-              icon: <option.Icon className="size-4" aria-hidden />,
+              icon: <option.Icon className="icon-sm" aria-hidden />,
               checked: side === value,
               selectionRole: "radio",
             };
@@ -148,14 +151,7 @@ function ToolDock({ placement, children }: { placement: Placement; children: Rea
   });
   return (
     <>
-      <div
-        {...resize.separatorProps}
-        className="tools-workspace-resizer"
-        data-dragging={resize.dragging}
-        aria-label={t("Tool panels")}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
-      />
+      <Sash {...resize.sashProps} label={t("Tool panels")} />
       <aside
         ref={(element) => {
           dock.current = element;
@@ -307,64 +303,73 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
           <div className="tools-workspace-panes">
             {panes.map((pane) => (
               <section className="tools-workspace-pane" key={pane.id}>
-                <header className="tools-workspace-toolbar">
-                  <Wrench className="icon-sm tools-workspace-kind" aria-hidden />
-                  <div className="tools-workspace-title" title={`${pane.title}\n${pane.cwd}`}>
-                    <strong>{pane.onlyTab ? t("Logs") : t("Conversation tools")}</strong>
-                    <span>{pane.title}</span>
-                  </div>
-                  <PlacementButton value={placement} onChange={setPlacement} />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    className="tools-workspace-icon"
-                    aria-label={t("Open in new window")}
-                    title={t("Open in new window")}
-                    onClick={async () => {
-                      try {
-                        const current = views.current.get(pane.id);
-                        await openHostToolsWindow(
-                          {
-                            ...pane,
-                            initialTab: current?.tab ?? pane.initialTab,
-                            initialMachine: current?.machine ?? pane.initialMachine,
-                          },
-                          pane.onlyTab,
-                        );
-                        close(pane.id);
-                      } catch (cause) {
-                        setError(String(cause));
-                      }
-                    }}
-                  >
-                    <ExternalLink className="icon-sm" aria-hidden />
-                  </Button>
-                  {panes.length > 1 ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      className="tools-workspace-icon"
-                      aria-label={t("Close panels")}
-                      title={t("Close panels")}
-                      onClick={() => setPanes([])}
-                    >
-                      <CircleX className="icon-sm" aria-hidden />
-                    </Button>
-                  ) : null}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    className="tools-workspace-icon"
-                    onClick={() => close(pane.id)}
-                    aria-label={t("Close panel")}
-                    title={t("Close panel")}
-                  >
-                    <X className="icon-sm" aria-hidden />
-                  </Button>
-                </header>
+                <PaneHeader
+                  as="header"
+                  className="tools-workspace-toolbar"
+                  icon={<Wrench className="icon-sm" aria-hidden />}
+                  titleAs="div"
+                  title={pane.onlyTab ? t("Logs") : t("Conversation tools")}
+                  meta={
+                    <Tooltip label={pane.title} details={[pane.cwd]}>
+                      <span>{pane.title}</span>
+                    </Tooltip>
+                  }
+                  actions={
+                    <>
+                      <PlacementButton value={placement} onChange={setPlacement} />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        type="button"
+                        className="tools-workspace-icon"
+                        label={t("Open in new window")}
+                        onClick={async () => {
+                          try {
+                            const current = views.current.get(pane.id);
+                            await openHostToolsWindow(
+                              {
+                                ...pane,
+                                initialTab: current?.tab ?? pane.initialTab,
+                                initialMachine: current?.machine ?? pane.initialMachine,
+                              },
+                              pane.onlyTab,
+                            );
+                            close(pane.id);
+                          } catch (cause) {
+                            setError(String(cause));
+                          }
+                        }}
+                      >
+                        <ExternalLink className="icon-sm" aria-hidden />
+                      </Button>
+                      {panes.length > 1 ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          iconOnly
+                          type="button"
+                          className="tools-workspace-icon"
+                          label={t("Close panels")}
+                          onClick={() => setPanes([])}
+                        >
+                          <CircleX className="icon-sm" aria-hidden />
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        type="button"
+                        className="tools-workspace-icon"
+                        label={t("Close panel")}
+                        onClick={() => close(pane.id)}
+                      >
+                        <X className="icon-sm" aria-hidden />
+                      </Button>
+                    </>
+                  }
+                />
                 <SessionHostTools
                   {...pane}
                   hidePresentation

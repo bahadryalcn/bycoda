@@ -67,21 +67,36 @@ it("resizes the terminal list by drag and keyboard, resets it, and follows dock 
     const sidebar = host.querySelector<HTMLElement>(".terminal-sidebar")!;
     sash.setPointerCapture = vi.fn();
     sash.releasePointerCapture = vi.fn();
+    sash.hasPointerCapture = () => true;
     expect(sash.getAttribute("aria-orientation")).toBe("vertical");
     expect(sash.tabIndex).toBe(0);
     expect(sidebar.style.width).toBe("200px");
     await act(async () => {
       sash.dispatchEvent(
-        new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientX: 200, button: 0 }),
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          pointerId: 1,
+          isPrimary: true,
+          clientX: 200,
+          button: 0,
+        }),
       );
-      window.dispatchEvent(new PointerEvent("pointermove", { pointerId: 2, clientX: 450 }));
+      sash.dispatchEvent(
+        new PointerEvent("pointermove", { bubbles: true, pointerId: 2, clientX: 450 }),
+      );
+      await new Promise((resolve) => requestAnimationFrame(resolve));
     });
     expect(sidebar.style.width).toBe("200px");
-    await act(async () =>
-      window.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: 300 })),
-    );
+    await act(async () => {
+      sash.dispatchEvent(
+        new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 300 }),
+      );
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
     expect(sidebar.style.width).toBe("300px");
-    await act(async () => window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 })));
+    await act(async () =>
+      sash.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 })),
+    );
     expect(sash.getAttribute("aria-valuenow")).toBe("300");
     expect(document.documentElement.classList.contains("is-resizing")).toBe(false);
     await act(async () =>

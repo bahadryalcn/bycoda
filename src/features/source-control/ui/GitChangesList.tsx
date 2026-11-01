@@ -23,6 +23,19 @@ import {
 } from "../../../platform/tauri/fs";
 import { ChangeRow, ChangeSelectionCtx, statusColor } from "./ChangeRow";
 
+const ROW_HEIGHT_FALLBACK = 28;
+
+/** The compact control height in px for the current density (a probe resolves rem and zoom). */
+function readRowHeight(list: HTMLElement): number {
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:absolute;visibility:hidden;pointer-events:none;block-size:var(--ui-control-height-compact)";
+  list.appendChild(probe);
+  const height = probe.getBoundingClientRect().height;
+  probe.remove();
+  return height > 0 ? height : ROW_HEIGHT_FALLBACK;
+}
+
 /** Folders the user collapsed in tree view, keyed `<kind>:<dir>`. */
 const collapsedDirs = new Set<string>();
 
@@ -99,10 +112,12 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
     [visiblePaths],
   );
   const focusedIndex = visibleRows.findIndex((row) => row.file?.path === focusedPath);
+  // Rows are one compact control tall: follow the density token instead of a fixed 28px.
+  const [rowHeight, setRowHeight] = useState(ROW_HEIGHT_FALLBACK);
   const virtual = useVirtualizer({
     count: visibleRows.length,
     getScrollElement: () => scrollElement,
-    estimateSize: () => 28,
+    estimateSize: () => rowHeight,
     getItemKey: (index) => visibleRows[index].file?.path ?? `dir:${visibleRows[index].dir!.path}`,
     enabled: visibleRows.length > 80 && !!scrollElement,
     overscan: 8,
@@ -115,6 +130,9 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
   });
   const virtualized = visibleRows.length > 80;
   useLayoutEffect(() => {
+    virtual.measure();
+  }, [rowHeight]);
+  useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;
     let parent = list.parentElement;
@@ -122,6 +140,10 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
       parent = parent.parentElement;
     setScrollElement(parent);
     const measure = () => {
+      setRowHeight((previous) => {
+        const next = readRowHeight(list);
+        return Math.abs(previous - next) < 0.5 ? previous : next;
+      });
       if (!parent) return;
       const margin =
         list.getBoundingClientRect().top - parent.getBoundingClientRect().top + parent.scrollTop;
@@ -224,7 +246,7 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
           insetBlockStart: 0,
           insetInlineStart: 0,
           width: "100%",
-          height: 28,
+          height: rowHeight,
           transform: `translateY(${item.start - scrollMargin}px)`,
         }),
       )
@@ -329,26 +351,26 @@ function ChangeDirRow({
     <li style={style}>
       <ActionHost
         style={{ paddingLeft: 8 + depth * 12 }}
-        className="flex h-7 w-full items-center gap-1 pr-2 leading-none text-content"
+        className="flex h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 leading-none text-content"
       >
         <Button
           size="sm"
           variant="ghost"
           motion="none"
           type="button"
-          title={dir.path}
+          tooltip={dir.path}
           aria-expanded={open}
           onClick={() => onToggle(dir.path)}
           className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
         >
           <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
             {open ? (
-              <ChevronDown className="size-3.5" strokeWidth={1.75} />
+              <ChevronDown className="icon-sm" strokeWidth={1.75} />
             ) : (
-              <ChevronRight className="size-3.5" strokeWidth={1.75} />
+              <ChevronRight className="icon-sm" strokeWidth={1.75} />
             )}
           </span>
-          <FileTypeIcon name={dir.name} isDir isOpen={open} size={16} />
+          <FileTypeIcon name={dir.name} isDir isOpen={open} />
           <MiddleTruncate mode="path" className="min-w-0 flex-1 text-ui-body font-medium">{dir.name}</MiddleTruncate>
         </Button>
         <div className="flex shrink-0 items-center">
@@ -360,9 +382,9 @@ function ChangeDirRow({
             onClick={() => rest.onFolderAction(dir.path, kind === "staged" ? "unstage" : "stage")}
           >
             {kind === "staged" ? (
-              <Minus className="size-3.5" strokeWidth={1.75} />
+              <Minus className="icon-sm" strokeWidth={1.75} />
             ) : (
-              <Plus className="size-3.5" strokeWidth={1.75} />
+              <Plus className="icon-sm" strokeWidth={1.75} />
             )}
           </InlineAction>
         </div>

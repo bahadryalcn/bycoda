@@ -63,7 +63,7 @@ function ProxyApprovalDialog({
   return (
     <Modal title={t("HTTP proxy authentication")} onClose={() => finish(null)} size="sm">
       <div className="flex min-w-0 flex-col gap-3 p-4">
-        <div className="text-xs">
+        <div className="text-ui-caption">
           <p className="break-all font-medium">
             {secure ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
             {sshEndpointPreview(request.endpoint.httpProxy!)}
@@ -147,7 +147,7 @@ function ProxyApprovalDialog({
               disabled={busy}
               onChange={change}
             />
-            <label className="flex items-start gap-2 text-xs">
+            <label className="flex items-start gap-2 text-ui-caption">
               <Checkbox
                 checked={consent}
                 disabled={busy}
@@ -159,14 +159,14 @@ function ProxyApprovalDialog({
                   : "I allow sending these Basic credentials to this HTTP proxy without TLS for this operation.",
               )}
             </label>
-            <p className="text-xs text-(--ui-text-muted)">
+            <p className="text-ui-caption text-(--ui-text-muted)">
               {t(
                 "SSH traffic remains encrypted after CONNECT. Proxy credentials are temporary and never saved; another operation needs a new approval.",
               )}
             </p>
           </>
         ) : (
-          <p className="text-xs text-(--ui-text-muted)">
+          <p className="text-ui-caption text-(--ui-text-muted)">
             {t(
               "Continue without credentials. A proxy authentication error will not retry automatically.",
             )}

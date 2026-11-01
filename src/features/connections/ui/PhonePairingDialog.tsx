@@ -12,7 +12,10 @@ import { useRef, useState } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
-import { CheckCircle, Copy, ExternalLink, Loader, RefreshCw } from "../../../shared/ui/icons";
+import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { CheckCircle, Copy, ExternalLink, RefreshCw } from "../../../shared/ui/icons";
 import { isLocalSyncMachine } from "../model/localSync";
 import type {
   PhonePairingDialogProps,
@@ -54,7 +57,8 @@ function PhonePairingLink({ url, label }: PhonePairingLinkProps) {
   };
   return (
     <div className="flex flex-col gap-2">
-      <Button stableWidth
+      <Button
+        stableWidth
         type="button"
         className="shrink-0"
         disabled={status === "pending"}
@@ -90,7 +94,8 @@ function PhonePairingCopy({ code }: PhonePairingCopyProps) {
   };
   return (
     <div className="flex flex-col items-center gap-2">
-      <Button stableWidth
+      <Button
+        stableWidth
         type="button"
         className="shrink-0"
         disabled={status === "pending"}
@@ -100,9 +105,7 @@ function PhonePairingCopy({ code }: PhonePairingCopyProps) {
         {t("Copy pairing code")}
       </Button>
       {status === "success" ? (
-        <p role="status" className="text-ui-caption text-(--ui-text-muted)">
-          {t("Pairing code copied")}
-        </p>
+        <InlineMessage tone="success">{t("Pairing code copied")}</InlineMessage>
       ) : status === "error" ? (
         <Alert role="alert" tone="danger">
           {t("The pairing code could not be copied. Try again.")}
@@ -186,17 +189,13 @@ export function PhonePairingDialog({
         ) : null}
 
         {busy ? (
-          <div
-            role="status"
-            className="flex items-center gap-2 text-ui-secondary text-(--ui-text-muted)"
-          >
-            <Loader className="icon-md motion-safe:animate-spin" />
+          <LoadingText>
             {state.stage === "enabling"
               ? t("Opening the secure connection…")
               : state.stage === "creating"
                 ? t("Creating your QR code…")
                 : t("Checking phone access…")}
-          </div>
+          </LoadingText>
         ) : null}
 
         {state.stage === "access" ? (
@@ -216,10 +215,7 @@ export function PhonePairingDialog({
               </>
             ) : (
               <>
-                <p
-                  role="status"
-                  className="text-ui-secondary leading-relaxed text-(--ui-text-muted)"
-                >
+                <InlineMessage tone="info">
                   {localNetwork
                     ? state.access.state === "setup-required"
                       ? t(
@@ -229,7 +225,7 @@ export function PhonePairingDialog({
                           "Local network access is unavailable. Check your computer's network and firewall, then try again.",
                         )
                     : t(accessCopy[state.access.state])}
-                </p>
+                </InlineMessage>
                 {localNetwork && (state.access.addresses?.length ?? 0) > 1 ? (
                   <label className="flex flex-col gap-2 text-ui-caption text-(--ui-text-muted)">
                     {t("Local network address")}
@@ -249,10 +245,17 @@ export function PhonePairingDialog({
                 ) : null}
                 {state.access.state === "setup-required" && localNetwork ? (
                   <Row label={t("Local network access")}>
-                    <Toggle label={t("Local network access")} on={false} onChange={() => onEnable(state.access.addresses?.includes(address) ? address : undefined)} />
+                    <Toggle
+                      label={t("Local network access")}
+                      on={false}
+                      onChange={() =>
+                        onEnable(state.access.addresses?.includes(address) ? address : undefined)
+                      }
+                    />
                   </Row>
                 ) : state.access.state === "setup-required" ? (
-                  <Button stableWidth
+                  <Button
+                    stableWidth
                     type="button"
 
                     onClick={() =>
@@ -283,7 +286,12 @@ export function PhonePairingDialog({
                 ) : null}
                 <div className="flex flex-wrap gap-2">
                   {state.access.state === "permission-required" ? (
-                    <Button stableWidth type="button" className="shrink-0" onClick={() => onEnable()}>
+                    <Button
+                      stableWidth
+                      type="button"
+                      className="shrink-0"
+                      onClick={() => onEnable()}
+                    >
                       {t("Retry secure connection")}
                     </Button>
                   ) : null}
@@ -298,7 +306,7 @@ export function PhonePairingDialog({
 
         {state.stage === "qr" ? (
           <div className="phone-pairing-code">
-            <div className="rounded-xl border border-stroke bg-on-solid p-2">
+            <div className="rounded-(--ui-radius-card) border border-stroke bg-on-solid p-2">
               <QRCodeSVG
                 value={JSON.stringify(state.session.code)}
                 size={260}
@@ -311,9 +319,15 @@ export function PhonePairingDialog({
             <div className="phone-pairing-instructions">
               <p>{t("On your phone, open Connections and choose Scan QR code.")}</p>
               <div className="flex items-center justify-center gap-2">
-                <Badge size="sm" minWidth="8ch">{t("{p0}s left", { p0: state.remainingSeconds })}</Badge>
+                <Badge size="sm" minWidth="8ch">
+                  {t("{p0}s left", { p0: state.remainingSeconds })}
+                </Badge>
                 <InfoPopover label={t("Connection help")}>
-                  {localNetwork ? t("Keep your phone on the same local network as this computer. Allow local network access when your phone asks.") : t("Use the same Tailscale account on this machine and your phone.")}
+                  {localNetwork
+                    ? t(
+                        "Keep your phone on the same local network as this computer. Allow local network access when your phone asks.",
+                      )
+                    : t("Use the same Tailscale account on this machine and your phone.")}
                 </InfoPopover>
               </div>
             </div>
@@ -327,7 +341,8 @@ export function PhonePairingDialog({
             <div className="phone-pairing-actions">
               <PhonePairingCopy key={state.session.pairingId} code={state.session.code} />
               <Button stableWidth type="button" className="shrink-0" onClick={onRegenerate}>
-                <RefreshCw className="icon-sm" aria-hidden />{t("Create a new code")}
+                <RefreshCw className="icon-sm" aria-hidden />
+                {t("Create a new code")}
               </Button>
             </div>
           </div>
@@ -335,11 +350,12 @@ export function PhonePairingDialog({
 
         {state.stage === "expired" ? (
           <div className="flex flex-col gap-3">
-            <p role="status" className="text-ui-secondary text-(--ui-text-muted)">
+            <InlineMessage tone="warning">
               {t("This code has expired. Create a new one to connect your phone.")}
-            </p>
+            </InlineMessage>
             <Button stableWidth type="button" onClick={onRegenerate} variant="secondary">
-              <RefreshCw className="icon-sm" aria-hidden />{t("Create a new code")}
+              <RefreshCw className="icon-sm" aria-hidden />
+              {t("Create a new code")}
             </Button>
           </div>
         ) : null}
@@ -347,7 +363,7 @@ export function PhonePairingDialog({
         {state.stage === "paired" ? (
           <div role="status" className="flex flex-col items-start gap-3">
             <div className="flex items-center gap-2 text-ui-body font-medium text-content">
-              <CheckCircle className="icon-lg text-success" />
+              <CheckCircle className="icon-lg text-(--ui-tone-success-fg)" />
               {t("Your phone is connected")}
             </div>
             <p className="text-ui-secondary leading-relaxed text-(--ui-text-muted)">
@@ -385,14 +401,26 @@ export function PhonePairingDialog({
         {localNetwork &&
         (state.stage === "qr" || (state.stage === "access" && state.access.state === "ready")) ? (
           <Row label={t("Local network access")}>
-            <Toggle label={t("Local network access")} on={true} onChange={() => setConfirmDisable(true)} />
+            <Toggle
+              label={t("Local network access")}
+              on={true}
+              onChange={() => setConfirmDisable(true)}
+            />
           </Row>
         ) : null}
-        {confirmDisable ? <Modal title={t("Turn off local network access?")} size="sm" onClose={() => setConfirmDisable(false)}
-          footer={<><Button onClick={() => setConfirmDisable(false)}>{t("Cancel")}</Button>
-            <Button tone="danger" onClick={() => { setConfirmDisable(false); onDisable?.(); }}>{t("Turn off local network access")}</Button></>}>
-          <p className="p-4 text-ui-secondary">{t("Phones on this network will lose access to this computer.")}</p>
-        </Modal> : null}
+        {confirmDisable ? (
+          <ConfirmDialog
+            request={{
+              title: t("Turn off local network access?"),
+              message: t("Phones on this network will lose access to this computer."),
+              confirmLabel: t("Turn off local network access"),
+            }}
+            onSettle={(confirmed) => {
+              setConfirmDisable(false);
+              if (confirmed) onDisable?.();
+            }}
+          />
+        ) : null}
       </div>
     </Modal>
   );

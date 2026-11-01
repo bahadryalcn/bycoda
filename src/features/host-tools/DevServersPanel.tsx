@@ -1,4 +1,5 @@
 import { EmptyState } from "../../shared/ui/EmptyState";
+import { Surface } from "../../shared/ui/Surface";
 import { Badge } from "../../shared/ui/Badge";
 import { Alert } from "../../shared/ui/Alert";
 import { NumberField } from "../../shared/ui/NumberField";
@@ -496,7 +497,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         </>
       ) : null}
       {intent === "restart" && !current.server.managed ? (
-        <div className="dev-server-form">
+        <Surface variant="plain" className="dev-server-form">
           <p className="host-tool-muted">
             {t("Define the exact command and working directory to restart this external server.")}
           </p>
@@ -512,7 +513,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             disabled={disabled}
             onChange={(event) => setRestartCwd(event.target.value)}
           />
-        </div>
+        </Surface>
       ) : null}
       {intent !== "details" ? (
         <div className="dev-server-confirm">
@@ -894,6 +895,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         </Alert>
       ) : null}
       {showStart ? (
+        <Surface as="section" variant="plain">
         <form
           ref={startForm}
           tabIndex={-1}
@@ -967,9 +969,10 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             {t("Start command")}
           </Button>
         </form>
+        </Surface>
       ) : null}
       {startResult?.conflict ? (
-        <section className="dev-server-conflict" aria-label={t("Port conflict")}>
+        <Surface as="section" variant="plain" className="dev-server-conflict" aria-label={t("Port conflict")}>
           <Alert tone="danger" role="alert">
             {t("Port {p0} is already in use.", { p0: startResult.conflict.port })}
           </Alert>
@@ -980,7 +983,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           <Button disabled={disabled} onClick={() => setShowStart(true)}>
             {t("Use another port")}
           </Button>
-        </section>
+        </Surface>
       ) : null}
       {scan && scan.servers.length === 0 && !scanError ? (
         <EmptyState

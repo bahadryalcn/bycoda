@@ -179,7 +179,7 @@ export function SessionWorkspaceActions({
                 disabled={
                   !!pending || !!session?.busy || !capabilities.includes("workspaces.delivery.v1")
                 }
-                title={
+                disabledReason={
                   !capabilities.includes("workspaces.delivery.v1")
                     ? t("Update bycoda Host to review and deliver workspace changes.")
                     : undefined
@@ -205,8 +205,6 @@ export function SessionWorkspaceActions({
               variant="ghost"
               iconOnly
               label={t("Workspace actions")}
-              aria-label={t("Workspace actions")}
-              title={t("Workspace actions")}
               loading={pending === "finish" || pending === "close"}
               disabled={!!pending || !!session?.busy}
               onClick={() => setMenu((value) => !value)}

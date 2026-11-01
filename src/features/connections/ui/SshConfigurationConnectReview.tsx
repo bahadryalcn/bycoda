@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
 import { t } from "../../../shared/i18n";
@@ -58,10 +59,10 @@ export function SshConfigurationConnectReview({
       <div className="flex min-w-0 flex-col gap-3 p-4">
         {configuration ? (
           <>
-            <p className="break-all text-sm font-medium">
+            <p className="break-all text-ui-body font-medium">
               {sshEndpointPreview(configuration.endpoint)}
             </p>
-            <dl className="grid min-w-0 grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs">
+            <dl className="grid min-w-0 grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-ui-caption">
               {(
                 [
                   ["user", t("SSH user"), configuration.endpoint.user ?? t("Default")],
@@ -99,7 +100,7 @@ export function SshConfigurationConnectReview({
               ))}
             </dl>
             {configuration.environment.length ? (
-              <details className="text-xs">
+              <details className="text-ui-caption">
                 <summary className="cursor-pointer py-1">{t("Remote environment")}</summary>
                 <dl className="mbs-2 flex flex-col gap-2">
                   {configuration.environment.map((entry) => (
@@ -120,9 +121,7 @@ export function SshConfigurationConnectReview({
             {error}
           </Alert>
         ) : (
-          <p role="status" className="text-xs text-(--ui-text-muted)">
-            {t("Loading…")}
-          </p>
+          <LoadingText />
         )}
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>

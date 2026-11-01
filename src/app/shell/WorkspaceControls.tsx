@@ -51,7 +51,7 @@ export function WorkspaceControls({
   return (
     <nav
       aria-label={t("Workspace controls")}
-      className="ml-auto flex h-7 shrink-0 items-center justify-end gap-1 px-2 text-(--ui-text-secondary)"
+      className="ml-auto flex shrink-0 items-center justify-end gap-1 px-2 text-(--ui-text-secondary)"
     >
       {actions.map(({ id, label, icon: Icon, onClick }) => (
         <Button
@@ -61,11 +61,8 @@ export function WorkspaceControls({
           motion="none"
           key={id}
           type="button"
-          title={label}
-          aria-label={label}
           aria-pressed={active === id}
           onClick={onClick}
-          className="size-7"
         >
           <Icon className="icon-sm" />
         </Button>
@@ -78,10 +75,7 @@ export function WorkspaceControls({
         motion="none"
         type="button"
         disabled={!canRefresh}
-        title={t("Refresh current view")}
-        aria-label={t("Refresh current view")}
         onClick={() => window.dispatchEvent(new Event(WORKSPACE_REFRESH_EVENT))}
-        className="size-7"
       >
         <RefreshCw className="icon-sm" />
       </Button>

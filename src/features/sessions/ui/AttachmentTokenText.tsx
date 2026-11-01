@@ -57,7 +57,7 @@ function TokenPill({ token, label, attachment }: PillProps) {
         variant="link"
         layout="text"
         type="button"
-        title={t("Open {p0} full screen", { p0: attachment.name })}
+        tooltip={t("Open {p0} full screen", { p0: attachment.name })}
         aria-label={t("Open {p0} ({p1}) full screen", { p0: token, p1: attachment.name })}
         aria-haspopup="dialog"
         aria-busy={loading}
@@ -73,13 +73,14 @@ function TokenPill({ token, label, attachment }: PillProps) {
         {body}
       </Button>
       {loading ? (
-        <span role="status" className="text-xs text-(--ui-text-secondary)">
+        <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
           {" "}
           {t("Loading…")}
         </span>
       ) : null}
       {error ? (
-        <span role="alert" className="text-xs text-(--ui-tone-warning-fg)">
+        // Phrasing-only: this renders inside <pre>/<p> prose, where the block InlineMessage (a div) is invalid.
+        <span role="alert" className="text-ui-caption text-(--ui-tone-warning-fg)">
           {" "}
           {t("Preview unavailable. Try again.")}
         </span>

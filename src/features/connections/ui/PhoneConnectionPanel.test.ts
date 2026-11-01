@@ -17,6 +17,8 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../model/phonePairingApi", () => ({ phonePairingApi: api }));
 vi.mock("../../../shared/ui/Modal", () => ({
+  ModalActions: ({ children }: { children?: ReactNode }) =>
+    createElement("div", { "data-modal-actions": "" }, children),
   Modal: ({
     children,
     footer,

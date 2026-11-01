@@ -542,12 +542,15 @@ export function SurfaceTabs({
         className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-none pl-1.5 pr-2.5"
       >
         {onPaneDragStart ? (
-          <div
-            role="button"
-            title={t("Drag to reorder pane")}
-            aria-label={t("Drag to reorder pane")}
+          <Button
+            iconOnly
+            variant="ghost"
+            size="sm"
+            motion="none"
+            type="button"
+            label={t("Drag to reorder pane")}
             tabIndex={-1}
-            className="grid h-7 w-5 shrink-0 cursor-grab place-items-center rounded-md text-(--ui-text-muted) hover:bg-(--ui-surface-hover) hover:text-content active:cursor-grabbing touch-none"
+            className="w-5 shrink-0 cursor-grab touch-none active:cursor-grabbing"
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
@@ -555,8 +558,8 @@ export function SurfaceTabs({
               onPaneDragStart(event);
             }}
           >
-            <GripVertical className="size-3.5" strokeWidth={1.75} />
-          </div>
+            <GripVertical className="icon-sm" strokeWidth={1.75} />
+          </Button>
         ) : null}
         {displayed.map((entry) => {
           const file = entry.item;
@@ -624,7 +627,7 @@ export function SurfaceTabs({
               externalDrop.tabPosition ? (
                 <span
                   data-file-tab-drop={externalDrop.tabPosition}
-                  className={`pointer-events-none absolute inset-y-0 z-20 w-(--ui-drop-line-size) rounded-full ${externalDrop.tabPosition === "before" ? "start-0" : "end-0"} ${externalDrop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`}
+                  className={`pointer-events-none absolute inset-y-0 z-1 w-(--ui-drop-line-size) rounded-full ${externalDrop.tabPosition === "before" ? "start-0" : "end-0"} ${externalDrop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`}
                 />
               ) : null}
               <Button
@@ -684,7 +687,7 @@ export function SurfaceTabs({
                   onSelectFile(next);
                   focusFileTab(next);
                 }}
-                title={appendProblems(dirty ? `${tooltip} (${t("Unsaved changes")})` : tooltip, errors)}
+                tooltip={appendProblems(dirty ? `${tooltip} (${t("Unsaved changes")})` : tooltip, errors)}
                 onClick={() => {
                   if (sortable.consumeClick()) return;
                   onSelectFile(file.id);
@@ -693,20 +696,20 @@ export function SurfaceTabs({
                 className={`relative flex min-w-0 flex-1 cursor-default pe-7 items-center gap-1.5 self-center `}
               >
                 {terminal ? (
-                  <Terminal className="size-3.5 shrink-0" strokeWidth={1.75} />
+                  <Terminal className="icon-sm shrink-0" strokeWidth={1.75} />
                 ) : agent ? (
                   <HarnessIcon harness={agent.harness} className="size-3.5 shrink-0" />
                 ) : changes || commit || review ? (
-                  <GitCompare className="size-3.5 shrink-0" strokeWidth={1.75} />
+                  <GitCompare className="icon-sm shrink-0" strokeWidth={1.75} />
                 ) : (
-                  <FileTypeIcon name={iconName} isDir={false} size={14} />
+                  <FileTypeIcon name={iconName} isDir={false} size="sm" />
                 )}
                 <TabLabel
-                  className={`flex-1 ${file.preview ? "italic" : ""} ${errors ? "text-danger" : ""}`}
+                  className={`flex-1 ${file.preview ? "italic" : ""} ${errors ? "text-(--ui-tone-danger-fg)" : ""}`}
                 >
                   {label}
                 </TabLabel>
-                {errors ? <CircleAlert aria-hidden className="icon-xs shrink-0 text-danger" /> : null}
+                {errors ? <CircleAlert aria-hidden className="icon-xs shrink-0 text-(--ui-tone-danger-fg)" /> : null}
                 {dirty ? (
                   <span className="size-2 shrink-0 rounded-full bg-(--ui-text-secondary)" aria-label={t("Unsaved changes")} />
                 ) : null}
@@ -715,7 +718,6 @@ export function SurfaceTabs({
                 label={t("Close {p0}", { p0: label })}
                 motion="none"
                 type="button"
-                title={t("Close {p0}", { p0: label })}
                 aria-label={t("Close {p0}", { p0: label })}
                 data-no-drag
                 tabIndex={-1}
@@ -732,7 +734,7 @@ export function SurfaceTabs({
                 }}
                 className="absolute end-1 inset-y-0 my-auto"
               >
-                <X className="size-3" strokeWidth={1.75} />
+                <X className="icon-xs" strokeWidth={1.75} />
               </InlineAction>
             </ActionHost>
           );

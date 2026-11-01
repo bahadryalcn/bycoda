@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Alert } from "../../../shared/ui/Alert";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
 import { InlineVisual } from "./InlineVisual";
@@ -150,7 +151,11 @@ export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
 
 type Props = {
   /** Travels with the element when TranscriptPool renders it in its outlet. */
-  approvalContext?: { session: import("../model/session").Session; getSession?: () => import("../model/session").Session; dispatch: ApprovalDispatch };
+  approvalContext?: {
+    session: import("../model/session").Session;
+    getSession?: () => import("../model/session").Session;
+    dispatch: ApprovalDispatch;
+  };
   sessionId?: string;
   blocks: Block[];
   busy?: boolean;
@@ -526,7 +531,8 @@ function AgentTranscriptComponent({
         className="agent-transcript h-full overflow-y-auto overscroll-none [overflow-anchor:none] font-mono text-ui-secondary leading-5"
       >
         {activeVersionValid ? (
-          <div className="sticky inset-bs-0 z-10 flex flex-wrap items-center justify-end gap-2 bg-(--ui-surface) px-4 py-2 font-sans text-xs text-(--ui-text-secondary)">
+          // z-10: in-pane sticky bar over the scrolling rows; no in-pane layer scale exists, so the literal stays.
+          <div className="sticky inset-bs-0 z-10 flex flex-wrap items-center justify-end gap-2 bg-(--ui-surface) px-4 py-2 font-sans text-ui-caption text-(--ui-text-secondary)">
             <span>{t("After applying: ↑ original, ↓ translation.")}</span>
             <Button
               motion="none"
@@ -553,7 +559,10 @@ function AgentTranscriptComponent({
           className="transcript-content mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-1 pb-8"
         >
           {historyLoading ? (
-            <div role="status" className="px-4 py-3 font-sans text-xs text-(--ui-text-secondary)">
+            <div
+              role="status"
+              className="px-4 py-3 font-sans text-ui-caption text-(--ui-text-secondary)"
+            >
               {t("Loading earlier messages…")}
             </div>
           ) : null}
@@ -1174,7 +1183,7 @@ function InitialThinking({ live, embedded = false }: { live: boolean; embedded?:
   const t = useT();
   return (
     <div
-      className={`min-w-0 pt-3 pb-1 font-sans text-sm text-(--ui-text-secondary) ${embedded ? "" : "px-4"}`}
+      className={`min-w-0 pt-3 pb-1 font-sans text-ui-body text-(--ui-text-secondary) ${embedded ? "" : "px-4"}`}
     >
       {live ? <Shimmer duration={1.6}>{t("Thinking…")}</Shimmer> : t("Thinking…")}
     </div>
@@ -1209,7 +1218,7 @@ function LiveFoldTitle({
   if (!paused && background && isBackgroundOnly(true, background, backgroundAgents)) {
     return (
       <span
-        className="min-w-0 truncate font-sans text-sm text-(--ui-text-secondary)"
+        className="min-w-0 truncate font-sans text-ui-body text-(--ui-text-secondary)"
         title={background.join("\n")}
       >
         {background.length === 1
@@ -1226,7 +1235,7 @@ function LiveFoldTitle({
       ? `${formatWorkingDuration(elapsedMs, modelName)} · ${backgroundLabel(background)}`
       : formatWorkingDuration(elapsedMs, modelName);
   const shimmer = (
-    <Shimmer className="min-w-0 truncate font-sans text-sm" duration={1}>
+    <Shimmer className="min-w-0 truncate font-sans text-ui-body" duration={1}>
       {text}
     </Shimmer>
   );
@@ -1304,9 +1313,7 @@ function RemoteBlockLoad({
         )}
       </Button>
       {state === "failed" ? (
-        <span role="alert" className="text-ui-caption text-(--ui-tone-danger-fg)">
-          {t("Could not load the full output.")}
-        </span>
+        <InlineError>{t("Could not load the full output.")}</InlineError>
       ) : null}
     </div>
   );
@@ -1347,20 +1354,20 @@ function TurnDuration({
   const hasOutput = hasTurnCopyText(turn);
   const getText = useCallback(() => turnCopyText(turn), [turn]);
   const dot = (
-    <span aria-hidden className="size-[3px] shrink-0 rounded-full bg-(--ui-tone-neutral-border)" />
+    <span aria-hidden className="size-0.75 shrink-0 rounded-full bg-(--ui-tone-neutral-border)" />
   );
   return (
     <div
       aria-label={label}
-      className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-2.5 px-4 pt-1 pb-3 font-sans text-sm text-(--ui-text-secondary)"
+      className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-2.5 px-4 pt-1 pb-3 font-sans text-ui-body text-(--ui-text-secondary)"
     >
       <span className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
         {hasOutput ? null : turn.some(
             (block) => block.role === "user" && block.turnOutcome === "stopped",
           ) ? (
-          <X className="size-3.5" strokeWidth={1.75} />
+          <X className="icon-sm" strokeWidth={1.75} />
         ) : (
-          <Check className="size-3.5" strokeWidth={1.75} />
+          <Check className="icon-sm" strokeWidth={1.75} />
         )}
         <TurnOutputActions
           getText={hasOutput ? getText : undefined}
@@ -1503,9 +1510,9 @@ function TurnMetricsBadge({
           variant="ghost"
           iconOnly
           label={t("Turn metrics: {p0}", { p0: label })}
-          title={t("Turn metrics")}
+          tooltip={t("Turn metrics")}
         >
-          <ChartBreakoutSquare className="size-3.5" strokeWidth={1.75} />
+          <ChartBreakoutSquare className="icon-sm" strokeWidth={1.75} />
         </Button>
       )}
       {(renderTrigger ? open : hovered) ? (
@@ -1584,15 +1591,15 @@ function CopyTurnButton({
         variant="ghost"
         type="button"
         disabled={pending}
-        title={copied ? t("Copied") : label}
+        tooltip={copied ? t("Copied") : label}
         aria-label={copied ? t("Copied") : label}
         loading={pending}
         startIcon={
           showLabel ? (
             copied ? (
-              <Check className="size-3.5" strokeWidth={1.75} />
+              <Check className="icon-sm" strokeWidth={1.75} />
             ) : (
-              <Copy className="size-3.5" strokeWidth={1.75} />
+              <Copy className="icon-sm" strokeWidth={1.75} />
             )
           ) : undefined
         }
@@ -1607,17 +1614,17 @@ function CopyTurnButton({
       >
         {!showLabel &&
           (copied ? (
-            <Check className="size-3.5" strokeWidth={1.75} />
+            <Check className="icon-sm" strokeWidth={1.75} />
           ) : (
-            <Copy className="size-3.5" strokeWidth={1.75} />
+            <Copy className="icon-sm" strokeWidth={1.75} />
           ))}
         {showLabel ? <span>{copied ? t("Copied") : label}</span> : null}
       </Button>
       {error && (
-        <span role="alert" className="max-w-xs text-xs text-(--ui-text-secondary)">
+        <InlineError className="max-w-xs">
           {t("Copy failed. ")}
           {error}
-        </span>
+        </InlineError>
       )}
     </>
   );
@@ -1651,15 +1658,15 @@ function SaveNoteButton({
         variant="ghost"
         type="button"
         disabled={pending}
-        title={saved ? t("Saved to Notes") : t("Save as note")}
+        tooltip={saved ? t("Saved to Notes") : t("Save as note")}
         aria-label={saved ? t("Saved to Notes") : t("Save as note")}
         loading={pending}
         startIcon={
           showLabel ? (
             saved ? (
-              <Check className="size-3.5" strokeWidth={1.75} />
+              <Check className="icon-sm" strokeWidth={1.75} />
             ) : (
-              <FilePlusCorner className="size-3.5" strokeWidth={1.75} />
+              <FilePlusCorner className="icon-sm" strokeWidth={1.75} />
             )
           ) : undefined
         }
@@ -1672,17 +1679,17 @@ function SaveNoteButton({
       >
         {!showLabel &&
           (saved ? (
-            <Check className="size-3.5" strokeWidth={1.75} />
+            <Check className="icon-sm" strokeWidth={1.75} />
           ) : (
-            <FilePlusCorner className="size-3.5" strokeWidth={1.75} />
+            <FilePlusCorner className="icon-sm" strokeWidth={1.75} />
           ))}
         {showLabel ? <span>{saved ? t("Saved to Notes") : t("Save as note")}</span> : null}
       </Button>
       {error && (
-        <span role="alert" className="max-w-xs text-xs text-(--ui-text-secondary)">
+        <InlineError className="max-w-xs">
           {t("Could not save note. ")}
           {error}
-        </span>
+        </InlineError>
       )}
     </>
   );
@@ -1825,8 +1832,8 @@ const TranscriptBlock = memo(function TranscriptBlock({
                 aria-label={t("AI question")}
                 className="flex min-w-0 items-start gap-2 text-(--ui-text-secondary)"
               >
-                <Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-                <p className="min-w-0 whitespace-pre-wrap break-words text-xs leading-relaxed">
+                <Check aria-hidden="true" className="mt-0.5 icon-sm shrink-0" />
+                <p className="min-w-0 whitespace-pre-wrap break-words text-ui-caption leading-relaxed">
                   {prompt}
                 </p>
               </section>
@@ -2001,7 +2008,7 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
       >
         <div className="flex min-w-0 items-start gap-2 px-3 py-1.5">
           <Terminal
-            className="mt-1 size-3 shrink-0 text-(--ui-text-secondary)"
+            className="mt-1 icon-xs shrink-0 text-(--ui-text-secondary)"
             strokeWidth={1.75}
             aria-hidden
           />
@@ -2157,7 +2164,7 @@ function UserMessageBlock({
       {block.startedAt != null ? (
         <Timestamp
           value={block.startedAt}
-          className="ms-1 whitespace-nowrap font-sans text-xs text-(--ui-text-secondary)"
+          className="ms-1 whitespace-nowrap font-sans text-ui-caption text-(--ui-text-secondary)"
         />
       ) : null}
     </>
@@ -2231,7 +2238,7 @@ function UserMessageBlock({
               ref={(element) => {
                 textRef.current = element;
               }}
-              className="user-message-with-link min-w-0 whitespace-pre-wrap break-words font-sans text-sm"
+              className="user-message-with-link min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body"
               data-selectable-agent-response={block.id}
             >
               <AttachmentTokenText text={messageLink.beforeText} attachments={block.attachments} />
@@ -2244,7 +2251,7 @@ function UserMessageBlock({
               ref={(element) => {
                 textRef.current = element;
               }}
-              className={`min-w-0 whitespace-pre-wrap break-words font-sans text-sm ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
+              className={`min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
             >
               <AttachmentTokenText text={displayText} attachments={block.attachments} />
             </pre>
@@ -2268,11 +2275,11 @@ function UserMessageBlock({
               className="group/ci mt-2 min-w-0 border-t border-(--ui-tone-neutral-border) pt-2"
               onClick={(event) => event.stopPropagation()}
             >
-              <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded text-xs text-(--ui-text-secondary) transition-colors hover:text-(--ui-text-secondary) focus-visible:outline focus-visible:outline-1 focus-visible:outline-(--ui-focus-ring-color) [&::-webkit-details-marker]:hidden">
-                <ChevronRight className="size-3 shrink-0 transition-transform group-open/ci:rotate-90" />
+              <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded text-ui-caption text-(--ui-text-secondary) transition-colors hover:text-(--ui-text-secondary) focus-visible:outline focus-visible:outline-1 focus-visible:outline-(--ui-focus-ring-color) [&::-webkit-details-marker]:hidden">
+                <ChevronRight className="icon-xs shrink-0 transition-transform group-open/ci:rotate-90" />
                 <span>{t("CI context")}</span>
               </summary>
-              <p className="mt-2 text-xs text-(--ui-text-secondary)">
+              <p className="mt-2 text-ui-caption text-(--ui-text-secondary)">
                 {t("CI instructions and failure details included with this request.")}
               </p>
               <pre className="mt-2 max-h-72 min-w-0 overflow-auto overscroll-contain rounded-md bg-(--ui-surface-raised) p-2.5 font-mono text-ui-micro leading-relaxed whitespace-pre-wrap break-words text-(--ui-text-secondary)">
@@ -2283,11 +2290,11 @@ function UserMessageBlock({
           {block.draft ? (
             <div className="mt-2 flex items-center justify-between gap-4 border-t border-(--color-stroke) pt-2">
               <span
-                className="flex items-center gap-1.5 text-xs text-(--ui-text-secondary)"
+                className="flex items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)"
                 role={delivery ? "status" : undefined}
                 title={deliveryDescription}
               >
-                <CircleDashed className="size-3.5" strokeWidth={1.75} />
+                <CircleDashed className="icon-sm" strokeWidth={1.75} />
                 {deliveryLabel}
               </span>
               <span className="flex items-center gap-1">
@@ -2295,25 +2302,25 @@ function UserMessageBlock({
                   motion="none"
                   variant="ghost"
                   type="button"
-                  title={deliveryActive ? heldActionTitle : t("Remove draft")}
+                  tooltip={deliveryActive ? heldActionTitle : t("Remove draft")}
                   aria-label={t("Remove draft")}
                   disabled={deliveryActive}
                   onClick={() => onRemoveDraft?.(block)}
                 >
-                  <Trash2 className="size-3.5" strokeWidth={1.75} />
+                  <Trash2 className="icon-sm" strokeWidth={1.75} />
                   {t("Remove")}
                 </Button>
                 <Button
                   motion="none"
                   variant="ghost"
                   type="button"
-                  title={deliveryActive ? heldActionTitle : t("Send draft")}
+                  tooltip={deliveryActive ? heldActionTitle : t("Send draft")}
                   aria-label={t("Send draft")}
                   disabled={deliveryActive}
                   onClick={() => onSendDraft?.(block)}
                 >
                   {t("Send")}
-                  <ArrowUp className="size-3.5" strokeWidth={2.25} />
+                  <ArrowUp className="icon-sm" strokeWidth={2} />
                 </Button>
               </span>
             </div>
@@ -2430,10 +2437,7 @@ function WorkFoldLine({
       {open ? (
         // Open, the chevron stays put: it is the way back, and hunting for it
         // under the cursor is no way to close what you opened.
-        <ChevronRight
-          className="size-3.5 rotate-90 text-(--ui-text-secondary)"
-          strokeWidth={1.75}
-        />
+        <ChevronRight className="icon-sm rotate-90 text-(--ui-text-secondary)" strokeWidth={1.75} />
       ) : (
         <>
           {harness ? (
@@ -2450,7 +2454,7 @@ function WorkFoldLine({
   const label = live ? (
     title
   ) : (
-    <span className="min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
+    <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
       {title}
     </span>
   );

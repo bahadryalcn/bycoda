@@ -69,10 +69,10 @@
 }
 .provider-cli-option-meta[data-tone="signedOut"],
 .provider-cli-option-meta[data-tone="low"] {
-  color: var(--color-warning);
+  color: var(--ui-tone-warning-fg);
 }
 .provider-cli-option-meta[data-tone="exhausted"] {
-  color: var(--color-danger);
+  color: var(--ui-tone-danger-fg);
 }
 .provider-cli-item-action {
   flex-shrink: 0;
@@ -282,8 +282,8 @@
   flex: 1 1 0;
 }
 .provider-antigravity-box {
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-editor-border);
+  background: var(--ui-settings-group-surface);
+  border: 1px solid var(--ui-settings-group-border);
   border-radius: var(--ui-radius-card);
   overflow: hidden;
 }

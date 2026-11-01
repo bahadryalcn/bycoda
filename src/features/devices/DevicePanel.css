@@ -191,7 +191,7 @@
   overflow-y: auto;
   font-size: var(--ui-font-caption);
   background: var(--ui-surface);
-  color: var(--color-danger);
+  color: var(--ui-tone-danger-fg);
   padding: 6px 10px;
 }
 .device-panel-error summary {

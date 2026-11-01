@@ -164,21 +164,21 @@ it("clears a host date filter when the retained history controls are reset", asy
   try {
     await act(async () => render());
     await openFilters();
-    const input = document.querySelector<HTMLInputElement>(
-      '.social-filter-panel input[type="date"]',
-    )!;
+    const trigger = () =>
+      document.querySelector<HTMLButtonElement>(
+        '.social-filter-panel button[aria-label^="Start date:"]',
+      )!;
+    await act(async () => trigger().click());
+    const day = document.querySelector<HTMLButtonElement>("button[data-date]")!;
+    const picked = day.dataset.date!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        input,
-        "2026-10-12",
-      );
-      input.dispatchEvent(new Event("input", { bubbles: true }));
+      day.click();
       vi.advanceTimersByTime(200);
     });
     await act(async () => vi.advanceTimersByTime(200));
     expect(onFilterChange).toHaveBeenCalledWith(
       "jobs",
-      expect.objectContaining({ since: new Date("2026-10-12T00:00:00").getTime() }),
+      expect.objectContaining({ since: new Date(`${picked}T00:00:00`).getTime() }),
     );
     snapshot.filters = { jobs: onFilterChange.mock.calls[0][1] };
     await act(async () => render());
@@ -194,7 +194,7 @@ it("clears a host date filter when the retained history controls are reset", asy
       accountId: "",
       kind: "",
     });
-    expect(input.value).toBe("");
+    expect(trigger().getAttribute("aria-label")).toContain("Choose a date");
   } finally {
     vi.useRealTimers();
   }

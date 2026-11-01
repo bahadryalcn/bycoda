@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -61,7 +62,7 @@ export function EditorDraftRecoverySection({
           ]}
         />
         <SearchInputGroup appearance="field" className="recovery-toolbar-search">
-          <Search className="size-3.5 shrink-0" aria-hidden="true" />
+          <Search className="icon-sm shrink-0" aria-hidden="true" />
           <SearchInput
             focusOwner="group"
             aria-label={t("Search file recovery copies")}
@@ -147,11 +148,11 @@ export function EditorDraftRecoverySection({
                       · {row.windowLabel} · {formatRelative(row.updatedAt, now)}
                     </p>
                     {failed ? (
-                      <p role="alert" className="text-ui-caption text-danger">
+                      <InlineError>
                         {t(
                           "The copy could not be opened. Retry uses the same prepared copy; refresh if the source changed.",
                         )}
-                      </p>
+                      </InlineError>
                     ) : null}
                   </div>
                   <Button

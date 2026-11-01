@@ -270,6 +270,7 @@ export function ComposerActions({
   className?: string;
 }) {
   const footer = useSocialContext(ComposerFooterContext);
+  // Portal into the Modal's footer slot (owned by the composer dialog), not a free-floating overlay.
   return footer ? createPortal(children, footer) : <div className={className}>{children}</div>;
 }
 
@@ -399,6 +400,7 @@ export function Composer({
           <ComposerModalSlot onSlot={setSlot} />
         </Modal>
       ) : null}
+      {/* Portal into the Modal body slot so the composer content keeps this component's state and context. */}
       {host
         ? createPortal(
             <OverlayMenuLayer.Provider value={slot.layer}>

@@ -1,5 +1,6 @@
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Check, Copy, Folder, Minus, Plus, RotateCcw } from "../../../shared/ui/icons";
@@ -103,7 +104,7 @@ export function BinaryFileView({ path, cwd }: Props) {
         cwd={cwd}
         title={t("Couldn’t open {p0}", { p0: basename(path) })}
         detail={state.message}
-        icon={<AlertCircle className="mx-auto mb-3 size-5 text-danger" />}
+        icon={<AlertCircle className="mx-auto mb-3 icon-lg text-(--ui-tone-danger-fg)" />}
         onRetry={reload}
       />
     );
@@ -118,6 +119,7 @@ export function BinaryFileView({ path, cwd }: Props) {
         detail={`${formatFileSize(state.size)} · not a readable image`}
         icon={
           <div className="mx-auto mb-3 flex justify-center">
+            {/* Hero mark: 28 px is larger than the largest icon token (`lg`, 20 px). */}
             <FileTypeIcon name={basename(path)} isDir={false} size={28} />
           </div>
         }
@@ -225,9 +227,7 @@ function ImageView({
         />
       </div>
       {copyError ? (
-        <p role="alert" className="shrink-0 break-words px-3 py-2 text-ui-caption text-danger">
-          {copyError}
-        </p>
+        <InlineError className="shrink-0 break-words px-3 py-2">{copyError}</InlineError>
       ) : null}
       <footer className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 border-t border-(--ui-pane-border) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
         <span className="tabular-nums">{natural ? `${natural.w} × ${natural.h}` : "—"}</span>
@@ -235,27 +235,30 @@ function ImageView({
         <span className="uppercase">{mime.replace(/^image\//, "")}</span>
         <span className="flex-1" />
         {IS_MAC ? (
-          <ZoomButton
+          <Button
+            size="sm"
+            variant="ghost"
+            iconOnly
             label={copied ? t("Copied") : t("Copy original file")}
             onClick={copyOriginal}
             loading={copyPending}
           >
             {copied ? (
-              <Check className="size-3" strokeWidth={2} />
+              <Check className="icon-xs" strokeWidth={2} />
             ) : (
-              <Copy className="size-3" strokeWidth={1.75} />
+              <Copy className="icon-xs" strokeWidth={1.75} />
             )}
-          </ZoomButton>
+          </Button>
         ) : null}
-        <ZoomButton label={t("Zoom out")} onClick={() => imageZoom.zoom(1 / 1.5)}>
-          <Minus className="size-3" strokeWidth={1.75} />
-        </ZoomButton>
+        <Button size="sm" variant="ghost" iconOnly label={t("Zoom out")} onClick={() => imageZoom.zoom(1 / 1.5)}>
+          <Minus className="icon-xs" strokeWidth={1.75} />
+        </Button>
         <Button
           size="sm"
           variant="ghost"
           motion="none"
           type="button"
-          title={t("Fit to window")}
+          tooltip={t("Fit to window")}
           onClick={imageZoom.reset}
           className="w-11 text-center tabular-nums"
         >
@@ -263,9 +266,9 @@ function ImageView({
             ? t("Fit")
             : `${Math.round(zoom * (natural && imageRef.current?.offsetWidth ? imageRef.current.offsetWidth / natural.w : 1) * 100)}%`}
         </Button>
-        <ZoomButton label={t("Zoom in")} onClick={() => imageZoom.zoom(1.5)}>
-          <Plus className="size-3" strokeWidth={1.75} />
-        </ZoomButton>
+        <Button size="sm" variant="ghost" iconOnly label={t("Zoom in")} onClick={() => imageZoom.zoom(1.5)}>
+          <Plus className="icon-xs" strokeWidth={1.75} />
+        </Button>
       </footer>
       {menu ? (
         <ExplorerMenu
@@ -288,37 +291,6 @@ function ImageView({
         />
       ) : null}
     </div>
-  );
-}
-
-function ZoomButton({
-  label,
-  onClick,
-  children,
-  loading,
-}: {
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-  loading?: boolean;
-}) {
-  useLocale();
-  return (
-    <Button
-      size="sm"
-      iconOnly
-      label={label}
-      loading={loading}
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className="grid place-items-center"
-    >
-      {children}
-    </Button>
   );
 }
 
@@ -365,68 +337,41 @@ function FileCard({
           {displayPath(path, cwd)}
         </p>
         {error ? (
-          <p role="alert" className="mt-2 break-words text-ui-caption text-danger">
-            {error}
-          </p>
+          <InlineError className="mt-2 justify-center break-words">{error}</InlineError>
         ) : null}
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           {onRetry ? (
-            <CardButton
+            <Button
+            size="sm"
+            variant="ghost"
               onClick={onRetry}
               disabled={pending !== null}
-              startIcon={<RotateCcw className="size-3" strokeWidth={1.75} />}
+              startIcon={<RotateCcw className="icon-xs" strokeWidth={1.75} />}
             >
               {t("Retry")}
-            </CardButton>
+            </Button>
           ) : null}
-          <CardButton
+          <Button
+            size="sm"
+            variant="ghost"
             disabled={pending !== null}
             loading={pending === "reveal"}
-            startIcon={<Folder className="size-3" strokeWidth={1.75} />}
+            startIcon={<Folder className="icon-xs" strokeWidth={1.75} />}
             onClick={() => void run("reveal", () => revealPath(path))}
           >
             {t("Reveal")}
-          </CardButton>
-          <CardButton
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
             disabled={pending !== null}
             loading={pending === "copy"}
             onClick={() => void run("copy", () => copyText(path))}
           >
             {t("Copy path")}
-          </CardButton>
+          </Button>
         </div>
       </div>
     </div>
-  );
-}
-
-function CardButton({
-  onClick,
-  children,
-  loading,
-  disabled,
-  startIcon,
-}: {
-  onClick: () => void;
-  children: React.ReactNode;
-  loading?: boolean;
-  disabled?: boolean;
-  startIcon?: React.ReactNode;
-}) {
-  useLocale();
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      motion="none"
-      type="button"
-      onClick={onClick}
-      loading={loading}
-      disabled={disabled}
-      startIcon={startIcon}
-      className="flex items-center gap-1.5"
-    >
-      {children}
-    </Button>
   );
 }

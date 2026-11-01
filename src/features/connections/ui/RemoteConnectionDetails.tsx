@@ -35,7 +35,7 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
     return () => clearInterval(timer);
   }, [ticking]);
   return (
-    <div className="flex min-w-0 flex-col gap-2 text-xs">
+    <div className="flex min-w-0 flex-col gap-2 text-ui-caption">
       <p role="status" className="text-(--ui-text-muted)">
         {t(phases[lifecycle.phase])}
         {lifecycle.phase === "checking" && lifecycle.startedAt != null && now != null ? (

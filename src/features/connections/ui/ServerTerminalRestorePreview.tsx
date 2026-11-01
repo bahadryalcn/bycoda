@@ -3,6 +3,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Modal } from "../../../shared/ui/Modal";
 import { Badge } from "../../../shared/ui/Badge";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t } from "../../../shared/i18n";
 import type { ServerRecord } from "../model/serverInventory";
 import type {
@@ -35,7 +36,7 @@ export function ServerTerminalRestorePreview({
   const selectedTabs = restore.tabs.filter((tab) => selected.has(tab.tabId));
   if (!restore.tabs.length) return null;
   return (
-    <details className="border-t border-stroke pbs-2 text-xs" open={defaultOpen || undefined}>
+    <details className="border-t border-stroke pbs-2 text-ui-caption" open={defaultOpen || undefined}>
       <summary className="cursor-pointer py-1 font-medium text-(--ui-text-secondary)">
         {t("Saved SSH tabs")} ({restore.tabs.length}) · {t("Not connected")}
       </summary>
@@ -44,11 +45,7 @@ export function ServerTerminalRestorePreview({
           "Restored tabs reconnect only when you choose Connect. This opens a new shell; previous commands are not replayed.",
         )}
       </p>
-      {error ? (
-        <p className="mbs-2 text-(--ui-tone-danger-fg)" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineError className="mbs-2">{error}</InlineError> : null}
       <div className="mbs-2 flex flex-wrap items-center gap-2">
         <Checkbox
           aria-label={t("Select saved SSH tabs")}
@@ -169,7 +166,7 @@ export function ServerTerminalRestorePreview({
             </div>
           }
         >
-          <p className="p-4 text-sm">
+          <p className="p-4 text-ui-body">
             {t("Only saved tab references are removed. Servers and open terminals are kept.")}
           </p>
         </Modal>

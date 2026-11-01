@@ -651,7 +651,7 @@ function ConnectedCrewEditor({
                             }
                             endIcon={<ChevronRight className="text-(--ui-text-secondary)" />}
                             onClick={() => openMember(agent)}
-                            title={[
+                            tooltip={[
                               agent.name || t("Unnamed member"),
                               `${roleLabel(agent.role)} · ${summary}`,
                               groups,

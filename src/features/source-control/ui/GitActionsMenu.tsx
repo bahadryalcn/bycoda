@@ -2,7 +2,6 @@ import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import {
-  Loader,
   MoreHorizontal,
   ArrowDownCircle,
   CloudUpload,
@@ -12,6 +11,7 @@ import {
 } from "../../../shared/ui/icons";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
 import { Button } from "../../../shared/ui/Button";
+import { Spinner } from "../../../shared/ui/Spinner";
 import {
   gitBranches,
   gitCreateBranch,
@@ -705,12 +705,10 @@ export function GitActionsMenu({
                 size="sm"
                 iconOnly
                 label={label}
-                title={label}
-                aria-label={label}
                 disabled={!item || item.kind !== "item" || !!item.disabled || !!busy}
                 onClick={() => void handle(id)}
               >
-                <Icon className="size-3.5" />
+                <Icon className="icon-sm" />
               </Button>
             );
           })
@@ -730,9 +728,9 @@ export function GitActionsMenu({
         }}
       >
         {busy === GIT_MENU_BUSY ? (
-          <Loader className="size-3.5 animate-spin" strokeWidth={1.75} />
+          <Spinner />
         ) : (
-          <MoreHorizontal className="size-4" strokeWidth={2} />
+          <MoreHorizontal className="icon-md" strokeWidth={2} />
         )}
       </Button>
       {anchor ? (

@@ -111,7 +111,7 @@ describe("AgentMarkdown file link context menu", () => {
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
     );
-    const alert = document.body.querySelector<HTMLElement>(':scope > [role="alert"]');
+    const alert = document.body.querySelector<HTMLElement>('[data-toast-region] [role="alert"]');
     expect(alert?.textContent).toContain("Explorer is unavailable");
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });

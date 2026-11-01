@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -239,16 +240,16 @@ export function GroupLockSettings({
         }
       >
         {listedGroups.length === 0 ? (
-          <div className="settings-collection settings-collection-empty privacy-empty">
-            <p className="font-medium text-content">
-              {lock.groups.length === 0 ? t("No groups yet") : t("All groups are hidden")}
-            </p>
-            <p>
-              {lock.groups.length === 0
+          <EmptyState
+            size="inline"
+            className="settings-collection settings-collection-empty privacy-empty"
+            title={lock.groups.length === 0 ? t("No groups yet") : t("All groups are hidden")}
+            description={
+              lock.groups.length === 0
                 ? t("Create a group in the project list to configure protection.")
-                : t("Manage them in Hidden groups.")}
-            </p>
-          </div>
+                : t("Manage them in Hidden groups.")
+            }
+          />
         ) : (
           <div className="settings-collection privacy-group-collection">
             {searchable ? (
@@ -277,12 +278,14 @@ export function GroupLockSettings({
             </div>
             <div className="settings-collection-list privacy-group-list" role="list">
               {visibleGroups.length === 0 ? (
-                <div className="settings-collection-empty">
-                  <p role="status">{t("No groups found")}</p>
-                  <Button variant="ghost" onClick={() => setGroupQuery("")}>
-                    {t("Clear search")}
-                  </Button>
-                </div>
+                <EmptyState
+                  size="inline"
+                  kind="filtered"
+                  className="settings-collection-empty"
+                  description={t("No groups found")}
+                  resetLabel={t("Clear search")}
+                  onReset={() => setGroupQuery("")}
+                />
               ) : null}
               {visibleGroups.map((group) => {
                 const locked = lock.lock.lockedGroupIds.has(group.id);

@@ -711,10 +711,12 @@ it("filters and collapses project groups while retaining an edited note outside 
   );
   await render();
   expect(container.querySelectorAll(".note-group-heading")).toHaveLength(2);
-  await act(async () => container.querySelector<HTMLButtonElement>(".note-group-heading")!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>(".note-group-heading h3 button")!.click(),
+  );
   expect(
     container
-      .querySelector<HTMLButtonElement>(".note-group-heading")!
+      .querySelector<HTMLButtonElement>(".note-group-heading h3 button")!
       .getAttribute("aria-expanded"),
   ).toBe("false");
   await act(async () =>

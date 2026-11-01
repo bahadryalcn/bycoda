@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -96,24 +97,25 @@ export function LocalSessionReferenceLink({
 
   return (
     <span data-local-session-reference className="inline">
-      <a
-        href={href}
-        className={`text-(--ui-tone-info-fg) hover:underline ${className ?? ""}`}
-        title={t("Open local session")}
-        aria-busy={!!opening || undefined}
-        aria-describedby={error || opening ? id : undefined}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          void open();
-        }}
-        onAuxClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-      >
-        {children}
-      </a>
+      <Tooltip label={t("Open local session")}>
+        <a
+          href={href}
+          className={`text-(--ui-tone-info-fg) hover:underline ${className ?? ""}`}
+          aria-busy={!!opening || undefined}
+          aria-describedby={error || opening ? id : undefined}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void open();
+          }}
+          onAuxClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
+          {children}
+        </a>
+      </Tooltip>
       <Button
         ref={trigger}
         iconOnly
@@ -133,7 +135,7 @@ export function LocalSessionReferenceLink({
           if (next) void readDetails();
         }}
       >
-        <Info className="size-3.5" />
+        <Info className="icon-sm" />
       </Button>
       {!details && (error || opening) ? (
         <span id={id} role="status" className="text-ui-caption text-(--ui-text-secondary)">

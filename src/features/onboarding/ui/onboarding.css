@@ -4,7 +4,7 @@
   inline-size: min(100%, 840px);
   block-size: min(680px, calc(100dvh - 32px));
   margin-inline: auto;
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
 }
 .onboarding-panel .modal-panel > div:last-child {
   display: flex;
@@ -44,7 +44,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 9px;
-  font-size: 18px;
+  font-size: var(--ui-font-title);
   font-weight: 650;
   letter-spacing: -0.025em;
 }
@@ -56,7 +56,7 @@
 .onboarding-brand small {
   border-inline-start: 1px solid var(--color-stroke);
   padding-inline-start: 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   font-weight: 400;
   letter-spacing: normal;
   color: var(--ui-text-muted);
@@ -73,7 +73,7 @@
   display: none;
   margin: 0;
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 @container onboarding-stepper (max-width: 44rem) {
   .onboarding-step-caption {
@@ -109,7 +109,7 @@
   margin-block-end: 14px;
 }
 .onboarding-heading h3 {
-  font-size: clamp(20px, 2.2vw, 24px);
+  font-size: var(--ui-font-heading);
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1.25;
@@ -144,7 +144,7 @@
 }
 .onboarding-body small {
   display: block;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   color: var(--ui-text-muted);
   line-height: 1.45;
   margin-block-start: 3px;
@@ -160,7 +160,7 @@
 .onboarding-section-title {
   margin-block-end: 8px;
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   font-weight: 600;
 }
 .onboarding-row {
@@ -171,11 +171,13 @@
   min-block-size: 44px;
   padding: 8px 12px;
   border: 1px solid var(--color-stroke);
-  border-radius: 10px;
+  border-radius: var(--ui-radius-card);
   cursor: pointer;
 }
-.onboarding-row:hover {
-  background: var(--ui-surface-hover);
+@media (hover: hover) and (pointer: fine) {
+  .onboarding-row:hover {
+    background: var(--ui-surface-hover);
+  }
 }
 
 /* Step 1: even grid, whole-card selection */
@@ -191,7 +193,7 @@
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--color-stroke);
-  border-radius: 10px;
+  border-radius: var(--ui-radius-card);
 }
 .onboarding-feature {
   min-block-size: 64px;
@@ -210,11 +212,13 @@
   flex: none;
 }
 .onboarding-feature small {
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   line-height: 1.4;
 }
-.onboarding-feature:not([data-fixed]):hover {
-  background: var(--ui-surface-hover);
+@media (hover: hover) and (pointer: fine) {
+  .onboarding-feature:not([data-fixed]):hover {
+    background: var(--ui-surface-hover);
+  }
 }
 .onboarding-feature:has(input:checked) {
   border-color: var(--ui-tone-accent-border);
@@ -228,7 +232,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   color: var(--ui-text-muted);
 }
 
@@ -243,80 +247,31 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
-.onboarding-choice {
-  position: relative;
+/* Tiles are the shared RadioTiles item Buttons; the descendant selector outranks Button's own box. */
+.onboarding-panel .onboarding-choice {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 8px;
+  block-size: auto;
+  min-block-size: 0;
   min-inline-size: 0;
   padding: 8px;
   border: 1px solid var(--color-stroke);
-  border-radius: 10px;
-  cursor: pointer;
+  border-radius: var(--ui-radius-card);
+  text-align: start;
 }
-/* The native radio covers the card, so the whole card is the hit target and keeps arrow-key behavior. */
-.onboarding-choice > input {
-  position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-.onboarding-choice:hover {
-  background: var(--ui-surface-hover);
-}
-.onboarding-choice:has(input:checked) {
-  border-color: var(--ui-tone-accent-border);
-  background: var(--ui-surface-selected);
-}
-.onboarding-choice:has(input:focus-visible) {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: var(--ui-focus-offset);
+.onboarding-panel .onboarding-choice[aria-checked="true"] {
+  /* Selection is the accent border (the same role as the Settings tiles), not the focus ring. */
+  border-color: var(--ui-border-accent);
+  box-shadow: inset 0 0 0 1px var(--ui-border-accent);
 }
 .onboarding-choice-text strong {
-  font-size: 13px;
+  font-size: var(--ui-font-secondary);
 }
 .onboarding-choice-text small {
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   margin-block-start: 2px;
-}
-.onboarding-mode-preview {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  block-size: 44px;
-  border: 1px solid var(--color-stroke);
-  border-radius: 6px;
-  overflow: clip;
-}
-.onboarding-mode-preview > i {
-  position: relative;
-  display: block;
-}
-.onboarding-mode-preview > i[data-tone="light"] {
-  background: var(--palette-oklch_100pct_0_none);
-  --onboarding-line: var(--palette-oklch_85pct_0_none);
-}
-.onboarding-mode-preview > i[data-tone="dark"] {
-  background: var(--palette-oklch_12pct_0_none);
-  --onboarding-line: var(--palette-oklch_35pct_0_none);
-}
-.onboarding-mode-preview > i::before,
-.onboarding-mode-preview > i::after {
-  content: "";
-  position: absolute;
-  inset-inline: 14%;
-  block-size: 4px;
-  border-radius: 2px;
-  background: var(--onboarding-line);
-}
-.onboarding-mode-preview > i::before {
-  inset-block-start: 28%;
-  inset-inline-end: 40%;
-}
-.onboarding-mode-preview > i::after {
-  inset-block-start: 52%;
 }
 /* Still frames only: previews keep their aspect ratio and never stretch or animate. */
 .onboarding-crew-preview {
@@ -325,9 +280,10 @@
   place-items: center;
   inline-size: 100%;
   aspect-ratio: 2.8;
-  border-radius: 6px;
-  background: var(--palette-oklch_12pct_0_none);
-  color: var(--palette-oklch_80pct_0_none);
+  border-radius: var(--ui-control-radius);
+  /* The crew scene is always drawn on a dark stage, whatever the app theme. */
+  background: var(--palette-canvasPureDark);
+  color: var(--palette-solidInk);
   overflow: clip;
 }
 .onboarding-crew-preview canvas {
@@ -474,7 +430,7 @@
 }
 .onboarding-status {
   color: var(--ui-text-muted);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 .onboarding-actions {
   display: flex;
@@ -483,7 +439,7 @@
   margin-block-start: 12px;
 }
 .onboarding-hint {
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   margin-block-start: 12px;
 }
 .onboarding-settings {
@@ -500,7 +456,7 @@
 }
 .onboarding-projects-frame {
   border: 1px solid var(--color-stroke);
-  border-radius: 10px;
+  border-radius: var(--ui-radius-card);
   overflow: clip;
 }
 .onboarding-selection {
@@ -510,11 +466,11 @@
   padding: 8px 12px;
   border-block-end: 1px solid var(--color-stroke);
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .onboarding-body .onboarding-selection-note {
   margin: 0 0 0 auto;
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 .onboarding-project {
   display: flex;
@@ -530,8 +486,10 @@ div.onboarding-project {
 .onboarding-project + .onboarding-project {
   border-block-start: 1px solid var(--color-stroke);
 }
-label.onboarding-project:hover {
-  background: var(--ui-surface-hover);
+@media (hover: hover) and (pointer: fine) {
+  label.onboarding-project:hover {
+    background: var(--ui-surface-hover);
+  }
 }
 .onboarding-project > strong {
   flex: none;
@@ -548,13 +506,13 @@ label.onboarding-project:hover {
   flex: 1;
   min-inline-size: 0;
   color: var(--ui-text-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
 }
 .onboarding-project-count {
   flex: none;
   min-inline-size: 2.5rem;
   color: var(--ui-text-muted);
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
   text-align: end;
 }
@@ -594,7 +552,7 @@ label.onboarding-project:hover {
 }
 .onboarding-save-note {
   color: var(--ui-text-muted);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -602,8 +560,8 @@ label.onboarding-project:hover {
   .onboarding-choice,
   .onboarding-row {
     transition:
-      background-color 120ms ease,
-      border-color 120ms ease;
+      background-color var(--motion-duration-fast) var(--motion-ease-standard),
+      border-color var(--motion-duration-fast) var(--motion-ease-standard);
   }
 }
 

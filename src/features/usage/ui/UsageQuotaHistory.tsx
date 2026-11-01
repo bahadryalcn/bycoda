@@ -1,6 +1,7 @@
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useMemo, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
 import {
@@ -64,10 +65,10 @@ export function QuotaHistory({
           </InfoPopover>
         </div>
         <div className="usage-controls">
-          <Select
+          <SearchableSelect
             label={t("Account")}
             value={key}
-            onValueChange={setAccount}
+            onChange={setAccount}
             options={knownAccounts.map((a) => ({
               value: `${a.provider}:${a.id}`,
               label: `${a.provider} · ${a.label}`,

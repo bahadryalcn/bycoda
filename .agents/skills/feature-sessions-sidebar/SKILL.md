@@ -291,3 +291,13 @@ Delivered in source (uncommitted; unit, type and fixture-screenshot evidence onl
 - `FolderRow`: one ~28px line, muted folder/open-folder (or Pin/Clock) icon that becomes a rotating chevron on hover/focus, medium secondary-ink name, small muted count. The count yields to `+` (new session in group) and `…` (same menu as right-click; also ContextMenu/Shift+F10 on the header). The `+` no longer renders over the count at rest.
 - Crew work with nothing running is only its label row with Manage; the empty line is gone (`CrewSessions.tsx`).
 - Evidence: `temp/verification/v3-037-sidebar/` (scratch fixture `temp/local/v3-037-sidebar/`, memory-only data). Not yet checked in the native app.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Shell, rail, title bar and sidebar (`src/app/shell/**`, `src/app/workspace/layout/**`) moved onto the shared parts. w2-shell wrote no handoff file; this entry is read from the working-tree diff (28 files) and the drift report.
+
+- Done: title bar, window controls and recovery layout headers on `PaneHeader` / `WindowChromeInset`; `Tooltip`/Button `tooltip` replace native `title=` (roughly 58 `title=` lines removed and 24 `tooltip=` added across `src/app`); `InlineError`, `Spinner`, `LoadingText` for errors and pending; `Surface`, `Sash`, `Tabs`, `Badge` where hand-made; `WorkspaceNotices.tsx` mounts `<ToastRegion insets={{ "top-end": 48 }} />` once per window (reminders and approvals join through `ToastSlot`).
+- Left: about 51 drift findings remain under `src/app/shell` (`check-ui-drift --report`); `LastSessionsSection.tsx` and `sessionList.css` were off-limits this round. The session-list row and rail layout contracts above are unchanged.
+- Unverified: no screenshots or native run (light/dark, 1280/800, macOS inset next to the rail).

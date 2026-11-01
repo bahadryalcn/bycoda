@@ -1,5 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Popover } from "../../../shared/ui/Popover";
 import { FileDiff, LayoutGrid, SplitSquare } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -100,7 +101,7 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
       {failed !== undefined ? (
         <Popover anchor={anchor} role="dialog" aria-label={t("Diff view")} onDismiss={() => setFailed(undefined)} autoFocus>
           <div className="flex flex-col gap-2 p-3 text-ui-secondary">
-            <p role="alert">{t("Could not save changes")}</p>
+            <InlineError>{t("Could not save changes")}</InlineError>
             <div className="flex justify-end gap-1">
               <Button size="sm" variant="ghost" onClick={() => setFailed(undefined)}>{t("Cancel")}</Button>
               <Button size="sm" onClick={() => pick(failed)}>{t("Retry")}</Button>

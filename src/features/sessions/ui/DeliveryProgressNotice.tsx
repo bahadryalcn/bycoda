@@ -156,7 +156,7 @@ export function DeliveryProgressNotice({
     finish();
   };
   return (
-    <div className="px-4 py-1 text-xs text-(--ui-text-secondary)" data-delivery-progress={stage}>
+    <div className="px-4 py-1 text-ui-caption text-(--ui-text-secondary)" data-delivery-progress={stage}>
       <div
         role={stage === "rejected" || stage === "unknown" ? "alert" : "status"}
         aria-live="polite"

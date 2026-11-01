@@ -78,7 +78,7 @@
   padding: 12px;
   background: var(--ui-surface);
   border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: var(--ui-radius-panel, 8px);
+  border-radius: var(--ui-radius-card);
 }
 .automation-template-search {
   inline-size: min(100%, 16rem);
@@ -105,16 +105,9 @@
   display: grid;
   gap: 20px;
 }
-/* The instructions field fills a share of the available height and still grows with its text. */
-.automation-prompt textarea {
-  min-block-size: clamp(7rem, 24cqb, 16rem);
-}
 @container automation-editor (min-width: 52rem) {
   .automation-editor-grid {
     grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
     gap: 32px;
-  }
-  .automation-prompt textarea {
-    min-block-size: clamp(14rem, 52cqb, 36rem);
   }
 }

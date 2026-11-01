@@ -1,6 +1,11 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Tab } from "../../../shared/ui/Tabs";
 import { fetchCheckDetails, hasCheckDetails } from "../model/prChecks";
 import { t, useLocale } from "../../../shared/i18n";
 import { CheckRepairForm, type CheckRepair } from "./CheckRepairForm";
@@ -22,7 +27,6 @@ import {
   CircleHelp,
   CircleX,
   ExternalLink,
-  LoaderCircle,
   Minus,
   RefreshCw,
   Sparkles,
@@ -43,22 +47,19 @@ import {
   type GithubCheckDetails,
 } from "../model/githubPrChecks";
 
-function overallMark(overall: GithubPrChecksOverall): {
-  Icon: IconComponent;
-  className: string;
-} {
+/** A state glyph; `"spinner"` is the shared pending Spinner instead of an icon. */
+type Mark = { Icon: IconComponent | "spinner"; className: string };
+
+function overallMark(overall: GithubPrChecksOverall): Mark {
   switch (overall.kind) {
     case "loading":
-      return { Icon: LoaderCircle, className: "animate-spin text-(--ui-text-secondary)" };
+      return { Icon: "spinner", className: "text-(--ui-text-secondary)" };
     case "error":
       return { Icon: AlertCircle, className: "text-(--ui-tone-danger-fg)" };
     case "fail":
       return { Icon: CircleX, className: "text-(--ui-tone-danger-fg)" };
     case "pending":
-      return {
-        Icon: LoaderCircle,
-        className: "animate-spin text-(--ui-tone-warning-fg)",
-      };
+      return { Icon: "spinner", className: "text-(--ui-tone-warning-fg)" };
     case "pass":
       return { Icon: CheckCircle, className: "text-(--ui-tone-success-fg)" };
     case "neutral":
@@ -66,17 +67,14 @@ function overallMark(overall: GithubPrChecksOverall): {
   }
 }
 
-function checkMark(state: GithubPrCheckState): {
-  Icon: IconComponent;
-  className: string;
-} {
+function checkMark(state: GithubPrCheckState): Mark {
   switch (state) {
     case "pass":
       return { Icon: CheckCircle, className: "text-(--ui-tone-success-fg)" };
     case "fail":
       return { Icon: CircleX, className: "text-(--ui-tone-danger-fg)" };
     case "pending":
-      return { Icon: LoaderCircle, className: "animate-spin text-(--ui-text-secondary)" };
+      return { Icon: "spinner", className: "text-(--ui-text-secondary)" };
     case "cancel":
       return { Icon: Minus, className: "text-(--ui-text-secondary)" };
     case "unknown":
@@ -86,46 +84,34 @@ function checkMark(state: GithubPrCheckState): {
   }
 }
 
-/** The Checks tab: label plus an overall mark whose name spells out the counts. */
-export function PrChecksTab({
-  id,
-  controls,
-  overall,
-  selected,
-  onSelect,
-}: {
-  id?: string;
-  controls?: string;
-  overall: GithubPrChecksOverall;
-  selected: boolean;
-  onSelect: () => void;
-}) {
+function MarkGlyph({ mark, size }: { mark: Mark; size: "sm" | "md" }) {
+  if (mark.Icon === "spinner")
+    return <Spinner size={size} className={`shrink-0 ${mark.className}`} />;
+  return (
+    <mark.Icon
+      className={`${size === "sm" ? "icon-sm" : "icon-md"} shrink-0 ${mark.className}`}
+      strokeWidth={1.75}
+    />
+  );
+}
+
+/**
+ * The Checks tab: label plus an overall mark whose name spells out the counts. Rendered
+ * inside the PR detail `Tabs`, whose `value="checks"` it selects.
+ */
+export function PrChecksTab({ overall }: { overall: GithubPrChecksOverall }) {
   useLocale();
   const mark = overallMark(overall);
   const label = `Checks: ${overall.description}`;
   const failClass = mark.className.split(" ").find((entry) => entry.startsWith("text-")) ?? "";
   return (
-    <Button
-      variant="tab"
-      type="button"
-      role="tab"
-      id={id}
-      aria-controls={controls}
-      tabIndex={selected ? 0 : -1}
-      aria-selected={selected}
-      aria-label={label}
-      title={label}
-      onClick={onSelect}
-    >
+    <Tab value="checks" aria-label={label} tooltip={label}>
       <span className="leading-none">{t("Checks")}</span>
-      <mark.Icon className={`icon-sm shrink-0 ${mark.className}`} strokeWidth={1.75} />
+      <MarkGlyph mark={mark} size="sm" />
       {overall.kind === "fail" ? (
         <span className={`tabular-nums leading-none ${failClass}`}>{overall.failed}</span>
       ) : null}
-      {selected ? (
-        <span className="absolute inset-x-0 bottom-0 h-0.5 bg-(--ui-tone-neutral-solid)" />
-      ) : null}
-    </Button>
+    </Tab>
   );
 }
 
@@ -278,7 +264,7 @@ function PrCheckRow({
   const body = (
     <>
       <span className="grid h-7 w-5 shrink-0 place-items-center">
-        <mark.Icon className={`icon-md ${mark.className}`} strokeWidth={1.75} />
+        <MarkGlyph mark={mark} size="md" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-w-0 items-baseline gap-2.5">
@@ -311,14 +297,14 @@ function PrCheckRow({
     </>
   );
   const className =
-    "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-(--radius-control) text-left";
+    "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-left";
   return (
     <li
       ref={rowRef}
       tabIndex={-1}
-      className={`min-w-0 rounded-(--radius-control) outline-none ${expanded ? "bg-(--ui-surface-hover)" : ""}`}
+      className={`min-w-0 rounded-(--ui-control-radius) outline-none ${expanded ? "bg-(--ui-fill-faint)" : ""}`}
     >
-      <div className="group/check flex min-w-0 items-center gap-2 rounded-(--radius-control) px-2 py-1 hover:bg-(--ui-surface-hover) @max-[420px]/checks:gap-1">
+      <ActionHost className="min-w-0 gap-2 px-2 py-1 @max-[420px]/checks:gap-1">
         {expandable ? (
           <Button
             variant="item"
@@ -342,7 +328,7 @@ function PrCheckRow({
             motion="none"
             className="w-full min-w-0 flex-1 text-left"
             type="button"
-            title={title}
+            tooltip={title}
             aria-label={title}
             onClick={() => void openUrl(url)}
           >
@@ -357,9 +343,7 @@ function PrCheckRow({
           {repairItem ? (
             <CheckRepairStatus item={repairItem} />
           ) : (
-            <span className={`text-ui-micro ${mark.className.replace("animate-spin", "")}`}>
-              {status}
-            </span>
+            <span className={`text-ui-micro ${mark.className}`}>{status}</span>
           )}
         </span>
         <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-ui-caption tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
@@ -377,7 +361,8 @@ function PrCheckRow({
             aria-haspopup="dialog"
             aria-expanded={fixOpen}
             aria-label={t("Fix {p0} with AI", { p0: check.name })}
-            title={t("Fix with AI")}
+            tooltip={t("Fix with AI")}
+            data-no-drag=""
             className="shrink-0"
           >
             <Sparkles className="icon-sm" strokeWidth={1.75} />
@@ -399,6 +384,7 @@ function PrCheckRow({
             aria-expanded={expanded}
             aria-controls={detailsId}
             onClick={() => setExpanded(!expanded)}
+            data-no-drag=""
             className="shrink-0"
           >
             <ChevronRight
@@ -415,8 +401,9 @@ function PrCheckRow({
             label={t("Open {p0} check", { p0: check.name })}
             variant="ghost"
             type="button"
-            title={t("View full log")}
+            tooltip={t("View full log")}
             aria-label={t("Open {p0} check", { p0: check.name })}
+            data-no-drag=""
             onClick={() => void openUrl(url)}
           >
             <ExternalLink className="icon-xs" strokeWidth={1.75} />
@@ -424,20 +411,14 @@ function PrCheckRow({
         ) : (
           <span className="size-6 shrink-0" aria-hidden="true" />
         )}
-      </div>
+      </ActionHost>
       {expanded ? (
         <div
           id={detailsId}
           className="min-w-0 space-y-3 py-3 pl-10 pr-3 text-ui-caption @max-[420px]/checks:pl-3"
         >
           {loading && !details && !error ? (
-            <p
-              role="status"
-              className="flex items-center gap-2 px-2 py-1 text-(--ui-text-secondary)"
-            >
-              <LoaderCircle className="icon-md shrink-0 animate-spin" strokeWidth={1.75} />
-              {t("Loading steps…")}
-            </p>
+            <LoadingText className="px-2 py-1">{t("Loading steps…")}</LoadingText>
           ) : null}
           {error ? (
             <Alert tone="info" role="alert">
@@ -480,10 +461,7 @@ function PrCheckRow({
                           key={index}
                           className={`flex items-center gap-2 rounded px-2 py-1 ${step.state === "fail" ? "bg-(--ui-tone-danger-subtle)" : ""}`}
                         >
-                          <stepMark.Icon
-                            className={`icon-md shrink-0 ${stepMark.className}`}
-                            strokeWidth={1.75}
-                          />
+                          <MarkGlyph mark={stepMark} size="md" />
                           <span className="min-w-0 flex-1 break-words text-(--ui-text-secondary)">
                             {step.name}
                             <span className="sr-only">: {checkStateLabel(step.state)}</span>
@@ -497,12 +475,18 @@ function PrCheckRow({
                   </ol>
                 </details>
               ) : (
-                <p className="text-(--ui-text-secondary)">{t("No steps reported for this job.")}</p>
+                <EmptyState
+                  size="inline"
+                  kind="empty"
+                  description={t("No steps reported for this job.")}
+                />
               )}
               {check.state === "fail" && !details.annotations.length && !details.notice ? (
-                <p className="mt-3 text-(--ui-text-secondary)">
-                  {t("No error annotations reported. View the full log at the check URL.")}
-                </p>
+                <EmptyState
+                  size="inline"
+                  kind="empty"
+                  description={t("No error annotations reported. View the full log at the check URL.")}
+                />
               ) : null}
               {details.log ? (
                 <details className="mt-3">
@@ -570,10 +554,7 @@ export function InboxPrChecks({
   if (selection && !selectionValid) setSelection(null);
   if (loading && !checks && !error) {
     return (
-      <div role="status" className="flex items-center gap-2 py-5 text-ui-secondary text-(--ui-text-secondary)">
-        <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
-        {t("Loading checks…")}
-      </div>
+      <LoadingText className="py-5">{t("Loading checks…")}</LoadingText>
     );
   }
   if (!checks && error) {
@@ -585,7 +566,7 @@ export function InboxPrChecks({
         <Button
           variant="ghost"
           type="button"
-          title={t("Retry loading checks")}
+          tooltip={t("Retry loading checks")}
           aria-label={t("Retry loading checks")}
           loading={loading || refreshing}
           startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} />}
@@ -683,8 +664,6 @@ export function InboxPrChecks({
           <Button
             variant="ghost"
             type="button"
-            title={t("Refresh checks")}
-            aria-label={t("Refresh checks")}
             iconOnly
             label={t("Refresh checks")}
             loading={refreshing}
@@ -771,7 +750,7 @@ export function InboxPrChecks({
         </div>
       ) : null}
       {rows.length === 0 ? (
-        <p className="text-ui-secondary text-(--ui-text-secondary)">{t("No checks reported")}</p>
+        <EmptyState size="inline" kind="empty" description={t("No checks reported")} />
       ) : (
         <>
           {groups.map((group) =>

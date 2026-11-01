@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Badge } from "../../../shared/ui/Badge";
-import { useEffect, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ComponentProps, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
@@ -138,6 +138,11 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           <InfoPopover label={t("About usage budgets")}>
             <p>{t("Budgets apply to local desktop turns. Host tasks, remote sessions and other machines are not covered.")}</p>
             <p>{t("Local rules can overlap. Their readings are not added together and provider quota percentages are never pooled.")}</p>
+            <p>
+              {t(
+                "Token budgets include input, output and cache tokens from local records. Project and workspace reports use 15-minute buckets; boundary buckets are included. Session budgets require complete turn metrics. Percentage rules compare the selected account's weekly or 5-hour usage with your threshold; they do not reserve provider capacity. Missing or stale data blocks new turns only when blocking is enabled. Running turns can exceed a budget.",
+              )}
+            </p>
           </InfoPopover>
           {(["block", "monitor"] as const).map((action) => {
             const count = visible.filter((budget) => budget.action === action).length;
@@ -201,7 +206,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
         const format = (n: number) =>
           budget.metric === "tokens" ? formatUsageTokens(n) : `${n.toFixed(1)}%`;
         return (
-          <div key={budget.id} className="space-y-2 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-4">
+          <div key={budget.id} className="space-y-2 rounded-(--ui-radius-card) border border-(--ui-settings-group-border) p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="break-words text-ui-caption font-medium">{budget.label}</h3>
@@ -281,13 +286,6 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           </div>
         );
       })}
-      <InfoPopover label={t("How budgets are measured")}>
-        <p className="mt-2">
-          {t(
-            "Token budgets include input, output and cache tokens from local records. Project and workspace reports use 15-minute buckets; boundary buckets are included. Session budgets require complete turn metrics. Percentage rules compare the selected account's weekly or 5-hour usage with your threshold; they do not reserve provider capacity. Missing or stale data blocks new turns only when blocking is enabled. Running turns can exceed a budget.",
-          )}
-        </p>
-      </InfoPopover>
     </section>
   );
 }
@@ -341,7 +339,7 @@ function BudgetEditor({
   };
   return (
     <form
-      className="space-y-3 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-4"
+      className="space-y-3 rounded-(--ui-radius-card) border border-(--ui-settings-group-border) p-4"
       onSubmit={(event) => {
         event.preventDefault();
         const next = normalizeBudget({
@@ -380,6 +378,10 @@ function BudgetEditor({
       <div className="grid gap-3 sm:grid-cols-2">
         <BudgetSelect
           label={t("Scope")}
+          info={scope === "machine" ? <InfoPopover label={t("About machine budgets")}>
+            <p>{t("Supported local Codex and Claude usage. Missing, unsupported or private data stays unknown; a blocking rule refuses new turns until usage can be verified.")}</p>
+            <p>{t("Multiple profiles of one provider may share logs; common usage remains unknown until their sources can be verified.")}</p>
+          </InfoPopover> : undefined}
           value={scope}
           onChange={(v) => {
             setScope(v as BudgetScope);
@@ -461,10 +463,6 @@ function BudgetEditor({
           maxLength={200}
         />
       </div>
-      {scope === "machine" ? <InfoPopover label={t("About machine budgets")}>
-        <p>{t("Supported local Codex and Claude usage. Missing, unsupported or private data stays unknown; a blocking rule refuses new turns until usage can be verified.")}</p>
-        <p>{t("Multiple profiles of one provider may share logs; common usage remains unknown until their sources can be verified.")}</p>
-      </InfoPopover> : null}
       {error ? (
         <Alert tone="danger" role="alert">
           {error}
@@ -484,10 +482,10 @@ function BudgetEditor({
   );
 }
 
-function BudgetSelect(props: ComponentProps<typeof SearchableSelect>) {
+function BudgetSelect({ info, ...props }: ComponentProps<typeof SearchableSelect> & { info?: ReactNode }) {
   return (
     <div className="space-y-1">
-      <span className="text-ui-caption font-medium">{props.label}</span>
+      <span className="flex items-center gap-1 text-ui-caption font-medium">{props.label}{info}</span>
       <SearchableSelect {...props} />
     </div>
   );

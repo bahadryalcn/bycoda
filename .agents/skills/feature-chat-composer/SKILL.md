@@ -857,3 +857,16 @@ Owner, 2026-10-31, with screenshots of an empty bycoda transcript and T3 Code's 
 > chat ekranında bazen böyle hiç birşey gözükmüyor aslında birşeyler oluyor ama ne olduğunu anlamıyoruz. T3Code da mesela bu şekilde gösteriliyor ama bizde değil. Bu tarz şeyleri de düzenler misin lütfen.
 
 Delivered in source (uncommitted): `model/turnActivity.ts` derives the live phase from existing state only (send preparing, `send-starting`/`provider-starting` status rows, `retryMessage`, provider not yet answered, provider answered with nothing readable, private reasoning only, hidden calls, mid-turn silence ≥4 s). `ui/TurnActivityLine.tsx` renders it at the end of the live turn (icon, pulsing label, clock); `AgentTranscript.tsx` wires it and lets it replace the live private-reasoning placeholder; start-up status rows leave the work trail (`model/startupStatus.ts`). Visible live rows (running tool/subagent, compaction, approvals, questions, background work) suppress the line. Clock ownership: before output the line shows the turn clock and `ActivityDock.tsx` drops its own number while the reader is at the end (`claimTurnClock`/`useTurnClockInTranscript`); a mid-turn silence line counts the silence and the dock keeps the turn total. Fixture captures: `temp/verification/v3-038-turn-activity/` (fixture data, light/dark 1280/800).
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Sessions, quick composer and orchestration (`src/features/sessions/**`, `quick-composer/**`, `orchestration/**`), from `HANDOFF-w2-sessions.md`. Drift in scope 461 -> 45.
+
+- Composer: `data-ui-focus-quiet` on `[data-composer-box]` (no ring; the focus contract is in `arc-ui.md`); shortcut tooltips use `shortcut=` (`Mod+Enter`, `Meta+P`...); composer surface follows the 2026-11-01 owner decision in `DESIGN.md`.
+- Pickers: AccessPicker, QuickPermissions, McpServerPicker and SessionFolderPicker on the picker kit; TranscriptFind, ModelFlyout, QuickModelSelector, OrchestrationPreview on `PopoverSearchHeader`; ProviderAccountMenu on DropdownMenu; QuickModelSelector provider strip on `Tabs`.
+- Sheets/toasts: SubagentSheet and BtwSheet on `Sheet modal={false} anchor="container"`; the notification sheet on `Sheet anchor="viewport"` with `TabStrip`, popups on `ToastSlot`; reminders on `ToastSlot`; DeleteSessionDialog on `ConfirmDialog acknowledge`.
+- Other: ContextMeter on `Meter` and `useHoverCard`; hover previews open after 300 ms and on keyboard focus; `Surface` cards; `InlineError`/`LoadingText`/`EmptyState size="inline"`.
+- Left: SecondOpinionButton three-level submenus (needs a submenu primitive); ModelPicker flyout rows; ToolDiffPreview hover timer (opens on click, moves focus); QuickComposer to PromptField; 12 in-pane `z-*` layers; native-popup translucency role.
+- Unverified: no screenshots or native run; Escape/focus order of the Sheets and the notification popups need a native check.

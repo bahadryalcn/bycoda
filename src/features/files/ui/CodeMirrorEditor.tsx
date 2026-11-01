@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { acceptCompletion, completionStatus } from "@codemirror/autocomplete";
 import { historyField, indentLess, indentMore, isolateHistory } from "@codemirror/commands";
@@ -1128,10 +1129,10 @@ function StandardCodeMirrorEditor({
           onMarkResolved={() => void markResolved()}
         />
         {formatError ? (
-          <p role="alert" className="shrink-0 px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+          <InlineError className="shrink-0 px-3 py-1">
             {t("Formatting failed: ")}
             {formatError}
-          </p>
+          </InlineError>
         ) : null}
         {blameOn && blameError ? (
           <p
@@ -1280,8 +1281,8 @@ function DiffChunkStat({ additions, deletions }: { additions: number; deletions:
   }
   return (
     <span className="flex min-w-0 shrink-0 items-center gap-1.5 font-sans text-ui-micro font-medium tabular-nums">
-      {additions > 0 ? <span className="text-success">+{formatInteger(additions)}</span> : null}
-      {deletions > 0 ? <span className="text-danger">-{formatInteger(deletions)}</span> : null}
+      {additions > 0 ? <span className="text-(--ui-tone-success-fg)">+{formatInteger(additions)}</span> : null}
+      {deletions > 0 ? <span className="text-(--ui-tone-danger-fg)">-{formatInteger(deletions)}</span> : null}
     </span>
   );
 }

@@ -10,11 +10,17 @@ import {
 } from "react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
+import { Tooltip } from "../../Tooltip";
 import styles from "./segmented-control.module.css";
 
 export interface Segment {
   value: string;
   label: string;
+  /** Optional leading icon before the label. Decorative: the label stays the accessible name.
+   *  With `iconOnly`, only the icon shows and the label becomes the accessible name. */
+  icon?: ReactNode;
+  /** Hide the visible label (needs `icon`); the label remains the accessible name and tooltip. */
+  iconOnly?: boolean;
   /** Optional content after the label, such as a badge. */ accessory?: ReactNode;
   /** Unavailable option: stays visible, is skipped by arrow keys and cannot be chosen. */
   disabled?: boolean;
@@ -138,45 +144,65 @@ export default function SegmentedControl({
     >
       <LayoutGroup id={id}>
         <motion.div ref={track} layoutScroll className={styles.track}>
-          {options.map((option, index) => (
-            <button
-              key={option.value}
-              id={
-                optionIdPrefix
-                  ? `${optionIdPrefix}-${option.value.toLowerCase()}`
-                  : `${id}-${option.value}`
-              }
-              className={styles.button}
-              type="button"
-              data-value={option.value}
-              data-selected={value === option.value}
-              role={selectionRole === "radio" ? "radio" : undefined}
-              aria-checked={selectionRole === "radio" ? value === option.value : undefined}
-              aria-pressed={selectionRole === "pressed" ? value === option.value : undefined}
-              tabIndex={index === tabStop ? 0 : -1}
-              disabled={option.disabled}
-              onClick={() => onValueChange(option.value)}
-              onKeyDown={onKeyDown}
-              onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
-              onFocus={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
-            >
-              {value === option.value && (
-                <motion.span
-                  className={styles.selection}
-                  layoutId="selection"
-                  layoutDependency={value}
-                  transition={reduced ? { duration: 0 } : motionTokens.spring.morph}
-                  aria-hidden="true"
-                />
-              )}
-              <span className={styles.label}>
-                {option.label}
-                {option.accessory != null ? (
-                  <span className={styles.accessory}>{option.accessory}</span>
-                ) : null}
-              </span>
-            </button>
-          ))}
+          {options.map((option, index) => {
+            const iconOnly = !!option.iconOnly && option.icon != null;
+            const button = (
+              <button
+                key={iconOnly ? undefined : option.value}
+                id={
+                  optionIdPrefix
+                    ? `${optionIdPrefix}-${option.value.toLowerCase()}`
+                    : `${id}-${option.value}`
+                }
+                className={styles.button}
+                type="button"
+                data-value={option.value}
+                data-selected={value === option.value}
+                role={selectionRole === "radio" ? "radio" : undefined}
+                aria-checked={selectionRole === "radio" ? value === option.value : undefined}
+                aria-pressed={selectionRole === "pressed" ? value === option.value : undefined}
+                tabIndex={index === tabStop ? 0 : -1}
+                disabled={option.disabled}
+                aria-label={option.iconOnly && option.icon != null ? option.label : undefined}
+                onClick={() => onValueChange(option.value)}
+                onKeyDown={onKeyDown}
+                onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
+                onFocus={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
+              >
+                {value === option.value && (
+                  <motion.span
+                    className={styles.selection}
+                    layoutId="selection"
+                    layoutDependency={value}
+                    transition={reduced ? { duration: 0 } : motionTokens.spring.morph}
+                    aria-hidden="true"
+                  />
+                )}
+                <span className={styles.label}>
+                  {option.icon != null ? (
+                    <span className={styles.icon} aria-hidden="true">
+                      {option.icon}
+                    </span>
+                  ) : null}
+                  {option.iconOnly && option.icon != null ? (
+                    <span className="sr-only">{option.label}</span>
+                  ) : (
+                    option.label
+                  )}
+                  {option.accessory != null ? (
+                    <span className={styles.accessory}>{option.accessory}</span>
+                  ) : null}
+                </span>
+              </button>
+            );
+            return iconOnly ? (
+              <Tooltip key={option.value} label={option.label}>
+                {button}
+              </Tooltip>
+            ) : (
+              button
+            );
+          })}
         </motion.div>
       </LayoutGroup>
     </div>

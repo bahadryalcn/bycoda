@@ -12,6 +12,7 @@ import { localDateTimeInput } from "../model/socialProgramForm";
 import { ProgramTargetEditor } from "./ProgramTargetEditor";
 import { SocialBusyContext } from "./socialContext";
 import { Notice, type Props } from "./socialShared";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useSocialPending } from "./useSocialPending";
 
 /** Placeholder for a selected program whose record is loading or failed to load. */
@@ -63,7 +64,7 @@ export function ProgramDetailPending({
           </Button>
         </Notice>
       ) : (
-        <Notice kind="loading">{t("Loading program…")}</Notice>
+        <LoadingText>{t("Loading program…")}</LoadingText>
       )}
     </section>
   );

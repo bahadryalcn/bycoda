@@ -9,6 +9,8 @@
  * in both places.
  */
 export const LAYER = {
+  /** In-pane surfaces (a sheet over a session pane): above pane content, below every floating layer. */
+  paneSheet: 40,
   /** Hover cards that float over a pane (editor blame card) but stay below menus. */
   hoverCard: 60,
   /** Anchored menus, dropdowns, and pickers. */
@@ -21,6 +23,8 @@ export const LAYER = {
   dialogPopover: 91,
   /** Toasts, which outrank whatever they interrupt. */
   toast: 100,
+  /** Menus and pickers opened from a toast: just above the toast stack. */
+  toastPopover: 101,
   /** Pointer drag previews and drop hints, which must follow the pointer over everything. */
   drag: 2147483647,
 } as const;

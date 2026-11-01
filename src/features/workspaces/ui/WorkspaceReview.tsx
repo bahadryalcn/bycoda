@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import type { TaskDeliveryArtifactsPreview } from "../../tasks/model/hostTasks";
@@ -229,7 +231,7 @@ export function WorkspaceReview({
         if (!lock.current) onClose();
       }}
       footer={
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <ModalActions>
           <Button variant="secondary" disabled={!!pending} onClick={onClose}>
             {t("Close")}
           </Button>
@@ -266,7 +268,7 @@ export function WorkspaceReview({
               )}
             </>
           )}
-        </div>
+        </ModalActions>
       }
     >
       <div className="space-y-4 p-4 text-ui-body">
@@ -354,12 +356,8 @@ export function WorkspaceReview({
             </Button>
           </>
         )}
-        {pending === "review" && <p role="status">{t("Preparing review…")}</p>}
-        {error && (
-          <p role="alert" className="break-words text-(--ui-tone-danger-fg)">
-            {error}
-          </p>
-        )}
+        {pending === "review" && <LoadingText>{t("Preparing review…")}</LoadingText>}
+        {error && <InlineError className="break-words">{error}</InlineError>}
         {message && <p role="status">{message}</p>}
         {receipt && (
           <dl className="space-y-1">
@@ -402,9 +400,9 @@ export function WorkspaceReview({
               {t("Approval applies only to these revisions. Changes require a fresh review.")}
             </p>
             {expired && (
-              <p role="alert" className="text-(--ui-tone-warning-fg)">
+              <InlineMessage tone="warning" live="assertive">
                 {t("This review expired. Refresh review before approving.")}
-              </p>
+              </InlineMessage>
             )}
             {!!plan.blockers.length && (
               <div role="alert">
@@ -441,7 +439,7 @@ export function WorkspaceReview({
                       <Button
                         variant="ghost"
                         className="max-w-full"
-                        title={sha}
+                        tooltip={sha}
                         onClick={() => setDiffCommit((value) => (value === sha ? null : sha))}
                       >
                         {sha.slice(0, 12)}
@@ -487,7 +485,7 @@ export function WorkspaceReview({
                   ))}
                 </dl>
                 {!!plan.artifacts.blockers.length && (
-                  <p role="alert">{plan.artifacts.blockers.join(" · ")}</p>
+                  <InlineError>{plan.artifacts.blockers.join(" · ")}</InlineError>
                 )}
               </section>
             )}

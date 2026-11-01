@@ -93,12 +93,6 @@
 .social-knowledge-suggest > .social-form {
   gap: 0.625rem;
 }
-.social-knowledge-error {
-  margin: 0;
-  color: var(--ui-tone-danger-fg);
-  font-size: var(--ui-font-caption);
-  overflow-wrap: anywhere;
-}
 /* Rows the owner accepted: part of the editor draft, not verified until saved. */
 .social-knowledge-added-list {
   display: grid;

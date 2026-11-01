@@ -10072,5 +10072,22 @@
   "Pure": "Saf",
   "Tinted": "Tonlu",
   "Pure is true black in dark mode and white in light mode.": "Saf, koyu modda tam siyah, açık modda tam beyazdır.",
-  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "Özel yüzey renkleri kendi arka planlarını korur. Saf seçeneğini kullanmak için bir tema paleti seçin."
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "Özel yüzey renkleri kendi arka planlarını korur. Saf seçeneğini kullanmak için bir tema paleti seçin.",
+  "The editor is busy closing or moving. Try again in a moment.": "Düzenleyici kapanıyor veya taşınıyor. Biraz sonra tekrar deneyin.",
+  "Match Case": "Büyük/küçük harfe duyarlı",
+  "Match Whole Word": "Kelimenin tamamını eşleştir",
+  "Use Regular Expression": "Düzenli ifade kullan",
+  "Notes sections": "Not bölümleri",
+  "Close notes": "Notları kapat",
+  "Add folder": "Klasör ekle",
+  "Open folder": "Klasörü aç",
+  "The draft changed while it was being prepared. Send it again.": "Taslak hazırlanırken değişti. Tekrar gönderin.",
+  "Work item preview": "İş öğesi önizlemesi",
+  "New worktree": "Yeni worktree",
+  "Type “{p0}” to confirm": "Onaylamak için “{p0}” yazın",
+  "Choose a date": "Tarih seçin",
+  "Resize panel": "Paneli yeniden boyutlandır",
+  "or": "veya",
+  "Alt": "Alt",
+  "Windows": "Windows"
 }

@@ -1,10 +1,13 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { MenuRow } from "../../../shared/ui/MenuRow";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Surface } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { TextField } from "../../../shared/ui/TextField";
-import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
+import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   useContext,
@@ -36,11 +39,9 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  CircleDashed,
   CircleHelp,
   MessageMultiple,
   Play,
-  Search,
 } from "../../../shared/ui/icons";
 
 function AssignmentModel({
@@ -237,32 +238,23 @@ function AssignmentModel({
           data-assignment-model-target
           className="flex flex-col overflow-hidden"
         >
-          <SearchInputGroup className="flex shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2.5 text-(--ui-text-secondary)">
-            <Search className="icon-sm shrink-0" strokeWidth={1.75} />
-            <SearchInput
-              ref={search}
-              type="text"
-              role="combobox"
-              aria-expanded={open}
-              aria-autocomplete="list"
-              aria-controls={listId}
-              aria-activedescendant={activeChoice ? optionId(activeChoice) : undefined}
-              focusOwner="group"
-              aria-label={t("Search assignment models")}
-              placeholder={t("Search models or harnesses…")}
-              spellCheck={false}
-              autoComplete="off"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActive(0);
-                setInEffort(false);
-                setEffortKeyboard(false);
-              }}
-              onKeyDown={onSearchKey}
-              className="min-w-0 flex-1 bg-transparent text-ui-secondary text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
-            />
-          </SearchInputGroup>
+          <PopoverSearchHeader
+            ref={search}
+            size="md"
+            label={t("Search assignment models")}
+            placeholder={t("Search models or harnesses…")}
+            value={query}
+            autoFocus={false}
+            listId={listId}
+            activeOptionId={activeChoice ? optionId(activeChoice) : undefined}
+            onValueChange={(value) => {
+              setQuery(value);
+              setActive(0);
+              setInEffort(false);
+              setEffortKeyboard(false);
+            }}
+            onKeyDown={onSearchKey}
+          />
           <div
             id={listId}
             ref={listOverscroll}
@@ -333,6 +325,7 @@ function AssignmentModel({
       activeChoice &&
       activeModel?.harness === activeChoice.harness &&
       effort ? (
+        // Effort flyout of the model menu: ArrowRight/hover opens it from a row, which DropdownMenu does not model.
         <Popover
           anchor={activeRow}
           side="right"
@@ -517,15 +510,17 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
   };
   const fieldLabel = "mb-1 block text-ui-micro leading-tight text-(--ui-text-secondary)";
   return (
-    <div
-      className="mb-2 overflow-hidden rounded-(--radius-panel) border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-sans"
+    <Surface
+      variant="raised"
+      padding="none"
+      className="mb-2 overflow-hidden font-sans"
       aria-label={t("Orchestration proposal")}
       data-orchestration-review
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2.5 px-3 py-2.5">
         <span className="grid size-6 shrink-0 place-items-center text-(--ui-text-secondary)">
           {planning ? (
-            <CircleDashed className="icon-md animate-spin" />
+            <Spinner size="md" />
           ) : (
             <MessageMultiple className="icon-md" strokeWidth={1.75} />
           )}
@@ -616,7 +611,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                 : undefined;
             return (
               <li key={task.id}>
-                <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1 hover:bg-(--ui-surface-raised)">
+                <ActionHost className="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1">
                   <Button
                     variant="item"
                     type="button"
@@ -665,7 +660,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                       </span>
                     )}
                   </div>
-                </div>
+                </ActionHost>
                 {open && (
                   <div className="space-y-2.5 px-3 pb-3 pl-8 text-ui-micro leading-4 text-(--ui-text-secondary)">
                     {editable ? (
@@ -777,6 +772,6 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           </span>
         </div>
       )}
-    </div>
+    </Surface>
   );
 }

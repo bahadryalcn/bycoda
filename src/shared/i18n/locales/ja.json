@@ -10072,5 +10072,22 @@
   "Pure": "ピュア",
   "Tinted": "ティント",
   "Pure is true black in dark mode and white in light mode.": "ピュアはダークモードで真っ黒、ライトモードで真っ白になります。",
-  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "カスタムのサーフェスカラーは独自の背景を保ちます。ピュアを使うにはテーマパレットを選んでください。"
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "カスタムのサーフェスカラーは独自の背景を保ちます。ピュアを使うにはテーマパレットを選んでください。",
+  "The editor is busy closing or moving. Try again in a moment.": "エディターを閉じているか移動しています。しばらくしてからもう一度お試しください。",
+  "Match Case": "大文字と小文字を区別する",
+  "Match Whole Word": "単語全体と一致する",
+  "Use Regular Expression": "正規表現を使用する",
+  "Notes sections": "ノートのセクション",
+  "Close notes": "ノートを閉じる",
+  "Add folder": "フォルダを追加",
+  "Open folder": "フォルダを開く",
+  "The draft changed while it was being prepared. Send it again.": "準備中に下書きが変更されました。もう一度送信してください。",
+  "Work item preview": "ワークアイテムのプレビュー",
+  "New worktree": "新しいワークツリー",
+  "Type “{p0}” to confirm": "確認するには「{p0}」と入力してください",
+  "Choose a date": "日付を選択",
+  "Resize panel": "パネルのサイズを変更する",
+  "or": "または",
+  "Alt": "Alt",
+  "Windows": "Windows"
 }

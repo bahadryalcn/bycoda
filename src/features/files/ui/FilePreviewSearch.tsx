@@ -10,7 +10,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
-import { ALT, MOD, SHIFT } from "../../../platform/tauri/platform";
 import { ChevronDown, ChevronUp, X } from "../../../shared/ui/icons";
 import { keybindingPressed } from "../../settings/model/settings";
 import { startPreviewSearch } from "./previewSearchTask";
@@ -386,7 +385,7 @@ export function FilePreviewSearch({
         <div
           role="search"
           aria-label={t("Find in preview")}
-          className="relative z-30 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-2 py-1 text-content"
+          className="relative z-1 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-2 py-1 text-content"
           onKeyDown={onKeyDown}
         >
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">
@@ -409,7 +408,7 @@ export function FilePreviewSearch({
               aria-live="polite"
               className={`w-[13ch] shrink-0 overflow-hidden pl-2 text-right font-mono text-ui-caption tabular-nums text-ellipsis whitespace-nowrap ${
                 (query && total === 0) || result.invalid
-                  ? "text-danger"
+                  ? "text-(--ui-tone-danger-fg)"
                   : "text-[var(--ui-text-muted)]"
               }`}
             >
@@ -418,44 +417,63 @@ export function FilePreviewSearch({
           </SearchInputGroup>
           <FindToggle
             label={t("Aa")}
-            title={t("Match Case ({p0}C)", { p0: ALT })}
+            title={t("Match Case")}
+            shortcut="Alt+C"
             pressed={caseSensitive}
             onClick={() => toggle(setCaseSensitive)}
           />
           <FindToggle
             label={t("ab")}
-            title={t("Match Whole Word ({p0}W)", { p0: ALT })}
+            title={t("Match Whole Word")}
+            shortcut="Alt+W"
             pressed={wholeWord}
             onClick={() => toggle(setWholeWord)}
           />
           <FindToggle
             label=".*"
-            title={t("Use Regular Expression ({p0}R)", { p0: ALT })}
+            title={t("Use Regular Expression")}
+            shortcut="Alt+R"
             pressed={regexp}
             onClick={() => toggle(setRegexp)}
           />
-          <FindButton
+          <Button
+            size="sm"
+            variant="ghost"
+            iconOnly
             label={t("Previous Match")}
-            title={t("Previous Match ({p0}{p1}G)", { p0: MOD, p1: SHIFT })}
+            shortcut="Mod+Shift+G"
             disabled={total === 0}
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => step(-1)}
           >
-            <ChevronUp className="size-3.5" strokeWidth={1.75} />
-          </FindButton>
-          <FindButton
+            <ChevronUp className="icon-sm" strokeWidth={1.75} />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            iconOnly
             label={t("Next Match")}
-            title={t("Next Match ({p0}G)", { p0: MOD })}
+            shortcut="Mod+G"
             disabled={total === 0}
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => step(1)}
           >
-            <ChevronDown className="size-3.5" strokeWidth={1.75} />
-          </FindButton>
-          <FindButton label={t("Close")} title={t("Close (Escape)")} onClick={closeSearch}>
-            <X className="size-3.5" strokeWidth={1.75} />
-          </FindButton>
+            <ChevronDown className="icon-sm" strokeWidth={1.75} />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            iconOnly
+            label={t("Close")}
+            shortcut="Esc"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={closeSearch}
+          >
+            <X className="icon-sm" strokeWidth={1.75} />
+          </Button>
         </div>
       ) : null}
-      <div ref={contentRef} tabIndex={-1} className="min-h-0 min-w-0 flex-1">
+      <div ref={contentRef} tabIndex={-1} className="isolate min-h-0 min-w-0 flex-1">
         {children}
       </div>
     </div>
@@ -465,11 +483,13 @@ export function FilePreviewSearch({
 function FindToggle({
   label,
   title,
+  shortcut,
   pressed,
   onClick,
 }: {
   label: string;
   title: string;
+  shortcut?: string;
   pressed: boolean;
   onClick: () => void;
 }) {
@@ -480,48 +500,15 @@ function FindToggle({
       variant="ghost"
       motion="none"
       type="button"
-      title={title}
-      aria-label={title.slice(0, title.lastIndexOf(" ("))}
+      tooltip={title}
+      shortcut={shortcut}
+      aria-label={title}
       aria-pressed={pressed}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
       className="shrink-0 font-mono"
     >
       {label}
-    </Button>
-  );
-}
-
-function FindButton({
-  label,
-  title,
-  disabled = false,
-  onClick,
-  children,
-}: {
-  label: string;
-  title: string;
-  disabled?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  useLocale();
-  return (
-    <Button
-      size="sm"
-      iconOnly
-      label={label}
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={title}
-      aria-label={label}
-      disabled={disabled}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-      className="shrink-0"
-    >
-      {children}
     </Button>
   );
 }

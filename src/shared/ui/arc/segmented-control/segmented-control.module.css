@@ -111,6 +111,15 @@
   align-items: center;
   gap: 6px;
 }
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+.icon > svg {
+  inline-size: var(--ui-icon-sm, 1rem);
+  block-size: var(--ui-icon-sm, 1rem);
+}
 .accessory {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;

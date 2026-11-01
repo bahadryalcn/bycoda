@@ -2,7 +2,7 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  border-radius: var(--control-radius, 6px);
+  border-radius: var(--ui-control-radius);
 }
 .server-selection {
   display: flex;

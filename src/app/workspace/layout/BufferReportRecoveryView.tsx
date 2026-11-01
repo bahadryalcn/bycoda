@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -97,7 +98,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           )}
         </Alert>
         <SearchInputGroup appearance="field">
-          <Search className="size-3.5 shrink-0" aria-hidden="true" />
+          <Search className="icon-sm shrink-0" aria-hidden="true" />
           <SearchInput
             focusOwner="group"
             value={pathQuery}
@@ -193,7 +194,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           ]}
         />
         <SearchInputGroup appearance="field" className="recovery-toolbar-search">
-          <Search className="size-3.5 shrink-0" aria-hidden="true" />
+          <Search className="icon-sm shrink-0" aria-hidden="true" />
           <SearchInput
             focusOwner="group"
             value={query}
@@ -274,9 +275,9 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
                       </p>
                     ) : null}
                     {recovery.readError === key ? (
-                      <p role="alert" className="text-ui-caption text-danger">
+                      <InlineError>
                         {t("This report could not be inspected. Refresh the list and retry.")}
-                      </p>
+                      </InlineError>
                     ) : null}
                   </div>
                   <Button

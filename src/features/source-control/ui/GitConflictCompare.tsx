@@ -1,10 +1,9 @@
-import { Button } from "../../../shared/ui/Button";
+import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState } from "react";
 import { gitConflictStages, type GitConflictStages } from "../../../platform/tauri/fs";
-import { AlertCircle } from "../../../shared/ui/icons";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
-import { GitFeedback } from "./GitFeedback";
 import { comparisonsFor, missingSideNotes, type CompareId } from "../model/conflictCompare";
 import { conflictKindInfo } from "../model/conflictSection";
 import { buildUnifiedFile } from "../model/unifiedDiff";
@@ -95,29 +94,20 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
       title={title}
       onClose={onClose}
       toolbar={
-        <div
-          role="tablist"
-          aria-label={t("Versions to compare")}
-          className="flex items-center gap-1"
-        >
-          {comparisons.map((entry) => (
-            <Button
-              size="sm"
-              variant="tab"
-              motion="none"
-              key={entry.id}
-              type="button"
-              role="tab"
-              aria-selected={entry.id === pair}
-              disabled={!!entry.unavailable}
-              title={entry.unavailable}
-              onClick={() => setPair(entry.id)}
-              className={""}
-            >
-              {entry.label}
-            </Button>
-          ))}
-        </div>
+        <Tabs<CompareId> value={pair} onValueChange={setPair} panels="none">
+          <TabList label={t("Versions to compare")}>
+            {comparisons.map((entry) => (
+              <Tab
+                key={entry.id}
+                value={entry.id}
+                disabled={!!entry.unavailable}
+                disabledReason={entry.unavailable}
+              >
+                {entry.label}
+              </Tab>
+            ))}
+          </TabList>
+        </Tabs>
       }
     >
       {load.status === "loading" ? (
@@ -125,23 +115,21 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
           <SurfaceLoading label={t("Loading conflict versions")} />
         </div>
       ) : load.status === "error" ? (
-        <div className="grid flex-1 place-items-center p-6 text-center">
-          <div>
-            <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
-            <p className="text-[13px] text-content">{t("Couldn’t load the versions")}</p>
-            <p className="mt-1 text-[12px] text-[var(--ui-text-secondary)]">{load.message}</p>
-            <GitFeedback
-              title={t("Conflict versions unavailable")}
-              onRetry={() => setRetry((value) => value + 1)}
-            />
-          </div>
+        <div className="grid flex-1 place-items-center p-6">
+          <EmptyState
+            kind="unavailable"
+            context="panel"
+            title={t("Couldn’t load the versions")}
+            description={load.message}
+            onRetry={() => setRetry((value) => value + 1)}
+          />
         </div>
       ) : (
         <>
           {notes.length > 0 ? (
             <p
               role="status"
-              className="shrink-0 border-b border-stroke px-4 py-1.5 text-[12px] text-[var(--ui-text-secondary)]"
+              className="shrink-0 border-b border-stroke px-4 py-1.5 text-ui-caption text-(--ui-text-secondary)"
             >
               {notes.join(" ")}
             </p>

@@ -1,4 +1,5 @@
 import { useT } from "../../shared/i18n";
+import { Button } from "../../shared/ui/Button";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "../../shared/ui/icons";
 import { createContext, useContext, useState } from "react";
@@ -11,6 +12,11 @@ export async function toggleWindowMaximize(): Promise<void> {
   if (await win.isFullscreen()) await setNativeFullscreen(false);
   else await win.toggleMaximize();
 }
+
+// Full-height caption buttons, flush with the title bar edge. They stay Buttons so the shared
+// tooltip, focus ring and hover states apply; `data-tauri-drag-region="false"` keeps them out of
+// the window drag area.
+const CONTROL_CLASS = "h-full w-10 min-h-0 rounded-none";
 
 // Detached workspaces own their controls in the persistent Working bar.
 export const WindowControlsVisible = createContext(true);
@@ -56,40 +62,48 @@ function NativeWindowControls() {
           onDismiss={() => setError(null)}
         />
       ) : null}
-      <button
-        type="button"
-        title={t("Minimize")}
-        aria-label={t("Minimize window")}
+      <Button
+        iconOnly
+        label={t("Minimize window")}
+        tooltip={t("Minimize")}
+        tooltipSide="bottom"
+        variant="ghost"
+        motion="none"
         data-tauri-drag-region="false"
         onClick={handleMinimize}
-        className="flex w-10 items-center justify-center text-(--ui-text-secondary) transition-colors hover:bg-(--ui-surface-hover) hover:text-content focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--ui-text-secondary) active:bg-(--ui-surface-pressed)"
+        className={CONTROL_CLASS}
       >
         <Minus className="icon-sm" strokeWidth={1.75} />
-      </button>
-      <button
-        type="button"
-        title={isMaximized || isFullscreen ? t("Restore") : t("Maximize")}
-        aria-label={isMaximized || isFullscreen ? t("Restore window") : t("Maximize window")}
+      </Button>
+      <Button
+        iconOnly
+        label={isMaximized || isFullscreen ? t("Restore window") : t("Maximize window")}
+        tooltip={isMaximized || isFullscreen ? t("Restore") : t("Maximize")}
+        variant="ghost"
+        motion="none"
         data-tauri-drag-region="false"
         onClick={handleToggleMaximize}
-        className="flex w-10 items-center justify-center text-(--ui-text-secondary) transition-colors hover:bg-(--ui-surface-hover) hover:text-content focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--ui-text-secondary) active:bg-(--ui-surface-pressed)"
+        className={CONTROL_CLASS}
       >
         {isMaximized || isFullscreen ? (
           <Copy className="icon-sm" strokeWidth={1.75} />
         ) : (
           <Square className="icon-sm" strokeWidth={1.75} />
         )}
-      </button>
-      <button
-        type="button"
-        title={t("Close")}
-        aria-label={t("Close window")}
+      </Button>
+      <Button
+        iconOnly
+        label={t("Close window")}
+        tooltip={t("Close")}
+        variant="ghost"
+        tone="danger"
+        motion="none"
         data-tauri-drag-region="false"
         onClick={handleClose}
-        className="flex w-10 items-center justify-center text-(--ui-text-secondary) transition-colors hover:bg-danger hover:text-on-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-(--ui-text-secondary) active:bg-danger"
+        className={CONTROL_CLASS}
       >
         <X className="icon-sm" strokeWidth={1.75} />
-      </button>
+      </Button>
     </div>
   );
 }

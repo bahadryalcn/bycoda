@@ -3,7 +3,9 @@ import {
   APPEARANCE_PREFERENCES_EVENT,
   loadAppearancePreferences,
 } from "../../settings/model/appearancePreferences";
+import { StatusBadge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t } from "../../../shared/i18n";
 import type { SshEndpoint } from "../model/serverInventory";
 import styles from "./ServerTerminalSession.module.css";
@@ -52,9 +54,17 @@ export function ServerTerminalSession({
     <div className={styles.session} data-server-terminal-session>
       <div className={styles.toolbar}>
         <div className={styles.identity}>
-          <span className={styles.address} title={name ?? address}>{name ?? address}</span>
+          <Tooltip label={name ?? address}>
+            <span className={styles.address}>{name ?? address}</span>
+          </Tooltip>
           <span className="shrink-0 text-ui-caption text-(--ui-text-muted)" role="status">
-            {t(!lifecycle ? "Opening…" : lifecycle === "opened-on-computer" ? "Running" : lifecycle === "failed" ? "Failed" : "Terminal closed")}
+            {lifecycle === "opened-on-computer" ? (
+              <StatusBadge status="running" />
+            ) : lifecycle === "failed" ? (
+              <StatusBadge status="failed" />
+            ) : (
+              t(!lifecycle ? "Opening…" : "Terminal closed")
+            )}
           </span>
         </div>
         <InfoPopover label={t("Connection details")}>

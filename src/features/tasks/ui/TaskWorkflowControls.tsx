@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
@@ -383,9 +384,7 @@ function ScopedTaskWorkflowControls({
           </p>
         ) : null}
         {error ? (
-          <p role="alert" className="break-words text-ui-caption text-(--ui-tone-danger-fg)">
-            {error}
-          </p>
+          <InlineError>{error}</InlineError>
         ) : null}
       </div>
     </details>

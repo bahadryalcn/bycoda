@@ -1,5 +1,9 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Surface } from "../../../shared/ui/Surface";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { providerLabel } from "../../../shared/lib/providerLabel";
@@ -15,7 +19,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { CheckCircle, CircleX, LoaderCircle, MessageSquare, X } from "../../../shared/ui/icons";
+import { CheckCircle, CircleX, MessageSquare, X } from "../../../shared/ui/icons";
 import {
   formatRelativeTime,
   githubReviewStateLabel,
@@ -177,10 +181,7 @@ export function InboxComments({
           </span>
         ) : null}
         {loading ? (
-          <LoaderCircle
-            className="icon-xs animate-spin text-(--ui-text-secondary)"
-            strokeWidth={1.75}
-          />
+          <Spinner size="xs" className="text-(--ui-text-secondary)" />
         ) : null}
       </div>
       {error ? (
@@ -332,8 +333,6 @@ export function InboxCommentForm({
             label={t("Cancel reply")}
             variant="ghost"
             type="button"
-            title={t("Cancel reply")}
-            aria-label={t("Cancel reply")}
             disabled={busy}
             onClick={onCancelReply}
             className="shrink-0"
@@ -379,11 +378,7 @@ export function InboxCommentForm({
           </Button>
         </div>
       </div>
-      {error ? (
-        <p role="alert" className="text-ui-caption text-(--ui-tone-danger-fg)">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineError>{error}</InlineError> : null}
     </form>
   );
 }
@@ -391,10 +386,9 @@ export function InboxCommentForm({
 function CommentsPending() {
   useLocale();
   return (
-    <div className="flex items-center gap-2 border-t border-(--ui-tone-neutral-border) pt-5 text-ui-caption text-(--ui-text-secondary)">
-      <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} />
+    <LoadingText className="border-t border-(--ui-tone-neutral-border) pt-5">
       {t("Loading comments")}
-    </div>
+    </LoadingText>
   );
 }
 
@@ -449,7 +443,7 @@ function InboxComment({
               <Button
                 variant="ghost"
                 type="button"
-                title={
+                tooltip={
                   provider === "linear"
                     ? t("Open in Linear")
                     : provider === "jira"
@@ -549,9 +543,9 @@ function InboxComment({
 
   if (nested) return <article>{inner}</article>;
   return (
-    <article className="overflow-hidden rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
+    <Surface as="article" variant="raised" padding="none" className="overflow-hidden">
       {inner}
-    </article>
+    </Surface>
   );
 }
 
@@ -814,7 +808,7 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
         <Button
           variant="item"
           type="button"
-          title={commit.url ? t("Open commit") : commit.messageHeadline}
+          tooltip={commit.url ? t("Open commit") : commit.messageHeadline}
           disabled={!commit.url}
           onClick={() => void openUrl(commit.url)}
           className="w-full min-w-0 text-left"

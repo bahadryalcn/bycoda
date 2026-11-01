@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
-import { Progress } from "../../../shared/ui/Progress";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
@@ -11,11 +12,7 @@ import { requestWorktreeManagement } from "../model/worktreeManagement";
 
 export function GitLoading({ text }: { text: string }) {
   useLocale();
-  return (
-    <div role="status" className="px-3 py-2">
-      <Progress label={text} compact />
-    </div>
-  );
+  return <LoadingText className="px-3 py-2">{t(text)}</LoadingText>;
 }
 
 type GitFeedbackProps = {
@@ -107,7 +104,7 @@ function GitFeedbackContent({
             <pre
               tabIndex={0}
               aria-label={t("Output")}
-              className="max-h-[50dvh] min-w-0 overflow-auto whitespace-pre-wrap break-all select-text font-mono text-xs text-content"
+              className="max-h-[50dvh] min-w-0 overflow-auto whitespace-pre-wrap break-all select-text font-mono text-ui-caption text-content"
             >
               {detail}
             </pre>
@@ -169,9 +166,7 @@ function GitFeedbackContent({
               </p>
             ) : null}
             {copyError ? (
-              <p role="alert" className="text-danger">
-                {copyError}
-              </p>
+              <InlineError>{copyError}</InlineError>
             ) : null}
             {branchInWorktree && cwd ? (
               <Button variant="link" onClick={() => requestWorktreeManagement(cwd)}>

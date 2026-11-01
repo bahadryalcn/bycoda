@@ -2,6 +2,7 @@ import { useState } from "react";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 
 import type { UsageMetric, UsageResolution } from "../model/usageAnalytics";
 
@@ -124,11 +125,13 @@ export function PagedUsageTable({
             sortable: true,
             render: (_, row) =>
               onSelect ? (
-                <Button variant="link" onClick={() => onSelect(row.key)} title={row.label}>
+                <Button variant="link" onClick={() => onSelect(row.key)} tooltip={row.label}>
                   {t(row.label)}
                 </Button>
               ) : (
-                <span title={row.label}>{t(row.label)}</span>
+                <Tooltip label={row.label}>
+                  <span>{t(row.label)}</span>
+                </Tooltip>
               ),
           },
           ...(

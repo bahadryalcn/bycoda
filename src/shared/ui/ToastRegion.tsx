@@ -106,7 +106,7 @@ export function ToastSlot({ placement = "bottom-end", order, children }: ToastSl
       className="pointer-events-auto flex max-w-full min-w-0 flex-col"
       style={order === undefined ? undefined : { order }}
     >
-      <OverlayMenuLayer.Provider value={LAYER.toast + 1}>{children}</OverlayMenuLayer.Provider>
+      <OverlayMenuLayer.Provider value={LAYER.toastPopover}>{children}</OverlayMenuLayer.Provider>
     </div>,
     node,
   );

@@ -1,11 +1,10 @@
-import { MenuRow } from "../../shared/ui/MenuRow";
 import { Button } from "../../shared/ui/Button";
 import { t, useT } from "../../shared/i18n";
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import { ChevronDown } from "../../shared/ui/icons";
-import { Popover } from "../../shared/ui/Popover";
+import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { IS_MAC } from "../../platform/tauri/platform";
 import { WindowControls, toggleWindowMaximize } from "./WindowControls";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
@@ -32,9 +31,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
   const [dragging, setDragging] = useState(false);
   const [windowError, setWindowError] = useState<string | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
   const dragCleanup = useRef<(() => void) | undefined>(undefined);
-  const menuId = useId();
   const count = agents.length;
   const summary = `${count} ${count === 1 ? "conversation" : "conversations"}`;
   // The menu cannot stay open with nothing to list. Closed while rendering so it
@@ -42,14 +39,6 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
   if (!count && open) setOpen(false);
 
   useEffect(() => () => dragCleanup.current?.(), []);
-  useEffect(() => {
-    if (open) menu.current?.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus();
-  }, [open]);
-
-  const dismiss = () => {
-    setOpen(false);
-    trigger.current?.focus();
-  };
   const beginDrag = (event: PointerEvent<HTMLDivElement>) => {
     if (
       event.button !== 0 ||
@@ -91,22 +80,19 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
     window.addEventListener("pointercancel", end);
     window.addEventListener("blur", cleanup);
   };
-  const onMenuKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
-    const current = items.indexOf(document.activeElement as HTMLButtonElement);
-    let next: number;
-    if (event.key === "ArrowDown") next = (current + 1) % items.length;
-    else if (event.key === "ArrowUp") next = (current - 1 + items.length) % items.length;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = items.length - 1;
-    else if (event.key === "Escape") {
-      event.preventDefault();
-      dismiss();
-      return;
-    } else return;
-    event.preventDefault();
-    items[next]?.focus();
-  };
+  const menuItems: DropdownMenuItem[] = agents.map((agent) => ({
+    kind: "item",
+    id: agent.id,
+    label: detachedAgentTitle(agent.title),
+    description: `${detachedAgentStatus(agent)}${
+      agent.ownerWindowLabel ? t(" · Other window") : t(" · This window")
+    }`,
+    icon: (
+      <span
+        className={`size-1.5 rounded-full ${agent.issue === "failed" ? "bg-danger" : agent.issue === "retrying" ? "bg-warning" : agent.done ? "bg-(--ui-text-muted)" : agent.needsApproval ? "bg-warning" : "bg-active"}`}
+      />
+    ),
+  }));
 
   return (
     <div
@@ -133,7 +119,6 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         aria-label={t("Working conversations: {p0}", { p0: summary })}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
         disabled={!count}
         onClick={() => setOpen((value) => !value)}
         onKeyDown={(event) => {
@@ -161,49 +146,16 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         />
       ) : null}
       {open ? (
-        <Popover
-          ref={menu}
+        <DropdownMenu
           anchor={trigger}
           align="start"
           width={320}
-          maxHeight={320}
-          onDismiss={dismiss}
-          role="menu"
-          id={menuId}
-          aria-label={t("Working conversations")}
-          onKeyDown={onMenuKey}
-          style={{ maxWidth: "calc(100vw - 16px)" }}
-          className="overflow-y-auto p-1"
+          label={t("Working conversations")}
+          items={menuItems}
+          onPick={onSelectAgent}
+          onClose={() => setOpen(false)}
           data-tauri-drag-region="false"
-        >
-          {agents.map((agent) => (
-            <MenuRow
-              key={agent.id}
-              type="button"
-              role="menuitem"
-              data-tauri-drag-region="false"
-              onClick={() => {
-                dismiss();
-                onSelectAgent(agent.id);
-              }}
-              className="flex w-full min-w-0 items-center gap-2"
-            >
-              <span
-                aria-hidden="true"
-                className={`size-1.5 shrink-0 rounded-full ${agent.issue === "failed" ? "bg-danger" : agent.issue === "retrying" ? "bg-warning" : agent.done ? "bg-(--ui-text-muted)" : agent.needsApproval ? "bg-warning" : "bg-active"}`}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-ui-caption">
-                  {detachedAgentTitle(agent.title)}
-                </span>
-                <span className="block truncate text-ui-micro text-(--ui-text-secondary)">
-                  {detachedAgentStatus(agent)}
-                  {agent.ownerWindowLabel ? t(" · Other window") : t(" · This window")}
-                </span>
-              </span>
-            </MenuRow>
-          ))}
-        </Popover>
+        />
       ) : null}
     </div>
   );

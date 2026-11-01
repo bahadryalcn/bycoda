@@ -50,7 +50,7 @@ export const InterruptedNotice = memo(function InterruptedNotice({
             variant="secondary"
             disabled={!!blockedReason}
             tooltip={blockedReason}
-            startIcon={<Play className="size-3.5" />}
+            startIcon={<Play className="icon-sm" />}
             onClick={() => {
               // Consume the pending automatic send before submitting manually.
               claimAutoContinue(session.id);

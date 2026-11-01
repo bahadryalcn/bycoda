@@ -1,4 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { getLocale, useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { ModalPanel } from "../../../shared/ui/Modal";
@@ -43,21 +46,19 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
       fitViewport
     >
       {error ? (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-2 px-1 py-3 text-sm text-danger"
+        <InlineError
+          className="px-1 py-3"
+          retry={{ onRetry: () => setRetry((value) => value + 1) }}
         >
-          <span>{error}</span>
-          <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>
-            {t("Retry")}
-          </Button>
-        </div>
+          {error}
+        </InlineError>
       ) : sessions === null ? (
-        <p className="px-1 py-6 text-center text-sm opacity-60">{t("Reading…")}</p>
+        <LoadingText className="px-1 py-6">{t("Reading…")}</LoadingText>
       ) : sessions.length === 0 ? (
-        <p className="px-1 py-6 text-center text-sm opacity-60">
-          {t("Claude Code has not recorded a conversation in this project yet.")}
-        </p>
+        <EmptyState
+          size="inline"
+          description={t("Claude Code has not recorded a conversation in this project yet.")}
+        />
       ) : (
         <ul className="flex flex-col gap-1">
           {sessions.map((session) => (
@@ -70,8 +71,8 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
                 className="w-full flex-col text-left"
                 onClick={() => onPick(session)}
               >
-                <span className="line-clamp-2 text-sm">{session.title}</span>
-                <span className="text-xs opacity-60">
+                <span className="line-clamp-2 text-ui-body">{session.title}</span>
+                <span className="text-ui-caption opacity-60">
                   {formatWhen(session.updatedAt)} ·{" "}
                   {session.messageCount === 1
                     ? t("1 message")

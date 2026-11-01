@@ -1,6 +1,6 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
@@ -72,11 +72,11 @@ export function ProjectNameConflictDialog({
           }}
         />
         {error ? <Alert tone="danger">{error}</Alert> : null}
-        <div className="flex justify-end gap-2">
+        <ModalActions inline>
           <Button
             type="button"
             onClick={onCancel}
-            title={t('Keep "{p0}"', { p0: suggested })}
+            tooltip={t('Keep "{p0}"', { p0: suggested })}
             variant="ghost"
           >
             {t("Cancel")}
@@ -84,7 +84,7 @@ export function ProjectNameConflictDialog({
           <Button type="submit" variant="primary">
             {t("Rename")}
           </Button>
-        </div>
+        </ModalActions>
       </form>
     </Modal>
   );

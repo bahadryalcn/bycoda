@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { DateTimeField } from "../../../shared/ui/DateTimePicker";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -280,9 +282,7 @@ export function SprintManagement({
         </p>
       ) : null}
       {error || board.error ? (
-        <p role="alert" className="sprint-errors">
-          {error || board.error}
-        </p>
+        <InlineError>{error || board.error}</InlineError>
       ) : null}
       {board.syncErrors.length ? (
         <details>
@@ -502,19 +502,19 @@ function SprintEditor({
           />
         </label>
         <div className="sprint-form-grid">
-          <TextField
-            type="date"
+          <DateTimeField
+            mode="date"
             label={t("Start date")}
             value={startsAt}
-            onChange={(event) => setStartsAt(event.currentTarget.value)}
+            onChange={setStartsAt}
             disabled={busy}
           />
-          <TextField
-            type="date"
+          <DateTimeField
+            mode="date"
             label={t("End date")}
             value={endsAt}
             min={startsAt || undefined}
-            onChange={(event) => setEndsAt(event.currentTarget.value)}
+            onChange={setEndsAt}
             disabled={busy}
           />
         </div>
@@ -553,9 +553,7 @@ function SprintEditor({
           </details>
         ) : null}
         {error ? (
-          <p role="alert" className="sprint-errors">
-            {error}
-          </p>
+          <InlineError>{error}</InlineError>
         ) : null}
         <footer>
           <Button variant="ghost" type="button" disabled={busy} onClick={onClose}>
@@ -685,9 +683,7 @@ function SprintCompletion({
           />
         ) : null}
         {error ? (
-          <p role="alert" className="sprint-errors">
-            {error}
-          </p>
+          <InlineError>{error}</InlineError>
         ) : null}
         <footer>
           <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>

@@ -412,7 +412,7 @@ export function SecondOpinionButton({
           variant={triggerVariant}
           ref={setButton}
           type="button"
-          title={label}
+          tooltip={label}
           aria-label={label}
           aria-haspopup="menu"
           aria-expanded={open}
@@ -428,6 +428,7 @@ export function SecondOpinionButton({
       )}
       {open ? (
         <>
+          {/* Kept as Popover role=menu: single-level DropdownMenu cannot host hover flyouts or a second control per row. */}
           <Popover
             anchor={button}
             side="top"
@@ -486,7 +487,7 @@ export function SecondOpinionButton({
                     <span className="min-w-0 flex-1 truncate">{HARNESS_TITLE[harness]}</span>
                     {modelsFor(harness).length > 0 ? (
                       <ChevronRight
-                        className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+                        className="icon-sm shrink-0 text-(--ui-text-secondary)"
                         strokeWidth={1.75}
                       />
                     ) : null}
@@ -496,6 +497,7 @@ export function SecondOpinionButton({
             )}
           </Popover>
           {showSubmenu ? (
+            // Kept as Popover role=menu: provider -> model -> effort cascade needs a submenu primitive.
             <Popover
               // Remounting per row re-measures the flyout against that row.
               key={active}
@@ -543,13 +545,13 @@ export function SecondOpinionButton({
                     <span className="min-w-0 flex-1 truncate">{model.name}</span>
                     {model.id === preferred ? (
                       <Check
-                        className="size-3 shrink-0 text-(--ui-text-secondary)"
+                        className="icon-xs shrink-0 text-(--ui-text-secondary)"
                         strokeWidth={2}
                       />
                     ) : null}
                     {modelEffortSetting(model)?.options.length ? (
                       <ChevronRight
-                        className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+                        className="icon-sm shrink-0 text-(--ui-text-secondary)"
                         strokeWidth={1.75}
                       />
                     ) : null}
@@ -559,6 +561,7 @@ export function SecondOpinionButton({
             </Popover>
           ) : null}
           {showEffort ? (
+            // Kept as Popover role=menu: third level of the provider -> model -> effort cascade.
             <Popover
               key={`${activeModel.id}:effort`}
               anchor={activeModelRow}
@@ -593,7 +596,7 @@ export function SecondOpinionButton({
                     <span className="min-w-0 flex-1 truncate">{option.label}</span>
                     {selected ? (
                       <Check
-                        className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+                        className="icon-sm shrink-0 text-(--ui-text-secondary)"
                         strokeWidth={2}
                       />
                     ) : null}

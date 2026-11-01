@@ -19,7 +19,7 @@ export function RemoteConnectionBanner({ cwd, stale = false }: { cwd: string; st
       })
     : "";
   return (
-    <div className="shrink-0 border-b border-stroke py-0.5">
+    <div className="shrink-0 px-2 py-1">
       <RemoteLoadError
         cwd={cwd}
         stale={stale}

@@ -54,7 +54,7 @@
   color: var(--ui-text-secondary);
 }
 .settings-loading-shapes {
-  animation: settings-loading-reveal 160ms linear 150ms both;
+  animation: settings-loading-reveal var(--motion-duration-standard) linear var(--motion-duration-standard) both;
 }
 @keyframes settings-loading-reveal {
   from {

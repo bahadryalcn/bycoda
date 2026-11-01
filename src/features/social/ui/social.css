@@ -77,10 +77,6 @@
   font-size: var(--ui-font-caption);
   white-space: nowrap;
 }
-.social-header-field select {
-  min-inline-size: 0;
-  max-inline-size: 100%;
-}
 .social-header-field > div {
   flex: 1;
   min-inline-size: 0;
@@ -126,7 +122,7 @@
   font-variant-numeric: tabular-nums;
   flex: none;
   padding: 0.0625rem 0.375rem;
-  border-radius: var(--radius-control);
+  border-radius: var(--ui-radius-control);
   color: var(--ui-text-secondary);
 }
 .social-host-status {
@@ -289,12 +285,6 @@
   padding: 12px;
   border-radius: var(--ui-radius-card);
 }
-.social-view input:not([type="checkbox"]),
-.social-view textarea,
-.social-view select {
-  min-inline-size: 0;
-  max-inline-size: 100%;
-}
 .social-view
   :is(.social-form, .social-editor, .social-toolbar, .social-form-grid)
   label:not(.bycoda-arc):not(.bycoda-arc label) {
@@ -443,7 +433,7 @@
   padding: 10px 12px;
   border: 1px solid var(--color-stroke);
   color: var(--color-content);
-  border-radius: var(--radius-control);
+  border-radius: var(--ui-radius-control);
   overflow-wrap: break-word;
 }
 .social-workspace .social-error {

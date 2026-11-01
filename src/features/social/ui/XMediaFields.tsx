@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -247,7 +248,7 @@ export function XMediaFields({
           }
         />
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {preview && showPreview ? (
         preview.kind === "video" ? (
           <video

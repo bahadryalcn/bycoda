@@ -780,7 +780,7 @@ describe("Composer question focus", () => {
 
     const list = document.querySelector<HTMLElement>('[data-mcp-picker] [role="listbox"]')!;
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(6);
-    expect(list.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
+    expect(list.parentElement?.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
     expect(list.querySelector('[role="option"]')?.className).toContain("bycoda-arc");
     expect(document.querySelector("[data-mcp-picker]")?.className).toContain(
       "--ui-surface-floating",
@@ -790,9 +790,13 @@ describe("Composer question focus", () => {
     )!;
     const options = list.querySelectorAll<HTMLButtonElement>('[role="option"]');
     expect(searchInput.getAttribute("aria-controls")).toBe(list.id);
-    await act(async () => options[1].focus());
-    expect(options[1].getAttribute("aria-selected")).toBe("true");
+    expect(searchInput.getAttribute("aria-activedescendant")).toBe(options[0].id);
+    await act(async () => {
+      searchInput.focus();
+      searchInput.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
     expect(searchInput.getAttribute("aria-activedescendant")).toBe(options[1].id);
+    expect(options[1].getAttribute("data-highlighted")).toBe("true");
     await act(async () => {
       searchInput.focus();
       for (const key of ["ArrowDown", "Enter", "Escape"]) {

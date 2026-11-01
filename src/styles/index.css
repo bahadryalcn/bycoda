@@ -547,14 +547,20 @@ html.theme-light {
   --motion-feedback-duration: var(--motion-duration-fast);
   --motion-ease-out: var(--motion-ease-standard);
   --motion-tab-ease-out: cubic-bezier(0.3333, 0.6667, 0.6667, 1);
+  /* Named curves of the one-off ambient and entrance animations below. */
+  --motion-ease-rise: cubic-bezier(0.3, 0.6, 0.4, 1);
+  --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-sheen: cubic-bezier(0.4, 0, 0.2, 1);
   /* Stacking layers. Keep in sync with LAYER in src/shared/lib/layers.ts (TS sets zIndex inline,
      CSS uses these); values and names must match one to one. */
+  --layer-pane-sheet: 40;
   --layer-hover-card: 60;
   --layer-popover: 80;
   --layer-submenu: 81;
   --layer-dialog: 90;
   --layer-dialog-popover: 91;
   --layer-toast: 100;
+  --layer-toast-popover: 101;
   --layer-drag: 2147483647;
   /* Arc scale aliases for surfaces outside a .bycoda-arc root (inbox, host tools, onboarding,
      chat controls). Same values as the .bycoda-arc block in arc.css, which still re-declares them
@@ -1388,7 +1394,7 @@ html.theme-light .bycoda-sparkles {
     transparent 70%
   );
   transform: translateX(-120%);
-  animation: bycoda-sheen 1100ms 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: bycoda-sheen 1100ms 300ms var(--motion-ease-sheen) both;
 }
 
 .bycoda-sparkles::after {
@@ -1410,7 +1416,7 @@ html.theme-light .bycoda-sparkles {
   left: var(--x);
   z-index: 1;
   width: 0;
-  animation: bycoda-rise var(--duration) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: bycoda-rise var(--duration) var(--delay) var(--motion-ease-rise) both;
 }
 
 .bycoda-sparkle-glyph {
@@ -1583,7 +1589,7 @@ html.theme-light .plan-steps {
 }
 
 .plan-steps::before {
-  animation: turn-mode-sheen 1100ms 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: turn-mode-sheen 1100ms 300ms var(--motion-ease-sheen) both;
 }
 
 .plan-step {
@@ -1593,7 +1599,7 @@ html.theme-light .plan-steps {
   left: var(--x);
   z-index: 2;
   width: 0;
-  animation: bycoda-rise var(--duration) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: bycoda-rise var(--duration) var(--delay) var(--motion-ease-rise) both;
 }
 
 .plan-step-dot {
@@ -1643,7 +1649,7 @@ html.theme-light .plan-steps {
   left: var(--x);
   z-index: 1;
   width: 0;
-  animation: bycoda-rise var(--duration) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: bycoda-rise var(--duration) var(--delay) var(--motion-ease-rise) both;
 }
 
 .plan-step-ember-glyph {
@@ -1732,13 +1738,13 @@ html.theme-light .orchestrator-constellation {
 }
 
 .orchestrator-constellation::before {
-  animation: turn-mode-sheen 1100ms 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: turn-mode-sheen 1100ms 300ms var(--motion-ease-sheen) both;
 }
 
 .orchestrator-network {
   position: absolute;
   inset: 0;
-  animation: orchestrator-network-rise 2200ms 300ms cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: orchestrator-network-rise 2200ms 300ms var(--motion-ease-rise) both;
 }
 
 .orchestrator-edges {
@@ -1758,7 +1764,7 @@ html.theme-light .orchestrator-constellation {
   stroke: color-mix(in srgb, var(--mode-color) 60%, transparent);
   stroke-width: 1.25;
   stroke-dasharray: var(--length);
-  animation: orchestrator-edge-draw var(--draw) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: orchestrator-edge-draw var(--draw) var(--delay) var(--motion-ease-rise) both;
 }
 
 /* A bright head rides the tip of each edge as it draws out. */
@@ -1767,7 +1773,7 @@ html.theme-light .orchestrator-constellation {
   stroke-width: 2.5;
   stroke-dasharray: 6 var(--length);
   filter: drop-shadow(0 0 3px var(--mode-glow));
-  animation: orchestrator-pulse var(--draw) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  animation: orchestrator-pulse var(--draw) var(--delay) var(--motion-ease-rise) both;
 }
 
 .orchestrator-hub,
@@ -3730,7 +3736,7 @@ html:not(.theme-light) .markdown-code-token {
   mask-size: 100% 300%;
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
-  animation: zen-step-in calc(var(--step-ms) * 0.5) cubic-bezier(0.16, 1, 0.3, 1)
+  animation: zen-step-in calc(var(--step-ms) * 0.5) var(--motion-ease-emphasized)
     calc(var(--step-ms) * 0.5) both;
 }
 
@@ -3848,7 +3854,7 @@ html.theme-light .popover-backdrop {
 }
 
 .popover-open {
-  animation: popover-open 170ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation: popover-open 170ms var(--motion-ease-emphasized) backwards;
 }
 
 .popover-open[data-popover-side="bottom"] {
@@ -3881,35 +3887,6 @@ html.theme-light .popover-backdrop {
    in step with the morph; this is its resting state under an open sheet. */
 [data-session-composer][inert] {
   opacity: 0;
-}
-
-/* Held on the first frame until the freshly mounted sheet has painted. */
-.btw-overlay[data-morph="pending"] .btw-sheet-body,
-.btw-overlay[data-morph="pending"] .btw-burst,
-.btw-overlay[data-morph="pending"] .btw-burst * {
-  animation-play-state: paused;
-}
-
-/* The composer's outline, carried between the session composer's box and
-   the side composer's box while their contents cross-fade inside it. */
-.btw-morph-frame {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  opacity: 0;
-  pointer-events: none;
-  border: 1px solid var(--ui-fill-strong);
-  border-radius: var(--radius-lg, 0.5rem);
-  background: var(--ui-fill-faint);
-}
-
-html.theme-light .btw-morph-frame {
-  background: var(--color-background-base);
-  box-shadow:
-    0 6px 24px color-mix(in srgb, var(--color-content) 9%, transparent),
-    0 2px 6px color-mix(in srgb, var(--color-content) 6%, transparent);
 }
 
 /*
@@ -3953,7 +3930,7 @@ html.theme-light .btw-burst {
     transparent 70%
   );
   transform: translateX(-120%);
-  animation: btw-burst-sheen 900ms 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: btw-burst-sheen 900ms 140ms var(--motion-ease-sheen) both;
 }
 
 .btw-burst-mark {
@@ -4053,70 +4030,6 @@ html.theme-light .btw-burst {
   top: clamp(2.5rem, 18%, 12rem);
 }
 
-/* Match the composer box it morphs out of. */
-.btw-sheet-glass {
-  border: 1px solid var(--ui-fill-muted);
-  border-bottom: 0;
-  border-radius: var(--radius-lg, 0.5rem) var(--radius-lg, 0.5rem) 0 0;
-  box-shadow:
-    0 20px 25px -5px var(--palette-rgb_0_0_0_0_1),
-    0 8px 10px -6px var(--palette-rgb_0_0_0_0_1);
-}
-
-/* Side questions are frequent input surfaces: keep text and input immediate. */
-.btw-sheet-body {
-  animation: none;
-}
-
-.btw-overlay[data-state="closed"] {
-  pointer-events: none;
-}
-
-/* Closing restores the session composer without an exit animation. */
-.btw-overlay[data-state="closed"] .btw-sheet-body,
-.btw-overlay[data-state="closed"] .btw-sheet-composer {
-  animation: none;
-}
-
-@keyframes btw-body-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes btw-fade-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .btw-sheet-body,
-  .btw-overlay[data-state="closed"] .btw-sheet-body,
-  .btw-overlay[data-state="closed"] .btw-sheet-composer {
-    animation: none;
-  }
-}
-
-.btw-error {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 11px;
-  border: 1px solid color-mix(in srgb, var(--palette-dangerDark) 24%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--palette-dangerDark) 7%, transparent);
-}
-
 /* The selected project mascot turns banked resets into a tiny status scene. */
 .reset-mascot-scene {
   position: absolute;
@@ -4159,7 +4072,7 @@ html.theme-light .btw-burst {
   background: currentColor;
   box-shadow: 0 0 8px currentColor;
   transform: rotate(45deg);
-  animation: reset-mascot-spark-in 620ms 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: reset-mascot-spark-in 620ms 260ms var(--motion-ease-emphasized) both;
 }
 
 .reset-mascot-spark-a {
@@ -4417,37 +4330,6 @@ html[data-performance-no-blur] .modal-backdrop {
 @container (min-width: 290px) {
   .git-graph-date {
     display: block;
-  }
-}
-
-/* Subagent panel: a right-hand sheet over the session pane, as the side
-   conversation sheet is a bottom one. */
-.subagent-sheet-glass {
-  border-left: 1px solid var(--ui-fill-muted);
-  border-radius: var(--radius-lg, 0.5rem) 0 0 var(--radius-lg, 0.5rem);
-  box-shadow:
-    0 20px 25px -5px var(--palette-rgb_0_0_0_0_1),
-    0 8px 10px -6px var(--palette-rgb_0_0_0_0_1);
-}
-
-.subagent-sheet {
-  animation: subagent-sheet-in var(--motion-sheet-duration) var(--motion-ease-out) backwards;
-}
-
-@keyframes subagent-sheet-in {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .subagent-sheet {
-    animation: none;
   }
 }
 

@@ -1,5 +1,4 @@
-import { useRef, type KeyboardEvent } from "react";
-import { Button } from "../../../shared/ui/Button";
+import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 
 export type RecoveryTab = {
   value: string;
@@ -30,57 +29,21 @@ export function RecoveryTabs({
   tabs: readonly RecoveryTab[];
   onChange: (value: string) => void;
 }) {
-  const nodes = useRef(new Map<string, HTMLButtonElement>());
-  const enabled = tabs.filter((tab) => !tab.disabled);
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const current = enabled.findIndex((tab) => tab.value === value);
-    let next = -1;
-    if (event.key === "ArrowRight") next = (current + 1) % enabled.length;
-    else if (event.key === "ArrowLeft") next = (current - 1 + enabled.length) % enabled.length;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = enabled.length - 1;
-    if (next < 0 || !enabled[next]) return;
-    event.preventDefault();
-    onChange(enabled[next].value);
-    nodes.current.get(enabled[next].value)?.focus();
-  };
   return (
-    <div
-      role="tablist"
-      aria-label={label}
-      aria-orientation="horizontal"
-      className="recovery-tabs"
-      onKeyDown={onKeyDown}
-    >
-      {tabs.map((tab) => {
-        const selected = tab.value === value;
-        return (
-          <Button
+    <Tabs value={value} onValueChange={onChange} id={idPrefix}>
+      <TabList label={label} className="recovery-tabs">
+        {tabs.map((tab) => (
+          <Tab
             key={tab.value}
-            ref={(node) => {
-              if (node) nodes.current.set(tab.value, node);
-              else nodes.current.delete(tab.value);
-            }}
-            type="button"
-            variant="tab"
-            size="sm"
-            role="tab"
-            id={recoveryTabId(idPrefix, tab.value)}
-            aria-controls={recoveryPanelId(idPrefix, tab.value)}
-            aria-selected={selected}
-            tabIndex={selected ? 0 : -1}
-            selected={selected}
+            value={tab.value}
+            count={tab.count}
             disabled={tab.disabled}
-            title={tab.disabled ? tab.disabledReason : undefined}
-            onClick={() => onChange(tab.value)}
+            disabledReason={tab.disabledReason}
           >
             {tab.label}
-            {tab.count !== undefined ? (
-              <span className="ms-1.5 tabular-nums text-(--ui-text-secondary)">{tab.count}</span>
-            ) : null}
-          </Button>
-        );
-      })}
-    </div>
+          </Tab>
+        ))}
+      </TabList>
+    </Tabs>
   );
 }

@@ -182,6 +182,25 @@ above it; pure light adds one faint `--ui-surface` step. Custom surface colors (
 tint that matches no palette) keep their tinted canvas. Native glass keeps its
 opacity settings and tints with the active canvas.
 
+Owner decision, 2026-11-01, UI standards round, source: owner chat:
+
+> tamam düzeltmelere başla lütfen hepsini
+
+This authorized the whole standards round: missing shared primitives are built, drift is
+caught by `check-ui-drift`, and screens migrate onto the shared parts (see the feature-shared-ui
+card and `ui-component-catalog.md`).
+
+Owner decision, 2026-11-01, composer surface, source: owner chat:
+
+> buranın rengi 1e1e1e bunun yerine 0e0e0e ve light modda da tam tersi yada uygun şekilde
+
+The chat composer is no longer the mid-gray step on the Pure background. In
+`html[data-canvas-background="pure"]`, `--ui-composer-surface` is one quiet step above the
+pure ground (about `#0e0e0e` on black, 6% content ink over the canvas); the light mirror is a
+faint off-white (3% content ink over the white canvas). The composer border keeps the writing
+area distinct. Source-checked in `src/styles/index.css`; not visually verified by the docs
+agent. This supersedes "composer ... roles remain unchanged" for the Pure background only.
+
 Make separation clear before reducing containment. Separate ordinary sections
 primarily with spacing and subtle surface-tone differences.
 Use alignment and type to reinforce hierarchy; reserve boxes and borders for

@@ -73,7 +73,7 @@ function AttachmentTextPreview({ readBytes }: { readBytes: () => Promise<Uint8Ar
   return (
     <pre
       tabIndex={0}
-      className="max-h-[min(620px,70dvh)] min-w-0 overflow-auto whitespace-pre-wrap break-words p-3 select-text font-mono text-(length:--ui-font-caption) text-content"
+      className="max-h-[min(620px,70dvh)] min-w-0 overflow-auto whitespace-pre-wrap break-words p-3 select-text font-mono text-ui-caption text-content"
     >
       {state.text}
     </pre>

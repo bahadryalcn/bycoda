@@ -106,7 +106,7 @@ function TurnActivityRow({
   return (
     <div
       data-turn-activity={phase}
-      className="turn-activity-line flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans text-sm text-(--ui-text-secondary)"
+      className="turn-activity-line flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans text-ui-body text-(--ui-text-secondary)"
     >
       <TurnActivityIcon phase={phase} />
       {/* One live signal: the label breathes; the icon and the clock stay still. */}

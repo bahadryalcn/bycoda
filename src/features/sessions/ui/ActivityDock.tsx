@@ -251,11 +251,11 @@ function DockBody({
               className="shrink-0"
               variant="ghost"
               type="button"
-              title={stopAll.title}
+              tooltip={stopAll.title}
               disabled={stop.stopping.has(STOP_ALL)}
               onClick={() => stop.request(STOP_ALL, () => stop.onAll!())}
             >
-              <Square className="size-3" strokeWidth={1.75} />
+              <Square className="icon-xs" strokeWidth={1.75} />
               {stop.stopping.has(STOP_ALL)
                 ? t("Stopping…")
                 : stop.failed.has(STOP_ALL)
@@ -273,14 +273,14 @@ function DockBody({
                 open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
                 { p0: counts },
               )}
-              title={open ? t("Hide background work") : t("Show background work")}
+              tooltip={open ? t("Hide background work") : t("Show background work")}
               onClick={() => setExpanded(!open)}
               className="shrink-0"
             >
-              <CheckList className="size-3.5" strokeWidth={1.75} />
+              <CheckList className="icon-sm" strokeWidth={1.75} />
               <span className="tabular-nums">{counts}</span>
               <ChevronUp
-                className={`size-3 transition-transform duration-150 motion-reduce:transition-none ${
+                className={`icon-xs transition-transform duration-150 motion-reduce:transition-none ${
                   open ? "" : "rotate-180"
                 }`}
                 strokeWidth={1.75}
@@ -320,18 +320,18 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
   if (state === "done" || state === "background") {
     return (
       <Check
-        className={`size-3.5 shrink-0 ${
+        className={`icon-sm shrink-0 ${
           state === "done"
             ? "activity-dock-check text-(--ui-tone-success-fg)"
             : "text-(--ui-tone-success-fg)"
         }`}
-        strokeWidth={2.25}
+        strokeWidth={2}
       />
     );
   }
   if (state === "needs-input") {
     return (
-      <CircleAlert className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
+      <CircleAlert className="icon-sm shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
     );
   }
   return (
@@ -371,7 +371,7 @@ function DockAgentRow({
         variant="item"
         type="button"
         aria-label={t(agent.kind === "agent" ? "Open {p0}" : "Show {p0}", { p0: summary })}
-        title={agent.name}
+        tooltip={agent.name}
         data-dock-agent={agent.blockId}
         onClick={() => onOpen(agent)}
         className="min-w-0 flex-1 items-start text-left"
@@ -394,7 +394,7 @@ function DockAgentRow({
           </span>
         </span>
         <ChevronRight
-          className="mt-1 size-3 shrink-0 text-(--ui-text-secondary)"
+          className="mt-1 icon-xs shrink-0 text-(--ui-text-secondary)"
           strokeWidth={1.75}
         />
       </Button>
@@ -405,7 +405,7 @@ function DockAgentRow({
           type="button"
           disabled={stopping}
           aria-label={t(stopping ? "Stopping {p0}" : "Stop {p0}", { p0: agent.name })}
-          title={
+          tooltip={
             stop.failed.has(key)
               ? t("Could not stop it. Try again.")
               : stopping
@@ -416,7 +416,7 @@ function DockAgentRow({
           }
           onClick={() => stop.request(key, () => stop.onAgent!(agent))}
         >
-          <Square className="size-3" strokeWidth={1.75} />
+          <Square className="icon-xs" strokeWidth={1.75} />
           {stopping
             ? t("Stopping…")
             : stop.failed.has(key)
@@ -431,13 +431,13 @@ function DockAgentRow({
 function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
   useLocale();
   if (status === "failed") {
-    return <X className="size-3 shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
+    return <X className="icon-xs shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
   if (status === "stopped") {
-    return <Square className="size-3 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
+    return <Square className="icon-xs shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
   }
   if (status === "interrupted") {
-    return <CircleAlert className="size-3 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
+    return <CircleAlert className="icon-xs shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
   }
   return (
     <span

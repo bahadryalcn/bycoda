@@ -173,7 +173,7 @@ export function ToolDiffPreview({
               className="shrink-0"
               onClick={() => dismiss(true)}
             >
-              <X className="size-3" />
+              <X className="icon-xs" />
             </Button>
           </div>
           <FilePreview

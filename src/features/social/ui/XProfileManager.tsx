@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { useContext, useRef, useState } from "react";
@@ -274,7 +275,7 @@ export function XProfileManager({
           </div>
         </form>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {status ? <p role="status">{status}</p> : null}
     </details>
   );

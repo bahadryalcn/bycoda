@@ -106,7 +106,7 @@ export function CrewWorkList({
               aria-pressed={selectedId === run.id}
               disabled={disabled}
               onClick={() => onSelect(run.id)}
-              title={crewRunTitle(run)}
+              tooltip={crewRunTitle(run)}
             >
               <span className="min-w-0 flex-1 text-start">
                 <span className="block line-clamp-2 break-words font-medium">

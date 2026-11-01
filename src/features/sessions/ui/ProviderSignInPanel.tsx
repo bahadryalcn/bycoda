@@ -57,7 +57,7 @@ export function ProviderSignInPanel({
         className="mt-4"
         disabled={state === "running" || (complete && !onComplete)}
         loading={state === "running"}
-        startIcon={complete ? <Check className="size-3.5" aria-hidden /> : undefined}
+        startIcon={complete ? <Check className="icon-sm" aria-hidden /> : undefined}
         onClick={complete && onComplete ? onComplete : onSignIn}
       >
         {state === "running"
@@ -68,7 +68,7 @@ export function ProviderSignInPanel({
       </Button>
       {state === "error" && error ? (
         <p
-          className="mt-2.5 max-w-60 text-(length:--ui-font-caption) leading-4 text-(--ui-tone-danger-fg)"
+          className="mt-2.5 max-w-60 text-ui-caption leading-4 text-(--ui-tone-danger-fg)"
           role="status"
         >
           {error}

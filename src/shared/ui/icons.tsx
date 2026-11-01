@@ -39,6 +39,7 @@ import {
   Info as LucideInfo,
   CircleX as LucideCircleX,
   CloudUpload as LucideCloudUpload,
+  Calendar as LucideCalendar,
   Clock as LucideClock,
   Copy as LucideCopy,
   MousePointer2 as LucideCursorMagicSelection,
@@ -268,6 +269,7 @@ export const CircleHelp = wrap(LucideCircleHelp, "CircleHelp");
 export const Info = wrap(LucideInfo, "Info");
 export const CircleX = wrap(LucideCircleX, "CircleX");
 export const CloudUpload = wrap(LucideCloudUpload, "CloudUpload");
+export const Calendar = wrap(LucideCalendar, "Calendar");
 export const Clock = wrap(LucideClock, "Clock");
 export const Copy = wrap(LucideCopy, "Copy");
 export const CursorMagicSelection = wrap(LucideCursorMagicSelection, "CursorMagicSelection");

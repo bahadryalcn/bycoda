@@ -1,4 +1,9 @@
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { PromptField } from "../../../shared/ui/PromptField";
+import { NumberField } from "../../../shared/ui/NumberField";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Progress } from "../../../shared/ui/Progress";
 import { Alert } from "../../../shared/ui/Alert";
@@ -26,7 +31,6 @@ import { type FormEvent, useMemo, useRef, useState } from "react";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
 import {
   Check,
-  LoaderCircle,
   MessageSquare,
   MoreHorizontal,
   Pencil,
@@ -170,7 +174,7 @@ function GoalCard({
         </h3>
         <Badge tone={GOAL_STATUS_TONES[goal.status]} className="shrink-0">
           {goal.status === "planning" ? (
-            <LoaderCircle className="mr-1 icon-xs animate-spin" />
+            <Spinner size="xs" className="mr-1" />
           ) : null}
           {t(GOAL_STATUS_LABELS[goal.status])}
         </Badge>
@@ -198,7 +202,7 @@ function GoalCard({
         </span>
         <div className="task-goal-actions ml-auto flex flex-wrap items-center gap-0.5">
           {pending ? (
-            <LoaderCircle className="mx-1.5 icon-xs animate-spin text-(--ui-text-secondary)" />
+            <Spinner size="xs" className="mx-1.5 text-(--ui-text-secondary)" />
           ) : null}
           {goal.status !== "done" && goal.status !== "cancelled" ? (
             <Button
@@ -483,9 +487,8 @@ function GoalSettingsForm({
               onChange={(value) => update("maxRunningTasks", Number(value))}
             />
           </label>
-          <TextField
+          <NumberField
             label={t("Run limit (minutes)")}
-            type="number"
             disabled={goal.status === "planning"}
             min={0}
             max={10_080}
@@ -679,61 +682,60 @@ function GoalForm({
                 {machine}
               </span>
             ) : draft.cwds.length ? (
-              <span role="alert" className="text-(--ui-tone-warning-fg)">
+              <InlineMessage tone="warning" live="assertive">
                 {TASK_MACHINE_ERROR}
-              </span>
+              </InlineMessage>
             ) : (
               <span>{t("Choose the projects the job may touch, all on one machine.")}</span>
             )}
           </div>
-          <div className="relative rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
-            <TextareaField
-              hideLabel
-              label=""
-              aria-label={t("Main job")}
-              value={draft.prompt}
-              onChange={(event) => update("prompt", event.target.value)}
-              placeholder={t(
-                "Describe the whole job. A planner agent reads the projects and splits it into tasks, which agents then carry out.",
-              )}
-              rows={4}
-              fieldClassName="block w-full"
-              className="resize-y"
-            />
-            <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
-              <ModelPicker
-                harness={draft.harness}
-                model={draft.model}
-                values={draft.modelSettings}
-                project={lead || "~"}
-                accountChoices={localAccounts}
-                accountId={draft.providerAccountId}
-                onChange={(harness, model, accountId) =>
-                  onChange({
-                    ...draft,
-                    harness,
-                    model,
-                    providerAccountId: localAccounts
-                      ? (accountId ?? defaultAccountFor(harness))
-                      : harness === draft.harness
-                        ? draft.providerAccountId
-                        : defaultAccountFor(harness),
-                  })
-                }
-                onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
-              />
-              <TaskAccountPicker
-                harness={draft.harness}
-                accountId={draft.providerAccountId}
-                local={localAccounts}
-              />
-              {draft.harness !== "fx" ? (
-                <AccessPicker
-                  value={draft.runtimeMode}
-                  onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+          <PromptField
+            label={t("Main job")}
+            surface="raised"
+            minRows={4}
+            value={draft.prompt}
+            onChange={(event) => update("prompt", event.target.value)}
+            placeholder={t(
+              "Describe the whole job. A planner agent reads the projects and splits it into tasks, which agents then carry out.",
+            )}
+            toolbarLeading={
+              <>
+                <ModelPicker
+                  harness={draft.harness}
+                  model={draft.model}
+                  values={draft.modelSettings}
+                  project={lead || "~"}
+                  accountChoices={localAccounts}
+                  accountId={draft.providerAccountId}
+                  onChange={(harness, model, accountId) =>
+                    onChange({
+                      ...draft,
+                      harness,
+                      model,
+                      providerAccountId: localAccounts
+                        ? (accountId ?? defaultAccountFor(harness))
+                        : harness === draft.harness
+                          ? draft.providerAccountId
+                          : defaultAccountFor(harness),
+                    })
+                  }
+                  onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
                 />
-              ) : null}
-              <span className="ml-auto flex items-center gap-2 text-ui-micro text-(--ui-text-secondary)">
+                <TaskAccountPicker
+                  harness={draft.harness}
+                  accountId={draft.providerAccountId}
+                  local={localAccounts}
+                />
+                {draft.harness !== "fx" ? (
+                  <AccessPicker
+                    value={draft.runtimeMode}
+                    onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+                  />
+                ) : null}
+              </>
+            }
+            toolbarTrailing={
+              <span className="flex items-center gap-2 text-ui-micro text-(--ui-text-secondary)">
                 {t("Time limit")}
                 <SearchableSelect
                   variant="pill"
@@ -745,8 +747,8 @@ function GoalForm({
                   onChange={(value) => update("maxRunMinutes", Number(value))}
                 />
               </span>
-            </div>
-          </div>
+            }
+          />
           <div className="task-form-options">
             <div className="task-form-section">
               <div className="task-form-section-body">
@@ -758,16 +760,17 @@ function GoalForm({
                     />
                     {t("Verify the integrated result before completing this goal")}
                   </label>
-                  <label
-                    title={t("The planned tasks are created only once you approve the plan.")}
-                    className="flex cursor-pointer items-center gap-1.5"
+                  <Tooltip
+                    label={t("The planned tasks are created only once you approve the plan.")}
                   >
-                    <Checkbox
-                      checked={draft.approvePlan}
-                      onChange={(event) => update("approvePlan", event.target.checked)}
-                    />
-                    {t("Review the plan before starting")}
-                  </label>
+                    <label className="flex cursor-pointer items-center gap-1.5">
+                      <Checkbox
+                        checked={draft.approvePlan}
+                        onChange={(event) => update("approvePlan", event.target.checked)}
+                      />
+                      {t("Review the plan before starting")}
+                    </label>
+                  </Tooltip>
                   <label className="flex cursor-pointer items-center gap-1.5">
                     <Checkbox
                       checked={draft.review}

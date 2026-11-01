@@ -10,9 +10,9 @@
 
 .runtime-logs-panel {
   --runtime-log-muted: var(--ui-text-secondary);
-  --runtime-log-error: var(--color-danger);
-  --runtime-log-warning: var(--color-warning);
-  --runtime-log-browser: var(--color-info);
+  --runtime-log-error: var(--ui-tone-danger-fg);
+  --runtime-log-warning: var(--ui-tone-warning-fg);
+  --runtime-log-browser: var(--ui-tone-info-fg);
   --runtime-log-server: var(--color-feature);
   background: var(--color-background-base);
   flex: 1 1 0;
@@ -50,8 +50,8 @@
 }
 
 .runtime-logs-disclosure > summary:focus-visible {
-  outline: 2px solid var(--color-accent, var(--color-content));
-  outline-offset: 2px;
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 
 .runtime-logs-disclosure > summary:active {
@@ -314,7 +314,7 @@
   content: "";
   inline-size: 4px;
   block-size: 4px;
-  border-radius: 1px;
+  border-radius: 50%;
   background: currentColor;
   flex-shrink: 0;
 }
@@ -585,7 +585,7 @@
   --runtime-row-color: var(--color-feature);
 }
 .runtime-log-row[data-level="success"] {
-  --runtime-row-color: var(--color-success);
+  --runtime-row-color: var(--ui-tone-success-fg);
 }
 .runtime-log-row .runtime-log-level {
   color: var(--runtime-row-color);

@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext as useSocialContext, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
@@ -614,9 +615,7 @@ export function ProductKnowledge({
                     <p className="social-muted">{t("Asking again replaces the suggestions below.")}</p>
                   ) : null}
                   {suggest.error ? (
-                    <p role="alert" className="social-knowledge-error">
-                      {suggest.error}
-                    </p>
+                    <InlineError>{suggest.error}</InlineError>
                   ) : null}
                   <div className="social-actions">
                     <Button

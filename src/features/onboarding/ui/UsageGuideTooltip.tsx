@@ -63,7 +63,7 @@ function TourCard({
           iconOnly
           label={closeProps["aria-label"] ?? closeProps.title ?? t("Close")}
         >
-          <X size={16} aria-hidden="true" />
+          <X className="icon-md" aria-hidden="true" />
         </Button>
       </header>
       <div className="usage-guide-scroll" key={index}>
@@ -124,7 +124,7 @@ function UsageGuidePanel({
           iconOnly
           label={closeProps["aria-label"] ?? closeProps.title ?? t("Close")}
         >
-          <X size={18} aria-hidden="true" />
+          <X className="icon-lg" aria-hidden="true" />
         </Button>
       </header>
       <div className="usage-guide-scroll" key={index}>

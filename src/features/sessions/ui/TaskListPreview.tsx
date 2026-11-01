@@ -1,6 +1,8 @@
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Surface } from "../../../shared/ui/Surface";
 import { Badge } from "../../../shared/ui/Badge";
 import { useT } from "../../../shared/i18n";
-import { Check, ListEnd, Loader, Minus } from "../../../shared/ui/icons";
+import { Check, ListEnd, Minus } from "../../../shared/ui/icons";
 import type { TaskListItem, TaskListItemStatus } from "../model/session";
 import { taskListProgressLabel } from "../model/taskList";
 
@@ -12,12 +14,18 @@ type Props = {
 export function TaskListPreview({ items, explanation }: Props) {
   const t = useT();
   return (
-    <section
+    <Surface
+      as="section"
+      variant="raised"
+      padding="none"
       aria-label={t("Task progress")}
-      className="mb-2 overflow-hidden rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel)"
+      className="mb-2 overflow-hidden"
     >
       <div className="flex items-start gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-2">
-        <ListEnd className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+        <ListEnd
+          className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
+          strokeWidth={1.75}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-mono text-ui-caption font-medium text-(--ui-text-secondary)">
@@ -57,7 +65,7 @@ export function TaskListPreview({ items, explanation }: Props) {
           </li>
         ))}
       </ol>
-    </section>
+    </Surface>
   );
 }
 
@@ -69,7 +77,7 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
         aria-label={t("Completed")}
         className="mt-px grid size-4 shrink-0 place-items-center rounded-full bg-(--ui-tone-success-subtle) text-on-solid"
       >
-        <Check className="size-2.5" strokeWidth={3} />
+        <Check className="size-2.5" strokeWidth={2} />
       </span>
     );
   }
@@ -79,7 +87,7 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
         aria-label={t("In progress")}
         className="mt-px grid size-4 shrink-0 place-items-center text-(--ui-tone-info-fg)"
       >
-        <Loader className="size-4 motion-safe:animate-spin" strokeWidth={2} />
+        <Spinner size="md" />
       </span>
     );
   }

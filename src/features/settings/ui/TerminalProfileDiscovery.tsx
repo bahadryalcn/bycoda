@@ -201,12 +201,12 @@ export function TerminalProfileDiscovery({
                 "Separate sign-ins per provider. New conversations use the default account; each conversation can pick its own account from the composer.",
               )}
             </p>
-            <p className="text-[length:var(--ui-font-caption)] leading-relaxed text-(--ui-text-secondary)">
+            <p className="text-ui-caption leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Uses existing CLI sign-ins. Finds standard and named home profiles; choose a folder for other locations.",
               )}
             </p>
-            <p className="text-[length:var(--ui-font-caption)] leading-relaxed text-(--ui-text-secondary)">
+            <p className="text-ui-caption leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Discovery reads profile folders on this computer. Connecting stores a path, not credentials.",
               )}
@@ -214,7 +214,7 @@ export function TerminalProfileDiscovery({
             {disabled ? (
               <p
                 role="status"
-                className="text-[length:var(--ui-font-caption)] leading-relaxed text-(--ui-text-secondary)"
+                className="text-ui-caption leading-relaxed text-(--ui-text-secondary)"
               >
                 {t(
                   "Wait for the current account operation to finish, then discover or connect a terminal profile.",

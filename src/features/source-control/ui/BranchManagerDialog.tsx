@@ -7,7 +7,11 @@ import { useState, type FormEvent } from "react";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { Check, GitBranch, MoreHorizontal, Plus } from "../../../shared/ui/icons";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   gitCheckout,
   gitCreateBranch,
@@ -183,14 +187,15 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             strokeWidth={1.75}
           />
         )}
-        <span
-          title={reference}
-          className={`min-w-0 flex-1 truncate text-ui-secondary text-content ${
-            isCurrent ? "font-medium" : ""
-          }`}
-        >
-          {reference}
-        </span>
+        <Tooltip label={reference}>
+          <span
+            className={`min-w-0 flex-1 truncate text-ui-secondary text-content ${
+              isCurrent ? "font-medium" : ""
+            }`}
+          >
+            {reference}
+          </span>
+        </Tooltip>
         {isCurrent ? null : (
           <Button
             size="sm"
@@ -198,7 +203,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             motion="none"
             type="button"
             disabled={busy}
-            title={
+            tooltip={
               branch.remote
                 ? t("Check out {p0} as a local branch", { p0: reference })
                 : t("Switch to {p0}", { p0: reference })
@@ -282,9 +287,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
   const section = (title: string, rows: GitBranchInfo[]) =>
     rows.length === 0 ? null : (
       <li key={title}>
-        <h3 className="px-1 pt-2 pb-1 text-(length:--ui-font-caption) font-semibold text-(--ui-text-secondary)">
-          {title}
-        </h3>
+        <SectionLabel className="px-1 pt-2 pb-1">{title}</SectionLabel>
         <ul>{rows.map(renderRow)}</ul>
       </li>
     );
@@ -327,27 +330,26 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             onClick={() => startEditing({ kind: "create" })}
             className="inline-flex shrink-0 items-center gap-1"
           >
-            <Plus className="size-3.5" strokeWidth={1.75} />
+            <Plus className="icon-sm" strokeWidth={1.75} />
             {t("New Branch…")}
           </Button>
         </div>
         {editing?.kind === "create" ? renderForm("New branch name", "Create") : null}
         {error ? (
-          <p
-            role="alert"
-            className="max-h-24 overflow-y-auto whitespace-pre-wrap text-[11px] leading-4 text-danger"
-          >
+          <InlineError className="max-h-24 overflow-y-auto whitespace-pre-wrap">
             {error}
-          </p>
+          </InlineError>
         ) : null}
         {listed.length === 0 ? (
-          <p className="px-1 py-2 text-[12px] text-(--ui-text-secondary)">
-            {needle ? t("No branches match") : t("No branches")}
-          </p>
+          <EmptyState
+            size="inline"
+            kind={needle ? "filtered" : "empty"}
+            description={needle ? t("No branches match") : t("No branches")}
+          />
         ) : (
           <ul className="min-h-0 overflow-y-auto">
-            {section("Local", localRows)}
-            {section("Remote", remoteRows)}
+            {section(t("Local"), localRows)}
+            {section(t("Remote"), remoteRows)}
           </ul>
         )}
       </div>

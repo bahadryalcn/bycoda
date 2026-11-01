@@ -279,7 +279,7 @@ it("prevents duplicate creation and keeps its progress visible", async () => {
   await typeQuery("new-worktree");
   await press("Enter");
   expect(search().disabled).toBe(true);
-  expect(createButton()?.disabled).toBe(true);
+  expect(createButton()?.getAttribute("aria-disabled")).toBe("true");
   expect(trigger().getAttribute("aria-busy")).toBe("true");
   await press("Enter");
   await press("Escape");

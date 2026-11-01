@@ -100,7 +100,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
           else setOpen(true);
         }}
       >
-        <AiIdea size={14} />
+        <AiIdea className="icon-sm" />
         <span className="sr-only">{t(open ? "Next tip" : "Tip")}</span>
       </Button>
       {open ? (

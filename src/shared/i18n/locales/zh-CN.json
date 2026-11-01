@@ -10072,5 +10072,22 @@
   "Pure": "纯色",
   "Tinted": "着色",
   "Pure is true black in dark mode and white in light mode.": "纯色在深色模式下为纯黑，在浅色模式下为纯白。",
-  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "自定义表面颜色会保留自己的背景。选择一个主题调色板即可使用纯色。"
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "自定义表面颜色会保留自己的背景。选择一个主题调色板即可使用纯色。",
+  "The editor is busy closing or moving. Try again in a moment.": "编辑器正在关闭或移动。请稍后重试。",
+  "Match Case": "区分大小写",
+  "Match Whole Word": "匹配整个单词",
+  "Use Regular Expression": "使用正则表达式",
+  "Notes sections": "笔记分区",
+  "Close notes": "关闭笔记",
+  "Add folder": "添加文件夹",
+  "Open folder": "打开文件夹",
+  "The draft changed while it was being prepared. Send it again.": "草稿在准备期间发生了变化。请重新发送。",
+  "Work item preview": "工作项预览",
+  "New worktree": "新建工作树",
+  "Type “{p0}” to confirm": "输入“{p0}”以确认",
+  "Choose a date": "选择日期",
+  "Resize panel": "调整面板大小",
+  "or": "或",
+  "Alt": "Alt",
+  "Windows": "Windows"
 }

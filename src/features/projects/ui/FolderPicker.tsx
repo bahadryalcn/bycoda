@@ -3,6 +3,9 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost } from "../../../shared/ui/ActionHost";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -14,7 +17,7 @@ import {
   pickNativeFolders,
   type FsEntry,
 } from "../../../platform/tauri/fs";
-import { IS_MAC, IS_WIN, MOD } from "../../../platform/tauri/platform";
+import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { parentPath, pathKey, prettyCwd, slash } from "../../../shared/lib/paths";
 import { Modal } from "../../../shared/ui/Modal";
 import { ArrowLeft, Folder, FolderOpen, FolderPlus } from "../../../shared/ui/icons";
@@ -172,11 +175,12 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
             motion="none"
             type="button"
             aria-label={t("Parent folder")}
-            title={t("Parent folder (Backspace)")}
+            tooltip={t("Parent folder")}
+            shortcut="Backspace"
             disabled={busy || !directory || pathKey(parent) === pathKey(directory)}
             onClick={() => navigate(parent)}
           >
-            <ArrowLeft className="size-4" />
+            <ArrowLeft className="icon-md" />
           </Button>
           <form
             className="min-w-0 flex-1"
@@ -207,7 +211,8 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
             variant="secondary"
             motion="none"
             type="button"
-            title={t("Add folder ({p0}Enter)", { p0: MOD })}
+            tooltip={t("Add folder")}
+            shortcut="Mod+Enter"
             disabled={busy || loading || !directory || loadFailed}
             onClick={pick}
           >
@@ -290,24 +295,23 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           }}
         >
           {loading ? (
-            <p role="status" className="p-3 text-[13px] text-[var(--ui-text-muted)]">
-              {t("Loading folders…")}
-            </p>
+            <LoadingText className="p-3">{t("Loading folders…")}</LoadingText>
           ) : visibleEntries.length === 0 && !error ? (
-            <p className="p-3 text-[13px] text-[var(--ui-text-muted)]">{t("No subfolders")}</p>
+            <EmptyState size="inline" className="p-3" description={t("No subfolders")} />
           ) : null}
           {visibleEntries.map((entry, index) => (
-            <div
+            <ActionHost
               key={entry.path}
               id={`folder-picker-${index}`}
               role="option"
+              selected={index === active}
               data-active={index === active}
               aria-selected={
                 multiple
                   ? selected.some((path) => pathKey(path) === pathKey(entry.path))
                   : index === active
               }
-              className={`flex items-center rounded-md ${index === active ? "bg-selection" : "hover:bg-[var(--ui-surface-hover)]"}`}
+              className="flex items-center rounded-md"
             >
               {multiple ? (
                 <Checkbox
@@ -329,16 +333,18 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
                 motion="none"
                 type="button"
                 tabIndex={-1}
-                title={t("{p0}\nOpen folder (Enter)", { p0: entry.path })}
+                tooltip={t("Open folder")}
+                tooltipDetails={[entry.path]}
+                shortcut="Enter"
                 disabled={busy}
                 onMouseEnter={() => setActive(index)}
                 onClick={() => navigate(entry.path)}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
-                <Folder className="size-4 shrink-0 text-[var(--ui-text-muted)]" />
+                <Folder className="icon-md shrink-0 text-(--ui-text-muted)" />
                 <span className="truncate">{entry.name}</span>
               </Button>
-            </div>
+            </ActionHost>
           ))}
         </div>
         {newName !== null ? (
@@ -349,7 +355,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               void createFolder();
             }}
           >
-            <FolderPlus className="size-4 shrink-0 text-[var(--ui-text-muted)]" />
+            <FolderPlus className="icon-md shrink-0 text-(--ui-text-muted)" />
             <TextField
               hideLabel
               label=""
@@ -398,21 +404,21 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
             variant="secondary"
             motion="none"
             type="button"
-            title={t("Create a folder in the current directory")}
+            tooltip={t("Create a folder in the current directory")}
             disabled={busy || loading || !directory}
             onClick={() => {
               setNewName("");
               setError(undefined);
             }}
           >
-            <FolderPlus className="size-3.5" />
+            <FolderPlus className="icon-sm" />
             {t("New folder")}
           </Button>
           <Button
             variant="secondary"
             motion="none"
             type="button"
-            title={t("Choose a drive, network location or folders using the system picker")}
+            tooltip={t("Choose a drive, network location or folders using the system picker")}
             disabled={busy}
             onClick={() =>
               void run(async () => {
@@ -427,11 +433,12 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
             variant="secondary"
             motion="none"
             type="button"
-            title={`${managerLabel}\n${prettyCwd(directory)}`}
+            tooltip={managerLabel}
+            tooltipDetails={[prettyCwd(directory)]}
             disabled={busy || loading || !directory}
             onClick={() => void run(() => openPathWithDefaultApp(directory))}
           >
-            <FolderOpen className="size-3.5" />
+            <FolderOpen className="icon-sm" />
             {managerLabel}
           </Button>
         </div>

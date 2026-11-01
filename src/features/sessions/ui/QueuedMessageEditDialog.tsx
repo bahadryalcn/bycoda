@@ -401,12 +401,12 @@ function QueueEditContent({
                 label={t("Add files or images")}
                 variant="ghost"
                 type="button"
-                title={t("Add files or images")}
+                tooltip={t("Add files or images")}
                 aria-label={t("Add files or images")}
                 disabled={parentClosed}
                 onClick={() => void collect(pickAttachments)}
               >
-                <FilePlus className="size-3.5" strokeWidth={1.5} />
+                <FilePlus className="icon-sm" />
               </Button>
             </div>
           ) : null}
@@ -475,7 +475,8 @@ function QueueEditContent({
               type="button"
               disabled={parentClosed || empty || loadingAttachments > 0}
               onClick={save}
-              title={t("Save (Ctrl/Cmd+Enter)")}
+              tooltip={t("Save")}
+              shortcut="Mod+Enter"
             >
               {t("Save")}
             </Button>

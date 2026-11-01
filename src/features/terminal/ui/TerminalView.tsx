@@ -19,6 +19,7 @@ import { useSshShellIntegration } from "../model/sshShellIntegration";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { t } from "../../../shared/i18n";
 import { bindTerminalDomInput } from "../runtime/terminalDomInput";
 import { createTerminalFitting } from "../runtime/terminalFitting";
@@ -642,7 +643,7 @@ export function TerminalView({
           }}
           fitViewport
         >
-          <div className="flex flex-wrap items-center gap-2 text-xs text-(--ui-text-muted)">
+          <div className="flex flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-muted)">
             <Button
               variant="ghost"
               size="sm"
@@ -656,7 +657,7 @@ export function TerminalView({
                 t("Insert commands at an empty shell prompt. Press Enter in the terminal to run.")}
             </span>
           </div>
-          <Suspense fallback={<p role="status">{t("Loading…")}</p>}>
+          <Suspense fallback={<LoadingText />}>
             <ServerSnippets
               serverId={sshConnectionId}
               serverName={
@@ -696,7 +697,7 @@ export function TerminalView({
             role={exitCode === 0 ? "status" : "alert"}
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-medium">
+              <span className="text-ui-caption font-medium">
                 {t("Terminal closed")}
                 {exitCode != null ? ` · ${t("Exit code")}: ${exitCode}` : ""}
               </span>
@@ -727,9 +728,9 @@ export function TerminalView({
                 </Button>
               ) : null}
             </div>
-            {inputError ? <p className="mbs-2 break-words text-xs">{inputError}</p> : null}
+            {inputError ? <p className="mbs-2 break-words text-ui-caption">{inputError}</p> : null}
             {inputError ? (
-              <details className="mbs-2 text-xs">
+              <details className="mbs-2 text-ui-caption">
                 <summary className="cursor-pointer">{t("Connection details")}</summary>
                 <p className="mbs-2 break-words">
                   {t(
@@ -744,17 +745,17 @@ export function TerminalView({
         <div className="shrink-0 px-3 py-2">
           <Alert tone="warning" role="alert">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-medium">{t("Input paused")}</span>
+              <span className="text-ui-caption font-medium">{t("Input paused")}</span>
               <Button size="sm" variant="secondary" onClick={() => resumeInputRef.current()}>
                 {t("Resume input")}
               </Button>
             </div>
-            <p className="mbs-1 text-xs">
+            <p className="mbs-1 text-ui-caption">
               {t(
                 "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
               )}
             </p>
-            <details className="mbs-2 text-xs">
+            <details className="mbs-2 text-ui-caption">
               <summary className="cursor-pointer">{t("Connection details")}</summary>
               <p className="mbs-2 break-words">{inputError}</p>
             </details>

@@ -130,7 +130,7 @@ export function ModelExtrasPanel({
                 aria-controls={descriptionId}
                 onClick={() => setExplained(showHelp ? null : setting.id)}
               >
-                <CircleHelp className="size-3" />
+                <CircleHelp className="icon-xs" />
               </Button>
             )}
           </span>
@@ -176,7 +176,7 @@ export function ModelExtrasPanel({
           <p
             id={descriptionId}
             hidden={!showHelp}
-            className="mb-1 rounded-md bg-(--ui-surface-raised) px-2 py-1.5 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)"
+            className="mb-1 rounded-md bg-(--ui-surface-raised) px-2 py-1.5 text-ui-caption leading-4 text-(--ui-text-secondary)"
           >
             {t(setting.description)}
           </p>
@@ -186,33 +186,36 @@ export function ModelExtrasPanel({
   };
   return (
     <>
-      {!compact && <div className="sticky top-0 z-10 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 pt-2.5 pb-2">
-        <div className="flex items-center justify-between gap-2">
-          {leading}
-          <span className="min-w-0 flex-1 truncate text-ui-caption font-medium">
-            {title ?? `${HARNESS_TITLE[harness]} · ${t("Extras")}`}
-          </span>
-          <Button
-            variant="ghost"
-            type="button"
-            disabled={disabled || changed === 0}
-            onClick={() => {
-              if (!disabled) onSettingsChange(defaultModelSettings(current));
-            }}
-            className="shrink-0"
-          >
-            {t("Reset extras")}
-          </Button>
+      {/* z-10: in-popover sticky header over the scrolling list; no in-pane layer scale exists, so the literal stays. */}
+      {!compact && (
+        <div className="sticky top-0 z-10 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 pt-2.5 pb-2">
+          <div className="flex items-center justify-between gap-2">
+            {leading}
+            <span className="min-w-0 flex-1 truncate text-ui-caption font-medium">
+              {title ?? `${HARNESS_TITLE[harness]} · ${t("Extras")}`}
+            </span>
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={disabled || changed === 0}
+              onClick={() => {
+                if (!disabled) onSettingsChange(defaultModelSettings(current));
+              }}
+              className="shrink-0"
+            >
+              {t("Reset extras")}
+            </Button>
+          </div>
+          <p className="mt-0.5 text-ui-caption leading-4 text-(--ui-text-secondary)">
+            {t("Extras apply to this model selection. They do not change the main model.")}
+          </p>
         </div>
-        <p className="mt-0.5 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)">
-          {t("Extras apply to this model selection. They do not change the main model.")}
-        </p>
-      </div>}
+      )}
       <div className="space-y-3 px-3 pt-2 pb-3">
         {groups.map((group) => (
           <section key={group.id}>
             {group.title && (
-              <h3 className="mb-1 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
+              <h3 className="mb-1 text-ui-caption font-medium text-(--ui-text-secondary)">
                 {t(group.title)}
               </h3>
             )}
@@ -286,10 +289,10 @@ export function ModelExtras({
         data-extras-trigger
         className="shrink-0"
       >
-        <SlidersHorizontal className="size-3 shrink-0" strokeWidth={1.75} />
+        <SlidersHorizontal className="icon-xs shrink-0" strokeWidth={1.75} />
         <span data-extras-label>{t("Extras")}</span>
         {changed > 0 && (
-          <span className="rounded bg-selection px-1 text-(length:--ui-font-caption) text-(--ui-tone-neutral-fg)">
+          <span className="rounded bg-selection px-1 text-ui-caption text-(--ui-tone-neutral-fg)">
             {changed}
           </span>
         )}
@@ -302,7 +305,7 @@ export function ModelExtras({
               .join(" · ")}
           </span>
         )}
-        <ChevronDown className="size-3" />
+        <ChevronDown className="icon-xs" />
       </Button>
       {open && (
         <Popover

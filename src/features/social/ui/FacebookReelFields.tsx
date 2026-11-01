@@ -1,5 +1,6 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { TextField } from "../../../shared/ui/TextField";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { t, useLocale } from "../../../shared/i18n";
 import type { CampaignVariant } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
@@ -106,9 +107,8 @@ export function FacebookReelFields({
               })
             }
           />
-          <TextField
+          <NumberField
             label={t("Video frame rate (fps)")}
-            type="number"
             min={23}
             step="any"
             required
@@ -129,9 +129,9 @@ export function FacebookReelFields({
             </p>
           ) : null}
           {!validFacebookReel(variant) ? (
-            <p role="alert">
+            <InlineError>
               {t("Upload a compatible Reel and enter its frame rate before saving.")}
-            </p>
+            </InlineError>
           ) : null}
         </>
       ) : null}

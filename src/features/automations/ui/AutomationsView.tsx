@@ -22,20 +22,30 @@ import { TextField } from "../../../shared/ui/TextField";
 import { Switch } from "../../../shared/ui/Switch";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Alert } from "../../../shared/ui/Alert";
+import { Divider } from "../../../shared/ui/Divider";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Surface } from "../../../shared/ui/Surface";
+import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { ToolHeader } from "../../../app/shell/ToolNavigation";
+import { ToolNavigation, ToolNavigationContext } from "../../../app/shell/ToolNavigation";
 import { t, useLocale } from "../../../shared/i18n";
 import {
+  useContext,
   useDeferredValue,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
+  type ElementType,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -53,7 +63,6 @@ import {
   Gauge,
   GitPullRequest,
   Inbox,
-  LoaderCircle,
   Lock,
   Maximize2,
   Minimize2,
@@ -154,6 +163,8 @@ export function AutomationsView({
   onOpenBackgroundSession,
 }: Props) {
   useLocale();
+  // Inside the workspace the tool switcher takes the title's place.
+  const toolNavigation = useContext(ToolNavigationContext)?.active != null;
   return (
     <div
       role="region"
@@ -162,21 +173,17 @@ export function AutomationsView({
       style={{ containerType: "inline-size", containerName: "automations" }}
       className="flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
     >
-      <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-(--ui-tone-neutral-border)"
-        data-tauri-drag-region="deep"
+      <PaneHeader
+        chromeInset={besideRail ? (compactRail ? "compact" : false) : true}
+        dragRegion
+        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        icon={toolNavigation ? undefined : <Zap strokeWidth={1.75} />}
+        title={toolNavigation ? undefined : t("Automations")}
+        trailing={IS_MAC ? null : <WindowControls />}
+        className={toolNavigation ? "items-stretch" : undefined}
       >
-        {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
-        <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
-            <Zap className="icon-sm shrink-0 text-(--ui-text-muted)" strokeWidth={1.75} />
-            <span className="min-w-0 truncate text-(--ui-tone-neutral-fg)">{t("Automations")}</span>
-          </div>
-        </ToolHeader>
-        {IS_MAC ? null : <WindowControls />}
-      </div>
+        {toolNavigation ? <ToolNavigation /> : null}
+      </PaneHeader>
       <AutomationsContent
         cwd={cwd}
         recents={recents}
@@ -774,7 +781,7 @@ function AutomationCard({
         </span>
       </Button>
       <span className="absolute right-2.5 top-2 flex items-center gap-1">
-        {pending ? <LoaderCircle className="icon-xs animate-spin" aria-hidden="true" /> : null}
+        {pending ? <Spinner size="xs" /> : null}
         <ToggleSwitch
           label={`${automation.enabled ? "Pause" : "Enable"} ${automation.name}`}
           on={automation.enabled}
@@ -904,9 +911,12 @@ function AutomationPicker({
             />
           </div>
           {templates.length === 0 ? (
-            <p role="status" className="mt-4 text-ui-secondary text-(--ui-text-muted)">
-              {t("No matching options")}
-            </p>
+            <EmptyState
+              size="inline"
+              kind="filtered"
+              className="mt-4"
+              description={t("No matching options")}
+            />
           ) : null}
           <div className="automation-gallery mt-3">
             {shown.map((template) => {
@@ -919,7 +929,7 @@ function AutomationPicker({
                   variant="item"
                   layout="stacked"
                   className="automation-template"
-                  title={t(template.description)}
+                  tooltip={t(template.description)}
                 >
                   <span className="flex gap-3">
                     <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
@@ -982,7 +992,8 @@ function RunRow({
       <Button
         type="button"
         disabled={!sessionId}
-        title={sessionId ? t("Open session") : (run.error ?? t("This run has no session yet"))}
+        tooltip={sessionId ? t("Open session") : undefined}
+        disabledReason={sessionId ? undefined : (run.error ?? t("This run has no session yet"))}
         onClick={() => {
           if (!sessionId) return;
           void onOpenSession(sessionId);
@@ -1029,7 +1040,7 @@ function RunStatusPill({ status }: { status: AutomationRun["status"] }) {
     <Badge
       tone={runStatusTone(status)}
       className="shrink-0 whitespace-nowrap"
-      icon={status === "running" ? <LoaderCircle className="icon-xs animate-spin" /> : undefined}
+      icon={status === "running" ? <Spinner size="xs" /> : undefined}
     >
       {runStatusLabel(status)}
     </Badge>
@@ -1136,9 +1147,6 @@ function AutomationEditor({
   useLocale();
   const extrasBeside = useSyncExternalStore(subscribeModelControls, loadModelControls) === "beside";
   const [tab, setTab] = useState<"settings" | "history">("settings");
-  const settingsTabId = useId();
-  const historyTabId = useId();
-  const tabPanelId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const { connections: providerConnected } = useProviderConnections();
@@ -1186,452 +1194,432 @@ function AutomationEditor({
     `${t("Runs per day")}: ${optionLabel(RUNS_PER_DAY_OPTIONS, draft.maxRunsPerDay)}`,
   ].join(" · ");
 
+  // With a run history the scroll region is the one panel both tabs show.
+  const Scroll: ElementType = historyAvailable ? TabPanel : "div";
+
   return (
     <form className="flex min-h-0 min-w-0 flex-1 flex-col" onSubmit={onSubmit} aria-busy={saving}>
-      <div className="automation-editor-header shrink-0 px-3 pt-2 sm:px-6">
-        <header className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-            <TextField
-              label={t("Automation name")}
-              hideLabel
-              autoFocus
-              aria-label={t("Automation name")}
-              value={draft.name}
-              disabled={saving}
-              onChange={(event) => update("name", event.target.value)}
-              placeholder={t("Untitled")}
-              fieldClassName="min-w-0 flex-[1_1_16rem]"
-            />
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-              {!draft.id || dirty ? (
-                <Button type="button" onClick={onClose} disabled={saving} variant="secondary">
-                  {draft.id ? t("Reset") : t("Cancel")}
-                </Button>
-              ) : null}
-              {onRun ? (
-                <Button
-                  type="button"
-                  onClick={onRun}
-                  loading={running}
-                  disabled={saving}
-                  startIcon={<Play className="icon-sm" />}
-                  variant="secondary"
-                >
-                  {t("Run now")}
-                </Button>
-              ) : null}
-              <Button
-                type="submit"
-                disabled={!valid || saving || (!!draft.id && !dirty)}
-                variant="primary"
-                loading={saving}
-              >
-                {draft.id ? t("Save") : t("Create")}
-              </Button>
-              {onDelete ? (
-                <>
-                  <Button
-                    ref={menuButton}
-                    type="button"
-                    title={t("Automation actions")}
-                    aria-label={t("Automation actions")}
-                    aria-haspopup="menu"
-                    aria-expanded={menuOpen}
-                    disabled={saving}
-                    onClick={() => setMenuOpen((open) => !open)}
-                    variant="ghost"
-                    iconOnly
-                    label={t("Automation actions")}
-                  >
-                    <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
-                  </Button>
-                  {menuOpen ? (
-                    <DropdownMenu
-                      anchor={menuButton}
-                      label={t("Automation actions")}
-                      onClose={() => setMenuOpen(false)}
-                      returnFocusRef={menuButton}
-                      items={[
-                        {
-                          kind: "item",
-                          id: "delete",
-                          label: t("Delete automation"),
-                          icon: <Trash2 />,
-                          danger: true,
-                          disabled: deleteDisabled,
-                          title: deleteDisabled
-                            ? t(
-                                "Wait for the current operation to finish before deleting this automation.",
-                              )
-                            : undefined,
-                        },
-                      ]}
-                      onPick={() => onDelete()}
-                    />
-                  ) : null}
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div
-            inert={saving}
-            className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-ui-caption text-(--ui-text-muted)"
-          >
-            <span className="flex shrink-0 items-center gap-2">
-              <ToggleSwitch
-                label={draft.enabled ? t("Pause automation") : t("Enable automation")}
-                on={draft.enabled}
-                onChange={(enabled) => update("enabled", enabled)}
-                compact
+      <Tabs value={tab} onValueChange={setTab} panels="shared">
+        <div className="automation-editor-header shrink-0 px-3 pt-2 sm:px-6">
+          <header className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+              <TextField
+                label={t("Automation name")}
+                hideLabel
+                autoFocus
+                aria-label={t("Automation name")}
+                value={draft.name}
+                disabled={saving}
+                onChange={(event) => update("name", event.target.value)}
+                placeholder={t("Untitled")}
+                fieldClassName="min-w-0 flex-[1_1_16rem]"
               />
-              <span>{draft.enabled ? t("Active") : t("Inactive")}</span>
-            </span>
-            <SearchableProjectPicker
-              cwd={draft.cwd}
-              recents={recents}
-              disabled={!!draft.id && draft.runInBackground}
-              onSelectProject={(cwd) => {
-                if (!draft.id || !draft.runInBackground)
-                  onChange({ ...draft, cwd, sessionFolderId: "" });
-              }}
-            />
-          </div>
-        </header>
-        {historyAvailable ? (
-          <div
-            role="tablist"
-            aria-label={t("Automation view")}
-            className="mt-1 flex h-9 items-stretch gap-1"
-          >
-            <PageTab
-              id={settingsTabId}
-              controls={tabPanelId}
-              label={t("Settings")}
-              selected={!showingHistory}
-              onSelect={() => setTab("settings")}
-            />
-            <PageTab
-              id={historyTabId}
-              controls={tabPanelId}
-              label={t("Run history")}
-              selected={showingHistory}
-              onSelect={() => setTab("history")}
-            />
-          </div>
-        ) : (
-          <div className="pb-2" />
-        )}
-      </div>
-
-      <div
-        ref={lockOverscroll}
-        inert={saving}
-        id={historyAvailable ? tabPanelId : undefined}
-        role={historyAvailable ? "tabpanel" : undefined}
-        aria-labelledby={
-          historyAvailable ? (showingHistory ? historyTabId : settingsTabId) : undefined
-        }
-        className="automation-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"
-      >
-        {!showingHistory ? (
-          <div className="automation-content automation-editor-grid">
-            <section className="automation-prompt">
-              <div className="flex items-center gap-1">
-                <SectionTitle>{t("Instructions")}</SectionTitle>
-                <InfoPopover className="shrink-0">
-                  <p>{t("Skills, @file references, and built-in commands work here.")}</p>
-                </InfoPopover>
-              </div>
-              <div
-                data-ui-focus-group=""
-                className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) has-focus:border-(--ui-tone-neutral-border)"
-              >
-                <PromptField
-                  value={draft.prompt}
-                  harness={draft.harness}
-                  cwd={draft.cwd}
-                  onChange={(prompt) => update("prompt", prompt)}
-                />
-                <div className="flex items-center gap-1 px-2 pb-2">
-                  <div className="flex min-w-0 flex-1 items-center overflow-x-auto">
-                    <div className="flex shrink-0 items-center gap-1">
-                      <ModelPicker
-                        harness={draft.harness}
-                        model={draft.model}
-                        values={draft.modelSettings}
-                        project={draft.cwd}
-                        onChange={(harness, model) => onChange({ ...draft, harness, model })}
-                        onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {!draft.id || dirty ? (
+                  <Button type="button" onClick={onClose} disabled={saving} variant="secondary">
+                    {draft.id ? t("Reset") : t("Cancel")}
+                  </Button>
+                ) : null}
+                {onRun ? (
+                  <Button
+                    type="button"
+                    onClick={onRun}
+                    loading={running}
+                    disabled={saving}
+                    startIcon={<Play className="icon-sm" />}
+                    variant="secondary"
+                  >
+                    {t("Run now")}
+                  </Button>
+                ) : null}
+                <Button
+                  type="submit"
+                  disabled={!valid || saving || (!!draft.id && !dirty)}
+                  variant="primary"
+                  loading={saving}
+                >
+                  {draft.id ? t("Save") : t("Create")}
+                </Button>
+                {onDelete ? (
+                  <>
+                    <Button
+                      ref={menuButton}
+                      type="button"
+                      aria-haspopup="menu"
+                      aria-expanded={menuOpen}
+                      disabled={saving}
+                      onClick={() => setMenuOpen((open) => !open)}
+                      variant="ghost"
+                      iconOnly
+                      label={t("Automation actions")}
+                    >
+                      <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+                    </Button>
+                    {menuOpen ? (
+                      <DropdownMenu
+                        anchor={menuButton}
+                        label={t("Automation actions")}
+                        onClose={() => setMenuOpen(false)}
+                        returnFocusRef={menuButton}
+                        items={[
+                          {
+                            kind: "item",
+                            id: "delete",
+                            label: t("Delete automation"),
+                            icon: <Trash2 />,
+                            danger: true,
+                            disabled: deleteDisabled,
+                            title: deleteDisabled
+                              ? t(
+                                  "Wait for the current operation to finish before deleting this automation.",
+                                )
+                              : undefined,
+                          },
+                        ]}
+                        onPick={() => onDelete()}
                       />
-                      {/* Chat settings "Extras summary: beside" also shows the active options here; the menu stays complete. */}
-                      {extrasBeside ? (
-                        <ModelControlPills
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            </div>
+            <div
+              inert={saving}
+              className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-ui-caption text-(--ui-text-muted)"
+            >
+              <span className="flex shrink-0 items-center gap-2">
+                <ToggleSwitch
+                  label={draft.enabled ? t("Pause automation") : t("Enable automation")}
+                  on={draft.enabled}
+                  onChange={(enabled) => update("enabled", enabled)}
+                  compact
+                />
+                <span>{draft.enabled ? t("Active") : t("Inactive")}</span>
+              </span>
+              <SearchableProjectPicker
+                cwd={draft.cwd}
+                recents={recents}
+                disabled={!!draft.id && draft.runInBackground}
+                onSelectProject={(cwd) => {
+                  if (!draft.id || !draft.runInBackground)
+                    onChange({ ...draft, cwd, sessionFolderId: "" });
+                }}
+              />
+            </div>
+          </header>
+          {historyAvailable ? (
+            <TabList label={t("Automation view")} className="mt-1">
+              <Tab value="settings">{t("Settings")}</Tab>
+              <Tab value="history">{t("Run history")}</Tab>
+            </TabList>
+          ) : (
+            <div className="pb-2" />
+          )}
+        </div>
+
+        <Scroll
+          ref={lockOverscroll}
+          inert={saving}
+          className="automation-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"
+        >
+          {!showingHistory ? (
+            <div className="automation-content automation-editor-grid">
+              <section>
+                <SectionLabel
+                  as="h2"
+                  className="px-1"
+                  actions={
+                    <InfoPopover className="shrink-0">
+                      <p>{t("Skills, @file references, and built-in commands work here.")}</p>
+                    </InfoPopover>
+                  }
+                >
+                  {t("Instructions")}
+                </SectionLabel>
+                <div className="mt-2">
+                  <InstructionsField
+                    value={draft.prompt}
+                    harness={draft.harness}
+                    cwd={draft.cwd}
+                    onChange={(prompt) => update("prompt", prompt)}
+                    toolbarLeading={
+                      <div className="flex shrink-0 items-center gap-1">
+                        <ModelPicker
                           harness={draft.harness}
                           model={draft.model}
                           values={draft.modelSettings}
+                          project={draft.cwd}
+                          onChange={(harness, model) => onChange({ ...draft, harness, model })}
                           onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
                         />
-                      ) : null}
-                      {draft.harness !== "fx" ? (
-                        <AccessPicker
-                          value={draft.runtimeMode}
-                          onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
-                        />
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <div className="automation-editor-side">
-              <section>
-                <SectionTitle>{t("Triggers")}</SectionTitle>
-                {draft.triggers.some(
-                  (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
-                ) ? (
-                  <p className="mt-2 px-1 text-ui-caption text-(--ui-text-muted)">
-                    {t(
-                      "Task and social events run while this app is open. Connect the source machine; social accounts must be linked to this project.",
-                    )}
-                  </p>
-                ) : null}
-                {draft.triggers.length > 0 ? (
-                  <ul className="mt-1 px-2">
-                    {draft.triggers.map((trigger) => (
-                      <li key={trigger.id}>
-                        <TriggerRow
-                          trigger={trigger}
-                          cwd={draft.cwd}
-                          background={draft.runInBackground}
-                          machineId={backgroundMachineId}
-                          onChange={updateTrigger}
-                          onRemove={() =>
-                            setTriggers(draft.triggers.filter((entry) => entry.id !== trigger.id))
-                          }
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <div className="mt-2">
-                  <SearchableSelect
-                    label={t("Add Trigger")}
-                    value=""
-                    placeholder={t("Add Trigger")}
-                    options={triggerOptions}
-                    onChange={selectTrigger}
-                    disabled={draft.triggers.length >= 20}
-                    searchPlaceholder={t("Search triggers")}
+                        {/* Chat settings "Extras summary: beside" also shows the active options here; the menu stays complete. */}
+                        {extrasBeside ? (
+                          <ModelControlPills
+                            harness={draft.harness}
+                            model={draft.model}
+                            values={draft.modelSettings}
+                            onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+                          />
+                        ) : null}
+                        {draft.harness !== "fx" ? (
+                          <AccessPicker
+                            value={draft.runtimeMode}
+                            onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+                          />
+                        ) : null}
+                      </div>
+                    }
                   />
                 </div>
               </section>
 
-              <section>
-                <SectionTitle>{t("Session")}</SectionTitle>
-                <div className="mt-1">
-                  <SettingsRow
-                    label={t("Runs")}
-                    hint={
-                      backgroundMachine
-                        ? "In the background keeps running with this app closed"
-                        : "Background runs need the project’s machine connected"
-                    }
-                  >
-                    <SettingsSelect
-                      label={t("Runs")}
-                      value={draft.runInBackground ? "background" : "app"}
-                      disabled={draft.id != null || !backgroundMachine}
-                      options={[
-                        {
-                          value: "app",
-                          get label() {
-                            return t("While this app is open");
-                          },
-                        },
-                        {
-                          value: "background",
-                          get label() {
-                            return t("In the background on {p0}", {
-                              p0: backgroundMachine ?? "its machine",
-                            });
-                          },
-                        },
-                      ]}
-                      onChange={(value) => update("runInBackground", value === "background")}
+              <div className="automation-editor-side">
+                <section>
+                  <SectionLabel as="h2" className="px-1">
+                    {t("Triggers")}
+                  </SectionLabel>
+                  {draft.triggers.some(
+                    (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
+                  ) ? (
+                    <p className="mt-2 px-1 text-ui-caption text-(--ui-text-muted)">
+                      {t(
+                        "Task and social events run while this app is open. Connect the source machine; social accounts must be linked to this project.",
+                      )}
+                    </p>
+                  ) : null}
+                  {draft.triggers.length > 0 ? (
+                    <ul className="mt-1 px-2">
+                      {draft.triggers.map((trigger) => (
+                        <li key={trigger.id}>
+                          <TriggerRow
+                            trigger={trigger}
+                            cwd={draft.cwd}
+                            background={draft.runInBackground}
+                            machineId={backgroundMachineId}
+                            onChange={updateTrigger}
+                            onRemove={() =>
+                              setTriggers(draft.triggers.filter((entry) => entry.id !== trigger.id))
+                            }
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="mt-2">
+                    <SearchableSelect
+                      label={t("Add Trigger")}
+                      value=""
+                      placeholder={t("Add Trigger")}
+                      options={triggerOptions}
+                      onChange={selectTrigger}
+                      disabled={draft.triggers.length >= 20}
+                      searchPlaceholder={t("Search triggers")}
                     />
-                  </SettingsRow>
-                  {draft.runInBackground ? null : (
-                    <>
-                      <SettingsRow label={t("Working copy")} hint="This repo, or a fresh worktree">
-                        <SettingsSelect
-                          label={t("Working copy")}
-                          value={
-                            draft.workspaceMode === "existing"
-                              ? "current"
-                              : (draft.workspaceMode ?? "automatic")
-                          }
-                          options={WORKSPACE_OPTIONS}
-                          onChange={(value) =>
-                            onChange({
-                              ...draft,
-                              workspaceMode:
-                                value === "automatic"
-                                  ? undefined
-                                  : (value as "current" | "worktree"),
-                              worktreeCwd: "",
-                              reuseSession: value === "current" && draft.reuseSession,
-                            })
-                          }
-                        />
-                      </SettingsRow>
-                      <SettingsRow
-                        label={t("Conversation")}
-                        hint="New chat, or continue the last run"
-                      >
-                        <SettingsSelect
-                          label={t("Conversation")}
-                          value={draft.reuseSession ? "reuse" : "fresh"}
-                          disabled={draft.workspaceMode === "worktree"}
-                          options={CONVERSATION_OPTIONS}
-                          onChange={(value) => update("reuseSession", value === "reuse")}
-                        />
-                      </SettingsRow>
-                      <SettingsRow
-                        label={t("Session folder")}
-                        hint="Where runs appear in the sidebar"
-                      >
-                        <SearchableSelect
-                          variant="pill"
-                          searchable
-                          align="end"
-                          label={t("Session folder")}
-                          value={draft.sessionFolderId}
-                          options={folderOptions}
-                          onChange={(value) => update("sessionFolderId", value)}
-                        />
-                      </SettingsRow>
-                    </>
-                  )}
-                </div>
-              </section>
+                  </div>
+                </section>
 
-              <details className="group/advanced">
-                <summary className="flex min-h-10 cursor-default list-none items-center justify-between gap-3 px-1">
-                  <span className="min-w-0">
-                    <span className="block text-ui-caption font-medium text-(--ui-text-muted)">
-                      {t("Advanced")}
+                <section>
+                  <SectionLabel as="h2" className="px-1">
+                    {t("Session")}
+                  </SectionLabel>
+                  <div className="mt-1">
+                    <SettingsRow
+                      label={t("Runs")}
+                      hint={
+                        backgroundMachine
+                          ? "In the background keeps running with this app closed"
+                          : "Background runs need the project’s machine connected"
+                      }
+                    >
+                      <SettingsSelect
+                        label={t("Runs")}
+                        value={draft.runInBackground ? "background" : "app"}
+                        disabled={draft.id != null || !backgroundMachine}
+                        options={[
+                          {
+                            value: "app",
+                            get label() {
+                              return t("While this app is open");
+                            },
+                          },
+                          {
+                            value: "background",
+                            get label() {
+                              return t("In the background on {p0}", {
+                                p0: backgroundMachine ?? "its machine",
+                              });
+                            },
+                          },
+                        ]}
+                        onChange={(value) => update("runInBackground", value === "background")}
+                      />
+                    </SettingsRow>
+                    {draft.runInBackground ? null : (
+                      <>
+                        <SettingsRow label={t("Working copy")} hint="This repo, or a fresh worktree">
+                          <SettingsSelect
+                            label={t("Working copy")}
+                            value={
+                              draft.workspaceMode === "existing"
+                                ? "current"
+                                : (draft.workspaceMode ?? "automatic")
+                            }
+                            options={WORKSPACE_OPTIONS}
+                            onChange={(value) =>
+                              onChange({
+                                ...draft,
+                                workspaceMode:
+                                  value === "automatic"
+                                    ? undefined
+                                    : (value as "current" | "worktree"),
+                                worktreeCwd: "",
+                                reuseSession: value === "current" && draft.reuseSession,
+                              })
+                            }
+                          />
+                        </SettingsRow>
+                        <SettingsRow
+                          label={t("Conversation")}
+                          hint="New chat, or continue the last run"
+                        >
+                          <SettingsSelect
+                            label={t("Conversation")}
+                            value={draft.reuseSession ? "reuse" : "fresh"}
+                            disabled={draft.workspaceMode === "worktree"}
+                            options={CONVERSATION_OPTIONS}
+                            onChange={(value) => update("reuseSession", value === "reuse")}
+                          />
+                        </SettingsRow>
+                        <SettingsRow
+                          label={t("Session folder")}
+                          hint="Where runs appear in the sidebar"
+                        >
+                          <SearchableSelect
+                            variant="pill"
+                            searchable
+                            align="end"
+                            label={t("Session folder")}
+                            value={draft.sessionFolderId}
+                            options={folderOptions}
+                            onChange={(value) => update("sessionFolderId", value)}
+                          />
+                        </SettingsRow>
+                      </>
+                    )}
+                  </div>
+                </section>
+
+                <details className="group/advanced">
+                  <summary className="flex min-h-10 cursor-default list-none items-center justify-between gap-3 px-1">
+                    <span className="min-w-0">
+                      <span className="block text-ui-caption font-medium text-(--ui-text-muted)">
+                        {t("Advanced")}
+                      </span>
+                      <span className="mt-0.5 block truncate text-ui-micro text-(--ui-text-muted)">
+                        {limitsSummary}
+                      </span>
                     </span>
-                    <span className="mt-0.5 block truncate text-ui-micro text-(--ui-text-muted)">
-                      {limitsSummary}
-                    </span>
-                  </span>
-                  <ChevronDown className="icon-sm shrink-0 text-(--ui-text-muted) transition-transform group-open/advanced:rotate-180" />
-                </summary>
-                <div className="mt-1">
-                  <SettingsRow
-                    label={t("Missed-run grace")}
-                    hint={
-                      draft.runInBackground
-                        ? "Background runs catch up within 12 hours"
-                        : "Catch up if a scheduled run was missed"
-                    }
-                  >
-                    <SettingsSelect
+                    <ChevronDown className="icon-sm shrink-0 text-(--ui-text-muted) transition-transform group-open/advanced:rotate-180" />
+                  </summary>
+                  <div className="mt-1">
+                    <SettingsRow
                       label={t("Missed-run grace")}
-                      value={String(draft.runInBackground ? 720 : draft.missedRunGraceMinutes)}
-                      disabled={draft.runInBackground}
-                      options={GRACE_OPTIONS}
-                      onChange={(value) => update("missedRunGraceMinutes", Number(value))}
-                    />
-                  </SettingsRow>
-                  <SettingsRow
-                    label={t("Run time limit")}
-                    hint="Stop a run that is still going after this long"
-                  >
-                    <SettingsSelect
+                      hint={
+                        draft.runInBackground
+                          ? "Background runs catch up within 12 hours"
+                          : "Catch up if a scheduled run was missed"
+                      }
+                    >
+                      <SettingsSelect
+                        label={t("Missed-run grace")}
+                        value={String(draft.runInBackground ? 720 : draft.missedRunGraceMinutes)}
+                        disabled={draft.runInBackground}
+                        options={GRACE_OPTIONS}
+                        onChange={(value) => update("missedRunGraceMinutes", Number(value))}
+                      />
+                    </SettingsRow>
+                    <SettingsRow
                       label={t("Run time limit")}
-                      value={String(draft.maxRunMinutes)}
-                      options={RUN_TIME_LIMIT_OPTIONS}
-                      onChange={(value) => update("maxRunMinutes", Number(value))}
-                    />
-                  </SettingsRow>
-                  <SettingsRow
-                    label={t("Runs per day")}
-                    hint="Skip scheduled and event runs past this many a day"
-                  >
-                    <SettingsSelect
+                      hint="Stop a run that is still going after this long"
+                    >
+                      <SettingsSelect
+                        label={t("Run time limit")}
+                        value={String(draft.maxRunMinutes)}
+                        options={RUN_TIME_LIMIT_OPTIONS}
+                        onChange={(value) => update("maxRunMinutes", Number(value))}
+                      />
+                    </SettingsRow>
+                    <SettingsRow
                       label={t("Runs per day")}
-                      value={String(draft.maxRunsPerDay)}
-                      options={RUNS_PER_DAY_OPTIONS}
-                      onChange={(value) => update("maxRunsPerDay", Number(value))}
-                    />
-                  </SettingsRow>
-                </div>
-              </details>
-            </div>
-          </div>
-        ) : (
-          <section className="automation-content">
-            <SectionTitle>{t("Run history")}</SectionTitle>
-            {historyLoading ? (
-              <p
-                role="status"
-                className="flex items-center gap-2 p-3 text-ui-caption text-(--ui-text-muted)"
-              >
-                <LoaderCircle className="icon-xs animate-spin" />
-                {t("Loading…")}
-              </p>
-            ) : null}
-            {historyError ? (
-              <Alert tone="danger" className="mt-2">
-                <p>{historyError}</p>
-                <Button
-                  type="button"
-                  onClick={onRefreshHistory}
-                  disabled={historyLoading}
-                  variant="ghost"
-                >
-                  {t("Retry")}
-                </Button>
-              </Alert>
-            ) : null}
-            {runs.length > 0 ? (
-              <div className="mt-3 overflow-x-auto rounded-md border border-(--ui-tone-neutral-border)">
-                <div
-                  className={`${RUN_GRID} min-w-[480px] h-10 text-ui-micro text-(--ui-text-muted)`}
-                >
-                  <span>{t("Trigger")}</span>
-                  <span>{t("Triggered")}</span>
-                  <span>{t("Status")}</span>
-                  <span className="text-right">{t("Duration")}</span>
-                </div>
-                <ul className="divide-y divide-stroke border-t border-(--ui-tone-neutral-border)">
-                  {runs.slice(0, 100).map((run) => (
-                    <RunRow key={run.id} run={run} draft={draft} onOpenSession={onOpenSession} />
-                  ))}
-                </ul>
+                      hint="Skip scheduled and event runs past this many a day"
+                    >
+                      <SettingsSelect
+                        label={t("Runs per day")}
+                        value={String(draft.maxRunsPerDay)}
+                        options={RUNS_PER_DAY_OPTIONS}
+                        onChange={(value) => update("maxRunsPerDay", Number(value))}
+                      />
+                    </SettingsRow>
+                  </div>
+                </details>
               </div>
-            ) : !historyLoading && !historyError ? (
-              <EmptyState description={t("This automation has not run yet.")} />
-            ) : null}
-          </section>
-        )}
-      </div>
+            </div>
+          ) : (
+            <section className="automation-content">
+              <SectionLabel as="h2" className="px-1">
+                {t("Run history")}
+              </SectionLabel>
+              {historyLoading ? (
+                <LoadingText className="p-3" />
+              ) : null}
+              {historyError ? (
+                <InlineError
+                  className="mt-2 px-1"
+                  retry={{ onRetry: onRefreshHistory, disabled: historyLoading }}
+                >
+                  {historyError}
+                </InlineError>
+              ) : null}
+              {runs.length > 0 ? (
+                <Surface variant="outline" padding="none" className="mt-3 overflow-x-auto">
+                  <div
+                    className={`${RUN_GRID} min-w-[480px] h-10 text-ui-micro text-(--ui-text-muted)`}
+                  >
+                    <span>{t("Trigger")}</span>
+                    <span>{t("Triggered")}</span>
+                    <span>{t("Status")}</span>
+                    <span className="text-right">{t("Duration")}</span>
+                  </div>
+                  <Divider decorative />
+                  <ul className="divide-y divide-stroke">
+                    {runs.slice(0, 100).map((run) => (
+                      <RunRow key={run.id} run={run} draft={draft} onOpenSession={onOpenSession} />
+                    ))}
+                  </ul>
+                </Surface>
+              ) : !historyLoading && !historyError ? (
+                <EmptyState description={t("This automation has not run yet.")} />
+              ) : null}
+            </section>
+          )}
+        </Scroll>
+      </Tabs>
     </form>
   );
 }
 
-function PromptField({
+function InstructionsField({
   value,
   harness,
   cwd,
   onChange,
+  toolbarLeading,
 }: {
   value: string;
   harness: AutomationDraft["harness"];
   cwd: string;
   onChange: (value: string) => void;
+  toolbarLeading: ReactNode;
 }) {
   useLocale();
   return (
@@ -1640,16 +1628,13 @@ function PromptField({
       harness={harness}
       cwd={cwd}
       onChange={onChange}
-      focusOwner="group"
+      surface="raised"
+      minRows={6}
+      toolbarLeading={toolbarLeading}
       label={t("Instructions")}
       placeholder={t("Tell the agent what to do when this automation runs…")}
     />
   );
-}
-
-function SectionTitle({ children }: { children: ReactNode }) {
-  useLocale();
-  return <h2 className="px-1 text-ui-caption font-medium text-(--ui-text-muted)">{children}</h2>;
 }
 
 function SettingsRow({
@@ -1698,35 +1683,6 @@ function SettingsSelect({
   );
 }
 
-function PageTab({
-  id,
-  controls,
-  label,
-  selected,
-  onSelect,
-}: {
-  id: string;
-  controls: string;
-  label: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  useLocale();
-  return (
-    <Button
-      id={id}
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      aria-controls={controls}
-      onClick={onSelect}
-      variant="tab"
-    >
-      {label}
-    </Button>
-  );
-}
-
 function ToggleSwitch({
   label,
   on,
@@ -1742,11 +1698,10 @@ function ToggleSwitch({
   busy?: boolean;
   disabled?: boolean;
 }) {
-  return (
+  const control = (
     <Switch
       label={compact ? undefined : label}
       aria-label={label}
-      title={compact ? label : undefined}
       checked={on}
       disabled={disabled}
       aria-busy={busy || undefined}
@@ -1757,6 +1712,7 @@ function ToggleSwitch({
       compact={compact}
     />
   );
+  return compact ? <Tooltip label={label}>{control}</Tooltip> : control;
 }
 
 const WORKSPACE_OPTIONS = [

@@ -3,7 +3,14 @@ import { Switch } from "../../../shared/ui/Switch";
 import { lazy, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Check, CircleDashed, CodeBlock } from "../../../shared/ui/icons";
+import { ModePreview, type Tint } from "../../settings/ui/AppearancePreviews";
+import { RadioTiles } from "../../settings/ui/RadioTiles";
+import { CANVAS_BACKGROUND_DEFAULT } from "../../settings/model/appearancePreferences";
 import {
+  ACCENT_COLOR_DEFAULT,
+  THEME_DARK_LIGHTNESS_DEFAULT,
+  THEME_HUE_DEFAULT,
+  THEME_SATURATION_DEFAULT,
   applyThemePreference,
   loadThemePreference,
   saveThemePreference,
@@ -30,6 +37,13 @@ import {
   workspaceFeatureSettings,
 } from "../../settings/model/workspaceFeatures";
 import { WORKSPACE_FEATURE_CHOICES } from "../../settings/ui/WorkspaceFeatureSettings";
+/** The default palette, shown in the mode tiles before the user changes it in Settings. */
+const DEFAULT_TINT: Tint = {
+  hue: THEME_HUE_DEFAULT,
+  saturation: THEME_SATURATION_DEFAULT,
+  lightness: THEME_DARK_LIGHTNESS_DEFAULT,
+  accent: ACCENT_COLOR_DEFAULT,
+};
 const OnboardingCrewPreview = lazy(() =>
   import("./OnboardingCrewPreview").then((module) => ({ default: module.OnboardingCrewPreview })),
 );
@@ -78,19 +92,19 @@ export function OnboardingWorkspace() {
       <div className="onboarding-scroll">
         <div className="onboarding-feature-grid">
           <div className="onboarding-feature" data-fixed="">
-            <CodeBlock aria-hidden className="size-5" />
+            <CodeBlock aria-hidden className="icon-lg" />
             <div>
               <strong>{t("Coding essentials")}</strong>
               <small>{t("AI chat, files, terminal and Git")}</small>
             </div>
             <span className="onboarding-included">
-              <Check aria-hidden className="size-3.5" />
+              <Check aria-hidden className="icon-sm" />
               {t("Included")}
             </span>
           </div>
           {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description, icon: Icon }) => (
             <label className="onboarding-feature" key={id}>
-              <Icon aria-hidden className="size-5" />
+              <Icon aria-hidden className="icon-lg" />
               <div>
                 <strong>{t(label)}</strong>
                 <small>{t(description)}</small>
@@ -168,66 +182,69 @@ export function OnboardingAppearance() {
       </div>
       <div className="onboarding-scroll">
         <Section title={t("Appearance")}>
-          <div className="onboarding-mode-grid" role="radiogroup" aria-label={t("Appearance")}>
-            {modes.map(({ value, label }) => (
-              <label className="onboarding-choice onboarding-mode" key={value}>
-                <input
-                  type="radio"
-                  name="onboarding-appearance"
-                  id={`onboarding-appearance-${value}`}
-                  value={value}
-                  checked={theme === value}
-                  onChange={() => changeTheme(value)}
-                />
-                <span className="onboarding-mode-preview" aria-hidden="true">
-                  {(value === "system" ? ["light", "dark"] : [value, value]).map((tone, index) => (
-                    <i key={index} data-tone={tone} />
-                  ))}
-                </span>
-                <span className="onboarding-choice-text">
-                  <strong>{label}</strong>
-                </span>
-              </label>
-            ))}
-          </div>
+          <RadioTiles
+            label={t("Appearance")}
+            className="onboarding-mode-grid"
+            tileClassName="onboarding-choice onboarding-mode"
+            value={theme}
+            onChange={changeTheme}
+            options={modes.map(({ value, label }) => ({
+              value,
+              id: `onboarding-appearance-${value}`,
+              children: (
+                <>
+                  <ModePreview
+                    mode={value}
+                    tint={DEFAULT_TINT}
+                    pure={CANVAS_BACKGROUND_DEFAULT === "pure"}
+                  />
+                  <span className="onboarding-choice-text">
+                    <strong>{label}</strong>
+                  </span>
+                </>
+              ),
+            }))}
+          />
         </Section>
         <Section title={t("Agent crew")}>
-          <div className="onboarding-crew-grid" role="radiogroup" aria-label={t("Agent crew")}>
-            {crewChoices.map(({ value, title, caption, detail }) => (
-              <label
-                className="onboarding-choice onboarding-crew-card"
-                key={value}
-                title={detail}
-              >
-                <input
-                  type="radio"
-                  name="onboarding-crew"
-                  value={value}
-                  checked={crew === value}
-                  onChange={() => {
-                    if (value === "none") saveCrewSceneEnabled(false);
-                    else {
-                      saveCrewTheme(value);
-                      saveCrewSceneEnabled(true);
-                    }
-                  }}
-                />
-                {value === "none" ? (
-                  <span className="onboarding-crew-preview onboarding-crew-none" aria-hidden="true">
-                    <CircleDashed className="size-5" />
+          <RadioTiles
+            label={t("Agent crew")}
+            className="onboarding-crew-grid"
+            tileClassName="onboarding-choice onboarding-crew-card"
+            value={crew}
+            onChange={(value) => {
+              if (value === "none") saveCrewSceneEnabled(false);
+              else {
+                saveCrewTheme(value);
+                saveCrewSceneEnabled(true);
+              }
+            }}
+            options={crewChoices.map(({ value, title, caption, detail }) => ({
+              value,
+              id: `onboarding-crew-${value}`,
+              tooltip: detail,
+              children: (
+                <>
+                  {value === "none" ? (
+                    <span
+                      className="onboarding-crew-preview onboarding-crew-none"
+                      aria-hidden="true"
+                    >
+                      <CircleDashed className="icon-lg" />
+                    </span>
+                  ) : (
+                    <Suspense fallback={<span className="onboarding-crew-preview" />}>
+                      <OnboardingCrewPreview theme={value} />
+                    </Suspense>
+                  )}
+                  <span className="onboarding-choice-text">
+                    <strong>{title}</strong>
+                    <small>{caption}</small>
                   </span>
-                ) : (
-                  <Suspense fallback={<span className="onboarding-crew-preview" />}>
-                    <OnboardingCrewPreview theme={value} />
-                  </Suspense>
-                )}
-                <span className="onboarding-choice-text">
-                  <strong>{title}</strong>
-                  <small>{caption}</small>
-                </span>
-              </label>
-            ))}
-          </div>
+                </>
+              ),
+            }))}
+          />
         </Section>
         <Section title={t("Behavior")}>
           <SwitchRow

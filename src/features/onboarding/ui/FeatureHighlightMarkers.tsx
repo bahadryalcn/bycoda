@@ -90,6 +90,7 @@ export function FeatureHighlightMarkers() {
     };
   }, [key]);
   if (!key) return null;
+  // Markers are DOM decorations anchored to arbitrary elements of the app, not a shared overlay.
   return createPortal(
     <>
       {spots

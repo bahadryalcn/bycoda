@@ -2,9 +2,8 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { useT } from "../../../shared/i18n";
-import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
-import { LAYER } from "../../../shared/lib/layers";
+import { useState, useSyncExternalStore } from "react";
+import { ToastSlot } from "../../../shared/ui/ToastRegion";
 import {
   loadNotificationsEnabled,
   NOTIFICATIONS_CHANGE_EVENT,
@@ -33,7 +32,6 @@ export function ReminderNotices({
   onDismiss,
   onRetry,
   onOpenSettings,
-  onHeightChange,
 }: {
   reminders: SessionReminder[];
   error: string | null;
@@ -42,10 +40,8 @@ export function ReminderNotices({
   onDismiss: (ids: readonly string[], expectedDueAt?: number) => void;
   onRetry: () => void;
   onOpenSettings: () => void;
-  onHeightChange?: (height: number) => void;
 }) {
   const t = useT();
-  const panelRef = useRef<HTMLElement>(null);
   const [snooze, setSnooze] = useState<{
     reminder: SessionReminder;
     x: number;
@@ -53,37 +49,20 @@ export function ReminderNotices({
   } | null>(null);
   const notifications = useSyncExternalStore(subscribeNotifications, loadNotificationsEnabled);
   const visible = reminders.length > 0 || error != null;
-  useLayoutEffect(() => {
-    const panel = panelRef.current;
-    if (!panel || !onHeightChange) return;
-    const measure = () => onHeightChange(panel.offsetHeight);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(panel);
-    return () => {
-      observer.disconnect();
-      onHeightChange(0);
-    };
-  }, [visible, onHeightChange]);
   if (!visible) return null;
 
-  return createPortal(
-    <>
+  return (
+    <ToastSlot placement="top-end" order={-1}>
       <section
-        ref={panelRef}
         aria-label={t("Due reminders")}
-        style={{ zIndex: LAYER.popover - 1 }}
-        className="fixed top-3 right-3 flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-floating) text-(--ui-tone-neutral-fg) shadow-(--ui-elevation-floating)"
+        className="relative flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-floating) text-(--ui-tone-neutral-fg) shadow-(--ui-elevation-floating)"
       >
         <div className="flex min-h-7 items-center gap-2 px-3 pt-2">
           <Clock className="icon-sm shrink-0 text-(--ui-text-secondary)" aria-hidden />
           <span className="flex-1 text-ui-caption font-medium text-(--ui-text-secondary)">
             {t("Due reminders")}
           </span>
-          <span
-            role="status"
-            className="text-ui-caption tabular-nums text-(--ui-text-secondary)"
-          >
+          <span role="status" className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
             {reminders.length || ""}
           </span>
         </div>
@@ -182,7 +161,6 @@ export function ReminderNotices({
           }}
         />
       ) : null}
-    </>,
-    document.body,
+    </ToastSlot>
   );
 }

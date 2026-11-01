@@ -1,5 +1,7 @@
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { Button } from "../../../shared/ui/Button";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { CrewsSettings } from "../../crews/ui/CrewsSettings";
@@ -164,7 +166,7 @@ export function SettingsView({
   const categoryGroups = settingsSectionsByGroup();
   const categories = categoryGroups.flatMap((group) => group.sections);
   const [horizontalNavigation, setHorizontalNavigation] = useState(false);
-  const navigationRef = useRef<HTMLElement>(null);
+  const navigationRef = useRef<HTMLDivElement>(null);
   // A reveal belongs to the section it targets; it is dropped when another section opens.
   const [reveal, setReveal] = useState<{ id: string | null; section: SettingsSectionId }>({
     id: anchor,
@@ -395,12 +397,11 @@ export function SettingsView({
       className="bycoda-settings bycoda-settings-workbench flex min-h-0 min-w-0 flex-1 flex-col text-content"
     >
       {embedded ? null : (
-        <div
-          className="bycoda-settings-titlebar flex min-h-10 shrink-0 select-none items-center border-b border-stroke"
-          data-tauri-drag-region="deep"
-        >
-          {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
+        <PaneHeader
+          className="bycoda-settings-titlebar shrink-0 select-none"
+          dragRegion
+          chromeInset={!besideRail}
+          leading={
             <Button
               variant="ghost"
               size="sm"
@@ -408,233 +409,214 @@ export function SettingsView({
               onClick={onClose}
               aria-label={t("Back to workspace")}
               tooltip={t("Back to workspace")}
-              data-tauri-drag-region="false"
             >
               <ArrowLeft aria-hidden="true" strokeWidth={1.75} />
               <span className="truncate">{t("Back to workspace")}</span>
             </Button>
-            <span className="min-w-0 truncate text-(--ui-text-secondary)">
-              {section === "usage" ? t("Usage / This machine") : t("Settings")}
-            </span>
-          </div>
-          {IS_MAC ? null : <WindowControls />}
-        </div>
+          }
+          title={section === "usage" ? t("Usage / This machine") : t("Settings")}
+          titleAs="div"
+          trailing={IS_MAC ? null : <WindowControls />}
+        />
       )}
 
       <div className="bycoda-settings-body">
-        <nav
-          ref={navigationRef}
-          className="bycoda-settings-categories"
-          role="tablist"
-          aria-orientation={horizontalNavigation ? "horizontal" : "vertical"}
-          aria-label={t("Settings categories")}
-        >
-          {categoryGroups.map((group) => (
-            <div
-              key={group.id}
-              className="bycoda-settings-category-group"
-              role="presentation"
-            >
-              <span className="bycoda-settings-category-label" aria-hidden="true">
-                {group.label}
-              </span>
-              <div
-                className="bycoda-settings-category-tabs"
-                role="group"
-                aria-label={group.label}
-              >
-                {group.sections.map((category) => {
-                  const index = categories.findIndex((item) => item.id === category.id);
-                  const Icon = SETTINGS_SECTION_ICONS[category.id];
-                  return (
-                    <Button
-                      variant="item"
-                      motion="none"
-                      align="start"
-                      fullWidth
-                      selected={category.id === section}
-                      tooltip={category.label}
-                      key={category.id}
-                      ref={(node) => {
-                        if (node) categoryRefs.current.set(category.id, node);
-                        else categoryRefs.current.delete(category.id);
-                      }}
-                      type="button"
-                      role="tab"
-                      id={`${panelId}-${category.id}`}
-                      aria-selected={category.id === section}
-                      aria-controls={panelId}
-                      tabIndex={category.id === section ? 0 : -1}
-                      disabled={!onSelectSection && category.id !== section}
-                      data-category-group={category.group}
-                      onClick={() => selectCategory(category.id)}
-                      onKeyDown={(event) => {
-                        if (!onSelectSection) return;
-                        let next = index;
-                        if (event.key === (horizontalNavigation ? "ArrowRight" : "ArrowDown"))
-                          next = (index + 1) % categories.length;
-                        else if (event.key === (horizontalNavigation ? "ArrowLeft" : "ArrowUp"))
-                          next = (index - 1 + categories.length) % categories.length;
-                        else if (event.key === "Home") next = 0;
-                        else if (event.key === "End") next = categories.length - 1;
-                        else return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        const target = categories[next]!;
-                        categoryRefs.current.get(target.id)?.focus();
-                        selectCategory(target.id);
-                      }}
-                    >
-                      <Icon aria-hidden className="icon-sm" strokeWidth={1.75} />
-                      <span>{category.label}</span>
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        <div
-          ref={panelRef}
+        <Tabs
+          value={section}
+          onValueChange={(next) => selectCategory(next as SettingsSectionId)}
+          orientation={horizontalNavigation ? "horizontal" : "vertical"}
+          variant="item"
+          size="md"
+          panels="shared"
           id={panelId}
-          role="tabpanel"
-          aria-labelledby={`${panelId}-${section}`}
-          data-settings-full={section === "skills" || undefined}
-          className="bycoda-settings-panel"
         >
-          {section === "skills" ? (
-            <RevealedSetting.Provider value={revealed}>
-              {pageBar}
-              <SkillsPage
-                key={cwd}
-                cwd={cwd}
-                header={<span className="sr-only">{settingsSectionLabel(section)}</span>}
-              />
-            </RevealedSetting.Provider>
-          ) : (
-            <RevealedSetting.Provider value={revealed}>
-              <PageAutomaticSaveHint.Provider value={AUTOMATIC_SAVE_SECTIONS.includes(section)}>
-                <SettingsPageResetRegistry.Provider value={setRegisteredReset}>
-                  <div
-                    key={section}
-                    data-settings-scroller
-                    ref={lockOverscroll}
-                    className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
-                  >
-                    {pageBar}
+          <TabList
+            ref={navigationRef}
+            className="bycoda-settings-categories"
+            label={t("Settings categories")}
+          >
+            {categoryGroups.map((group) => (
+              <div
+                key={group.id}
+                className="bycoda-settings-category-group"
+                role="presentation"
+              >
+                <span className="bycoda-settings-category-label" aria-hidden="true">
+                  {group.label}
+                </span>
+                <div
+                  className="bycoda-settings-category-tabs"
+                  role="group"
+                  aria-label={group.label}
+                >
+                  {group.sections.map((category) => {
+                    const Icon = SETTINGS_SECTION_ICONS[category.id];
+                    return (
+                      <Tab
+                        key={category.id}
+                        value={category.id}
+                        align="start"
+                        fullWidth
+                        tooltip={category.label}
+                        ref={(node) => {
+                          if (node) categoryRefs.current.set(category.id, node);
+                          else categoryRefs.current.delete(category.id);
+                        }}
+                        type="button"
+                        controls={panelId}
+                        disabled={!onSelectSection && category.id !== section}
+                        data-category-group={category.group}
+                        icon={<Icon aria-hidden className="icon-sm" strokeWidth={1.75} />}
+                      >
+                        {category.label}
+                      </Tab>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </TabList>
+
+          <TabPanel
+            ref={panelRef}
+            id={panelId}
+            tabIndex={undefined}
+            data-settings-full={section === "skills" || undefined}
+            className="bycoda-settings-panel"
+          >
+            {section === "skills" ? (
+              <RevealedSetting.Provider value={revealed}>
+                {pageBar}
+                <SkillsPage
+                  key={cwd}
+                  cwd={cwd}
+                  header={<span className="sr-only">{settingsSectionLabel(section)}</span>}
+                />
+              </RevealedSetting.Provider>
+            ) : (
+              <RevealedSetting.Provider value={revealed}>
+                <PageAutomaticSaveHint.Provider value={AUTOMATIC_SAVE_SECTIONS.includes(section)}>
+                  <SettingsPageResetRegistry.Provider value={setRegisteredReset}>
                     <div
-                      data-settings-section={section}
-                      className="bycoda-settings-content bycoda-settings-form min-w-0 w-full"
+                      key={section}
+                      data-settings-scroller
+                      ref={lockOverscroll}
+                      className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
                     >
-                      {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
-                      {section === "crews" ? (
-                        <div className="settings-topics">
-                          <CrewsSettings
-                            cwd={cwd}
-                            onOpen={
-                              onOpenBackgroundSession
-                                ? async (target) => {
-                                    await onOpenBackgroundSession(target);
-                                    onClose();
-                                  }
-                                : undefined
-                            }
-                          />
-                        </div>
-                      ) : null}
-                      {section === "connections" ? (
-                        <>
-                          <ConnectionsSettings />
-                        </>
-                      ) : null}
-                      {section === "appearance" ? <AppearancePage appearance={appearance} /> : null}
-                      {section === "workspace" ? (
-                        <WorkspacePage>
-                          <Group title={t("Explorer")} layout="full">
-                            <Row
-                              id="show-excluded-files"
-                              label={t("Show excluded files")}
-                              feedback={<AppearanceSaveFeedback settingIds={["show-excluded-files"]} />}
-                              description={t(
-                                "Show files and folders Git excludes, such as build output and dependencies, in the explorer.",
-                              )}
-                            >
-                              <Toggle
-                                label={t("Show excluded files")}
-                                on={appearance.showExcludedFiles}
-                                onChange={appearance.onShowExcludedFiles}
-                              />
-                            </Row>
-                          </Group>
-                          <WorkspaceEditorSettings />
-                        </WorkspacePage>
-                      ) : null}
-                      {section === "notifications" ? (
-                        <div className="settings-topics">
-                          <NotificationAlerts />
-                          <div
-                            id={settingDomId("project-notifications")}
-                            data-setting-id="project-notifications"
-                          >
-                            <ProjectNotificationSettings
+                      {pageBar}
+                      <div
+                        data-settings-section={section}
+                        className="bycoda-settings-content bycoda-settings-form min-w-0 w-full"
+                      >
+                        {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
+                        {section === "crews" ? (
+                          <div className="settings-topics">
+                            <CrewsSettings
                               cwd={cwd}
-                              recents={recents}
-                              notificationProjectPath={notificationProjectPath}
-                              notificationSettingsRequest={notificationSettingsRequest}
-                              highlighted={notificationHighlight}
+                              onOpen={
+                                onOpenBackgroundSession
+                                  ? async (target) => {
+                                      await onOpenBackgroundSession(target);
+                                      onClose();
+                                    }
+                                  : undefined
+                              }
                             />
                           </div>
-                        </div>
-                      ) : null}
-                      {section === "chat" ? <ChatPage appearance={appearance} /> : null}
-                      {section === "policies" ? <PoliciesSettings /> : null}
-                      {section === "keybindings" ? <KeybindingsPage /> : null}
-                      {section === "terminal" ? <TerminalPage /> : null}
-                      {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
-                      {section === "providers" ? <ProvidersPage cwd={cwd} recents={recents} /> : null}
-                      {section === "usage" ? <UsagePage /> : null}
-                      {section === "limits" ? <UsagePage limitsOnly /> : null}
-                      {section === "worktrees" ? (
-                        <div className="settings-topics">
-                          <SourceControlSettings />
-                          <WorktreesPage
-                            boundary
+                        ) : null}
+                        {section === "connections" ? (
+                          <>
+                            <ConnectionsSettings />
+                          </>
+                        ) : null}
+                        {section === "appearance" ? <AppearancePage appearance={appearance} /> : null}
+                        {section === "workspace" ? (
+                          <WorkspacePage>
+                            <Group title={t("Explorer")} layout="full">
+                              <Row
+                                id="show-excluded-files"
+                                label={t("Show excluded files")}
+                                feedback={<AppearanceSaveFeedback settingIds={["show-excluded-files"]} />}
+                                description={t(
+                                  "Show files and folders Git excludes, such as build output and dependencies, in the explorer.",
+                                )}
+                              >
+                                <Toggle
+                                  label={t("Show excluded files")}
+                                  on={appearance.showExcludedFiles}
+                                  onChange={appearance.onShowExcludedFiles}
+                                />
+                              </Row>
+                            </Group>
+                            <WorkspaceEditorSettings />
+                          </WorkspacePage>
+                        ) : null}
+                        {section === "notifications" ? (
+                          <div className="settings-topics">
+                            <NotificationAlerts />
+                            <div
+                              id={settingDomId("project-notifications")}
+                              data-setting-id="project-notifications"
+                            >
+                              <ProjectNotificationSettings
+                                cwd={cwd}
+                                recents={recents}
+                                notificationProjectPath={notificationProjectPath}
+                                notificationSettingsRequest={notificationSettingsRequest}
+                                highlighted={notificationHighlight}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+                        {section === "chat" ? <ChatPage appearance={appearance} /> : null}
+                        {section === "policies" ? <PoliciesSettings /> : null}
+                        {section === "keybindings" ? <KeybindingsPage /> : null}
+                        {section === "terminal" ? <TerminalPage /> : null}
+                        {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
+                        {section === "providers" ? <ProvidersPage cwd={cwd} recents={recents} /> : null}
+                        {section === "usage" ? <UsagePage /> : null}
+                        {section === "limits" ? <UsagePage limitsOnly /> : null}
+                        {section === "worktrees" ? (
+                          <div className="settings-topics">
+                            <SourceControlSettings />
+                            <WorktreesPage
+                              boundary
+                              cwd={cwd}
+                              recents={recents}
+                              liveSessions={liveSessions}
+                              onRemove={onRemoveWorktree}
+                              onCheckRemove={onCheckWorktreeRemoval}
+                              onDeleteSessions={onDeleteWorktreeSessions}
+                            />
+                          </div>
+                        ) : null}
+                        {section === "groupLock" ? (
+                          <div className="group-privacy settings-topics">
+                            <PrivacyStartupSettings />
+                            <GroupLockSettings controls={{ Group, Row, Toggle, Select }} />
+                          </div>
+                        ) : null}
+                        {section === "inbox" ? <InboxPage /> : null}
+                        {section === "archive" ? (
+                          <ArchivePage
                             cwd={cwd}
-                            recents={recents}
-                            liveSessions={liveSessions}
-                            onRemove={onRemoveWorktree}
-                            onCheckRemove={onCheckWorktreeRemoval}
-                            onDeleteSessions={onDeleteWorktreeSessions}
+                            sessions={sessions}
+                            sessionsStatus={sessionsStatus}
+                            onOpenSession={onOpenSession}
+                            onArchiveSession={onArchiveSession}
+                            onDeleteSession={onDeleteSession}
+                            onRestoreProject={onRestoreProject}
+                            onDeleteProject={onDeleteProject}
                           />
-                        </div>
-                      ) : null}
-                      {section === "groupLock" ? (
-                        <div className="group-privacy settings-topics">
-                          <PrivacyStartupSettings />
-                          <GroupLockSettings controls={{ Group, Row, Toggle, Select }} />
-                        </div>
-                      ) : null}
-                      {section === "inbox" ? <InboxPage /> : null}
-                      {section === "archive" ? (
-                        <ArchivePage
-                          cwd={cwd}
-                          sessions={sessions}
-                          sessionsStatus={sessionsStatus}
-                          onOpenSession={onOpenSession}
-                          onArchiveSession={onArchiveSession}
-                          onDeleteSession={onDeleteSession}
-                          onRestoreProject={onRestoreProject}
-                          onDeleteProject={onDeleteProject}
-                        />
-                      ) : null}
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                </SettingsPageResetRegistry.Provider>
-              </PageAutomaticSaveHint.Provider>
-            </RevealedSetting.Provider>
-          )}
-        </div>
+                  </SettingsPageResetRegistry.Provider>
+                </PageAutomaticSaveHint.Provider>
+              </RevealedSetting.Provider>
+            )}
+          </TabPanel>
+        </Tabs>
       </div>
       {pageResetDialog}
     </div>

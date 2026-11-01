@@ -1,14 +1,14 @@
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { LAYER } from "../../../shared/lib/layers";
 import { createWorktree, type Worktree } from "../model/worktrees";
 import { prettyCwd } from "../../../shared/lib/paths";
-import { Modal } from "../../../shared/ui/Modal";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { Loader } from "../../../shared/ui/icons";
 
 export function CreateWorktreeDialog({
   cwd,
@@ -33,6 +33,7 @@ export function CreateWorktreeDialog({
   const [base, setBase] = useState("HEAD");
   const [existing, setExisting] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const formId = useId();
   useEffect(() => {
     if (existing) return;
     const frame = requestAnimationFrame(() => input.current?.focus());
@@ -78,9 +79,26 @@ export function CreateWorktreeDialog({
       onClose={() => {
         if (!busy) onCancel();
       }}
+      footer={
+        <ModalActions>
+          <Button variant="ghost" motion="none" type="button" disabled={busy} onClick={onCancel}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            motion="none"
+            type="submit"
+            form={formId}
+            loading={busy}
+            disabled={busy || !name.trim()}
+          >
+            {t("Create worktree")}
+          </Button>
+        </ModalActions>
+      }
     >
-      <form className="flex flex-col gap-4 p-4" action={submit}>
-        <p className="text-[12px] text-[var(--ui-text-secondary)]">
+      <form id={formId} className="flex flex-col gap-4 p-4" action={submit}>
+        <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("An independent working copy of ")}
           {prettyCwd(cwd)}
           {t(". Existing uncommitted changes stay in their current working copy.")}
@@ -156,31 +174,12 @@ export function CreateWorktreeDialog({
           />
         )}
         {defaultRoot && (
-          <p className="break-all text-[11px] text-[var(--ui-text-muted)]">
+          <p className="break-all text-ui-micro text-(--ui-text-muted)">
             {t("Created in ")}
             {prettyCwd(defaultRoot)}
           </p>
         )}
-        {error && (
-          <p role="alert" className="text-[12px] text-danger">
-            {error}
-          </p>
-        )}
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" motion="none" type="button" disabled={busy} onClick={onCancel}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="primary"
-            motion="none"
-            type="submit"
-            disabled={busy || !name.trim()}
-            className="inline-flex items-center gap-1.5"
-          >
-            {busy && <Loader className="size-3.5 animate-spin" />}
-            {t("Create worktree")}
-          </Button>
-        </div>
+        {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>
   );

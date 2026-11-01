@@ -1,9 +1,11 @@
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { contextRatio, formatTokens, type ContextUsage } from "../model/contextUsage";
 import { formatApiTime, formatCost, type SessionUsage } from "../model/sessionUsage";
+import { Meter, meterTone } from "../../../shared/ui/Meter";
 import { Popover } from "../../../shared/ui/Popover";
+import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { Info } from "../../../shared/ui/icons";
 import type { Block } from "../model/session";
 import { completedResponseSpeed, responseSpeedFill } from "../model/responseSpeed";
@@ -12,10 +14,15 @@ import "./chat-controls.css";
 
 const NO_BLOCKS: readonly Block[] = [];
 
-/** The outer ring turns amber then red as the context window fills. */
+/** Ratios at which the meter turns amber, then red, as the context window fills. */
+const WARNING_PERCENT = 75;
+const DANGER_PERCENT = 90;
+
+/** Text tone matching the meter's own: neutral, amber, red. */
 function ringClass(ratio: number): string {
-  if (ratio >= 0.9) return "context-meter-danger";
-  if (ratio >= 0.75) return "context-meter-warning";
+  const tone = meterTone(ratio * 100, { warning: WARNING_PERCENT, danger: DANGER_PERCENT });
+  if (tone === "danger") return "context-meter-danger";
+  if (tone === "warning") return "context-meter-warning";
   return "context-meter-neutral";
 }
 
@@ -45,34 +52,24 @@ export function ContextMeter({
   empty?: boolean;
 }) {
   const t = useT();
-  const [hovered, setHovered] = useState(false);
   const [open, setOpen] = useState(false);
   const [speedInfoOpen, setSpeedInfoOpen] = useState(false);
   const speedInfoId = useId();
   const root = useRef<HTMLDivElement>(null);
-  const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  function cancelHoverClose() {
-    if (hoverCloseTimer.current !== null) {
-      clearTimeout(hoverCloseTimer.current);
-      hoverCloseTimer.current = null;
-    }
-  }
-  function enterHover() {
-    cancelHoverClose();
-    setHovered(true);
-  }
-  function leaveHover() {
-    cancelHoverClose();
-    // Give the pointer time to cross the gap to the portalled popover.
-    hoverCloseTimer.current = setTimeout(() => setHovered(false), 200);
-  }
+  // Hover and keyboard focus preview the panel; a click pins it (the Popover below).
+  const hover = useHoverCard({
+    side: "top",
+    align: "end",
+    width: 280,
+    disabled: open,
+    className: "context-meter-popover",
+    "aria-label": t("Context usage"),
+  });
   function closeActions() {
-    cancelHoverClose();
-    setHovered(false);
+    hover.close();
     setOpen(false);
     setSpeedInfoOpen(false);
   }
-  useEffect(() => () => cancelHoverClose(), []);
   const ratio = contextRatio(usage);
   // Scans the whole transcript: only redo it when the blocks change, not per keystroke.
   const speed = useMemo(() => completedResponseSpeed(contextBlocks), [contextBlocks]);
@@ -98,16 +95,129 @@ export function ContextMeter({
       ? [`${t("API time")}: ${formatApiTime(sessionUsage.apiMs)}`]
       : []),
   ].join(". ");
-  const panelOpen = hovered || open;
+  const panelOpen = hover.open || open;
   const percent = ratio === null ? t("Unknown") : `${Math.round(ratio * 100)}%`;
 
+  // Built only while a panel shows: the meter re-renders with the composer.
+  const renderPanel = () => (
+    <>
+      <div className="context-meter-heading">
+        <span>{t("Context usage")}</span>
+        <strong className={ringClass(ratio ?? 0)}>{percent}</strong>
+      </div>
+      {ratio !== null ? (
+        <Meter
+          label={t("Context usage")}
+          value={Math.round(ratio * 100)}
+          warning={WARNING_PERCENT}
+          danger={DANGER_PERCENT}
+          valueText={detail}
+          size="md"
+          className="my-3"
+        />
+      ) : null}
+      <div className="context-meter-tokens">
+        <span>
+          {usage
+            ? `${formatTokens(usage.used)}${ratio !== null ? ` / ${formatTokens(usage.window!)}` : ""}`
+            : t("Unavailable")}
+        </span>
+        {usage ? <span>{t("tokens")}</span> : null}
+      </div>
+      <section className="context-meter-speed-details" aria-label={t("Response speed")}>
+        <div className="context-meter-heading">
+          <span className="inline-flex items-center gap-1">
+            {t("Response speed")}
+            <Button
+              variant="ghost"
+              size="sm"
+              motion="none"
+              iconOnly
+              label={t("Response speed")}
+              aria-expanded={speedInfoOpen}
+              aria-controls={speedInfoId}
+              onClick={() => setSpeedInfoOpen((value) => !value)}
+            >
+              <Info className="icon-sm" />
+            </Button>
+          </span>
+          <strong>{speed ? `${speed.tps.toFixed(1)} TPS` : t("Unavailable")}</strong>
+        </div>
+        {speedInfoOpen ? (
+          <p id={speedInfoId} className="context-meter-hint">
+            {t(
+              "Average over the full turn, including tools and waiting; not live generation speed.",
+            )}
+          </p>
+        ) : null}
+      </section>
+      {agents.size > 0 ? (
+        <section className="context-meter-agents" aria-label={t("Subagents")}>
+          <div className="context-meter-heading">
+            {t("Subagents")} · {agents.size}
+          </div>
+          <ul className="context-meter-agent-list" tabIndex={0} aria-label={t("Subagents")}>
+            {[...agents].map(([id, agent]) => {
+              const agentRatio = contextRatio(agent.usage);
+              return (
+                <li key={id} className="context-meter-agent">
+                  <span className="context-meter-agent-name">{agent.name}</span>
+                  <span className="context-meter-agent-value">
+                    {agentRatio !== null ? (
+                      <span className={ringClass(agentRatio)}>{Math.round(agentRatio * 100)}%</span>
+                    ) : null}
+                    <span>
+                      {agent.usage === undefined
+                        ? t("Unavailable")
+                        : `${formatTokens(agent.usage.used)}${agentRatio !== null ? ` / ${formatTokens(agent.usage.window!)}` : ""} ${t("tokens")}`}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+      {sessionUsage ? (
+        <dl className="context-meter-stats">
+          <div>
+            <dt>{t("Cost")}</dt>
+            <dd>{formatCost(sessionUsage.costUsd)}</dd>
+          </div>
+          {sessionUsage.apiMs > 0 ? (
+            <div>
+              <dt>{t("API time")}</dt>
+              <dd>{formatApiTime(sessionUsage.apiMs)}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+      {onCompact ? (
+        <div className="context-meter-actions">
+          <Button
+            fullWidth
+            size="sm"
+            variant="secondary"
+            type="button"
+            disabled={compactDisabled}
+            tooltip={t("Compact this conversation's context")}
+            onClick={() => {
+              closeActions();
+              onCompact();
+            }}
+          >
+            {t("Compact now")}
+          </Button>
+          {compactDisabled ? (
+            <p className="context-meter-hint">{t("Wait for the current operation to finish")}</p>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+
   return (
-    <div
-      ref={root}
-      className="context-meter relative shrink-0"
-      onMouseEnter={enterHover}
-      onMouseLeave={leaveHover}
-    >
+    <div ref={root} className="context-meter relative shrink-0" {...hover.trigger}>
       <Button
         variant="ghost"
         size="sm"
@@ -116,7 +226,7 @@ export function ContextMeter({
         label={t("Context usage")}
         className="context-meter-summary"
         type="button"
-        title={t("Context usage")}
+        tooltip={t("Context usage")}
         aria-label={`${t("Context usage")}: ${percent}. ${speed ? `${t("Response speed")}: ${speed.tps.toFixed(1)} TPS. ` : ""}${label}`}
         aria-haspopup="dialog"
         aria-expanded={panelOpen}
@@ -125,7 +235,7 @@ export function ContextMeter({
       >
         <ContextSignal ratio={ratio ?? 0} working={working} tps={speed?.tps} />
       </Button>
-      {panelOpen ? (
+      {open ? (
         <Popover
           anchor={root}
           side="top"
@@ -133,137 +243,19 @@ export function ContextMeter({
           width={280}
           role="dialog"
           aria-label={t("Context usage")}
-          autoFocus={open}
-          tabIndex={open ? -1 : undefined}
+          autoFocus
+          tabIndex={-1}
           onDismiss={(reason) => {
             closeActions();
             if (reason === "escape") root.current?.querySelector("button")?.focus();
           }}
-          onMouseEnter={enterHover}
-          onMouseLeave={leaveHover}
-          onFocusCapture={() => setOpen(true)}
           className="context-meter-popover"
         >
-          <div className="context-meter-heading">
-            <span>{t("Context usage")}</span>
-            <strong className={ringClass(ratio ?? 0)}>{percent}</strong>
-          </div>
-          {ratio !== null ? (
-            <div
-              role="meter"
-              aria-label={t("Context usage")}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(ratio * 100)}
-              aria-valuetext={detail}
-              className={`context-meter-track ${ringClass(ratio)}`}
-            >
-              <div style={{ inlineSize: `${ratio * 100}%` }} />
-            </div>
-          ) : null}
-          <div className="context-meter-tokens">
-            <span>
-              {usage
-                ? `${formatTokens(usage.used)}${ratio !== null ? ` / ${formatTokens(usage.window!)}` : ""}`
-                : t("Unavailable")}
-            </span>
-            {usage ? <span>{t("tokens")}</span> : null}
-          </div>
-          <section className="context-meter-speed-details" aria-label={t("Response speed")}>
-            <div className="context-meter-heading">
-              <span className="inline-flex items-center gap-1">
-                {t("Response speed")}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  motion="none"
-                  iconOnly
-                  label={t("Response speed")}
-                  aria-expanded={speedInfoOpen}
-                  aria-controls={speedInfoId}
-                  onClick={() => setSpeedInfoOpen((value) => !value)}
-                >
-                  <Info className="size-3.5" />
-                </Button>
-              </span>
-              <strong>{speed ? `${speed.tps.toFixed(1)} TPS` : t("Unavailable")}</strong>
-            </div>
-            {speedInfoOpen ? (
-              <p id={speedInfoId} className="context-meter-hint">
-                {t(
-                  "Average over the full turn, including tools and waiting; not live generation speed.",
-                )}
-              </p>
-            ) : null}
-          </section>
-          {agents.size > 0 ? (
-            <section className="context-meter-agents" aria-label={t("Subagents")}>
-              <div className="context-meter-heading">
-                {t("Subagents")} · {agents.size}
-              </div>
-              <ul className="context-meter-agent-list" tabIndex={0} aria-label={t("Subagents")}>
-                {[...agents].map(([id, agent]) => {
-                  const agentRatio = contextRatio(agent.usage);
-                  return (
-                    <li key={id} className="context-meter-agent">
-                      <span className="context-meter-agent-name">{agent.name}</span>
-                      <span className="context-meter-agent-value">
-                        {agentRatio !== null ? (
-                          <span className={ringClass(agentRatio)}>
-                            {Math.round(agentRatio * 100)}%
-                          </span>
-                        ) : null}
-                        <span>
-                          {agent.usage === undefined
-                            ? t("Unavailable")
-                            : `${formatTokens(agent.usage.used)}${agentRatio !== null ? ` / ${formatTokens(agent.usage.window!)}` : ""} ${t("tokens")}`}
-                        </span>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ) : null}
-          {sessionUsage ? (
-            <dl className="context-meter-stats">
-              <div>
-                <dt>{t("Cost")}</dt>
-                <dd>{formatCost(sessionUsage.costUsd)}</dd>
-              </div>
-              {sessionUsage.apiMs > 0 ? (
-                <div>
-                  <dt>{t("API time")}</dt>
-                  <dd>{formatApiTime(sessionUsage.apiMs)}</dd>
-                </div>
-              ) : null}
-            </dl>
-          ) : null}
-          {onCompact ? (
-            <div className="context-meter-actions">
-              <Button
-                fullWidth
-                size="sm"
-                variant="secondary"
-                type="button"
-                disabled={compactDisabled}
-                title={t("Compact this conversation's context")}
-                onClick={() => {
-                  closeActions();
-                  onCompact();
-                }}
-              >
-                {t("Compact now")}
-              </Button>
-              {compactDisabled ? (
-                <p className="context-meter-hint">
-                  {t("Wait for the current operation to finish")}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+          {renderPanel()}
         </Popover>
-      ) : null}
+      ) : (
+        hover.card(renderPanel)
+      )}
     </div>
   );
 }
@@ -285,72 +277,48 @@ function ContextSignal({
   // compositor; an animated element inside an SVG repaints every frame.
   return (
     <span className="context-signal-frame" data-working={working ? "true" : undefined}>
-      <svg
-        width={24}
-        height={24}
-        viewBox="0 0 24 24"
-        className={`context-signal ${ringClass(ratio)}`}
+      <Meter
+        variant="ring"
+        size="md"
+        label={label}
+        aria-hidden={label ? undefined : true}
+        value={ratio * 100}
+        warning={WARNING_PERCENT}
+        danger={DANGER_PERCENT}
+        className="context-signal"
         data-working={working ? "true" : undefined}
         data-speed-fill={fill}
-        fill="none"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        role={label ? "img" : undefined}
-        aria-label={label}
-        aria-hidden={label ? undefined : true}
-      >
-        <circle
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          className="context-signal-track"
-        />
-        {ratio > 0 ? (
-          <circle
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            pathLength="100"
-            strokeDasharray="100"
-            strokeDashoffset={100 * (1 - ratio)}
-            transform="rotate(-90 12 12)"
-          />
-        ) : null}
-      </svg>
+      />
       <span className="context-speed-pulse">
-      <svg
-        width={24}
-        height={24}
-        viewBox="0 0 24 24"
-        className="context-speed-bolt"
-        fill="none"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <defs>
-          <clipPath id={clipId}>
-            <rect x="8" y={17.2 - 10.4 * fill} width="8" height={10.4 * fill} />
-          </clipPath>
-        </defs>
-        <path
-          d="M13.5 6.8 8.5 12.5h3.3l-1.3 4.7 5-6.3h-3.2z"
-          stroke="currentColor"
-          strokeWidth="0.7"
-          strokeLinejoin="round"
-          className="context-speed-outline"
-        />
-        {fill > 0 ? (
+        <svg
+          width={24}
+          height={24}
+          viewBox="0 0 24 24"
+          className="context-speed-bolt"
+          fill="none"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <defs>
+            <clipPath id={clipId}>
+              <rect x="8" y={17.2 - 10.4 * fill} width="8" height={10.4 * fill} />
+            </clipPath>
+          </defs>
           <path
             d="M13.5 6.8 8.5 12.5h3.3l-1.3 4.7 5-6.3h-3.2z"
-            fill="currentColor"
-            clipPath={`url(#${clipId})`}
+            stroke="currentColor"
+            strokeWidth="0.7"
+            strokeLinejoin="round"
+            className="context-speed-outline"
           />
-        ) : null}
-      </svg>
+          {fill > 0 ? (
+            <path
+              d="M13.5 6.8 8.5 12.5h3.3l-1.3 4.7 5-6.3h-3.2z"
+              fill="currentColor"
+              clipPath={`url(#${clipId})`}
+            />
+          ) : null}
+        </svg>
       </span>
     </span>
   );

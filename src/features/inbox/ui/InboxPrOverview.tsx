@@ -1,8 +1,11 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, LoaderCircle } from "../../../shared/ui/icons";
+import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { formatInteger } from "../../../shared/lib/numbers";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
@@ -63,7 +66,7 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
   const [expanded, setExpanded] = useState(false);
 
   if (!body.trim()) {
-    return <p className="text-ui-secondary text-(--ui-text-secondary)">{t("No description")}</p>;
+    return <EmptyState size="inline" kind="empty" description={t("No description")} />;
   }
   if (!excerpt.truncated) {
     return (
@@ -73,9 +76,11 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
     );
   }
   return (
-    <section
+    <Surface
+      as="section"
+      variant="raised"
       data-inbox-description
-      className="flex flex-col gap-2 rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) px-3.5 py-3"
+      className="flex flex-col gap-2 px-3.5 py-3"
     >
       {expanded ? (
         <SurfaceSelection cwd={cwd} contentVersion={body}>
@@ -110,7 +115,7 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
           </span>
         ) : null}
       </Button>
-    </section>
+    </Surface>
   );
 }
 
@@ -145,12 +150,7 @@ export function InboxPrChangesGlance({
             </span>
           </>
         ) : null}
-        {loading ? (
-          <LoaderCircle
-            className="icon-xs animate-spin text-(--ui-text-secondary)"
-            strokeWidth={1.75}
-          />
-        ) : null}
+        {loading ? <Spinner size="xs" className="text-(--ui-text-secondary)" /> : null}
         {files.length > 0 ? (
           <Button variant="ghost" type="button" onClick={() => onOpenFile()} className="ml-auto">
             {files.length > shown.length
@@ -166,9 +166,14 @@ export function InboxPrChangesGlance({
         </Alert>
       ) : null}
       {diff && files.length === 0 ? (
-        <p className="text-ui-caption text-(--ui-text-secondary)">{t("No file changes")}</p>
+        <EmptyState size="inline" kind="empty" description={t("No file changes")} />
       ) : shown.length > 0 ? (
-        <ul className="flex flex-col overflow-hidden rounded-(--radius-control) border border-(--ui-tone-neutral-border)">
+        <Surface
+          as="ul"
+          variant="outline"
+          padding="none"
+          className="flex flex-col overflow-hidden"
+        >
           {shown.map((file) => {
             const slash = file.path.lastIndexOf("/");
             const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
@@ -184,12 +189,12 @@ export function InboxPrChangesGlance({
                 <Button
                   variant="ghost"
                   type="button"
-                  title={file.path}
+                  tooltip={file.path}
                   onClick={() => onOpenFile(file.path)}
                   align="start"
                   className="w-full min-w-0"
                 >
-                  <FileTypeIcon name={name} isDir={false} size={16} />
+                  <FileTypeIcon name={name} isDir={false} />
                   <span className="flex min-w-0 flex-1 flex-wrap font-mono text-ui-caption">
                     <span className="min-w-0 truncate text-(--ui-text-secondary)">{dir}</span>
                     <span className="min-w-0 wrap-anywhere text-(--ui-text-secondary)">{name}</span>
@@ -214,7 +219,7 @@ export function InboxPrChangesGlance({
               </li>
             );
           })}
-        </ul>
+        </Surface>
       ) : null}
     </section>
   );

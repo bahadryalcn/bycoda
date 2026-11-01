@@ -10,6 +10,7 @@ import { useLocale, useT } from "../../shared/i18n";
 import { Modal } from "../../shared/ui/Modal";
 import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../shared/ui/EmptyState";
+import { InlineError } from "../../shared/ui/InlineError";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
   sessionDisplayTitle,
@@ -334,7 +335,7 @@ export function SessionRecoveryPanel({
           ]}
         />
         <SearchInputGroup appearance="field" className="recovery-toolbar-search">
-          <Search className="size-3.5 shrink-0" aria-hidden="true" />
+          <Search className="icon-sm shrink-0" aria-hidden="true" />
           <SearchInput
             focusOwner="group"
             aria-label={t("Search recovered sessions")}
@@ -478,9 +479,7 @@ export function SessionRecoveryPanel({
                       </div>
                     ) : null}
                     {openOutcome?.failed.includes(stub.id) ? (
-                      <p className="text-ui-caption text-danger">
-                        {t("Could not open this session.")}
-                      </p>
+                      <InlineError>{t("Could not open this session.")}</InlineError>
                     ) : null}
                   </div>
                   <Button
@@ -501,10 +500,10 @@ export function SessionRecoveryPanel({
                     disabled={pending}
                     loading={pendingAction === `remove:${stub.id}`}
                     aria-label={t("Remove {p0} from recovery list", { p0: title })}
-                    title={t("Remove from recovery list. Conversation history is kept.")}
+                    tooltip={t("Remove from recovery list. Conversation history is kept.")}
                     onClick={() => void remove([stub.id], `remove:${stub.id}`)}
                   >
-                    <X className="size-4" aria-hidden="true" />
+                    <X className="icon-md" aria-hidden="true" />
                   </InlineAction>
                 </ActionHost>
               </li>

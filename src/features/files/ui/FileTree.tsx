@@ -1,13 +1,10 @@
 import { TextField } from "../../../shared/ui/TextField";
-import {
-  TreeRow,
-  TreeRowIcon,
-  TreeRowLabel,
-  TreeRowToggle,
-  TreeRowTrailing,
-} from "../../../shared/ui/TreeRow";
+import { TreeRow, TreeRowIcon, TreeRowLabel, TreeRowToggle, TreeRowTrailing } from "../../../shared/ui/TreeRow";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Alert } from "../../../shared/ui/Alert";
 import { getLocale, t, useLocale } from "../../../shared/i18n/technical";
@@ -19,7 +16,6 @@ import {
   FolderPlus,
   FolderOpen,
   FoldVertical,
-  Loader,
   RefreshCw,
   Search,
   MoreHorizontal,
@@ -43,12 +39,7 @@ import {
 import { leafName, validateFileName, type NameIssue } from "../model/fileName";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import {
-  loadShowExcludedFiles,
-  saveShowExcludedFiles,
-  SHOW_EXCLUDED_FILES_DEFAULT,
-  subscribeShowExcludedFiles,
-} from "../../settings/model/appearance";
+import { loadShowExcludedFiles, saveShowExcludedFiles, SHOW_EXCLUDED_FILES_DEFAULT, subscribeShowExcludedFiles } from "../../settings/model/appearance";
 import {
   createParentOf,
   listCachedDir,
@@ -70,7 +61,11 @@ import { GIT_ACTIONS, useRemoteSupports } from "../../connections/model/remoteCa
 import { useRemoteLoadFailure } from "../../connections/model/remoteHealth";
 import { RemoteLoadError } from "../../connections/ui/RemoteLoadError";
 import type { RemoteDataState } from "../../connections/model/remoteDataState";
-import { basename, clipboardFilePaths, type FsEntry } from "../../../platform/tauri/fs";
+import {
+  basename,
+  clipboardFilePaths,
+  type FsEntry,
+} from "../../../platform/tauri/fs";
 import { parentPath } from "../../../shared/lib/paths";
 import { MOD } from "../../../platform/tauri/platform";
 import type { OpenFileFn } from "../../search/model/search";
@@ -120,7 +115,7 @@ const GIT_STATUS_MARK: Record<string, { mark: string; label: string }> = {
 };
 
 const GIT_STATUS_COLOR: Record<string, string> = {
-  modified: "text-warning",
+  modified: "text-(--ui-tone-warning-fg)",
   added: "text-diff-add-fg",
   untracked: "text-diff-add-fg",
   deleted: "text-diff-del-fg",
@@ -142,6 +137,7 @@ type Props = {
   /** False while another sidebar tab covers the tree: its refresh poll pauses. */
   visible?: boolean;
 };
+
 
 /** Header widths below this fold Collapse All and Search into the Explorer actions menu. */
 const NARROW_HEADER_WIDTH = 200;
@@ -215,7 +211,9 @@ function createDirectorySnapshot(store: TreeStore, parent: string, entries: FsEn
           next.cutPaths.has(path) !== previous.cutPaths.has(path) ||
           (next.dragOverPath === path) !== (previous.dragOverPath === path) ||
           (isDir ? next.gitStatuses?.dirs.get(path) : next.gitStatuses?.files.get(path)) !==
-            (isDir ? previous.gitStatuses?.dirs.get(path) : previous.gitStatuses?.files.get(path)),
+            (isDir
+              ? previous.gitStatuses?.dirs.get(path)
+              : previous.gitStatuses?.files.get(path)),
       );
     if (changed) previous = next;
     return previous;
@@ -254,8 +252,7 @@ async function copyText(text: string) {
       if (!document.execCommand("copy")) throw new Error(t("Could not copy. Try again."));
     } finally {
       el.remove();
-      if (focused instanceof HTMLElement && focused.isConnected)
-        focused.focus({ preventScroll: true });
+      if (focused instanceof HTMLElement && focused.isConnected) focused.focus({ preventScroll: true });
     }
   }
 }
@@ -359,16 +356,15 @@ function FileTreeInner({
   const connectionFailure = useRemoteLoadFailure(cwd, "files");
   // Why creating cannot start at all: no folder to create in, or a remote machine that cannot be
   // asked. These are the capability signals the tree already has; there is no per-folder permission.
-  const createUnavailableReason =
-    !cwd || cwd === "~"
-      ? t("Open a project folder first")
-      : connectionFailure?.kind === "unreachable"
-        ? t("This machine is unreachable")
-        : connectionFailure?.kind === "identity"
-          ? t("Pair this machine again to change files")
-          : connectionFailure?.kind === "outdated"
-            ? t("Update the host to change files")
-            : undefined;
+  const createUnavailableReason = !cwd || cwd === "~"
+    ? t("Open a project folder first")
+    : connectionFailure?.kind === "unreachable"
+      ? t("This machine is unreachable")
+      : connectionFailure?.kind === "identity"
+        ? t("Pair this machine again to change files")
+        : connectionFailure?.kind === "outdated"
+          ? t("Update the host to change files")
+          : undefined;
 
   const toggle = (path: string) => {
     const next = new Set(expandedRef.current);
@@ -783,9 +779,7 @@ function FileTreeInner({
   // Creating is unavailable without a usable root and while any file operation or inline name commit is in flight.
   const createBlockedReason =
     createUnavailableReason ??
-    (operationPending || editPending
-      ? t("Wait for the current file operation to finish")
-      : undefined);
+    (operationPending || editPending ? t("Wait for the current file operation to finish") : undefined);
   const createLabel = (label: string) =>
     createBlockedReason ? `${label} (${createBlockedReason})` : label;
   // Visible name of a folder in this tree: the root keeps its display identity (worktree/branch label).
@@ -795,8 +789,7 @@ function FileTreeInner({
   useLayoutEffect(() => {
     const header = headerRef.current;
     if (!header || typeof ResizeObserver === "undefined") return;
-    const measure = () =>
-      setNarrowHeader(header.clientWidth > 0 && header.clientWidth < NARROW_HEADER_WIDTH);
+    const measure = () => setNarrowHeader(header.clientWidth > 0 && header.clientWidth < NARROW_HEADER_WIDTH);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(header);
@@ -987,210 +980,135 @@ function FileTreeInner({
   return (
     <TreeActionsCtx.Provider value={actions}>
       <TreeStateCtx.Provider value={treeStore}>
-        <div
-          ref={rootRef}
-          data-external-drop-owner="file-tree"
-          tabIndex={-1}
-          onKeyDown={onKeyDown}
-          onContextMenu={onBackgroundMenu}
-          className="flex h-full min-h-0 flex-col outline-none"
-        >
-          <ActionHost
-            ref={headerRef}
-            selected={dragOverPath === cwd}
-            className="@container/explorer-root min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 gap-0.5 rounded-none px-1"
-          >
-            <Button
-              size="sm"
-              variant="ghost"
-              align="start"
-              selected={dragOverPath === cwd}
-              motion="none"
-              type="button"
-              data-explorer-root
-              data-path={cwd}
-              aria-expanded={rootOpen}
-              title={cwd}
-              onClick={() => {
-                onSelect(cwd);
-                toggle(cwd);
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                openMenu({ path: cwd, isDir: true, isRoot: true }, e.clientX, e.clientY);
-              }}
-              className="min-w-0 flex-1"
-            >
-              <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
-                {rootOpen ? (
-                  <ChevronDown className="size-3.5" strokeWidth={1.75} />
-                ) : (
-                  <ChevronRight className="size-3.5" strokeWidth={1.75} />
-                )}
-              </span>
-              <span className="min-w-0 truncate text-ui-caption font-medium text-[var(--ui-text-secondary)]">
-                {name}
-              </span>
-            </Button>
+        <div ref={rootRef} data-external-drop-owner="file-tree" tabIndex={-1}
+          onKeyDown={onKeyDown} onContextMenu={onBackgroundMenu}
+          className="flex h-full min-h-0 flex-col outline-none">
+          <ActionHost ref={headerRef} selected={dragOverPath === cwd}
+            className="@container/explorer-root min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 gap-0.5 rounded-none px-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  align="start"
+                  selected={dragOverPath === cwd}
+                  motion="none"
+                  type="button"
+                  data-explorer-root
+                  data-path={cwd}
+                  aria-expanded={rootOpen}
+                  tooltip={cwd}
+                  onClick={() => {
+                    onSelect(cwd);
+                    toggle(cwd);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openMenu({ path: cwd, isDir: true, isRoot: true }, e.clientX, e.clientY);
+                  }}
+                  className="min-w-0 flex-1"
+                >
+                  <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
+                    {rootOpen ? (
+                      <ChevronDown className="icon-sm" strokeWidth={1.75} />
+                    ) : (
+                      <ChevronRight className="icon-sm" strokeWidth={1.75} />
+                    )}
+                  </span>
+                  <span className="min-w-0 truncate text-ui-caption font-medium text-[var(--ui-text-secondary)]">
+                    {name}
+                  </span>
+                </Button>
             {/* Creation, then tree management, then view/search; narrow headers fold the last two into the menu. */}
-            <InlineAction
-              reveal="always"
-              label={createLabel(t("New File"))}
-              disabled={Boolean(createBlockedReason)}
-              data-explorer-action="new-file"
-              onClick={() => runHeaderAction("new-file")}
-            >
+            <InlineAction reveal="always" label={createLabel(t("New File"))} disabled={Boolean(createBlockedReason)}
+              data-explorer-action="new-file" onClick={() => runHeaderAction("new-file")}>
               <FilePlus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
-            <InlineAction
-              reveal="always"
-              label={createLabel(t("New Folder"))}
-              disabled={Boolean(createBlockedReason)}
-              data-explorer-action="new-folder"
-              onClick={() => runHeaderAction("new-folder")}
-            >
+            <InlineAction reveal="always" label={createLabel(t("New Folder"))} disabled={Boolean(createBlockedReason)}
+              data-explorer-action="new-folder" onClick={() => runHeaderAction("new-folder")}>
               <FolderPlus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
-            {narrowHeader ? null : (
-              <InlineAction
-                reveal="always"
-                label={t("Collapse All")}
-                data-explorer-action="collapse"
-                onClick={() => runHeaderAction("collapse")}
-              >
-                <FoldVertical className="icon-sm" strokeWidth={1.75} />
-              </InlineAction>
-            )}
-            {onSearch && !narrowHeader ? (
-              <InlineAction
-                reveal="always"
-                label={t("Search in files ({p0}Shift+F)", { p0: MOD })}
-                aria-pressed={!!search}
-                onClick={search ? onCloseSearch : onSearch}
-              >
-                <Search className="icon-sm" strokeWidth={1.75} />
-              </InlineAction>
-            ) : null}
-            <InlineAction
-              reveal="always"
-              ref={headerMenuRef}
-              label={t("Explorer actions")}
-              aria-haspopup="menu"
-              aria-expanded={headerMenu}
-              selected={showExcludedFiles}
-              onClick={() => setHeaderMenu((open) => !open)}
-            >
-              {showExcludedFiles ? (
-                <ListFilter className="icon-sm" />
-              ) : (
-                <MoreHorizontal className="icon-sm" />
-              )}
+            {narrowHeader ? null : <InlineAction reveal="always" label={t("Collapse All")}
+              data-explorer-action="collapse" onClick={() => runHeaderAction("collapse")}>
+              <FoldVertical className="icon-sm" strokeWidth={1.75} />
+            </InlineAction>}
+            {onSearch && !narrowHeader ? <InlineAction reveal="always"
+              label={t("Search in files ({p0}Shift+F)", { p0: MOD })}
+              aria-pressed={!!search} onClick={search ? onCloseSearch : onSearch}>
+              <Search className="icon-sm" strokeWidth={1.75} />
+            </InlineAction> : null}
+            <InlineAction reveal="always" ref={headerMenuRef} label={t("Explorer actions")}
+              aria-haspopup="menu" aria-expanded={headerMenu} selected={showExcludedFiles}
+              onClick={() => setHeaderMenu((open) => !open)}>
+              {showExcludedFiles ? <ListFilter className="icon-sm" /> : <MoreHorizontal className="icon-sm" />}
             </InlineAction>
             <ExplorerSyncStatus state={rootDataState} onRefresh={refreshRoot} />
           </ActionHost>
-          {headerMenu ? (
-            <DropdownMenu
-              anchor={headerMenuRef}
-              label={t("Explorer actions")}
-              returnFocusRef={headerMenuRef}
-              onClose={() => setHeaderMenu(false)}
-              items={explorerHeaderItems(
-                {
-                  narrow: narrowHeader,
-                  canSearch: !!onSearch,
-                  busyReason: createBlockedReason,
-                  showExcluded: showExcludedFiles,
-                  excludedDefault: SHOW_EXCLUDED_FILES_DEFAULT,
-                },
-                (id) => {
-                  const Icon = {
-                    "new-file": FilePlus,
-                    "new-folder": FolderPlus,
-                    collapse: FoldVertical,
-                    search: Search,
-                    reveal: FolderOpen,
-                  }[id];
-                  return <Icon className="icon-sm" />;
-                },
-              )}
-              onPick={(id) => {
-                setHeaderMenu(false);
-                if (id === "excluded" || id === "reset") {
-                  saveShowExcludedFiles(
-                    id === "reset" ? SHOW_EXCLUDED_FILES_DEFAULT : !showExcludedFiles,
-                  );
-                  return;
-                }
-                if (id === "search") {
-                  onSearch?.();
-                  return;
-                }
-                if (id === "reveal") void run(() => revealInFileManager(cwd));
-                else runHeaderAction(id);
-              }}
-            />
-          ) : null}
+          {headerMenu ? <DropdownMenu anchor={headerMenuRef} label={t("Explorer actions")}
+            returnFocusRef={headerMenuRef} onClose={() => setHeaderMenu(false)}
+            items={explorerHeaderItems(
+              {
+                narrow: narrowHeader,
+                canSearch: !!onSearch,
+                busyReason: createBlockedReason,
+                showExcluded: showExcludedFiles,
+                excludedDefault: SHOW_EXCLUDED_FILES_DEFAULT,
+              },
+              (id) => {
+                const Icon = { "new-file": FilePlus, "new-folder": FolderPlus, collapse: FoldVertical, search: Search, reveal: FolderOpen }[id];
+                return <Icon className="icon-sm" />;
+              },
+            )}
+            onPick={(id) => {
+              setHeaderMenu(false);
+              if (id === "excluded" || id === "reset") { saveShowExcludedFiles(id === "reset" ? SHOW_EXCLUDED_FILES_DEFAULT : !showExcludedFiles); return; }
+              if (id === "search") { onSearch?.(); return; }
+              if (id === "reveal") void run(() => revealInFileManager(cwd));
+              else runHeaderAction(id);
+            }} /> : null}
           {selectedPaths.size > 1 || hiddenSelectedPaths.length ? (
-            <div
-              role="status"
-              data-explorer-selection-scope
-              className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 py-1 text-ui-caption text-(--ui-text-secondary)"
-            >
-              <span>
-                {t("Selected")}: {selectedPaths.size}
-              </span>
-              {hiddenSelectedPaths.length ? (
-                <span>
-                  {t("Selection includes hidden items")}: {hiddenSelectedPaths.length}
-                </span>
-              ) : null}
+            <div role="status" data-explorer-selection-scope className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
+              <span>{t("Selected")}: {selectedPaths.size}</span>
+              {hiddenSelectedPaths.length ? <span>{t("Selection includes hidden items")}: {hiddenSelectedPaths.length}</span> : null}
             </div>
           ) : null}
-          {copyNotice ? (
-            <p role="status" className="px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
-              {copyNotice}
-            </p>
-          ) : null}
+          {copyNotice ? <p role="status" className="px-2 py-1 text-ui-caption text-(--ui-text-secondary)">{copyNotice}</p> : null}
           {operationPending ? (
             <div
               role="status"
               className="flex items-center gap-2 px-3 py-1 text-ui-caption text-(--ui-text-secondary)"
             >
-              <Loader className="icon-sm motion-safe:animate-spin" aria-hidden />
+              <Spinner size="sm" />
               {t("Working…")}
             </div>
           ) : null}
-          {opError ? (
-            <Alert tone="danger" inline className="mx-2 my-1">
-              {opError}
-              {copyFailedText !== null ? (
-                <Button variant="ghost" size="sm" onClick={() => void copyPathText(copyFailedText)}>
-                  {t("Retry")}
-                </Button>
-              ) : null}
-            </Alert>
-          ) : null}
-          {refreshFailure?.cwd === cwd ? (
-            <Alert tone="danger" inline className="mx-2 my-1">
-              <span>
-                {t("File change saved. Refresh failed.")} {refreshFailure.message}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                loading={operationPending}
-                onClick={() => {
-                  const failure = refreshFailure;
-                  void run(() => refreshAfterMutation(failure.touched, failure.forget));
-                }}
-              >
-                {t("Retry")}
-              </Button>
-            </Alert>
-          ) : null}
+                {opError ? (
+                  <Alert tone="danger" inline className="mx-2 my-1">
+                    {opError}
+                    {copyFailedText !== null ? <Button variant="ghost" size="sm" onClick={() => void copyPathText(copyFailedText)}>{t("Retry")}</Button> : null}
+                  </Alert>
+                ) : null}
+                {refreshFailure?.cwd === cwd ? (
+                  <Alert tone="danger" inline className="mx-2 my-1">
+                    <span>
+                      {t("File change saved. Refresh failed.")} {refreshFailure.message}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={operationPending}
+                      onClick={() => {
+                        const failure = refreshFailure;
+                        void run(() => refreshAfterMutation(failure.touched, failure.forget));
+                      }}
+                    >
+                      {t("Retry")}
+                    </Button>
+                  </Alert>
+                ) : null}
           {search ?? (
-            <div className="flex min-h-0 flex-1 flex-col outline-none">
+            <div
+              className="flex min-h-0 flex-1 flex-col outline-none"
+            >
               <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
                 {connectionFailure ? (
                   <RemoteLoadError
@@ -1299,7 +1217,7 @@ function ExplorerSyncStatus({
     >
       {warn ? (
         <span className="inline-flex items-center gap-1">
-          <CircleAlert aria-hidden className="icon-xs shrink-0 text-warning" />
+          <CircleAlert aria-hidden className="icon-xs shrink-0 text-(--ui-tone-warning-fg)" />
           {time ? (
             <span className="hidden tabular-nums @min-[200px]/explorer-root:inline">{time}</span>
           ) : null}
@@ -1307,27 +1225,13 @@ function ExplorerSyncStatus({
       ) : null}
       <InlineAction
         reveal="always"
-        label={
-          state.phase === "error"
-            ? t("Retry loading {p0}", { p0: "files" })
-            : t("Refresh {p0}", { p0: "files" })
-        }
+        label={state.phase === "error" ? t("Retry loading {p0}", { p0: "files" }) : t("Refresh {p0}", { p0: "files" })}
         motion="none"
         type="button"
         onClick={onRefresh}
         loading={busy}
-        aria-label={
-          state.phase === "error"
-            ? t("Retry loading {p0}", { p0: "files" })
-            : t("Refresh {p0}", { p0: "files" })
-        }
-        title={t("Refresh")}
       >
-        {busy ? (
-          <Loader aria-hidden className="icon-sm motion-safe:animate-spin" />
-        ) : (
-          <RefreshCw aria-hidden className="size-3.5" />
-        )}
+        {busy ? <Spinner size="sm" /> : <RefreshCw aria-hidden className="icon-sm" />}
       </InlineAction>
     </div>
   );
@@ -1410,41 +1314,18 @@ function TreeChildren({
   return (
     <>
       {error ? (
-        <p
-          role="alert"
-          className="flex items-start gap-2 py-1 pr-2 text-ui-caption leading-4 text-danger"
-          style={pad}
-        >
-          <span className="min-w-0 flex-1 break-words">{error}</span>
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            className="shrink-0"
-            onClick={onRetry}
-          >
-            {t("Retry")}
-          </Button>
-        </p>
+        <InlineError className="py-1 pr-2 break-words" style={pad} retry={{ onRetry }}>
+          {error}
+        </InlineError>
       ) : loading && entries === null ? (
-        <p className="py-1 pr-2 text-ui-caption text-[var(--ui-text-muted)]" style={pad}>
+        <LoadingText className="py-1 pr-2" style={pad}>
           {t("Loading…")}
-        </p>
+        </LoadingText>
       ) : null}
       {!error && !loading && entries !== null && visible.length === 0 && !show ? (
-        <p
-          role="status"
-          data-explorer-empty
-          className="py-1 pr-2 text-ui-caption text-(--ui-text-muted)"
-          style={pad}
-        >
+        <p role="status" data-explorer-empty className="py-1 pr-2 text-ui-caption text-(--ui-text-muted)" style={pad}>
           {entries.length ? t("Only excluded files in this folder") : t("This folder is empty")}
-          {entries.length ? (
-            <Button variant="link" size="sm" onClick={() => saveShowExcludedFiles(true)}>
-              {t("Show excluded files")}
-            </Button>
-          ) : null}
+          {entries.length ? <Button variant="link" size="sm" onClick={() => saveShowExcludedFiles(true)}>{t("Show excluded files")}</Button> : null}
         </p>
       ) : null}
       {show && ctx.creating?.isDir ? row : null}
@@ -1607,9 +1488,9 @@ const TreeNode = memo(function TreeNode({
           <TreeRowToggle>
             {entry.isDir ? (
               open ? (
-                <ChevronDown className="size-3.5" strokeWidth={1.75} />
+                <ChevronDown className="icon-sm" strokeWidth={1.75} />
               ) : (
-                <ChevronRight className="size-3.5" strokeWidth={1.75} />
+                <ChevronRight className="icon-sm" strokeWidth={1.75} />
               )
             ) : null}
           </TreeRowToggle>
@@ -1617,9 +1498,7 @@ const TreeNode = memo(function TreeNode({
             <FileTypeIcon name={entry.name} isDir={entry.isDir} isOpen={open} />
           </TreeRowIcon>
           {/* Name stays at content weight; excluded entries recede, Git state lives in the end slot only. */}
-          <TreeRowLabel
-            className={entry.ignored ? "italic text-[var(--ui-text-secondary)]" : undefined}
-          >
+          <TreeRowLabel className={entry.ignored ? "italic text-[var(--ui-text-secondary)]" : undefined}>
             {entry.name}
           </TreeRowLabel>
           {gitMark ? (
@@ -1731,6 +1610,7 @@ export function NameRow({
     onCancel();
   };
 
+
   return (
     <div
       ref={rowRef}
@@ -1744,7 +1624,7 @@ export function NameRow({
         className="flex h-[var(--ui-control-height-compact)] w-full min-w-0 items-center gap-2 pe-2"
       >
         <TreeRowToggle>
-          {isDir ? <ChevronRight className="size-3.5" strokeWidth={1.75} /> : null}
+          {isDir ? <ChevronRight className="icon-sm" strokeWidth={1.75} /> : null}
         </TreeRowToggle>
         <TreeRowIcon>
           <FileTypeIcon name={leaf} isDir={isDir} />
@@ -1759,10 +1639,9 @@ export function NameRow({
           readOnly={busy}
           aria-busy={busy || undefined}
           aria-invalid={invalid || undefined}
-          aria-describedby={
-            [context ? contextId : null, showIssue ? issueId : null].filter(Boolean).join(" ") ||
-            undefined
-          }
+          aria-describedby={[context ? contextId : null, showIssue ? issueId : null]
+            .filter(Boolean)
+            .join(" ") || undefined}
           placeholder={isDir ? t("Folder name") : t("File name")}
           spellCheck={false}
           autoComplete="off"
@@ -1795,7 +1674,7 @@ export function NameRow({
           style={{ minHeight: "calc(var(--ui-control-height-compact) - 0.25rem)" }}
           className="min-w-0 flex-1 leading-none"
         />
-        {busy ? <Loader aria-hidden className="icon-sm shrink-0 motion-safe:animate-spin" /> : null}
+        {busy ? <Spinner size="sm" className="shrink-0" /> : null}
         {context ? (
           <span id={contextId} className="sr-only">
             {context}
@@ -1878,13 +1757,13 @@ function NameIssueView({
   if (!body) return null;
   const error = Boolean(fallback) || !issue || issue.severity === "error";
   return (
-    <p
+    <InlineMessage
       id={id}
-      role={error ? "alert" : "status"}
-      className={`min-w-0 break-words pe-2 pb-1 text-ui-caption leading-4 ${error ? "text-danger" : "text-warning"}`}
+      tone={error ? "danger" : "warning"}
+      className="min-w-0 break-words pe-2 pb-1"
       style={{ paddingInlineStart: nameFieldInset(depth) }}
     >
       {body}
-    </p>
+    </InlineMessage>
   );
 }

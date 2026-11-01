@@ -1,3 +1,4 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -6,7 +7,8 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Popover } from "../../../shared/ui/Popover";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { Select } from "../../../shared/ui/Select";
+import { Progress } from "../../../shared/ui/Progress";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Switch } from "../../../shared/ui/Switch";
 import { getLocale, useT } from "../../../shared/i18n";
@@ -173,7 +175,9 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
   const roots = useMemo(() => (report ? driveRoots(report.candidates) : []), [report]);
   const rootOptions = [
     { value: "", label: t("All folders") },
-    ...(initialContext ? [{ value: initialContext.cwd, label: prettyCwd(initialContext.cwd) }] : []),
+    ...(initialContext
+      ? [{ value: initialContext.cwd, label: prettyCwd(initialContext.cwd) }]
+      : []),
     ...(roots.length > 1
       ? roots
           .filter((root) => root !== initialContext?.cwd)
@@ -196,7 +200,9 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
   const { visible, providerCounts, temporaryCount } = useMemo(() => {
     const temporary = new Set<ImportCandidate>();
     for (const candidate of matched) if (isTemporaryFolder(candidate.cwd)) temporary.add(candidate);
-    const scoped = hideTemporary ? matched.filter((candidate) => !temporary.has(candidate)) : matched;
+    const scoped = hideTemporary
+      ? matched.filter((candidate) => !temporary.has(candidate))
+      : matched;
     const byProvider: Record<ImportProvider, number> = { claude: 0, codex: 0 };
     for (const candidate of scoped) byProvider[candidate.provider] += 1;
     return {
@@ -338,10 +344,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
       <div className="flex min-h-0 flex-col gap-3 p-4 pt-3">
         {load.status === "loading" ? (
           <div className="flex flex-col gap-2 py-4">
-            <p
-              role="status"
-              className="text-center text-ui-secondary text-(--ui-text-secondary)"
-            >
+            <p role="status" className="text-center text-ui-secondary text-(--ui-text-secondary)">
               {t("Scanning Claude Code and Codex history…")}
             </p>
             {[0, 1, 2, 3, 4].map((row) => (
@@ -387,11 +390,11 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                 })}
               </ButtonGroup>
               {rootOptions.length > 1 ? (
-                <Select
+                <SearchableSelect
                   label={t("Root folder")}
                   value={rootFilter}
                   options={rootOptions}
-                  onValueChange={setRootFilter}
+                  onChange={setRootFilter}
                 />
               ) : null}
               <SearchInput
@@ -523,9 +526,9 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                             className="min-w-0 flex-1"
                           >
                             {missingOpen || searching ? (
-                              <ChevronDown className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
+                              <ChevronDown className="icon-sm shrink-0 text-(--ui-text-secondary)" />
                             ) : (
-                              <ChevronRight className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
+                              <ChevronRight className="icon-sm shrink-0 text-(--ui-text-secondary)" />
                             )}
                             <span className="min-w-0 flex-1 truncate text-ui-secondary text-(--ui-text-secondary)">
                               {t("Missing folders ({p0})", {
@@ -578,7 +581,9 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                       <p>
                         {groupPreview.length === 0
                           ? t("No groups: no folder has two or more projects to group.")
-                          : groupPreview.map((group) => `${group.name} (${group.count})`).join(" · ")}
+                          : groupPreview
+                              .map((group) => `${group.name} (${group.count})`)
+                              .join(" · ")}
                       </p>
                     </InfoPopover>
                   </>
@@ -657,15 +662,17 @@ function ToggleRow({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-1.5 hover:bg-(--ui-surface-hover)">
-      <span className="min-w-0 flex-1">
-        <span className="block text-ui-secondary text-(--ui-text-primary)">{label}</span>
-        {description ? (
-          <span className="block text-ui-micro text-(--ui-text-secondary)">{description}</span>
-        ) : null}
-      </span>
-      <Switch aria-label={label} checked={checked} onCheckedChange={onChange} />
-    </label>
+    <ActionHost className="rounded-lg">
+      <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 px-2 py-1.5">
+        <span className="min-w-0 flex-1">
+          <span className="block text-ui-secondary text-(--ui-tone-neutral-fg)">{label}</span>
+          {description ? (
+            <span className="block text-ui-micro text-(--ui-text-secondary)">{description}</span>
+          ) : null}
+        </span>
+        <Switch aria-label={label} checked={checked} onCheckedChange={onChange} />
+      </label>
+    </ActionHost>
   );
 }
 
@@ -713,11 +720,11 @@ function FolderSection({
           className="min-w-0 flex-1"
         >
           {open ? (
-            <ChevronDown className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
+            <ChevronDown className="icon-sm shrink-0 text-(--ui-text-secondary)" />
           ) : (
-            <ChevronRight className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
+            <ChevronRight className="icon-sm shrink-0 text-(--ui-text-secondary)" />
           )}
-          <Folder className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
+          <Folder className="icon-sm shrink-0 text-(--ui-text-secondary)" />
           <span className="max-w-[45%] shrink-0 truncate text-ui-secondary font-medium">
             {projectName(folder.path)}
           </span>
@@ -737,7 +744,7 @@ function FolderSection({
               className="grid shrink-0 place-items-center text-(--ui-text-muted)"
               title={t("Folder not found. Imported as history only.")}
             >
-              <CircleAlert aria-hidden className="size-3.5" />
+              <CircleAlert aria-hidden className="icon-sm" />
             </span>
           ) : null}
           <span className="w-16 shrink-0 text-right text-ui-micro tabular-nums text-(--ui-text-muted)">
@@ -753,9 +760,9 @@ function FolderSection({
             const key = candidateKey(item);
             const imported = isAlreadyImported(item, stored);
             return (
-              <li key={key}>
+              <ActionHost as="li" key={key} className="rounded-none">
                 <label
-                  className={`flex items-center gap-2.5 py-1.5 pl-9 pr-3 hover:bg-(--ui-surface-hover) ${
+                  className={`flex min-w-0 flex-1 items-center gap-2.5 py-1.5 pl-9 pr-3 ${
                     imported ? "opacity-50" : "cursor-pointer"
                   }`}
                 >
@@ -782,7 +789,7 @@ function FolderSection({
                       className="grid shrink-0 place-items-center text-(--ui-text-muted)"
                       title={t("Imported as history; sending a message starts a new conversation")}
                     >
-                      <Clock aria-hidden className="size-3.5" />
+                      <Clock aria-hidden className="icon-sm" />
                     </span>
                   ) : null}
                   {item.kind !== "interactive" ? (
@@ -797,7 +804,7 @@ function FolderSection({
                     {formatBytes(item.sizeBytes)}
                   </span>
                 </label>
-              </li>
+              </ActionHost>
             );
           })}
           {folder.items.length > limit ? (
@@ -825,18 +832,7 @@ function RunningView({ progress, onCancel }: { progress: ImportProgress; onCance
         {progress.done.toLocaleString(getLocale())}
         {t(" of")} {progress.total.toLocaleString(getLocale())}…
       </p>
-      <div
-        className="h-1.5 overflow-hidden rounded-full bg-(--ui-surface-raised)"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent}
-      >
-        <div
-          className="h-full rounded-full bg-(--ui-tone-accent-subtle) transition-[width]"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
+      <Progress compact value={percent} max={100} />
       <p className="truncate text-ui-caption text-(--ui-text-secondary)">
         {progress.current ?? " "}
       </p>

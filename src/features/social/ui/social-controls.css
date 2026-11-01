@@ -21,7 +21,7 @@
   min-inline-size: 0;
   padding: 0.5rem 1.125rem;
   border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-control);
+  border-radius: var(--ui-radius-control);
 }
 .social-view .social-page-secondary > .social-form {
   margin: 0;
@@ -72,7 +72,7 @@
 }
 .social-policy-panel {
   padding: 1.5rem;
-  border-radius: var(--radius-control);
+  border-radius: var(--ui-radius-control);
   background: var(--ui-surface-panel);
 }
 .social-view .social-policy-scope {
@@ -85,7 +85,7 @@
   display: flex;
   flex-wrap: wrap;
   padding: 0.75rem 1rem;
-  border-radius: var(--radius-control);
+  border-radius: var(--ui-radius-control);
   background: var(--ui-surface);
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);

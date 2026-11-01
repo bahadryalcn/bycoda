@@ -1,6 +1,7 @@
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Folder, RotateCcw, Save } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Alert } from "../../../shared/ui/Alert";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -1144,7 +1145,8 @@ export function FileEditor({
       size="sm"
       variant={dirty || saveState.status === "error" ? "secondary" : "ghost"}
       aria-label={t("Save")}
-      tooltip={`${t("Save")} (${IS_MAC ? "⌘S" : "Ctrl+S"})`}
+      tooltip={t("Save")}
+      shortcut="Mod+S"
       disabled={editorClosure.closed() || (!dirty && saveState.status !== "error")}
       loading={saveState.status === "saving"}
       loadingLabel={t("Saving…")}
@@ -1161,7 +1163,7 @@ export function FileEditor({
       aria-live="polite"
       className={
         saveState.status === "error"
-          ? "min-w-0 basis-full break-words py-1 text-danger"
+          ? "min-w-0 basis-full break-words py-1 text-(--ui-tone-danger-fg)"
           : "min-w-0 max-w-64 truncate"
       }
       title={saveState.status === "error" ? saveState.message : undefined}
@@ -1244,7 +1246,7 @@ export function FileEditor({
       {draftActionError || (draftPersistence?.error && draftPersistence.phase !== "unsupported") ? (
         <div
           role="alert"
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-ui-caption text-danger"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-ui-caption text-(--ui-tone-danger-fg)"
         >
           <span className="min-w-0 flex-1 break-words">
             {draftActionError ??
@@ -1368,12 +1370,7 @@ export function FileEditor({
         />
       )}
       {chromeError ? (
-        <p
-          role="alert"
-          className="shrink-0 border-t border-stroke px-2.5 py-1 text-ui-caption text-danger"
-        >
-          {chromeError}
-        </p>
+        <InlineError className="shrink-0 border-t border-stroke px-2.5 py-1">{chromeError}</InlineError>
       ) : null}
       <footer
         className={`flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 border-t border-stroke px-2.5 text-ui-micro text-[var(--ui-text-muted)] ${saveState.status === "error" ? "flex-wrap" : ""}`}
@@ -1393,7 +1390,7 @@ export function FileEditor({
             onClick={() =>
               void revealPath(path).catch((error: unknown) => setChromeError(String(error)))
             }
-            title={REVEAL_LABEL}
+            tooltip={REVEAL_LABEL}
             aria-label={REVEAL_LABEL}
           >
             <Folder className="icon-sm" />
@@ -1408,7 +1405,7 @@ export function FileEditor({
             disabled={openingChrome || isRemoteProjectPath(path)}
             loading={openingChrome}
             onClick={() => void goLive()}
-            title={
+            tooltip={
               isRemoteProjectPath(path)
                 ? t("Go Live is available for local HTML files.")
                 : t("Save and open this HTML file in Google Chrome")

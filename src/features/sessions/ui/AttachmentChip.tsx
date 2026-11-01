@@ -1,3 +1,4 @@
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -52,8 +53,8 @@ export function AttachmentChip({
     attachment.kind === "image" && !attachment.missing && attachmentPreviewSrc(attachment);
   const label = token ? tokenLabel(token) : null;
   const labelClass = image
-    ? "block max-w-14 truncate text-center text-(length:--ui-font-caption) leading-5 text-(--ui-text-secondary)"
-    : "shrink-0 rounded bg-(--ui-surface-raised) px-1 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)";
+    ? "block max-w-14 truncate text-center text-ui-caption leading-5 text-(--ui-text-secondary)"
+    : "shrink-0 rounded bg-(--ui-surface-raised) px-1 text-ui-caption leading-4 text-(--ui-text-secondary)";
   const labelNode =
     image && label && onInsertToken ? (
       <Button
@@ -62,7 +63,7 @@ export function AttachmentChip({
         layout={image ? "text" : undefined}
         className={image ? "block w-14 max-w-14 truncate text-center" : undefined}
         type="button"
-        title={t("Insert {p0} into the message", { p0: token })}
+        tooltip={t("Insert {p0} into the message", { p0: token })}
         aria-label={t("Insert {p0} into the message", { p0: token })}
         // Keeps focus, and so the caret, in the message box.
         onMouseDown={(event) => event.preventDefault()}
@@ -71,9 +72,7 @@ export function AttachmentChip({
           onInsertToken();
         }}
       >
-        <span className={image ? "text-(length:--ui-font-caption) leading-5" : undefined}>
-          {label}
-        </span>
+        <span className={image ? "text-ui-caption leading-5" : undefined}>{label}</span>
       </Button>
     ) : label ? (
       <span
@@ -106,7 +105,7 @@ export function AttachmentChip({
               variant="ghost"
               type="button"
               aria-label={t("Open {p0} full screen", { p0: attachment.name })}
-              title={t("Open {p0} full screen", { p0: attachment.name })}
+              tooltip={t("Open {p0} full screen", { p0: attachment.name })}
               onClick={(event) => {
                 event.stopPropagation();
                 void show();
@@ -119,7 +118,7 @@ export function AttachmentChip({
           </span>
         ) : (
           <>
-            <span className="min-w-0 max-w-48 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+            <span className="min-w-0 max-w-48 text-ui-caption text-(--ui-text-secondary)">
               {canOpen || canOpenFile ? (
                 <Button
                   motion="none"
@@ -130,7 +129,7 @@ export function AttachmentChip({
                   aria-busy={loading}
                   aria-haspopup="dialog"
                   aria-label={t("Open {p0} full screen", { p0: attachment.name })}
-                  title={t("Open {p0} full screen", { p0: attachment.name })}
+                  tooltip={t("Open {p0} full screen", { p0: attachment.name })}
                   onClick={(event) => {
                     event.stopPropagation();
                     if (canOpenFile) {
@@ -143,7 +142,7 @@ export function AttachmentChip({
                   <FileTypeIcon
                     name={attachment.name}
                     isDir={isAttachmentFolder(attachment)}
-                    size={16}
+                    size="md"
                   />
                   <span className="min-w-0 truncate">
                     {loading ? t("Loading…") : attachment.name}
@@ -155,7 +154,7 @@ export function AttachmentChip({
                   <FileTypeIcon
                     name={attachment.name}
                     isDir={isAttachmentFolder(attachment)}
-                    size={16}
+                    size="md"
                   />
                   <span className="truncate">{attachment.name}</span>
                 </span>
@@ -174,19 +173,16 @@ export function AttachmentChip({
                   onInsertToken();
                 }}
               >
-                <Link className="size-3" />
+                <Link className="icon-xs" />
               </Button>
             ) : null}
             {previewError ? (
-              <span
-                role="alert"
-                className="text-(length:--ui-font-caption) text-(--ui-tone-warning-fg)"
-              >
+              <InlineMessage tone="warning" live="assertive">
                 {t("Preview unavailable. Try again.")}
-              </span>
+              </InlineMessage>
             ) : null}
             {attachment.missing ? (
-              <span className="shrink-0 text-(length:--ui-font-caption) leading-4 text-(--ui-tone-warning-fg)">
+              <span className="shrink-0 text-ui-caption leading-4 text-(--ui-tone-warning-fg)">
                 {t("missing")}
               </span>
             ) : null}
@@ -195,20 +191,20 @@ export function AttachmentChip({
         {onRemove && image ? (
           <Button
             motion="none"
-            className="absolute right-0.5 top-0.5 z-10 shrink-0"
+            className="absolute right-0.5 top-0.5 shrink-0"
             iconOnly
             label={t("Remove {p0}", { p0: attachment.name })}
             variant="secondary"
             shape="pill"
             type="button"
-            title={t("Remove")}
+            tooltip={t("Remove")}
             aria-label={t("Remove {p0}", { p0: attachment.name })}
             onClick={(event) => {
               event.stopPropagation();
               onRemove();
             }}
           >
-            <X className="size-3" strokeWidth={2} />
+            <X className="icon-xs" strokeWidth={2} />
           </Button>
         ) : null}
         {onRemove && !image ? (
@@ -219,7 +215,7 @@ export function AttachmentChip({
             type="button"
             onClick={onRemove}
           >
-            <X className="size-3" strokeWidth={2} />
+            <X className="icon-xs" strokeWidth={2} />
           </InlineAction>
         ) : null}
       </div>

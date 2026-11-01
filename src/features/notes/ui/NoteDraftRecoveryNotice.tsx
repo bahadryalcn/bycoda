@@ -1,8 +1,6 @@
-import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   drafts,
   DRAFT_CHANGED_EVENT,
@@ -14,8 +12,8 @@ import {
   draftInputOwner,
 } from "../noteDrafts";
 import { NOTES_CHANGED_EVENT, noteTitle, upsertNote } from "../notes";
-import { LAYER } from "../../../shared/lib/layers";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Toast, ToastCard, ToastSlot } from "../../../shared/ui/ToastRegion";
 import {
   getNotePrivateRecoveries,
   notePrivateInputCapacityUnavailable,
@@ -100,37 +98,29 @@ export function NoteDraftRecoveryNotice() {
   const capacityUnavailable = notePrivateInputCapacityUnavailable();
   const visibleFailed = isNotesViewOpen() ? [] : failed;
   if (!visibleFailed.length && !privateInputs.length && !capacityUnavailable) return null;
-  return createPortal(
-    <div
-      style={{ zIndex: LAYER.toast }}
-      className="fixed right-3 bottom-3 flex max-h-[calc(100dvh-24px)] w-80 max-w-[calc(100vw-24px)] flex-col gap-2 overflow-y-auto"
-    >
+  return (
+    <>
       {capacityUnavailable ? (
-        <Alert tone="info" title={t("Input capacity is unavailable")}>
-          {t("Existing input is kept. Copy retained text to keep a separate copy.")}
-        </Alert>
+        <Toast
+          tone="info"
+          title={t("Input capacity is unavailable")}
+          message={t("Existing input is kept. Copy retained text to keep a separate copy.")}
+        />
       ) : null}
       {privateInputs.map((input) => (
         <PrivateInputRecovery key={input.id} input={input} />
       ))}
       {visibleFailed.map(([id, draft]) => (
-        <Alert
+        <Toast
           key={id}
           tone={retryingDrafts.has(id) ? "info" : "danger"}
-          role={retryingDrafts.has(id) ? "status" : "alert"}
           title={t(retryingDrafts.has(id) ? "Retrying save…" : "Could not save note")}
-          action={
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              loading={retryingDrafts.has(id)}
-              disabled={!!draft.unadmittedInputs?.length}
-              onClick={() => void retryDraft(id, draft)}
-            >
-              {t("Retry save")}
-            </Button>
-          }
+          action={{
+            label: t("Retry save"),
+            pending: retryingDrafts.has(id),
+            disabled: !!draft.unadmittedInputs?.length,
+            onClick: () => void retryDraft(id, draft),
+          }}
         >
           <p className="wrap-anywhere text-ui-secondary font-medium">
             {(draft.edits.current.title ?? draft.saved?.title ?? draft.base.title).trim() ||
@@ -138,68 +128,65 @@ export function NoteDraftRecoveryNotice() {
           </p>
           {draft.error ? <p className="wrap-anywhere text-ui-caption">{draft.error}</p> : null}
           <p className="text-ui-caption">{t("Your draft is retained for this app session.")}</p>
-        </Alert>
+        </Toast>
       ))}
-    </div>,
-    document.body,
+    </>
   );
 }
 
 function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
   const copied = useCopyFeedback({ resetKeys: [input.id, input.text] });
   return (
-    <Alert
-      tone="info"
-      title={t("Retained note input")}
-      data-note-private-recovery={input.id}
-      action={
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            loading={copied.pending}
-            disabled={input.text === null}
-            onClick={() => {
-              if (input.text !== null) copied.copy(() => copyText(input.text!));
-            }}
-          >
-            {t("Copy exact text")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => requestOpenNoteLibrary({ id: input.noteId })}
-          >
-            {t("Open note")}
-          </Button>
-        </div>
-      }
-    >
-      <p className="wrap-anywhere font-medium">{input.title || t("Untitled")}</p>
-      <p className="text-ui-caption">
-        {t(
-          input.field === "tags"
-            ? "Tags input"
-            : input.field === "title"
-              ? "Title input"
-              : "Document input",
-        )}
-      </p>
-      <p className="text-ui-caption">{t("Check the note before reusing this input.")}</p>
-      {input.text === null ? (
-        <p>{t("The original input could not be read.")}</p>
-      ) : (
-        <details>
-          <summary>{t("View retained input")}</summary>
-          {input.text === "" ? <p>{t("Empty input")}</p> : null}
-          <TextareaField label={t("Retained input")} value={input.text} readOnly rows={2} />
-        </details>
-      )}
-      {copied.copied || copied.failed ? (
-        <p role="status" className="text-ui-caption">
-          {copied.failed ? copied.error : t("Exact text copied")}
-        </p>
-      ) : null}
-    </Alert>
+    <ToastSlot>
+      <div data-note-private-recovery={input.id}>
+        <ToastCard tone="info" title={t("Retained note input")}>
+          <p className="wrap-anywhere font-medium">{input.title || t("Untitled")}</p>
+          <p className="text-ui-caption">
+            {t(
+              input.field === "tags"
+                ? "Tags input"
+                : input.field === "title"
+                  ? "Title input"
+                  : "Document input",
+            )}
+          </p>
+          <p className="text-ui-caption">{t("Check the note before reusing this input.")}</p>
+          {input.text === null ? (
+            <p>{t("The original input could not be read.")}</p>
+          ) : (
+            <details>
+              <summary>{t("View retained input")}</summary>
+              {input.text === "" ? <p>{t("Empty input")}</p> : null}
+              <TextareaField label={t("Retained input")} value={input.text} readOnly rows={2} />
+            </details>
+          )}
+          {copied.copied || copied.failed ? (
+            <p role="status" className="text-ui-caption">
+              {copied.failed ? copied.error : t("Exact text copied")}
+            </p>
+          ) : null}
+          <div className="mt-2 flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={copied.pending}
+              disabled={input.text === null}
+              onClick={() => {
+                if (input.text !== null) copied.copy(() => copyText(input.text!));
+              }}
+            >
+              {t("Copy exact text")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => requestOpenNoteLibrary({ id: input.noteId })}
+            >
+              {t("Open note")}
+            </Button>
+          </div>
+        </ToastCard>
+      </div>
+    </ToastSlot>
   );
 }

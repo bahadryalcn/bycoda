@@ -1,3 +1,4 @@
+import { Surface } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
@@ -141,7 +142,7 @@ function SessionReviewContent({
   if (!enabled || busy || (files.length === 0 && !error && !recording)) return null;
   if (recording) {
     return (
-      <p role="status" className="px-3 py-2 text-xs text-(--ui-text-secondary)">
+      <p role="status" className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
         {t("Loading changes…")}
       </p>
     );
@@ -210,10 +211,7 @@ function SessionReviewContent({
 
   return (
     <div className="px-4 pt-1 pb-2 font-sans" data-session-review-shell>
-      <div
-        className="overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
-        data-session-review
-      >
+      <Surface variant="raised" padding="none" className="overflow-hidden" data-session-review>
         {errorNotice}
         <div className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
           <div className="min-w-0 flex-1">
@@ -230,7 +228,7 @@ function SessionReviewContent({
             <Button
               variant="ghost"
               type="button"
-              title={t("Keep all session changes and dismiss this card")}
+              tooltip={t("Keep all session changes and dismiss this card")}
               disabled={disabled}
               loading={acting === "keep"}
               onClick={() => void run("keep")}
@@ -240,7 +238,7 @@ function SessionReviewContent({
             <Button
               variant="secondary"
               type="button"
-              title={t("Review changes")}
+              tooltip={t("Review changes")}
               onClick={() => onOpenDiff(undefined, { sessionId, cwd })}
             >
               {t("Review")}
@@ -293,9 +291,9 @@ function SessionReviewContent({
             className="w-full text-left"
           >
             {expanded ? (
-              <ChevronDown className="size-3.5" strokeWidth={1.75} />
+              <ChevronDown className="icon-sm" strokeWidth={1.75} />
             ) : (
-              <ChevronRight className="size-3.5" strokeWidth={1.75} />
+              <ChevronRight className="icon-sm" strokeWidth={1.75} />
             )}
             <span>
               {expanded
@@ -306,7 +304,7 @@ function SessionReviewContent({
             </span>
           </Button>
         ) : null}
-      </div>
+      </Surface>
     </div>
   );
 }
@@ -326,7 +324,12 @@ function FileRow({
 }) {
   useLocale();
   const name = basename(file.relative);
-  const { menu, openFrom: _openFrom, isOpen: _isOpen, ...menuHandlers } = useChangedFileMenu({
+  const {
+    menu,
+    openFrom: _openFrom,
+    isOpen: _isOpen,
+    ...menuHandlers
+  } = useChangedFileMenu({
     path: file.path,
     relative: file.relative,
     deleted: file.status === "deleted",
@@ -340,11 +343,11 @@ function FileRow({
         variant="item"
         {...menuHandlers}
         type="button"
-        title={file.relative}
+        tooltip={file.relative}
         onClick={() => onOpenDiff(file.path, { sessionId, cwd })}
         className="w-full min-w-0 text-left"
       >
-        <FileTypeIcon name={name} isDir={false} size={15} />
+        <FileTypeIcon name={name} isDir={false} size="md" />
         <span className="min-w-0 flex-1 truncate font-mono text-ui-caption">{file.relative}</span>
         <DiffCounts file={file} />
       </Button>

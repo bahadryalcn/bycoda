@@ -103,11 +103,6 @@
 .menuBody {
   padding: 4px;
 }
-.separator {
-  block-size: 1px;
-  margin-block: 4px;
-  background: var(--ui-pane-border);
-}
 .fontRow {
   display: flex;
   align-items: center;

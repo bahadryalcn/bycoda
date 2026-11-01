@@ -9,6 +9,7 @@ import { Button } from "../../shared/ui/Button";
 import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { Progress } from "../../shared/ui/Progress";
 import { Popover } from "../../shared/ui/Popover";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { MediaToolbarButton } from "../../shared/ui/MediaToolbar";
 import {
   ImageAnnotationCanvas,
@@ -632,33 +633,34 @@ function DevicePanelSurface({
         <>
           <div className="device-panel-bar">
             {devices.length ? (
-              <div
-                className="device-panel-choice"
-                title={
+              <Tooltip
+                label={
                   device
                     ? `${hostLabel ?? ""} · ${kindLabel(device)} · ${platformLabel(device.platform)} ${device.version} · ${device.id}`
                     : undefined
                 }
               >
-                <SearchableSelect
-                  label={t("Selected device")}
-                  value={selected}
-                  disabled={busy || loadingDevices}
-                  placeholder={t("Select a device")}
-                  searchPlaceholder={t("Search devices by name or ID")}
-                  emptyLabel={t("No matching devices")}
-                  onChange={(id) => {
-                    if (id !== selected)
-                      selectDevice(id, !!devices.find((item) => item.id === id)?.booted);
-                  }}
-                  options={devices.map((item) => ({
-                    value: item.id,
-                    label: item.name,
-                    description: `${platformLabel(item.platform)} ${item.version} · ${stateLabel(item)} · ${kindLabel(item)}`,
-                    keywords: `${item.id} ${kindLabel(item)} ${item.version}`,
-                  }))}
-                />
-              </div>
+                <div className="device-panel-choice">
+                  <SearchableSelect
+                    label={t("Selected device")}
+                    value={selected}
+                    disabled={busy || loadingDevices}
+                    placeholder={t("Select a device")}
+                    searchPlaceholder={t("Search devices by name or ID")}
+                    emptyLabel={t("No matching devices")}
+                    onChange={(id) => {
+                      if (id !== selected)
+                        selectDevice(id, !!devices.find((item) => item.id === id)?.booted);
+                    }}
+                    options={devices.map((item) => ({
+                      value: item.id,
+                      label: item.name,
+                      description: `${platformLabel(item.platform)} ${item.version} · ${stateLabel(item)} · ${kindLabel(item)}`,
+                      keywords: `${item.id} ${kindLabel(item)} ${item.version}`,
+                    }))}
+                  />
+                </div>
+              </Tooltip>
             ) : (
               <p className="host-tool-muted device-panel-bar-text" role="status">
                 {loadingDevices

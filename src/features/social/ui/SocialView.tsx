@@ -5,6 +5,8 @@ import { Button } from "../../../shared/ui/Button";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { Accounts } from "./SocialAccounts";
 import { Campaigns } from "./SocialCampaigns";
@@ -140,21 +142,20 @@ export function SocialView({
       className="social-view"
       data-app-social
     >
-      <div
-        className="flex h-10 shrink-0 select-none items-center"
-        data-tauri-drag-region="deep"
+      <PaneHeader
+        dragRegion
+        chromeInset={!besideRail ? true : compactRail ? "compact" : false}
+        className="select-none"
+        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        trailing={IS_MAC ? null : <WindowControls />}
       >
-        {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
           <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
             <Globe className="icon-sm text-(--ui-text-secondary)" aria-hidden />
             <span>{t("Social Media")}</span>
           </div>
         </ToolHeader>
-        {IS_MAC ? null : <WindowControls />}
-      </div>
+      </PaneHeader>
       <div className="social-layout">
         <header className="social-header">
           <div className="social-heading">
@@ -213,7 +214,7 @@ export function SocialView({
                 type="button"
                 size="sm"
                 aria-label={t("Sending controls: {p0}", { p0: sendingMode.label })}
-                title={t("Sending controls")}
+                tooltip={t("Sending controls")}
                 onClick={actions.openSending}
               >
                 <Badge size="sm" tone={sendingMode.tone}>
@@ -291,7 +292,7 @@ export function SocialView({
               variant="ghost"
               loading={!busy && refreshing}
               disabled={socialLocked || busy || refreshing || !machineId}
-              title={refreshing ? t("Refreshing…") : t("Refresh")}
+              tooltip={refreshing ? t("Refreshing…") : t("Refresh")}
               data-refreshing={refreshing}
               onClick={actions.refreshNow}
             >
@@ -304,7 +305,6 @@ export function SocialView({
               size="sm"
               label={t("Close Social Media")}
               variant="ghost"
-              title={t("Close Social Media")}
               onClick={onClose}
             >
               <X className="icon-md" aria-hidden="true" />
@@ -332,7 +332,7 @@ export function SocialView({
                 type="button"
                 variant="tab"
                 key={item}
-                title={tabLabel(item)}
+                tooltip={tabLabel(item)}
                 aria-current={tab === item ? "page" : undefined}
                 onClick={() => actions.selectTab(item)}
               >
@@ -432,7 +432,7 @@ export function SocialView({
           {!sectionLoaded ? (
             loading || refreshing || !!scoped ? (
               <div className="social-initial-loading">
-                <Notice kind="loading" title={t("Loading Social Media workspace")} />
+                <LoadingText>{t("Loading Social Media workspace")}</LoadingText>
                 <Skeleton className="social-skeleton" aria-hidden="true" />
                 <Skeleton className="social-skeleton" aria-hidden="true" />
               </div>
@@ -738,7 +738,6 @@ function HostStatus({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={label}
-        title={label}
         onClick={() => setOpen(!open)}
       >
         <span className="social-status-dot" data-online={online} aria-hidden="true" />

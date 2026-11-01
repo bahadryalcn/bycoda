@@ -84,3 +84,13 @@ Per-record evidence, dependencies, remaining checks and source hashes:
 `temp/local/2026-10-28-h5-servers-impl/handoff.json`. No delivery commit exists.
 Native datalist preserves free entry until a shared autocomplete supports it;
 replacing it with a future adapter is a proposal, not delivered scope.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Connections, SSH servers, tunnels and phone pairing (`src/features/connections/**`), from `HANDOFF-w2-tools.md`.
+
+- Done: 134 literal font sizes to `text-ui-*`; ServersView header on `PaneHeader` (drag region + chrome inset; both mac spacers gone); SshSettings, ServersConnectionTools and ConnectionsSettings panel switches on `Tabs keepMounted` (selectors are now `[role="tab"]`); errors to `InlineError` (with `retry`), warnings to `InlineMessage`, empty lines to `EmptyState size="inline"`, "Loading" to `LoadingText`; Failed/Running text to `StatusBadge`; dialog footers to `ModalActions`; cards to `Surface`; `Divider`; PhonePairingDialog confirmation on `ConfirmDialog`; RemoteConnectionBanner/AdoptedSessionNotice/RemoteSession notices on `Alert` with `action`.
+- Left: ServersTerminalWorkspace header row and native draggable tab strip; ServersView detail header (inside a Popover); `Alert` blocks with their own Retry buttons; about 25 `NativeSelect`/`NativeSearchableSelect` uses; `SessionHostTools` `triggerProps={{ title }}` (SearchableSelect has no tooltip prop).
+- Unverified: no screenshots or native run; browser specs reading `[role="radio"]` for the section switch need `[role="tab"]` (`tests/browser`, not run).

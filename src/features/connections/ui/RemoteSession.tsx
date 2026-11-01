@@ -1,4 +1,7 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import { isLocalSyncMachine } from "../model/localSync";
 import { machineLabel } from "../model/machineIdentity";
@@ -310,7 +313,7 @@ export function RemoteSession({
   if (!project || !machine)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-[13px] text-(--ui-text-muted)">
+        <p className="text-ui-secondary text-(--ui-text-muted)">
           {!project
             ? t(
                 "This project’s machine details are missing. Add the project again from the project rail.",
@@ -3516,8 +3519,7 @@ function ConnectedRemoteSession({
         }
       />
     ),
-    workingMachine:
-      online && hostSession && snapshot?.status === "running" ? hostLabel : undefined,
+    workingMachine: online && hostSession && snapshot?.status === "running" ? hostLabel : undefined,
     session,
     remoteSession: true,
     remoteFeatures: {
@@ -3737,33 +3739,31 @@ function ConnectedRemoteSession({
     <ModelSourceContext.Provider value={modelSource}>
       <div className="relative flex h-full min-h-0 flex-col">
         {followUpPreparing || sending ? (
-          <div role="status" className="shrink-0 px-4 py-2 text-xs text-(--ui-text-secondary)">
+          <LoadingText className="shrink-0 px-4 py-2">
             {t(
               sending
                 ? "Waiting for the host to confirm your request."
                 : "Preparing the message and attachments…",
             )}
-          </div>
+          </LoadingText>
         ) : desktopRun ? (
-          <div role="status" className="shrink-0 px-4 py-2 text-xs text-(--ui-text-secondary)">
+          <InlineMessage tone="info" className="shrink-0 px-4 py-2">
             {t(
               "This turn is running in the desktop app. New messages are queued until it finishes.",
             )}
-          </div>
+          </InlineMessage>
         ) : null}
         {uploadProgress ? (
-          <div role="status" className="shrink-0 px-4 py-2 text-xs text-(--ui-text-muted)">
+          <LoadingText className="shrink-0 px-4 py-2">
             {t("Uploading attachment: ")}
             {Math.round(
               uploadProgress.size ? (uploadProgress.offset / uploadProgress.size) * 100 : 100,
             )}
             %
-          </div>
+          </LoadingText>
         ) : null}
         {snapshot?.historyLoading ? (
-          <div role="status" className="shrink-0 px-4 py-2 text-xs text-(--ui-text-muted)">
-            {t("Loading earlier messages…")}
-          </div>
+          <LoadingText className="shrink-0 px-4 py-2">{t("Loading earlier messages…")}</LoadingText>
         ) : null}
         <RemoteConnectionBanner cwd={owner?.environmentId ?? project.key} stale={!!hostSession} />
         <RemoteDataStatus
@@ -3779,27 +3779,30 @@ function ConnectedRemoteSession({
         />
         <RemoteOutboxNotice project={project.key} environment={machine.environmentId} />
         {notice ? (
-          <div
-            role={error ? "alert" : "status"}
-            className="flex shrink-0 items-center gap-3 border-b border-stroke px-4 py-2 text-[12px] text-(--ui-text-muted)"
-          >
-            <span className="min-w-0 flex-1 truncate" title={notice.detail}>
-              {notice.text}
-              {notice.detail ? (
-                <span className="text-(--ui-text-muted)"> {notice.detail}</span>
-              ) : null}
-            </span>
-            {notice.action ? (
-              <Button
-                type="button"
-                disabled={!online && !queue.error && notice.action.label !== "Dismiss"}
-
-                onClick={notice.action.run}
-                variant="secondary"
-              >
-                {notice.action.label}
-              </Button>
-            ) : null}
+          <div className="shrink-0 px-4 py-2">
+            <Alert
+              tone={error ? "danger" : "warning"}
+              role={error ? "alert" : "status"}
+              action={
+                notice.action ? (
+                  <Button
+                    type="button"
+                    disabled={!online && !queue.error && notice.action.label !== "Dismiss"}
+                    onClick={notice.action.run}
+                    variant="secondary"
+                  >
+                    {notice.action.label}
+                  </Button>
+                ) : undefined
+              }
+            >
+              <span className="min-w-0 break-words">
+                {notice.text}
+                {notice.detail ? (
+                  <span className="text-(--ui-text-muted)"> {notice.detail}</span>
+                ) : null}
+              </span>
+            </Alert>
           </div>
         ) : null}
         <div className="min-h-0 flex-1">{render(overrides)}</div>

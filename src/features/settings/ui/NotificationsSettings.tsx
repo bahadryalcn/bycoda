@@ -4,7 +4,6 @@ import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
-  DAILY_SUMMARY_TIMES,
   loadDailySummaryEnabled,
   subscribeDailySummary,
   loadDailySummaryTime,
@@ -31,8 +30,42 @@ import { RefreshCw } from "../../../shared/ui/icons";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
-import { Group, Row, Select, Toggle, SettingsFeedback } from "./settingsControls";
+import { DateTimeField } from "../../../shared/ui/DateTimePicker";
+import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
 import "./NotificationsSettings.css";
+
+/**
+ * Delivery time as a typed 24-hour field: any valid minute is allowed (the stored value is not
+ * limited to the former hourly list). Half-typed text stays a local draft; only a complete time
+ * is saved, and a failed save keeps the typed value beside its Retry.
+ */
+function DailySummaryTime({
+  saved,
+  disabled,
+  onCommit,
+}: {
+  saved: string;
+  disabled: boolean;
+  onCommit: (time: string) => void;
+}) {
+  const [draft, setDraft] = useState({ source: saved, text: saved });
+  if (draft.source !== saved) setDraft({ source: saved, text: saved });
+  return (
+    <DateTimeField
+      mode="time"
+      label={t("Daily summary time")}
+      hideLabel
+      description=""
+      fieldVariant="compact"
+      value={draft.text}
+      disabled={disabled}
+      onChange={(time) => {
+        setDraft({ source: saved, text: time });
+        if (time && time !== saved) onCommit(time);
+      }}
+    />
+  );
+}
 
 export function NotificationAlerts() {
   useLocale();
@@ -243,17 +276,12 @@ export function NotificationAlerts() {
           disabledReason={t("Enable Daily summary first")}
           feedback={saveFeedback("summary-time")}
         >
-          <Select
-            label={t("Daily summary time")}
-            value={summaryTime}
-            options={[...new Set([...DAILY_SUMMARY_TIMES, summaryTime])].sort().map((time) => ({
-              value: time,
-              label: time,
-            }))}
-            onChange={(time) => {
+          <DailySummaryTime
+            saved={summaryTime}
+            disabled={!notificationsEnabled || !summaryEnabled}
+            onCommit={(time) => {
               commitPreference("summary-time", () => saveDailySummaryTime(time), () => setSummaryTime(time));
             }}
-            disabled={!notificationsEnabled || !summaryEnabled}
           />
         </Row>
       </Group>

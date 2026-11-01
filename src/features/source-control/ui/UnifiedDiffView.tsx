@@ -33,6 +33,7 @@ import { highlightDiffFile, type SyntaxToken } from "../../files/editor/syntaxTo
 import { useDiffZoom } from "../hooks/useDiffZoom";
 import { useFocusFollow } from "../hooks/useFocusFollow";
 import { DiffCommentComposer } from "./DiffCommentComposer";
+import "./UnifiedDiffView.css";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import {
   DiffOverviewContext,
@@ -229,7 +230,9 @@ export function UnifiedDiffView({
       ref={rootRef}
       data-diff-layout={diffLayout}
       className={
-        fill ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "flex flex-col"
+        fill
+          ? "relative isolate flex h-full min-h-0 flex-1 flex-col overflow-hidden"
+          : "isolate flex flex-col"
       }
     >
       <div
@@ -252,8 +255,6 @@ export function UnifiedDiffView({
             variant="ghost"
             motion="none"
             type="button"
-            title={t("Expand all files")}
-            aria-label={t("Expand all files")}
             onClick={() => setOpen(new Set(files.map((file) => file.id)))}
           >
             <UnfoldVertical className="icon-sm" strokeWidth={1.75} />
@@ -265,8 +266,6 @@ export function UnifiedDiffView({
             variant="ghost"
             motion="none"
             type="button"
-            title={t("Collapse all files")}
-            aria-label={t("Collapse all files")}
             disabled={open.size === 0}
             onClick={() => setOpen(new Set())}
           >
@@ -442,7 +441,7 @@ const FileSection = memo(function FileSection({
         aria-label={file.label}
         selected={focused}
         className={`${
-          fileLayout === "stacked" ? "sticky top-0 z-30 " : ""
+          fileLayout === "stacked" ? "sticky top-0 z-3 " : ""
         } flex items-center gap-2 bg-[var(--ui-surface)] px-3 py-1.5 ${
           fileLayout === "stacked" || expanded ? "border-b border-stroke" : ""
         }`}
@@ -456,7 +455,7 @@ const FileSection = memo(function FileSection({
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
           <Chevron className="icon-sm shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
-          <FileTypeIcon name={name} isDir={false} size={16} />
+          <FileTypeIcon name={name} isDir={false} />
           <MiddleTruncate mode="path" className="min-w-0 flex-1 font-mono text-ui-caption font-medium text-(--color-content)">
             {file.label}
           </MiddleTruncate>
@@ -468,8 +467,6 @@ const FileSection = memo(function FileSection({
             label={t("Discard file")}
             motion="none"
             type="button"
-            title={t("Discard file")}
-            aria-label={t("Discard file")}
             disabled={busy}
             onClick={() => onDiscardFile(file.id)}
           >
@@ -482,8 +479,6 @@ const FileSection = memo(function FileSection({
             label={t("Stage file")}
             motion="none"
             type="button"
-            title={t("Stage file")}
-            aria-label={t("Stage file")}
             disabled={busy}
             onClick={() => onStageFile(file.id)}
           >
@@ -968,7 +963,7 @@ function VirtualRows({
                 does; the before gutter sits above the after one so a fold
                 bar spanning both stays clickable. */}
             <div className="flex min-w-0 flex-1">
-              <div className="relative z-20 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
+              <div className="relative z-2 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
                 {renderSplitLane("before", "gutter")}
               </div>
               <div ref={codeRef} className="min-w-0 flex-1 overflow-x-auto overscroll-x-none">
@@ -983,7 +978,7 @@ function VirtualRows({
               </div>
             </div>
             <div className="flex min-w-0 flex-1 border-l border-stroke">
-              <div className="relative z-10 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
+              <div className="relative z-1 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
                 {renderSplitLane("after", "gutter")}
               </div>
               <div ref={codeRightRef} className="min-w-0 flex-1 overflow-x-auto overscroll-x-none">
@@ -1000,7 +995,7 @@ function VirtualRows({
           </>
         ) : (
           <>
-            <div className="relative z-10 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
+            <div className="relative z-1 w-[var(--diff-gutter-w,3rem)] shrink-0" style={lanePad}>
               {renderLane("gutter")}
             </div>
             <div ref={codeRef} className="min-w-0 flex-1 overflow-x-auto overscroll-x-none">
@@ -1091,7 +1086,7 @@ const SplitLane = memo(function SplitLane({
     // The bar is drawn once, from the before gutter, across both columns.
     if (side === "before" && lane === "gutter") {
       return (
-        <div className="relative z-20" style={FOLD_HEIGHT}>
+        <div className="relative z-2" style={FOLD_HEIGHT}>
           <div
             className="absolute inset-y-0 left-0"
             style={{ width: "var(--unified-body-width, 100%)" }}
@@ -1161,7 +1156,7 @@ const DiffLane = memo(function DiffLane({
   if (row.type === "fold") {
     if (lane === "gutter") {
       return (
-        <div className="relative z-20" style={FOLD_HEIGHT}>
+        <div className="relative z-2" style={FOLD_HEIGHT}>
           <div
             className="absolute inset-y-0 left-0"
             style={{ width: "var(--unified-body-width, 100%)" }}
@@ -1209,11 +1204,10 @@ function FoldBar({
         variant="ghost"
         motion="none"
         type="button"
-        title={t("Expand upward")}
-        aria-label={t("Expand unmodified lines upward")}
+        tooltip={t("Expand upward")}
         onClick={() => onReveal(foldId, "up")}
       >
-        <ChevronUp className="size-3" strokeWidth={2} />
+        <ChevronUp className="icon-xs" strokeWidth={2} />
       </Button>
       <Button
         size="sm"
@@ -1223,11 +1217,10 @@ function FoldBar({
         variant="ghost"
         motion="none"
         type="button"
-        title={t("Expand downward")}
-        aria-label={t("Expand unmodified lines downward")}
+        tooltip={t("Expand downward")}
         onClick={() => onReveal(foldId, "down")}
       >
-        <ChevronDown className="size-3" strokeWidth={2} />
+        <ChevronDown className="icon-xs" strokeWidth={2} />
       </Button>
       <Button
         size="sm"
@@ -1282,7 +1275,7 @@ const DiffLineRow = memo(function DiffLineRow({
     return (
       <div className="flex items-center bg-[var(--ui-surface)]" style={HUNK_HEIGHT}>
         {lane === "code" ? (
-          <span className="px-3 font-mono text-[length:var(--diff-meta-font,11px)] leading-none text-[var(--ui-text-muted)]">
+          <span className="px-3 font-mono diff-meta-text leading-none text-[var(--ui-text-muted)]">
             {line.text}
           </span>
         ) : null}
@@ -1315,7 +1308,7 @@ const DiffLineRow = memo(function DiffLineRow({
           <span className={`pointer-events-none absolute inset-0 ${gutterTint}`} />
         ) : null}
         <span
-          className={`relative block w-full pr-2 text-right font-mono text-[length:var(--diff-meta-font,11px)] leading-none tabular-nums ${gutterText}`}
+          className={`relative block w-full pr-2 text-right font-mono diff-meta-text leading-none tabular-nums ${gutterText}`}
         >
           {number ?? ""}
         </span>
@@ -1324,14 +1317,12 @@ const DiffLineRow = memo(function DiffLineRow({
             selected={hovered || commenting}
             data-gutter-action="comment"
             data-retained-action={hovered || commenting ? "true" : "false"}
-            className="absolute top-0.5 left-0.5 z-10"
+            className="absolute top-0.5 left-0.5 z-1"
           >
           <InlineAction
             label={`Comment on line ${number ?? ""}`.trim()}
             motion="none"
             type="button"
-            title={`Comment on line ${number ?? ""}`.trim()}
-            aria-label={`Comment on line ${number ?? ""}`.trim()}
             onClick={(event) =>
               onComment(
                 side ? `${hoverKey}:${side}` : (hoverKey ?? ""),
@@ -1349,14 +1340,12 @@ const DiffLineRow = memo(function DiffLineRow({
             selected={stageVisible}
             data-gutter-action="stage"
             data-retained-action={stageVisible ? "true" : "false"}
-            className="absolute top-0.5 left-full z-10 ml-0.5"
+            className="absolute top-0.5 left-full z-1 ml-0.5"
           >
           <InlineAction
             label={t("Stage hunk")}
             motion="none"
             type="button"
-            title={t("Stage hunk")}
-            aria-label={t("Stage hunk")}
             onClick={() => {
               if (fileId !== undefined && stagePos !== undefined) onStage(fileId, stagePos);
             }}
@@ -1374,7 +1363,7 @@ const DiffLineRow = memo(function DiffLineRow({
       {/* Width is counted in minWidthCh. select-none keeps the glyph and the
           screen-reader cue out of copied code. */}
       <span
-        className={`w-7 shrink-0 select-none pl-3 font-mono text-[length:var(--diff-code-font,12px)] leading-none font-semibold ${gutterText}`}
+        className={`w-7 shrink-0 select-none pl-3 font-mono diff-code-text leading-none font-semibold ${gutterText}`}
       >
         <span aria-hidden="true">{added ? "+" : deleted ? "−" : ""}</span>
         {added || deleted ? (
@@ -1382,7 +1371,7 @@ const DiffLineRow = memo(function DiffLineRow({
         ) : null}
       </span>
       <span
-        className={`whitespace-pre pr-3 font-mono text-[length:var(--diff-code-font,12px)] leading-none ${line.kind === "context" ? "" : "text-[var(--color-content)]"} ${
+        className={`whitespace-pre pr-3 font-mono diff-code-text leading-none ${line.kind === "context" ? "" : "text-[var(--color-content)]"} ${
           line.kind === "context" ? "text-[var(--ui-text-secondary)]" : ""
         }`}
       >

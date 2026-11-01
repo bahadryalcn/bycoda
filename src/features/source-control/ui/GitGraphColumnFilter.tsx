@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { Popover } from "../../../shared/ui/Popover";
 import { TextField } from "../../../shared/ui/TextField";
-import { ListFilter } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n/git";
 import { EMPTY_HISTORY_FILTERS, type GitHistoryFilters } from "../model/gitHistoryFilters";
 
@@ -19,37 +19,32 @@ export function GitGraphColumnFilter({
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const keys = field === "date" ? (["after", "before"] as const) : [field];
-  const active = keys.some((key) => filters[key].trim());
+  const activeCount = keys.filter((key) => filters[key].trim()).length;
+  const active = activeCount > 0;
   const name = t("Filter {p0}", { p0: label });
   return (
     <>
       <span className="flex min-w-0 items-center gap-1">
         <span className="truncate">{label}</span>
-        <Button
-          variant="ghost"
-          motion="none"
-          iconOnly
+        <FilterTrigger
           label={name}
-          selected={active}
-          aria-pressed={active}
+          activeCount={activeCount}
           aria-expanded={!!anchor}
           aria-haspopup="dialog"
           onClick={(event) => setAnchor(event.currentTarget)}
-        >
-          <ListFilter className="size-3" />
-        </Button>
+        />
       </span>
       {anchor ? (
         <Popover
           anchor={anchor}
           width={280}
-          role="dialog"
+          kind="dialog"
           aria-label={name}
           onDismiss={() => setAnchor(null)}
         >
           <div className="flex flex-col gap-3 p-3">
-            <span className="text-xs font-medium">{name}</span>
-            <span className="text-xs text-[var(--ui-text-secondary)]">
+            <span className="text-ui-caption font-medium">{name}</span>
+            <span className="text-ui-caption text-(--ui-text-secondary)">
               {t("Filters apply to loaded commits")}
             </span>
             {keys.map((key) => (

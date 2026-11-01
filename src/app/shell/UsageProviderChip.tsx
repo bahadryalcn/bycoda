@@ -38,6 +38,11 @@ import {
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { ArrowLeft, Check, ChevronRight, Plus, RefreshCw } from "../../shared/ui/icons";
 import { Popover } from "../../shared/ui/Popover";
+import { Badge } from "../../shared/ui/Badge";
+import { InlineError } from "../../shared/ui/InlineError";
+import { Spinner } from "../../shared/ui/Spinner";
+import { Surface } from "../../shared/ui/Surface";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { Button } from "../../shared/ui/Button";
 import {
   ProviderSignInPanel,
@@ -129,7 +134,7 @@ export function UsageProviderChip(props: UsageProviderChipProps) {
         aria-label={t("{p0} usage details", { p0: providerLabel })}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title={
+        tooltip={
           tooltip ||
           limits.error ||
           (disconnected ? t("Not connected") : loading ? t("Loading usage…") : t("Usage details"))
@@ -324,7 +329,7 @@ function UsageProviderDetails({
               key={account.id}
               variant="tab"
               aria-pressed={account.id === detailAccountId}
-              title={account.label}
+              tooltip={account.label}
               className="min-w-0 max-w-full gap-1.5"
               onClick={() => {
                 setResetAction("idle");
@@ -396,20 +401,20 @@ function UsageProviderDetails({
               <HarnessIcon harness={iconHarness} className="size-4" />
             </span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-[13px] font-medium leading-4">
+              <h2 className="text-ui-secondary font-medium leading-4">
                 {providerLabel}
                 {t(" usage")}
               </h2>
-              <p className="mt-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+              <p className="mt-0.5 text-ui-caption leading-4 text-(--ui-text-secondary)">
                 {updatedLabel(detailLimits, now)}
               </p>
               {presentation?.sourceLabel ? (
-                <p className="mt-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+                <p className="mt-0.5 text-ui-caption leading-4 text-(--ui-text-secondary)">
                   {presentation.sourceLabel}
                 </p>
               ) : null}
               {canManageAccounts ? (
-                <div className="pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+                <div className="pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-ui-caption text-(--ui-text-secondary)">
                   {/* Keep account switching separate from email revelation. */}
                   <Button
                     variant="ghost"
@@ -433,7 +438,7 @@ function UsageProviderDetails({
               ) : null}
             </div>
             {detailLimits.status === "fetching" ? (
-              <span className="mt-0.5 inline-flex items-center gap-1 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+              <span className="mt-0.5 inline-flex items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
                 <RefreshCw
                   className="size-2.5 motion-safe:animate-spin"
                   strokeWidth={1.75}
@@ -445,7 +450,7 @@ function UsageProviderDetails({
           </div>
 
           {detailLimits.status === "error" && detailWindows.length > 0 ? (
-            <p className="mb-2 rounded-lg bg-(--ui-tone-warning-subtle) px-2.5 py-2 text-[length:var(--ui-font-caption)] leading-4 text-warning dark:text-warning">
+            <p className="mb-2 rounded-(--ui-radius-card) bg-(--ui-tone-warning-subtle) px-2.5 py-2 text-ui-caption leading-4 text-warning">
               {t("Couldn’t refresh. Showing the last available snapshot.")}
             </p>
           ) : null}
@@ -528,14 +533,10 @@ function AccountSwitchRow({
       >
         {account ? <AccountColorDot account={account} /> : null}
         <span className="min-w-0 flex-1 truncate">{accountLabel}</span>
-        <span className="text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+        <span className="text-ui-caption text-(--ui-text-secondary)">
           {t("Switch account")}
         </span>
-        <ChevronRight
-          className="size-3 shrink-0 text-(--ui-text-secondary)"
-          strokeWidth={1.75}
-          aria-hidden
-        />
+        <ChevronRight className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden />
       </Button>
     </div>
   );
@@ -579,14 +580,14 @@ function ProviderAccountPicker({
           aria-label={t("Back to usage")}
           onClick={onBack}
         >
-          <ArrowLeft className="size-3.5" strokeWidth={1.75} aria-hidden />
+          <ArrowLeft className="icon-sm" aria-hidden />
         </Button>
-        <h2 className="text-[13px] font-medium">
+        <h2 className="text-ui-secondary font-medium">
           {providerLabel}
           {t(" accounts")}
         </h2>
       </div>
-      <p className="mt-1 px-1 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+      <p className="mt-1 px-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
         {t("Applies to this conversation only; new ones use the default account.")}
       </p>
       <div
@@ -603,7 +604,7 @@ function ProviderAccountPicker({
           return (
             <div
               key={account.id}
-              className={`pointer-events-none relative flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-[11px] ring-1 ring-inset transition-colors ${
+              className={`pointer-events-none relative flex w-full items-center gap-3 rounded-(--ui-radius-card) px-2.5 py-2 text-left text-ui-micro ring-1 ring-inset transition-colors ${
                 selected
                   ? "bg-(--ui-surface-selected) text-content ring-(--ui-tone-accent-border)"
                   : "bg-(--ui-surface-muted) text-(--ui-text-secondary) ring-(--color-stroke)"
@@ -626,15 +627,15 @@ function ProviderAccountPicker({
                   <span className="shrink-0 truncate">{account.label}</span>
                   <ProviderAccountSubtitle
                     identity={identity}
-                    className="text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)"
+                    className="text-ui-caption text-(--ui-text-secondary)"
                   />
                   {orgTag ? (
-                    <span className="max-w-[6rem] shrink-0 truncate rounded bg-(--ui-surface-muted) px-1 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+                    <Badge size="xs" className="max-w-24 shrink-0 truncate">
                       {orgTag}
-                    </span>
+                    </Badge>
                   ) : null}
                 </span>
-                <span className="mt-1 flex min-w-0 items-center gap-3 text-[length:var(--ui-font-caption)]">
+                <span className="mt-1 flex min-w-0 items-center gap-3 text-ui-caption">
                   <span
                     id={`${statusId}-${account.id}`}
                     // Without meters, a long "unknown" reason truncates.
@@ -659,7 +660,7 @@ function ProviderAccountPicker({
                 </span>
               </span>
               {selected ? (
-                <Check className="size-3.5 shrink-0 text-accent" strokeWidth={1.9} aria-hidden />
+                <Check className="icon-sm shrink-0 text-accent" aria-hidden />
               ) : null}
             </div>
           );
@@ -672,7 +673,7 @@ function ProviderAccountPicker({
         className="mt-2 flex w-full items-center gap-2"
         onClick={onAdd}
       >
-        <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
+        <Plus className="icon-sm" aria-hidden />
         {t("Add account")}
       </Button>
       {onManage ? (
@@ -709,16 +710,16 @@ function SwitchSuggestion({
   return (
     <section className="mt-2 flex items-center gap-2.5 rounded-lg bg-(--ui-surface-muted) px-3 py-2.5 ring-1 ring-inset ring-(--color-stroke)">
       <div className="min-w-0 flex-1">
-        <p className="text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+        <p className="text-ui-caption leading-4 text-(--ui-text-secondary)">
           {exhausted ? t("Out of usage") : t("Running low")}
           {t(" · switch to")}
         </p>
-        <p className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px]">
+        <p className="mt-0.5 flex min-w-0 items-center gap-2 text-ui-micro">
           <AccountColorDot account={account} />
           <span className="min-w-0 truncate font-medium">{account.label}</span>
           <AccountStatusLabel
             status={accountStatus(limits, now)}
-            className="text-[length:var(--ui-font-caption)]"
+            className="text-ui-caption"
           />
         </p>
       </div>
@@ -773,18 +774,18 @@ function AddProviderAccount({
           disabled={running}
           onClick={onBack}
         >
-          <ArrowLeft className="size-3.5" strokeWidth={1.75} aria-hidden />
+          <ArrowLeft className="icon-sm" aria-hidden />
         </Button>
-        <h2 className="text-[13px] font-medium">
+        <h2 className="text-ui-secondary font-medium">
           {t("Add ")}
           {providerLabel}
           {t(" account")}
         </h2>
       </div>
-      <p className="mt-1 px-1 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+      <p className="mt-1 px-1 text-ui-caption leading-4 text-(--ui-text-secondary)">
         {t("Give this account a local name, then finish sign-in in your browser.")}
       </p>
-      <label className="mt-3 block text-[length:var(--ui-font-caption)] font-medium text-(--ui-text-secondary)">
+      <label className="mt-3 block text-ui-caption font-medium text-(--ui-text-secondary)">
         {t("Account name")}
         <TextField
           fieldClassName="min-w-0 flex-1"
@@ -807,16 +808,13 @@ function AddProviderAccount({
         className="mt-3 inline-flex w-full items-center justify-center gap-1.5"
         disabled={running || !label.trim()}
       >
-        {running ? <RefreshCw className="size-3.5 motion-safe:animate-spin" aria-hidden /> : null}
+        {running ? <Spinner /> : null}
         {running ? t("Waiting for browser…") : t("Sign in and add account")}
       </Button>
       {error ? (
-        <p
-          className="mt-2 text-[length:var(--ui-font-caption)] leading-4 text-danger"
-          role="status"
-        >
+        <InlineError live="polite" className="mt-2">
           {error}
-        </p>
+        </InlineError>
       ) : null}
     </form>
   );
@@ -853,9 +851,9 @@ function UsageWindowCard({
           ? "Monthly limit"
           : `${formatWindowLabel(window.windowMinutes)} limit`;
   return (
-    <section className="rounded-lg border border-(--color-stroke) bg-(--ui-surface) px-3 py-2.5">
+    <Surface as="section" variant="outline">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-[11px] font-medium text-(--ui-text-secondary)">{t(title)}</h3>
+        <h3 className="text-ui-micro font-medium text-(--ui-text-secondary)">{t(title)}</h3>
       </div>
       <Progress
         showValue
@@ -866,25 +864,26 @@ function UsageWindowCard({
         value={Math.round(shown)}
         tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
       />
-      <div className="mbs-1.5 flex items-center justify-between gap-3 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+      <div className="mbs-1.5 flex items-center justify-between gap-3 text-ui-caption leading-4 text-(--ui-text-secondary)">
         <span className="tabular-nums">
           {formatUsagePercent(showRemaining ? pct : remaining)}{" "}
           {showRemaining ? t("used") : t("remaining")}
         </span>
-        <span
-          className="truncate text-right tabular-nums"
-          title={
+        <Tooltip
+          label={
             window.resetsAt == null
               ? undefined
               : new Date(window.resetsAt).toLocaleString(getLocale())
           }
         >
-          {window.resetsAt == null
-            ? t("{p0} window", { p0: formatWindowLabel(window.windowMinutes) })
-            : formatResetCountdown(window.resetsAt - now)}
-        </span>
+          <span className="truncate text-right tabular-nums">
+            {window.resetsAt == null
+              ? t("{p0} window", { p0: formatWindowLabel(window.windowMinutes) })
+              : formatResetCountdown(window.resetsAt - now)}
+          </span>
+        </Tooltip>
       </div>
-    </section>
+    </Surface>
   );
 }
 
@@ -934,24 +933,21 @@ function BankedResets({
     <section className="mbs-2.5 border-t border-(--color-stroke) pbs-2.5">
       <div className="flex items-center justify-between gap-3 px-1 py-1">
         <div className="flex min-w-0 items-center gap-1.5">
-          <h3 className="text-[11px] font-medium">{t("Banked resets")}</h3>
-          <span
-            className="rounded-full bg-(--ui-surface-muted) px-1.5 py-px text-[length:var(--ui-font-caption)] font-medium tabular-nums text-(--ui-text-secondary)"
-            title={t("{p0} available", { p0: count })}
-            aria-label={t("{p0} available", { p0: count })}
+          <h3 className="text-ui-micro font-medium">{t("Banked resets")}</h3>
+          <Badge
+            variant="count"
+            size="xs"
+            tone="neutral"
+            label={t("{p0} available", { p0: count })}
           >
             {count}
-          </span>
+          </Badge>
           {refreshing ? (
             <span
-              className="inline-flex items-center gap-1 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)"
+              className="inline-flex items-center gap-1 text-ui-caption text-(--ui-text-secondary)"
               role="status"
             >
-              <RefreshCw
-                className="size-3 motion-safe:animate-spin"
-                strokeWidth={1.75}
-                aria-hidden
-              />
+              <Spinner size="xs" />
               {t("Checking…")}
             </span>
           ) : null}
@@ -1042,28 +1038,29 @@ function BankedResetRow({
   return (
     <article role="listitem" className="px-1 py-1.5">
       {showTitle && credit?.title ? (
-        <h4 className="text-[length:var(--ui-font-caption)] font-medium leading-4 text-(--ui-text-secondary)">
+        <h4 className="text-ui-caption font-medium leading-4 text-(--ui-text-secondary)">
           {credit.title}
         </h4>
       ) : null}
       <div className="flex min-h-6 items-center justify-between gap-2">
-        <p
-          className="min-w-0 truncate text-[length:var(--ui-font-caption)] tabular-nums text-(--ui-text-secondary)"
-          title={
+        <Tooltip
+          label={
             credit?.expiresAt == null
               ? undefined
               : new Date(credit.expiresAt).toLocaleString(getLocale())
           }
         >
-          {credit?.expiresAt == null
-            ? t("Expiry not provided")
-            : credit.expiresAt <= now
-              ? t("Expired")
-              : t("Expires in {p0}", { p0: formatResetDuration(credit.expiresAt - now) })}
-        </p>
+          <p className="min-w-0 truncate text-ui-caption tabular-nums text-(--ui-text-secondary)">
+            {credit?.expiresAt == null
+              ? t("Expiry not provided")
+              : credit.expiresAt <= now
+                ? t("Expired")
+                : t("Expires in {p0}", { p0: formatResetDuration(credit.expiresAt - now) })}
+          </p>
+        </Tooltip>
         {action === "using" ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
-            <RefreshCw className="size-3 motion-safe:animate-spin" strokeWidth={1.75} aria-hidden />
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
+            <Spinner size="xs" />
             {t("Applying…")}
           </span>
         ) : canUse && action !== "confirming" && (!outcome || retryable) ? (
@@ -1081,7 +1078,7 @@ function BankedResetRow({
       </div>
       {outcome ? (
         <p
-          className={`mt-0.5 break-words text-[length:var(--ui-font-caption)] leading-4 ${
+          className={`mt-0.5 break-words text-ui-caption leading-4 ${
             action === "reset" ? "text-success" : "text-(--ui-text-secondary)"
           }`}
           role="status"
@@ -1091,7 +1088,7 @@ function BankedResetRow({
       ) : null}
       {action === "confirming" ? (
         <div className="mt-1.5 flex items-center justify-between gap-2">
-          <p className="text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+          <p className="text-ui-caption leading-4 text-(--ui-text-secondary)">
             {t("Spend this reset now?")}
           </p>
           <div className="flex shrink-0 gap-1">
@@ -1111,11 +1108,8 @@ function BankedResetRow({
 function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; loading: boolean }) {
   const t = useT();
   return (
-    <div
-      className="flex flex-col gap-2 rounded-lg border border-dashed border-(--color-stroke) bg-(--ui-surface) px-3 py-3"
-      role="status"
-    >
-      <span className="text-[11px] font-medium">
+    <Surface variant="inset" className="flex flex-col gap-2" role="status">
+      <span className="text-ui-micro font-medium">
         {loading
           ? t("Loading usage…")
           : limits.status === "unavailable"
@@ -1127,9 +1121,9 @@ function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; load
         loading={loading}
       />
       {limits.error ? (
-        <p className="text-[11px] leading-relaxed text-(--ui-text-secondary)">{limits.error}</p>
+        <InlineError live="off">{limits.error}</InlineError>
       ) : null}
-    </div>
+    </Surface>
   );
 }
 
@@ -1165,13 +1159,14 @@ function isResetOutcome(value: ResetActionState): value is CodexRateLimitResetOu
 
 function UnknownUsageBar({ label, loading = false }: { label: string; loading?: boolean }) {
   return (
-    <span
-      title={label}
-      aria-label={label}
-      className="inline-flex h-4 min-w-12 items-center justify-center rounded-sm border border-dashed border-(--color-stroke) bg-(--ui-surface-muted) px-1 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)"
-    >
-      {loading ? "···" : "?"}
-    </span>
+    <Tooltip label={label}>
+      <span
+        aria-label={label}
+        className="inline-flex h-4 min-w-12 items-center justify-center rounded-sm border border-dashed border-(--color-stroke) bg-(--ui-surface-muted) px-1 text-ui-caption text-(--ui-text-secondary)"
+      >
+        {loading ? "···" : "?"}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -1191,27 +1186,29 @@ function UsageWindowStat({ window, now }: { window: RateLimitWindow; now: number
         } as CSSProperties)
       : undefined;
   return (
-    <span className="inline-flex items-center gap-1.5 tabular-nums" title={label}>
-      <span aria-hidden="true" className="text-ui-micro text-(--ui-text-secondary)">
-        {formatWindowLabel(window.windowMinutes)}
-      </span>
-      <Progress
-        compact
-        showValue
-        valuePlacement="inside"
-        valueLabel={formatUsagePercent(shown)}
-        aria-label={label}
-        aria-valuetext={label}
-        className="w-11 shrink-0"
-        style={quiet}
-        value={shown}
-        tone={tone}
-      />
-      {window.resetsAt != null ? (
-        <span className="text-(--ui-text-secondary)">
-          {formatResetDuration(window.resetsAt - now)}
+    <Tooltip label={label}>
+      <span className="inline-flex items-center gap-1.5 tabular-nums">
+        <span aria-hidden="true" className="text-ui-micro text-(--ui-text-secondary)">
+          {formatWindowLabel(window.windowMinutes)}
         </span>
-      ) : null}
-    </span>
+        <Progress
+          compact
+          showValue
+          valuePlacement="inside"
+          valueLabel={formatUsagePercent(shown)}
+          aria-label={label}
+          aria-valuetext={label}
+          className="w-11 shrink-0"
+          style={quiet}
+          value={shown}
+          tone={tone}
+        />
+        {window.resetsAt != null ? (
+          <span className="text-(--ui-text-secondary)">
+            {formatResetDuration(window.resetsAt - now)}
+          </span>
+        ) : null}
+      </span>
+    </Tooltip>
   );
 }

@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -507,11 +508,7 @@ function QuestionFormContent({
             {parentClosed ? (
               <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
             ) : null}
-            {capacityMessage ? (
-              <p role="alert" className={styles.status} data-error="true">
-                {capacityMessage}
-              </p>
-            ) : null}
+            {capacityMessage ? <InlineError>{capacityMessage}</InlineError> : null}
             <p
               role={failed || uncertain ? "alert" : "status"}
               className={styles.status}

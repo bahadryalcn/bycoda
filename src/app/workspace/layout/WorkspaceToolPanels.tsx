@@ -2,6 +2,7 @@ import { OverlayNav } from "../../shell/TitleBar";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { WindowControls } from "../../shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { memo, useMemo, useState } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { ConversationTools } from "../../../features/host-tools/SessionHostTools";
@@ -155,15 +156,14 @@ function WorkspaceToolPanelsComponent({
   const onLeaveServers = navigation?.onBack ?? leaveServers;
   const onLeaveAutomations = navigation?.onBack ?? leaveAutomations;
   const auxiliaryHeader = (
-    <div
-      className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
-      data-tauri-drag-region="deep"
+    <PaneHeader
+      dragRegion
+      chromeInset={detachedSessionWindow}
+      leading={detachedSessionWindow ? <OverlayNav onBack={onLeaveAutomations} /> : undefined}
+      trailing={IS_MAC ? null : <WindowControls />}
     >
-      {IS_MAC && detachedSessionWindow ? <div className="w-[78px] shrink-0" /> : null}
-      {detachedSessionWindow ? <OverlayNav onBack={onLeaveAutomations} /> : null}
       <ToolNavigation />
-      {IS_MAC ? null : <WindowControls />}
-    </div>
+    </PaneHeader>
   );
   // The provider value keeps its identity across workspace renders, so tool
   // headers only re-render when navigation state changes.

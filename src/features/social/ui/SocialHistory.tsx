@@ -5,7 +5,7 @@ import { SocialFilters } from "./SocialFilters";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { NativeSelect } from "../../../shared/ui/Select";
-import { TextField } from "../../../shared/ui/TextField";
+import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useState } from "react";
@@ -330,13 +330,14 @@ export function JobHistory({
             </NativeSelect>
           </label>
           <div>
-            <TextField
+            <DateTimeField
+              mode="date"
               disabled={socialLocked}
               label={t("Start date")}
-              type="date"
+              clearable
               value={since}
-              onChange={(event) => {
-                setSince(event.target.value);
+              onChange={(next) => {
+                setSince(next);
                 setPage(0);
               }}
             />
@@ -366,12 +367,12 @@ export function JobHistory({
               return <article key={job.id} className="social-history-record min-w-0" data-status={job.status}>
                 <Button variant="item" layout="stacked" selected={selected?.id === job.id}
                   aria-current={selected?.id === job.id ? "true" : undefined}
-                  title={`${jobKinds[job.kind]} · ${title}`} onClick={() => setSelectedId(job.id)} className="w-full min-w-0">
+                  tooltip={`${jobKinds[job.kind]} · ${title}`} onClick={() => setSelectedId(job.id)} className="w-full min-w-0">
                   <span className="line-clamp-1 min-w-0 text-ui-secondary font-medium">{title}</span>
                   <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-caption text-(--ui-text-secondary)">{job.payload.text || jobKinds[job.kind]}</span>
                   <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-micro text-(--ui-text-secondary)">
                     <span className="min-w-0 truncate">{account?.name ?? t("Account removed")}{account ? ` · ${names[account.platform]}` : ""}</span>
-                    <time dateTime={new Date(job.createdAt).toISOString()} title={time(job.createdAt)}>{t("Created {p0}", { p0: time(job.createdAt) })}</time>
+                    <time dateTime={new Date(job.createdAt).toISOString()}>{t("Created {p0}", { p0: time(job.createdAt) })}</time>
                   </span>
                   <JobState job={job} />
                   {job.status === "review" || job.delivery?.status === "failed" ? <span className="text-ui-caption text-(--ui-tone-warning-fg)">{socialJobExplanation(job)}</span> : null}

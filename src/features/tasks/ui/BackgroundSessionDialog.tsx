@@ -1,8 +1,9 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle } from "../../../shared/ui/icons";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Modal } from "../../../shared/ui/Modal";
 import {
   loadBackgroundSessionSummary,
@@ -89,13 +90,7 @@ export function BackgroundSessionDialog({
             </Button>
           </Alert>
         ) : !summary ? (
-          <div
-            role="status"
-            aria-label={t("Loading…")}
-            className="grid h-20 place-items-center text-(--ui-text-secondary)"
-          >
-            <LoaderCircle className="icon-md animate-spin" />
-          </div>
+          <LoadingText className="h-20 justify-center" />
         ) : (
           <>
             <div className="flex flex-col gap-1">
@@ -105,9 +100,7 @@ export function BackgroundSessionDialog({
               </p>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3 text-ui-caption leading-relaxed text-(--ui-text-secondary)">
-              {summary.reply || (
-                <span className="text-(--ui-text-secondary)">{t("No reply yet.")}</span>
-              )}
+              {summary.reply || <EmptyState size="inline" description={t("No reply yet.")} />}
             </div>
             {summary.note ? (
               <p className="whitespace-pre-wrap break-words text-ui-caption leading-snug text-(--ui-text-secondary)">

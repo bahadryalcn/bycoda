@@ -13,6 +13,8 @@ import { displayPath } from "../../../shared/lib/paths";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { Button } from "../../../shared/ui/Button";
 import { Search } from "../../../shared/ui/icons";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { languageForPath, schemeExtensions } from "../../files/editor/editorChrome";
 import { editorReadability } from "../../files/editor/editorReadability";
@@ -394,17 +396,17 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
   };
   return (
     <div className="merge-conflict-editor">
-      {error ? (
-        <p className="conflict-editor-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineError className="conflict-editor-status">{error}</InlineError> : null}
       {resolved ? (
-        <p className="conflict-editor-status" role="status">
+        <InlineMessage tone="success" className="conflict-editor-status">
           {t("All conflicts resolved")}
-        </p>
+        </InlineMessage>
       ) : null}
-      {!initial ? <p role="status">{t("Loading conflict versions")}</p> : null}
+      {!initial ? (
+        <LoadingText className="conflict-editor-status">
+          {t("Loading conflict versions")}
+        </LoadingText>
+      ) : null}
       <ConflictLayout
         cwd={cwd}
         path={path}
@@ -470,7 +472,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
                 if (viewRef.current) openSearchPanel(viewRef.current);
               }}
             >
-              <Search size={14} />
+              <Search className="icon-sm" />
             </Button>
             <Button
               variant="primary"

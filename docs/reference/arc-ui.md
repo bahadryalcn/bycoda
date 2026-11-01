@@ -94,9 +94,12 @@ by their existing interactions.
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `variant`                  | `primary`, `secondary` (default), `ghost`, `danger`, `link`, `item`, `tab`.                                                                                                    |
 | `size`                     | Existing Arc `sm` (default), `md`, `lg`; bycoda's shared control-height tokens remain authoritative.                                                                           |
-| `iconOnly` / `label`       | `iconOnly: true` requires a translated `label` at the type level. It creates a square control and supplies its accessible name and fallback native tooltip.                    |
-| `tooltip`                  | Translated hint; explicit native `title` takes precedence. Native hover titles remain. Keyboard focus on icon, shortcut or explicit-tooltip actions shows the same text through the existing Popover. |
-| `shortcut`                 | Optional display hint appended to the tooltip. Resolve configurable bindings with `useKeybindingShortcut`; disabled bindings return null. Does not register keyboard handlers. |
+| `iconOnly` / `label`       | `iconOnly: true` requires a translated `label` at the type level. It creates a square control and supplies its accessible name and its shared tooltip. |
+| `tooltip`                  | Translated hint in the shared Tooltip (hover after 450 ms, keyboard focus at once, warm handoff). An explicit `title` takes precedence and is routed the same way; no native `title` attribute is rendered. `title=""` means no tooltip (for a Button an outer `Tooltip` describes). `aria-describedby` links the open hint unless it only repeats the accessible name. |
+| `shortcut`                 | Optional display hint rendered as key caps in the tooltip through the shared formatter (`Mod+K`, `Ctrl+Shift+P`, `⌘⇧P`, `Esc Esc`, `A / B`). Resolve configurable bindings with `useKeybindingShortcut`; disabled bindings return null. Does not register keyboard handlers. |
+| `tooltipDetails`           | Muted lines under the tooltip title (path, counts, state). |
+| `tooltipSide` / `tooltipAlign` | Tooltip placement; default `bottom`. |
+| `disabledReason`           | With `disabled`: the control stays focusable (`aria-disabled`, `data-disabled`, presses swallowed like `loading`), the reason shows in the tooltip and is exposed as `aria-description` while the hint is closed. Plain `disabled` keeps the native attribute; its tooltip still opens on hover. |
 | `shape`                    | `default` (existing control radius) or `pill`.                                                                                                                                 |
 | `selected`                 | Optional visual state; otherwise derived from the caller's `aria-selected`, `aria-pressed` or `aria-checked`. It does not invent or change ARIA roles/states.                  |
 | `loading` / `loadingLabel` | Controlled pending state and optional translated busy accessible name. Remains focusable and blocks duplicate activation and form submission.                                  |
@@ -242,7 +245,7 @@ not a new product build or UI test suite.
 - `FloatingButtonGroup` supplies shared action rows and roving keyboard focus
   inside TranscriptSelectionMenu's existing Popover. Terminal delegates to that
   same menu. Selection preservation, dismissal and pending/error/retry remain
-  feature-owned. Button keyboard hints reuse Popover without another tooltip dependency.
+  feature-owned. Button hover and keyboard hints use the shared Tooltip (Popover-based) without another tooltip dependency.
   These passive hints preserve the active dialog/menu's Escape handling, never
   take focus and do not restore focus when the trigger blurs. Button refs,
   native events and loading/disabled guards remain with the existing owner.
@@ -323,13 +326,20 @@ not a new product build or UI test suite.
   with projects uses the existing saved-conversation confirmation and keeps
   project folders on disk.
 
+Shared primitives added in the 2026-11-01 UI standards round (Tabs, PaneHeader, SectionLabel,
+Surface, Divider, Sash, Meter, ToastRegion, Sheet, InlineError, Spinner/LoadingText, ModalActions,
+PromptField, PopoverSearchHeader, the picker kit, HoverCard and the shared Tooltip) are Bycoda-owned
+compositions on top of these adapters. Their API, when-to-use and "replaces" notes live in
+`docs/reference/ui-component-catalog.md`; they are not Arc registry installs.
+
 ## Appearance and motion
 
 Text-field focus is owned by `src/styles/arc.css` and follows the V3 field/focus contract
 in `docs/reference/ui-component-catalog.md` ("Field frame and action slots"): a faint 1px
-boundary and 8px radius; focus uses adjusted accent ink (`--ui-field-border-focus`) plus the
-`--ui-focus-ring` halo, forced colors keep a real outline, and invalid fields keep the shared
-danger boundary. Hover uses `--ui-field-border-hover`; neither state uses the text color as
+boundary and 8px radius; focus turns the frame border to adjusted accent ink
+(`--ui-field-border-focus`) and adds `--ui-focus-ring`, a subtle 2px ring in the user's accent at
+low alpha (never a gray halo, never an inset outline); invalid fields use the danger border with
+`--ui-focus-ring-invalid`, and forced colors keep a real outline. Hover uses `--ui-field-border-hover`; neither state uses the text color as
 its border. One frame draws the focus: a field with leading/trailing actions uses
 `FieldControl` slots (`InlineAction`), never overlaid buttons, so a hover fill stays inside the
 frame. `SearchInput`
@@ -339,6 +349,13 @@ and `focusOwner="group"`; for an already framed menu header, use
 `focusOwner="menu"`. Clear buttons retain their own keyboard focus indicator.
 Feature focus rules must exclude `[data-ui-focus]` instead of overriding this
 contract or drawing another outline on the container.
+
+Composites: `data-ui-focus-group` on the bordered frame, `data-ui-focus="group"` on the inner
+editor or trigger (the member draws nothing). Inputs inside `FieldControl` are members
+automatically. `data-ui-focus="input"` marks a standalone editor that owns its frame,
+`data-ui-focus="menu"` an editor inside a framed menu. `data-ui-focus-quiet` on a group opts a
+writing surface out of the ring (the chat composer); forced-colors outlines still apply. The
+tokens (`--ui-field-*`, `--ui-focus-*`) are defined once, at the top of `src/styles/arc.css`.
 
 Standalone search fields use `SearchInput appearance="field"`; bordered search
 compositions use `SearchInputGroup appearance="field"` with an inner
@@ -419,13 +436,16 @@ installed desktop acceptance.
 
 `node scripts/checks/check-ui-boundaries.mjs` compares source/style findings
 against explicit owner-reviewed fingerprint decisions. The baseline includes
-944 historical component decisions plus reviewed current additions and counted
-signal exceptions. It remains in the uncommitted owner review diff. Inventory
-counts alone are not approval; the check has no automatic refresh command.
-AST/CSS heuristics cannot prove event, permission, native editor or overlay
-correctness. Local immutable/conditional/template class recipes and static
-ARIA/feedback selectors are tracked; dynamic roles, indirect styles and imported
-recipes still need manual review.
+historical component decisions plus reviewed current additions and counted
+signal exceptions. Inventory counts alone are not approval; the check has no
+automatic refresh command and is not wired into staged checks or CI yet (about 263
+findings are unreviewed). AST/CSS heuristics cannot prove event, permission,
+native editor or overlay correctness. Local immutable/conditional/template class
+recipes and static ARIA/feedback selectors are tracked; dynamic roles, indirect
+styles and imported recipes still need manual review.
+`node scripts/checks/check-ui-drift.mjs` (`pnpm check:ui-drift`) is the separate
+per-file count ratchet for token, typography, icon, layer, motion, tooltip, error and
+overlay drift; it runs on staged `src` files (see `ui-design-system.md`, "UI drift ratchet").
 Source contracts, mocked browser fixtures, installed Windows/macOS applications
 and release acceptance are separate evidence.
 

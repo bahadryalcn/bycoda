@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select } from "../../../shared/ui/Select";
@@ -359,9 +360,7 @@ export function CrewMemberForm({
           </>
         )}
         {modelError ? (
-          <p role="alert" className="text-ui-caption text-danger">
-            {modelError}
-          </p>
+          <InlineError>{modelError}</InlineError>
         ) : null}
       </div>
       {advancedExtra ? (

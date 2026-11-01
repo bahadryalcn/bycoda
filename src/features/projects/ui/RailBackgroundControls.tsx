@@ -1,7 +1,59 @@
+import { useRef, useState } from "react";
+import { Button } from "../../../shared/ui/Button";
+import { ColorPickerPopover } from "../../../shared/ui/ColorPickerPopover";
+import { Popover } from "../../../shared/ui/Popover";
 import { Slider } from "../../../shared/ui/Slider";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t } from "../../../shared/i18n";
 import { type RailBackgrounds, railBackgroundColor } from "../../workspace/model/tabGroups";
+
+function ColorSwatchButton({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  disabled: boolean;
+  onChange: (hex: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <Button
+        ref={trigger}
+        variant="ghost"
+        iconOnly
+        label={label}
+        disabled={disabled}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span
+          aria-hidden="true"
+          className="block icon-md rounded-(--ui-radius-control) border border-(--ui-pane-border)"
+          style={{ background: value }}
+        />
+      </Button>
+      {open ? (
+        <Popover
+          anchor={trigger}
+          kind="dialog"
+          aria-label={label}
+          width={232}
+          onDismiss={() => setOpen(false)}
+        >
+          <div className="p-3">
+            <ColorPickerPopover value={value} onChange={onChange} />
+          </div>
+        </Popover>
+      ) : null}
+    </>
+  );
+}
 
 export function RailBackgroundControls({
   value,
@@ -15,8 +67,8 @@ export function RailBackgroundControls({
   onChange: (value: RailBackgrounds) => void;
 }) {
   return (
-    <details className="rounded-md border border-[var(--color-stroke)] text-xs">
-      <summary className="cursor-pointer px-2 py-1.5 text-[var(--color-content)]">
+    <details className="rounded-md border border-(--ui-pane-border) text-ui-caption">
+      <summary className="cursor-pointer px-2 py-1.5 text-content">
         {t("Background colors")}
       </summary>
       <div className="space-y-2 p-2">
@@ -49,16 +101,14 @@ export function RailBackgroundControls({
                   />
                   <span>{label}</span>
                 </label>
-                <input
-                  type="color"
-                  aria-label={`${label}: ${t("Color")}`}
+                <ColorSwatchButton
+                  label={`${label}: ${t("Color")}`}
                   value={current?.color ?? color}
                   disabled={!current}
-                  onChange={(event) => update({ color: event.target.value })}
-                  className="h-6 w-8 cursor-pointer rounded border border-[var(--color-stroke)] bg-transparent disabled:opacity-40"
+                  onChange={(hex) => update({ color: hex })}
                 />
               </div>
-              <label className="flex items-center gap-2 text-[var(--ui-text-muted)]">
+              <label className="flex items-center gap-2 text-(--ui-text-muted)">
                 <span>{t("Opacity")}</span>
                 <Slider
                   hideLabel

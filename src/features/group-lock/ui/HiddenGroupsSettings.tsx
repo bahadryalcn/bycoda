@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
@@ -56,9 +57,11 @@ export function HiddenGroupsSettings({
           </Button>
         </Row>
       ) : groups.length === 0 ? (
-        <div className="settings-collection settings-collection-empty privacy-empty">
-          <p>{t("No hidden groups")}</p>
-        </div>
+        <EmptyState
+          size="inline"
+          className="settings-collection settings-collection-empty privacy-empty"
+          description={t("No hidden groups")}
+        />
       ) : (
         <div className="settings-collection privacy-hidden-collection">
           {searchable ? (
@@ -74,12 +77,14 @@ export function HiddenGroupsSettings({
           ) : null}
           <div className="settings-collection-list privacy-hidden-list" role="list">
             {visibleGroups.length === 0 ? (
-              <div className="settings-collection-empty">
-                <p role="status">{t("No groups found")}</p>
-                <Button variant="ghost" onClick={() => setQuery("")}>
-                  {t("Clear search")}
-                </Button>
-              </div>
+              <EmptyState
+                size="inline"
+                kind="filtered"
+                className="settings-collection-empty"
+                description={t("No groups found")}
+                resetLabel={t("Clear search")}
+                onReset={() => setQuery("")}
+              />
             ) : null}
             {visibleGroups.map((group) => (
               <div key={group.id} role="listitem" className="settings-collection-row">

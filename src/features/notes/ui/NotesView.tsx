@@ -8,6 +8,13 @@ import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { ContextMenu } from "../../../shared/ui/ContextMenu";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Sash } from "../../../shared/ui/Sash";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { TagInput } from "../../../shared/ui/TagInput";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,7 +28,6 @@ import {
   Search,
   File,
   Trash2,
-  ChevronDown,
   SlidersHorizontal,
   MessageSquarePlus,
   Check,
@@ -928,9 +934,8 @@ export function NotesView({
           anchor={filtersButton}
           align="end"
           width={320}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Filters and options")}
-          autoFocus
           flow="scroll"
           onDismiss={(reason) => {
             setFiltersOpen(false);
@@ -1147,13 +1152,9 @@ export function NotesView({
             </Alert>
           ))}
         {loading && notes.length === 0 ? (
-          <div
-            role="status"
-            className="flex items-center justify-center gap-2 py-10 text-ui-caption text-(--ui-text-secondary)"
-          >
-            <WorkingIndicator size="md" />
+          <LoadingText layout="fill" className="py-10">
             {t("Loading notes…")}
-          </div>
+          </LoadingText>
         ) : listError && notes.length === 0 ? null : visible.length === 0 ? (
           <EmptyState
             kind={filtered ? "filtered" : "empty"}
@@ -1296,14 +1297,11 @@ export function NotesView({
           </Button>
         </nav>
       ) : null}
-      <div
-        {...resize.separatorProps}
-        aria-label={t("Resize notes list")}
-        className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-(--ui-surface-selected)" : "hover:bg-(--ui-surface-hover)"
-        }`}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
+      <Sash
+        {...resize.sashProps}
+        label={t("Resize notes list")}
+        appearance="hidden"
+        className="absolute inset-y-0 -right-px"
       />
     </div>
   );
@@ -1317,38 +1315,31 @@ export function NotesView({
       data-library-visible={mobileListVisible}
       className="notes-workspace flex min-h-0 min-w-0 flex-1 flex-col text-content"
     >
-      <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
-        data-tauri-drag-region="deep"
+      <PaneHeader
+        dragRegion
+        chromeInset={!besideRail ? true : compactRail ? "compact" : false}
+        className="select-none"
+        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        trailing={IS_MAC ? null : <WindowControls />}
       >
-        {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
           <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
             <File className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
             <span className="min-w-0 truncate text-content">{t("Notes")}</span>
           </div>
         </ToolHeader>
-        {IS_MAC ? null : <WindowControls />}
-      </div>
+      </PaneHeader>
       <div className="note-mobile-navigation">
-        <Button
-          variant="tab"
-          selected={mobileListVisible}
-          aria-pressed={mobileListVisible}
-          onClick={() => setMobileListVisible(true)}
-        >
-          {t("Notes")}
-        </Button>
-        <Button
-          variant="tab"
-          selected={!mobileListVisible}
-          aria-pressed={!mobileListVisible}
-          onClick={() => setMobileListVisible(false)}
-        >
-          {t("Editor")}
-        </Button>
+        <SegmentedControl
+          label={t("Notes sections")}
+          selectionRole="pressed"
+          value={mobileListVisible ? "list" : "editor"}
+          onValueChange={(value) => setMobileListVisible(value === "list")}
+          options={[
+            { value: "list", label: t("Notes") },
+            { value: "editor", label: t("Editor") },
+          ]}
+        />
       </div>
       <div className="flex min-h-0 min-w-0 flex-1">
         {list}
@@ -1397,12 +1388,9 @@ export function NotesView({
             </Alert>
           ) : null}
           {detailLoading && !selected ? (
-            <div role="status" className="grid min-h-0 flex-1 place-items-center">
-              <span className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
-                <WorkingIndicator size="md" />
-                {t("Loading note…")}
-              </span>
-            </div>
+            <LoadingText layout="fill" className="flex-1">
+              {t("Loading note…")}
+            </LoadingText>
           ) : (
             <NoteDetail
               findRequest={findRequest}
@@ -1542,39 +1530,6 @@ function NoteProjectMark({
   );
 }
 
-function NoteDetailTab({
-  id,
-  controls,
-  label,
-  selected,
-  onSelect,
-}: {
-  id: string;
-  controls: string;
-  label: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  useLocale();
-  return (
-    <Button
-      variant="tab"
-      size="sm"
-      motion="none"
-      type="button"
-      role="tab"
-      id={id}
-      aria-controls={controls}
-      tabIndex={selected ? 0 : -1}
-      aria-selected={selected}
-      onClick={onSelect}
-      selected={selected}
-    >
-      {label}
-    </Button>
-  );
-}
-
 function NoteCard({
   note,
   group,
@@ -1617,7 +1572,7 @@ function NoteCard({
       variant="item"
       layout="stacked"
       motion="none"
-      title={hint}
+      tooltip={hint}
       aria-current={active ? "true" : undefined}
       aria-haspopup="menu"
       data-note-id={note.id}
@@ -1655,13 +1610,11 @@ function NoteCard({
           </span>
         ) : null}
         {time ? (
-          <time
-            dateTime={new Date(date.timestamp).toISOString()}
-            title={`${t(date.label)}: ${new Date(date.timestamp).toLocaleString()}`}
-            className="shrink-0 tabular-nums"
-          >
-            {t(date.label)} {time}
-          </time>
+          <Tooltip label={`${t(date.label)}: ${new Date(date.timestamp).toLocaleString()}`}>
+            <time dateTime={new Date(date.timestamp).toISOString()} className="shrink-0 tabular-nums">
+              {t(date.label)} {time}
+            </time>
+          </Tooltip>
         ) : null}
         {note.tags.length ? (
           <span className="flex min-w-0 items-center gap-1">
@@ -1716,45 +1669,46 @@ function NoteGroupHeading({
 }) {
   useLocale();
   return (
-    <ActionHost className="mt-1 min-w-0">
-      <Button
-        variant="item"
-        size="sm"
-        motion="none"
-        type="button"
-        className="note-group-heading min-w-0 flex-1"
-        title={group.path}
-        aria-expanded={!collapsed}
-        aria-haspopup="menu"
-        onClick={onToggle}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onMenu({ x: event.clientX, y: event.clientY });
-        }}
-        onKeyDown={(event) => {
-          if (!isMenuKey(event)) return;
-          event.preventDefault();
-          onMenu({ anchor: event.currentTarget });
-        }}
-      >
-        <ChevronDown className={`size-3 shrink-0 ${collapsed ? "-rotate-90" : ""}`} />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        <span data-action-yield="" className="tabular-nums text-(--ui-text-secondary)">
-          {group.totalNotes}
-        </span>
-      </Button>
-      <div data-action-slot="collapse" className="flex shrink-0 items-center">
-        <InlineAction
+    <SectionLabel
+      collapsible
+      expanded={!collapsed}
+      onExpandedChange={onToggle}
+      count={group.totalNotes}
+      className="note-group-heading mt-1"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onMenu({ x: event.clientX, y: event.clientY });
+      }}
+      onKeyDown={(event) => {
+        if (!isMenuKey(event)) return;
+        event.preventDefault();
+        onMenu({
+          anchor: event.target instanceof HTMLElement ? event.target : event.currentTarget,
+        });
+      }}
+      actions={
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
           label={t("Actions for {p0}", { p0: label })}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={(event) => onMenu({ anchor: event.currentTarget })}
         >
           <MoreHorizontal className="icon-sm" />
-        </InlineAction>
-      </div>
-    </ActionHost>
+        </Button>
+      }
+    >
+      {group.path ? (
+        <Tooltip label={group.path}>
+          <span>{label}</span>
+        </Tooltip>
+      ) : (
+        label
+      )}
+    </SectionLabel>
   );
 }
 
@@ -1780,10 +1734,7 @@ function NoteDetail({
   useLocale();
   if (!note) {
     return (
-      <div className="flex h-full min-w-0 flex-1 flex-col items-center justify-center px-6 text-center">
-        <File className="mb-3 size-6 text-(--ui-text-secondary)" strokeWidth={1.75} />
-        <p className="text-ui-secondary text-(--ui-text-secondary)">{t("Select a note")}</p>
-      </div>
+      <EmptyState icon={<File />} description={t("Select a note")} className="min-w-0 flex-1" />
     );
   }
   return (
@@ -1822,7 +1773,6 @@ function NoteEditor({
 }) {
   useLocale();
   const modesId = useId();
-  const panelId = `${modesId}-panel`;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const [previewEditing, setPreviewEditing] = useState(false);
   // Mode, narrow-pane routing and toolbar target; find and image insertion read
@@ -2493,53 +2443,18 @@ function NoteEditor({
             </Alert>
           ) : null}
         </header>
+        <Tabs
+          value={visibleMode}
+          onValueChange={(next) => setMode(next as typeof mode)}
+          panels="shared"
+          id={modesId}
+        >
         <div className="note-editor-toolbar">
-          <div
-            role="tablist"
-            aria-label={t("Note sections")}
-            onKeyDown={(event) => {
-              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-              const tabs = [
-                ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-              ];
-              const index = tabs.indexOf(event.target as HTMLButtonElement);
-              if (index < 0) return;
-              event.preventDefault();
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? tabs.length - 1
-                    : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-              tabs[next]?.focus();
-              tabs[next]?.click();
-            }}
-            className="note-mode-switch"
-          >
-            <NoteDetailTab
-              id={`${modesId}-preview`}
-              controls={panelId}
-              label={t("Document")}
-              selected={visibleMode === "preview"}
-              onSelect={() => setMode("preview")}
-            />
-            <NoteDetailTab
-              id={`${modesId}-source`}
-              controls={panelId}
-              label={t("Source")}
-              selected={visibleMode === "source"}
-              onSelect={() => setMode("source")}
-            />
-            {narrow ? null : (
-              <NoteDetailTab
-                id={`${modesId}-split`}
-                controls={panelId}
-                label={t("Split")}
-                selected={mode === "split"}
-                onSelect={() => setMode("split")}
-              />
-            )}
-          </div>
+          <TabList label={t("Note sections")}>
+            <Tab value="preview">{t("Document")}</Tab>
+            <Tab value="source">{t("Source")}</Tab>
+            {narrow ? null : <Tab value="split">{t("Split")}</Tab>}
+          </TabList>
           <NoteMarkdownToolbar
             viewRef={
               visibleMode === "preview"
@@ -2555,11 +2470,9 @@ function NoteEditor({
             onInsertImage={() => void insertImage()}
           />
         </div>
-        <div
+        <TabPanel
           ref={dropZoneRef}
-          id={panelId}
-          role="tabpanel"
-          aria-labelledby={`${modesId}-${visibleMode}`}
+          tabIndex={undefined}
           data-external-drop-owner="note-images"
           aria-busy={imageBusy}
           className="note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-editor-border) transition-colors"
@@ -2619,7 +2532,8 @@ function NoteEditor({
               />
             </NoteEditorPane>
           </div>
-        </div>
+        </TabPanel>
+        </Tabs>
       </SurfaceSelection>
     </div>
   );

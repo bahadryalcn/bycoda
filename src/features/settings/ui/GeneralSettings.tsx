@@ -368,7 +368,7 @@ function ProductLink({
         loading={pending === "open"}
         loadingLabel={t("Opening…")}
         disabled={pending !== null}
-        title={address}
+        tooltip={address}
         onClick={() => void run("open")}
       >
         {displayAddress}

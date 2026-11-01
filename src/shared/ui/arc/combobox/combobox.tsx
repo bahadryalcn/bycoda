@@ -62,6 +62,8 @@ export const ComboboxItem = forwardRef<HTMLButtonElement, ComponentPropsWithoutR
 
 /** Content of a choice row: check slot, optional icon, truncating label and an optional description beneath it. */
 export function ComboboxChoice({
+  selected,
+  icon,
   label,
   description,
   descriptionId,
@@ -77,6 +79,14 @@ export function ComboboxChoice({
 }) {
   return (
     <>
+      <span className={styles.choiceCheck} aria-hidden="true">
+        {selected ? <Check size={12} strokeWidth={2} /> : null}
+      </span>
+      {icon != null ? (
+        <span className={styles.choiceIcon} aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
       <span className={styles.choiceBody} title={title}>
         <span className={`${styles.choiceLabel} truncate`}>{label}</span>
         {description ? (
@@ -219,12 +229,18 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             opacity: [0, 1],
             y: ["0.35em", "0em"],
           },
-          { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] },
+          {
+            duration: motionTokens.duration.standard,
+            ease: [...motionTokens.ease.enter],
+          },
         )
       : animate(
           input,
           { opacity: [0, 1] },
-          { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] },
+          {
+            duration: motionTokens.duration.fast,
+            ease: [...motionTokens.ease.enter],
+          },
         );
     return () => controls.complete();
   }, [selectedValue, reduceMotion, open]);
@@ -241,11 +257,14 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
 
   const customValue = query.trim();
   const exactOption = options.find((option) =>
-    [option.value, option.label].some((text) => text.toLocaleLowerCase() === customValue.toLocaleLowerCase()),
+    [option.value, option.label].some(
+      (text) => text.toLocaleLowerCase() === customValue.toLocaleLowerCase(),
+    ),
   );
-  const filteredOptions = allowCustomValue && customValue && !exactOption
-    ? [...matchingOptions, { value: customValue, label: t("Use “{p0}”", { p0: customValue }) }]
-    : matchingOptions;
+  const filteredOptions =
+    allowCustomValue && customValue && !exactOption
+      ? [...matchingOptions, { value: customValue, label: t("Use “{p0}”", { p0: customValue }) }]
+      : matchingOptions;
 
   const enabledIndices = filteredOptions.reduce<number[]>((indices, option, index) => {
     if (!option.disabled) indices.push(index);
@@ -327,7 +346,8 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (allowCustomValue) {
       onKeyDown?.(event);
-      if (event.defaultPrevented || inputProps.readOnly || isImeComposition(event.nativeEvent)) return;
+      if (event.defaultPrevented || inputProps.readOnly || isImeComposition(event.nativeEvent))
+        return;
     }
     if (disabled) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -340,10 +360,12 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
       const currentPosition = enabledIndices.indexOf(activeIndex);
       const nextPosition =
         allowCustomValue && currentPosition < 0
-          ? (event.key === "ArrowDown" ? 0 : enabledIndices.length - 1)
+          ? event.key === "ArrowDown"
+            ? 0
+            : enabledIndices.length - 1
           : event.key === "ArrowDown"
-          ? (currentPosition + 1) % enabledIndices.length
-          : (currentPosition - 1 + enabledIndices.length) % enabledIndices.length;
+            ? (currentPosition + 1) % enabledIndices.length
+            : (currentPosition - 1 + enabledIndices.length) % enabledIndices.length;
       setActiveIndex(enabledIndices[nextPosition]!);
       return;
     }
@@ -376,7 +398,9 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     }
   };
 
-  const inputValue = open ? query : (selectedOption?.label ?? (allowCustomValue ? selectedValue : ""));
+  const inputValue = open
+    ? query
+    : (selectedOption?.label ?? (allowCustomValue ? selectedValue : ""));
   const activeOption = activeIndex >= 0 ? filteredOptions[activeIndex] : undefined;
 
   const menu = (
@@ -407,12 +431,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             >
               <span>{option.label}</span>
               {option.value === selectedValue && (
-                <Check
-                  className={styles.check}
-                  size={16}
-                  strokeWidth={1.75}
-                  aria-hidden="true"
-                />
+                <Check className={styles.check} size={16} strokeWidth={1.75} aria-hidden="true" />
               )}
             </div>
           ))
@@ -436,7 +455,9 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
 
   return (
     <div ref={rootRef} className={styles.field}>
-      <label htmlFor={controlId} className={hideLabel ? "sr-only" : undefined}>{label}</label>
+      <label htmlFor={controlId} className={hideLabel ? "sr-only" : undefined}>
+        {label}
+      </label>
       <SearchInputGroup
         className={[
           styles.control,
@@ -460,12 +481,16 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
           // While searching, the chosen label stays in place as muted placeholder copy instead of vanishing.
           placeholder={selectedOption?.label ?? placeholder}
           disabled={disabled}
-          aria-describedby={[hintId, inputProps["aria-describedby"]].filter(Boolean).join(" ") || undefined}
+          aria-describedby={
+            [hintId, inputProps["aria-describedby"]].filter(Boolean).join(" ") || undefined
+          }
           aria-expanded={open}
           aria-controls={open ? listboxId : undefined}
           aria-autocomplete="list"
           aria-activedescendant={
-            open && activeOption ? `${controlId}-option-${allowCustomValue ? activeIndex : activeOption.value}` : undefined
+            open && activeOption
+              ? `${controlId}-option-${allowCustomValue ? activeIndex : activeOption.value}`
+              : undefined
           }
           onFocus={(event) => {
             onFocus?.(event);
@@ -485,43 +510,46 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
           onKeyDown={handleKeyDown}
         />
         <AnimatePresence initial={false}>
-          {(selectedOption || (allowCustomValue && selectedValue)) && !disabled && (!allowCustomValue || !inputProps.readOnly) && (!open || !query) && (
-            <motion.button
-              type="button"
-              className={styles.clear}
-              aria-label={allowCustomValue ? t("Clear selection") : "Clear selection"}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={clear}
-              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
-              animate={{
-                opacity: 1,
-                scale: 1,
-                transition: reduceMotion
-                  ? { duration: motionTokens.duration.instant }
-                  : {
-                      ...motionTokens.spring.snappy,
-                      opacity: { duration: motionTokens.duration.fast },
-                    },
-              }}
-              exit={{
-                opacity: 0,
-                ...(reduceMotion ? {} : { scale: 0.6 }),
-                transition: {
-                  duration: motionTokens.duration.instant,
-                  ease: [...motionTokens.ease.standard],
-                },
-              }}
-              whileTap={{
-                scale: reduceMotion ? 1 : 0.96,
-                transition: {
-                  duration: motionTokens.duration.instant,
-                  ease: [...motionTokens.ease.standard],
-                },
-              }}
-            >
-              <X size={16} strokeWidth={1.75} aria-hidden="true" />
-            </motion.button>
-          )}
+          {(selectedOption || (allowCustomValue && selectedValue)) &&
+            !disabled &&
+            (!allowCustomValue || !inputProps.readOnly) &&
+            (!open || !query) && (
+              <motion.button
+                type="button"
+                className={styles.clear}
+                aria-label={allowCustomValue ? t("Clear selection") : "Clear selection"}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={clear}
+                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
+                animate={{
+                  opacity: 1,
+                  scale: 1,
+                  transition: reduceMotion
+                    ? { duration: motionTokens.duration.instant }
+                    : {
+                        ...motionTokens.spring.snappy,
+                        opacity: { duration: motionTokens.duration.fast },
+                      },
+                }}
+                exit={{
+                  opacity: 0,
+                  ...(reduceMotion ? {} : { scale: 0.6 }),
+                  transition: {
+                    duration: motionTokens.duration.instant,
+                    ease: [...motionTokens.ease.standard],
+                  },
+                }}
+                whileTap={{
+                  scale: reduceMotion ? 1 : 0.96,
+                  transition: {
+                    duration: motionTokens.duration.instant,
+                    ease: [...motionTokens.ease.standard],
+                  },
+                }}
+              >
+                <X size={16} strokeWidth={1.75} aria-hidden="true" />
+              </motion.button>
+            )}
         </AnimatePresence>
         <ChevronDown className={styles.chevron} size={16} strokeWidth={1.75} aria-hidden="true" />
       </SearchInputGroup>
@@ -531,49 +559,50 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         </span>
       )}
       <AnimatePresence initial={false}>
-        {open && (allowCustomValue ? (
-          <Popover
-            anchor={rootRef}
-            align="start"
-            ignore={`[id="${controlId}"]`}
-            maxHeight={240}
-            restoreFocus={false}
-            onDismiss={dismiss}
-            className="bycoda-arc"
-          >
-            {menu}
-          </Popover>
-        ) : (
-          <motion.div
-            className={styles.popover}
-            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
-            animate={{
-              opacity: 1,
-              y: 0,
-              scale: 1,
-              transition: reduceMotion
-                ? { duration: motionTokens.duration.instant }
-                : {
-                    ...motionTokens.spring.snappy,
-                    opacity: {
-                      duration: motionTokens.duration.fast,
-                      ease: [...motionTokens.ease.enter],
+        {open &&
+          (allowCustomValue ? (
+            <Popover
+              anchor={rootRef}
+              align="start"
+              ignore={`[id="${controlId}"]`}
+              maxHeight={240}
+              restoreFocus={false}
+              onDismiss={dismiss}
+              className="bycoda-arc"
+            >
+              {menu}
+            </Popover>
+          ) : (
+            <motion.div
+              className={styles.popover}
+              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                scale: 1,
+                transition: reduceMotion
+                  ? { duration: motionTokens.duration.instant }
+                  : {
+                      ...motionTokens.spring.snappy,
+                      opacity: {
+                        duration: motionTokens.duration.fast,
+                        ease: [...motionTokens.ease.enter],
+                      },
                     },
-                  },
-            }}
-            exit={{
-              opacity: 0,
-              ...(reduceMotion ? {} : { y: -4, scale: 0.98 }),
-              transition: {
-                duration: motionTokens.duration.instant,
-                ease: [...motionTokens.ease.standard],
-              },
-            }}
-            role="presentation"
-          >
-            {menu}
-          </motion.div>
-        ))}
+              }}
+              exit={{
+                opacity: 0,
+                ...(reduceMotion ? {} : { y: -4, scale: 0.98 }),
+                transition: {
+                  duration: motionTokens.duration.instant,
+                  ease: [...motionTokens.ease.standard],
+                },
+              }}
+              role="presentation"
+            >
+              {menu}
+            </motion.div>
+          ))}
       </AnimatePresence>
     </div>
   );

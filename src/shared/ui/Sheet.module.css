@@ -44,10 +44,3 @@
   inset-inline-start: 0;
   z-index: 2;
 }
-/* A modal bottom sheet (Modal placement="bottom") has no shared entrance rule yet. */
-@media (prefers-reduced-motion: no-preference) {
-  .modalBottom {
-    animation: sheet-in-bottom var(--motion-sheet-duration, 240ms) var(--motion-ease-out, ease-out)
-      backwards;
-  }
-}

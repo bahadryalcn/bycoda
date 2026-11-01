@@ -111,7 +111,7 @@ import {
 } from "../../features/settings/model/appearance";
 import { formatInteger } from "../../shared/lib/numbers";
 import { type GitFileDiffKind, type GitHistoryCommit } from "../../platform/tauri/fs";
-import { IS_MAC, MOD } from "../../platform/tauri/platform";
+import { MOD } from "../../platform/tauri/platform";
 import { copyText } from "../../platform/tauri/clipboard";
 import { forgetRemoteQueue } from "../../features/connections/model/useRemoteQueue";
 import { RemoteDataStatus } from "../../features/connections/ui/RemoteDataStatus";
@@ -268,7 +268,9 @@ import { ProjectRail } from "./ProjectRail";
 import { RailAction } from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../shared/ui/ActionHost";
-import { Tooltip, useTooltip } from "../../shared/ui/Tooltip";
+import { Tooltip } from "../../shared/ui/Tooltip";
+import { PaneHeader } from "../../shared/ui/PaneHeader";
+import { Sash } from "../../shared/ui/Sash";
 import { DevModeIndicator, IconButton, TabVisitNav } from "./TitleBar";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { Popover } from "../../shared/ui/Popover";
@@ -2281,7 +2283,7 @@ function SidebarComponent({
           disabled={!remote.machine && !remote.dataState.error}
         />
       ) : null}
-      <div className="w-(--control-height-sm) shrink-0">
+      <div className="w-(--ui-control-height-compact) shrink-0">
         <ExpandingSearch
           ref={sessionSearchRef}
           inline
@@ -2425,8 +2427,8 @@ function SidebarComponent({
               ]
             : [];
     return (
-      <Tooltip key={itemId} label={TAB_LABELS[itemId]} details={tabDetails} wide>
       <div
+        key={itemId}
         ref={(el) => sortable.setItemRef(itemId, el)}
         className={`reorder-item workspace-tab relative flex min-w-0 touch-none items-stretch ${(itemId === "sessions" && workingSessionsBadge) || (isChangesTab && hasChangeStats) ? "flex-[1.4]" : "flex-1"}`}
         onPointerDown={(event) => {
@@ -2457,7 +2459,9 @@ function SidebarComponent({
           }
           data-workspace-tab-churn={isChangesTab && hasChangeStats ? "" : undefined}
           aria-label={label}
-          title=""
+          tooltip={TAB_LABELS[itemId]}
+          tooltipDetails={tabDetails}
+          tooltipWide
           data-usage-guide={
             isChangesTab ? "changes" : itemId === "files" ? "files-tab" : undefined
           }
@@ -2526,30 +2530,37 @@ function SidebarComponent({
           ) : null}
         </Button>
       </div>
-      </Tooltip>
     );
   });
 
   // With no title bar above, back/forward and the workspace controls share this one row instead
   // of leaving an empty row over the Workspace selector.
-  const workspaceHeader = (withVisitNav = false) => (
-    <div
-      className={`flex min-h-10 shrink-0 select-none items-center gap-1 border-b border-(--ui-pane-border) pr-1.5 ${
-        withVisitNav ? "pl-1.5" : "pl-3"
-      }`}
-      data-tauri-drag-region="deep"
-    >
-      {withVisitNav && IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
-      {withVisitNav ? (
-        <TabVisitNav
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          onGoBack={onGoBack}
-          onGoForward={onGoForward}
-        />
-      ) : null}
-      <div className="flex min-w-0 flex-1 items-center">
-        {!remoteProject && cwd && cwd !== "~" ? (
+  const workspaceHeader = (withVisitNav = false) => {
+    const switcher = !remoteProject && cwd && cwd !== "~";
+    return (
+      <PaneHeader
+        dragRegion
+        chromeInset={withVisitNav}
+        leading={
+          withVisitNav ? (
+            <TabVisitNav
+              canGoBack={canGoBack}
+              canGoForward={canGoForward}
+              onGoBack={onGoBack}
+              onGoForward={onGoForward}
+            />
+          ) : undefined
+        }
+        title={switcher ? undefined : t("Workspace")}
+        titleAs="div"
+        actions={
+          <>
+            {sessionToolbar}
+            <WorkspaceTitleActions onNew={onNew} />
+          </>
+        }
+      >
+        {switcher ? (
           <SidebarWorktreeSwitcher
             cwd={cwd}
             tabStats={worktreeTabStats}
@@ -2557,16 +2568,10 @@ function SidebarComponent({
             pending={workspaceSwitchPending}
             switchError={workspaceSwitchError}
           />
-        ) : (
-          <span className="min-w-0 truncate text-ui-body font-medium leading-tight">
-            {t("Workspace")}
-          </span>
-        )}
-      </div>
-      {sessionToolbar}
-      <WorkspaceTitleActions onNew={onNew} />
-    </div>
-  );
+        ) : null}
+      </PaneHeader>
+    );
+  };
 
   const sidebarContent = (
     <aside
@@ -2611,20 +2616,19 @@ function SidebarComponent({
       ) : (
         <>
           {titleBarAbove || compactRailVisible ? null : (
-            <div
-              className="flex min-h-10 shrink-0 select-none items-center border-b border-(--ui-pane-border) pr-1.5"
-              data-tauri-drag-region="deep"
-            >
-              {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
-              <div className="min-w-0 flex-1" />
-              <TabVisitNav
-                canGoBack={canGoBack}
-                canGoForward={canGoForward}
-                onGoBack={onGoBack}
-                onGoForward={onGoForward}
-                onTogglePanel={compactProjectRail ? undefined : onToggleProjectRail}
-              />
-            </div>
+            <PaneHeader
+              dragRegion
+              chromeInset
+              actions={
+                <TabVisitNav
+                  canGoBack={canGoBack}
+                  canGoForward={canGoForward}
+                  onGoBack={onGoBack}
+                  onGoForward={onGoForward}
+                  onTogglePanel={compactProjectRail ? undefined : onToggleProjectRail}
+                />
+              }
+            />
           )}
           {compactRailVisible ? workspaceHeader(!titleBarAbove) : null}
           {onSelectProject && !compactRailVisible ? (
@@ -2711,9 +2715,7 @@ function SidebarComponent({
         </div>
         {/* The tools live in the Workspace header row; without that row they get their own slim one. */}
         {sessionToolbar && !railVisible && !compactRailVisible ? (
-          <div className="flex min-h-9 shrink-0 items-center justify-end border-b border-(--ui-pane-border) px-2">
-            {sessionToolbar}
-          </div>
+          <PaneHeader actions={sessionToolbar} />
         ) : null}
         {tab === "sessions" && cwd && cwd !== "~" && showBulkBar ? (
           <div
@@ -3260,14 +3262,12 @@ function SidebarComponent({
           </div>
         </Modal>
       ) : null}
-      <div
-        {...resize.separatorProps}
-        aria-label={t("Resize sidebar")}
-        className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-(--ui-surface-pressed)" : "hover:bg-(--ui-surface-hover)"
-        }`}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
+      {/* useDragResize owns the drag (Escape cancels), keys and double-click reset through sashProps. */}
+      <Sash
+        {...resize.sashProps}
+        label={t("Resize sidebar")}
+        appearance="hidden"
+        className="absolute inset-y-0 end-0"
       />
     </aside>
   );
@@ -3511,30 +3511,24 @@ function ProjectsFlyoutChrome({
           <span className="min-w-0 flex-1 truncate text-ui-body font-medium">
             {t("Projects and groups")}
           </span>
-          <Tooltip label={t("New project")}>
-            <Button
-              variant="ghost"
-              motion="none"
-              iconOnly
-              label={t("New project")}
-              title=""
-              onClick={onNewProject}
-            >
-              <Plus className="size-4" aria-hidden />
-            </Button>
-          </Tooltip>
-          <Tooltip label={t("Expand projects")}>
-            <Button
-              variant="ghost"
-              motion="none"
-              iconOnly
-              label={t("Expand projects")}
-              title=""
-              onClick={onExpand}
-            >
-              <PanelLeft className="size-4" aria-hidden />
-            </Button>
-          </Tooltip>
+          <Button
+            variant="ghost"
+            motion="none"
+            iconOnly
+            label={t("New project")}
+            onClick={onNewProject}
+          >
+            <Plus className="icon-md" aria-hidden />
+          </Button>
+          <Button
+            variant="ghost"
+            motion="none"
+            iconOnly
+            label={t("Expand projects")}
+            onClick={onExpand}
+          >
+            <PanelLeft className="icon-md" aria-hidden />
+          </Button>
         </div>
         <SearchInputGroup appearance="field" className="min-w-0">
           <Search className="icon-xs shrink-0" />
@@ -3638,21 +3632,11 @@ function SidebarProjectPicker({
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(null);
   const inboxTrigger = useRef<HTMLElement | null>(null);
   return (
-    <div
-      className="@container/picker flex h-9 items-center gap-0.5 border-b border-(--ui-pane-border) px-2"
-      data-tauri-drag-region="deep"
-    >
-      <SearchableProjectPickerWithMenu
-        cwd={cwd}
-        recents={recents}
-        busy={busy}
-        className="flex-1"
-        onSelectProject={onSelectProject}
-        onOpenProject={onOpenProject}
-        onRemoveProject={onRemoveProject}
-        onOpenNotificationSettings={onOpenNotificationSettings}
-      />
-      <div className="ml-auto flex shrink-0 items-center">
+    <PaneHeader
+      dragRegion
+      className="@container/picker"
+      actions={
+        <>
         {onNew ? (
           <IconButton label={t("New tab")} command="Tab: New" onClick={onNew}>
             <Plus className="icon-sm" strokeWidth={1.75} />
@@ -3739,7 +3723,19 @@ function SidebarProjectPicker({
             </WorkspaceFeatureGate>
           </span>
         ) : null}
-      </div>
+        </>
+      }
+    >
+      <SearchableProjectPickerWithMenu
+        cwd={cwd}
+        recents={recents}
+        busy={busy}
+        className="flex-1"
+        onSelectProject={onSelectProject}
+        onOpenProject={onOpenProject}
+        onRemoveProject={onRemoveProject}
+        onOpenNotificationSettings={onOpenNotificationSettings}
+      />
       {inboxMenu ? (
         <InboxNotificationMenu
           {...inboxMenu}
@@ -3751,7 +3747,7 @@ function SidebarProjectPicker({
           }}
         />
       ) : null}
-    </div>
+    </PaneHeader>
   );
 }
 
@@ -3848,18 +3844,19 @@ function CompactProjectRail({
       {titleBarAbove ? null : (
         // The row shares its height and rule with the workspace header beside it. It stays a
         // window drag region; the mark is the same product logo the full rail shows.
-        <div
-          className="flex min-h-10 w-full shrink-0 items-center justify-center border-b border-(--ui-pane-border)"
-          data-tauri-drag-region="deep"
+        <PaneHeader
+          dragRegion
+          className="w-full [&>div]:justify-center"
+          style={{ paddingInline: 0 }}
         >
           <CompactRailLogo />
-        </div>
+        </PaneHeader>
       )}
       <span
         aria-hidden
         data-compact-rail-divider
         className={`pointer-events-none absolute bottom-0 right-0 w-px bg-(--ui-pane-border) ${
-          titleBarAbove ? "top-0" : "top-10"
+          titleBarAbove ? "top-0" : "top-[calc(var(--ui-control-height-compact)+0.5rem)]"
         }`}
       />
       <div
@@ -3868,38 +3865,31 @@ function CompactProjectRail({
       >
         {titleBarAbove ? <CompactRailLogo /> : null}
         {recoveryControl}
-        <Tooltip
+        <Button
+          variant="ghost"
+          motion="none"
+          iconOnly
           label={t("Expand projects")}
-          details={[toggleShortcut]}
-          side="right"
+          shortcut={toggleShortcut || undefined}
+          tooltipSide="right"
+          onClick={onTogglePanel}
         >
+          <PanelLeft className="icon-md" aria-hidden />
+        </Button>
+        {onOpenProjectNavigation ? (
           <Button
             variant="ghost"
             motion="none"
             iconOnly
-            label={t("Expand projects")}
-            title=""
-            onClick={onTogglePanel}
+            label={t("Projects and groups")}
+            tooltipSide="right"
+            aria-haspopup="dialog"
+            aria-expanded={projectNavigationOpen}
+            selected={projectNavigationOpen}
+            onClick={(event) => onOpenProjectNavigation(event.currentTarget)}
           >
-            <PanelLeft className="size-4" aria-hidden />
+            <FolderTree className="icon-md" aria-hidden />
           </Button>
-        </Tooltip>
-        {onOpenProjectNavigation ? (
-          <Tooltip label={t("Projects and groups")} side="right">
-            <Button
-              variant="ghost"
-              motion="none"
-              iconOnly
-              label={t("Projects and groups")}
-              title=""
-              aria-haspopup="dialog"
-              aria-expanded={projectNavigationOpen}
-              selected={projectNavigationOpen}
-              onClick={(event) => onOpenProjectNavigation(event.currentTarget)}
-            >
-              <FolderTree className="size-4" aria-hidden />
-            </Button>
-          </Tooltip>
         ) : null}
         {recentSessions && onSelectProject ? (
           <CompactLastSessionsAction
@@ -4018,21 +4008,19 @@ function CompactRailTools({ active, children }: { active: boolean; children: Rea
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   return (
     <>
-      <Tooltip label={t("Tools")} side="right">
-        <Button
-          variant="ghost"
-          motion="none"
-          iconOnly
-          label={t("Tools")}
-          aria-haspopup="dialog"
-          aria-expanded={Boolean(anchor)}
-          selected={Boolean(anchor) || active}
-          title=""
-          onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
-        >
-          <DashboardSquare className="size-4" aria-hidden />
-        </Button>
-      </Tooltip>
+      <Button
+        variant="ghost"
+        motion="none"
+        iconOnly
+        label={t("Tools")}
+        tooltipSide="right"
+        aria-haspopup="dialog"
+        aria-expanded={Boolean(anchor)}
+        selected={Boolean(anchor) || active}
+        onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
+      >
+        <DashboardSquare className="icon-md" aria-hidden />
+      </Button>
       {anchor ? (
         <Popover
           anchor={anchor}
@@ -4093,7 +4081,6 @@ function CompactRailAction({
     motion: "none" as const,
     ref,
     type: "button" as const,
-    title: "",
     "aria-label": label,
     "aria-pressed": active,
     disabled: !onClick,
@@ -4133,30 +4120,40 @@ function CompactRailAction({
   // and shortcut live in the tooltip and the accessible name. Flyout rows keep their text.
   if (!row)
     return (
-      <Tooltip label={label} details={[shortcut]} side="right">
-        <Button {...sharedProps} iconOnly label={label} className="relative shrink-0">
-          <Icon
-            className={`size-4 ${dot ? "compact-rail-icon-with-dot" : ""}`}
-            strokeWidth={1.75}
-            aria-hidden
-          />
-          {marks}
-        </Button>
-      </Tooltip>
-    );
-  return (
-    <Tooltip label={label} details={[shortcut]}>
-      <Button {...sharedProps} fullWidth align="start" className="relative shrink-0">
-        <span className="flex w-full min-w-0 items-center gap-2">
-          <Icon
-            className={`size-4 ${dot ? "compact-rail-icon-with-dot" : ""}`}
-            strokeWidth={1.75}
-          />
-          <span className="max-w-full truncate text-ui-body">{caption ?? label}</span>
-        </span>
+      <Button
+        {...sharedProps}
+        iconOnly
+        label={label}
+        shortcut={shortcut || undefined}
+        tooltipSide="right"
+        className="relative shrink-0"
+      >
+        <Icon
+          className={`icon-md ${dot ? "compact-rail-icon-with-dot" : ""}`}
+          strokeWidth={1.75}
+          aria-hidden
+        />
         {marks}
       </Button>
-    </Tooltip>
+    );
+  return (
+    <Button
+      {...sharedProps}
+      tooltip={label}
+      shortcut={shortcut || undefined}
+      fullWidth
+      align="start"
+      className="relative shrink-0"
+    >
+      <span className="flex w-full min-w-0 items-center gap-2">
+        <Icon
+          className={`icon-md ${dot ? "compact-rail-icon-with-dot" : ""}`}
+          strokeWidth={1.75}
+        />
+        <span className="max-w-full truncate text-ui-body">{caption ?? label}</span>
+      </span>
+      {marks}
+    </Button>
   );
 }
 
@@ -4231,7 +4228,7 @@ function CompactLastSessionsAction({
           align="start"
           width={280}
           onDismiss={() => setOpen(false)}
-          role="menu"
+          kind="dialog"
           aria-label={t("Last sessions")}
           className="p-1"
         >
@@ -4293,23 +4290,19 @@ function BulkBarAction({
 }) {
   const t = useT();
   return (
-    <Tooltip label={t("{p0} selected", { p0: label })}>
-      <Button
-        tone={danger ? "danger" : "neutral"}
-        iconOnly
-        label={t("{p0} selected", { p0: label })}
-        variant="ghost"
-        motion="none"
-        type="button"
-        title=""
-        aria-label={t("{p0} selected", { p0: label })}
-        disabled={disabled}
-        onClick={onClick}
-        className={`grid place-items-center disabled:pointer-events-none `}
-      >
-        {children}
-      </Button>
-    </Tooltip>
+    <Button
+      tone={danger ? "danger" : "neutral"}
+      iconOnly
+      label={t("{p0} selected", { p0: label })}
+      variant="ghost"
+      motion="none"
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="grid place-items-center disabled:pointer-events-none"
+    >
+      {children}
+    </Button>
   );
 }
 
@@ -4330,25 +4323,21 @@ function SessionsHeaderButton({
 }) {
   useLocale();
   return (
-    <Tooltip label={label}>
-      <Button
-        iconOnly
-        label={label}
-        selected={open || active}
-        variant="ghost"
-        motion="none"
-        type="button"
-        title=""
-        aria-label={label}
-        aria-expanded={open}
-        aria-haspopup={hasPopup ? "menu" : undefined}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={onClick}
-        className={`relative z-50 grid place-items-center `}
-      >
-        {children}
-      </Button>
-    </Tooltip>
+    <Button
+      iconOnly
+      label={label}
+      selected={open || active}
+      variant="ghost"
+      motion="none"
+      type="button"
+      aria-expanded={open}
+      aria-haspopup={hasPopup ? "menu" : undefined}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={onClick}
+      className="relative grid place-items-center"
+    >
+      {children}
+    </Button>
   );
 }
 
@@ -4605,34 +4594,22 @@ function FolderRow({
   const t = useT();
   const count = sessions.length;
   const accent = folderAccent(folder.colorIndex, folder.customColor);
-  const nameTip = useTooltip({
-    label: folder.name,
-    details: [busy ? t("Working") : null, needsApproval ? t("Needs input") : null],
-    wide: true,
-  });
   const actionCount = (onNewSession ? 1 : 0) + (onOpenMenu ? 1 : 0);
   const header = (
-    <>
     <Button
       variant="item"
       motion="none"
       type="button"
-      title=""
+      tooltip={folder.name}
+      tooltipDetails={[busy ? t("Working") : null, needsApproval ? t("Needs input") : null]}
+      tooltipWide
       data-folder-row=""
       aria-expanded={expanded}
       data-tauri-drag-region="false"
-      onPointerEnter={nameTip.trigger.onPointerEnter}
-      onPointerLeave={nameTip.trigger.onPointerLeave}
-      onFocus={nameTip.trigger.onFocus}
-      onBlur={nameTip.trigger.onBlur}
-      onPointerDown={(event) => {
-        nameTip.trigger.onPointerDown();
-        onPointerDown?.(event);
-      }}
+      onPointerDown={onPointerDown}
       onClick={onToggle}
       onContextMenu={onContextMenu}
       onKeyDown={(event) => {
-        nameTip.trigger.onKeyDown(event);
         if (event.key === "F2" && onRename) {
           event.preventDefault();
           onRename();
@@ -4686,7 +4663,7 @@ function FolderRow({
             <CircleAlert className="icon-xs text-warning" strokeWidth={1.75} />
           </span>
         ) : !expanded && !busy && done ? (
-          <Check className="icon-xs text-success" strokeWidth={2.25} />
+          <Check className="icon-xs text-success" strokeWidth={2} />
         ) : null}
         {/* With a fine pointer the count steps aside for the header actions on hover and focus;
             it is as wide as they are, so they cover only the count, never the status marks
@@ -4701,8 +4678,6 @@ function FolderRow({
         </span>
       </span>
     </Button>
-    {nameTip.tooltip}
-    </>
   );
   if (!actionCount) return header;
   const newSessionLabel = t("New session");
@@ -4712,34 +4687,31 @@ function FolderRow({
       {header}
       <span data-action-slot="collapse" className="flex shrink-0 items-center pe-2">
         {onNewSession ? (
-          <Tooltip label={newSessionLabel} details={[folder.name]}>
-            <InlineAction
-              label={newSessionLabel}
-              motion="none"
-              type="button"
-              data-no-drag
-              data-tauri-drag-region="false"
-              title=""
-              aria-label={`${newSessionLabel}: ${folder.name}`}
-              onClick={onNewSession}
-            >
-              <Plus className="icon-xs shrink-0" strokeWidth={1.75} />
-            </InlineAction>
-          </Tooltip>
+          <InlineAction
+            label={newSessionLabel}
+            tooltipDetails={[folder.name]}
+            motion="none"
+            type="button"
+            data-no-drag
+            data-tauri-drag-region="false"
+            aria-label={`${newSessionLabel}: ${folder.name}`}
+            onClick={onNewSession}
+          >
+            <Plus className="icon-xs shrink-0" strokeWidth={1.75} />
+          </InlineAction>
         ) : null}
         {onOpenMenu ? (
-          <Tooltip label={menuLabel} details={[folder.name]}>
-            <InlineMoreAction
-              label={t("Actions for {p0}", { p0: folder.name })}
-              motion="none"
-              type="button"
-              data-no-drag
-              data-tauri-drag-region="false"
-              title=""
-              expanded={menuOpen}
-              onOpen={onOpenMenu}
-            />
-          </Tooltip>
+          <InlineMoreAction
+            label={t("Actions for {p0}", { p0: folder.name })}
+            tooltip={menuLabel}
+            tooltipDetails={[folder.name]}
+            motion="none"
+            type="button"
+            data-no-drag
+            data-tauri-drag-region="false"
+            expanded={menuOpen}
+            onOpen={onOpenMenu}
+          />
         ) : null}
       </span>
     </ActionHost>
@@ -5119,7 +5091,7 @@ const SessionCard = memo(function SessionCard({
           </>
         ) : done ? (
           <>
-            <Check className="icon-xs" strokeWidth={2.25} />
+            <Check className="icon-xs" strokeWidth={2} />
             <span>{t("Done")}</span>
           </>
         ) : draft ? (
@@ -5149,21 +5121,18 @@ const SessionCard = memo(function SessionCard({
     </Tooltip>
   ) : null;
   const workItemBadge = linkedWorkItem ? (
-    <Tooltip
-      label={t(
-        linkedWorkItem.kind === "pr"
-          ? "Open PR #{p1} beside this session ({p2}-click for GitHub)"
-          : "Open issue #{p1} beside this session ({p2}-click for GitHub)",
-        { p1: linkedWorkItem.number, p2: MOD },
-      )}
-    >
     <Button
       variant="ghost"
       motion="none"
       type="button"
       data-no-drag
       data-tauri-drag-region="false"
-      title=""
+      tooltip={t(
+        linkedWorkItem.kind === "pr"
+          ? "Open PR #{p1} beside this session ({p2}-click for GitHub)"
+          : "Open issue #{p1} beside this session ({p2}-click for GitHub)",
+        { p1: linkedWorkItem.number, p2: MOD },
+      )}
       aria-label={t(linkedWorkItem.kind === "pr" ? "Open PR #{p1}" : "Open issue #{p1}", {
         p1: linkedWorkItem.number,
       })}
@@ -5199,7 +5168,6 @@ const SessionCard = memo(function SessionCard({
       )}
       <span>#{linkedWorkItem.number}</span>
     </Button>
-    </Tooltip>
   ) : null;
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -5583,7 +5551,7 @@ const SessionCard = memo(function SessionCard({
       data-session-row-model
       className="flex min-w-0 shrink items-center gap-1 text-ui-caption font-medium text-(--ui-text-secondary)"
     >
-      <HarnessIcon harness={session.harness} className="size-3 shrink-0" />
+      <HarnessIcon harness={session.harness} className="icon-xs shrink-0" />
       {compact ? null : (
         <span className="session-row-model-full min-w-0 truncate">
           <SessionSearchText text={model} />
@@ -5603,7 +5571,7 @@ const SessionCard = memo(function SessionCard({
         data-session-row-branch
         className="session-row-branch flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)"
       >
-        <BranchIcon className="size-3 shrink-0" strokeWidth={1.75} />
+        <BranchIcon className="icon-xs shrink-0" strokeWidth={1.75} />
         <span className="min-w-0 truncate">
           <SessionSearchText text={branchText} />
         </span>
@@ -5612,41 +5580,39 @@ const SessionCard = memo(function SessionCard({
   const actions = (
     <span data-session-row-actions className="relative flex shrink-0 items-center gap-px">
       {onArchive ? (
-        <Tooltip label={archiveLabel} details={[title]}>
-          <InlineAction
-            label={`${archiveLabel} ${title}`}
-            motion="none"
-            type="button"
-            data-no-drag
-            data-tauri-drag-region="false"
-            title=""
-            aria-label={`${archiveLabel} ${title}`}
-            onClick={() => {
-              onArchive(session.id, !session.archived);
-            }}
-          >
-            <Archive className="icon-xs shrink-0" strokeWidth={1.75} />
-          </InlineAction>
-        </Tooltip>
+        <InlineAction
+          label={`${archiveLabel} ${title}`}
+          tooltip={archiveLabel}
+          tooltipDetails={[title]}
+          motion="none"
+          type="button"
+          data-no-drag
+          data-tauri-drag-region="false"
+          aria-label={`${archiveLabel} ${title}`}
+          onClick={() => {
+            onArchive(session.id, !session.archived);
+          }}
+        >
+          <Archive className="icon-xs shrink-0" strokeWidth={1.75} />
+        </InlineAction>
       ) : null}
       {onDelete ? (
-        <Tooltip label={t("Delete")} details={[title]}>
-          <InlineAction
-            label={`Delete ${title}`}
-            tone="danger"
-            motion="none"
-            type="button"
-            data-no-drag
-            data-tauri-drag-region="false"
-            title=""
-            aria-label={`Delete ${title}`}
-            onClick={() => {
-              onDelete(session.id);
-            }}
-          >
-            <Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />
-          </InlineAction>
-        </Tooltip>
+        <InlineAction
+          label={`Delete ${title}`}
+          tooltip={t("Delete")}
+          tooltipDetails={[title]}
+          tone="danger"
+          motion="none"
+          type="button"
+          data-no-drag
+          data-tauri-drag-region="false"
+          aria-label={`Delete ${title}`}
+          onClick={() => {
+            onDelete(session.id);
+          }}
+        >
+          <Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />
+        </InlineAction>
       ) : null}
       {workItemBadge}
       {session.automationId ? (
@@ -5751,35 +5717,6 @@ const SessionCard = memo(function SessionCard({
       >
         {working ? <span aria-hidden data-session-working-edge className="session-row-working-edge" /> : null}
         {/* The landing mark (line, group frame) is drawn on this card by setDropIndicator. */}
-        {dropDwell || dropTarget ? (
-          <span
-            aria-hidden
-            data-session-dwell={dropTarget ? "ready" : "waiting"}
-            style={{ "--session-dwell-ms": `${groupDelayMs}ms` } as CSSProperties}
-            // Progress only: the cursor badge owns the instruction ("Hold to group" then
-            // "Release to group"), so the row never repeats it.
-            className="pointer-events-none absolute right-1.5 top-1/2 z-10 grid -translate-y-1/2 place-items-center rounded-full bg-(--ui-surface-raised) p-0.5"
-          >
-            <svg viewBox="0 0 16 16" className="session-row-dwell-ring size-3.5 -rotate-90">
-              <circle
-                cx="8"
-                cy="8"
-                r="6"
-                className="fill-none stroke-(--ui-surface-pressed)"
-                strokeWidth="2.5"
-              />
-              <circle
-                cx="8"
-                cy="8"
-                r="6"
-                pathLength={100}
-                className="session-row-dwell-progress fill-none stroke-accent"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </span>
-        ) : null}
         {/* Actions sit beside the row's button, never inside it. */}
         <span className="relative flex min-h-5 min-w-0 items-center gap-1.5">
           <div
@@ -5811,11 +5748,11 @@ const SessionCard = memo(function SessionCard({
               <span
                 aria-hidden
                 data-session-checkbox={isSelected ? "checked" : "unchecked"}
-                className={`grid size-3.5 shrink-0 place-items-center rounded-[4px] border ${
+                className={`grid size-3.5 shrink-0 place-items-center rounded-sm border ${
                   isSelected ? "border-active bg-active text-on-solid" : "border-(--ui-text-muted)"
                 }`}
               >
-                {isSelected ? <Check className="size-2.5" strokeWidth={2.5} /> : null}
+                {isSelected ? <Check className="icon-xs" strokeWidth={2} /> : null}
               </span>
             ) : null}
             {session.pinned && !inPinnedSection ? (
@@ -5882,6 +5819,36 @@ const SessionCard = memo(function SessionCard({
         ) : null}
         {orchestrationExpanded ? (
           <OrchestrationSidebarAgents leadId={session.id} summary={orchestration!} />
+        ) : null}
+        {/* Last child: later DOM order paints over the row content without a z-index. */}
+        {dropDwell || dropTarget ? (
+          <span
+            aria-hidden
+            data-session-dwell={dropTarget ? "ready" : "waiting"}
+            style={{ "--session-dwell-ms": `${groupDelayMs}ms` } as CSSProperties}
+            // Progress only: the cursor badge owns the instruction ("Hold to group" then
+            // "Release to group"), so the row never repeats it.
+            className="pointer-events-none absolute right-1.5 top-1/2 grid -translate-y-1/2 place-items-center rounded-full bg-(--ui-surface-raised) p-0.5"
+          >
+            <svg viewBox="0 0 16 16" className="session-row-dwell-ring size-3.5 -rotate-90">
+              <circle
+                cx="8"
+                cy="8"
+                r="6"
+                className="fill-none stroke-(--ui-surface-pressed)"
+                strokeWidth="2.5"
+              />
+              <circle
+                cx="8"
+                cy="8"
+                r="6"
+                pathLength={100}
+                className="session-row-dwell-progress fill-none stroke-accent"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </span>
         ) : null}
       </ActionHost>
       {detailVisible ? (
@@ -5958,7 +5925,7 @@ const SessionCard = memo(function SessionCard({
                   key={task.sessionId}
                   className="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-1"
                 >
-                  <HarnessIcon harness={task.harness} className="size-3.5 shrink-0 opacity-75" />
+                  <HarnessIcon harness={task.harness} className="icon-sm shrink-0 opacity-75" />
                   <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
                     {task.title}
                   </span>

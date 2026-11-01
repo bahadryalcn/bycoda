@@ -2,6 +2,7 @@ import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "../../shared/ui/icons";
+import { Spinner } from "../../shared/ui/Spinner";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
   fetchPiUsage,
@@ -99,17 +100,11 @@ function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: nu
         motion="none"
         type="button"
         size="sm"
-        aria-label={t("Refresh Pi usage")}
-        title={t("Refresh Pi usage")}
         disabled={fetching}
         onClick={() => refreshRef.current(true)}
-        className="size-7 shrink-0"
+        className="shrink-0"
       >
-        <RefreshCw
-          className={`icon-sm ${fetching ? "motion-safe:animate-spin" : ""}`}
-          strokeWidth={1.75}
-          aria-hidden
-        />
+        {fetching ? <Spinner /> : <RefreshCw className="icon-sm" aria-hidden />}
       </Button>
     </>
   );

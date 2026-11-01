@@ -1,7 +1,9 @@
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { Check, Loader, RefreshCw } from "../../../shared/ui/icons";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Check, RefreshCw } from "../../../shared/ui/icons";
 import type { RemoteDataState } from "../model/remoteDataState";
 
 /** Retained content stays visible; this strip explains whether it was verified. */
@@ -51,11 +53,7 @@ export function RemoteDataStatus({
   if (presentation === "indicator" && needsAttention) return null;
   if (!needsAttention) {
     const detail = `${message}${time ? ` · ${t("Last verified {p0}", { p0: new Date(state.updatedAt!).toLocaleString(getLocale()) })}` : ""}`;
-    const icon = busy ? (
-      <Loader aria-hidden className="icon-sm motion-safe:animate-spin" />
-    ) : (
-      <Check aria-hidden className="icon-sm" />
-    );
+    const icon = busy ? <Spinner /> : <Check aria-hidden className="icon-sm" />;
     return (
       <span
         data-remote-data-state={state.phase}
@@ -77,9 +75,11 @@ export function RemoteDataStatus({
             {icon}
           </Button>
         ) : (
-          <span title={detail} aria-label={detail} role="img">
-            {icon}
-          </span>
+          <Tooltip label={detail}>
+            <span aria-label={detail} role="img">
+              {icon}
+            </span>
+          </Tooltip>
         )}
       </span>
     );
@@ -91,20 +91,19 @@ export function RemoteDataStatus({
       aria-busy={busy}
       role={state.phase === "error" ? "alert" : "group"}
       tone={state.phase === "error" ? "danger" : "info"}
-      icon={busy ? <Loader aria-hidden className="icon-sm motion-safe:animate-spin" /> : undefined}
+      icon={busy ? <Spinner /> : undefined}
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <span>{message}</span>
           {time ? (
-            <span
-              className="ml-1 text-(--ui-text-muted)"
-              title={t("Last verified {p0}", {
+            <Tooltip
+              label={t("Last verified {p0}", {
                 p0: new Date(state.updatedAt!).toLocaleString(getLocale()),
               })}
             >
-              · {time}
-            </span>
+              <span className="ml-1 text-(--ui-text-muted)">· {time}</span>
+            </Tooltip>
           ) : null}
           {state.error ? (
             <p className="mt-1 break-words text-(--ui-text-muted)">{state.error}</p>
@@ -122,16 +121,14 @@ export function RemoteDataStatus({
             }
             variant="ghost"
             iconOnly
+            loading={busy}
             label={
               state.phase === "error"
                 ? t("Retry loading {p0}", { p0: dataLabel })
                 : t("Refresh {p0}", { p0: dataLabel })
             }
           >
-            <RefreshCw
-              aria-hidden
-              className={`icon-sm ${busy ? "motion-safe:animate-spin" : ""}`}
-            />
+            <RefreshCw aria-hidden className="icon-sm" />
           </Button>
         ) : null}
       </div>

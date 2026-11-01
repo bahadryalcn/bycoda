@@ -7,7 +7,11 @@ import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { useTaskBoardQueries } from "../model/useTaskBoardQueries";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { projectDisplayName } from "../../projects/model/projectNames";
-import { ToolHeader } from "../../../app/shell/ToolNavigation";
+import { ToolNavigation, ToolNavigationContext } from "../../../app/shell/ToolNavigation";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { TabStrip } from "../../../shared/ui/Tabs";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { WorkspaceReview } from "../../workspaces/ui/WorkspaceReview";
@@ -65,14 +69,12 @@ import {
 import { getLocale, t, useLocale, useT } from "../../../shared/i18n";
 import { machineProjects } from "../../automations/model/machineSnapshot";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   CircleHelp,
   DashboardSquare,
   Gauge,
-  ListFilter,
-  LoaderCircle,
   MoreHorizontal,
   Plus,
   RefreshCw,
@@ -158,6 +160,9 @@ export function TasksView({
 }: Props) {
   "use memo";
   const t = useT();
+  // Inside a tool window the tool switcher replaces the plain title.
+  const toolNavigation = useContext(ToolNavigationContext);
+  const navigating = Boolean(toolNavigation?.active);
   return (
     <div
       role="region"
@@ -165,24 +170,16 @@ export function TasksView({
       data-app-tasks
       className="flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
     >
-      <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-(--ui-tone-neutral-border)"
-        data-tauri-drag-region="deep"
+      <PaneHeader
+        dragRegion
+        chromeInset={!besideRail ? true : compactRail ? "compact" : false}
+        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        icon={navigating ? undefined : <DashboardSquare strokeWidth={1.75} />}
+        title={navigating ? undefined : t("Tasks")}
+        trailing={IS_MAC ? null : <WindowControls />}
       >
-        {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
-        <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
-            <DashboardSquare
-              className="icon-sm shrink-0 text-(--ui-text-secondary)"
-              strokeWidth={1.75}
-            />
-            <span className="min-w-0 truncate text-(--ui-tone-neutral-fg)">{t("Tasks")}</span>
-          </div>
-        </ToolHeader>
-        {IS_MAC ? null : <WindowControls />}
-      </div>
+        {navigating ? <ToolNavigation /> : null}
+      </PaneHeader>
       <TasksContent cwd={cwd} recents={recents} onOpenBackgroundSession={onOpenBackgroundSession} />
     </div>
   );
@@ -896,6 +893,12 @@ function TasksContent({
     setProjectFilter("all");
     setSprintFilter("");
   };
+  const resetPopoverFilters = () => {
+    setSprintFilter("");
+    setGoalFilter(ALL_GOALS);
+    setStatusFilter("all");
+    setMachineFilter("all");
+  };
   const hasTasks = visibleTasks.length > 0;
   // Nothing to run yet: only "what is this and how do I start" is shown.
   const showOnboarding = section === "backlog" && !loading && !hasTasks && !unreadable;
@@ -950,19 +953,19 @@ function TasksContent({
     <div className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)">
       <header className="task-board-toolbar">
         <h1 className="sr-only">{t("Tasks")}</h1>
-        <SegmentedControl
+        <TabStrip
           label={t("Task sections")}
           value={section}
-          options={[
+          items={[
             { value: "backlog", label: t("Backlog") },
             { value: "sprints", label: t("Sprints") },
             // Reports have nothing to show before the first sprint.
             ...(accessibleSprints.length > 0 || section === "reports"
-              ? [{ value: "reports", label: t("Reports") }]
+              ? [{ value: "reports" as const, label: t("Reports") }]
               : []),
           ]}
           onValueChange={(value) => {
-            setSection(value as typeof section);
+            setSection(value);
             if (value === "backlog") setSprintFilter("");
           }}
         />
@@ -1040,34 +1043,31 @@ function TasksContent({
           ) : null}
           {!showOnboarding && (goalList.length > 0 || hasTasks || accessibleSprints.length > 0) ? (
             <>
-              <Button
+              <FilterTrigger
                 ref={filterTrigger}
-                variant="ghost"
-                iconOnly
                 label={t("Filters")}
-                tooltip={t("Filters")}
+                activeCount={activeFilterCount}
+                onReset={resetPopoverFilters}
+                type="button"
                 aria-haspopup="dialog"
                 aria-expanded={filtersOpen}
-                selected={activeFilterCount > 0}
                 aria-pressed={activeFilterCount > 0}
                 onClick={() => setFiltersOpen((open) => !open)}
-              >
-                <ListFilter className="icon-sm" />
-                {activeFilterCount > 0 ? (
-                  <span className="task-filter-active" aria-hidden="true" />
-                ) : null}
-              </Button>
+              />
               {filtersOpen ? (
                 <Popover
+                  kind="dialog"
+                  aria-label={t("Filters")}
                   anchor={filterTrigger}
                   align="end"
                   width={280}
                   onDismiss={(reason) => {
                     setFiltersOpen(false);
+                    // The trigger re-renders with its count while a filter changes.
                     if (reason === "escape") filterTrigger.current?.focus();
                   }}
                 >
-                  <div className="task-filter-popover" role="dialog" aria-label={t("Filters")}>
+                  <div className="task-filter-popover">
                     <label className="task-filter-field">
                       <span>{t("Status")}</span>
                       <SearchableSelect
@@ -1144,12 +1144,7 @@ function TasksContent({
                     <Button
                       variant="ghost"
                       disabled={activeFilterCount === 0}
-                      onClick={() => {
-                        setSprintFilter("");
-                        setGoalFilter(ALL_GOALS);
-                        setStatusFilter("all");
-                        setMachineFilter("all");
-                      }}
+                      onClick={resetPopoverFilters}
                     >
                       {t("Reset")}
                     </Button>
@@ -1248,7 +1243,7 @@ function TasksContent({
                 tone={error || missingNotice || boardDataState.error ? "warning" : "neutral"}
               >
                 {board.pending ? (
-                  <LoaderCircle className="icon-xs animate-spin" strokeWidth={1.75} />
+                  <Spinner size="xs" />
                 ) : (
                   <CircleHelp className="icon-sm" strokeWidth={1.75} />
                 )}

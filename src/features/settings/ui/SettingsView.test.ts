@@ -385,15 +385,16 @@ describe("settings pages", () => {
 
   it("refreshes the mounted daily summary time when another window saves it", async () => {
     await render("notifications");
-    const control = () => container.querySelector('[aria-label^="Daily summary time"]');
-    expect(control()?.textContent).toContain("09:00");
+    const control = () =>
+      container.querySelector<HTMLInputElement>('input[aria-label="Daily summary time"]');
+    expect(control()?.value).toBe("09:00");
     await act(async () => {
       localStorage.setItem("bycoda.notifications.dailySummary.time", "10:00");
       window.dispatchEvent(
         new StorageEvent("storage", { key: "bycoda.notifications.dailySummary.time" }),
       );
     });
-    expect(control()?.textContent).toContain("10:00");
+    expect(control()?.value).toBe("10:00");
   });
   it("restores appearance without resetting conversation display or explorer settings", async () => {
     localStorage.setItem(
@@ -737,6 +738,8 @@ describe("settings pages", () => {
       );
       expect(onSelectSection).toHaveBeenLastCalledWith("policies");
       expect(document.activeElement).toBe(tabs.at(-1));
+      // The page owner follows the selection; Home then moves back from the last category.
+      await render("policies");
       await act(async () =>
         tabs.at(-1)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })),
       );
@@ -749,7 +752,7 @@ describe("settings pages", () => {
     const onClose = vi.fn();
     await render("general", { onClose });
     const back = container.querySelector<HTMLButtonElement>('[aria-label="Back to workspace"]')!;
-    expect(back.getAttribute("data-tauri-drag-region")).toBe("false");
+    expect(back.closest('[data-tauri-drag-region="false"]')).not.toBeNull();
     await act(async () => back.click());
     expect(onClose).toHaveBeenCalledOnce();
     expect(onSelectSection).not.toHaveBeenCalled();
@@ -1500,22 +1503,21 @@ describe("settings pages", () => {
     expect(hidden?.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("sets interface scale from a menu instead of a live slider", async () => {
+  it("applies interface scale only when the slider commits, in whole 10% steps", async () => {
     await render("appearance");
     const row = container.querySelector('[data-setting-id="interface-scale"]')!;
-    expect(row.querySelector('input[type="range"]')).toBeNull();
-    const trigger = row.querySelector<HTMLButtonElement>('[aria-haspopup="listbox"]')!;
-    expect(trigger.getAttribute("aria-label")).toBe("Interface scale: 100%");
+    expect(row.querySelector('[aria-haspopup="listbox"]')).toBeNull();
+    const thumb = row.querySelector<HTMLElement>('[role="slider"]')!;
+    expect(thumb.getAttribute("aria-valuetext")).toBe("100%");
+    expect(thumb.getAttribute("aria-valuemin")).toBe("50");
+    expect(thumb.getAttribute("aria-valuemax")).toBe("200");
 
-    await act(async () => trigger.click());
-    const option = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
-      (node) => node.textContent?.includes("150%"),
-    );
-    expect(option).toBeTruthy();
-    await act(async () => option!.click());
+    await act(async () => {
+      thumb.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
 
-    expect(localStorage.getItem("bycoda.uiScale")).toBe("1.5");
-    expect(trigger.getAttribute("aria-label")).toBe("Interface scale: 150%");
+    expect(localStorage.getItem("bycoda.uiScale")).toBe("1.1");
+    expect(row.querySelector('[role="slider"]')!.getAttribute("aria-valuetext")).toBe("110%");
     document.documentElement.style.removeProperty("zoom");
   });
 

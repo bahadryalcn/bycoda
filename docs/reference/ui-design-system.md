@@ -171,6 +171,8 @@ shared composite rather than replacing it with a generic action button. Record
 the semantic reason and owner in the component reference; a local style preference
 is not an exception.
 
+Pane structure: `PaneHeader` (+ `WindowChromeInset`) for pane/tool headers and title rows, `SectionLabel` for group titles, `Surface` for static containers, `Divider` for hairlines, `Sash` for resize edges, `Meter` for bounded measures, `Tabs` for view switching. Features compose these instead of local header rows, eyebrow labels, card recipes, `w-[78px]` spacers, resize-handle recipes, hand-made meter bars and roving-key tab handlers. Feature CSS may add container steps on the documented hooks (`Tabs` `data-tab-part`, `className`) but not restyle the parts.
+
 ## Action contract
 
 `Button.tsx` is the only ordinary action presentation owner. `SecondaryButton` and
@@ -193,10 +195,13 @@ Hierarchy and semantic color are independent:
 | Compatibility            | `variant="danger"`; `tone="error"`                                                                           | Normalize to secondary/danger and danger respectively; one style implementation     |
 | Structural compatibility | `item`, `tab`                                                                                                | Existing stable direct-child rendering; interaction owner retains ARIA/roving focus |
 | `size`                   | `sm`, `md`, `lg`                                                                                             | Shared token dimensions, never a local height/padding override                      |
-| Other existing props     | `shape`, `iconOnly`, `label`, `tooltip`, `selected`, `loading`, `loadingLabel`, icons, `fullWidth`, `motion` | Preserve current contracts                                                          |
+| Other existing props     | `shape`, `iconOnly`, `label`, `tooltip`, `tooltipDetails`, `tooltipSide`, `shortcut`, `disabledReason`, `selected`, `loading`, `loadingLabel`, icons, `fullWidth`, `motion` | Preserve current contracts                                                          |
 
 The shared Button implements the independent tone prop. Existing seven variants
 remain compatible; legacy aliases normalize at the public adapter boundary.
+Hover and keyboard hints, shortcut key caps and disabled reasons all go through the shared
+Tooltip (`tooltip`, `shortcut`, `tooltipDetails`, `disabledReason`); a native `title=` on an
+action is drift, and optional rich previews use HoverCard.
 Feature-wide migration and installed-application acceptance remain separate work.
 
 ```tsx
@@ -326,7 +331,7 @@ rows migrate in their owning lines.
 | A few visible exclusive choices         | RadioGroup; RadioCards only when descriptions materially help                                         |
 | Short stable exclusive list             | Select when scanning is easy; Combobox for long or searchable lists                                   |
 | Several selected options                | MultiSelect, with discoverable removal and reset                                                      |
-| Same data in a different view           | SegmentedControl; Tabs for peer panels of an object                                                   |
+| Same data in a different view           | SegmentedControl for an exclusive filter/display mode; `Tabs` for views or panels of one context    |
 | Number, password, tags, file, date/time | Specialized shared adapter; preserve parsing, validation, timezone and native file behavior           |
 | One independently saved value           | InlineEdit with explicit pending, failure and recovery                                                |
 
@@ -370,6 +375,17 @@ only; callers own fetching); `Segment.disabled`; `TabLabel truncate="middle"`,
 `tail`, `title` and `TabDirtyDot`; `MiddleTruncate` (`mode`, `tail`, `title`) for long
 paths, branches and model names; TreeRow slots `TreeRowToggle`, `TreeRowIcon`,
 `TreeRowLabel` and `TreeRowTrailing`.
+
+Prompt and editor surfaces (task description, automation instructions, quick composer, skill
+prompt) use PromptField: the bordered frame owns the single focus ring; the textarea draws none.
+The main composer keeps its own implementation for now but follows the same contract
+(`data-ui-focus-group`, `data-ui-focus="group"`, `data-ui-focus-quiet`).
+
+Selection owners, smallest first: Select (short stable list) -> MorphSelect (inline property) ->
+SearchableSelect (form/long/async/multiple) -> picker kit (custom toolbar/composer pickers).
+Popover headers with search use PopoverSearchHeader; never hand-roll a `border-b` search row with
+`SearchInput`. Date and time values use `DateTimeField` / `DateTimePicker` (`mode` date, time or
+datetime), not native date inputs.
 
 ### Style ownership: caller className sets placement only
 
@@ -460,8 +476,8 @@ readable text on every surface.
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Hover and press      | Transient feedback uses shared surface or tone hover/pressed roles; it does not represent a saved choice.                                                                                                                                                                                       |
 | Selected and checked | Use selection roles for selected content and the control's on/mixed semantics for membership. Checkbox, switch, radio and segmented controls retain their distinct native or ARIA state.                                                                                                        |
-| Keyboard focus       | Shared focus width, offset and ring color indicate the focused control independently of hover and selection. Preserve visible focus in forced-colors mode.                                                                                                                                      |
-| Disabled and pending | Disabled roles communicate unavailable actions; pending retains the operation's label and state and prevents duplicate submission where appropriate. Do not treat either as selection.                                                                                                          |
+| Keyboard focus       | One contract (see "Global tokens"): fields turn the border to `--ui-field-border-focus` and add the 2px accent `--ui-focus-ring`; other controls use the shared outline. Independent of hover and selection. Preserve visible focus in forced-colors mode.                                                                                                                                      |
+| Disabled and pending | One disabled model (see "Global tokens"); disabled roles communicate unavailable actions; pending retains the operation's label and state and prevents duplicate submission where appropriate. Do not treat either as selection.                                                                                                          |
 | Accent               | Opt into the accent tone for intended actions; neutral primary actions remain neutral. Message and composer selection styling are separate consumers. Changing the accent must not recolor status, diff or running meaning.                                                                     |
 | Text selection       | General document, composer, editor, PDF and terminal selections have different owners. Preserve the composer's transparent text/highlight layer and the PDF text layer when changing shared selection roles; verify actual rendered selection rather than assuming all consumers use one token. |
 
@@ -479,6 +495,50 @@ glass. Hue/saturation/lightness and contrast preferences must not make meaning o
 focus disappear. Status includes a label/icon, never color alone. External brand
 marks, content imagery, syntax and diff data use their existing distinct shared
 contracts, not UI status colors.
+
+## Global tokens
+
+Tokens are defined once in their owner (`src/styles/index.css`, `bycoda.css`, `arc.css`) and
+consumed by name. Do not copy a value into feature CSS.
+
+- Focus contract (owner: top of `src/styles/arc.css`): a focused field frame turns its border to
+  `--ui-field-border-focus` (readability-adjusted accent ink) and adds `--ui-focus-ring`, a 2px ring
+  in the user's accent at low alpha; invalid fields use the danger border with
+  `--ui-focus-ring-invalid`; non-field controls use the outline set by `--ui-focus-ring-color`,
+  `--ui-focus-width` and `--ui-focus-offset`. No field uses an inset outline. Composites mark the
+  bordered frame `data-ui-focus-group` and the inner editor `data-ui-focus="group"`;
+  `data-ui-focus="input"` is a standalone editor that owns its frame and `data-ui-focus="menu"` an
+  editor inside a framed menu. `data-ui-focus-quiet` on a group opts a writing surface (the chat
+  composer) out of the ring; forced-colors outlines still apply. Feature CSS never draws another
+  outline on these containers.
+- Disabled: fields, rows and composite surfaces dim with `--ui-disabled-opacity`; buttons and
+  filled actions use `--ui-tone-<tone>-disabled-fg|surface|border`. Never both on one element;
+  the reason goes in the shared Tooltip (`disabledReason`).
+- Layers: `--layer-hover-card|popover|submenu|dialog|dialog-popover|toast|drag` on `:root`
+  mirror `LAYER` in `src/shared/lib/layers.ts` (keep both identical). CSS uses
+  `z-index: var(--layer-*)`, TS uses `LAYER.*`; no literal z-index above 10.
+- Motion: `--motion-duration-instant|fast|standard|slow` (80/120/160/260ms) and
+  `--motion-ease-standard|enter|exit`. Arc's `--duration-*`/`--ease-*` point at them. Feature CSS
+  uses the tokens, not literal milliseconds or `cubic-bezier(0.22, 1, 0.36, 1)`. Tailwind
+  `animate-spin`/`animate-pulse` become a slow opacity pulse under reduced motion globally.
+- Status utilities: `text-|border-|outline-|fill-|stroke-|ring-danger|warning|success|info|accent`
+  resolve to `--ui-tone-<tone>-fg`, `bg-<tone>` to `--ui-tone-<tone>-solid`. Raw hues stay
+  available as `var(--color-danger)` etc. for derivations only.
+- Neutral translucent fills: `--ui-fill-faint|subtle|muted|strong` (content ink at 4/8/10/12%
+  over transparent) for hairlines, quiet wells and chips; opaque steps keep `--ui-surface-*`.
+- Arc scale outside Arc: `--radius-control|panel|surface|pill`, `--space-1..16` and `--accent`
+  are global with Arc's values. `--control-height-*`, `--surface*` and `--border*` stay
+  Arc-scoped (density/scope specific); outside Arc use `--ui-control-height-*`, `--ui-surface-*`
+  and `--color-stroke`/`--ui-pane-border`. `--ui-radius-control` and `--ui-radius-panel` alias
+  `--ui-control-radius` and `--ui-radius-card`.
+- Floating container role: `--ui-surface-floating` is the one surface for dialogs, sheets,
+  popovers, menus, tooltips, toasts and floating panels. Tinted canvases keep the raised step; the
+  Pure background maps it near the pure ground (the pane border and floating elevation separate
+  it) and controls inside keep their own steps.
+- Pure and Tinted background (Appearance -> Themes -> Background tone, `html[data-canvas-background]`):
+  Pure is the default and paints the shared canvas pure black or white for every palette. Derived
+  layers still mix from `--ui-tint-base`. Tokens and components must read well on both; do not
+  hard-code a canvas colour or test only one background.
 
 ## Type, density and layout
 
@@ -590,7 +650,10 @@ Pages compose these; they never reskin them or add page-local surfaces.
   height; a Select has a fixed minimum width; Slider has a fixed width plus a value chip.
   Wide editors use `stacked`.
 - **Dependent sub-rows:** `dependsOn={parentValue}` indents the row; `false` dims it and makes
-  its controls inert. `disabledReason` is the tooltip text (and read by assistive technology).
+  its controls inert. `disabledReason` is the tooltip text (and read by assistive technology);
+  `Row` shows it through the shared tooltip hook, spread on the row itself with no wrapper element
+  (the `.settings-group-content > .settings-row` sibling selectors need a direct child). Never use a
+  native `title` on a row.
   Never repeat "Enable X to use this option. Your choice is preserved." as visible text.
   `disabled` gives the same dim/inert state without the indent.
 - **Reset:** `modified` + `onReset` on a Row or Group shows a small reset icon next to the title
@@ -599,6 +662,11 @@ Pages compose these; they never reskin them or add page-local surfaces.
 - **Page-level Restore defaults:** a page calls `useSettingsPageReset(handler)` (or the shell
   supplies one, as for Appearance); the settings header then shows one "Restore defaults" icon
   that always asks for confirmation and affects only that page. No handler, no action.
+- **Interface scale and time:** interface scale is a Slider that applies on release (zoom reflows
+  the window, so a live drag would move the thumb under the pointer). The daily summary time is
+  `DateTimeField mode="time"`; the stored value can be any valid minute.
+- **Tile choices:** one exclusive choice shown as tiles (Appearance mode, onboarding mode and crew) uses
+  `RadioTiles` (`src/features/settings/ui/RadioTiles.tsx`); the selected tile gets `--ui-border-accent`.
 - **AdvancedSettings:** a disclosure row with the same title x as row titles, chevron on the
   right, at the end of its group. New pages pass `defaultOpen={false}` so Advanced is closed
   (the prop still defaults to open for existing pages). Never use it to hold only a paragraph.
@@ -621,6 +689,22 @@ Motion explains a state change. Use shared tokens and stable keys, respect reduc
 motion, and avoid width morphing on hundreds of repeated controls. Structural
 rows/tabs can use the shared stable rendering mode. No decorative entrances,
 blur/glow or layout movement just to demonstrate a library component.
+
+### Feedback and overlay primitives
+
+- Toasts: one stack per corner (`ToastRegion`). Never position a notice with `fixed` and an
+  offset, never report heights between notices; render `<Toast>` or wrap a custom card in
+  `<ToastSlot>`.
+- Sheets: `Sheet` for every side or bottom panel. Modal sheets trap focus; non-modal sheets
+  are `role="dialog"` without `aria-modal` and keep Escape scoped to their pane or the overlay
+  stack. No hand-rolled `role="dialog"` overlays with their own Escape or focus handling.
+- Destructive confirmation: ConfirmDialog with filled danger confirm, focus on Cancel; add
+  `consequences` for what is lost/kept, `requireText` for irreversible bulk loss, `acknowledge`
+  for an extra choice. Row deletes stay ConfirmMorph.
+- Dialog actions: `ModalActions` (leading destructive at the start edge, Cancel then primary at
+  the end). No per-dialog `flex justify-end gap-2` rows.
+- Errors in a row or form: InlineError. Empty list rows: `EmptyState size="inline"`.
+  Loading lines: `LoadingText`. Pending glyphs: `Spinner` only.
 
 ## Contextual groups and morph interactions
 
@@ -733,21 +817,53 @@ Check representative consumers and the shared browser fixture at 390/768/1024/14
 both themes, neutral and saturated accents, keyboard and reduced motion. Include
 pending/failure/retry, empty, long translation and disabled cases.
 
+**UI drift ratchet.** `pnpm check:ui-drift` (`scripts/checks/check-ui-drift.mjs`) runs regex
+rules over `src/app/**` and `src/features/**`, plus the feature sections of `src/styles/index.css`
+and `bycoda.css`. The rules cover:
+
+- undefined or Arc-only CSS variables;
+- literal type, radius, size, layer and motion values;
+- icon size and stroke drift, and direct `lucide-react` imports;
+- loaders without reduced-motion handling;
+- base-hue colour utilities;
+- native `title=` on actions;
+- `<p role="alert">`;
+- feature `createPortal` and `Popover role=menu`;
+- `hover:bg-*` recipes, opacity used as the disabled state, and fixed control heights.
+
+Existing findings are counted per file and rule in `scripts/checks/ui-drift-baseline.json` (1,964
+findings when created on 2026-11-01, 243 after the wave-2 migrations). A new
+finding (a count above the baseline) fails `check:staged` and the bounded `check:changed` runner;
+lower counts pass and are reported as improvements.
+
+- After a migration, run `node scripts/checks/check-ui-drift.mjs --ratchet`. It lowers buckets only
+  and never accepts someone else's new drift.
+- `--update-baseline` rewrites every count, including increases. Use it only for an owner-approved
+  exception.
+- `--report` prints totals per rule and folder; `--files <paths>` checks only those files.
+
+Wiring: `scripts/checks/check-staged.mjs` runs the ratchet over the staged text of `src/**`
+`.ts`/`.tsx`/`.css` files (the working tree supplies variable definitions), and
+`scripts/checks/check-local.mjs` (`pnpm check:changed`) runs it over changed `src` files with
+`--files`. The preflight CI step is requested but not added yet: append
+`node scripts/checks/check-ui-drift.mjs` and `node scripts/checks/check-theme-colors.mjs` to the
+"Verify shared Host contracts and headless boundaries" step of `.github/workflows/ci.yml`
+(web jobs; the check reads `node_modules/tailwindcss/theme.css`, so dependencies must be
+installed). Until then the ratchet is a local and pre-commit gate only.
+
 Use `node scripts/checks/inventory-ui.mjs` (or `--json`) to measure remaining source
 sites. It is an advisory inventory, not a conformance gate. Review native semantics
 and dynamic/CSS candidates manually. `check-theme-colors.mjs` still owns existing
-literal-color checks. Run `node scripts/checks/check-ui-boundaries.mjs` for
-owner-reviewed source/style fingerprint decisions. The baseline records 944
-historical component decisions plus current additions, with counted signal
-exceptions and explicit semantic owners. It remains in the uncommitted owner
-review diff; its existence or a source count does
-not authorize a blind baseline refresh. The command is separate from ordinary
-build/test execution. Heuristics do not prove behavior or complete CSS ownership:
-local immutable/conditional/template class recipes and static ARIA/feedback
-selectors are tracked. Indirect styles, dynamic roles, imported class recipes and
-specialized native controllers still need manual review. Preserve counted
-exceptions with concrete owners/reasons;
-line relocation alone must not invalidate a decision or bless a new bypass.
+literal-color checks. `node scripts/checks/check-ui-boundaries.mjs` compares
+owner-reviewed source/style fingerprint decisions; it is separate from ordinary
+build/test execution and is not wired into staged checks or CI (about 263 findings
+are still unreviewed). Its baseline records historical component decisions with counted
+signal exceptions and explicit semantic owners; its existence or a source count does not
+authorize a blind baseline refresh. Heuristics do not prove behavior or complete CSS ownership:
+local immutable/conditional/template class recipes and static ARIA/feedback selectors are
+tracked. Indirect styles, dynamic roles, imported class recipes and specialized native
+controllers still need manual review. Preserve counted exceptions with concrete
+owners/reasons; line relocation alone must not invalidate a decision or bless a new bypass.
 
 Completion means standard controls use shared adapters, remaining native internals
 have named semantic owners, no feature owns a parallel control style/theme/overlay,

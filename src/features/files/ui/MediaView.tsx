@@ -1,5 +1,6 @@
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -176,7 +177,7 @@ export function MediaView({
           />
         ) : state.status === "error" ? (
           <DocumentMessage title={t("Couldn’t open {p0}", { p0: basename(path) })} error>
-            <span role="alert">{state.message}</span>
+            <InlineError>{state.message}</InlineError>
             <Button
               variant="ghost"
               motion="none"
@@ -230,7 +231,7 @@ export function MediaView({
             motion="none"
             type="button"
             loading={opening}
-            title={
+            tooltip={
               localCopy
                 ? t("Changes to this local copy are not saved to the connected machine.")
                 : undefined
@@ -259,9 +260,7 @@ export function MediaView({
           </Button>
         ) : null}
         {actionError ? (
-          <span role="alert" className="basis-full text-danger">
-            {actionError}
-          </span>
+          <InlineError className="basis-full">{actionError}</InlineError>
         ) : null}
       </footer>
     </div>

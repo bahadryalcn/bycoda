@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Switch } from "../../../shared/ui/Switch";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -469,9 +470,7 @@ export function WorkspacePolicySettings({
                           </p>
                         </details>
                         {pinError?.id === workspace.id && (
-                          <p role="alert" className="break-words text-ui-caption text-status-error">
-                            {pinError.message}
-                          </p>
+                          <InlineError className="break-words">{pinError.message}</InlineError>
                         )}
                       </div>
                       <div className={`settings-collection-actions ${worktreeStyles.rowActions}`}>
@@ -485,7 +484,7 @@ export function WorkspacePolicySettings({
                           {t("Review changes")}
                         </Button>
                         <Button size="sm" variant="ghost" iconOnly
-                          label={t("More actions")} title={t("More actions")}
+                          label={t("More actions")}
                           loading={pinning === workspace.id} aria-haspopup="menu"
                           aria-expanded={menu?.workspace.id === workspace.id}
                           onClick={(event) => setMenu({ workspace, anchor: event.currentTarget })}>

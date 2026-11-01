@@ -230,7 +230,7 @@ export function ProviderBinaryControl({
     <form className="mt-2" onSubmit={submit}>
       <label
         htmlFor={`${provider}-binary-path`}
-        className="text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)"
+        className="text-ui-caption text-(--ui-text-secondary)"
       >
         {t("CLI path")}
       </label>
@@ -250,7 +250,7 @@ export function ProviderBinaryControl({
         }}
       />
       {inline ? <div className="mt-2">{chooseExecutable}</div> : null}
-      <p className="mt-1.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+      <p className="mt-1.5 text-ui-caption text-(--ui-text-secondary)">
         {t("Enter the absolute path to the CLI executable. Changes apply after restarting ")}
         {PRODUCT_IDENTITY.displayName}.
       </p>
@@ -316,7 +316,7 @@ export function ProviderBinaryControl({
         aria-expanded={open}
         aria-controls={`${provider}-binary-popover`}
         aria-haspopup="dialog"
-        title={t(restartRequired ? "{p0} CLI path — restart required" : "{p0} CLI path", {
+        tooltip={t(restartRequired ? "{p0} CLI path — restart required" : "{p0} CLI path", {
           p0: title,
         })}
         onClick={() => {
@@ -364,11 +364,11 @@ export function ProviderBinaryControl({
             ) : (
               <>
                 <div className="mt-2 rounded-md border border-(--color-stroke) bg-(--ui-surface-muted) px-2.5 py-2">
-                  <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+                  <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-ui-caption text-(--ui-text-secondary)">
                     {inspection?.path ??
                       (error ? t("CLI could not be resolved") : t("Checking the selected CLI…"))}
                   </span>
-                  <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+                  <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
                     {inspection?.version ??
                       (error ? t("Retry to check this CLI") : t("Checking version…"))}
                   </span>

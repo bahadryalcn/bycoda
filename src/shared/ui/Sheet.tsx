@@ -18,12 +18,6 @@ import { PanelHeader } from "./PanelHeader";
 import { Sash } from "./Sash";
 import styles from "./Sheet.module.css";
 
-/**
- * In-pane surfaces (a sheet over the session pane) stay below the app's floating layers
- * (`LAYER`), which start at 80, and above the pane's own content.
- */
-const PANE_SHEET_LAYER = 40;
-
 export type SheetSide = "end" | "bottom";
 
 export type SheetResize = {
@@ -163,11 +157,7 @@ export function Sheet(props: SheetProps) {
             ? { inlineSize: `min(${cssSize(size)}, 100vw)` }
             : { blockSize: `min(${cssSize(size)}, calc(100dvh - 40px))` }
       }
-      className={[
-        side === "bottom" && motion !== "none" ? styles.modalBottom : "",
-        side === "bottom" && size !== undefined ? "h-full" : "",
-        className,
-      ]
+      className={[side === "bottom" && size !== undefined ? "h-full" : "", className]
         .filter(Boolean)
         .join(" ")}
     >
@@ -298,7 +288,12 @@ function NonModalSheet({
         }
     : end
       ? { position: "absolute", insetBlock: 0, insetInlineEnd: 0 }
-      : { position: "absolute", insetInline: 0, insetBlockEnd: 0, marginInline: "auto" };
+      : {
+          position: "absolute",
+          insetInline: 0,
+          insetBlockEnd: 0,
+          marginInline: "auto",
+        };
   const frame = end
     ? `border-s border-(--ui-pane-border) ${viewport ? "" : "rounded-s-(--ui-radius-popup)"}`
     : "w-full max-w-4xl rounded-t-(--ui-radius-popup) border border-b-0 border-(--ui-pane-border)";
@@ -425,7 +420,7 @@ function NonModalSheet({
       data-sheet-overlay=""
       data-state={open ? "open" : "closed"}
       inert={!open}
-      style={{ zIndex: PANE_SHEET_LAYER }}
+      style={{ zIndex: LAYER.paneSheet }}
       className={["absolute inset-0", open ? "" : "pointer-events-none", overlayClassName]
         .filter(Boolean)
         .join(" ")}

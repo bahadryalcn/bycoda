@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -141,7 +142,7 @@ export function SocialRegistrationReview({
             </Button>
           </div>
         ) : null}
-        {error ? <p role="alert">{error}</p> : null}
+        {error ? <InlineError>{error}</InlineError> : null}
       </div>
     );
   if (workflow.status !== "awaiting_owner") return null;
@@ -242,7 +243,7 @@ export function SocialRegistrationReview({
           </Button>
         </div>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
     </div>
   );
 }

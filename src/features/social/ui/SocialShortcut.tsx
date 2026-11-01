@@ -32,7 +32,7 @@ export function SocialShortcut({
       variant={responsiveRail ? "item" : "ghost"}
       motion="none"
       {...(compact || rail ? { iconOnly: true, label: t("Social Media") } : { iconOnly: false })}
-      title={t("Social Media")}
+      tooltip={t("Social Media")}
       aria-pressed={active}
       aria-label={t("Social Media")}
       onClick={() => window.dispatchEvent(new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }))}
@@ -40,7 +40,7 @@ export function SocialShortcut({
       <span
         className={`flex min-w-0 items-center gap-2 ${responsiveRail ? "w-full @max-[140px]/rail:justify-center" : ""}`}
       >
-        <Globe className="size-4 shrink-0" aria-hidden />
+        <Globe className="icon-md shrink-0" aria-hidden />
         {compact || rail ? null : (
           <span className={`min-w-0 truncate ${responsiveRail ? "@max-[140px]/rail:hidden" : ""}`}>
             {t("Social Media")}

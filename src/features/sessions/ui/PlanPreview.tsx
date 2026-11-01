@@ -1,3 +1,4 @@
+import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { AiIdea, CircleDashed, PanelRight, Play } from "../../../shared/ui/icons";
@@ -46,16 +47,16 @@ export function PlanPreview({
         : t("Build");
 
   return (
-    <div className="mb-2 overflow-hidden rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel)">
+    <Surface variant="raised" padding="none" className="mb-2 overflow-hidden">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
         {streaming ? (
           <CircleDashed
-            className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)"
+            className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
             strokeWidth={1.75}
           />
         ) : (
           <AiIdea
-            className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)"
+            className="mt-0.5 icon-md shrink-0 text-(--ui-text-secondary)"
             strokeWidth={1.75}
           />
         )}
@@ -66,7 +67,7 @@ export function PlanPreview({
               variant="item"
               type="button"
               className="block w-full truncate text-left"
-              title={title}
+              tooltip={title}
               onClick={onOpen}
             >
               {title}
@@ -90,12 +91,12 @@ export function PlanPreview({
                 <Button
                   variant="ghost"
                   type="button"
-                  title={t("Open in pane")}
+                  tooltip={t("Open in pane")}
                   aria-label={t("Open plan in pane")}
                   className="shrink-0"
                   onClick={onOpen}
                 >
-                  <PanelRight className="size-3" strokeWidth={1.75} />
+                  <PanelRight className="icon-xs" strokeWidth={1.75} />
                   {t("Open")}
                 </Button>
               ) : null}
@@ -105,11 +106,11 @@ export function PlanPreview({
                     className="shrink-0"
                     variant="secondary"
                     type="button"
-                    title={t("Build this plan")}
+                    tooltip={t("Build this plan")}
                     disabled={buildDisabled}
                     onClick={() => onBuild()}
                   >
-                    <Play className="size-3" strokeWidth={1.75} />
+                    <Play className="icon-xs" strokeWidth={1.75} />
                     {buildLabel}
                   </Button>
                   {harness ? (
@@ -127,6 +128,6 @@ export function PlanPreview({
           ) : null}
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }

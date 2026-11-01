@@ -1,6 +1,6 @@
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { t, useLocale } from "../../../shared/i18n";
-import { useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import {
   AdvancedSettings,
   Group,
@@ -29,15 +29,21 @@ import {
   type ThemePreference,
 } from "../model/appearance";
 import { THEME_PALETTE_PRESETS, matchThemePalette } from "../model/themePalettes";
-import { UI_SCALE_DEFAULT, UI_SCALE_PERCENTS } from "../model/uiScale";
+import {
+  UI_SCALE_DEFAULT,
+  UI_SCALE_MAX,
+  UI_SCALE_MIN,
+  UI_SCALE_STEP,
+} from "../model/uiScale";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useCodeTheme } from "../../../shared/hooks/useCodeTheme";
 import { Button } from "../../../shared/ui/Button";
 import { Check } from "../../../shared/ui/icons";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Combobox } from "../../../shared/ui/Combobox";
-import { liveBackgroundKeyTarget } from "./LiveBackgroundPicker";
+import { RadioTiles } from "./RadioTiles";
 import "./AppearancePreviews.css";
+import "./AppearanceSettings.css";
 
 export { matchThemePalette };
 
@@ -46,7 +52,7 @@ export function isDefaultAccent(accentColor: string | null) {
   return !accentColor || accentColor.toLowerCase() === ACCENT_COLOR_DEFAULT.toLowerCase();
 }
 
-type Tint = { hue: number; saturation: number; lightness: number; accent: string };
+export type Tint = { hue: number; saturation: number; lightness: number; accent: string };
 
 /**
  * A tone's own surface values for a sample; these show a selectable option (a mode or a palette in
@@ -77,6 +83,24 @@ function ToneSample({ tint, tone, pure }: { tint: Tint; tone: "light" | "dark"; 
     >
       <i />
       <b />
+    </span>
+  );
+}
+
+/** The sample inside a mode tile: one tone, or both side by side for System. */
+export function ModePreview({
+  mode,
+  tint,
+  pure,
+}: {
+  mode: ThemePreference;
+  tint: Tint;
+  pure: boolean;
+}) {
+  return (
+    <span className="appearance-mode-preview" data-split={mode === "system" || undefined}>
+      {mode === "dark" ? null : <ToneSample tint={tint} tone="light" pure={pure} />}
+      {mode === "light" ? null : <ToneSample tint={tint} tone="dark" pure={pure} />}
     </span>
   );
 }
@@ -145,7 +169,6 @@ export function AppearancePreview() {
 /** System / Light / Dark as three visual cards; the selected card carries the accent border. */
 function ModeCards({ appearance: a, pure }: { appearance: AppearanceSettings; pure: boolean }) {
   const light = useColorScheme() === "light";
-  const group = useRef<HTMLDivElement>(null);
   const tint: Tint = {
     hue: a.themeHue,
     saturation: a.themeSaturation,
@@ -157,54 +180,33 @@ function ModeCards({ appearance: a, pure }: { appearance: AppearanceSettings; pu
     { value: "light", label: t("Light") },
     { value: "dark", label: t("Dark") },
   ];
-  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const target = liveBackgroundKeyTarget(event.key, index, modes.length);
-    const next = target === null ? undefined : modes[target];
-    if (target === null || !next) return;
-    event.preventDefault();
-    a.onThemePreference(next.value);
-    group.current
-      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
-      [target]?.focus({ preventScroll: true });
-  };
   return (
-    <div ref={group} role="radiogroup" aria-label={t("Color scheme")} className="appearance-modes">
-      {modes.map((mode, index) => {
-        const on = a.themePreference === mode.value;
-        return (
-          <Button
-            key={mode.value}
-            variant="item"
-            motion="none"
-            selected={on}
-            role="radio"
-            aria-checked={on}
-            tabIndex={on ? 0 : -1}
-            className="appearance-mode-card"
-            data-mode={mode.value}
-            tooltip={
-              mode.value === "system"
-                ? t("Active mode: {p0}", { p0: light ? t("Light") : t("Dark") })
-                : undefined
-            }
-            onClick={() => a.onThemePreference(mode.value)}
-            onKeyDown={(event) => onKeyDown(event, index)}
-          >
-            <span
-              className="appearance-mode-preview"
-              data-split={mode.value === "system" || undefined}
-            >
-              {mode.value === "dark" ? null : <ToneSample tint={tint} tone="light" pure={pure} />}
-              {mode.value === "light" ? null : <ToneSample tint={tint} tone="dark" pure={pure} />}
-            </span>
+    <RadioTiles
+      label={t("Color scheme")}
+      className="appearance-modes"
+      tileClassName="appearance-mode-card"
+      value={a.themePreference}
+      onChange={a.onThemePreference}
+      options={modes.map((mode) => ({
+        value: mode.value,
+        data: { "data-mode": mode.value },
+        tooltip:
+          mode.value === "system"
+            ? t("Active mode: {p0}", { p0: light ? t("Light") : t("Dark") })
+            : undefined,
+        children: (
+          <>
+            <ModePreview mode={mode.value} tint={tint} pure={pure} />
             <span className="appearance-card-name">
               {mode.label}
-              {on ? <Check aria-hidden className="icon-xs ms-auto" strokeWidth={2} /> : null}
+              {a.themePreference === mode.value ? (
+                <Check aria-hidden className="icon-xs ms-auto" strokeWidth={2} />
+              ) : null}
             </span>
-          </Button>
-        );
-      })}
-    </div>
+          </>
+        ),
+      }))}
+    />
   );
 }
 
@@ -352,6 +354,7 @@ export function AppearanceInterface({ appearance: a }: { appearance: AppearanceS
   const p = a.preferences;
   const scalePercent = Math.round(a.uiScale * 100);
   const defaultScalePercent = Math.round(UI_SCALE_DEFAULT * 100);
+  const [scaleDraft, setScaleDraft] = useState<number | null>(null);
   return (
     <Group title={t("Interface")}>
       <Row
@@ -370,14 +373,20 @@ export function AppearanceInterface({ appearance: a }: { appearance: AppearanceS
         modified={scalePercent !== defaultScalePercent}
         onReset={() => a.onUiScale(defaultScalePercent)}
       >
-        <Select
+        {/* Zoom reflows the whole window, so the value applies when the thumb is released (or a key
+            changes it); dragging only previews the number and the thumb never moves under the pointer. */}
+        <Slider
           label={t("Interface scale")}
-          value={String(scalePercent)}
-          options={UI_SCALE_PERCENTS.map((percent) => ({
-            value: String(percent),
-            label: `${percent}%`,
-          }))}
-          onChange={(value) => a.onUiScale(Number(value))}
+          value={scaleDraft ?? scalePercent}
+          display={`${scaleDraft ?? scalePercent}%`}
+          min={Math.round(UI_SCALE_MIN * 100)}
+          max={Math.round(UI_SCALE_MAX * 100)}
+          step={Math.round(UI_SCALE_STEP * 100)}
+          onChange={setScaleDraft}
+          onValueCommit={(percent) => {
+            setScaleDraft(null);
+            a.onUiScale(percent);
+          }}
         />
       </Row>
       <Row

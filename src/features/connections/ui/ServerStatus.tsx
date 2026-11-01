@@ -63,7 +63,7 @@ export function MachineStatus({
         : "neutral";
   // Health is always readable; SSH capability is a separate type label.
   const badge = (
-    <Badge variant="dot" size="sm" tone={tone} title={label}>
+    <Badge variant="dot" size="sm" tone={tone}>
       {label}
     </Badge>
   );
@@ -73,7 +73,7 @@ export function MachineStatus({
       {badge}
       {state.error ? (
         <details
-          className="w-full text-xs text-(--ui-text-muted)"
+          className="w-full text-ui-caption text-(--ui-text-muted)"
           open={needsSignIn(state.status) || undefined}
         >
           <summary className="cursor-pointer py-1">{t("Connection details")}</summary>

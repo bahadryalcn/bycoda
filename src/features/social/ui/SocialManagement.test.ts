@@ -529,8 +529,15 @@ describe("Social management workflows", () => {
     await change(control("Content for this account"), "abc");
     await change(control("Link"), "https://example.test");
     expect(container.textContent).toContain("The content exceeds the limit");
-    await change(control("One-time schedule time"), "");
-    expect(control("One-time schedule time").value).toBe("");
+    await act(async () => control("One-time schedule time").click());
+    await act(async () =>
+      Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "Clear")!
+        .click(),
+    );
+    expect(control("One-time schedule time").getAttribute("aria-label")).toContain(
+      "Choose date and time",
+    );
     expect(
       Array.from(container.querySelectorAll("button")).find(
         (item) => item.textContent === "Save campaign draft",

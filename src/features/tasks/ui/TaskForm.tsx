@@ -3,6 +3,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { isWorkspaceValid, TaskWorkspacePicker, useWorkspaceChecks } from "./TaskWorkspacePicker";
 import { useTaskTargetMachine } from "./useTaskTargetMachine";
 import { TaskAccountPicker } from "./TaskAccountPicker";
@@ -206,31 +207,24 @@ export function TaskForm({
                 {machine}
               </span>
             ) : (
-              <span role="alert" className="text-(--ui-tone-warning-fg)">
+              <InlineMessage tone="warning" live="assertive">
                 {TASK_MACHINE_ERROR}
-              </span>
+              </InlineMessage>
             )}
             {!draft.id && todoUnsupported ? (
-              <span role="status" className="text-(--ui-tone-warning-fg)">
-                {todoUnsupported}
-              </span>
+              <InlineMessage tone="warning">{todoUnsupported}</InlineMessage>
             ) : null}
           </div>
-          <div
-            data-ui-focus-group=""
-            data-task-prompt=""
-            className="relative rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
-          >
-            <SkillPromptField
-              value={draft.prompt}
-              harness={draft.harness}
-              cwd={draft.cwd}
-              onChange={(prompt) => update("prompt", prompt)}
-              label={t("Description")}
-              placeholder={t("Details, acceptance criteria, links…")}
-              focusOwner="group"
-            />
-          </div>
+          <SkillPromptField
+            value={draft.prompt}
+            harness={draft.harness}
+            cwd={draft.cwd}
+            onChange={(prompt) => update("prompt", prompt)}
+            label={t("Description")}
+            placeholder={t("Details, acceptance criteria, links…")}
+            surface="raised"
+            maxHeight={320}
+          />
           <CrewTaskPicker
             cwd={draft.cwd}
             machineId={targetId}
@@ -439,8 +433,8 @@ export function TaskForm({
                   onChange={(event) => update("verifyCommand", event.target.value)}
                   placeholder={"npm test"}
                   spellCheck={false}
+                  monospace
                   fieldClassName="min-w-[12rem] flex-1"
-                  className="font-mono"
                 />
               </label>
             </div>
@@ -518,7 +512,9 @@ export function TaskForm({
             type="submit"
             loading={saving}
             disabled={!canSave || saving}
-            title={canSave ? undefined : (blockedReason ?? t("Add a description to save."))}
+            disabledReason={
+              canSave || saving ? undefined : (blockedReason ?? t("Add a description to save."))
+            }
           >
             {t("Save")}
           </Button>
@@ -529,7 +525,8 @@ export function TaskForm({
               type="button"
               disabled={!ready || !hasDescription || saving}
               loading={saving && submitMode === "queued"}
-              title={ready && hasDescription ? t("Queues it for an agent now.") : startReason}
+              tooltip={ready && hasDescription ? t("Queues it for an agent now.") : undefined}
+              disabledReason={(ready && hasDescription) || saving ? undefined : startReason}
               onClick={() => {
                 setSubmitMode("queued");
                 onSubmit("queued");
@@ -542,7 +539,8 @@ export function TaskForm({
               type="submit"
               loading={saving && submitMode === "todo"}
               disabled={!canTodo || saving}
-              title={canTodo ? t("Saves it without running.") : todoReason}
+              tooltip={canTodo ? t("Saves it without running.") : undefined}
+              disabledReason={canTodo || saving ? undefined : todoReason}
             >
               {t("Add to To do")}
             </Button>

@@ -47,6 +47,7 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
       {composer ? (
         // Same box as the docked composer (max-w-4xl, p-1.5), so the input
         // keeps its width when the first message docks it.
+        // z-10: in-pane stacking above sibling layers; no in-pane layer scale exists, so the literal stays.
         <div className="bycoda-entry-workbench pointer-events-none relative z-10 mx-auto flex w-full flex-1 flex-col">
           <div className="bycoda-entry-heading">
             <div className="bycoda-wordmark" aria-label={PRODUCT_IDENTITY.displayName}>
@@ -61,7 +62,7 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
                 <div className="bycoda-entry-actions bycoda-arc">
                   <Button
                     variant="primary"
-                    startIcon={<FolderOpen size={14} />}
+                    startIcon={<FolderOpen className="icon-sm" />}
                     onClick={() => runGuideAction("open-project")}
                   >
                     {t("Open a project")}

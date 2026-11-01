@@ -131,7 +131,7 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
         style={{ fontSize: FONT_SIZE * zoom }}
       >
         <div
-          className="relative"
+          className="relative isolate"
           style={{
             width,
             height: headerHeight + grid.rowCount * rowHeight,
@@ -140,7 +140,7 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
           <div
             role="row"
             aria-rowindex={1}
-            className="sticky top-0 z-20 flex border-b border-stroke bg-[var(--ui-surface)] text-[var(--ui-text-secondary)]"
+            className="sticky top-0 z-2 flex border-b border-stroke bg-(--ui-surface) text-(--ui-text-secondary)"
             style={{
               height: headerHeight,
               width,
@@ -151,7 +151,7 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
               role="columnheader"
               aria-colindex={1}
               aria-label={t("Row")}
-              className="sticky left-0 z-10 shrink-0 border-r border-stroke bg-[var(--ui-surface)]"
+              className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--ui-surface)"
               style={{ width: rowHeaderWidth }}
             />
             {grid.columns.map((label, column) => (
@@ -189,7 +189,7 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
                   <div
                     role="rowheader"
                     aria-colindex={1}
-                    className="sticky left-0 z-10 shrink-0 border-r border-stroke bg-[var(--ui-surface)] text-right text-[var(--ui-text-secondary)] tabular-nums"
+                    className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--ui-surface) text-right text-(--ui-text-secondary) tabular-nums"
                     style={{
                       width: rowHeaderWidth,
                       lineHeight: `${rowHeight}px`,

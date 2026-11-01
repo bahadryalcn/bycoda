@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -99,7 +100,7 @@ export function SocialUploadImagePreview({
   if (current?.phase === "error")
     return (
       <div>
-        <p role="alert">{t("Image preview could not be loaded.")}</p>
+        <InlineError>{t("Image preview could not be loaded.")}</InlineError>
         <Button type="button" variant="secondary" onClick={() => setAttempt((value) => value + 1)}>
           {t("Retry")}
         </Button>

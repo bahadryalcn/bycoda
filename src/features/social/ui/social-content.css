@@ -124,7 +124,7 @@
   white-space: nowrap;
 }
 .social-content-count[data-over="true"] {
-  color: var(--color-danger);
+  color: var(--ui-tone-danger-fg);
 }
 .social-variant legend .social-content-count {
   margin-inline-start: 0.5rem;

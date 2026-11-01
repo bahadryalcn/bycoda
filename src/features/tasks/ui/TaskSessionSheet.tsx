@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
-import { LoaderCircle } from "../../../shared/ui/icons";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { t } from "../../../shared/i18n";
 import { remoteRequest } from "../../connections/model/connections";
 import type { HostSession } from "../../connections/model/protocol";
@@ -114,7 +115,7 @@ export function TaskSessionSheet({
           </Alert>
         ) : null}
         {!session && !error ? (
-          <LoaderCircle className="icon-md animate-spin" aria-label={t("Loading…")} />
+          <LoadingText />
         ) : null}
         {conversation.map((block) => (
           <section className="task-session-message" data-role={block.role} key={block.id}>
@@ -134,7 +135,7 @@ export function TaskSessionSheet({
           </details>
         ) : null}
         {session && visibleBlocks.length === 0 ? (
-          <p>{t("No reply yet.")}</p>
+          <EmptyState size="inline" description={t("No reply yet.")} />
         ) : null}
       </div>
     </Modal>

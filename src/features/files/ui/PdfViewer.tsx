@@ -295,33 +295,31 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
           hideLabel
           label={t("Page number")}
           aria-label={t("Page number")}
-          fieldClassName="w-10 shrink-0"
+          fieldClassName="w-14 shrink-0"
           value={pageInput}
-          inputMode="numeric"
+          numeric
           onChange={(event) => setPageInput(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") goTo(Number(pageInput));
           }}
           onBlur={() => setPageInput(String(current))}
-          className="w-10 text-center tabular-nums"
         />
         <span className="tabular-nums">/ {doc.numPages}</span>
         <span className="flex-1" />
-        <ToolbarButton label={t("Zoom out")} onClick={() => zoomBy(1 / ZOOM_STEP)}>
-          <Minus className="size-3" strokeWidth={1.75} />
-        </ToolbarButton>
+        <Button size="sm" variant="ghost" iconOnly label={t("Zoom out")} onClick={() => zoomBy(1 / ZOOM_STEP)}>
+          <Minus className="icon-xs" strokeWidth={1.75} />
+        </Button>
         <span ref={percentRef} className="w-10 text-center tabular-nums">
           {formatZoomPercent(scale)}
         </span>
-        <ToolbarButton label={t("Zoom in")} onClick={() => zoomBy(ZOOM_STEP)}>
-          <Plus className="size-3" strokeWidth={1.75} />
-        </ToolbarButton>
+        <Button size="sm" variant="ghost" iconOnly label={t("Zoom in")} onClick={() => zoomBy(ZOOM_STEP)}>
+          <Plus className="icon-xs" strokeWidth={1.75} />
+        </Button>
         <Button
           size="sm"
           variant="ghost"
-          motion="none"
           type="button"
-          title={t("Fit to width")}
+          tooltip={t("Fit to width")}
           onClick={() => {
             endGesture();
             changeZoom("fit");
@@ -601,32 +599,4 @@ function anchorAt(container: HTMLElement, clientX: number, clientY: number): Anc
     x: clientX - container.getBoundingClientRect().left,
     y: clientY - container.getBoundingClientRect().top,
   };
-}
-
-function ToolbarButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  useLocale();
-  return (
-    <Button
-      size="sm"
-      iconOnly
-      label={label}
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className="grid place-items-center"
-    >
-      {children}
-    </Button>
-  );
 }

@@ -18,12 +18,12 @@ import {
   Copy,
   Eye,
   FolderOpen,
-  LoaderCircle,
   MoreHorizontal,
   RefreshCw,
   Trash2,
   X,
 } from "../../../shared/ui/icons";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { confirmNative } from "../../source-control/model/gitConfirmation";
 import { canTransferSkill, SkillExistsError, transferSkill } from "../model/transferSkill";
 import { CreateSkillForm } from "./SkillPicker";
@@ -653,7 +653,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             />
           ) : null}
           {policyTarget === JSON.stringify([machine?.environmentId ?? "local", skill.path]) ? (
-            <LoaderCircle className="icon-xs animate-spin" aria-label={t("Saving…")} />
+            <Spinner size="xs" label={t("Saving…")} />
           ) : null}
           {!policy && disabled ? <Badge size="sm">{t("Disabled")}</Badge> : null}
         </div>

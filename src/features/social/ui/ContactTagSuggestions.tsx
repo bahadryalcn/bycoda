@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext, useRef, useState } from "react";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -366,9 +367,9 @@ function ContactTagReview({
                     </p>
                   ) : null}
                   {failure ? (
-                    <p className="social-tag-issue" role="alert">
+                    <InlineError className="social-tag-failure">
                       {t("Could not save: {p0}", { p0: failure })}
-                    </p>
+                    </InlineError>
                   ) : null}
                 </li>
               );

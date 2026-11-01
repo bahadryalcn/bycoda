@@ -1,7 +1,9 @@
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { Modal } from "../../shared/ui/Modal";
-import { ArrowDownCircle, Loader, RefreshCw } from "../../shared/ui/icons";
+import { ArrowDownCircle, RefreshCw } from "../../shared/ui/icons";
+import { InlineError } from "../../shared/ui/InlineError";
+import { Spinner } from "../../shared/ui/Spinner";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { claimStartupUpdatePrompt, installAppUpdate, useAppUpdater } from "../model/useAppUpdater";
 import { type UpdaterSnapshot } from "../model/updater";
@@ -81,12 +83,12 @@ export function SidebarUpdateFooter({
       className="min-w-0"
     >
       {snapshot.phase === "downloading" ? (
-        <Loader className="size-4 shrink-0 motion-safe:animate-spin" aria-hidden />
+        <Spinner size="md" className="shrink-0" />
       ) : (
-        <RefreshCw className="size-4 shrink-0" aria-hidden />
+        <RefreshCw className="icon-md shrink-0" aria-hidden />
       )}
       {!repositoryPrompt ? (
-        <span className="truncate text-[12px] font-medium leading-tight @max-[140px]/rail:hidden">
+        <span className="truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden">
           {snapshot.phase === "downloading"
             ? snapshot.progress != null
               ? `${snapshot.progress}%`
@@ -108,18 +110,16 @@ export function SidebarUpdateFooter({
           onClose={dismissPrompt}
         >
           <div className="flex flex-col gap-3 p-4">
-            <p className="text-sm text-content">
+            <p className="text-ui-body text-content">
               v{snapshot.currentVersion} → v{snapshot.availableVersion}
             </p>
             {snapshot.error ? (
-              <p role="alert" className="text-sm text-content">
-                {snapshot.error}
-              </p>
+              <InlineError>{snapshot.error}</InlineError>
             ) : null}
             {notes ? (
-              <details className="text-sm text-content">
+              <details className="text-ui-body text-content">
                 <summary className="cursor-pointer">{t("Release notes")}</summary>
-                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-sm [margin-block-start:0.5rem]">
+                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-ui-secondary [margin-block-start:0.5rem]">
                   {notes}
                 </pre>
               </details>
@@ -176,17 +176,17 @@ export function SidebarUpdate({
       label={label}
       tooltip={label}
     >
-      <span className="grid size-[18px] shrink-0 place-items-center">
+      <span className="icon-md grid shrink-0 place-items-center">
         {busy ? (
-          <Loader className="size-4 motion-safe:animate-spin opacity-70" aria-hidden />
+          <Spinner size="md" className="opacity-70" />
         ) : (
-          <ArrowDownCircle className="size-4 text-accent" aria-hidden />
+          <ArrowDownCircle className="icon-md text-accent" aria-hidden />
         )}
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-3">
-        <span className="block truncate text-[12px] font-medium leading-tight">{label}</span>
+        <span className="block truncate text-ui-caption font-medium leading-tight">{label}</span>
         {!compact ? (
-          <span className="ms-auto block shrink-0 text-[11px] text-muted">
+          <span className="ms-auto block shrink-0 text-ui-micro text-muted">
             v{snapshot.currentVersion}
           </span>
         ) : null}

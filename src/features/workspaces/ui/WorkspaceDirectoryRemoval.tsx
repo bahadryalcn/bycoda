@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import type { ManagedWorkspace, WorkspaceCleanupPlan } from "../model/contracts";
 import {
   workspaceOperationKey,
@@ -131,7 +133,7 @@ export function WorkspaceDirectoryRemoval({
         if (!lock.current) onClose();
       }}
       footer={
-        <div className="flex flex-wrap justify-end gap-2">
+        <ModalActions>
           <Button variant="secondary" disabled={!!pending} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -150,6 +152,7 @@ export function WorkspaceDirectoryRemoval({
                 {t("Refresh preview")}
               </Button>
               <Button
+                variant="primary"
                 tone="danger"
                 loading={pending === "remove"}
                 disabled={!!pending || !plan || !!plan.blockers.length || plan.expiresAt <= now}
@@ -159,7 +162,7 @@ export function WorkspaceDirectoryRemoval({
               </Button>
             </>
           )}
-        </div>
+        </ModalActions>
       }
     >
       <div className="space-y-3 p-4 text-ui-body">
@@ -171,21 +174,17 @@ export function WorkspaceDirectoryRemoval({
         <p className="break-all font-mono text-(--ui-text-secondary)">
           {plan?.path ?? workspace.path}
         </p>
-        {pending === "plan" && <p role="status">{t("Checking directory…")}</p>}
-        {error && (
-          <p role="alert" className="break-words text-(--ui-tone-danger-fg)">
-            {error}
-          </p>
-        )}
+        {pending === "plan" && <LoadingText>{t("Checking directory…")}</LoadingText>}
+        {error && <InlineError className="break-words">{error}</InlineError>}
         {plan && (
           <>
             <p className="break-all">
               {plan.branchRef} · {plan.head.slice(0, 12)}
             </p>
             {plan.dirty && (
-              <p className="text-(--ui-tone-warning-fg)">
+              <InlineMessage tone="warning">
                 {t("Uncommitted work must be preserved by the host before removal.")}
-              </p>
+              </InlineMessage>
             )}
             {!!plan.links.length && (
               <p>{t("Dependency links are detached without deleting their targets.")}</p>
@@ -203,7 +202,7 @@ export function WorkspaceDirectoryRemoval({
               </div>
             )}
             {plan.expiresAt <= now && (
-              <p role="alert">{t("This preview expired. Refresh preview before deleting.")}</p>
+              <InlineError>{t("This preview expired. Refresh preview before deleting.")}</InlineError>
             )}
           </>
         )}

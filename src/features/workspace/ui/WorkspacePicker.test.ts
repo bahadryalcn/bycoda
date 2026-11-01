@@ -68,7 +68,8 @@ it.each([{ isComposing: true }, { keyCode: 229 }])(
       input().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
       press("Enter");
     });
-    expect(change).toHaveBeenCalledExactlyOnceWith("main");
+    // The list starts on the current base ("develop").
+    expect(change).toHaveBeenCalledExactlyOnceWith("develop");
     expect(close).toHaveBeenCalledTimes(1);
     expect(input()).toBeNull();
   },
@@ -76,12 +77,12 @@ it.each([{ isComposing: true }, { keyCode: 229 }])(
 
 it("retains ordinary arrow selection", async () => {
   await act(async () => {
-    press("ArrowDown");
+    press("ArrowUp");
   });
   await act(async () => {
     press("Enter");
   });
-  expect(change).toHaveBeenCalledExactlyOnceWith("develop");
+  expect(change).toHaveBeenCalledExactlyOnceWith("main");
 });
 
 it("dismisses with a non-composition Escape without selecting", async () => {

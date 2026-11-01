@@ -122,7 +122,7 @@ export const ChangeRow = memo(function ChangeRow({
       <ActionHost
         selected={selected}
         style={tree ? { paddingLeft: 8 + depth * 12 } : undefined}
-        className={`flex h-7 w-full items-center gap-1 pr-2 leading-none ${
+        className={`flex h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 leading-none ${
           tree ? "" : "pl-2"
         } text-content`}
       >
@@ -131,7 +131,7 @@ export const ChangeRow = memo(function ChangeRow({
           variant="item"
           motion="none"
           type="button"
-          title={file.relative}
+          tooltip={file.relative}
           aria-label={file.relative}
           data-git-file={file.path}
           onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -147,7 +147,7 @@ export const ChangeRow = memo(function ChangeRow({
           className="flex h-full min-w-0 flex-1 select-none items-center gap-1.5 text-left focus-visible:-outline-offset-1"
         >
           {tree ? <span className="size-4 shrink-0" /> : null}
-          <FileTypeIcon name={name} isDir={false} size={16} />
+          <FileTypeIcon name={name} isDir={false} />
           <span className="grid min-w-0 flex-1 grid-cols-2 items-center gap-1.5">
             <span
               className={`min-w-0 truncate ${collision && dir ? "text-ui-caption text-(--ui-text-secondary)" : "max-w-full shrink text-ui-secondary font-medium"} ${
@@ -231,7 +231,7 @@ function statusLabel(status: string): string {
 
 // The marker carries the status; plain modifications stay neutral so the list is not an amber wall.
 export function statusColor(status: string): string {
-  if (status === "untracked") return "text-info";
+  if (status === "untracked") return "text-(--ui-tone-info-fg)";
   if (status === "added") return "text-diff-add-fg";
   if (status === "deleted") return "text-diff-del-fg";
   return "text-[var(--ui-text-secondary)]";

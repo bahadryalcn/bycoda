@@ -16,6 +16,7 @@ import { Slider as SharedSlider } from "../../../shared/ui/Slider";
 import { ElasticSlider } from "../../../shared/ui/ElasticSlider";
 import { Switch } from "../../../shared/ui/Switch";
 import { Badge } from "../../../shared/ui/Badge";
+import { useTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -167,6 +168,17 @@ export function SettingsFeedback({
       )}
       {state === "empty" && presentation === "inset" ? action : null}
     </div>
+  );
+}
+
+/** A plain-string `info` becomes the standard info popover; custom nodes render as given. */
+function InfoSlot({ info }: { info: ReactNode }) {
+  return typeof info === "string" ? (
+    <InfoPopover className="shrink-0">
+      <p>{info}</p>
+    </InfoPopover>
+  ) : (
+    <>{info}</>
   );
 }
 
@@ -453,7 +465,7 @@ export function Group({
                 <p>{description}</p>
               </InfoPopover>
             ) : null}
-            {info}
+            <InfoSlot info={info} />
             {modified && onReset ? (
               <SettingResetButton onReset={onReset} label={resetLabel} />
             ) : null}
@@ -549,6 +561,14 @@ export function Row({
     description || scope || dependency || persistence || (inactive && disabledReason),
   );
   const controls = useControlDescriptions(hasDescription ? descriptionId : undefined);
+  // The row keeps its place as a direct child of the group (sibling selectors), so the shared
+  // tooltip hook is spread on it instead of a wrapper element. Inert children are skipped by
+  // hit-testing, so the row itself receives the pointer.
+  const reasonTip = useTooltip({
+    label: inactive ? disabledReason : undefined,
+    align: "start",
+    describe: false,
+  });
 
   return (
     <div
@@ -558,9 +578,9 @@ export function Row({
       data-stacked={stacked || undefined}
       data-dependent={dependsOn !== undefined || undefined}
       data-disabled={inactive || undefined}
-      title={inactive ? disabledReason : undefined}
       tabIndex={-1}
       className="settings-row"
+      {...(inactive && disabledReason ? reasonTip.trigger : null)}
     >
       <div className="settings-row-label">
         <div className="settings-title-line">
@@ -582,7 +602,7 @@ export function Row({
               <p>{description}</p>
             </InfoPopover>
           ) : null}
-          {info}
+          <InfoSlot info={info} />
           {modified && onReset ? (
             <SettingResetButton onReset={onReset} label={resetLabel} />
           ) : null}
@@ -612,6 +632,7 @@ export function Row({
         {children}
       </div>
       {feedback ? <div className="settings-row-feedback">{feedback}</div> : null}
+      {reasonTip.tooltip}
     </div>
   );
 }

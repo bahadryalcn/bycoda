@@ -67,10 +67,10 @@ export function UsageLimitNotice({
               <Button
                 variant="ghost"
                 type="button"
-                title={t("Continue this conversation with another model")}
+                tooltip={t("Continue this conversation with another model")}
                 onClick={onSwitchModel}
               >
-                <Replace className="size-3.5" />
+                <Replace className="icon-sm" />
                 {t("Switch model")}
               </Button>
             ) : null}
@@ -80,27 +80,27 @@ export function UsageLimitNotice({
               </span>
             ) : !waiting ? (
               <Button variant="secondary" type="button" onClick={onResume}>
-                <Play className="size-3.5" />
+                <Play className="icon-sm" />
                 {t("Resume")}
               </Button>
             ) : !onResumeAtReset ? null : limit.resumeAtReset ? (
               <Button
                 variant="ghost"
                 type="button"
-                title={t("Cancel the automatic resume")}
+                tooltip={t("Cancel the automatic resume")}
                 onClick={() => onResumeAtReset?.(false)}
               >
-                <Clock className="size-3.5" />
+                <Clock className="icon-sm" />
                 {t("Resuming at reset")}
               </Button>
             ) : (
               <Button
                 variant="ghost"
                 type="button"
-                title={t("Continue this session once the limit resets")}
+                tooltip={t("Continue this session once the limit resets")}
                 onClick={() => onResumeAtReset?.(true)}
               >
-                <Clock className="size-3.5" />
+                <Clock className="icon-sm" />
                 {t("Resume at reset")}
               </Button>
             )}
@@ -109,12 +109,12 @@ export function UsageLimitNotice({
               label={t("Dismiss usage limit notice")}
               variant="ghost"
               type="button"
-              title={t("Dismiss")}
+              tooltip={t("Dismiss")}
               aria-label={t("Dismiss usage limit notice")}
               onClick={onDismiss}
               className="shrink-0"
             >
-              <X className="size-3.5" />
+              <X className="icon-sm" />
             </Button>
           </>
         }

@@ -52,7 +52,7 @@
 .current {
   flex-shrink: 0;
   font-size: var(--ui-font-caption);
-  color: var(--color-accent);
+  color: var(--ui-tone-accent-fg);
 }
 
 .actions {
@@ -76,17 +76,11 @@
   min-inline-size: 0;
 }
 
+/* Size, row bounds and autosize come from TextareaField (fieldSize/minRows/maxRows/autosize).
+   Only the caption type size has no shared prop. */
 .messageField textarea.message {
-  display: block;
-  inline-size: 100%;
-  min-block-size: 32px;
-  max-block-size: 160px;
-  padding-block: 4px;
-  padding-inline: 8px;
-  resize: none;
-  overflow-y: auto;
   font-size: var(--ui-font-caption);
-  line-height: 20px;
+  line-height: var(--ui-leading-caption);
 }
 
 .summary {
@@ -100,7 +94,7 @@
 }
 
 .conflicts {
-  color: var(--color-warning);
+  color: var(--ui-tone-warning-fg);
 }
 
 .sectionHeader {
@@ -124,25 +118,3 @@
 .branchHeader { display: flex; min-block-size: 36px; align-items: center; gap: 4px; padding-inline: 6px; }
 .branchSlots { display: grid; grid-template-columns: repeat(3, var(--ui-control-height-compact)); align-items: center; gap: 4px; flex-shrink: 0; }
 .branchSlot { display: flex; justify-content: center; min-inline-size: 0; }
-
-/* First read of the changed-files list. Centered in the list's own box; it stays hidden for a
-   moment so a warm read never flashes a loader. Reduced motion keeps the delay, drops the fade. */
-.changesLoading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-block-size: 96px;
-  padding: 16px 12px;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
-  animation: changesLoadingReveal 160ms linear 150ms both;
-}
-@keyframes changesLoadingReveal {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .changesLoading { animation-duration: 1ms; }
-}

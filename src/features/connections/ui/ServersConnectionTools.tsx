@@ -6,7 +6,7 @@ import { useId, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { SshIdentityField } from "./SshIdentityField";
 import { Alert } from "../../../shared/ui/Alert";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { Terminal, Lock } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { setServerSshIdentity, type ServerRecord } from "../model/serverInventory";
@@ -87,12 +87,12 @@ export function ServersConnectionTools({
   return (
     <div className="server-connection-tools mbs-4 flex min-w-0 flex-col gap-4">
       {endpoint?.httpProxy ? (
-        <p className="w-full break-all text-xs text-(--ui-text-muted)">
+        <p className="w-full break-all text-ui-caption text-(--ui-text-muted)">
           {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
           {sshEndpointPreview(endpoint.httpProxy)}
         </p>
       ) : null}
-      <div className="sticky inset-bs-0 z-10 flex flex-wrap gap-2 bg-(--ui-surface) pbe-2">
+      <div className="sticky inset-bs-0 z-1 flex flex-wrap gap-2 bg-(--ui-surface) pbe-2">
         {(server.kind === "ssh" || server.machine?.ssh) && openTerminal ? (
           <Button
             variant="primary"
@@ -110,118 +110,120 @@ export function ServersConnectionTools({
           </Button>
         ) : null}
       </div>
-      <SegmentedControl
-        label={t("Server tools")}
-        selectionRole="pressed"
-        value={panel}
-        onValueChange={setPanel}
-        options={panels}
-      />
-      <div id={`${panelId}-connection`} hidden={panel !== "connection"}>
-        {canAssignKey ? (
-          <section aria-label={t("Credentials")} className="flex min-w-0 flex-col gap-3">
-            <div className="flex min-w-0 items-start justify-between gap-3">
-              <div className="flex min-w-0 flex-col gap-1 text-xs">
-                <h3 className="font-medium">{t("Credentials")}</h3>
-                <p className="break-all text-(--ui-text-muted)">
-                  {t("SSH user")}: {sshUser || t("Default")}
-                </p>
-                <p className="break-all text-(--ui-text-muted)">
-                  {t("SSH key")}: {selectedIdentity || t("SSH agent and default keys")}
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                aria-expanded={editingIdentity}
-                disabled={busy}
-                onClick={() => {
-                  setIdentityDraft(selectedIdentity ?? "");
-                  setEditingIdentity((value) => !value);
-                }}
-              >
-                {t("Choose SSH key")}
-              </Button>
-            </div>
-            {jumpChain.length ? (
-              <p className="break-all text-xs text-(--ui-text-muted)">
-                {t("Jump chain")}: {jumpChain.join(" → ")}
-              </p>
-            ) : null}
-            {currentServer.metadata.sshInheritance ? (
-              <Button variant="link" onClick={() => setGroupSettings(true)}>
-                {t("SSH group settings")}
-              </Button>
-            ) : null}
-            {editingIdentity ? (
-              <div className="flex min-w-0 flex-col gap-3">
-                <SshIdentityField
-                  value={identityDraft}
-                  onChange={setIdentityDraft}
-                  disabled={busy}
-                />
-                <div className="flex justify-end gap-2">
-                  <Button variant="ghost" disabled={busy} onClick={() => setEditingIdentity(false)}>
-                    {t("Cancel")}
-                  </Button>
-                  <Button
-                    loading={busy}
-                    onClick={() =>
-                      void act(async () => {
-                        const saved = await setServerSshIdentity(
-                          server.id,
-                          identityDraft.trim() || undefined,
-                        );
-                        setIdentityUpdate({ base: server, saved });
-                        setEditingIdentity(false);
-                      })
-                    }
-                  >
-                    {t("Save")}
-                  </Button>
+      <Tabs id={panelId} value={panel} onValueChange={setPanel}>
+        <TabList label={t("Server tools")}>
+          {panels.map((item) => (
+            <Tab key={item.value} value={item.value}>
+              {item.label}
+            </Tab>
+          ))}
+        </TabList>
+        <TabPanel value="connection" keepMounted>
+          {canAssignKey ? (
+            <section aria-label={t("Credentials")} className="flex min-w-0 flex-col gap-3">
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-col gap-1 text-ui-caption">
+                  <h3 className="font-medium">{t("Credentials")}</h3>
+                  <p className="break-all text-(--ui-text-muted)">
+                    {t("SSH user")}: {sshUser || t("Default")}
+                  </p>
+                  <p className="break-all text-(--ui-text-muted)">
+                    {t("SSH key")}: {selectedIdentity || t("SSH agent and default keys")}
+                  </p>
                 </div>
+                <Button
+                  variant="secondary"
+                  aria-expanded={editingIdentity}
+                  disabled={busy}
+                  onClick={() => {
+                    setIdentityDraft(selectedIdentity ?? "");
+                    setEditingIdentity((value) => !value);
+                  }}
+                >
+                  {t("Choose SSH key")}
+                </Button>
               </div>
-            ) : null}
-          </section>
-        ) : null}
-        {!canAssignKey ? (
-          <p className="text-xs text-(--ui-text-muted)">
-            {t("This machine uses bycoda Host. Use Reconnect to restore its connection.")}
-          </p>
-        ) : null}
-      </div>
-      <div id={`${panelId}-forwards`} hidden={panel !== "forwards"}>
+              {jumpChain.length ? (
+                <p className="break-all text-ui-caption text-(--ui-text-muted)">
+                  {t("Jump chain")}: {jumpChain.join(" → ")}
+                </p>
+              ) : null}
+              {currentServer.metadata.sshInheritance ? (
+                <Button variant="link" onClick={() => setGroupSettings(true)}>
+                  {t("SSH group settings")}
+                </Button>
+              ) : null}
+              {editingIdentity ? (
+                <div className="flex min-w-0 flex-col gap-3">
+                  <SshIdentityField
+                    value={identityDraft}
+                    onChange={setIdentityDraft}
+                    disabled={busy}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" disabled={busy} onClick={() => setEditingIdentity(false)}>
+                      {t("Cancel")}
+                    </Button>
+                    <Button
+                      loading={busy}
+                      onClick={() =>
+                        void act(async () => {
+                          const saved = await setServerSshIdentity(
+                            server.id,
+                            identityDraft.trim() || undefined,
+                          );
+                          setIdentityUpdate({ base: server, saved });
+                          setEditingIdentity(false);
+                        })
+                      }
+                    >
+                      {t("Save")}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+          {!canAssignKey ? (
+            <p className="text-ui-caption text-(--ui-text-muted)">
+              {t("This machine uses bycoda Host. Use Reconnect to restore its connection.")}
+            </p>
+          ) : null}
+        </TabPanel>
         {canAssignKey ? (
-          <ServerForwards key={server.id} server={server} expanded active={panel === "forwards"} />
+          <TabPanel value="forwards" keepMounted>
+            <ServerForwards key={server.id} server={server} expanded active={panel === "forwards"} />
+          </TabPanel>
         ) : null}
-      </div>
-      <div id={`${panelId}-automation`} hidden={panel !== "automation"}>
-        <div className="mbe-4 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-medium">{t("Automation")}</h3>
-          {server.kind === "ssh" ? (
-            <Button onClick={() => setRunbooks(true)}>{t("SSH runbooks")}</Button>
-          ) : null}
-        </div>
-        <ServerSnippets key={server.id} serverId={server.id} serverName={server.name} embedded />
-      </div>
-      <div id={`${panelId}-settings`} hidden={panel !== "settings"} className="min-w-0">
-        <h3 className="mbe-3 text-ui-body font-medium">{t("Organization")}</h3>
-        <div className="flex flex-wrap gap-2">
-          {(server.kind === "ssh" || server.machine?.ssh) && openAgentTerminal ? (
-            <Button onClick={() => setAgentReview(true)}>{t("Forward SSH agent")}</Button>
-          ) : null}
-          {server.kind === "ssh" ? (
-            <Button onClick={() => setGroupSettings(true)}>{t("SSH group settings")}</Button>
-          ) : null}
-          <Button loading={busy} onClick={() => setSecurity(true)}>
-            <Lock aria-hidden className="icon-sm" />
-            {t("SSH settings")}
-          </Button>
-        </div>
-        <ServerOrganization key={server.id} server={server} servers={servers} expanded />
-      </div>
-      <div id={`${panelId}-activity`} hidden={panel !== "activity"}>
-        <ServerActivity key={server.id} server={server} expanded />
-      </div>
+        <TabPanel value="automation" keepMounted>
+          <div className="mbe-4 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-ui-body font-medium">{t("Automation")}</h3>
+            {server.kind === "ssh" ? (
+              <Button onClick={() => setRunbooks(true)}>{t("SSH runbooks")}</Button>
+            ) : null}
+          </div>
+          <ServerSnippets key={server.id} serverId={server.id} serverName={server.name} embedded />
+        </TabPanel>
+        <TabPanel value="settings" keepMounted className="min-w-0">
+          <h3 className="mbe-3 text-ui-body font-medium">{t("Organization")}</h3>
+          <div className="flex flex-wrap gap-2">
+            {(server.kind === "ssh" || server.machine?.ssh) && openAgentTerminal ? (
+              <Button onClick={() => setAgentReview(true)}>{t("Forward SSH agent")}</Button>
+            ) : null}
+            {server.kind === "ssh" ? (
+              <Button onClick={() => setGroupSettings(true)}>{t("SSH group settings")}</Button>
+            ) : null}
+            <Button loading={busy} onClick={() => setSecurity(true)}>
+              <Lock aria-hidden className="icon-sm" />
+              {t("SSH settings")}
+            </Button>
+          </div>
+          <ServerOrganization key={server.id} server={server} servers={servers} expanded />
+        </TabPanel>
+        <TabPanel value="activity" keepMounted>
+          <ServerActivity key={server.id} server={server} expanded />
+        </TabPanel>
+      </Tabs>
       {agentReview && openAgentTerminal ? (
         <SshAgentForwarding
           server={server}

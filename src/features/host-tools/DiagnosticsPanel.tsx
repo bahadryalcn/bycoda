@@ -2,6 +2,8 @@ import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
 import { Button } from "../../shared/ui/Button";
 import { InfoPopover } from "../../shared/ui/InfoPopover";
+import { Meter } from "../../shared/ui/Meter";
+import { Surface } from "../../shared/ui/Surface";
 import { RefreshCw } from "../../shared/ui/icons";
 import { t, useLocale, getLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState } from "react";
@@ -256,7 +258,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
       {sample ? (
         <>
           <div className="resource-cards">
-            <article className="resource-card">
+            <Surface as="article" variant="outline" className="resource-card">
               <h3>{t("bycoda host CPU")}</h3>
               <strong className="resource-value">
                 {sample?.process.cpuPercent != null
@@ -264,32 +266,23 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
                   : "—"}
               </strong>
               <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
-            </article>
-            <article className="resource-card">
+            </Surface>
+            <Surface as="article" variant="outline" className="resource-card">
               <h3>{t("bycoda host memory")}</h3>
               <strong className="resource-value">
                 {sample ? mib(sample.process.rssBytes) : "—"}
               </strong>
               <ResourceChart samples={samples} metric="memory" label={t("bycoda host memory")} />
-            </article>
+            </Surface>
           </div>
-          <article className="resource-card resource-system-memory">
+          <Surface as="article" variant="outline" className="resource-card resource-system-memory">
             <div className="resource-memory-heading">
               <h3>{t("Computer memory")}</h3>
               <strong>
                 {memoryUsed !== null ? `${memoryUsed.toFixed(1)}% ${t("Used")}` : "—"}
               </strong>
             </div>
-            <div
-              className="resource-memory-bar"
-              role={memoryUsed !== null ? "meter" : undefined}
-              aria-label={t("Computer memory")}
-              aria-valuemin={memoryUsed !== null ? 0 : undefined}
-              aria-valuemax={memoryUsed !== null ? 100 : undefined}
-              aria-valuenow={memoryUsed ?? undefined}
-            >
-              <span style={{ inlineSize: `${memoryUsed ?? 0}%` }} />
-            </div>
+            <Meter label={t("Computer memory")} value={memoryUsed} warning={75} danger={90} />
             <div className="resource-memory-legend">
               <span>
                 {t("Available")} <strong>{sample ? gib(sample.host.freeMemoryBytes) : "—"}</strong>
@@ -298,7 +291,7 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
                 {t("Total")} <strong>{sample ? gib(sample.host.totalMemoryBytes) : "—"}</strong>
               </span>
             </div>
-          </article>
+          </Surface>
         </>
       ) : null}
       {sample ? (

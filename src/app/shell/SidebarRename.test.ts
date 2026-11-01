@@ -1336,10 +1336,8 @@ describe("sidebar orchestration card", () => {
     const rowActions = card().querySelector("[data-session-row-actions]");
     expect(rowActions?.contains(orchestrationIcon)).toBe(true);
     expect(rowActions?.contains(pullRequest)).toBe(true);
-    // Each action sits in its own shared-tooltip wrapper (no box), so adjacency is between wrappers.
-    expect(archive.closest("[data-tooltip-wrap]")?.nextElementSibling).toBe(
-      pullRequest?.closest("[data-tooltip-wrap]"),
-    );
+    // The actions are direct siblings: each Button owns its tooltip.
+    expect(archive.nextElementSibling).toBe(pullRequest);
     expect(orchestrationIcon?.parentElement?.lastElementChild).toBe(orchestrationIcon);
     act(() => archive.click());
     expect(props.onArchiveSession).toHaveBeenCalledExactlyOnceWith(lead.id, true);
@@ -1553,10 +1551,8 @@ describe("sidebar linked work item updates", () => {
     const pullRequest = card().querySelector('[aria-label="Open PR #42"]');
     expect(card().querySelectorAll('img[alt=""]')).toHaveLength(1);
     expect(rows.item(rows.length - 1)?.contains(pullRequest)).toBe(true);
-    const archiveWrap = archive?.closest("[data-tooltip-wrap]");
-    const pullRequestWrap = pullRequest?.closest("[data-tooltip-wrap]");
-    expect(archiveWrap?.parentElement).toBe(pullRequestWrap?.parentElement);
-    expect(archiveWrap?.nextElementSibling).toBe(pullRequestWrap);
+    expect(archive?.parentElement).toBe(pullRequest?.parentElement);
+    expect(archive?.nextElementSibling).toBe(pullRequest);
   });
 
   it("renders an unread dot without changing session order", () => {
@@ -2624,9 +2620,7 @@ it("keeps delete beside archive and routes its click through the existing delete
   const actions = card().querySelector("[data-session-row-actions]")!;
   const archive = actions.querySelector('[aria-label^="Archive "]')!;
   const deleteButton = actions.querySelector<HTMLButtonElement>('[aria-label^="Delete "]')!;
-  expect(archive.closest("[data-tooltip-wrap]")?.nextElementSibling).toBe(
-    deleteButton.closest("[data-tooltip-wrap]"),
-  );
+  expect(archive.nextElementSibling).toBe(deleteButton);
   act(() => deleteButton.click());
   expect(props.onDeleteSession).toHaveBeenCalledExactlyOnceWith("session-1");
   expect(props.onArchiveSession).not.toHaveBeenCalled();

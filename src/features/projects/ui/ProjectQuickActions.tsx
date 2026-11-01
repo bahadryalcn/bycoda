@@ -246,7 +246,7 @@ function ProjectQuickActionsFor({
       kind: "item",
       id: "folder",
       label: IS_MAC ? "Finder" : "File Explorer",
-      icon: <FolderOpen className="size-4 text-warning" />,
+      icon: <FolderOpen className="icon-md text-(--ui-tone-warning-fg)" />,
     },
   ];
   const actionItems: ExplorerMenuItem[] = [
@@ -285,7 +285,7 @@ function ProjectQuickActionsFor({
       get label() {
         return t("Add action…");
       },
-      icon: <Plus className="size-4" />,
+      icon: <Plus className="icon-md" />,
     },
   ];
   const selected = actions[0];
@@ -324,7 +324,7 @@ function ProjectQuickActionsFor({
             id: "project-actions",
             label: t("Project actions"),
             tooltip: `${t("Project actions")}\n${cwd}`,
-            icon: <CheckList className="size-3.5" />,
+            icon: <CheckList className="icon-sm" />,
             render: (renderTrigger) =>
               renderTrigger({
                 ref: actionsTrigger,
@@ -347,7 +347,7 @@ function ProjectQuickActionsFor({
                   id: "open-project",
                   label: t("Open project in"),
                   tooltip: `${t("Open project in")}\n${cwd}`,
-                  icon: <FolderOpen className="size-3.5" />,
+                  icon: <FolderOpen className="icon-sm" />,
                   render: (
                     renderTrigger: Parameters<NonNullable<ExpandingButtonGroupItem["render"]>>[0],
                   ) =>

@@ -188,8 +188,7 @@ export function QuickComposer({
   // makes a failed read a hard stop. Automatic falls back to the current checkout.
   const workspaceBlocked =
     !workspace.tree &&
-    (workspaceCreation.pending ||
-      (!!workspaceCreation.error && workspace.mode === "worktree"));
+    (workspaceCreation.pending || (!!workspaceCreation.error && workspace.mode === "worktree"));
   const [gitOpen, setGitOpen] = useState(false);
   // Re-render when a workspace window's live catalog lands.
   const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot);
@@ -576,6 +575,7 @@ export function QuickComposer({
     >
       <div
         title={t("Drag to move")}
+        // z-10: in-popup stacking above the content; no in-pane layer scale exists, so the literal stays.
         className="group absolute inset-x-0 top-0 z-10 flex h-3 cursor-grab items-start justify-center pt-1 active:cursor-grabbing"
         onMouseDown={(event) => {
           if (event.button !== 0) return;
@@ -594,11 +594,13 @@ export function QuickComposer({
         motion="none"
         type="button"
         aria-label={t("Close composer")}
-        title={t("Close (Esc)")}
+        tooltip={t("Close")}
+        shortcut="Esc"
         onClick={dismiss}
+        // z-20: above the drag strip (z-10); same in-popup scale.
         className="absolute right-2 top-2 z-20 grid place-items-center"
       >
-        <X className="size-3" />
+        <X className="icon-xs" />
       </Button>
       <div className="flex shrink-0 items-center gap-2 px-5 pt-3 pr-9">
         <QuickWorkspaceControls
@@ -622,7 +624,8 @@ export function QuickComposer({
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("project")}
           disabled={projects.length === 0}
-          title={t("Project (⌘P)")}
+          tooltip={t("Project")}
+          shortcut="Meta+P"
           aria-expanded={picker === "project"}
           className={`ml-auto flex min-w-0 max-w-[40%] items-center gap-1.5 `}
         >
@@ -634,7 +637,7 @@ export function QuickComposer({
             />
           ) : null}
           <span className="truncate">{cwd ? projectDisplayName(cwd) : t("No project")}</span>
-          <ChevronDown className="size-3 shrink-0 opacity-60" />
+          <ChevronDown className="icon-xs shrink-0 opacity-60" />
         </Button>
       </div>
       {attachments.files.length ? (
@@ -762,7 +765,7 @@ export function QuickComposer({
           ref={plusRef}
           aria-label={t("Add attachment")}
           aria-expanded={picker === "attachments"}
-          title={
+          tooltip={
             attachmentsSupported
               ? t("Attach files or take a screenshot")
               : t("This provider does not support attachments")
@@ -772,7 +775,7 @@ export function QuickComposer({
           onClick={() => openPicker("attachments")}
           className={`grid shrink-0 place-items-center `}
         >
-          <Plus className="size-3.5" strokeWidth={1.5} />
+          <Plus className="icon-sm" />
         </Button>
         <Button
           selected={picker === "model"}
@@ -781,13 +784,14 @@ export function QuickComposer({
           type="button"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("model")}
-          title={t("Model (⌘.)")}
+          tooltip={t("Model")}
+          shortcut="Meta+."
           aria-expanded={picker === "model"}
           className={`flex min-w-0 max-w-[40%] items-center gap-1.5 `}
         >
           <HarnessIcon harness={model.harness} className="size-3.5 shrink-0" />
           <span className="truncate">{model.name}</span>
-          <ChevronDown className="size-3 shrink-0 opacity-60" />
+          <ChevronDown className="icon-xs shrink-0 opacity-60" />
         </Button>
         {model.harness !== "fx" ? (
           <Button
@@ -797,14 +801,14 @@ export function QuickComposer({
             type="button"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => openPicker("permissions")}
-            title={t("Permissions")}
+            tooltip={t("Permissions")}
             aria-label={t("Permissions")}
             aria-expanded={picker === "permissions"}
             className={`flex min-w-0 items-center gap-1.5 `}
           >
             <QuickPermissionIcon mode={runtimeMode} className="size-3.5 shrink-0" />
             <span className="truncate max-[450px]:hidden">{RUNTIME_MODE_LABEL[runtimeMode]}</span>
-            <ChevronDown className="size-3 shrink-0 opacity-60" />
+            <ChevronDown className="icon-xs shrink-0 opacity-60" />
           </Button>
         ) : null}
         <span className="ml-auto flex shrink-0 items-center gap-3 text-ui-micro text-(--ui-text-secondary)">
@@ -861,7 +865,7 @@ export function QuickComposer({
             }}
             className="flex w-full items-center gap-2"
           >
-            <ImagePlus className="size-3.5" />
+            <ImagePlus className="icon-sm" />
             {t("Choose files…")}
           </Button>
           <Button
@@ -876,7 +880,7 @@ export function QuickComposer({
             }}
             className="flex w-full items-center gap-2"
           >
-            <Maximize2 className="size-3.5" />
+            <Maximize2 className="icon-sm" />
             {t("Take screenshot…")}
           </Button>
         </Popover>
@@ -945,7 +949,7 @@ export function QuickComposer({
           {picker === "project" ? (
             <div className="flex min-h-0 flex-col border-t border-stroke">
               <label className="flex shrink-0 items-center gap-2 px-4 py-2 text-(--ui-text-secondary)">
-                <Search className="size-3.5 shrink-0" />
+                <Search className="icon-sm shrink-0" />
                 <SearchInput
                   ref={queryRef}
                   value={query}

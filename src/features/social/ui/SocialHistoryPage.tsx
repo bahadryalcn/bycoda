@@ -6,6 +6,7 @@ import { useContext, useEffect, useState } from "react";
 import type { SocialContact, SocialPage } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 import { Empty, Notice, time } from "./socialShared";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SocialPanelActiveContext } from "./socialContext";
 
 export function socialContactHistoryLabel(kind: string) {
@@ -129,7 +130,7 @@ export function SocialContactHistory({
   const history = contact.historyPage ? (detail.value?.history ?? []) : contact.history;
   return (
     <>
-      {detail.loading ? <Notice kind="loading" title={t("Loading interaction history")} /> : null}
+      {detail.loading ? <LoadingText>{t("Loading interaction history")}</LoadingText> : null}
       {detail.error ? <Notice kind="error">{detail.error} <Button variant="ghost" loading={detail.loading} onClick={detail.retry}>{t("Retry loading history")}</Button></Notice> : null}
       <HistoryPageControls
         page={detail.value?.historyPage}

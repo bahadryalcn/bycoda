@@ -66,12 +66,12 @@
   padding: 16px;
   font-size: var(--ui-font-secondary);
 }
-/* Token grants share the connection list language: one bounded, quiet box. */
+/* Token grants share the connection list language: one bounded, unfilled frame. */
 .list {
   display: grid;
   max-block-size: 320px;
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-editor-border);
+  background: var(--ui-settings-group-surface);
+  border: 1px solid var(--ui-settings-group-border);
   border-radius: var(--ui-radius-card);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -80,10 +80,13 @@
 .row {
   padding: 10px 16px;
 }
-/* Rows separate by spacing and hover fill, like every settings collection. */
+/* Hairline dividers and a quiet hover, like every settings group (V3-013). */
+.row + .row {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
 @media (hover: hover) and (pointer: fine) {
   .row:hover {
-    background: var(--ui-surface-hover);
+    background: var(--ui-settings-row-hover);
   }
 }
 .list:empty {

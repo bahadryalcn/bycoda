@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { invoke } from "@tauri-apps/api/core";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Modal } from "../../../shared/ui/Modal";
 import { t } from "../../../shared/i18n";
 import {
@@ -186,9 +188,7 @@ export function SshAgentForwarding({
           )}
         </Alert>
         {active?.loading ? (
-          <p role="status" className="text-xs text-(--ui-text-muted)">
-            {t("Loading…")}
-          </p>
+          <LoadingText />
         ) : null}
         {active?.error ? (
           <Alert tone="danger" role="alert">
@@ -197,17 +197,17 @@ export function SshAgentForwarding({
         ) : null}
         {review ? (
           <>
-            <p className="break-all text-sm font-medium">
+            <p className="break-all text-ui-body font-medium">
               {sshEndpointPreview({ ...review.summary, user: review.summary.user ?? undefined })}
             </p>
             {server.sshEndpoint?.httpProxy ? (
-              <p className="break-all text-xs text-(--ui-text-muted)">
+              <p className="break-all text-ui-caption text-(--ui-text-muted)">
                 {server.sshEndpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}
                 : {sshEndpointPreview(server.sshEndpoint.httpProxy)}
               </p>
             ) : null}
             {review.summary.configuration ? (
-              <details className="text-xs text-(--ui-text-muted)">
+              <details className="text-ui-caption text-(--ui-text-muted)">
                 <summary className="cursor-pointer">{t("Effective SSH configuration")}</summary>
                 <dl className="mbs-2 grid grid-cols-2 gap-1">
                   {Object.entries(review.summary.configuration.provenance).map(
@@ -245,21 +245,21 @@ export function SshAgentForwarding({
                 ))}
               </details>
             ) : null}
-            <p className="text-xs text-(--ui-text-muted)">
+            <p className="text-ui-caption text-(--ui-text-muted)">
               {t("One terminal only. Approval is not saved.")} ·{" "}
               {Math.max(0, Math.ceil((review.expiresAt - clock) / 1000))} s
             </p>
             {!valid ? (
-              <p role="status" className="text-xs text-(--ui-text-muted)">
+              <InlineMessage tone="warning">
                 {t("This review expired or is unavailable. Request a new review.")}
-              </p>
+              </InlineMessage>
             ) : null}
           </>
         ) : null}
         {!active || active.changed ? (
-          <p role="status" className="text-xs text-(--ui-text-muted)">
+          <InlineMessage tone="warning">
             {t("Agent forwarding target changed. Request a new review.")}
-          </p>
+          </InlineMessage>
         ) : null}
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>

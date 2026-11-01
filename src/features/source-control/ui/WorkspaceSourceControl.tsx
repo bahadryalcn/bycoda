@@ -174,7 +174,7 @@ export function WorkspaceSourceControl({
               aria-controls={repositoryListId}
               onClick={() => setListOpen((open) => !open)}
             >
-              {listOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+              {listOpen ? <ChevronDown className="icon-xs" /> : <ChevronRight className="icon-xs" />}
               {t("Repository")}
             </Button>
           ) : null}
@@ -220,7 +220,7 @@ export function WorkspaceSourceControl({
               disabled={!enabled}
               onClick={() => requestWorktreeManagement(active || cwd)}
             >
-              <FolderTree aria-hidden className="size-3.5" />
+              <FolderTree aria-hidden className="icon-sm" />
             </Button>
           ) : null}
           <Button
@@ -229,11 +229,9 @@ export function WorkspaceSourceControl({
             iconOnly
             label={t("Refresh source control")}
             disabled={!enabled}
-            title={t("Refresh source control")}
-            aria-label={t("Refresh source control")}
             onClick={refreshAll}
           >
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className="icon-sm" />
           </Button>
         </div>
       ) : null}

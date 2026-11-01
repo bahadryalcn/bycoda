@@ -55,6 +55,31 @@
   flex: 1 1 auto;
   min-inline-size: 0;
 }
+.mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.375rem;
+}
+.icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--ui-text-secondary);
+}
+.icon > svg {
+  inline-size: var(--ui-icon-xs);
+  block-size: var(--ui-icon-xs);
+}
+/* chevron="hover": the icon rests in the chevron's place; hover or keyboard focus swaps them. */
+.mark[data-swap] .chevron {
+  display: none;
+}
+.root:is(:hover, :has(:focus-visible)) .mark[data-swap] .chevron {
+  display: inline-flex;
+}
+.root:is(:hover, :has(:focus-visible)) .mark[data-swap] .icon {
+  display: none;
+}
 .chevron {
   display: inline-flex;
   flex: none;
@@ -77,5 +102,29 @@
 @media (prefers-reduced-motion: reduce) {
   .chevron {
     transition: none;
+  }
+}
+
+/* Narrow rail (an ancestor `@container/rail`): only the icon, or the chevron, remains. */
+@container rail (max-width: 140px) {
+  .root[data-compact-rail] {
+    justify-content: center;
+  }
+  .root[data-compact-rail] :is(.text, .count) {
+    display: none;
+  }
+  .root[data-compact-rail] .heading {
+    flex: 0 1 auto;
+    justify-content: center;
+  }
+  .root[data-compact-rail] .toggle {
+    flex: 0 1 auto;
+    justify-content: center;
+  }
+  .root[data-compact-rail] .toggle:not(:has(.icon)) {
+    display: none;
+  }
+  .root[data-compact-rail] .mark:has(.icon):not([data-swap]) .chevron {
+    display: none;
   }
 }

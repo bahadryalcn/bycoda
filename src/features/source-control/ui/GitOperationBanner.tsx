@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
@@ -67,22 +68,18 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
   };
 
   return (
-    <div
-      role="status"
-      className="flex shrink-0 items-center gap-1 border-b border-stroke bg-[var(--ui-surface)] px-3 py-1.5 text-ui-caption text-[var(--color-content)]"
-    >
+    <div className="flex shrink-0 items-center gap-1 border-b border-stroke bg-(--ui-surface) px-3 py-1.5">
       {confirmElement}
-      <span className="min-w-0 flex-1 truncate">{operationSummary(label, conflictCount)}</span>
+      <InlineMessage tone="warning" className="flex-1">
+        {operationSummary(label, conflictCount)}
+      </InlineMessage>
       <Button
         variant="secondary"
         motion="none"
         type="button"
         disabled={!!busy || conflictCount > 0}
-        title={
-          conflictCount > 0
-            ? t("Resolve every conflict first")
-            : t("Continue the {p0}", { p0: label.toLowerCase() })
-        }
+        disabledReason={conflictCount > 0 ? t("Resolve every conflict first") : undefined}
+        tooltip={t("Continue the {p0}", { p0: label.toLowerCase() })}
         onClick={() => void run(() => gitOperationContinue(cwd))}
         className={ACTION}
       >
@@ -94,7 +91,7 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
         motion="none"
         type="button"
         disabled={!!busy}
-        title={t("Abort the {p0}", { p0: label.toLowerCase() })}
+        tooltip={t("Abort the {p0}", { p0: label.toLowerCase() })}
         onClick={() => void abort()}
         className={ACTION}
       >

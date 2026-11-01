@@ -16,6 +16,7 @@ export function SessionSurface({ host, children }: { host?: HTMLElement; childre
   return (
     <>
       <div ref={fallback} className="h-full min-h-0 min-w-0" />
+      {/* Pane-hosted portal into the surface container, not an overlay: shared Popover/Modal do not apply. */}
       {createPortal(children, container)}
     </>
   );

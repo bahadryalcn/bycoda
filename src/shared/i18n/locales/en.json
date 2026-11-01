@@ -10072,5 +10072,22 @@
   "Pure": "Pure",
   "Tinted": "Tinted",
   "Pure is true black in dark mode and white in light mode.": "Pure is true black in dark mode and white in light mode.",
-  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "Custom surface colors keep their own background. Choose a theme palette to use Pure."
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "Custom surface colors keep their own background. Choose a theme palette to use Pure.",
+  "The editor is busy closing or moving. Try again in a moment.": "The editor is busy closing or moving. Try again in a moment.",
+  "Match Case": "Match Case",
+  "Match Whole Word": "Match Whole Word",
+  "Use Regular Expression": "Use Regular Expression",
+  "Notes sections": "Notes sections",
+  "Close notes": "Close notes",
+  "Add folder": "Add folder",
+  "Open folder": "Open folder",
+  "The draft changed while it was being prepared. Send it again.": "The draft changed while it was being prepared. Send it again.",
+  "Work item preview": "Work item preview",
+  "New worktree": "New worktree",
+  "Type “{p0}” to confirm": "Type “{p0}” to confirm",
+  "Choose a date": "Choose a date",
+  "Resize panel": "Resize panel",
+  "or": "or",
+  "Alt": "Alt",
+  "Windows": "Windows"
 }

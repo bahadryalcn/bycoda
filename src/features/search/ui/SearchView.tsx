@@ -5,6 +5,8 @@ import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Alert } from "../../../shared/ui/Alert";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { Modal } from "../../../shared/ui/Modal";
 import "./search.css";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
@@ -12,7 +14,6 @@ import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   Folder,
-  LoaderCircle,
   MessageSquare,
   Search,
   Maximize2,
@@ -477,23 +478,40 @@ export function SearchView({
       data-search-size={capacity <= 4 ? "small" : capacity <= 10 ? "medium" : "large"}
       className={`app-search @container/search flex min-h-0 min-w-0 flex-1 flex-col text-content ${presentation === "dialog" ? "app-search-dialog" : ""}`}
     >
-      <div className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto]">
-        <div
-          className="col-span-3 grid h-10 grid-cols-subgrid select-none items-center border-b border-stroke"
-          data-tauri-drag-region={presentation === "page" ? "deep" : undefined}
+      <div className="flex shrink-0 flex-col">
+        <PaneHeader
+          dragRegion={presentation === "page"}
+          chromeInset={presentation === "page" ? (!besideRail ? true : compactRail ? "compact" : false) : false}
+          className="select-none"
+          leading={presentation === "page" && !besideRail ? (
+            <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+          ) : null}
+          actions={
+            presentation === "dialog" ? (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Full screen")}
+                tooltip={t("Full screen")}
+                onClick={onExpand}
+              >
+                <Maximize2 className="icon-sm" />
+              </Button>
+            ) : onCompact ? (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Restore")}
+                tooltip={t("Restore")}
+                onClick={onCompact}
+              >
+                <Minimize2 className="icon-sm" />
+              </Button>
+            ) : null
+          }
+          trailing={presentation === "page" && !IS_MAC ? <WindowControls /> : null}
         >
-          <div className="flex items-center">
-            {presentation === "page" ? (
-              <>
-                {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-                {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-                {besideRail ? null : (
-                  <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
-                )}
-              </>
-            ) : null}
-          </div>
-          <div className="min-w-0 flex-1 px-3">
+          <div className="min-w-0 flex-1 px-2">
             <SearchInputGroup appearance="field" className="w-full">
               <Search className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden="true" />
               <SearchInput
@@ -518,45 +536,12 @@ export function SearchView({
                 data-tauri-drag-region="false"
                 className="min-w-0 flex-1 select-text"
               />
-              {loading ? (
-                <LoaderCircle
-                  className="icon-sm shrink-0 motion-safe:animate-spin text-(--ui-text-secondary)"
-                  strokeWidth={1.75}
-                />
-              ) : null}
+              {loading ? <Spinner size="sm" className="shrink-0 text-(--ui-text-secondary)" /> : null}
             </SearchInputGroup>
           </div>
-          <div className="flex items-center pe-3">
-            {presentation === "dialog" ? (
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Full screen")}
-                tooltip={t("Full screen")}
-                onClick={onExpand}
-              >
-                <Maximize2 className="icon-sm" />
-              </Button>
-            ) : (
-              <>
-                {onCompact ? (
-                  <Button
-                    variant="ghost"
-                    iconOnly
-                    label={t("Restore")}
-                    tooltip={t("Restore")}
-                    onClick={onCompact}
-                  >
-                    <Minimize2 className="icon-sm" />
-                  </Button>
-                ) : null}
-                {!IS_MAC ? <WindowControls /> : null}
-              </>
-            )}
-          </div>
-        </div>
+        </PaneHeader>
 
-        <div className="app-search-mode-band col-span-3">
+        <div className="app-search-mode-band">
           <div className="min-w-0 flex-1 overflow-x-auto">
             <SegmentedControl
               label={t("Search in")}
@@ -817,14 +802,14 @@ function rowCopy(
   }
   if (hit.kind === "file") {
     return {
-      icon: <FileTypeIcon name={hit.name} isDir={false} size={16} />,
+      icon: <FileTypeIcon name={hit.name} isDir={false} size="md" />,
       title: <MatchText text={hit.name} positions={namePositions(hit)} active />,
       meta: hit.path,
     };
   }
   if (hit.kind === "content") {
     return {
-      icon: <FileTypeIcon name={hit.name} isDir={false} size={16} />,
+      icon: <FileTypeIcon name={hit.name} isDir={false} size="md" />,
       title: hit.name,
       preview: <Highlight text={hit.preview} query={query} />,
       meta: `${hit.path}:${hit.line}:${hit.column}`,

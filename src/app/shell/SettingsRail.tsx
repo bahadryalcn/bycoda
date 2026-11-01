@@ -147,7 +147,8 @@ function NavRow({
       ref={buttonRef}
       tabIndex={tabIndex}
       onKeyDown={onKeyDown}
-      title={label}
+      tooltip={label}
+      tooltipSide="right"
       aria-label={label}
       aria-current={active ? "true" : undefined}
       className={`flex w-full items-center gap-2 @max-[140px]/rail:justify-center `}

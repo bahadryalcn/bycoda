@@ -4,12 +4,16 @@ import "./InboxView.css";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Sash } from "../../../shared/ui/Sash";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
-import { ToolHeader } from "../../../app/shell/ToolNavigation";
+import { ToolNavigation, ToolNavigationContext } from "../../../app/shell/ToolNavigation";
 import { filterCodeHostScopes, useCodeHostScopes } from "../model/codeHostScopes";
 import { prefetchInboxItem } from "../model/inboxPrefetch";
 import { t, useLocale } from "../../../shared/i18n";
@@ -29,7 +33,6 @@ import {
   CircleX,
   ExternalLink,
   Inbox,
-  LoaderCircle,
   MessageMultiple,
   Plus,
   RefreshCw,
@@ -38,6 +41,7 @@ import {
 } from "../../../shared/ui/icons";
 import {
   useCallback,
+  useContext,
   useDeferredValue,
   memo,
   useEffect,
@@ -154,18 +158,18 @@ function InboxSourceTab({
   useLocale();
   const label = INBOX_SOURCE_LABELS[source];
   return (
-    <Button
-      variant="tab"
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      onClick={() => onSelect(source)}
+    <Tab
+      value={source}
+      // Choosing the current source again still returns to its list (clears the open item).
+      onClick={() => {
+        if (selected) onSelect(source);
+      }}
     >
       <span className="flex items-center gap-1.5">
         <InboxProviderMark provider={source} className="block icon-sm shrink-0" />
         <span className="leading-none">{label}</span>
       </span>
-    </Button>
+    </Tab>
   );
 }
 
@@ -213,6 +217,8 @@ export function InboxView({
   onOpenIntegrations,
 }: Props) {
   useLocale();
+  // Inside the workspace the tool switcher takes the title place.
+  const toolNavigation = useContext(ToolNavigationContext)?.active != null;
   const [discussionOpen, setDiscussionOpen] = useState(false);
   const viewStateKey = `inbox:${pullRequestsOnly ? "pull-requests" : "all"}:${projectKey(cwd)}`;
   const listLock = useLockOverscroll<HTMLDivElement>();
@@ -600,21 +606,22 @@ export function InboxView({
   const sourceRow = (
     <div className="flex h-9 shrink-0 items-center gap-px px-2">
       {visibleSources.length > 0 ? (
-        <div
-          role="tablist"
-          aria-label={t("Inbox source")}
-          className="flex min-w-0 basis-0 items-center gap-px"
-          style={{ flexGrow: visibleSources.length }}
-        >
-          {visibleSources.map((option) => (
-            <InboxSourceTab
-              key={option}
-              source={option}
-              selected={source === option}
-              onSelect={onSourceChange}
-            />
-          ))}
-        </div>
+        <Tabs value={source} onValueChange={onSourceChange} panels="none">
+          <TabList
+            label={t("Inbox source")}
+            className="min-w-0 basis-0"
+            style={{ flexGrow: visibleSources.length }}
+          >
+            {visibleSources.map((option) => (
+              <InboxSourceTab
+                key={option}
+                source={option}
+                selected={source === option}
+                onSelect={onSourceChange}
+              />
+            ))}
+          </TabList>
+        </Tabs>
       ) : null}
       {connectableSources.length > 0 ? (
         <Button
@@ -626,7 +633,6 @@ export function InboxView({
           aria-label={t("Connect an inbox source")}
           aria-haspopup="menu"
           aria-expanded={connectMenuOpen}
-          title={t("Connect an inbox source")}
           onClick={() => setConnectMenuOpen((open) => !open)}
         >
           <Plus className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
@@ -681,7 +687,6 @@ export function InboxView({
                 label={t("Sort pull requests")}
                 variant="ghost"
                 type="button"
-                title={t("Sort pull requests")}
                 aria-haspopup="menu"
                 aria-expanded={sortMenuOpen}
                 onClick={() => setSortMenuOpen((open) => !open)}
@@ -732,7 +737,6 @@ export function InboxView({
             label={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
             variant="ghost"
             type="button"
-            title={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
             aria-label={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
             disabled={!sourceHasUnseen}
             onClick={() => {
@@ -821,9 +825,7 @@ export function InboxView({
             }
           />
         ) : loading && items.length === 0 ? (
-          <div role="status" className="flex items-center justify-center gap-2 py-10 text-ui-secondary text-(--ui-text-secondary)">
-            <WorkingIndicator size="md" />{t("Loading...")}
-          </div>
+          <LoadingText className="justify-center py-10" />
         ) : visibleItems.length === 0 ? (
           !pullRequestsOnly && !isTrackerSource(source) && projects.length === 0 ? (
             <EmptyState
@@ -913,14 +915,11 @@ export function InboxView({
           {sourceError ? <span className="text-(--ui-tone-warning-fg)">{t("Partial")}</span> : null}
         </div>
       )}
-      <div
-        {...resize.separatorProps}
-        aria-label={t("Resize inbox list")}
-        className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-(--ui-surface-selected)" : "hover:bg-(--ui-surface-hover)"
-        }`}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
+      <Sash
+        {...resize.sashProps}
+        appearance="hidden"
+        label={t("Resize inbox list")}
+        className="absolute inset-y-0 -right-px"
       />
     </div>
   );
@@ -965,23 +964,18 @@ export function InboxView({
       data-app-inbox
       className="bycoda-inbox flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
     >
-      <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-(--ui-tone-neutral-border)"
-        data-tauri-drag-region="deep"
+      <PaneHeader
+        chromeInset={besideRail ? (compactRail ? "compact" : false) : true}
+        dragRegion
+        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        icon={toolNavigation ? undefined : <Inbox strokeWidth={1.75} />}
+        title={toolNavigation ? undefined : pullRequestsOnly ? t("Pull Requests") : t("Inbox")}
+        titleAs="h1"
+        trailing={IS_MAC ? null : <WindowControls />}
+        className={toolNavigation ? "items-stretch" : undefined}
       >
-        {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
-        <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
-            <Inbox className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-            <h1 className="min-w-0 truncate text-(--ui-tone-neutral-fg)">
-              {pullRequestsOnly ? t("Pull Requests") : t("Inbox")}
-            </h1>
-          </div>
-        </ToolHeader>
-        {IS_MAC ? null : <WindowControls />}
-      </div>
+        {toolNavigation ? <ToolNavigation /> : null}
+      </PaneHeader>
 
       {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
         <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
@@ -1166,14 +1160,11 @@ export function LinkedWorkItemPanel({
         visible ? "flex linked-work-item-enter" : "hidden"
       }`}
     >
-      <div
-        {...resize.separatorProps}
-        aria-label={t("Resize linked {p0} panel", { p0: kindLabel.toLowerCase() })}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
-        className={`absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-(--ui-surface-selected)" : "hover:bg-(--ui-surface-hover)"
-        }`}
+      <Sash
+        {...resize.sashProps}
+        appearance="hidden"
+        label={t("Resize linked {p0} panel", { p0: kindLabel.toLowerCase() })}
+        className="absolute inset-y-0 -left-px"
       />
       <header className="flex shrink-0 items-center gap-2 px-3 py-1">
         <span className="min-w-0 flex-1 truncate text-ui-caption font-medium text-(--ui-text-secondary)">
@@ -1219,7 +1210,7 @@ export function LinkedWorkItemPanel({
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-(--ui-text-secondary)">
-            <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
+            <Spinner size="md" />
           </div>
         )}
       </div>
@@ -1319,7 +1310,7 @@ const InboxCard = memo(function InboxCard({
       layout="stacked"
       className="w-full min-w-0"
       type="button"
-      title={item.title}
+      tooltip={item.title}
       aria-current={active ? "true" : undefined}
       selected={active}
       aria-label={`${status.label} ${kindLabel.toLowerCase()} ${inboxItemRef(

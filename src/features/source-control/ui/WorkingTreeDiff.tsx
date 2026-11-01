@@ -1,8 +1,8 @@
-import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { runDiffWorker } from "../model/diffWorker";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle } from "../../../shared/ui/icons";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import {
   gitDiscardFile,
@@ -473,26 +473,22 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
 
   if (!cwd || cwd === "~") {
     return (
-      <p className="grid h-full place-items-center text-[13px] text-[var(--ui-text-muted)]">
-        {t("No project folder")}
-      </p>
+      <div className="grid h-full place-items-center">
+        <EmptyState key="no-project" context="panel" description={t("No project folder")} />
+      </div>
     );
   }
   if (error) {
     return (
-      <div className="grid h-full place-items-center p-6 text-center">
-        <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
-        <p className="text-[13px] text-content">{t("Couldn’t load changes")}</p>
-        <p className="mt-1 text-[12px] text-[var(--ui-text-secondary)]">{error}</p>
-        <Button
-          variant="ghost"
-          motion="none"
-          type="button"
-          onClick={() => setRetry((value) => value + 1)}
-          className="mt-3"
-        >
-          {t("Retry")}
-        </Button>
+      <div className="grid h-full place-items-center p-6">
+        <EmptyState
+          key="load-error"
+          kind="unavailable"
+          context="panel"
+          title={t("Couldn’t load changes")}
+          description={error}
+          onRetry={() => setRetry((value) => value + 1)}
+        />
       </div>
     );
   }
@@ -505,9 +501,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
   return (
     <div className="flex h-full min-h-0 flex-col">
       {mutationError && (
-        <p role="alert" className="shrink-0 px-3 py-2 text-[12px] text-danger">
-          {mutationError}
-        </p>
+        <InlineError className="shrink-0 px-3 py-2">{mutationError}</InlineError>
       )}
       <UnifiedDiffView
         files={models}

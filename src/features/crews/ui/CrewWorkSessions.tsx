@@ -69,7 +69,7 @@ function SessionRow({
       disabled={disabled}
       loading={loading}
       onClick={onClick}
-      title={title}
+      tooltip={title}
     >
       <CrewRoleIcon role={role} className="icon-md shrink-0" />
       <span className="min-w-0 flex-1 text-start">

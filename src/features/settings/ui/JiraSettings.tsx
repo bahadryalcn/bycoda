@@ -255,6 +255,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       />
       <Row
         label={t("Account")}
+        stacked={!checking && !(status?.connected && !editing)}
         info={t(
           "Connect your Jira Cloud site using your Atlassian email and an API token without scopes. Disconnect deletes the saved credentials.",
         )}

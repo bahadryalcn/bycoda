@@ -63,8 +63,9 @@
 }
 .appearance-settings .appearance-mode-card[aria-checked="true"],
 .appearance-settings .appearance-palette[aria-pressed="true"] {
-  border-color: var(--ui-focus-ring-color);
-  box-shadow: inset 0 0 0 1px var(--ui-focus-ring-color);
+  /* Selection is its own role (accent border), not the keyboard focus ring colour. */
+  border-color: var(--ui-border-accent);
+  box-shadow: inset 0 0 0 1px var(--ui-border-accent);
 }
 .appearance-mode-preview {
   display: grid;

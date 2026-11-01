@@ -1,9 +1,10 @@
 import { NumberField } from "../../../shared/ui/NumberField";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRef, useState } from "react";
-import { LoaderCircle } from "../../../shared/ui/icons";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import {
@@ -77,29 +78,31 @@ export function CustomDailyLimit({
         }
       }}
     >
-      <label className="task-limits-custom-field" title={t("0 = no limit")}>
-        <span>{t("Hours")}</span>
-        <NumberField
-          hideLabel
-          label=""
+      <Tooltip label={t("0 = no limit")}>
+        <label className="task-limits-custom-field">
+          <span>{t("Hours")}</span>
+          <NumberField
+            hideLabel
+            label=""
 
-          min="0"
-          step="any"
-          aria-label={t("Daily agent hours on {p0}", { p0: entry.machineName })}
-          value={hours}
-          disabled={saving}
-          onChange={(event) => {
-            if (saving) return;
-            const next = event.target.value;
-            setDraft((open) => ({
-              hours: next,
-              baseline: open && !open.saved ? open.baseline : current,
-              saved: false,
-            }));
-          }}
-          fieldClassName="w-24 max-w-24"
-        />
-      </label>
+            min="0"
+            step="any"
+            aria-label={t("Daily agent hours on {p0}", { p0: entry.machineName })}
+            value={hours}
+            disabled={saving}
+            onChange={(event) => {
+              if (saving) return;
+              const next = event.target.value;
+              setDraft((open) => ({
+                hours: next,
+                baseline: open && !open.saved ? open.baseline : current,
+                saved: false,
+              }));
+            }}
+            fieldClassName="w-24 max-w-24"
+          />
+        </label>
+      </Tooltip>
       <Button variant="secondary" type="submit" loading={saving} disabled={!valid || saving}>
         {t("Save")}
       </Button>
@@ -156,7 +159,7 @@ export function MachineConcurrency({
             }
           }}
         />
-        {saving ? <LoaderCircle className="icon-sm animate-spin" aria-hidden="true" /> : null}
+        {saving ? <Spinner /> : null}
       </label>
       <p>
         {t("Applies to all goals and tasks on this machine.")}{" "}
@@ -211,7 +214,7 @@ export function LimitsPanel({
             <span className="font-medium text-(--ui-tone-neutral-fg)">
               {entry.machineName}
               {savingMachine === entry.machineId ? (
-                <LoaderCircle className="ml-1 inline icon-xs animate-spin" aria-hidden="true" />
+                <Spinner size="xs" className="ml-1 inline-block" />
               ) : null}
             </span>
             <span className="tabular-nums">

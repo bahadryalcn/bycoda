@@ -182,7 +182,7 @@ function SkillList({
         return (
           <Fragment key={`${skill.kind}:${skill.source}:${skill.invocation}`}>
             {skill.kind === "template" && skills[index - 1]?.kind !== "template" ? (
-              <p className="px-2 pb-0.5 pt-1.5 text-[length:var(--ui-font-caption)] font-medium text-(--ui-text-secondary)">
+              <p className="px-2 pb-0.5 pt-1.5 text-ui-caption font-medium text-(--ui-text-secondary)">
                 {t("Templates")}
               </p>
             ) : null}
@@ -204,7 +204,7 @@ function SkillList({
                   {prefix}
                   {skill.invocation}
                 </span>
-                <span className="shrink-0 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+                <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
                   {scopeLabel(skill)}
                 </span>
               </span>
@@ -321,7 +321,7 @@ export function CreateSkillForm({
         {t("Writes a starter SKILL.md you can edit.")}
       </p>
       <TextField
-        className={monospace ? "font-mono" : "font-sans"}
+        monospace={monospace}
         label={t("Skill name")}
         ref={input}
         value={name}

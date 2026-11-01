@@ -1,10 +1,10 @@
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { Loader, WandSparkles, X } from "../../../shared/ui/icons";
+import { WandSparkles, X } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { generateCommitMessage } from "../../../integrations/harness";
 import { MOD } from "../../../platform/tauri/platform";
@@ -56,13 +56,6 @@ export function SwitchBranchDialog({
     [cwd],
   );
 
-  useEffect(() => {
-    const el = messageRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [message]);
-
   const generate = async () => {
     if (busy || generating || generateAbortRef.current) return;
     const controller = new AbortController();
@@ -110,6 +103,39 @@ export function SwitchBranchDialog({
       onClose={() => {
         if (!busy && !generating) onCancel();
       }}
+      footer={
+        <ModalActions>
+          <Button
+            variant="ghost"
+            motion="none"
+            type="button"
+            disabled={Boolean(busy) || generating}
+            onClick={onCancel}
+          >
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="secondary"
+            motion="none"
+            type="button"
+            loading={busy === "commit"}
+            disabled={!canCommit}
+            onClick={() => onCommit(trimmed)}
+          >
+            {t("Commit & switch")}
+          </Button>
+          <Button
+            variant="primary"
+            motion="none"
+            type="button"
+            loading={busy === "stash"}
+            disabled={Boolean(busy) || generating}
+            onClick={onStash}
+          >
+            {t("Stash & switch")}
+          </Button>
+        </ModalActions>
+      }
     >
       <div aria-busy={Boolean(busy) || generating} className="flex flex-col gap-3 px-4 pt-2 pb-4">
         <div className="flex min-w-0 flex-col gap-1">
@@ -117,13 +143,14 @@ export function SwitchBranchDialog({
             hideLabel
             label=""
             ref={messageRef}
-            style={{ minHeight: 0 }}
-            rows={1}
+            autosize
+            minRows={1}
+            maxRows={8}
             value={message}
             placeholder={t("Message ({p0}↩ to commit)", { p0: MOD })}
             disabled={Boolean(busy) || generating}
             aria-label={t("Commit message")}
-            className="max-h-40 w-full resize-none overflow-y-auto leading-5"
+            className="w-full"
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
               if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canCommit) {
@@ -161,44 +188,6 @@ export function SwitchBranchDialog({
 
         {generateError ? <Alert tone="danger">{generateError}</Alert> : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
-
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            disabled={Boolean(busy) || generating}
-            onClick={onCancel}
-          >
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="secondary"
-            motion="none"
-            type="button"
-            disabled={!canCommit}
-            onClick={() => onCommit(trimmed)}
-            className="inline-flex items-center gap-1.5"
-          >
-            {busy === "commit" ? (
-              <Loader className="icon-sm animate-spin" strokeWidth={1.75} />
-            ) : null}
-            {t("Commit & switch")}
-          </Button>
-          <Button
-            variant="primary"
-            motion="none"
-            type="button"
-            disabled={Boolean(busy) || generating}
-            onClick={onStash}
-            className="inline-flex items-center gap-1.5"
-          >
-            {busy === "stash" ? (
-              <Loader className="icon-sm animate-spin" strokeWidth={1.75} />
-            ) : null}
-            {t("Stash & switch")}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

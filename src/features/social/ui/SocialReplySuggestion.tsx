@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { t, useLocale } from "../../../shared/i18n";
@@ -142,9 +143,7 @@ export function SocialReplySuggestion({
         </p>
       )}
       {error ? (
-        <p role="alert" className="social-assistant-reason" data-kind="error">
-          {error}
-        </p>
+        <InlineError>{error}</InlineError>
       ) : null}
       <div className="social-assistant-actions">
         <Button type="submit" loading={working} disabled={!canAsk} startIcon={<Sparkles aria-hidden="true" />}>

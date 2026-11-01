@@ -9,6 +9,8 @@ import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { useRemoteMachines } from "../../connections/model/connections";
 import { machineLabel } from "../../connections/model/machineIdentity";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Segmented, SettingsFeedback } from "../../settings/ui/settingsControls";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import "./ProjectNotificationSettings.css";
@@ -172,9 +174,13 @@ export function ProjectNotificationSettings({
           </SettingsFeedback>
         ) : null}
         {projects.length === 0 ? (
-          <p role="status" className="settings-collection-empty">
-            {t("Open a project or connect an Inbox provider to configure its notifications.")}
-          </p>
+          <EmptyState
+            size="inline"
+            kind="empty"
+            description={t(
+              "Open a project or connect an Inbox provider to configure its notifications.",
+            )}
+          />
         ) : null}
         {projects.length ? (
           <>
@@ -247,18 +253,16 @@ export function ProjectNotificationSettings({
               tabIndex={0}
             >
               {visibleProjects.length === 0 ? (
-                <div className="settings-collection-empty project-notification-empty">
-                  <p role="status">{t("No projects found")}</p>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setQuery("");
-                      setScope("all");
-                    }}
-                  >
-                    {t("Clear search")}
-                  </Button>
-                </div>
+                <EmptyState
+                  size="inline"
+                  kind="filtered"
+                  description={t("No projects found")}
+                  resetLabel={t("Clear search")}
+                  onReset={() => {
+                    setQuery("");
+                    setScope("all");
+                  }}
+                />
               ) : null}
               {visibleProjects.map((project) => {
                 const path =
@@ -344,12 +348,11 @@ export function ProjectNotificationSettings({
                             )}
                           </span>
                           <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <p
-                              className="project-notification-name min-w-0 flex-1"
-                              title={`${project.name} (${project.detail})`}
-                            >
-                              {project.name.replace(/^\s*\u21b3\s*/, "")}
-                            </p>
+                            <Tooltip label={project.name} details={[project.detail]}>
+                              <p className="project-notification-name min-w-0 flex-1">
+                                {project.name.replace(/^\s*\u21b3\s*/, "")}
+                              </p>
+                            </Tooltip>
                             <p className="project-notification-summary shrink-0">
                               {muted
                                 ? t("Muted")

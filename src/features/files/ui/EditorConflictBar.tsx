@@ -38,7 +38,7 @@ export function EditorConflictBar({
       variant="ghost"
       motion="none"
       type="button"
-      title={t("Open the next conflicted file")}
+      tooltip={t("Open the next conflicted file")}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onNextFile}
       className="shrink-0"
@@ -55,7 +55,7 @@ export function EditorConflictBar({
     >
       {count > 0 ? (
         <>
-          <span className="font-medium tabular-nums text-warning" role="status">
+          <span className="font-medium tabular-nums text-(--ui-tone-warning-fg)" role="status">
             {count === 1 ? t("1 conflict") : t("{p0} conflicts", { p0: count })}
           </span>
           <div className="flex items-center gap-1">
@@ -76,7 +76,7 @@ export function EditorConflictBar({
               variant="ghost"
               motion="none"
               type="button"
-              title={t("Previous conflict")}
+              tooltip={t("Previous conflict")}
               aria-label={t("Previous conflict")}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onPrev}
@@ -91,7 +91,7 @@ export function EditorConflictBar({
               variant="ghost"
               motion="none"
               type="button"
-              title={t("Next conflict")}
+              tooltip={t("Next conflict")}
               aria-label={t("Next conflict")}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onNext}
@@ -105,7 +105,7 @@ export function EditorConflictBar({
         <>
           <span className="min-w-0 truncate text-[var(--ui-text-secondary)]" role="status">
             {error ? (
-              <span className="text-danger" title={error}>
+              <span className="text-(--ui-tone-danger-fg)" title={error}>
                 {error}
               </span>
             ) : (
@@ -131,7 +131,7 @@ export function EditorConflictBar({
               disabled={marking}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onMarkResolved}
-              title={t("Save the file and stage it")}
+              tooltip={t("Save the file and stage it")}
               className="shrink-0"
             >
               {marking ? t("Staging…") : t("Mark resolved")}

@@ -10,40 +10,7 @@
   color: var(--terminal-text);
 }
 .terminal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex: 0 0 auto;
-  min-block-size: 2rem;
-  min-inline-size: 0;
-  padding: 2px 4px 2px 8px;
-  border-block-end: 1px solid var(--terminal-border);
   background: var(--ui-surface-panel);
-}
-.terminal-header-title {
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-  color: var(--ui-text-secondary);
-}
-.terminal-toolbar {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  min-inline-size: 0;
-  gap: 4px;
-}
-/* Dock resize handle: a transient fill only, never a persistent stripe. */
-.terminal-dock-sash:hover,
-.terminal-dock-sash[data-dragging] {
-  background: var(--ui-surface-selected);
-}
-.terminal-dock-sash:focus-visible {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: -2px;
 }
 .terminal-body {
   position: relative;
@@ -60,34 +27,7 @@
   /* The list width is an explicit, user-resizable size, so its rows adapt to it rather
      than to the window (container query below). */
   container: terminal-list / inline-size;
-  border-inline-end: 1px solid var(--terminal-border);
   background: var(--ui-surface-panel);
-}
-.terminal-sidebar-sash {
-  position: relative;
-  z-index: 1;
-  flex: 0 0 0;
-  cursor: col-resize;
-  touch-action: none;
-}
-.terminal-sidebar-sash::after {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  inset-inline: -4px;
-}
-.terminal-sidebar-sash:focus-visible {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: 0;
-}
-.terminal-sidebar-sash[data-dragging]::after,
-.terminal-sidebar-sash:active::after {
-  background: var(--terminal-selected);
-}
-@media (hover: hover) and (pointer: fine) {
-  .terminal-sidebar-sash:hover::after {
-    background: var(--terminal-selected);
-  }
 }
 .terminal-list {
   min-block-size: 0;

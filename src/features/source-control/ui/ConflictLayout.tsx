@@ -5,6 +5,7 @@ import { minimalSetup } from "codemirror";
 import { presentableDiff } from "@codemirror/merge";
 import { editorSearch } from "../../files/editor/editorSearch";
 import { Button } from "../../../shared/ui/Button";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import {
   ChevronDown,
   ChevronUp,
@@ -252,40 +253,40 @@ export function ConflictLayout({
           <strong>{provenance.theirs.label || t("Incoming")}</strong>
         </div>
       ) : null}
-      <div className="conflict-layout-controls" role="group" aria-label={t("Conflict layout")}>
-        {(
-          [
-            ["stacked", "Sources above"],
-            ["columns", "Side by side"],
-            ["inline", "Result only"],
-          ] as const
-        ).map(([value, label]) => (
-          <Button
-            key={value}
-            variant="tab"
-            size="sm"
-            motion="none"
-            iconOnly
-            label={t(label)}
-            aria-pressed={layout === value}
-            onClick={() => {
-              setLayout(value);
-              try {
-                localStorage.setItem("bycoda.conflictLayout", value);
-              } catch {
-                /* In-memory preference still works. */
-              }
-            }}
-          >
-            {value === "stacked" ? (
-              <PanelTop size={14} />
-            ) : value === "columns" ? (
-              <SplitSquare size={14} />
-            ) : (
-              <File size={14} />
-            )}
-          </Button>
-        ))}
+      <div className="conflict-layout-controls">
+        <SegmentedControl
+          label={t("Conflict layout")}
+          value={layout}
+          options={[
+            {
+              value: "stacked",
+              label: t("Sources above"),
+              icon: <PanelTop className="icon-sm" aria-hidden />,
+              iconOnly: true,
+            },
+            {
+              value: "columns",
+              label: t("Side by side"),
+              icon: <SplitSquare className="icon-sm" aria-hidden />,
+              iconOnly: true,
+            },
+            {
+              value: "inline",
+              label: t("Result only"),
+              icon: <File className="icon-sm" aria-hidden />,
+              iconOnly: true,
+            },
+          ]}
+          onValueChange={(value) => {
+            const next = value as Layout;
+            setLayout(next);
+            try {
+              localStorage.setItem("bycoda.conflictLayout", next);
+            } catch {
+              /* In-memory preference still works. */
+            }
+          }}
+        />
         {layout !== "inline" ? (
           <Button
             variant="ghost"
@@ -307,7 +308,7 @@ export function ConflictLayout({
               }
             }}
           >
-            <Link size={14} />
+            <Link className="icon-sm" />
           </Button>
         ) : null}
         {controls ? (
@@ -333,7 +334,7 @@ export function ConflictLayout({
               disabled={controls.disabled || controls.state.regions.length < 2}
               onClick={() => controls.select(stepConflict(controls.state, -1))}
             >
-              <ChevronUp size={14} />
+              <ChevronUp className="icon-sm" />
             </Button>
             <Button
               variant="ghost"
@@ -345,7 +346,7 @@ export function ConflictLayout({
               disabled={controls.disabled || controls.state.regions.length < 2}
               onClick={() => controls.select(stepConflict(controls.state, 1))}
             >
-              <ChevronDown size={14} />
+              <ChevronDown className="icon-sm" />
             </Button>
           </div>
         ) : null}
@@ -585,7 +586,7 @@ function ConflictSourcePane({
                 if (view) openSearchPanel(view);
               }}
             >
-              <Search size={14} />
+              <Search className="icon-sm" />
             </Button>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { indentWithTab, redo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { openSearchPanel } from "@codemirror/search";
@@ -496,8 +497,6 @@ export function NoteMarkdownToolbar({
           motion="none"
           key={command}
           type="button"
-          title={label}
-          aria-label={label}
           onClick={() => run((view) => runMarkdownCommand(view, command))}
         >
           <Icon className="icon-sm" />
@@ -522,15 +521,14 @@ export function NoteMarkdownToolbar({
               anchor={moreRef}
               align="end"
               onDismiss={() => setExpanded(false)}
-              role="dialog"
+              kind="dialog"
+              autoFocus={false}
               aria-label={t("Markdown formatting")}
               className="flex max-h-96 w-60 flex-col gap-2 overflow-y-auto p-2"
             >
               {TOOLBAR_GROUPS.map((group) => (
                 <section key={group.label} aria-label={t(group.label)}>
-                  <h3 className="px-2 py-1 text-ui-caption font-medium text-(--ui-text-secondary)">
-                    {t(group.label)}
-                  </h3>
+                  <SectionLabel className="px-2">{t(group.label)}</SectionLabel>
                   <div className="grid grid-cols-2 gap-0.5">
                     {TOOLBAR.filter((item) => group.commands.includes(item.command)).map(
                       ({ command, label, icon: Icon }) => (
@@ -562,8 +560,7 @@ export function NoteMarkdownToolbar({
             label={t("Find and replace")}
             motion="none"
             type="button"
-            title={t("Find ({p0}F) · Replace ({p1}H)", { p0: MOD, p1: MOD })}
-            aria-label={t("Find and replace")}
+            shortcut="Mod+F / Mod+H"
             onClick={() => run(openSearchPanel)}
           >
             <Search className="icon-sm" />
@@ -577,8 +574,7 @@ export function NoteMarkdownToolbar({
         label={t("Insert image")}
         motion="none"
         type="button"
-        title={t("Insert image · or paste ({p0}V) / drop one", { p0: MOD })}
-        aria-label={t("Insert image")}
+        tooltip={t("Insert image · or paste ({p0}V) / drop one", { p0: MOD })}
         loading={imageBusy}
         onClick={onInsertImage}
       >

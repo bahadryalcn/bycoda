@@ -361,7 +361,7 @@
   cursor: not-allowed;
 }
 .settings-row[data-disabled] > :is(.settings-row-label, .settings-row-control) {
-  opacity: var(--ui-disabled-opacity, 0.5);
+  opacity: var(--ui-disabled-opacity);
 }
 .settings-description {
   color: var(--ui-text-secondary);

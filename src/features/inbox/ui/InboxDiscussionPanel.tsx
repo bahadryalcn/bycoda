@@ -1,5 +1,8 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Sash } from "../../../shared/ui/Sash";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { X, RotateCcw } from "../../../shared/ui/icons";
@@ -71,46 +74,52 @@ export function InboxDiscussionPanel({
       aria-label={t("Ask about {p0}", { p0: inboxItemRef(item) })}
       className="inbox-discussion-panel relative flex min-h-0 shrink-0 flex-col border-l border-(--ui-pane-border)"
     >
-      <div
-        {...resize.separatorProps}
-        aria-label={t("Resize discussion")}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
-        className="inbox-discussion-resizer absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize"
+      <Sash
+        {...resize.sashProps}
+        appearance="hidden"
+        label={t("Resize discussion")}
+        className="inbox-discussion-resizer absolute inset-y-0 -left-px"
       />
-      <header className="flex h-11 shrink-0 items-center border-b border-(--ui-tone-neutral-border) px-3">
-        <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium">
-          {t("Ask · ")}
-          {inboxItemRef(item)}
-        </span>
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Restart conversation")}
-          disabled={loading}
-          onClick={() => {
-            const generation = ++request.current;
-            setLoading(true);
-            setError(null);
-            void onRestart(item)
-              .then((sessionId) => {
-                if (generation === request.current && host.current)
-                  onMount({ sessionId, host: host.current });
-              })
-              .catch((reason) => {
-                if (generation === request.current) setError(String(reason));
-              })
-              .finally(() => {
-                if (generation === request.current) setLoading(false);
-              });
-          }}
-        >
-          <RotateCcw className="icon-sm" />
-        </Button>
-        <Button variant="ghost" iconOnly label={t("Close panel")} onClick={onClose}>
-          <X className="icon-sm" />
-        </Button>
-      </header>
+      <PaneHeader
+        titleAs="div"
+        title={
+          <>
+            {t("Ask · ")}
+            {inboxItemRef(item)}
+          </>
+        }
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Restart conversation")}
+              disabled={loading}
+              onClick={() => {
+                const generation = ++request.current;
+                setLoading(true);
+                setError(null);
+                void onRestart(item)
+                  .then((sessionId) => {
+                    if (generation === request.current && host.current)
+                      onMount({ sessionId, host: host.current });
+                  })
+                  .catch((reason) => {
+                    if (generation === request.current) setError(String(reason));
+                  })
+                  .finally(() => {
+                    if (generation === request.current) setLoading(false);
+                  });
+              }}
+            >
+              <RotateCcw className="icon-sm" />
+            </Button>
+            <Button variant="ghost" iconOnly label={t("Close panel")} onClick={onClose}>
+              <X className="icon-sm" />
+            </Button>
+          </>
+        }
+      />
       {error ? (
         <Alert tone="danger" role="alert">
           <p>{error}</p>
@@ -119,11 +128,7 @@ export function InboxDiscussionPanel({
           </Button>
         </Alert>
       ) : null}
-      {loading ? (
-        <p role="status" className="p-3 text-ui-caption text-(--ui-text-secondary)">
-          {t("Loading…")}
-        </p>
-      ) : null}
+      {loading ? <LoadingText className="p-3" /> : null}
       <div ref={host} className="flex min-h-0 min-w-0 flex-1 flex-col" />
     </aside>
   );

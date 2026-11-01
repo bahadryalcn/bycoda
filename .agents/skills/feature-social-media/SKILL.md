@@ -274,3 +274,13 @@ provider/platform/account contact, no build or install.
   inherit choice). React Compiler lint clean in `src/features/social`.
 - Evidence: `temp/verification/vis-social*/`; social.spec 52/52 (private build).
   Live provider/platform and native app not exercised.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Social (`src/features/social/**`), from `HANDOFF-w2-tools.md` (sub-agent F). Existing `social.spec.ts` was not run (off-limits).
+
+- Done: blanket `input/textarea/select` rules removed from `social.css` and `social-programs.css`; status variables to `--ui-tone-*-fg`; `SocialView` header on `PaneHeader`; eleven `type="number"` fields to `NumberField`; date/time fields on `DateTimeField` in PlanSuggestion, ProgramSetupForm, CampaignComposer, SocialManagement and SocialHistory (explicit `Number.isFinite(startsAt)` submit guard); 17 `role="alert"` paragraphs to `InlineError`; `Notice kind="loading"` to `LoadingText`.
+- Left: SocialView nav and automation-mode switchers stay buttons (unit tests assert `aria-current`; `social.spec.ts` uses `.social-tabs`); SocialBrowserWorkspace birth date stays a native date field (the picker pages month by month); ProgramDetailPanel reschedule needs a "Reschedule" button first; `socialShared.tsx` `createPortal` into the Modal footer/content slot.
+- Unverified: `tests/browser/social.spec.ts` needs shared field selectors for time/datetime inputs; no screenshots or native run.

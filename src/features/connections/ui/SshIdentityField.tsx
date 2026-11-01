@@ -89,7 +89,7 @@ export function SshIdentityField({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-content">{t("SSH key")}</span>
+        <span className="text-ui-caption font-medium text-content">{t("SSH key")}</span>
         <Button
           variant="ghost"
           iconOnly
@@ -116,7 +116,7 @@ export function SshIdentityField({
         options={[{ value: "", label: t("SSH agent and default keys") }, ...options]}
       />
       {value ? (
-        <p className="break-all text-xs text-(--ui-text-muted)" title={value}>
+        <p className="break-all text-ui-caption text-(--ui-text-muted)" title={value}>
           {value}
         </p>
       ) : null}
@@ -181,7 +181,7 @@ export function SshIdentityField({
           </Button>
         </Alert>
       ) : null}
-      <details open={failed || pickerError} className="text-xs text-(--ui-text-muted)">
+      <details open={failed || pickerError} className="text-ui-caption text-(--ui-text-muted)">
         <summary className="cursor-pointer py-1">{t("Use a key file path")}</summary>
         <TextField
           label={pathLabel}
@@ -194,7 +194,7 @@ export function SshIdentityField({
         />
       </details>
       {selectedKey ? (
-        <details className="text-xs text-(--ui-text-muted)">
+        <details className="text-ui-caption text-(--ui-text-muted)">
           <summary className="cursor-pointer py-1">{t("Key details")}</summary>
           <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 py-2">
             <dt>{t("Key type")}</dt>

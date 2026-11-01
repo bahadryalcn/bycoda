@@ -7,7 +7,7 @@ export function ExternalEditorIcon({ id }: { id: string }) {
     return (
       <svg
         viewBox="0 0 24 24"
-        className={`size-4 ${id === "vscode" ? "text-info" : "text-success"}`}
+        className={`size-4 ${id === "vscode" ? "text-(--ui-tone-info-fg)" : "text-(--ui-tone-success-fg)"}`}
         fill="currentColor"
         aria-hidden="true"
       >
@@ -19,10 +19,10 @@ export function ExternalEditorIcon({ id }: { id: string }) {
     return (
       <span
         aria-hidden="true"
-        className="grid size-4 place-items-center rounded-sm border border-[var(--color-stroke)] bg-[var(--ui-surface-hover)] text-[8px] font-bold text-content"
+        className="grid size-4 place-items-center rounded-sm border border-(--ui-pane-border) bg-(--ui-fill-subtle) text-ui-micro font-bold text-content"
       >
         {jetbrains[id as keyof typeof jetbrains]}
       </span>
     );
-  return <CodeBlock className="size-4 text-accent" />;
+  return <CodeBlock className="icon-md text-(--ui-tone-accent-fg)" />;
 }

@@ -1,5 +1,6 @@
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useState } from "react";
 import { MessageSquarePlus, X } from "../../../shared/ui/icons";
@@ -52,12 +53,11 @@ export function DiffCommentComposer({
         }}
       >
         <div className="mb-1.5 flex items-center gap-2 px-0.5">
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--ui-text-secondary)]"
-            title={location}
-          >
-            {location}
-          </span>
+          <Tooltip label={location}>
+            <span className="min-w-0 flex-1 truncate font-mono text-ui-caption text-(--ui-text-secondary)">
+              {location}
+            </span>
+          </Tooltip>
           <Button
             size="sm"
             iconOnly
@@ -65,18 +65,18 @@ export function DiffCommentComposer({
             variant="ghost"
             motion="none"
             type="button"
-            title={t("Cancel comment")}
-            aria-label={t("Cancel comment")}
             onClick={onDismiss}
           >
-            <X className="size-3" strokeWidth={1.75} />
+            <X className="icon-xs" strokeWidth={1.75} />
           </Button>
         </div>
         <TextareaField
           hideLabel
           label=""
           autoFocus
-          rows={3}
+          minRows={3}
+          maxRows={8}
+          autosize
           value={comment}
           onChange={(event) => setComment(event.target.value)}
           onKeyDown={(event) => {
@@ -86,10 +86,10 @@ export function DiffCommentComposer({
             }
           }}
           placeholder={t("Leave a comment…")}
-          className="max-h-40 min-h-18 w-full resize-y leading-5"
+          className="w-full"
         />
         <div className="mt-2 flex items-center justify-between gap-3">
-          <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+          <span className="text-ui-caption text-(--ui-text-secondary)">
             {MOD}
             {t("↩ to add")}
           </span>
@@ -101,7 +101,7 @@ export function DiffCommentComposer({
             disabled={!comment.trim()}
             className="inline-flex items-center gap-1.5 disabled:cursor-default"
           >
-            <MessageSquarePlus className="size-3.5" strokeWidth={1.75} />
+            <MessageSquarePlus className="icon-sm" strokeWidth={1.75} />
             {t("Add to chat")}
           </Button>
         </div>

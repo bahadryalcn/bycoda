@@ -38,16 +38,18 @@ export function ColorSwatchRow({
   colors: readonly string[];
   labels?: readonly string[];
   colorIndex: number | null | undefined;
-  customColor: string | null | undefined;
-  customPickerOpen: boolean;
+  /** The saved custom colour. Omit when the row has no custom option. */
+  customColor?: string | null | undefined;
+  customPickerOpen?: boolean;
   customHighlighted?: boolean;
   onPickIndex: (index: number) => void;
+  /** Opens the custom picker. Without it the row shows the preset swatches only: no custom button. */
   onToggleCustom?: () => void;
   /** External placement of the row (for example a grid of swatches); colours stay internal. */
   className?: string;
 }) {
   const t = useT();
-  const pipetteActive = customHighlighted ?? (customColor != null || customPickerOpen);
+  const pipetteActive = customHighlighted ?? (customColor != null || !!customPickerOpen);
   return (
     <div className={className ? `${styles.swatchRow} ${className}` : styles.swatchRow}>
       {colors.map((color, index) => {
@@ -73,30 +75,32 @@ export function ColorSwatchRow({
           </button>
         );
       })}
-      <button
-        type="button"
-        title={t("Custom color")}
-        aria-label={t("Custom color")}
-        aria-expanded={customPickerOpen}
-        aria-pressed={customColor != null}
-        data-selected={pipetteActive || undefined}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={onToggleCustom}
-        className={styles.swatch}
-      >
-        <span
-          className={[styles.dot, customColor ? undefined : styles.spectrum]
-            .filter(Boolean)
-            .join(" ")}
-          style={customColor ? { background: customColor } : undefined}
+      {onToggleCustom ? (
+        <button
+          type="button"
+          title={t("Custom color")}
+          aria-label={t("Custom color")}
+          aria-expanded={customPickerOpen}
+          aria-pressed={customColor != null}
+          data-selected={pipetteActive || undefined}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onToggleCustom}
+          className={styles.swatch}
         >
-          {!customColor ? (
-            <Pipette className={styles.glyph} strokeWidth={2.25} aria-hidden="true" />
-          ) : pipetteActive ? (
-            <Check className={styles.glyph} strokeWidth={3} aria-hidden="true" />
-          ) : null}
-        </span>
-      </button>
+          <span
+            className={[styles.dot, customColor ? undefined : styles.spectrum]
+              .filter(Boolean)
+              .join(" ")}
+            style={customColor ? { background: customColor } : undefined}
+          >
+            {!customColor ? (
+              <Pipette className={styles.glyph} strokeWidth={2.25} aria-hidden="true" />
+            ) : pipetteActive ? (
+              <Check className={styles.glyph} strokeWidth={3} aria-hidden="true" />
+            ) : null}
+          </span>
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -10,23 +10,8 @@
   pointer-events: none;
 }
 
-.notification-sheet {
-  inset-block: 40px 32px;
-  inline-size: min(420px, 100%);
-}
-.notification-sheet-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 16px 4px;
-}
-/* Tabs are separated from the list by spacing, not a rule. */
-.notification-sheet-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 0 16px 8px;
-}
+/* The sheet frame, placement, header, tabs and entrance are the shared Sheet and Tabs; this class
+   only scopes the flat row anatomy below. */
 .notification-sheet-list {
   min-block-size: 0;
   flex: 1;
@@ -47,19 +32,14 @@
   animation: none;
   border: 0;
   border-radius: var(--ui-radius-card);
-  background: transparent;
+  /* Colour only: the ActionHost row paints its hover and press as background images. */
+  background-color: transparent;
   box-shadow: none;
   backdrop-filter: none;
 }
 .notification-request-body {
   align-items: stretch;
   gap: 4px;
-}
-@media (hover: hover) and (pointer: fine) {
-  .notification-sheet .approval-toast:hover,
-  .notification-sheet .notification-history-item:hover {
-    background: var(--ui-surface-hover);
-  }
 }
 .notification-request-preview {
   display: -webkit-box;
@@ -141,7 +121,7 @@
 }
 .notification-history-details summary {
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--ui-radius-control);
   color: var(--ui-tone-neutral-fg);
   font-size: var(--ui-font-secondary);
   line-height: 1.5;
@@ -189,31 +169,8 @@
   gap: 8px;
   padding: 12px;
 }
-@media (hover: hover) and (pointer: fine) {
-  .notification-history-details summary:hover {
-    background: var(--ui-surface-hover);
-  }
-}
-.notification-history-details summary:active {
-  background: var(--ui-surface-pressed);
-}
 @media (prefers-reduced-motion: reduce) {
   .approval-toast {
     animation: none;
-  }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .notification-sheet {
-    animation: notification-sheet-enter var(--motion-sheet-duration) var(--motion-ease-out);
-  }
-  @keyframes notification-sheet-enter {
-    from {
-      opacity: 0;
-      translate: var(--motion-sheet-distance) 0;
-    }
-    to {
-      opacity: 1;
-      translate: 0 0;
-    }
   }
 }

@@ -240,10 +240,9 @@ export function ToolNavigation() {
               onPointerEnter={() => preloadToolSurface(tool)}
               onFocus={() => preloadToolSurface(tool)}
               tabIndex={navigation.active === tool ? 0 : -1}
-              title={t(labels[tool])}
               onClick={() => navigation.onSelect(tool)}
             >
-              <Icon className="size-3.5 shrink-0" aria-hidden />
+              <Icon className="icon-sm shrink-0" aria-hidden />
               <span>{t(labels[tool])}</span>
               {tool === "servers" && sshReviews.intents.length ? (
                 <span aria-label={t("Pending SSH reviews")}>{sshReviews.intents.length}</span>
@@ -262,8 +261,6 @@ export function ToolNavigation() {
           disabled={opening !== null}
           loading={opening === "single"}
           onClick={() => void open(false)}
-          aria-label={t("Open in new window")}
-          title={t("Open in new window")}
         >
           <AppWindow className="icon-sm" aria-hidden />
         </Button>
@@ -276,7 +273,7 @@ export function ToolNavigation() {
           startIcon={<DashboardSquare className="icon-sm" aria-hidden />}
           onClick={() => void open(true)}
           aria-label={t("Open all tools in one window")}
-          title={t("Open all tools in one window")}
+          tooltip={t("Open all tools in one window")}
         >
           <span className="tool-action-label">{t("All tools in one window")}</span>
         </Button>

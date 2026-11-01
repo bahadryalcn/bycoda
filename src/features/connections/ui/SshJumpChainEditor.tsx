@@ -77,7 +77,7 @@ export function SshJumpChainEditor({
         {t("Add jump host")}
       </Button>
       {value.length > 1 ? (
-        <p className="text-xs text-(--ui-text-muted)">
+        <p className="text-ui-caption text-(--ui-text-muted)">
           {t("Connections follow this order. Each hop requires its own trusted host key.")}
         </p>
       ) : null}

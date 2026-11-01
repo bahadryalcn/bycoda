@@ -1,10 +1,7 @@
 import { MorphSelect } from "../../../shared/ui/MorphSelect";
 import { Button } from "../../../shared/ui/Button";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import {
-  clampActiveIndex,
-  useKeyedActiveIndex,
-} from "../../../shared/hooks/useKeyedActiveIndex";
+import { clampActiveIndex, useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { useOpenSessionKey } from "./useOpenSessionKey";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Check, ChevronDown, ChevronRight, Gauge, Zap } from "../../../shared/ui/icons";
@@ -171,8 +168,10 @@ export function ModelPicker({
   const refreshSource = useStableCallback(source.refresh);
   const accountsSnapshot = useSyncExternalStore(
     subscribeProviderAccounts,
-    () => source.accounts === undefined ? accountChoicesSnapshot() : JSON.stringify(source.accounts),
-    () => source.accounts === undefined ? accountChoicesSnapshot() : JSON.stringify(source.accounts),
+    () =>
+      source.accounts === undefined ? accountChoicesSnapshot() : JSON.stringify(source.accounts),
+    () =>
+      source.accounts === undefined ? accountChoicesSnapshot() : JSON.stringify(source.accounts),
   );
   const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   const availabilityVersion = useSyncExternalStore(
@@ -228,12 +227,15 @@ export function ModelPicker({
     ...current,
     accountId: accountChoices ? currentAccountId : undefined,
   });
-  const currentLabel = accountChoices ? modelAccountLabel(current, currentAccountId, source.accounts) : current.name;
+  const currentLabel = accountChoices
+    ? modelAccountLabel(current, currentAccountId, source.accounts)
+    : current.name;
   // The account is part of the identity only while there is a choice between
   // accounts; a lone default account stays out of the trigger.
   const triggerAccountLabel = useMemo(() => {
     void accountsSnapshot;
-    if (!accountChoices || !currentAccountId || !supportsProviderAccounts(harness)) return undefined;
+    if (!accountChoices || !currentAccountId || !supportsProviderAccounts(harness))
+      return undefined;
     // A saved account that no longer exists is shown honestly instead of a blank label.
     if (source.accounts !== undefined) {
       const accounts = source.accounts[harness] ?? [];
@@ -243,11 +245,17 @@ export function ModelPicker({
     }
     const accounts = providerAccounts(harness);
     const known = accounts.some((account) => account.id === currentAccountId);
-    if (!known && currentAccountId !== defaultProviderAccountId(harness) && currentAccountId !== "default")
+    if (
+      !known &&
+      currentAccountId !== defaultProviderAccountId(harness) &&
+      currentAccountId !== "default"
+    )
       return t("Removed account");
     if (accounts.length <= 1) return undefined;
     const saved = accounts.find((account) => account.id === currentAccountId);
-    return saved ? accountDisplayLabel(accounts, saved) : providerAccountLabel(harness, currentAccountId);
+    return saved
+      ? accountDisplayLabel(accounts, saved)
+      : providerAccountLabel(harness, currentAccountId);
   }, [accountChoices, accountsSnapshot, currentAccountId, harness, source.accounts, t]);
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
@@ -583,9 +591,7 @@ export function ModelPicker({
   const toggleFavorite = (id: string) => {
     // Persist once from the event, not from inside a state updater.
     const previous = favoritesRef.current;
-    const next = previous.includes(id)
-      ? previous.filter((item) => item !== id)
-      : [...previous, id];
+    const next = previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id];
     favoritesRef.current = next;
     setFavorites(next);
     saveFavoriteModels(next);
@@ -703,9 +709,7 @@ export function ModelPicker({
     <>
       <Button
         size={field ? "md" : "sm"}
-        className={
-          field ? "model-picker-field-trigger" : "w-auto max-w-full min-w-0 shrink-0"
-        }
+        className={field ? "model-picker-field-trigger" : "w-auto max-w-full min-w-0 shrink-0"}
         data-model-picker-presentation={presentation}
         variant="ghost"
         align={field ? "start" : undefined}
@@ -713,7 +717,7 @@ export function ModelPicker({
         ref={button}
         type="button"
         shortcut={hotkeys ? switchShortcut : null}
-        title={t("{p0} · Recent models: right-click or {p1}.", {
+        tooltip={t("{p0} · Recent models: right-click or {p1}.", {
           p0: triggerTitle,
           p1: MOD,
         })}
@@ -749,7 +753,10 @@ export function ModelPicker({
         {triggerAccountLabel && !inheritSelected ? (
           <>
             {" "}
-            <span data-model-account className="min-w-0 max-w-24 truncate text-(--ui-text-secondary)">
+            <span
+              data-model-account
+              className="min-w-0 max-w-24 truncate text-(--ui-text-secondary)"
+            >
               {triggerAccountLabel}
             </span>
           </>
@@ -762,14 +769,14 @@ export function ModelPicker({
         {triggerFastOn ? (
           <Zap
             data-model-fast
-            className="size-3 shrink-0 text-(--ui-text-secondary)"
+            className="icon-xs shrink-0 text-(--ui-text-secondary)"
             fill="currentColor"
             strokeWidth={1.75}
             aria-hidden
           />
         ) : null}
         <ChevronDown
-          className={`size-3 shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""} ${
+          className={`icon-xs shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""} ${
             field ? "model-picker-field-chevron" : ""
           }`}
           strokeWidth={1.75}
@@ -811,6 +818,7 @@ export function ModelPicker({
 
       {open && !hideSettings ? (
         <>
+          {/* Kept as Popover role=menu: single-level DropdownMenu cannot host hover flyouts or a second control per row. */}
           <Popover
             anchor={button}
             side={field ? "bottom" : "top"}
@@ -846,7 +854,7 @@ export function ModelPicker({
                     type="button"
                     role="menuitemradio"
                     aria-checked={inheritSelected}
-                    title={inherit.label}
+                    tooltip={inherit.label}
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => {
                       setActive(index);
@@ -854,12 +862,14 @@ export function ModelPicker({
                     }}
                     onClick={() => pickInherit()}
                   >
-                    <span className={`min-w-0 flex-1 truncate ${inheritSelected ? "font-medium" : ""}`}>
+                    <span
+                      className={`min-w-0 flex-1 truncate ${inheritSelected ? "font-medium" : ""}`}
+                    >
                       {inherit.label}
                     </span>
                     {inheritSelected ? (
                       <Check
-                        className="size-3.5 shrink-0 text-(--ui-tone-neutral-fg)"
+                        className="icon-sm shrink-0 text-(--ui-tone-neutral-fg)"
                         strokeWidth={2}
                       />
                     ) : (
@@ -898,7 +908,7 @@ export function ModelPicker({
                     aria-haspopup="menu"
                     aria-expanded={highlighted && showSubmenu}
                     // Long model and account names truncate here; the tooltip keeps the full identity.
-                    title={triggerTitle}
+                    tooltip={triggerTitle}
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => {
                       setActive(index);
@@ -921,7 +931,7 @@ export function ModelPicker({
                       ) : null}
                     </span>
                     <ChevronRight
-                      className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+                      className="icon-sm shrink-0 text-(--ui-text-secondary)"
                       strokeWidth={1.75}
                     />
                   </Button>
@@ -934,69 +944,70 @@ export function ModelPicker({
               return (
                 <Fragment key={setting.id}>
                   {caption}
-                <Button
-                  className="w-full text-left"
-                  fullWidth
-                  selected={highlighted}
-                  variant="item"
-                  ref={highlighted ? setActiveRow : undefined}
-                  data-model-control-index={index}
-                  type="button"
-                  role={isToggle ? "menuitemcheckbox" : "menuitem"}
-                  disabled={settingDisabled(setting)}
-                  aria-checked={isToggle ? value === "true" : undefined}
-                  aria-haspopup={isToggle ? undefined : "menu"}
-                  aria-expanded={!isToggle && highlighted ? showSubmenu : undefined}
-                  title={
-                    setting.id === "advisor" && setting.description
-                      ? t(setting.description)
-                      : setting.description
-                  }
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => {
-                    setActive(index);
-                    showEntrySubmenu(entry);
-                  }}
-                  onClick={() => {
-                    if (isToggle) {
-                      setSetting(setting, value === "true" ? "false" : "true");
-                    } else {
-                      showEntrySubmenu(entry);
+                  <Button
+                    className="w-full text-left"
+                    fullWidth
+                    selected={highlighted}
+                    variant="item"
+                    ref={highlighted ? setActiveRow : undefined}
+                    data-model-control-index={index}
+                    type="button"
+                    role={isToggle ? "menuitemcheckbox" : "menuitem"}
+                    disabled={settingDisabled(setting)}
+                    aria-checked={isToggle ? value === "true" : undefined}
+                    aria-haspopup={isToggle ? undefined : "menu"}
+                    aria-expanded={!isToggle && highlighted ? showSubmenu : undefined}
+                    tooltip={
+                      setting.id === "advisor" && setting.description
+                        ? t(setting.description)
+                        : setting.description
                     }
-                  }}
-                >
-                  <span className="min-w-0 flex-1 truncate">{t(settingLabel(setting))}</span>
-                  {isToggle ? (
-                    <>
-                      <span
-                        className={`shrink-0 ${
-                          value === "true"
-                            ? "font-medium text-(--ui-tone-neutral-fg)"
-                            : "text-(--ui-text-secondary)"
-                        }`}
-                      >
-                        {value === "true" ? t("On") : t("Off")}
-                      </span>
-                      <span className="size-3.5 shrink-0" aria-hidden />
-                    </>
-                  ) : (
-                    <>
-                      <span className="min-w-0 truncate text-right text-(--ui-text-secondary)">
-                        {t(settingValueLabel(setting, values))}
-                      </span>
-                      <ChevronRight
-                        className="size-3.5 shrink-0 text-(--ui-text-secondary)"
-                        strokeWidth={1.75}
-                      />
-                    </>
-                  )}
-                </Button>
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => {
+                      setActive(index);
+                      showEntrySubmenu(entry);
+                    }}
+                    onClick={() => {
+                      if (isToggle) {
+                        setSetting(setting, value === "true" ? "false" : "true");
+                      } else {
+                        showEntrySubmenu(entry);
+                      }
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{t(settingLabel(setting))}</span>
+                    {isToggle ? (
+                      <>
+                        <span
+                          className={`shrink-0 ${
+                            value === "true"
+                              ? "font-medium text-(--ui-tone-neutral-fg)"
+                              : "text-(--ui-text-secondary)"
+                          }`}
+                        >
+                          {value === "true" ? t("On") : t("Off")}
+                        </span>
+                        <span className="size-3.5 shrink-0" aria-hidden />
+                      </>
+                    ) : (
+                      <>
+                        <span className="min-w-0 truncate text-right text-(--ui-text-secondary)">
+                          {t(settingValueLabel(setting, values))}
+                        </span>
+                        <ChevronRight
+                          className="icon-sm shrink-0 text-(--ui-text-secondary)"
+                          strokeWidth={1.75}
+                        />
+                      </>
+                    )}
+                  </Button>
                 </Fragment>
               );
             })}
           </Popover>
 
           {showSubmenu && submenu.kind === "setting" ? (
+            // Kept as Popover role=menu: the setting flyout is a hover/ArrowRight child of the model menu.
             <Popover
               key={submenu.setting.id}
               anchor={activeRow}
@@ -1033,7 +1044,7 @@ export function ModelPicker({
                     </span>
                     {selected ? (
                       <Check
-                        className="size-3.5 shrink-0 text-(--ui-tone-neutral-fg)"
+                        className="icon-sm shrink-0 text-(--ui-tone-neutral-fg)"
                         strokeWidth={2}
                       />
                     ) : (
@@ -1068,6 +1079,7 @@ export function ModelPicker({
       ) : null}
 
       {recentOpen ? (
+        // Kept as Popover role=menu: anchored to the picker button with its own aria-activedescendant keyboard, not a DropdownMenu trigger.
         <Popover
           anchor={button}
           side="top"
@@ -1098,7 +1110,7 @@ export function ModelPicker({
                 role="menuitemradio"
                 aria-checked={selected}
                 disabled={disabled}
-                title={disabled ? harnessUnavailableHint(item.harness) : undefined}
+                tooltip={disabled ? harnessUnavailableHint(item.harness) : undefined}
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => setRecentActive(index)}
                 onClick={() => pickModel(item)}
@@ -1112,7 +1124,7 @@ export function ModelPicker({
                   </span>
                 </span>
                 {selected ? (
-                  <Check className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
+                  <Check className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
                 ) : null}
               </Button>
             );
@@ -1188,7 +1200,7 @@ function TogglePill({
     <Button
       variant="ghost"
       type="button"
-      title={`${setting.label}: ${on ? "On" : "Off"}`}
+      tooltip={`${setting.label}: ${on ? "On" : "Off"}`}
       aria-label={`${setting.label}: ${on ? "On" : "Off"}`}
       aria-pressed={on}
       data-model-control
@@ -1229,9 +1241,9 @@ function SelectPill({
             value: option.value,
             label: t(option.label),
             icon: isEffortSetting(item) ? (
-              <Gauge className="size-3.5" />
+              <Gauge className="icon-sm" />
             ) : item.id === "serviceTier" ? (
-              <Zap className="size-3.5" />
+              <Zap className="icon-sm" />
             ) : undefined,
           }))}
           onChange={(value) => onSettingsChange({ ...values, [item.id]: value })}

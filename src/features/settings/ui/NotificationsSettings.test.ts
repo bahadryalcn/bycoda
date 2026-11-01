@@ -51,7 +51,7 @@ it("keeps event choices and schedule findable while application alerts are off",
     expect(control!.getAttribute("aria-checked")).toBe("true");
   }
   expect(container.querySelector('[data-setting-id="notification-event-finished"]')?.getAttribute("data-dependent")).toBeTruthy();
-  expect(container.querySelector('[aria-label^="Daily summary time:"]')).not.toBeNull();
+  expect(container.querySelector('input[aria-label="Daily summary time"]')).not.toBeNull();
   expect(localStorage.getItem("bycoda.notifications.events.v1")).toBeNull();
 });
 it("reports denied permission and a failed system-settings action", async () => {
@@ -98,7 +98,9 @@ it("preserves event choices when desktop delivery is paused and resumed", async 
 it("retains a valid non-hour schedule value instead of snapping it to a listed hour", async () => {
   localStorage.setItem("bycoda.notifications.dailySummary.time", "09:35");
   await act(async () => root.render(createElement(NotificationAlerts)));
-  expect(container.querySelector('[aria-label^="Daily summary time:"]')?.textContent).toContain("09:35");
+  expect(
+    container.querySelector<HTMLInputElement>('input[aria-label="Daily summary time"]')?.value,
+  ).toBe("09:35");
   expect(localStorage.getItem("bycoda.notifications.dailySummary.time")).toBe("09:35");
 });
 

@@ -61,6 +61,9 @@
   color: var(--ui-tone-danger-fg);
   font-size: var(--ui-font-caption);
 }
+.social-tag-failure {
+  grid-column: 2 / -1;
+}
 .social-tag-segments {
   margin: 0;
   font-size: var(--ui-font-caption);

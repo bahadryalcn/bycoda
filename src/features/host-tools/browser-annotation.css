@@ -13,13 +13,13 @@
   cursor: crosshair;
 }
 .host-browser-surface img:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: calc(var(--ui-focus-offset) * -1);
 }
 .host-browser-highlight {
   position: absolute;
   pointer-events: none;
-  border: 2px dashed var(--color-accent);
+  border: 2px dashed var(--ui-tone-accent-solid);
   background: var(--ui-annotation-highlight);
   box-sizing: border-box;
 }
@@ -54,12 +54,12 @@
 }
 .browser-annotation-details summary:focus-visible,
 .browser-annotation-chip > summary:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 .browser-annotation-details summary:active,
 .browser-annotation-chip > summary:active {
-  color: var(--color-accent);
+  color: var(--ui-tone-accent-fg);
 }
 .browser-annotation-chip {
   font-size: var(--ui-font-micro);
@@ -85,6 +85,6 @@
 @media (hover: hover) and (pointer: fine) {
   .browser-annotation-details summary:hover,
   .browser-annotation-chip > summary:hover {
-    color: var(--color-accent);
+    color: var(--ui-tone-accent-fg);
   }
 }

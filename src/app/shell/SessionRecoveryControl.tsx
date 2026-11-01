@@ -1,5 +1,6 @@
 import { Badge } from "../../shared/ui/Badge";
 import { Button } from "../../shared/ui/Button";
+import { InlineError } from "../../shared/ui/InlineError";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { useT } from "../../shared/i18n";
 import { useRef, useState, useSyncExternalStore } from "react";
@@ -57,13 +58,14 @@ export function SessionRecoveryControl({
         motion="none"
         size="sm"
         type="button"
-        title={`${label} (${count})`}
+        tooltip={`${label} (${count})`}
+        tooltipSide="right"
         aria-label={`${label} (${count})`}
         className={`recovery-rail-control flex min-w-0 flex-1 items-center justify-start ${RAIL_SECTION_LABEL}`}
         disabled={pending}
         onClick={onOpen}
       >
-        <Clock className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden="true" />
+        <Clock className="icon-sm shrink-0" aria-hidden="true" />
         <span className="recovery-rail-label min-w-0 flex-1 truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden">
           {label}
         </span>
@@ -98,30 +100,23 @@ export function SessionRecoveryControl({
           type="button"
           className="recovery-rail-clear recovery-remove"
           reveal={pending || error ? "always" : "interaction"}
-          title={clearLabel}
-          aria-label={clearLabel}
           loading={pending}
           onClick={() => void clear()}
         >
-          <Trash2 className="size-3.5" aria-hidden="true" />
+          <Trash2 className="icon-sm" aria-hidden="true" />
         </InlineAction>
       ) : null}
       {error ? (
-        <span role="alert" className="recovery-rail-error text-xs text-danger">
+        <InlineError className="recovery-rail-error">
           {t("Could not update the recovery list. Try again.")}
-        </span>
+        </InlineError>
       ) : null}
       {saveFailure ? (
-        <span
-          role="alert"
-          className="recovery-rail-error flex flex-wrap items-center gap-1 text-ui-caption text-danger"
-        >
-          {t("Recovery dismissal was not saved.")}
-          <Button
-            variant="ghost"
-            size="sm"
-            loading={pending}
-            onClick={async () => {
+        <InlineError
+          className="recovery-rail-error"
+          retry={{
+            pending,
+            onRetry: async () => {
               if (pendingRef.current) return;
               pendingRef.current = true;
               setPending(true);
@@ -131,11 +126,11 @@ export function SessionRecoveryControl({
                 pendingRef.current = false;
                 setPending(false);
               }
-            }}
-          >
-            {t("Retry")}
-          </Button>
-        </span>
+            },
+          }}
+        >
+          {t("Recovery dismissal was not saved.")}
+        </InlineError>
       ) : null}
     </ActionHost>
   );

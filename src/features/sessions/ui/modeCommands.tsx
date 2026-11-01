@@ -189,14 +189,14 @@ export function ModeCommandPill({ name, onClear }: { name: string; onClear: () =
       className="shrink-0"
       variant="ghost"
       type="button"
-      title={t("Turn off {p0}", { p0: pill.title })}
+      tooltip={t("Turn off {p0}", { p0: pill.title })}
       aria-label={t("Turn off {p0}", { p0: pill.title })}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClear}
     >
       <Icon className="size-3.5" />
       <span className="composer-mode-shimmer">{pill.label}</span>
-      <X className="size-3" />
+      <X className="icon-xs" />
     </Button>
   );
 }

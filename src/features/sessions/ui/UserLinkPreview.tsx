@@ -1,7 +1,8 @@
 import { Badge } from "../../../shared/ui/Badge";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, useT } from "../../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import {
   CircleDot,
   CircleX,
@@ -13,7 +14,8 @@ import {
   GitPullRequestDraft,
   type IconComponent,
 } from "../../../shared/ui/icons";
-import { Popover } from "../../../shared/ui/Popover";
+import { useHoverCard } from "../../../shared/ui/HoverCard";
+import { Skeleton } from "../../../shared/ui/Skeleton";
 import {
   formatRelativeTime,
   githubWorkItem,
@@ -78,34 +80,32 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
   const favicon = faviconFailed ? null : metadata?.faviconDataUrl;
 
   return (
-    <a
-      href={link.url}
-      data-user-link-preview
-      title={link.url}
-      aria-label={t("Open {p0}", { p0: title })}
-      className="user-link-preview group mx-0.5 text-(--ui-tone-info-fg) hover:text-(--ui-tone-info-fg) hover:underline"
-      onClick={(event) => openExternalLink(event, link.url)}
-    >
-      <span className="mr-1 inline-flex size-4 items-center justify-center overflow-hidden rounded bg-(--ui-surface) align-[-0.125em] text-ui-micro font-semibold uppercase text-(--ui-text-secondary)">
-        {favicon ? (
-          <img
-            src={favicon}
-            alt=""
-            draggable={false}
-            className="size-3.5 object-contain"
-            onError={() => setFaviconFailed(true)}
-          />
-        ) : (
-          link.host.charAt(0)
-        )}
-      </span>
-      <span className="user-link-preview-title font-medium group-hover:underline">{title}</span>
-    </a>
+    <Tooltip label={link.url}>
+      <a
+        href={link.url}
+        data-user-link-preview
+        aria-label={t("Open {p0}", { p0: title })}
+        className="user-link-preview group mx-0.5 text-(--ui-tone-info-fg) hover:text-(--ui-tone-info-fg) hover:underline"
+        onClick={(event) => openExternalLink(event, link.url)}
+      >
+        <span className="mr-1 inline-flex size-4 items-center justify-center overflow-hidden rounded bg-(--ui-surface) align-[-0.125em] text-ui-micro font-semibold uppercase text-(--ui-text-secondary)">
+          {favicon ? (
+            <img
+              src={favicon}
+              alt=""
+              draggable={false}
+              className="size-3.5 object-contain"
+              onError={() => setFaviconFailed(true)}
+            />
+          ) : (
+            link.host.charAt(0)
+          )}
+        </span>
+        <span className="user-link-preview-title font-medium group-hover:underline">{title}</span>
+      </a>
+    </Tooltip>
   );
 }
-
-const HOVER_OPEN_DELAY_MS = 220;
-const HOVER_CLOSE_DELAY_MS = 100;
 
 function GithubWorkItemPreview({
   link,
@@ -119,13 +119,8 @@ function GithubWorkItemPreview({
   compact: boolean;
 }) {
   const t = useT();
-  const anchor = useRef<HTMLAnchorElement>(null);
-  const openTimer = useRef<number | null>(null);
-  const closeTimer = useRef<number | null>(null);
   const mounted = useRef(true);
   const requestStarted = useRef(false);
-  const tooltipId = useId();
-  const [open, setOpen] = useState(false);
   const [item, setItem] = useState<GithubWorkItem | null>(() =>
     peekGithubWorkItem(workItem.repo, workItem.kind, workItem.number, cwd || "."),
   );
@@ -140,8 +135,6 @@ function GithubWorkItemPreview({
     mounted.current = true;
     return () => {
       mounted.current = false;
-      if (openTimer.current != null) window.clearTimeout(openTimer.current);
-      if (closeTimer.current != null) window.clearTimeout(closeTimer.current);
     };
   }, []);
 
@@ -176,44 +169,17 @@ function GithubWorkItemPreview({
     });
   }, [cwd, details, item, workItem]);
 
-  const clearOpenTimer = () => {
-    if (openTimer.current == null) return;
-    window.clearTimeout(openTimer.current);
-    openTimer.current = null;
-  };
-  const clearCloseTimer = () => {
-    if (closeTimer.current == null) return;
-    window.clearTimeout(closeTimer.current);
-    closeTimer.current = null;
-  };
-  const showNow = () => {
-    clearOpenTimer();
-    clearCloseTimer();
-    setOpen(true);
-    load();
-  };
-  const showAfterDelay = () => {
-    clearCloseTimer();
-    if (open || openTimer.current != null) return;
-    openTimer.current = window.setTimeout(() => {
-      openTimer.current = null;
-      setOpen(true);
-      load();
-    }, HOVER_OPEN_DELAY_MS);
-  };
-  const hideAfterDelay = () => {
-    clearOpenTimer();
-    clearCloseTimer();
-    closeTimer.current = window.setTimeout(() => {
-      closeTimer.current = null;
-      setOpen(false);
-    }, HOVER_CLOSE_DELAY_MS);
-  };
-  const hideNow = () => {
-    clearOpenTimer();
-    clearCloseTimer();
-    setOpen(false);
-  };
+  // Rested hover or keyboard focus previews the item; opening starts its (cached) load.
+  const hover = useHoverCard({
+    side: "top",
+    align: "start",
+    width: 360,
+    className: "p-3.5 font-sans text-(--ui-tone-neutral-fg)",
+    "aria-label": t("Work item preview"),
+    onOpenChange: (open) => {
+      if (open) load();
+    },
+  });
 
   const kindLabel = workItem.kind === "pr" ? "Pull request" : "Issue";
   const compactKind = workItem.kind === "pr" ? "PR" : "Issue";
@@ -222,7 +188,7 @@ function GithubWorkItemPreview({
   return (
     <>
       <a
-        ref={anchor}
+        {...hover.trigger}
         href={link.url}
         data-user-link-preview
         data-github-work-item-chip={workItem.kind}
@@ -233,22 +199,19 @@ function GithubWorkItemPreview({
           p2: workItem.repo,
           p3: itemTitle ? `: ${itemTitle}` : "",
         })}
-        aria-describedby={open ? tooltipId : undefined}
         className={`group mx-px inline-flex max-w-full items-center gap-1 rounded-md border-0 bg-transparent p-0 text-(--ui-text-secondary) no-underline shadow-none outline-none transition-[color,transform] duration-[140ms] ease-[var(--motion-ease-out)] hover:text-(--ui-tone-neutral-fg) focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color) active:scale-[0.98] motion-reduce:transition-none pb-px ${
-          compact ? "align-middle text-xs leading-4" : "align-[-0.25em] text-ui-micro leading-4"
+          compact
+            ? "align-middle text-ui-caption leading-4"
+            : "align-[-0.25em] text-ui-micro leading-4"
         }`}
-        onMouseEnter={showAfterDelay}
-        onMouseLeave={hideAfterDelay}
-        onFocus={showNow}
-        onBlur={hideNow}
         onClick={(event) => {
-          hideNow();
+          hover.close();
           openExternalLink(event, link.url);
         }}
       >
         <span
           className={` inline-flex shrink-0 items-center font-medium ${
-            compact ? "h-[18px] gap-0.5 rounded-md px-1.5" : "h-5 gap-1 rounded-[5px] px-1.5"
+            compact ? "h-4.5 gap-0.5 rounded-md px-1.5" : "h-5 gap-1 rounded-md px-1.5"
           } ${
             workItem.kind === "pr"
               ? "bg-(--ui-tone-accent-subtle) text-(--ui-tone-accent-fg)"
@@ -256,37 +219,16 @@ function GithubWorkItemPreview({
           }`}
         >
           {workItem.kind === "pr" ? (
-            <GitPullRequest className={compact ? "size-3" : "size-3.5"} aria-hidden="true" />
+            <GitPullRequest className={compact ? "icon-xs" : "icon-sm"} aria-hidden="true" />
           ) : (
-            <CircleDot className={compact ? "size-3" : "size-3.5"} aria-hidden="true" />
+            <CircleDot className={compact ? "icon-xs" : "icon-sm"} aria-hidden="true" />
           )}
           {compactKind} #{workItem.number}
         </span>
       </a>
-      {open ? (
-        <Popover
-          anchor={anchor}
-          side="top"
-          align="start"
-          gap={6}
-          width={360}
-          constrainHeight={false}
-          onDismiss={hideNow}
-          id={tooltipId}
-          role="tooltip"
-          data-github-work-item-popover
-          className="p-3.5 font-sans text-(--ui-tone-neutral-fg)"
-          onMouseEnter={clearCloseTimer}
-          onMouseLeave={hideAfterDelay}
-        >
-          <GithubWorkItemCard
-            parsed={workItem}
-            item={item}
-            details={details}
-            loadState={loadState}
-          />
-        </Popover>
-      ) : null}
+      {hover.card(() => (
+        <GithubWorkItemCard parsed={workItem} item={item} details={details} loadState={loadState} />
+      ))}
     </>
   );
 }
@@ -355,7 +297,7 @@ function GithubWorkItemCard({
       )}
 
       {details?.author || updated ? (
-        <div className="mt-2.5 flex min-w-0 items-center gap-1.5 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+        <div className="mt-2.5 flex min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)">
           {details?.author ? (
             <GithubPerson name={details.author} avatarUrl={details.authorAvatarUrl} />
           ) : null}
@@ -370,8 +312,8 @@ function GithubWorkItemCard({
       ) : null}
 
       {hasBranches ? (
-        <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-(--ui-tone-neutral-solid)/[0.045] px-2 py-1.5 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-          <GitCompare className="size-3.5 shrink-0" aria-hidden="true" />
+        <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-(--ui-tone-neutral-solid)/[0.045] px-2 py-1.5 text-ui-caption text-(--ui-text-secondary)">
+          <GitCompare className="icon-sm shrink-0" aria-hidden="true" />
           <span className="min-w-0 truncate font-mono">
             {details.baseRefName} ← {details.headRefName}
           </span>
@@ -392,7 +334,7 @@ function GithubWorkItemCard({
               </Badge>
             ))}
             {labels.length > 3 ? (
-              <span className="px-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+              <span className="px-1 text-ui-caption text-(--ui-text-secondary)">
                 +{labels.length - 3}
               </span>
             ) : null}
@@ -417,8 +359,8 @@ function GithubWorkItemCard({
         </div>
       ) : null}
 
-      <div className="mt-3 flex items-center gap-1.5 border-t border-(--ui-tone-neutral-border)/[0.07] pt-2 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-        <ExternalLink className="size-3" aria-hidden="true" />
+      <div className="mt-3 flex items-center gap-1.5 border-t border-(--ui-tone-neutral-border)/[0.07] pt-2 text-ui-caption text-(--ui-text-secondary)">
+        <ExternalLink className="icon-xs" aria-hidden="true" />
         {t("Click the chip to open on GitHub")}
       </div>
     </div>
@@ -427,13 +369,7 @@ function GithubWorkItemCard({
 
 function GithubWorkItemCardSkeleton() {
   const t = useT();
-  return (
-    <div aria-label={t("Loading GitHub details")} className="mt-2.5 space-y-2">
-      <div className="h-3 w-4/5 rounded bg-(--ui-surface-raised) motion-safe:animate-pulse" />
-      <div className="h-2 w-full rounded bg-(--ui-tone-neutral-solid)/[0.07] motion-safe:animate-pulse" />
-      <div className="h-2 w-2/3 rounded bg-(--ui-tone-neutral-solid)/[0.07] motion-safe:animate-pulse" />
-    </div>
-  );
+  return <Skeleton lines={3} label={t("Loading GitHub details")} className="mt-2.5" />;
 }
 
 function GithubPerson({ name, avatarUrl }: { name: string; avatarUrl?: string }) {

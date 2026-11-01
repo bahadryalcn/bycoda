@@ -1,3 +1,4 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -156,7 +157,7 @@ export function SessionDirsPicker({
       <Button
         variant="ghost"
         type="button"
-        title={effective.map(prettyCwd).join("\n")}
+        tooltip={effective.map(prettyCwd).join("\n")}
         aria-label={t("Folders for this session")}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -174,7 +175,7 @@ export function SessionDirsPicker({
         className="max-w-40"
       >
         <Folder
-          className={`size-3.5 shrink-0 ${overridden ? "text-(--ui-tone-accent-fg)" : ""}`}
+          className={`icon-sm shrink-0 ${overridden ? "text-(--ui-tone-accent-fg)" : ""}`}
           strokeWidth={1.75}
         />
         <span data-session-dirs-label className="min-w-0 truncate text-ui-micro">
@@ -196,7 +197,7 @@ export function SessionDirsPicker({
           className="flex min-h-0 flex-col p-1.5"
         >
           <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-0.5">
-            <p className="text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
+            <p className="text-ui-caption font-medium text-(--ui-text-secondary)">
               {mode === "project" ? t("Change project") : t("Folders for this session")}
             </p>
             {onProjectChange ? (
@@ -246,31 +247,30 @@ export function SessionDirsPicker({
                   onClick={() => changeProject(path)}
                   className="w-full text-left"
                 >
-                  <Folder className="size-3.5 shrink-0" />
+                  <Folder className="icon-sm shrink-0" />
                   {details}
                   {pathKey(path) === pathKey(project) ? (
-                    <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                    <span className="text-ui-caption text-(--ui-text-secondary)">
                       {t("Current")}
                     </span>
                   ) : null}
                 </Button>
               ) : (
-                <label
-                  key={pathKey(path)}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-(--ui-surface-raised)"
-                >
-                  <Checkbox
-                    checked={effectiveKeys.has(pathKey(path))}
-                    disabled={working || picking || !enabled}
-                    onChange={() => toggle(path)}
-                  />
-                  {details}
-                  {working ? (
-                    <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-                      {t("Working folder")}
-                    </span>
-                  ) : null}
-                </label>
+                <ActionHost key={pathKey(path)} className="rounded-md">
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2 py-1.5">
+                    <Checkbox
+                      checked={effectiveKeys.has(pathKey(path))}
+                      disabled={working || picking || !enabled}
+                      onChange={() => toggle(path)}
+                    />
+                    {details}
+                    {working ? (
+                      <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                        {t("Working folder")}
+                      </span>
+                    ) : null}
+                  </label>
+                </ActionHost>
               );
             })}
             {matching.length === 0 ? (
@@ -285,7 +285,7 @@ export function SessionDirsPicker({
             disabled={picking || !enabled}
             onClick={() => void browse()}
             loading={picking}
-            startIcon={<Plus className="size-3.5 shrink-0" />}
+            startIcon={<Plus className="icon-sm shrink-0" />}
             className="mt-1 text-left"
           >
             {picking ? t("Choosing folders…") : t("Choose from {p0}…", { p0: browserLabel })}

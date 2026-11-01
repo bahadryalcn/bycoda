@@ -1,5 +1,6 @@
 import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select as SharedSelect } from "../../../shared/ui/Select";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n";
@@ -257,6 +258,39 @@ function AddServerModal({
   );
 }
 
+/** A long provider message stays two lines until the reader asks for the rest. */
+function ExpandableWarning({ children }: { children: ReactNode }) {
+  useLocale();
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const text = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const node = text.current;
+    if (!node || expanded) return;
+    const measure = () => setOverflowing(node.scrollHeight > node.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [expanded, children]);
+  return (
+    <SettingsFeedback
+      state="warning"
+      action={
+        overflowing || expanded ? (
+          <Button variant="ghost" size="sm" aria-expanded={expanded} onClick={() => setExpanded((open) => !open)}>
+            {expanded ? t("Show less") : t("Show more")}
+          </Button>
+        ) : undefined
+      }
+    >
+      <span ref={text} className={styles.clamp} data-expanded={expanded || undefined}>
+        {children}
+      </span>
+    </SettingsFeedback>
+  );
+}
+
 export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: RecentProject[] }) {
   useLocale();
   const [selection, setSelection] = useState({ initialCwd: cwd, project: cwd });
@@ -466,6 +500,13 @@ ${query}`;
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-ui-title font-medium">{t("MCP connections")}</h2>
+            <span id="setting-mcp-scopes" data-setting-id="mcp-scopes" tabIndex={-1} className={styles.scopeHelp}>
+              <InfoPopover label={t("Advanced: scopes and connection status")}>
+                {[scopeDescription("local"), scopeDescription("project"), scopeDescription("user")].map((description) => <p key={description}>{description}</p>)}
+                <p>{t("Claude Code status comes from its CLI. Other providers show configured entries. Sign in opens your browser when supported.")}</p>
+                <p>{t("Claude CLI status is matched by server name; it is not verified separately for each scope.")}</p>
+              </InfoPopover>
+            </span>
             {projectPicker}
           </div>
         </div>
@@ -524,39 +565,34 @@ ${query}`;
           anchor={filterAnchor}
           role="dialog"
           aria-label={t("Filter MCP servers by provider")}
-          width={300}
+          width={360}
           onDismiss={() => setFiltersOpen(false)}
         >
           <div className={styles.filterPanel}>
             <h3>{t("Provider")}</h3>
-            <div
-              role="group"
-              className={styles.providers}
-              aria-label={t("Filter MCP servers by provider")}
-            >
-              {(["all", ...filterProviders] as const).map((provider) => (
-                <Button
-                  key={provider}
-                  variant="tab"
-                  motion="none"
-                  type="button"
-                  aria-pressed={effectiveFilter === provider}
-                  onClick={() => setFilter(provider)}
-                >
-                  {provider === "all" ? (
+            <SegmentedControl
+              label={t("Filter MCP servers by provider")}
+              selectionRole="pressed"
+              value={effectiveFilter}
+              onValueChange={(provider) => setFilter(provider as Filter)}
+              options={(["all", ...filterProviders] as const).map((provider) => ({
+                value: provider,
+                label: provider === "all" ? t("All") : MCP_PROVIDER_LABELS[provider],
+                icon:
+                  provider === "all" ? (
                     <Globe className="icon-sm" />
                   ) : (
                     <ProviderIcon provider={provider} />
-                  )}
-                  {provider === "all" ? t("All") : MCP_PROVIDER_LABELS[provider]}
-                  <span>
+                  ),
+                accessory: (
+                  <Badge variant="count" size="xs" tone="neutral">
                     {provider === "all"
                       ? servers.length
                       : servers.filter((server) => server.provider === provider).length}
-                  </span>
-                </Button>
-              ))}
-            </div>
+                  </Badge>
+                ),
+              }))}
+            />
             <Button
               variant="ghost"
               aria-label={
@@ -583,9 +619,9 @@ ${query}`;
       ) : null}
       {error ? <SettingsFeedback state="error" action={<Button loading={loading} onClick={() => void refresh()}>{t("Retry")}</Button>}>{servers.length ? `${t("Showing the last successful result.")} ` : ""}{error}</SettingsFeedback> : null}
       {claudeError && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
-        <SettingsFeedback state="warning">
+        <ExpandableWarning>
           {t("Claude connection status unavailable: ")} {claudeError}
-        </SettingsFeedback>
+        </ExpandableWarning>
       ) : null}
       {loading && servers.length === 0 ? (
         <SettingsFeedback state="loading">{t("Checking servers…")}</SettingsFeedback>
@@ -626,6 +662,8 @@ ${query}`;
               </div>
               <Badge
                 className={styles.status}
+                size="sm"
+                appearance="subtle"
                 tone={
                   /needs authentication/i.test(server.status)
                     ? "warning"
@@ -700,14 +738,6 @@ ${query}`;
           )}
         </p>
       ) : null}
-      <div id="setting-mcp-scopes" data-setting-id="mcp-scopes" tabIndex={-1} className={styles.scopeHelp}>
-        <span>{t("Scope")}</span>
-        <InfoPopover label={t("Advanced: scopes and connection status")}>
-          {[scopeDescription("local"), scopeDescription("project"), scopeDescription("user")].map((description) => <p key={description}>{description}</p>)}
-          <p>{t("Claude Code status comes from its CLI. Other providers show configured entries. Sign in opens your browser when supported.")}</p>
-          <p>{t("Claude CLI status is matched by server name; it is not verified separately for each scope.")}</p>
-        </InfoPopover>
-      </div>
       {menu ? <DropdownMenu anchor={menu.anchor} label={t("Actions for {p0}", { p0: menu.server.name })}
         onClose={() => setMenu(null)}
         items={[

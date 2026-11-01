@@ -22,6 +22,7 @@
 }
 .bycoda-empty .bycoda-wordmark {
   margin: 0;
+  /* Brand wordmark: fixed size, independent of the text-size setting. */
   font-size: 14px;
   letter-spacing: 0.08em;
 }
@@ -31,6 +32,7 @@
   margin: 0;
 }
 .bycoda-empty .bycoda-task-brief h1 {
+  /* Decorative entry headline: fluid display size, no text role is this large. */
   font-size: clamp(20px, 2vw, 28px);
   font-weight: 560;
   line-height: 1.35;

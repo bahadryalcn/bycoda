@@ -22,7 +22,7 @@ export function SecondOpinionCard({ card }: Props) {
       <div className="mt-1 flex min-w-0 items-center gap-1.5 text-ui-micro leading-4 text-(--ui-text-secondary)">
         <HarnessIcon harness={card.from} className="size-3 shrink-0" />
         <span className="truncate">{HARNESS_TITLE[card.from]}</span>
-        <ChevronRight className="size-3 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+        <ChevronRight className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
         <HarnessIcon harness={card.to} className="size-3 shrink-0" />
         <span className="truncate">{HARNESS_TITLE[card.to]}</span>
       </div>

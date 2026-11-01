@@ -436,3 +436,14 @@ Delivered in source (uncommitted; no checks run by the delivering agents; V2-024
 - Git panel and Worktrees dialog: stable header, fixed action and diff-stat columns (`ChangeRow.tsx`), the refresh icon aligned to the right edge, the shared field focus/action-slot contract (see `docs/reference/ui-component-catalog.md`), and the generation popover and model list limited to the relevant models (Fast is a toggle, not a model).
 - Proposal (not owner-confirmed): one Worktrees list for managed and other worktrees with a shared row model.
 - Unverified: 1280/800 light/dark screenshots of the empty project, override, loading and error states.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Git panel, Commit Graph, workspace pickers (`src/features/source-control/**`, `workspace/**`), from `HANDOFF-w2-git.md`. Drift in scope 448 -> 3.
+
+- Commit Graph dialog: `Modal size="full"` + `expandable` + `fieldEscape="field"` + `toolbar` (the reference consumer); top bar on `PaneHeader`; panes on `--ui-surface-panel` with `--ui-pane-border`; three sashes on `Sash`; branch list on `SectionLabel collapsible` + `ActionHost` + `InlineMoreAction`; `LoadingText` as the one loading presentation; one `useHoverCard` per virtualized row (content mounts only on the open row); column filters on `FilterTrigger` + `Popover kind="dialog"`.
+- Changes panel: local `IconAction` removed for Button; commit message on `TextareaField autosize`; `InlineError`/`InlineMessage`. Dialogs: `ConfirmDialog` (consequences, acknowledge), `ModalActions`. Conflict: layout switch on `SegmentedControl`, compare strip on `Tabs`, `Sash`. WorkspacePicker on the picker kit; PaneTree sash on `Sash`.
+- Left: `FileTypeIcon size={14}` (two sites), TabGroupMenu `Popover role="menu"`, WorktreePicker/SidebarWorktreeSwitcher rows, PaneTree/SurfaceTabs draggable strips (own controller).
+- Unverified: tinted canvas, 800 px, touch density, native app, BranchPicker/WorktreePicker/delete dialogs/conflict layout by unit tests only. Fixture screenshots (pure dark/light, 1280): `temp/verification/ui-standards/w2-git/`.

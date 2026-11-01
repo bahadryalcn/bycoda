@@ -28,7 +28,7 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
           layout="stacked"
           align="start"
           type="button"
-          title={t("Open in {p0}", { p0: serviceLabel })}
+          tooltip={t("Open in {p0}", { p0: serviceLabel })}
           aria-label={t("Open {p0} {p1} in {p2}", {
             p0: kindLabel,
             p1: card.identifier,
@@ -71,8 +71,6 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
           <InlineAction
             label={t("Remove {p0} {p1}", { p0: kindLabel, p1: card.identifier })}
             type="button"
-            title={t("Remove")}
-            aria-label={t("Remove {p0} {p1}", { p0: kindLabel, p1: card.identifier })}
             onClick={onDismiss}
           >
             <X className="icon-xs" strokeWidth={1.75} />

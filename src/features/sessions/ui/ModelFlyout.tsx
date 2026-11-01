@@ -1,15 +1,10 @@
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { Badge } from "../../../shared/ui/Badge";
+import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useLocale, useT } from "../../../shared/i18n";
-import {
-  ArrowLeft,
-  Check,
-  ChevronRight,
-  Search,
-  SlidersHorizontal,
-  Star,
-} from "../../../shared/ui/icons";
+import { ArrowLeft, Check, ChevronRight, SlidersHorizontal, Star } from "../../../shared/ui/icons";
 import {
   useEffect,
   useId,
@@ -214,7 +209,7 @@ export function ModelFlyout({
               onSelect={() => onSelectTab("favorites")}
             >
               <Star
-                className="size-4"
+                className="icon-md"
                 strokeWidth={1.75}
                 fill={tab === "favorites" ? "currentColor" : "none"}
               />
@@ -232,26 +227,17 @@ export function ModelFlyout({
           </nav>
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <label className="flex shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2.5 text-(--ui-text-secondary)">
-              <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
-              <SearchInput
-                ref={searchRef}
-                type="text"
-                value={query}
-                placeholder={t("Search models")}
-                aria-label={t("Search models")}
-                role="combobox"
-                aria-expanded="true"
-                aria-haspopup="listbox"
-                aria-autocomplete="list"
-                aria-controls={listId}
-                aria-activedescendant={models[active] ? `${listId}-${active}` : undefined}
-                autoComplete="off"
-                className="min-w-0 flex-1 bg-transparent text-ui-secondary text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
-                onChange={(event) => onQuery(event.target.value)}
-                onKeyDown={onSearchKey}
-              />
-            </label>
+            <PopoverSearchHeader
+              ref={searchRef}
+              size="md"
+              label={t("Search models")}
+              value={query}
+              autoFocus={false}
+              listId={listId}
+              activeOptionId={models[active] ? `${listId}-${active}` : undefined}
+              onValueChange={onQuery}
+              onKeyDown={onSearchKey}
+            />
 
             <div
               ref={lockOverscroll}
@@ -278,9 +264,9 @@ export function ModelFlyout({
                     aria-label={group.name}
                   >
                     {group.name ? (
-                      <div className="px-2.5 pb-1 pt-2 ui-caption-text font-medium uppercase tracking-wide">
+                      <SectionLabel as="div" className="px-2.5">
                         {group.name}
-                      </div>
+                      </SectionLabel>
                     ) : null}
                     {group.models.map(({ item, index }) => {
                       const accountColor = (item as AccountModelChoice).accountColor;
@@ -296,7 +282,7 @@ export function ModelFlyout({
                         <ActionHost
                           key={modelChoiceKey(item)}
                           selected={highlighted && !disabled}
-                          className={`h-8 rounded-lg px-1 ${
+                          className={`h-(--ui-control-height-compact) rounded-lg px-1 ${
                             disabled ? "text-(--ui-text-secondary)" : "text-(--ui-tone-neutral-fg)"
                           }`}
                           onMouseEnter={() => onActive(index)}
@@ -312,7 +298,7 @@ export function ModelFlyout({
                             disabled={disabled}
                             // The row truncates long names; the full name (and why a row is unavailable) stays in
                             // the tooltip, and the accessible name above always carries it.
-                            title={
+                            tooltip={
                               disabled
                                 ? `${item.name} · ${harnessUnavailableHint(item.harness)}`
                                 : item.name
@@ -341,7 +327,10 @@ export function ModelFlyout({
                             ) : null}
                           </Button>
                           {tab === "favorites" ? (
-                            <span className="max-w-24 shrink-0 truncate ui-caption-text" title={provenance}>
+                            <span
+                              className="max-w-24 shrink-0 truncate ui-caption-text"
+                              title={provenance}
+                            >
                               {provenance}
                             </span>
                           ) : null}
@@ -354,7 +343,7 @@ export function ModelFlyout({
                             onClick={() => onToggleFavorite(item.id)}
                           >
                             <Star
-                              className="size-3.5"
+                              className="icon-sm"
                               strokeWidth={1.75}
                               fill={favorited ? "currentColor" : "none"}
                             />
@@ -365,7 +354,7 @@ export function ModelFlyout({
                               className="grid size-6 shrink-0 place-items-center"
                             >
                               <Check
-                                className="size-3.5 text-(--ui-text-secondary)"
+                                className="icon-sm text-(--ui-text-secondary)"
                                 strokeWidth={2}
                               />
                             </span>
@@ -399,14 +388,14 @@ function ExtrasEntry({ extras, onOpen }: { extras: ModelFlyoutExtras; onOpen: ()
       onClick={onOpen}
       className="shrink-0 text-left"
     >
-      <SlidersHorizontal className="size-3.5 shrink-0" strokeWidth={1.75} />
+      <SlidersHorizontal className="icon-sm shrink-0" strokeWidth={1.75} />
       <span className="min-w-0 flex-1 truncate">{t("Extras")}</span>
       {changed > 0 ? (
-        <span className="rounded bg-selection px-1 text-(length:--ui-font-caption) tabular-nums text-(--ui-tone-neutral-fg)">
+        <Badge size="xs" variant="count" tone="neutral">
           {changed}
-        </span>
+        </Badge>
       ) : null}
-      <ChevronRight className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+      <ChevronRight className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
     </Button>
   );
 }
@@ -439,11 +428,11 @@ function ExtrasView({ extras, onBack }: { extras: ModelFlyoutExtras; onBack: () 
             variant="ghost"
             type="button"
             aria-label={t("Back")}
-            title={t("Back")}
+            tooltip={t("Back")}
             onClick={onBack}
             className="-ml-1 shrink-0"
           >
-            <ArrowLeft className="size-3.5" strokeWidth={1.75} />
+            <ArrowLeft className="icon-sm" strokeWidth={1.75} />
           </Button>
         }
       />
@@ -474,7 +463,7 @@ function ProviderTabButton({
       variant="tab"
       type="button"
       role="tab"
-      title={title}
+      tooltip={title}
       aria-label={title}
       aria-selected={selected}
       onMouseDown={(event) => event.preventDefault()}

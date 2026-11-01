@@ -52,18 +52,6 @@
   scrollbar-gutter: stable;
 }
 
-.session-notes-empty {
-  display: flex;
-  flex: 1;
-  min-block-size: 0;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  overflow-y: auto;
-  padding: 16px;
-}
-
 .session-notes-library-link {
   flex: none;
   padding: 4px 8px;
@@ -253,26 +241,6 @@
   align-items: center;
   gap: 4px 12px;
   min-block-size: var(--ui-control-height-compact, 1.75rem);
-}
-
-.note-mode-switch {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: calc(var(--ui-control-radius) + 2px);
-  background: var(--ui-surface-hover);
-}
-
-.note-mode-switch > [role="tab"] {
-  min-inline-size: 4.5rem;
-  justify-content: center;
-}
-
-.note-mode-switch > [role="tab"][aria-selected="true"] {
-  background: var(--ui-surface);
-  color: var(--color-content);
 }
 
 .note-layout {

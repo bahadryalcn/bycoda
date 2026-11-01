@@ -203,3 +203,13 @@ repository recovery, Code context/focus and stale checks in light/dark at
 1280/800/narrow widths. Full record ledger, file fingerprints and exact blockers:
 `temp/local/2026-10-28-inbox-impl/handoff.json`. Live claims API unavailable;
 project sessions inspected, native subagents used with exclusive file ownership.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Inbox (`src/features/inbox/**`, with notifications), from `HANDOFF-w2-work-inbox.md`. Drift 51 -> 0 in the folder (four non-flagged leftovers named there).
+
+- Done: PR tabs on `Tabs panels="shared"` (`DetailBody` is the shared-panels example) and the source tablist on `Tabs` (roving arrows now work); InboxView and InboxDiscussionPanel headers on `PaneHeader` + chrome inset (header height now the standard); CheckRepairForm on the picker kit; filter popovers on `FilterTrigger`; `ActionHost` check rows; counts on `Badge count` (99+); `Spinner`/`LoadingText`, `InlineError`, `EmptyState size="inline"`; every `title=` converted to `tooltip`/`label`/`disabledReason`.
+- Left: three `useDragResize` handles use `Sash` only as the shell (no Escape cancel, needs Sash-ready props in `useDragResize`); `InboxMedia` pulse placeholder stays a `span`; `InboxView.css` local `z-index: 10`.
+- Unverified: no screenshots or native run.

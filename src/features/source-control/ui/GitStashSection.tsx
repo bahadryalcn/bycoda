@@ -1,15 +1,12 @@
+import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useCallback, useState } from "react";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import {
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  RefreshCw,
-  MoreHorizontal,
-} from "../../../shared/ui/icons";
+import { Plus, RefreshCw } from "../../../shared/ui/icons";
 import {
   gitStash,
   gitStashAction,
@@ -104,68 +101,52 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
   };
 
   return (
-    <div className="shrink-0 border-t border-stroke">
+    <div className="shrink-0 border-t border-(--ui-pane-border)">
       {confirmElement}
-      <div className="flex h-7 items-center gap-1 px-1.5">
-        <Button
-          variant="ghost"
-          motion="none"
-          type="button"
-          aria-expanded={open}
-          onClick={() => {
-            stashOpen = !open;
-            setOpen(stashOpen);
-          }}
-          className="flex min-w-0 flex-1 items-center gap-1 text-left"
-        >
-          {open ? (
-            <ChevronDown
-              className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
-              strokeWidth={1.75}
-            />
-          ) : (
-            <ChevronRight
-              className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
-              strokeWidth={1.75}
-            />
-          )}
-          <span className="min-w-0 truncate text-ui-caption font-medium text-(--ui-text-secondary)">
-            {t("Stashes")}
-          </span>
-          <span className="text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">
-            {entries.length}
-          </span>
-        </Button>
-        <Button
-          iconOnly
-          label={t("Refresh stashes")}
-          variant="ghost"
-          motion="none"
-          type="button"
-          title={t("Refresh stashes")}
-          aria-label={t("Refresh stashes")}
-          loading={loading}
-          loadingLabel={t("Refreshing…")}
-          onClick={refresh}
-        >
-          <RefreshCw className="size-3.5" strokeWidth={1.75} />
-        </Button>
-        <Button
-          iconOnly
-          label={t("Stash all changes")}
-          variant="ghost"
-          motion="none"
-          type="button"
-          title={t("Stash all changes, including untracked files")}
-          aria-label={t("Stash all changes")}
-          disabled={stashAction !== "create" && (!!busy || !hasChanges)}
-          loading={stashAction === "create"}
-          loadingLabel={t("Working…")}
-          onClick={() => void run("create", () => gitStash(cwd))}
-        >
-          <Plus className="size-3.5" strokeWidth={1.75} />
-        </Button>
-      </div>
+      <SectionLabel
+        className="px-1"
+        collapsible
+        expanded={open}
+        count={entries.length}
+        onExpandedChange={() => {
+          stashOpen = !open;
+          setOpen(stashOpen);
+        }}
+        actions={
+          <>
+            <Button
+              iconOnly
+              size="sm"
+              label={t("Refresh stashes")}
+              variant="ghost"
+              motion="none"
+              type="button"
+              loading={loading}
+              loadingLabel={t("Refreshing…")}
+              onClick={refresh}
+            >
+              <RefreshCw className="icon-sm" strokeWidth={1.75} />
+            </Button>
+            <Button
+              iconOnly
+              size="sm"
+              label={t("Stash all changes")}
+              tooltip={t("Stash all changes, including untracked files")}
+              variant="ghost"
+              motion="none"
+              type="button"
+              disabled={stashAction !== "create" && (!!busy || !hasChanges)}
+              loading={stashAction === "create"}
+              loadingLabel={t("Working…")}
+              onClick={() => void run("create", () => gitStash(cwd))}
+            >
+              <Plus className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          </>
+        }
+      >
+        {t("Stashes")}
+      </SectionLabel>
       {error ? (
         <GitFeedback
           title={t("Couldn’t load stashes")}
@@ -176,35 +157,32 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
       ) : null}
       {open ? (
         entries.length === 0 && !loading && !error ? (
-          <p className="px-3 pb-2 text-[12px] text-(--ui-text-secondary)">{t("No stashes")}</p>
+          <EmptyState size="inline" kind="empty" className="px-3 pt-0" description={t("No stashes")} />
         ) : (
           <ul className="max-h-[min(10rem,20vh)] overflow-y-auto pb-1">
             {entries.map((entry) => (
-              <li key={entry.sha} className="flex items-center gap-0.5 px-3 py-0.5">
-                <Button
-                  variant="item"
-                  motion="none"
-                  type="button"
-                  title={entry.message}
-                  onClick={() => onOpenCommit(stashCommit(entry))}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <span className="min-w-0 truncate">{entry.message}</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  motion="none"
-                  iconOnly
-                  label={t("Actions for {p0}", { p0: entry.message })}
-                  disabled={!!busy && stashAction !== `entry:${entry.sha}`}
-                  loading={stashAction === `entry:${entry.sha}`}
-                  loadingLabel={t("Working…")}
-                  aria-haspopup="menu"
-                  aria-expanded={menu?.entry.sha === entry.sha}
-                  onClick={(event) => setMenu({ entry, anchor: event.currentTarget })}
-                >
-                  <MoreHorizontal className="size-3.5" />
-                </Button>
+              <li key={entry.sha}>
+                <ActionHost className="mx-1 min-h-(--ui-control-height-compact) pe-1">
+                  <Button
+                    variant="item"
+                    size="sm"
+                    motion="none"
+                    type="button"
+                    tooltip={entry.message}
+                    onClick={() => onOpenCommit(stashCommit(entry))}
+                    className="min-w-0 flex-1 justify-start"
+                  >
+                    <span className="min-w-0 truncate">{entry.message}</span>
+                  </Button>
+                  <InlineMoreAction
+                    label={t("Actions for {p0}", { p0: entry.message })}
+                    disabled={!!busy && stashAction !== `entry:${entry.sha}`}
+                    loading={stashAction === `entry:${entry.sha}`}
+                    loadingLabel={t("Working…")}
+                    expanded={menu?.entry.sha === entry.sha}
+                    onOpen={(anchor) => setMenu({ entry, anchor })}
+                  />
+                </ActionHost>
               </li>
             ))}
           </ul>

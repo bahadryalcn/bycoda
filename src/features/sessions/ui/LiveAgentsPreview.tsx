@@ -107,7 +107,7 @@ export function LiveAgentsPreview({
       <Check
         aria-hidden
         className="icon-sm shrink-0 text-(--ui-tone-success-fg)"
-        strokeWidth={2.25}
+        strokeWidth={2}
       />
     ) : (
       <span aria-hidden className="grid icon-sm shrink-0 place-items-center">
@@ -200,7 +200,7 @@ export function LiveAgentsPreview({
         ) : (
           <div className="flex w-full min-w-0 items-center gap-2 px-2.5 py-2 text-start">
             {statusMark}
-            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-(--ui-text-secondary)">
+            <span className="min-w-0 flex-1 truncate text-ui-caption font-semibold text-(--ui-text-secondary)">
               {title}
             </span>
             <span className="rounded-md bg-(--ui-tone-accent-subtle) px-1.5 text-ui-micro font-medium tabular-nums text-(--ui-text-secondary)">
@@ -334,7 +334,7 @@ function LiveAgentCard({
       selected={selected}
       variant="item"
       type="button"
-      title={title}
+      tooltip={title}
       aria-label={[agent.title, project, activity, elapsed].filter(Boolean).join(", ")}
       aria-current={selected ? "true" : undefined}
       data-live-agent-card={agent.id}
@@ -387,7 +387,7 @@ function LiveAgentCard({
           {agent.issue || agent.needsApproval ? (
             <CircleAlert className="icon-xs shrink-0" strokeWidth={1.75} />
           ) : agent.done ? (
-            <Check className="icon-xs shrink-0" strokeWidth={2.25} />
+            <Check className="icon-xs shrink-0" strokeWidth={2} />
           ) : (
             <SessionWorkingStatus startedAt={agent.startedAt} showElapsed={false} />
           )}

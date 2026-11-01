@@ -6,6 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -116,18 +117,16 @@ export function CrewLibrary({
               tabIndex={0}
             >
               {!agents.length ? (
-                <div className="settings-collection-empty">
-                  <p role="status">{t("No matching members.")}</p>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setQuery("");
-                      setGroup("");
-                    }}
-                  >
-                    {t("Clear filters")}
-                  </Button>
-                </div>
+                <EmptyState
+                  size="inline"
+                  kind="filtered"
+                  description={t("No matching members.")}
+                  resetLabel={t("Clear filters")}
+                  onReset={() => {
+                    setQuery("");
+                    setGroup("");
+                  }}
+                />
               ) : null}
               {agents.map((agent) => (
                 <div key={agent.id} className="settings-collection-row">

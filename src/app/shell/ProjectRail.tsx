@@ -2,7 +2,9 @@ import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
-import { Tooltip, useTooltip } from "../../shared/ui/Tooltip";
+import { Tooltip } from "../../shared/ui/Tooltip";
+import { Sash } from "../../shared/ui/Sash";
+import { WindowChromeInset } from "../../shared/ui/PaneHeader";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
 import { ExpandingButtonGroup } from "../../shared/ui/ExpandingButtonGroup";
@@ -969,7 +971,7 @@ export function ProjectRail({
           className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden pr-1.5"
           data-tauri-drag-region="deep"
         >
-          {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
+          <WindowChromeInset />
           {IS_MAC ? null : brand}
           {IS_MAC ? <div className="min-w-0 flex-1" /> : null}
           {/* Icon-only, just the panel toggle fits; in settings nothing does. */}
@@ -1320,14 +1322,11 @@ export function ProjectRail({
         />
       ) : null}
       {resizable && !navigator ? (
-        <div
-          {...resize.separatorProps}
-          aria-label={t("Resize project sidebar")}
-          className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
-            resize.dragging ? "bg-(--ui-surface-pressed)" : "hover:bg-(--ui-surface-hover)"
-          }`}
-          onPointerDown={resize.onPointerDown}
-          onDoubleClick={resize.onDoubleClick}
+        <Sash
+          {...resize.sashProps}
+          label={t("Resize project sidebar")}
+          appearance="hidden"
+          className="absolute inset-y-0 end-0"
         />
       ) : null}
     </nav>
@@ -1578,7 +1577,6 @@ function RemoteProjectSuggestion({
   const match = remoteOpenMatch(project);
   return (
     <>
-      <Tooltip label={project.name} details={[remoteOnlyProjectHint(project, match)]} side="right" wide>
       <Button
         variant="item"
         size="sm"
@@ -1587,7 +1585,10 @@ function RemoteProjectSuggestion({
         data-remote-project-id={project.projectId}
         data-multi-selected={selected || undefined}
         aria-pressed={selected}
-        title=""
+        tooltip={project.name}
+        tooltipDetails={[remoteOnlyProjectHint(project, match)]}
+        tooltipSide="right"
+        tooltipWide
         aria-label={
           match
             ? t("{p0}, on {p1}. Open there", { p0: project.name, p1: match.target.name })
@@ -1617,7 +1618,6 @@ function RemoteProjectSuggestion({
         )}
         <span className={nameClassName}>{project.name}</span>
       </Button>
-      </Tooltip>
     </>
   );
 }
@@ -1647,24 +1647,21 @@ function ProjectSectionHeader({
       actions={
         <>
           {onAddGroup ? (
-            <Tooltip label={t("New project group")}>
-              <InlineAction
-                reveal="always"
-                label={t("New project group")}
-                motion="none"
-                type="button"
-                data-no-drag
-                title=""
-                aria-label={t("New project group")}
-                onClick={(event) => {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  onAddGroup(rect.left, rect.bottom);
-                }}
-                className="shrink-0"
-              >
-                <FolderPlus className="icon-sm" strokeWidth={1.75} />
-              </InlineAction>
-            </Tooltip>
+            <InlineAction
+              reveal="always"
+              label={t("New project group")}
+              motion="none"
+              type="button"
+              data-no-drag
+              aria-label={t("New project group")}
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                onAddGroup(rect.left, rect.bottom);
+              }}
+              className="shrink-0"
+            >
+              <FolderPlus className="icon-sm" strokeWidth={1.75} />
+            </InlineAction>
           ) : null}
           {onAdd ? <AddProjectButton onOpenFolder={onAdd} /> : null}
         </>
@@ -1788,10 +1785,6 @@ function ProjectGroupSection({
     onOpenGroupMenu(x ?? rect.left, y ?? rect.bottom);
   };
 
-  const collapseTip = useTooltip({
-    label: group.name,
-    details: [locked ? t("Locked") : countLabel],
-  });
   return (
     <div
       ref={(el) => sortableGroups.setItemRef(group.id, el)}
@@ -1846,8 +1839,8 @@ function ProjectGroupSection({
           aria-label={
             locked ? t("{p0}, locked", { p0: group.name }) : `${group.name}, ${countLabel}`
           }
-          title=""
-          {...collapseTip.trigger}
+          tooltip={group.name}
+          tooltipDetails={[locked ? t("Locked") : countLabel]}
           onClick={onToggleCollapsed}
           className="size-6 shrink-0 @max-[140px]/rail:flex-1"
         >
@@ -1867,37 +1860,36 @@ function ProjectGroupSection({
                 </span>
                 <ChevronRight
                   data-group-chevron
-                  className="hidden size-3.5 group-hover:block group-has-[button:focus-visible]:block"
+                  className="icon-sm hidden group-hover:block group-has-[button:focus-visible]:block"
                   strokeWidth={1.75}
                 />
               </>
             ) : (
-              <ChevronDown data-group-chevron className="size-3.5" strokeWidth={1.75} />
+              <ChevronDown data-group-chevron className="icon-sm" strokeWidth={1.75} />
             )}
           </div>
         </Button>
-        {collapseTip.tooltip}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 @max-[140px]/rail:hidden">
           {workspaceRoot && !locked ? (
-            <Tooltip label={group.name} details={[workspaceRoot]} wide>
-              <Button
-                variant="ghost"
-                selected={workspaceSelected}
-                data-action-primary
-                motion="none"
-                type="button"
-                data-no-drag
-                aria-label={t("Open {p0}", { p0: group.name })}
-                aria-current={workspaceSelected ? "page" : undefined}
-                title=""
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={() => onSelect(workspaceRoot)}
-                size="sm"
-                className="min-w-0 flex-1 justify-start text-left"
-              >
-                <span className={nameClassName}>{group.name}</span>
-              </Button>
-            </Tooltip>
+            <Button
+              variant="ghost"
+              selected={workspaceSelected}
+              data-action-primary
+              motion="none"
+              type="button"
+              data-no-drag
+              aria-label={t("Open {p0}", { p0: group.name })}
+              aria-current={workspaceSelected ? "page" : undefined}
+              tooltip={group.name}
+              tooltipDetails={[workspaceRoot]}
+              tooltipWide
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => onSelect(workspaceRoot)}
+              size="sm"
+              className="min-w-0 flex-1 justify-start text-left"
+            >
+              <span className={nameClassName}>{group.name}</span>
+            </Button>
           ) : (
             <span className={`${nameClassName} ps-1.5`}>{group.name}</span>
           )}
@@ -1953,80 +1945,74 @@ function ProjectGroupSection({
         ) : null}
         <div className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden">
           {localPaths.length > 0 || (workspaceRoot && !locked) ? (
-            <Tooltip label={group.name} details={[gitTitle]}>
-              <InlineAction
-                label={t("{p0} git overview, {p1}", { p0: group.name, p1: gitTitle })}
-                motion="none"
-                ref={gitAnchor}
-                type="button"
-                data-no-drag
-                title=""
-                aria-label={t("{p0} git overview, {p1}", { p0: group.name, p1: gitTitle })}
-                aria-haspopup={workspaceRoot ? undefined : "dialog"}
-                aria-expanded={workspaceRoot ? undefined : overviewOpen}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (workspaceRoot) {
-                    window.dispatchEvent(
-                      new CustomEvent(OPEN_PROJECT_CHANGES_EVENT, { detail: workspaceRoot }),
-                    );
-                  } else setOverviewOpen((value) => !value);
-                }}
-                className="shrink-0"
-              >
-                <GitBranch className="icon-xs" strokeWidth={1.75} />
-              </InlineAction>
-            </Tooltip>
+            <InlineAction
+              label={t("{p0} git overview, {p1}", { p0: group.name, p1: gitTitle })}
+              tooltip={group.name}
+              tooltipDetails={[gitTitle]}
+              motion="none"
+              ref={gitAnchor}
+              type="button"
+              data-no-drag
+              aria-label={t("{p0} git overview, {p1}", { p0: group.name, p1: gitTitle })}
+              aria-haspopup={workspaceRoot ? undefined : "dialog"}
+              aria-expanded={workspaceRoot ? undefined : overviewOpen}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (workspaceRoot) {
+                  window.dispatchEvent(
+                    new CustomEvent(OPEN_PROJECT_CHANGES_EVENT, { detail: workspaceRoot }),
+                  );
+                } else setOverviewOpen((value) => !value);
+              }}
+              className="shrink-0"
+            >
+              <GitBranch className="icon-xs" strokeWidth={1.75} />
+            </InlineAction>
           ) : null}
-          <Tooltip
-            label={locked ? t("Unlock…") : t("Lock group")}
-            details={[group.name]}
+          <InlineAction
+            label={
+              locked ? t("Unlock {p0}", { p0: group.name }) : t("Lock {p0}", { p0: group.name })
+            }
+            tooltip={locked ? t("Unlock…") : t("Lock group")}
+            tooltipDetails={[group.name]}
+            motion="none"
+            type="button"
+            data-no-drag
+            aria-label={
+              locked ? t("Unlock {p0}", { p0: group.name }) : t("Lock {p0}", { p0: group.name })
+            }
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleLock();
+            }}
+            className="shrink-0"
           >
-            <InlineAction
-              label={
-                locked ? t("Unlock {p0}", { p0: group.name }) : t("Lock {p0}", { p0: group.name })
-              }
-              motion="none"
-              type="button"
-              data-no-drag
-              title=""
-              aria-label={
-                locked ? t("Unlock {p0}", { p0: group.name }) : t("Lock {p0}", { p0: group.name })
-              }
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleLock();
-              }}
-              className="shrink-0"
-            >
-              {locked ? (
-                <Lock className="icon-sm" strokeWidth={1.75} />
-              ) : (
-                <LockOpen className="icon-sm" strokeWidth={1.75} />
-              )}
-            </InlineAction>
-          </Tooltip>
-          <Tooltip label={t("Group options")} details={[group.name]}>
-            <InlineAction
-              label={t("{p0} group options", { p0: group.name })}
-              motion="none"
-              type="button"
-              data-no-drag
-              title=""
-              aria-label={t("{p0} group options", { p0: group.name })}
-              aria-haspopup="menu"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                openMenu(event.currentTarget);
-              }}
-              className="shrink-0"
-            >
-              <MoreHorizontal className="icon-md" strokeWidth={1.75} />
-            </InlineAction>
-          </Tooltip>
+            {locked ? (
+              <Lock className="icon-sm" strokeWidth={1.75} />
+            ) : (
+              <LockOpen className="icon-sm" strokeWidth={1.75} />
+            )}
+          </InlineAction>
+          <InlineAction
+            label={t("{p0} group options", { p0: group.name })}
+            tooltip={t("Group options")}
+            tooltipDetails={[group.name]}
+            motion="none"
+            type="button"
+            data-no-drag
+            aria-label={t("{p0} group options", { p0: group.name })}
+            aria-haspopup="menu"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              openMenu(event.currentTarget);
+            }}
+            className="shrink-0"
+          >
+            <MoreHorizontal className="icon-md" strokeWidth={1.75} />
+          </InlineAction>
         </div>
         {overviewOpen && !locked && !workspaceRoot ? (
           <GroupGitPopover
@@ -2183,17 +2169,12 @@ function ProjectCard({
     (!remote && isDuplicateProjectName(nameCollisions, name) ? parentFolderLabel(item.path) : "");
   const changeSummary = change ? projectGitChangeSummary(change, t) : "";
   // The tooltip shows on hover and on keyboard focus: the name, then the path and state as muted lines.
-  const rowTip = useTooltip({
-    label: name,
-    details: [
-      remote ? `${remote.cwd} on ${hostLabel || "another machine"} (${connection})` : item.path,
-      busy && t("Working"),
-      change && t("{p0} uncommitted", { p0: changeSummary }),
-      muteStatus,
-    ],
-    side: "right",
-    wide: true,
-  });
+  const rowTipDetails = [
+    remote ? `${remote.cwd} on ${hostLabel || "another machine"} (${connection})` : item.path,
+    busy && t("Working"),
+    change && t("{p0} uncommitted", { p0: changeSummary }),
+    muteStatus,
+  ];
   const cardAriaLabel = [
     machine ? `${name} on ${hostLabel}` : context ? `${name} (${context})` : name,
     busy ? "working" : "",
@@ -2305,13 +2286,13 @@ function ProjectCard({
       <Button
         variant="item"
         type="button"
-        title=""
-        onPointerEnter={rowTip.trigger.onPointerEnter}
-        onPointerLeave={rowTip.trigger.onPointerLeave}
-        onPointerDown={rowTip.trigger.onPointerDown}
-        onFocus={focusHint ? rowTip.trigger.onFocus : undefined}
-        onBlur={rowTip.trigger.onBlur}
-        onKeyDown={rowTip.trigger.onKeyDown}
+        tooltip={name}
+        tooltipDetails={rowTipDetails}
+        tooltipSide="right"
+        tooltipWide
+        // The flyout focuses a row as it opens; a focus hint there would pop over the list. Button
+        // skips its focus hint when the handler prevents the event's default.
+        onFocus={focusHint ? undefined : (event) => event.preventDefault()}
         aria-label={cardAriaLabel}
         aria-current={selected ? "true" : undefined}
         className={`flex min-w-0 flex-1 cursor-default items-center gap-2 text-left ${multi?.active ? "" : showReconnect ? "pe-12" : "pe-6"} @max-[140px]/rail:justify-center @max-[140px]/rail:pe-0!`}
@@ -2389,7 +2370,6 @@ function ProjectCard({
           </span>
         ) : null}
       </Button>
-      {rowTip.tooltip}
       {change ? (
         <span
           aria-hidden
@@ -2399,73 +2379,66 @@ function ProjectCard({
       {!multi?.active ? (
         <>
           {showReconnect ? (
-            <Tooltip label={t("{p0} Reconnect machine", { p0: connection })}>
-              <InlineAction
-                reveal="always"
-                label={t("{p0} Reconnect machine", { p0: connection })}
-                motion="none"
-                data-no-drag
-                title=""
-                loading={remoteConnection.reconnecting}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void remoteConnection.reconnect({ signIn: true });
-                }}
-                className="absolute end-7 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
-              >
-                <Internet className="icon-sm" strokeWidth={1.75} aria-hidden />
-              </InlineAction>
-            </Tooltip>
+            <InlineAction
+              reveal="always"
+              label={t("{p0} Reconnect machine", { p0: connection })}
+              motion="none"
+              data-no-drag
+              loading={remoteConnection.reconnecting}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                void remoteConnection.reconnect({ signIn: true });
+              }}
+              className="absolute end-7 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
+            >
+              <Internet className="icon-sm" strokeWidth={1.75} aria-hidden />
+            </InlineAction>
           ) : null}
-          <Tooltip label={t("Project options")} details={[name]}>
-            <InlineAction
-              label={t("Project options")}
-              motion="none"
-              type="button"
-              data-no-drag
-              title=""
-              aria-label={t("Project options")}
-              aria-haspopup="menu"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                const rect = event.currentTarget.getBoundingClientRect();
-                onOpenMenu(
-                  item.path,
-                  event.detail === 0 ? rect.left : event.clientX,
-                  event.detail === 0 ? rect.bottom : event.clientY,
-                  multi && item.path !== "~" ? () => multi.toggle(item.path) : undefined,
-                );
-              }}
-              className="absolute end-1 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
-            >
-              <MoreHorizontal className="icon-md" strokeWidth={1.75} />
-            </InlineAction>
-          </Tooltip>
-          <Tooltip label={pinned ? t("Unpin project") : t("Pin project")} details={[name]}>
-            <InlineAction
-              label={pinned ? t("Unpin project") : t("Pin project")}
-              motion="none"
-              type="button"
-              data-no-drag
-              data-usage-guide="group-pin"
-              title=""
-              aria-label={pinned ? t("Unpin project") : t("Pin project")}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onTogglePin(item.path);
-              }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
-            >
-              {pinned ? (
-                <PinOff className="icon-sm" strokeWidth={1.75} />
-              ) : (
-                <Pin className="icon-sm" strokeWidth={1.75} />
-              )}
-            </InlineAction>
-          </Tooltip>
+          <InlineAction
+            label={t("Project options")}
+            tooltipDetails={[name]}
+            motion="none"
+            type="button"
+            data-no-drag
+            aria-label={t("Project options")}
+            aria-haspopup="menu"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              onOpenMenu(
+                item.path,
+                event.detail === 0 ? rect.left : event.clientX,
+                event.detail === 0 ? rect.bottom : event.clientY,
+                multi && item.path !== "~" ? () => multi.toggle(item.path) : undefined,
+              );
+            }}
+            className="absolute end-1 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
+          >
+            <MoreHorizontal className="icon-md" strokeWidth={1.75} />
+          </InlineAction>
+          <InlineAction
+            label={pinned ? t("Unpin project") : t("Pin project")}
+            tooltipDetails={[name]}
+            motion="none"
+            type="button"
+            data-no-drag
+            data-usage-guide="group-pin"
+            aria-label={pinned ? t("Unpin project") : t("Pin project")}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onTogglePin(item.path);
+            }}
+            className="absolute left-2 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
+          >
+            {pinned ? (
+              <PinOff className="icon-sm" strokeWidth={1.75} />
+            ) : (
+              <Pin className="icon-sm" strokeWidth={1.75} />
+            )}
+          </InlineAction>
         </>
       ) : null}
     </ActionHost>
@@ -2543,42 +2516,38 @@ function CompactLiveAgents({
                 : agent.activity;
           const parts = [agent.title, project, activity].filter(Boolean);
           return (
-            <Tooltip
+            <Button
               key={agent.id}
-              label={agent.title}
-              details={[project, activity]}
-              side="right"
-              wide
+              variant="ghost"
+              motion="none"
+              iconOnly
+              label={parts.join(", ")}
+              size="sm"
+              selected={agent.id === activeSessionId}
+              type="button"
+              tooltip={agent.title}
+              tooltipDetails={[project, activity]}
+              tooltipSide="right"
+              tooltipWide
+              aria-label={parts.join(", ")}
+              aria-current={agent.id === activeSessionId ? "true" : undefined}
+              onClick={() => onSelect?.(agent.id)}
+              className="relative grid w-full shrink-0 place-items-center"
             >
-              <Button
-                variant="ghost"
-                motion="none"
-                iconOnly
-                label={parts.join(", ")}
-                size="sm"
-                selected={agent.id === activeSessionId}
-                type="button"
-                title=""
-                aria-label={parts.join(", ")}
-                aria-current={agent.id === activeSessionId ? "true" : undefined}
-                onClick={() => onSelect?.(agent.id)}
-                className="relative grid w-full shrink-0 place-items-center"
-              >
-                <ProjectMascot
-                  project={seed}
-                  color={color}
-                  name={resolveTabGroupMascot(key, groupMascots)}
-                  className="size-3"
-                  active={!agent.needsApproval && !agent.done}
+              <ProjectMascot
+                project={seed}
+                color={color}
+                name={resolveTabGroupMascot(key, groupMascots)}
+                className="size-3"
+                active={!agent.needsApproval && !agent.done}
+              />
+              {agent.needsApproval ? (
+                <span
+                  aria-hidden
+                  className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-warning"
                 />
-                {agent.needsApproval ? (
-                  <span
-                    aria-hidden
-                    className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-warning"
-                  />
-                ) : null}
-              </Button>
-            </Tooltip>
+              ) : null}
+            </Button>
           );
         })}
       </div>
@@ -2639,25 +2608,22 @@ function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Tooltip label={t("Open project")}>
-        <InlineAction
-          reveal="always"
-          label={t("Open project")}
-          motion="none"
-          ref={anchor}
-          type="button"
-          data-no-drag
-          title=""
-          aria-label={t("Open project")}
-          data-usage-guide="project-add"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-          className="shrink-0"
-        >
-          <Plus className="icon-sm" strokeWidth={1.75} />
-        </InlineAction>
-      </Tooltip>
+      <InlineAction
+        reveal="always"
+        label={t("Open project")}
+        motion="none"
+        ref={anchor}
+        type="button"
+        data-no-drag
+        aria-label={t("Open project")}
+        data-usage-guide="project-add"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="shrink-0"
+      >
+        <Plus className="icon-sm" strokeWidth={1.75} />
+      </InlineAction>
       {open ? (
         <DropdownMenu
           anchor={anchor}

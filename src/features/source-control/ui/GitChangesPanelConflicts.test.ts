@@ -316,7 +316,8 @@ describe("operation banner", () => {
     );
     await renderPanel();
     expect(container.textContent).toContain("Rebase in progress · 1 conflict");
-    expect(button("Continue")!.disabled).toBe(true);
+    // Continue explains itself (disabledReason), so it stays focusable with aria-disabled.
+    expect(button("Continue")!.getAttribute("aria-disabled")).toBe("true");
     expect(button("Abort")!.disabled).toBe(false);
 
     act(() => root.unmount());
@@ -327,7 +328,7 @@ describe("operation banner", () => {
     invalidateGitIndex();
     await renderPanel();
     expect(container.textContent).toContain("Rebase in progress · no conflicts left");
-    expect(button("Continue")!.disabled).toBe(false);
+    expect(button("Continue")!.getAttribute("aria-disabled")).toBeNull();
     await click(button("Continue"));
     expect(gitOperationContinue).toHaveBeenCalledWith("/repo");
   });

@@ -180,18 +180,19 @@ export function InboxAvatar({
 export function InboxPerson({
   name,
   avatarUrl,
-  size = 20,
+  size = "md",
   className = "",
 }: {
   name: string;
   avatarUrl?: string;
-  size?: number;
+  /** `sm` is the 16px avatar of metadata rows; `md` (default) the 20px list avatar. */
+  size?: "sm" | "md";
   className?: string;
 }) {
   useLocale();
   return (
     <span className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}>
-      <InboxAvatar name={name} avatarUrl={avatarUrl} size={size} />
+      <InboxAvatar name={name} avatarUrl={avatarUrl} size={size === "sm" ? 16 : 20} />
       <span className="min-w-0 truncate">{name}</span>
     </span>
   );

@@ -151,7 +151,7 @@ it("uses the main composer's branch checkout flow in the current working copy", 
 
 it("selects an existing working copy for the upcoming session", async () => {
   await act(async () => button("Existing worktree…").click());
-  const tree = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) =>
+  const tree = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
     item.textContent?.includes("/repo-feature"),
   )!;
   await act(async () => tree.click());
@@ -191,7 +191,7 @@ it("keeps branch creation inside the popup and finishes only after creating the 
 
 it("shows inherited worktree policy and returns an explicit current override", async () => {
   await render("workspace", { cwd: "/repo", resolvedMode: "worktree" });
-  expect(button("New worktree").getAttribute("aria-pressed")).toBe("true");
+  expect(button("New worktree").getAttribute("aria-selected")).toBe("true");
   await act(async () => button("Current checkout").click());
   expect(selection).toMatchObject({ cwd: "/repo", mode: "current" });
 });

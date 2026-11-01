@@ -48,6 +48,9 @@ export function TerminalGhostText({ terminal, suffix }: { terminal: Terminal; su
     };
   }, [terminal]);
   if (!layout) return null;
+  // Justified portal: the ghost suggestion must sit inside xterm's own screen element so it
+  // shares the terminal's scroll, clipping and cell-grid coordinates. It is not an overlay,
+  // so the shared Popover/overlay stack does not apply.
   return createPortal(
     <span aria-hidden="true" className={styles.ghost} style={layout.style}>
       {suffix}

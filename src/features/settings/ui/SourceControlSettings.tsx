@@ -70,7 +70,7 @@ export function SourceControlSettings() {
               onChange={onGenerationChoice}
             />
             <Button size="sm" variant="ghost" iconOnly
-              label={t("Use automatic selection")} title={t("Use automatic selection")}
+              label={t("Use automatic selection")}
               disabled={!gitGenerationChoice} onClick={() => onGenerationChoice(undefined)}>
               <RotateCcw className="icon-sm" />
             </Button>

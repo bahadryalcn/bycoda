@@ -10,7 +10,12 @@ import { Button, type ButtonProps } from "./Button";
 import { MoreHorizontal } from "./icons";
 import styles from "./ActionHost.module.css";
 
+export type ActionHostElement = "div" | "article" | "li" | "section" | "aside";
+
 export type ActionHostProps = ComponentPropsWithRef<"div"> & {
+  /** Rendered element. Default `div`; use `article` for a card or `li` for a list item so the
+   *  host carries the right semantics. Event and ref types stay those of the div form. */
+  as?: ActionHostElement;
   /** The row, tab or card is the current one; the host paints the selected fill. */
   selected?: boolean;
   /** A saved custom resting colour (any CSS colour, may be translucent). The host keeps
@@ -29,9 +34,11 @@ export type ActionHostProps = ComponentPropsWithRef<"div"> & {
  * its text, focus ring and selected-tab indicator. Feature controllers keep roles,
  * selection and drag.
  */
-export function ActionHost({ selected, ground, className, style, ...props }: ActionHostProps) {
+export function ActionHost({ as, selected, ground, className, style, ...props }: ActionHostProps) {
+  // The element varies; the props are those of the div form (a ref typed for li or article is a div ref).
+  const Element = (as ?? "div") as "div";
   return (
-    <div
+    <Element
       {...props}
       data-action-host=""
       data-selected={selected || undefined}
@@ -84,12 +91,7 @@ export type InlineMoreActionProps = Omit<
  * keyboard users reach the same target. Frequent actions stay direct `InlineAction`s
  * and status (counts, Git state, connection) stays visible in the row, never in this menu.
  */
-export function InlineMoreAction({
-  expanded,
-  onOpen,
-  reveal,
-  ...props
-}: InlineMoreActionProps) {
+export function InlineMoreAction({ expanded, onOpen, reveal, ...props }: InlineMoreActionProps) {
   return (
     <InlineAction
       {...props}

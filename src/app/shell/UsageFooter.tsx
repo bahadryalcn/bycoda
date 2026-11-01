@@ -11,6 +11,9 @@ import { RefreshCw, Terminal } from "../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { Popover } from "../../shared/ui/Popover";
+import { DropdownMenu } from "../../shared/ui/DropdownMenu";
+import { Spinner } from "../../shared/ui/Spinner";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { consumeCodexRateLimitResetCredit } from "../../features/providers/model/rateLimitsFetch";
 import {
   errorRateLimits,
@@ -350,17 +353,11 @@ export function UsageFooter({
               motion="none"
               type="button"
               size="sm"
-              className="size-7 shrink-0"
-              aria-label={t("Refresh usage")}
-              title={t("Refresh usage")}
+              className="shrink-0"
               disabled={refreshing}
               onClick={() => void refresh()}
             >
-              <RefreshCw
-                className={`icon-sm ${refreshing ? "motion-safe:animate-spin" : ""}`}
-                strokeWidth={1.75}
-                aria-hidden
-              />
+              {refreshing ? <Spinner /> : <RefreshCw className="icon-sm" aria-hidden />}
             </Button>
           </>
         ) : session ? (
@@ -384,16 +381,13 @@ export function UsageFooter({
               motion="none"
               type="button"
               size="sm"
-              className="size-7"
-              aria-label={terminalLabel}
               aria-pressed={projectTerminalVisible}
               data-usage-guide="terminal-toggle"
-              title={terminalUnavailableReason ?? terminalLabel}
               disabled={!!terminalUnavailableReason}
-              aria-description={terminalUnavailableReason}
+              disabledReason={terminalUnavailableReason ?? undefined}
               onClick={onTerminalClick}
             >
-              <Terminal className="icon-sm" strokeWidth={1.75} aria-hidden />
+              <Terminal className="icon-sm" aria-hidden />
             </Button>
           ) : null}
         </div>
@@ -443,13 +437,12 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
 
   if (!canLogin) {
     return (
-      <span
-        className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap"
-        title={HARNESS_TITLE[session.harness]}
-      >
-        <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
-        <span>{HARNESS_LABEL[session.harness]}</span>
-      </span>
+      <Tooltip label={HARNESS_TITLE[session.harness]}>
+        <span className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+          <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
+          <span>{HARNESS_LABEL[session.harness]}</span>
+        </span>
+      </Tooltip>
     );
   }
 
@@ -465,7 +458,7 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
         aria-label={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
+        tooltip={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         onClick={() => setOpen((value) => !value)}
       >
         <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
@@ -512,9 +505,7 @@ function RunningTerminalChip({
   const [menuOpen, setMenuOpen] = useState(false);
   const label = runningTerminalChipLabel(terminals);
   const many = terminals.length > 1;
-  const title = terminals
-    .map((terminal) => `"${terminal.process}" in ${terminal.label}`)
-    .join("\n");
+  const details = terminals.map((terminal) => `"${terminal.process}" in ${terminal.label}`);
   const ariaLabel =
     terminals.length === 1
       ? panelOpen
@@ -539,12 +530,10 @@ function RunningTerminalChip({
         ref={root}
         type="button"
         size="sm"
-        className="size-7"
-        aria-label={ariaLabel}
         aria-pressed={panelOpen}
         aria-expanded={many && !panelOpen ? menuOpen : undefined}
         aria-haspopup={many && !panelOpen ? "menu" : undefined}
-        title={title}
+        tooltipDetails={details}
         onClick={() => {
           if (panelOpen || !many) {
             const target = terminals[0];
@@ -558,34 +547,21 @@ function RunningTerminalChip({
         <span className="sr-only">{label}</span>
       </Button>
       {menuOpen && many && !panelOpen ? (
-        <Popover
+        <DropdownMenu
           anchor={root}
+          label={t("Running terminals")}
           side="top"
           align="end"
-          autoFocus
-          onDismiss={() => setMenuOpen(false)}
-          role="menu"
-          aria-label={t("Running terminals")}
-          className="min-w-[12rem] p-1"
-        >
-          {terminals.map((terminal) => (
-            <Button
-              variant="item"
-              motion="none"
-              key={terminal.id}
-              type="button"
-              role="menuitem"
-              className="flex w-full items-center gap-2 leading-none"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => toggle(terminal.id)}
-            >
-              <span className="min-w-0 flex-1 truncate">{terminal.process}</span>
-              <span className="max-w-[7rem] shrink-0 truncate text-ui-micro text-(--ui-text-secondary)">
-                {terminal.label}
-              </span>
-            </Button>
-          ))}
-        </Popover>
+          width={192}
+          items={terminals.map((terminal) => ({
+            kind: "item" as const,
+            id: terminal.id,
+            label: terminal.process,
+            description: terminal.label,
+          }))}
+          onPick={toggle}
+          onClose={() => setMenuOpen(false)}
+        />
       ) : null}
     </>
   );

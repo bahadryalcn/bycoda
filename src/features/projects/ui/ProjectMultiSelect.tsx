@@ -231,7 +231,7 @@ export function ProjectMultiSelect({
             }}
           >
             <label
-              className="px-1 text-xs font-medium text-[var(--ui-text-muted)]"
+              className="px-1 text-ui-caption font-medium text-[var(--ui-text-muted)]"
               htmlFor="project-selection-group-name"
             >
               {t("New group name")}

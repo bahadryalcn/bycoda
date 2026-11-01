@@ -1,4 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { useId, useState, useSyncExternalStore } from "react";
 import { getCiRepairs, subscribeCiRepairs, type TrackedCiRepair } from "../model/ciRepairTracking";
@@ -8,7 +10,6 @@ import {
   ChevronRight,
   CircleDashed,
   CircleX,
-  LoaderCircle,
   MessageSquare,
   type IconComponent,
 } from "../../../shared/ui/icons";
@@ -139,19 +140,19 @@ export function useCheckRepairs(
 }
 
 const neutral = "text-(--ui-text-secondary)";
-const positive = "text-(--ui-tone-success-fg) dark:text-(--ui-tone-success-fg)";
-const negative = "text-(--ui-tone-danger-fg) dark:text-(--ui-tone-danger-fg)";
-const active = "text-(--ui-tone-warning-fg) dark:text-(--ui-tone-warning-fg)";
+const positive = "text-(--ui-tone-success-fg)";
+const negative = "text-(--ui-tone-danger-fg)";
+const active = "text-(--ui-tone-warning-fg)";
 const states: Record<
   RepairState,
-  { label: string; summary: string; Icon: IconComponent; color: string }
+  { label: string; summary: string; Icon: IconComponent | "spinner"; color: string }
 > = {
   repairing: {
     get label() {
       return t("Repairing");
     },
     summary: "Repair in progress",
-    Icon: LoaderCircle,
+    Icon: "spinner",
     color: active,
   },
   waiting: {
@@ -167,7 +168,7 @@ const states: Record<
       return t("Refreshing");
     },
     summary: "Refreshing CI checks",
-    Icon: LoaderCircle,
+    Icon: "spinner",
     color: neutral,
   },
   stale: {
@@ -199,7 +200,7 @@ const states: Record<
       return t("CI running");
     },
     summary: "running",
-    Icon: LoaderCircle,
+    Icon: "spinner",
     color: active,
   },
   cancel: {
@@ -254,13 +255,8 @@ const states: Record<
 function StatusIcon({ state }: { state: RepairState }) {
   useLocale();
   const { Icon, color } = states[state];
-  return (
-    <Icon
-      aria-hidden="true"
-      strokeWidth={1.75}
-      className={`icon-sm shrink-0 ${color} ${["repairing", "refreshing", "pending"].includes(state) ? "animate-spin motion-reduce:animate-none" : ""}`}
-    />
-  );
+  if (Icon === "spinner") return <Spinner size="sm" className={`shrink-0 ${color}`} />;
+  return <Icon aria-hidden="true" strokeWidth={1.75} className={`icon-sm shrink-0 ${color}`} />;
 }
 
 export function CheckRepairStatus({ item }: { item: RepairItem }) {
@@ -320,7 +316,7 @@ function RepairCard({
       (check) => check.name === single.check.name && check.workflow === single.check.workflow,
     ).length === 1;
   return (
-    <div className="min-w-0 overflow-hidden rounded-(--radius-control) bg-(--ui-surface)">
+    <Surface padding="none" className="overflow-hidden">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-2 py-2">
         <Button
           variant="ghost"
@@ -410,7 +406,7 @@ function RepairCard({
           </p>
         </div>
       ) : null}
-    </div>
+    </Surface>
   );
 }
 

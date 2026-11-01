@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import { suppressTextSelection } from "../../../shared/lib/drag";
-import { t } from "../../../shared/i18n/git";
+import { useRef, type CSSProperties } from "react";
+import { Sash } from "../../../shared/ui/Sash";
 
 export type PaneSizes = { x: number; y: number; c1: number; c3: number };
 export const DEFAULT_PANE_SIZES: PaneSizes = { x: 0.5, y: 0.5, c1: 1 / 3, c3: 1 / 3 };
@@ -37,8 +36,10 @@ export function clampSizes(sizes: PaneSizes): PaneSizes {
   };
 }
 
-/** A native separator over the pane grid: drag, arrow keys, Home/End, and
- * double-click or Enter to restore the default split. */
+/** The shared pane `Sash` over the pane grid, working in container fractions: drag, arrow
+ * keys (2% steps, 10% with Shift), Home/End, and double-click or Enter to restore the
+ * default split. The grid gap already draws the hairline, so the sash only adds the
+ * hover, drag and focus line. */
 export function ConflictSash({
   axis,
   value,
@@ -61,85 +62,41 @@ export function ConflictSash({
   onCommit: () => void;
   onReset: () => void;
 }) {
-  const [dragging, setDragging] = useState(false);
-  const cancel = useRef<(() => void) | null>(null);
-  useEffect(() => () => cancel.current?.(), []);
-  const fromPointer = (event: { clientX: number; clientY: number }) => {
+  const start = useRef({ value, size: 1 });
+  const sign = reverse ? -1 : 1;
+  const measure = () => {
     const rect = container.current?.getBoundingClientRect();
-    if (!rect) return value;
-    const ratio =
-      axis === "x"
-        ? (event.clientX - rect.left) / Math.max(1, rect.width)
-        : (event.clientY - rect.top) / Math.max(1, rect.height);
-    return reverse ? 1 - ratio : ratio;
-  };
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    const handle = event.currentTarget;
-    const pointerId = event.pointerId;
-    handle.setPointerCapture(pointerId);
-    setDragging(true);
-    const restoreSelection = suppressTextSelection();
-    document.documentElement.classList.add("is-resizing");
-    const move = (next: globalThis.PointerEvent) => {
-      if (next.pointerId === pointerId) onChange(fromPointer(next));
-    };
-    const stop = (next?: globalThis.PointerEvent) => {
-      if (next && next.pointerId !== pointerId) return;
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", stop);
-      window.removeEventListener("pointercancel", stop);
-      restoreSelection();
-      document.documentElement.classList.remove("is-resizing");
-      setDragging(false);
-      cancel.current = null;
-      try {
-        handle.releasePointerCapture(pointerId);
-      } catch {
-        /* already released */
-      }
-      onCommit();
-    };
-    cancel.current = () => stop();
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", stop);
-    window.addEventListener("pointercancel", stop);
+    return Math.max(1, (axis === "x" ? rect?.width : rect?.height) ?? 1);
   };
   const decrease = axis === "x" ? "ArrowLeft" : "ArrowUp";
   const increase = axis === "x" ? "ArrowRight" : "ArrowDown";
   return (
-    <div
-      role="separator"
-      tabIndex={0}
-      aria-label={label}
-      title={t("Drag to resize. Double-click to reset.")}
-      aria-orientation={axis === "x" ? "vertical" : "horizontal"}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round((reverse ? 1 - value : value) * 100)}
+    <Sash
+      orientation={axis === "x" ? "vertical" : "horizontal"}
+      label={label}
+      appearance="hidden"
       className="conflict-sash"
-      data-axis={axis}
-      data-dragging={dragging || undefined}
       style={style}
-      onPointerDown={onPointerDown}
-      onDoubleClick={(event) => {
-        event.preventDefault();
-        onReset();
+      value={Math.round((reverse ? 1 - value : value) * 100)}
+      min={0}
+      max={100}
+      onResizeStart={() => {
+        start.current = { value, size: measure() };
       }}
+      onResize={(delta) => onChange(start.current.value + (sign * delta) / start.current.size)}
+      onResizeEnd={(_, { cancelled }) => {
+        if (cancelled) onChange(start.current.value);
+        else onCommit();
+      }}
+      onReset={onReset}
       onKeyDown={(event) => {
         const step = event.shiftKey ? 0.1 : 0.02;
-        const direction = reverse ? -1 : 1;
         let next: number;
-        if (event.key === decrease) next = value - step * direction;
-        else if (event.key === increase) next = value + step * direction;
+        if (event.key === decrease) next = value - step * sign;
+        else if (event.key === increase) next = value + step * sign;
         else if (event.key === "Home") next = reverse ? 1 : 0;
         else if (event.key === "End") next = reverse ? 0 : 1;
-        else if (event.key === "Enter") {
-          event.preventDefault();
-          onReset();
-          return;
-        } else return;
+        else return;
         event.preventDefault();
         onChange(next);
         onCommit();

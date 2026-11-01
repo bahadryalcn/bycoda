@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useLocale, useT } from "../../../shared/i18n";
 import { BarChart, LineChart, type LineChartDatum } from "../../../shared/ui/Charts";
 import { Button } from "../../../shared/ui/Button";
@@ -235,9 +236,7 @@ export function SprintReports({
           }
         />
         {error ? (
-          <p role="alert" className="sprint-errors">
-            {error}
-          </p>
+          <InlineError>{error}</InlineError>
         ) : null}
       </section>
     );
@@ -250,9 +249,7 @@ export function SprintReports({
         </Button>
       </div>
       {error ? (
-        <p role="alert" className="sprint-errors">
-          {error}
-        </p>
+        <InlineError>{error}</InlineError>
       ) : null}
       {!sprintId ? (
         <div className="sprint-report-empty">
@@ -393,7 +390,7 @@ export function SprintReports({
               curve="linear"
             />
           ) : (
-            <p className="sprint-muted">{t("No recorded sprint history yet.")}</p>
+            <EmptyState size="inline" description={t("No recorded sprint history yet.")} />
           )}
           <details>
             <summary>{t("Burndown data and scope changes")}</summary>

@@ -1,15 +1,8 @@
-import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { withGitOperation, useGitPanelState } from "../model/gitPanelState";
-import { Check, GitBranch, Plus, Search, RefreshCw } from "../../../shared/ui/icons";
+import { GitBranch, Plus, RefreshCw } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   gitCheckout,
   gitFetch,
@@ -22,12 +15,18 @@ import {
   notifyGitChanged,
   type GitBranchInfo,
 } from "../../../platform/tauri/fs";
-import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
-import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { CreateBranchDialog } from "./CreateBranchDialog";
 import { GitPickerTrigger } from "./GitPickerTrigger";
-import { Popover } from "../../../shared/ui/Popover";
+import { Badge } from "../../../shared/ui/Badge";
+import { InlineError } from "../../../shared/ui/InlineError";
+import {
+  PickerList,
+  PickerPopover,
+  PopoverSearchHeader,
+  usePickerList,
+  type PickerOption,
+} from "../../../shared/ui/picker";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
 
@@ -116,15 +115,6 @@ export function BranchPicker({
     if (restore) onCloseRef.current?.();
   };
 
-  useEffect(() => {
-    // Popover measures itself off-screen behind `visibility: hidden` before
-    // placing it; focusing during that pass is a no-op in real browsers, so
-    // wait a frame for the popover to actually be visible.
-    if (!open) return;
-    const id = requestAnimationFrame(() => search.current?.focus());
-    return () => cancelAnimationFrame(id);
-  }, [open]);
-
   // The parent disables git controls during our fetch too; keep its results
   // and errors in this picker while the shared operation lock is held.
   const disabledIdle = !enabled && !fetching;
@@ -175,9 +165,6 @@ export function BranchPicker({
     }));
   }, [branch, projectBranches, query]);
 
-  // Navigation restarts whenever the picker opens or the query changes; a
-  // shrinking list clamps the highlighted row during render.
-  const [active, setActive] = useKeyedActiveIndex(`${open}:${query}`, rows.length);
 
   const applySwitch = (pending: PendingSwitch) =>
     pending.kind === "create"
@@ -260,29 +247,38 @@ export function BranchPicker({
     });
   };
 
-  const onSearchKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (rows.length === 0) return;
-      setActive((i) => Math.min(rows.length - 1, i + 1));
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (rows.length === 0) return;
-      setActive((i) => Math.max(0, i - 1));
-      return;
-    }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const row = rows[active];
-      if (row) {
-        pick(row);
-        return;
-      }
-      if (createName && createRow) pick(createRow);
-    }
-  };
+  // Navigation restarts whenever the picker opens or the query changes; a
+  // shrinking list clamps the highlighted row during render.
+  const branchKey = (entry: GitBranchInfo) => `${entry.remote ?? "local"}:${entry.name}`;
+  const options = useMemo(
+    (): PickerOption[] =>
+      rows.map(({ branch: entry }) => ({
+        value: `${entry.remote ?? "local"}:${entry.name}`,
+        title: (
+          <MiddleTruncate mode="text" className={entry.current ? "font-medium" : undefined}>
+            {entry.name}
+          </MiddleTruncate>
+        ),
+        textValue: entry.name,
+        icon: <GitBranch className="icon-sm" strokeWidth={1.75} />,
+        meta: entry.remote ? (
+          <Badge size="xs" appearance="subtle">
+            {entry.remote}
+          </Badge>
+        ) : undefined,
+      })),
+    [rows],
+  );
+  const currentRow = rows.find((row) => row.branch.current);
+  const picker = usePickerList({
+    options,
+    value: currentRow ? branchKey(currentRow.branch) : null,
+    onChange: (value) => {
+      const row = rows.find((entry) => branchKey(entry.branch) === value);
+      if (row) pick(row);
+    },
+    resetKey: `${open}:${query}`,
+  });
 
   // Always keep the control mounted so the composer's toolbar does not resize
   // when a folder isn't a git repo. The loading skeleton, "No repo" label, and
@@ -371,202 +367,123 @@ export function BranchPicker({
         />
       ) : null}
       {open ? (
-        <Popover
+        <PickerPopover
+          open
           anchor={root}
           side={popoverSide}
           width={MENU_WIDTH}
           minHeight={MENU_MIN_HEIGHT}
           maxHeight={MENU_MAX_HEIGHT}
           onDismiss={(reason) => dismiss(reason === "escape")}
-          role="dialog"
-          aria-label={t("Branch picker")}
-          data-branch-picker
-          className="flex flex-col overflow-hidden"
-        >
-          <div className="flex shrink-0 items-center gap-2 border-b border-stroke px-3 py-2.5 text-[var(--ui-text-secondary)]">
-            <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
-            <SearchInput
+          label={t("Branch picker")}
+          data-branch-picker=""
+          header={
+            <PopoverSearchHeader
               ref={search}
-              type="text"
-              value={query}
+              label={t("Search or create a branch")}
               placeholder={t("Search or create a branch...")}
-              aria-label={t("Search or create a branch")}
-              spellCheck={false}
-              autoComplete="off"
+              value={query}
+              onValueChange={(value) => {
+                setQuery(value);
+                setError(null);
+              }}
               autoCorrect="off"
               autoCapitalize="off"
               disabled={busy}
-              className="min-w-0 flex-1"
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setError(null);
-              }}
-              onKeyDown={onSearchKey}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              label={t("Fetch")}
-              title={t("Fetch")}
-              loading={fetching}
-              loadingLabel={t("Fetching…")}
-              disabled={busy || !!checkoutBusy || !enabled}
-              onClick={async () => {
-                if (busy || checkoutBusy || !enabled) return;
-                setBusy(true);
-                setFetching(true);
-                setError(null);
-                try {
-                  await withGitOperation(cwd, "Fetching…", () => gitFetch(cwd));
-                  notifyGitChanged(cwd, "refs");
-                } catch (err) {
-                  setError(failMessage(err));
-                } finally {
-                  setBusy(false);
-                  setFetching(false);
+              {...picker.searchProps}
+              onSubmit={() => {
+                if (rows.length > 0) {
+                  picker.commit();
+                  return;
                 }
+                if (createName && createRow) pick(createRow);
               }}
-            >
-              <RefreshCw aria-hidden className="size-3.5" />
-            </Button>
-          </div>
-          <BranchList
-            rows={rows}
-            active={active}
-            busy={busy}
-            emptyLabel={query.trim() ? "No matching branches" : "No branches"}
-            onActive={setActive}
-            onPick={pick}
-          />
-          {error ? (
-            <p
-              role="alert"
-              className="max-h-16 shrink-0 overflow-y-auto whitespace-pre-wrap border-t border-stroke px-2.5 py-2 text-[11px] leading-4 text-danger"
-            >
-              {error}
-            </p>
-          ) : null}
-          <div className="shrink-0 border-t border-stroke p-1 px-1.5">
-            {createRow ? (
+              trailing={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t("Fetch")}
+                  loading={fetching}
+                  loadingLabel={t("Fetching…")}
+                  disabled={busy || !!checkoutBusy || !enabled}
+                  onClick={async () => {
+                    if (busy || checkoutBusy || !enabled) return;
+                    setBusy(true);
+                    setFetching(true);
+                    setError(null);
+                    try {
+                      await withGitOperation(cwd, "Fetching…", () => gitFetch(cwd));
+                      notifyGitChanged(cwd, "refs");
+                    } catch (err) {
+                      setError(failMessage(err));
+                    } finally {
+                      setBusy(false);
+                      setFetching(false);
+                    }
+                  }}
+                >
+                  <RefreshCw aria-hidden className="icon-sm" />
+                </Button>
+              }
+            />
+          }
+          footer={
+            <div className="shrink-0 border-t border-stroke p-1 px-1.5">
+              {createRow ? (
+                <Button
+                  variant="item"
+                  motion="none"
+                  type="button"
+                  fullWidth
+                  align="start"
+                  startIcon={<Plus className="icon-md" strokeWidth={1.75} />}
+                  disabled={busy}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(createRow)}
+                >
+                  <span className="min-w-0 truncate">
+                    {createRow.name
+                      ? t("Create and checkout {p0}", { p0: createRow.name })
+                      : t("New branch")}
+                  </span>
+                </Button>
+              ) : null}
               <Button
                 variant="item"
                 motion="none"
                 type="button"
-                disabled={busy}
+                fullWidth
+                align="start"
+                startIcon={<GitBranch className="icon-md" strokeWidth={1.75} />}
+                disabled={busy || !projectBranches?.branches.length}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pick(createRow)}
-                className="flex h-7.5 w-full items-center gap-2.5 text-left"
+                onClick={() => {
+                  setOpen(false);
+                  setError(null);
+                  setCreatingFrom(true);
+                  setCreating(true);
+                }}
               >
-                <Plus className="size-4 shrink-0" strokeWidth={1.75} />
-                <span className="min-w-0 truncate">
-                  {createRow.name
-                    ? t("Create and checkout {p0}", { p0: createRow.name })
-                    : t("New branch")}
-                </span>
+                <span className="min-w-0 truncate">{t("New branch from…")}</span>
               </Button>
-            ) : null}
-            <Button
-              variant="item"
-              motion="none"
-              type="button"
-              disabled={busy || !projectBranches?.branches.length}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                setOpen(false);
-                setError(null);
-                setCreatingFrom(true);
-                setCreating(true);
-              }}
-              className="flex h-7.5 w-full items-center gap-2.5 text-left"
-            >
-              <GitBranch className="size-4 shrink-0" strokeWidth={1.75} />
-              <span className="min-w-0 truncate">{t("New branch from…")}</span>
-            </Button>
-          </div>
-        </Popover>
-      ) : null}
-    </div>
-  );
-}
-
-function BranchList({
-  rows,
-  active,
-  busy,
-  emptyLabel,
-  onActive,
-  onPick,
-}: {
-  rows: BranchRow[];
-  active: number;
-  busy: boolean;
-  emptyLabel: string;
-  onActive: (index: number) => void;
-  onPick: (row: BranchRow) => void;
-}) {
-  useLocale();
-  const lockOverscroll = useLockOverscroll<HTMLDivElement>();
-  const activeRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: "nearest" });
-  }, [active]);
-
-  if (rows.length === 0) {
-    return (
-      <div className="min-h-0 flex-1 px-3 py-4 text-[12px] text-[var(--ui-text-secondary)]">
-        {emptyLabel}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      ref={lockOverscroll}
-      role="listbox"
-      aria-label={t("Branches")}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-none px-1.5 py-1.5"
-    >
-      {rows.map((row, index) => {
-        const highlighted = index === active;
-        const selected = row.branch.current;
-        return (
-          <Button
-            variant="item"
-            motion="none"
-            key={`${row.branch.remote ?? "local"}:${row.branch.name}`}
-            ref={highlighted ? activeRef : undefined}
-            type="button"
-            role="option"
-            aria-selected={selected}
+            </div>
+          }
+        >
+          <PickerList
+            label={t("Branches")}
+            controller={picker}
+            checkPlacement="icon"
             disabled={busy}
-            onMouseDown={(e) => e.preventDefault()}
-            onMouseEnter={() => onActive(index)}
-            onClick={() => onPick(row)}
-            className={`  flex h-8 w-full items-center gap-2 text-left  ${
-              highlighted || selected ? "" : ""
-            }   `}
-          >
-            {selected ? (
-              <Check className="size-3.5 shrink-0" strokeWidth={1.75} />
-            ) : (
-              <GitBranch
-                className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
-                strokeWidth={1.75}
-              />
-            )}
-            <MiddleTruncate mode="text" className={`min-w-0 flex-1 ${selected ? "font-medium" : ""}`}>
-              {row.branch.name}
-            </MiddleTruncate>
-            {row.branch.remote ? (
-              <span className="shrink-0 rounded bg-(--ui-surface) px-1.5 py-0.5 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)">
-                {row.branch.remote}
-              </span>
-            ) : null}
-          </Button>
-        );
-      })}
+            emptyLabel={query.trim() ? t("No matching branches") : t("No branches")}
+          />
+          {error ? (
+            <InlineError className="max-h-16 shrink-0 overflow-y-auto whitespace-pre-wrap border-t border-stroke px-2.5 py-2">
+              {error}
+            </InlineError>
+          ) : null}
+        </PickerPopover>
+      ) : null}
     </div>
   );
 }

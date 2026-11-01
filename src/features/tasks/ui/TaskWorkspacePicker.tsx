@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
@@ -308,7 +309,7 @@ export function TaskWorkspacePicker({
           ) : null}
         </>
       ) : supported && !error ? (
-        <p role="status">{t("Loading…")}</p>
+        <LoadingText />
       ) : null}
     </fieldset>
   );

@@ -290,27 +290,19 @@ describe("onboarding workflow", () => {
         expect(document.documentElement.classList.contains("theme-light")).toBe(mode === "light");
     }
     await act(async () =>
-      container
-        .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="star-wars"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>("#onboarding-crew-star-wars")!.click(),
     );
     expect(loadCrewTheme()).toBe("star-wars");
     expect(loadCrewSceneEnabled()).toBe(true);
     await act(async () =>
-      container
-        .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="lotr"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>("#onboarding-crew-lotr")!.click(),
     );
     expect(loadCrewTheme()).toBe("lotr");
     await act(async () =>
-      container
-        .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="star-wars"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>("#onboarding-crew-star-wars")!.click(),
     );
     await act(async () =>
-      container
-        .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="none"]')!
-        .click(),
+      container.querySelector<HTMLButtonElement>("#onboarding-crew-none")!.click(),
     );
     expect(loadCrewSceneEnabled()).toBe(false);
     expect(loadCrewTheme()).toBe("star-wars");

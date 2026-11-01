@@ -79,7 +79,6 @@ export function CrewAppearancePicker({
                   aria-pressed={look.icon === icon}
                   selected={look.icon === icon}
                   onClick={() => onChange({ icon })}
-                  className="grid size-7 place-items-center"
                 >
                   <ProjectMascot project={crewId} name={icon} color={color} className="icon-md" />
                 </Button>
@@ -104,8 +103,6 @@ export function CrewAppearancePicker({
             <ColorSwatchRow
               colors={TAB_GROUP_COLORS}
               colorIndex={look.color ?? 0}
-              customColor={null}
-              customPickerOpen={false}
               onPickIndex={(index) => onChange({ color: index || undefined })}
             />
           </div>

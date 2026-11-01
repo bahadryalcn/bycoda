@@ -115,7 +115,7 @@
 }
 
 .error {
-  color: var(--color-danger);
+  color: var(--ui-tone-danger-fg);
 }
 
 .modified {

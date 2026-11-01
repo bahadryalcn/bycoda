@@ -600,7 +600,7 @@ describe("FileTree render isolation", () => {
       },
     };
     act(() => render(1));
-    expect(row("first.ts").querySelector(".text-warning")).not.toBeNull();
+    expect(row("first.ts").querySelector("[class*=\"ui-tone-warning-fg\"]")).not.toBeNull();
     act(() => row("first.ts").click());
     expect(onOpenFile).toHaveBeenCalledWith(`${cwd}/first.ts`, undefined, {
       exact: true,

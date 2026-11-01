@@ -1,5 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Sash, type SashEndInfo } from "../../../shared/ui/Sash";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
   ChevronDown,
@@ -16,7 +18,7 @@ import {
   Terminal,
   X,
 } from "../../../shared/ui/icons";
-import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
@@ -135,7 +137,6 @@ function ProjectTerminalDockComponent({
     defaultWidth: 200,
     initial: 200,
   });
-  const [dragging, setDragging] = useState(false);
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const [profileMenu, setProfileMenu] = useState<HTMLElement | null>(null);
   const [terminalMenu, setTerminalMenu] = useState<{
@@ -162,7 +163,7 @@ function ProjectTerminalDockComponent({
   const profiles = useTerminalProfiles();
   const chosenProfile = useTerminalProfile();
   const defaultProfile = effectiveProfileId(profiles, chosenProfile);
-  const drag = useRef<{ start: number; size: number } | null>(null);
+  const dragStart = useRef(dock.size);
   const sizeRef = useRef(dock.size);
   sizeRef.current = dock.size;
   const pending = useRef(dock.size);
@@ -173,15 +174,6 @@ function ProjectTerminalDockComponent({
   const splitTerminal = (id: string) => {
     onSplitTerminal?.(id);
   };
-
-  useEffect(() => {
-    if (!dragging) return;
-    const previous = document.body.style.cursor;
-    document.body.style.cursor = vertical ? "row-resize" : "col-resize";
-    return () => {
-      document.body.style.cursor = previous;
-    };
-  }, [dragging, vertical]);
 
   useEffect(
     () => () => {
@@ -212,44 +204,37 @@ function ProjectTerminalDockComponent({
     onSizeCommit(pending.current);
   };
 
-  const onResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = {
-      start: vertical ? event.clientY : event.clientX,
-      size: sizeRef.current,
-    };
+  // The Sash owns pointer capture, the body cursor, Escape/blur cancel and the arrow keys; it
+  // reports a signed delta, which the dock turns into a clamped size for its side.
+  const startResize = () => {
+    dragStart.current = sizeRef.current;
     pending.current = sizeRef.current;
-    setDragging(true);
   };
-
-  const onResizePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
-    const point = vertical ? event.clientY : event.clientX;
-    const delta = point - drag.current.start;
+  const resizeBy = (delta: number) => {
     const signed = dock.side === "bottom" || dock.side === "right" ? -delta : delta;
-    paint(clampDockSize(dock.side, drag.current.size + signed, viewport()));
+    paint(clampDockSize(dock.side, dragStart.current + signed, viewport()));
   };
-
-  const onResizePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
-    drag.current = null;
-    commit();
-    setDragging(false);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
+  const endResize = (_delta: number, { cancelled }: SashEndInfo) => {
+    if (!cancelled) {
+      commit();
+      return;
     }
+    if (frame.current != null) {
+      cancelAnimationFrame(frame.current);
+      frame.current = null;
+    }
+    pending.current = dragStart.current;
+    onSizePaint(dragStart.current);
   };
 
   const sash =
     dock.side === "top"
-      ? "absolute inset-x-0 -bottom-px z-10 h-1.5 cursor-row-resize touch-none"
+      ? "absolute inset-x-0 -bottom-px"
       : dock.side === "bottom"
-        ? "absolute inset-x-0 -top-px z-10 h-1.5 cursor-row-resize touch-none"
+        ? "absolute inset-x-0 -top-px"
         : dock.side === "left"
-          ? "absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none"
-          : "absolute inset-y-0 -left-px z-10 w-1.5 cursor-col-resize touch-none";
+          ? "absolute inset-y-0 -right-px"
+          : "absolute inset-y-0 -left-px";
 
   return (
     <section
@@ -265,26 +250,27 @@ function ProjectTerminalDockComponent({
       } border-stroke`}
       onMouseDown={onFocus}
     >
-      <div
-        role="separator"
-        aria-orientation={vertical ? "horizontal" : "vertical"}
-        aria-label={t("Resize terminal")}
-        aria-valuenow={dock.size}
+      <Sash
+        orientation={vertical ? "horizontal" : "vertical"}
+        label={t("Resize terminal")}
+        appearance="hidden"
+        value={dock.size}
         className={`${sash} terminal-dock-sash`}
-        data-dragging={dragging || undefined}
-        onPointerDown={onResizePointerDown}
-        onPointerMove={onResizePointerMove}
-        onPointerUp={onResizePointerUp}
-        onPointerCancel={onResizePointerUp}
-        onDoubleClick={() => {
+        onResizeStart={startResize}
+        onResize={resizeBy}
+        onResizeEnd={endResize}
+        onReset={() => {
           pending.current = defaultDockSize(dock.side);
           commit();
         }}
       />
-      <header className="terminal-header">
-        <span className="terminal-header-title">{t("Terminals")}</span>
-        <div className="terminal-toolbar">
-          <div className="flex min-w-0 items-center gap-0.5">
+      <PaneHeader
+        as="header"
+        className="terminal-header"
+        titleAs="div"
+        title={t("Terminals")}
+        actions={
+          <>
             <IconButton
               label={t("New Terminal ({p0}`)", { p0: MOD })}
               onClick={() => {
@@ -327,9 +313,9 @@ function ProjectTerminalDockComponent({
             <IconButton label={t("Hide Terminal ({p0}J)", { p0: MOD })} onClick={onHide}>
               <X className="icon-sm" strokeWidth={1.75} />
             </IconButton>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
       <div className="terminal-body" ref={bodyRef}>
         <aside
           ref={sidebarResize.setPaneRef}
@@ -366,7 +352,8 @@ function ProjectTerminalDockComponent({
                   aria-controls={`terminal-panel-${file.id}`}
                   tabIndex={file.id === dock.pane.activeFileId ? 0 : -1}
                   className="terminal-list-item"
-                  title={`${terminalTabLabel(file)} — ${file.cwd}`}
+                  tooltip={terminalTabLabel(file)}
+                  tooltipDetails={[file.cwd]}
                   onClick={() => {
                     if (sortable.consumeClick()) return;
                     onSelectTerminal(file.id);
@@ -402,17 +389,16 @@ function ProjectTerminalDockComponent({
                     }
                   }}
                 >
-                  <Terminal className="icon-sm shrink-0" strokeWidth={1.5} />
+                  <Terminal className="icon-sm shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{terminalTabLabel(file)}</span>
                 </Button>
                 <div className="terminal-row-actions">
                   {onSplitTerminal ? (
                     <InlineAction
                       label={`${t("Split")} — ${terminalTabLabel(file)}`}
+                      tooltip={t("Split")}
                       motion="none"
                       type="button"
-                      aria-label={`${t("Split")} — ${terminalTabLabel(file)}`}
-                      title={t("Split")}
                       onClick={() => splitTerminal(file.id)}
                     >
                       <SplitSquare className="icon-sm" strokeWidth={1.75} />
@@ -420,10 +406,9 @@ function ProjectTerminalDockComponent({
                   ) : null}
                   <InlineAction
                     label={`${t("Close")} — ${terminalTabLabel(file)}`}
+                    tooltip={t("Close")}
                     motion="none"
                     type="button"
-                    aria-label={`${t("Close")} — ${terminalTabLabel(file)}`}
-                    title={t("Close")}
                     onClick={() => onCloseTerminal(file.id)}
                   >
                     <X className="icon-sm" strokeWidth={1.75} />
@@ -433,13 +418,10 @@ function ProjectTerminalDockComponent({
             ))}
           </div>
         </aside>
-        <div
-          {...sidebarResize.separatorProps}
-          aria-label={`${t("Resize terminal")} — ${t("Terminals")}`}
+        <Sash
+          {...sidebarResize.sashProps}
+          label={`${t("Resize terminal")} — ${t("Terminals")}`}
           className="terminal-sidebar-sash"
-          data-dragging={sidebarResize.dragging || undefined}
-          onPointerDown={sidebarResize.onPointerDown}
-          onDoubleClick={sidebarResize.onDoubleClick}
         />
         <div
           className="terminal-canvas relative min-h-0 min-w-0 flex-1"

@@ -53,7 +53,7 @@ export function HandoffMiniCard({ card, onDismiss }: Props) {
             label={t("Remove handoff")}
             variant="ghost"
             type="button"
-            title={t("Remove")}
+            tooltip={t("Remove")}
             aria-label={t("Remove handoff")}
             onClick={onDismiss}
             className="shrink-0"

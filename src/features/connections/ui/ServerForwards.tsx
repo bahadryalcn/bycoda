@@ -2,7 +2,9 @@ import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import { useEffect, useRef, useState } from "react";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
+import { Badge, StatusBadge } from "../../../shared/ui/Badge";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -95,7 +97,7 @@ export function ServerForwards({
   };
   return (
     <>
-      <Container className="text-xs">
+      <Container className="text-ui-caption">
         <Heading className="py-1 font-medium">
           {t("Port forwarding")}
           {rules.length ? ` (${rules.length})` : ""}
@@ -110,10 +112,15 @@ export function ServerForwards({
               onChange={(event) => setSearch(event.target.value)}
             />
           ) : (
-            <p className="py-3 text-(--ui-text-muted)">{t("No forwarding rules yet.")}</p>
+            <EmptyState size="inline" description={t("No forwarding rules yet.")} />
           )}
           {rules.length > 0 && matchingRules.length === 0 ? (
-            <p className="py-3 text-(--ui-text-muted)">{t("No matching forwarding rules.")}</p>
+            <EmptyState
+              size="inline"
+              kind="filtered"
+              description={t("No matching forwarding rules.")}
+              onReset={() => setSearch("")}
+            />
           ) : null}
           {matchingRules.map((rule) => {
             const runtimeId = forwardRuntimeId(server.id, rule.id);
@@ -126,27 +133,22 @@ export function ServerForwards({
               >
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                   <span className="min-w-0 break-all font-medium">{rule.name}</span>
-                  <Badge
-                    size="sm"
-                    tone={running ? "success" : status?.state === "failed" ? "danger" : "neutral"}
-                  >
-                    {running
-                      ? t("Running")
-                      : status?.state === "failed"
-                        ? t("Failed")
-                        : t("Stopped")}
-                  </Badge>
+                  {running ? (
+                    <StatusBadge status="running" />
+                  ) : status?.state === "failed" ? (
+                    <StatusBadge status="failed" />
+                  ) : (
+                    <Badge size="sm" tone="neutral">
+                      {t("Stopped")}
+                    </Badge>
+                  )}
                 </div>
                 <p className="break-all text-(--ui-text-muted)">
                   {rule.kind === "dynamic"
                     ? `SOCKS5 · 127.0.0.1:${rule.localPort}`
                     : `127.0.0.1:${rule.localPort} → ${rule.targetHost}:${rule.targetPort}`}
                 </p>
-                {status?.error ? (
-                  <p role="alert" className="text-(--ui-tone-danger-fg)">
-                    {status.error}
-                  </p>
-                ) : null}
+                {status?.error ? <InlineError>{status.error}</InlineError> : null}
                 <div className="flex flex-wrap gap-2">
                   <Button
                     loading={busy === rule.id}
@@ -298,11 +300,7 @@ export function ServerForwards({
               </div>
             </form>
           </details>
-          {error || statusError ? (
-            <p role="alert" className="break-words text-(--ui-tone-danger-fg)">
-              {error || statusError}
-            </p>
-          ) : null}
+          {error || statusError ? <InlineError>{error || statusError}</InlineError> : null}
         </div>
       </Container>
       {proxy.dialog}

@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { t, useLocale } from "../../../shared/i18n";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
@@ -225,12 +226,14 @@ export function ArchivePage({
               tabIndex={0}
             >
               {matchingProjects.length === 0 ? (
-                <div className="settings-collection-empty">
-                  <p role="status">{t("No matching archived projects.")}</p>
-                  <Button variant="ghost" onClick={() => setProjectQuery("")}>
-                    {t("Clear search")}
-                  </Button>
-                </div>
+                <EmptyState
+                  size="inline"
+                  kind="filtered"
+                  className="settings-collection-empty"
+                  description={t("No matching archived projects.")}
+                  resetLabel={t("Clear search")}
+                  onReset={() => setProjectQuery("")}
+                />
               ) : null}
               {matchingProjects.map((project) => (
                 <div key={project.path} className="settings-collection-row">
@@ -344,12 +347,14 @@ export function ArchivePage({
               tabIndex={0}
             >
               {matchingSessions.length === 0 ? (
-                <div className="settings-collection-empty">
-                  <p role="status">{t("No matching archived conversations.")}</p>
-                  <Button variant="ghost" onClick={() => setSessionQuery("")}>
-                    {t("Clear search")}
-                  </Button>
-                </div>
+                <EmptyState
+                  size="inline"
+                  kind="filtered"
+                  className="settings-collection-empty"
+                  description={t("No matching archived conversations.")}
+                  resetLabel={t("Clear search")}
+                  onReset={() => setSessionQuery("")}
+                />
               ) : null}
               {matchingSessions.map((session) => (
                 <div key={session.id} className="settings-collection-row">

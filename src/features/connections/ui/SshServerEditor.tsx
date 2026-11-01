@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { SshCertificateInspection } from "./SshCertificateInspection";
 import { SshIdentityField } from "./SshIdentityField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -17,7 +17,8 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { sshEndpointPreview, validSshEndpointPreview } from "../model/sshEndpointReview";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
 import { saveSshConnection, type ServerRecord, type SshEndpoint } from "../model/serverInventory";
 
@@ -113,6 +114,7 @@ export function SshServerEditor({
     validSshEndpointPreview(endpoint);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const formId = useId();
   return (
     <Modal
       title={onConnect ? t("Quick connect") : server ? t("Edit SSH server") : t("Add SSH server")}
@@ -120,8 +122,19 @@ export function SshServerEditor({
         if (!saving) onClose();
       }}
       size="md"
+      footer={
+        <ModalActions>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button variant="primary" type="submit" form={formId} loading={saving}>
+            {onConnect ? t("Connect") : t("Save")}
+          </Button>
+        </ModalActions>
+      }
     >
       <form
+        id={formId}
         className="flex flex-col gap-3 p-4"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -159,7 +172,7 @@ export function SshServerEditor({
         }}
       >
         <fieldset className="flex min-w-0 flex-col gap-3">
-          <legend className="mbe-3 text-sm font-medium">{t("Connection")}</legend>
+          <legend className="mbe-3 text-ui-body font-medium">{t("Connection")}</legend>
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
             <TextField
               label={t("Host")}
@@ -182,7 +195,7 @@ export function SshServerEditor({
           </div>
         </fieldset>
         <fieldset className="flex min-w-0 flex-col gap-3 border-t border-stroke pbs-3">
-          <legend className="text-sm font-medium">{t("Credentials")}</legend>
+          <legend className="text-ui-body font-medium">{t("Credentials")}</legend>
           <TextField
             label={t("SSH user")}
             value={user}
@@ -200,7 +213,7 @@ export function SshServerEditor({
           onChange={(event) => setName(event.target.value)}
           disabled={saving}
         />
-        <details className="text-xs text-(--ui-text-muted)">
+        <details className="text-ui-caption text-(--ui-text-muted)">
           <summary className="cursor-pointer py-1">{t("Connection help")}</summary>
           <p className="mbs-2">
             {t(
@@ -210,7 +223,7 @@ export function SshServerEditor({
           <p className="mbs-2">{t("Leave empty to use your SSH agent and default identities.")}</p>
         </details>
         {!onConnect && valid && endpoint.httpProxy ? (
-          <p className="break-all text-xs text-(--ui-text-muted)">
+          <p className="break-all text-ui-caption text-(--ui-text-muted)">
             {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
             {sshEndpointPreview(endpoint.httpProxy)}
           </p>
@@ -223,7 +236,7 @@ export function SshServerEditor({
             server?.sshEndpoint?.jumpHosts?.length ||
             server?.sshEndpoint?.jumpPolicies?.length,
           )}
-          className="border-t border-stroke pbs-3 text-xs text-(--ui-text-muted)"
+          className="border-t border-stroke pbs-3 text-ui-caption text-(--ui-text-muted)"
         >
           <summary className="cursor-pointer py-1">{t("Advanced SSH settings")}</summary>
           <div className="mbs-2 flex flex-col gap-3">
@@ -255,7 +268,7 @@ export function SshServerEditor({
             )}
           </div>
         </details>
-        <details className="text-xs text-(--ui-text-muted)">
+        <details className="text-ui-caption text-(--ui-text-muted)">
           <summary className="cursor-pointer py-1">{t("Connection proxy")}</summary>
           <div className="mbs-2 flex min-w-0 flex-col gap-2">
             <Switch
@@ -300,11 +313,11 @@ export function SshServerEditor({
                   )}
                 </p>
                 {proxyConflict ? (
-                  <p role="status" className="text-(--ui-tone-danger-fg)">
+                  <InlineError live="polite">
                     {t(
                       "Choose either an HTTP proxy or a jump chain. Both cannot be used together.",
                     )}
-                  </p>
+                  </InlineError>
                 ) : null}
               </>
             ) : null}
@@ -312,7 +325,7 @@ export function SshServerEditor({
         </details>
         {onConnect ? (
           <>
-            <label className="flex items-center gap-2 text-xs">
+            <label className="flex items-center gap-2 text-ui-caption">
               <Checkbox
                 checked={saveConnection}
                 disabled={saving}
@@ -323,7 +336,7 @@ export function SshServerEditor({
             {valid ? (
               <div
                 aria-label={t("Endpoint preview")}
-                className="border-t border-stroke pbs-3 text-xs"
+                className="border-t border-stroke pbs-3 text-ui-caption"
               >
                 <p className="break-all font-medium">
                   {sshEndpointPreview(endpoint)}
@@ -362,19 +375,7 @@ export function SshServerEditor({
             ) : null}
           </>
         ) : null}
-        {error ? (
-          <p role="alert" className="text-xs text-(--ui-tone-danger-fg)">
-            {error}
-          </p>
-        ) : null}
-        <div className="sticky inset-be-0 z-10 -mbe-4 flex justify-end gap-2 border-t border-stroke bg-(--ui-surface) py-3">
-          <Button variant="ghost" disabled={saving} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button variant="primary" type="submit" loading={saving}>
-            {onConnect ? t("Connect") : t("Save")}
-          </Button>
-        </div>
+        {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>
   );

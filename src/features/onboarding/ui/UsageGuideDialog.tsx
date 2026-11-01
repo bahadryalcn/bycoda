@@ -9,7 +9,7 @@ import { ACTIONS, EVENTS, Joyride, STATUS, type EventData, type Step } from "rea
 import { t, useLocale } from "../../../shared/i18n";
 import { useOverlay } from "../../../shared/ui/overlay";
 import { Button } from "../../../shared/ui/Button";
-import { MessageSquare, Check } from "lucide-react";
+import { MessageSquare, Check } from "../../../shared/ui/icons";
 import { UsageGuideTooltip } from "./UsageGuideTooltip";
 import { GuideShortcuts } from "./GuideShortcuts";
 import { findUsageGuideTarget } from "../model/usageGuideTargets";
@@ -137,7 +137,7 @@ export default function UsageGuideDialog({
           ) : null}
           {current.example ? (
             <blockquote className="usage-guide-example">
-              <MessageSquare size={16} aria-hidden="true" />
+              <MessageSquare className="icon-md" aria-hidden="true" />
               <p>{current.example}</p>
             </blockquote>
           ) : null}
@@ -145,7 +145,7 @@ export default function UsageGuideDialog({
             <ul className="usage-guide-tips">
               {current.tips.map((tip) => (
                 <li key={tip}>
-                  <Check size={15} aria-hidden="true" />
+                  <Check className="icon-md" aria-hidden="true" />
                   <span>{tip}</span>
                 </li>
               ))}

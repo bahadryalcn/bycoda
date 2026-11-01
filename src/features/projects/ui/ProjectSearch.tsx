@@ -1,13 +1,16 @@
 import { Popover } from "../../../shared/ui/Popover";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { Badge } from "../../../shared/ui/Badge";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   CaseSensitive,
   ListFilter,
   ChevronLeft,
-  LoaderCircle,
   Regex,
   WholeWord,
 } from "../../../shared/ui/icons";
@@ -191,27 +194,17 @@ function ProjectSearchContent({
   };
 
   if (!cwd || cwd === "~") {
-    return (
-      <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">{t("No project folder")}</p>
-    );
+    return <EmptyState size="inline" className="px-3 py-2" description={t("No project folder")} />;
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {showHeader ? (
         <div className="flex shrink-0 items-center gap-1 border-b border-stroke px-1.5 py-1">
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            onClick={onClose}
-            title={t("Back to files")}
-            aria-label={t("Back to files")}
-            className="grid size-7 shrink-0 place-items-center"
-          >
-            <ChevronLeft className="size-4" strokeWidth={1.75} />
+          <Button variant="ghost" iconOnly label={t("Back to files")} onClick={onClose}>
+            <ChevronLeft className="icon-md" strokeWidth={1.75} />
           </Button>
-          <span className="min-w-0 flex-1 truncate text-[12px] text-(--ui-text-secondary)">
+          <span className="min-w-0 flex-1 truncate text-ui-caption text-(--ui-text-secondary)">
             {t("Search in files")}
           </span>
         </div>
@@ -237,7 +230,7 @@ function ProjectSearchContent({
           aria-expanded={!!filtersAnchor}
           onClick={(event) => setFiltersAnchor(filtersAnchor ? null : event.currentTarget)}
         >
-          <ListFilter className="size-4" />
+          <ListFilter className="icon-md" />
         </Button>
       </div>
       {filtersAnchor ? (
@@ -256,21 +249,21 @@ function ProjectSearchContent({
               active={caseSensitive}
               onClick={() => setCaseSensitive((value) => !value)}
             >
-              <CaseSensitive className="size-3.5" strokeWidth={1.75} />
+              <CaseSensitive className="icon-sm" strokeWidth={1.75} />
             </Toggle>
             <Toggle
               label={t("Match whole word")}
               active={wholeWord}
               onClick={() => setWholeWord((value) => !value)}
             >
-              <WholeWord className="size-3.5" strokeWidth={1.75} />
+              <WholeWord className="icon-sm" strokeWidth={1.75} />
             </Toggle>
             <Toggle
               label={t("Use regular expression")}
               active={regex}
               onClick={() => setRegex((value) => !value)}
             >
-              <Regex className="size-3.5" strokeWidth={1.75} />
+              <Regex className="icon-sm" strokeWidth={1.75} />
             </Toggle>
           </div>
           <TextField
@@ -308,14 +301,11 @@ function ProjectSearchContent({
           </Button>
         </Popover>
       ) : null}
-      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-[11px] text-(--ui-text-secondary)">
+      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-ui-micro text-(--ui-text-secondary)">
         {loading ? (
-          <>
-            <LoaderCircle className="size-3 animate-spin" strokeWidth={1.75} />
-            <span>{t("Searching…")}</span>
-          </>
+          <LoadingText>{t("Searching…")}</LoadingText>
         ) : error ? (
-          <span className="text-danger">{error}</span>
+          <InlineError>{error}</InlineError>
         ) : query.trim() ? (
           <span>
             {matchCount === 0
@@ -341,14 +331,14 @@ function ProjectSearchContent({
         {groups.map((group) => (
           <section key={group.path} className="border-b border-stroke">
             <div className="flex items-center gap-1.5 px-2 py-1.5">
-              <FileTypeIcon name={group.name} isDir={false} size={16} />
-              <span className="min-w-0 flex-1 truncate text-[12px] text-content">{group.name}</span>
-              <span className="rounded-full bg-[var(--ui-tone-accent-subtle)] px-1.5 py-0.5 text-(length:--ui-font-caption) tabular-nums text-accent">
+              <FileTypeIcon name={group.name} isDir={false} size="md" />
+              <span className="min-w-0 flex-1 truncate text-ui-caption text-content">{group.name}</span>
+              <Badge variant="count" size="xs" tone="accent" max={Infinity}>
                 {group.matches.length}
-              </span>
+              </Badge>
             </div>
             <p
-              className="truncate px-2 pb-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
+              className="truncate px-2 pb-1 text-ui-caption text-(--ui-text-secondary)"
               title={group.relative}
             >
               {group.relative}
@@ -364,10 +354,10 @@ function ProjectSearchContent({
                     onDoubleClick={() => openMatch(match, true)}
                     className="flex w-full items-start gap-2 text-left"
                   >
-                    <span className="w-7 shrink-0 pt-px text-right font-mono text-[11px] text-(--ui-text-secondary) tabular-nums">
+                    <span className="w-7 shrink-0 pt-px text-right font-mono text-ui-micro text-(--ui-text-secondary) tabular-nums">
                       {match.line}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-5 text-[var(--color-content)]">
+                    <span className="min-w-0 flex-1 truncate font-mono text-ui-micro leading-5 text-content">
                       <MatchPreview
                         preview={match.preview.trimEnd()}
                         query={query.trim()}
@@ -403,13 +393,10 @@ function Toggle({
   return (
     <Button
       variant="ghost"
-      motion="none"
-      type="button"
-      title={label}
-      aria-label={label}
+      iconOnly
+      label={label}
       aria-pressed={active}
       onClick={onClick}
-      className={` grid size-6 place-items-center  ${active ? "" : ""}  `}
     >
       {children}
     </Button>

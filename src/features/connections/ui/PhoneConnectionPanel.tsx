@@ -1,5 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { Surface } from "../../../shared/ui/Surface";
 import { Internet } from "../../../shared/ui/icons";
 import { isLocalSyncMachine } from "../model/localSync";
 import type { PhoneConnectionPanelProps } from "../model/phonePairingTypes";
@@ -20,8 +22,11 @@ export function PhoneConnectionPanel({
   const machine = ordered[0];
 
   return (
-    <section
-      className="flex flex-col gap-3 rounded-xl border border-stroke bg-(--ui-surface) p-4"
+    <Surface
+      as="section"
+      variant="outline"
+      padding="lg"
+      className="flex flex-col gap-3"
       aria-label={t("Connect your phone")}
     >
       <div className="flex flex-wrap items-center gap-3">
@@ -44,16 +49,14 @@ export function PhoneConnectionPanel({
         </Button>
       </div>
       {loaded && !loading && !machine ? (
-        <div className="flex flex-wrap items-center gap-3 text-ui-caption text-(--ui-text-muted)">
-          <p>
-            {t(
-              "Your local host is not connected yet. Check again after bycoda finishes starting, or add a computer below.",
-            )}
-          </p>
-          <Button type="button" className="shrink-0" onClick={() => void onRefresh()}>
-            {t("Check again")}
-          </Button>
-        </div>
+        <InlineMessage
+          tone="neutral"
+          retry={{ onRetry: () => void onRefresh(), label: t("Check again") }}
+        >
+          {t(
+            "Your local host is not connected yet. Check again after bycoda finishes starting, or add a computer below.",
+          )}
+        </InlineMessage>
       ) : null}
       {state.stage !== "closed" ? (
         <PhonePairingDialog
@@ -69,6 +72,6 @@ export function PhoneConnectionPanel({
           onRegenerate={() => void coordinator.regenerate()}
         />
       ) : null}
-    </section>
+    </Surface>
   );
 }

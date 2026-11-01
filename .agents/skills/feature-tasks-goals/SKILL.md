@@ -243,3 +243,13 @@ Delivered in source (uncommitted; no Host/RPC change; no checks run by the deliv
 - **New task default view:** title, description, project/machine, crew choice and a collapsed "Agent settings" row. **Advanced** is closed by default (it opens when the draft already uses a check command, budget, required resources or workflow) and holds Check command, Working branch and worktree, Workflow and Total run budget. Workflow save/refresh/remove sit under "Save or refresh workflows"; the preparation badge shows only after a workflow, resource or check exists and is neutral unless Ready/Blocked. Disabled footer actions explain themselves in a tooltip.
 - Existing browser selectors in `tests/browser/tasks.spec.ts` were updated to open Advanced first (`openAdvanced`); no cases added.
 - Unverified: light/dark and 800/1280 px screenshots, installed-build acceptance.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Tasks, goals and Automations (`src/features/tasks/**`, `automations/**`; there is no separate Automations card), from `HANDOFF-w2-work-tasks.md` and `HANDOFF-w2-work-automations.md`. Drift tasks 33 -> 1, automations 8 -> 0.
+
+- Done: Tasks section strip on `TabStrip`, Automations page tabs on `Tabs` (roving keys); TasksView and AutomationsView headers on `PaneHeader` + chrome inset; TaskGoals prompt on `PromptField`; date/time on `DateTimeField` (Sprint, Goals, Stewards); run limit on `NumberField`; `SectionLabel`, `Surface` cards, `Badge count`, `ActionHost` rows; `Spinner`/`LoadingText`, `InlineError`; footer buttons with `disabledReason` are now `aria-disabled` rather than natively disabled.
+- Left: TaskForm and AutomationsView instruction frames stay hand-framed until `SkillPromptField` (`src/features/skills/ui`) renders `PromptField`; the task board card keeps one `hover:bg` (an `article`; `ActionHost` is a `div`); board/list toggle stays `SegmentedControl` (a display preference).
+- Unverified: no screenshots or native run.

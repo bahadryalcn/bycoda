@@ -4,6 +4,8 @@ import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Surface } from "../../../shared/ui/Surface";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Server, Star, Terminal } from "../../../shared/ui/icons";
 import type { ServerRecord } from "../model/serverInventory";
 import type { ServersLayout } from "./serversLayout";
@@ -107,16 +109,12 @@ export function ServerItem({
     onConnect();
   };
 
-  return (
-    <li
-      className={
-        cards
-          ? "server-card min-w-0 overflow-hidden rounded-lg border border-stroke bg-(--ui-surface)"
-          : "server-list-row"
-      }
-      data-checked={checked || undefined}
-      data-selection-mode={selectionMode || undefined}
-    >
+  const rootProps = {
+    "data-checked": checked || undefined,
+    "data-selection-mode": selectionMode || undefined,
+  };
+  const content = (
+    <>
       <ActionHost selected={selectionMode ? checked : selected} className="w-full min-w-0 flex-wrap">
         {onCheck && selectionMode ? (
           <label className="server-selection">
@@ -194,19 +192,20 @@ export function ServerItem({
               <span className="flex min-w-0 flex-col gap-2 p-3">
                 <span className="flex min-w-0 items-center gap-2">
                   <Server aria-hidden className="icon-sm shrink-0 text-(--ui-text-muted)" />
-                  <span title={server.name} className="min-w-0 flex-1 truncate font-medium">
-                    {server.name}
-                  </span>
+                  <Tooltip label={server.name}>
+                    <span className="min-w-0 flex-1 truncate font-medium">{server.name}</span>
+                  </Tooltip>
                   {accentDot}
                   {favorite}
                 </span>
-                <span
-                  title={address}
-                  className={`text-xs text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
-                >
-                  <span className="text-(--ui-text-muted)">{kind} · </span>
-                  {address}
-                </span>
+                <Tooltip label={address}>
+                  <span
+                    className={`text-ui-caption text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
+                  >
+                    <span className="text-(--ui-text-muted)">{kind} · </span>
+                    {address}
+                  </span>
+                </Tooltip>
                 <span className="flex min-w-0 items-center justify-between gap-2">
                   <span className="flex min-w-0 flex-wrap gap-1">
                     {group ? <Badge size="sm">{group}</Badge> : null}
@@ -227,19 +226,24 @@ export function ServerItem({
             <>
               <span className="min-w-0 flex-1">
                 <span className="flex min-w-0 items-center gap-2">
-                  <span title={server.name} className="block min-w-0 truncate text-sm font-medium">
-                    {server.name}
-                  </span>
+                  <Tooltip label={server.name}>
+                    <span className="block min-w-0 truncate text-ui-body font-medium">
+                      {server.name}
+                    </span>
+                  </Tooltip>
                   {accentDot}
                 </span>
-                <span
-                  title={groupTags ? `${address} · ${groupTags}` : address}
-                  className={`block min-w-0 flex-1 text-xs text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
-                >
-                  <span className="text-(--ui-text-muted)">{kind} · </span>
-                  {address}
-                  {groupTags ? <span className="text-(--ui-text-muted)"> · {groupTags}</span> : null}
-                </span>
+                <Tooltip label={groupTags ? `${address} · ${groupTags}` : address}>
+                  <span
+                    className={`block min-w-0 flex-1 text-ui-caption text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
+                  >
+                    <span className="text-(--ui-text-muted)">{kind} · </span>
+                    {address}
+                    {groupTags ? (
+                      <span className="text-(--ui-text-muted)"> · {groupTags}</span>
+                    ) : null}
+                  </span>
+                </Tooltip>
               </span>
               <span className="server-row-status flex shrink-0 items-center gap-2">
                 {favorite}
@@ -268,6 +272,21 @@ export function ServerItem({
           />
         </div>
       </ActionHost>
+    </>
+  );
+  return cards ? (
+    <Surface
+      as="li"
+      variant="outline"
+      padding="none"
+      className="server-card min-w-0 overflow-hidden"
+      {...rootProps}
+    >
+      {content}
+    </Surface>
+  ) : (
+    <li className="server-list-row" {...rootProps}>
+      {content}
     </li>
   );
 }

@@ -20,7 +20,6 @@ import {
   FolderTree,
   GitPullRequest,
   ListBullet,
-  Loader,
   Minus,
   MoreHorizontal,
   Plus,
@@ -32,7 +31,6 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import {
-  type MouseEvent as ReactMouseEvent,
   Suspense,
   lazy,
   useCallback,
@@ -144,6 +142,8 @@ import {
 import { GitGenerationSettings } from "./GitGenerationSettings";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
@@ -332,7 +332,7 @@ export function GitChangesPanel({
 
   if (!cwd || cwd === "~") {
     return (
-      <p className="px-3 py-2 text-[12px] text-[var(--ui-text-secondary)]">
+      <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
         {t("No project folder")}
       </p>
     );
@@ -438,13 +438,13 @@ export function GitChangesPanel({
             motion="none"
             aria-expanded={detailsOpen}
             onClick={() => repository.onToggle(!detailsOpen)}
-            title={`${repositoryName} · ${cwd}`}
+            tooltip={`${repositoryName} · ${cwd}`}
             className={styles.disclosure}
           >
             {detailsOpen ? (
-              <ChevronDown className="size-3 shrink-0" />
+              <ChevronDown className="icon-xs shrink-0" />
             ) : (
-              <ChevronRight className="size-3 shrink-0" />
+              <ChevronRight className="icon-xs shrink-0" />
             )}
             <span className={styles.identity}>
               <span className={styles.name}>{repositoryName}</span>
@@ -479,15 +479,15 @@ export function GitChangesPanel({
         {busy && !localProgressVisible ? (
           <span
             role="status"
-            className="flex min-w-0 items-center gap-1 text-[11px] text-[var(--ui-text-secondary)]"
+            className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)"
           >
-            <Loader className="size-3 shrink-0 animate-spin" strokeWidth={1.75} />
+            <Spinner size="xs" className="shrink-0" />
             <span className="min-w-0 truncate">{pending ?? busyLabel(busy)}</span>
           </span>
         ) : !busy && status ? (
           <span
             role="status"
-            className="min-w-0 truncate text-[11px] text-[var(--ui-text-secondary)]"
+            className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)"
           >
             {status}
           </span>
@@ -498,7 +498,7 @@ export function GitChangesPanel({
               className={styles.summary}
               title={`${t("Changes")}: ${files.length}; ${t("Merge Conflicts")}: ${conflicts.length}`}
             >
-              <FileDiff aria-hidden className="size-3" />
+              <FileDiff aria-hidden className="icon-xs" />
               <span aria-label={`${t("Changes")}: ${files.length + conflicts.length}`}>
                 {files.length + conflicts.length}
               </span>
@@ -539,8 +539,6 @@ export function GitChangesPanel({
                   size="sm"
                   iconOnly
                   label={t("Refresh source control")}
-                  aria-label={t("Refresh source control")}
-                  title={t("Refresh source control")}
                   disabled={!enabled || !!busy}
                   loading={loading}
                   loadingLabel={t("Refreshing…")}
@@ -549,7 +547,7 @@ export function GitChangesPanel({
                     changesRef.current?.refreshPr?.();
                   }}
                 >
-                  <RefreshCw aria-hidden className="size-3.5" strokeWidth={1.75} />
+                  <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
                 </Button>
               ) : null}
             </span>
@@ -563,7 +561,7 @@ export function GitChangesPanel({
                   disabled={!enabled || !!busy}
                   onClick={() => requestWorktreeManagement(cwd)}
                 >
-                  <FolderTree aria-hidden className="size-3.5" />
+                  <FolderTree aria-hidden className="icon-sm" />
                 </Button>
               )}
             </span>
@@ -593,12 +591,12 @@ export function GitChangesPanel({
         </div>
       </header>
       {repository && operation && !detailsOpen ? (
-        <span className="px-2 text-[11px] text-warning">{operation}</span>
+        <InlineMessage tone="warning" live="off" className="px-2">
+          {operation}
+        </InlineMessage>
       ) : null}
       {repository && loadError && !detailsOpen ? (
-        <p role="alert" className="break-words px-2 text-xs text-[var(--ui-text-secondary)]">
-          {loadError}
-        </p>
+        <InlineError className="px-2">{loadError}</InlineError>
       ) : null}
       {loadError?.includes("dubious ownership") ? (
         <Button
@@ -732,7 +730,6 @@ function ChangedFiles({
   conflicts,
   selected,
   selectedKind,
-  enabled,
   fill,
   busy,
   setBusy,
@@ -827,13 +824,12 @@ function ChangedFiles({
       motion="none"
       iconOnly
       label={t("Filter changed files")}
-      title={t("Filter changed files")}
       aria-haspopup="dialog"
       aria-expanded={!!filterAnchor}
       aria-pressed={!!fileQuery.trim()}
       onClick={(event) => setFilterAnchor(filterAnchor ? null : event.currentTarget)}
     >
-      <ListFilter className="size-3.5" />
+      <ListFilter className="icon-sm" />
     </Button>
   );
   const hasRemote = Boolean(index?.remote);
@@ -900,27 +896,6 @@ function ChangedFiles({
   const canEditMessage = !committing && !generating;
 
   const canOpenMenu = !!index?.branch && !busy;
-
-  useEffect(() => {
-    if (!active) return;
-    const el = messageRef.current;
-    if (!el) return;
-    const resize = () => {
-      if (!el.getClientRects().length) return;
-      el.style.height = "auto";
-      el.style.height = `${Math.max(32, Math.min(el.scrollHeight, 160))}px`;
-    };
-    resize();
-    // Reflow long drafts when the sidebar is resized as well as reopened.
-    let width = el.clientWidth;
-    const observer = new ResizeObserver(() => {
-      if (el.clientWidth === width) return;
-      width = el.clientWidth;
-      resize();
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [message, active, enabled]);
 
   const toggleView = () => {
     changesView = view === "tree" ? "list" : "tree";
@@ -1324,7 +1299,10 @@ function ChangedFiles({
             hideLabel
             fieldClassName={styles.messageField}
             ref={messageRef}
-            rows={1}
+            fieldSize="sm"
+            minRows={1}
+            maxRows={8}
+            autosize
             value={message}
             placeholder={
               amend
@@ -1348,19 +1326,13 @@ function ChangedFiles({
                   label={
                     generating ? t("Cancel commit message generation") : t("Generate commit message")
                   }
-                  title={
-                    generating ? t("Cancel commit message generation") : t("Generate commit message")
-                  }
-                  aria-label={
-                    generating ? t("Cancel commit message generation") : t("Generate commit message")
-                  }
                   disabled={!generating && !canGenerate}
                   onClick={() => (generating ? cancelGenerate() : void generate())}
                 >
                   {generating ? (
-                    <X className="size-3.5" strokeWidth={1.75} />
+                    <X className="icon-sm" strokeWidth={1.75} />
                   ) : (
-                    <WandSparkles className="size-3.5" strokeWidth={1.75} />
+                    <WandSparkles className="icon-sm" strokeWidth={1.75} />
                   )}
                 </InlineAction>
                 {!isRemoteProjectPath(cwd) && (
@@ -1409,21 +1381,17 @@ function ChangedFiles({
           />
         </div>
         {blockedMessage ? (
-          <p
-            role="alert"
-            title={blockedMessage}
-            className="text-ui-caption leading-snug text-warning"
-          >
+          <InlineMessage tone="warning" live="assertive" title={blockedMessage}>
             {conflicts.length === 1
               ? t("Resolve the conflict before committing")
               : t("Resolve {p0} conflicts before committing", { p0: conflicts.length })}
-          </p>
+          </InlineMessage>
         ) : null}
       </div>
       {notices}
       </div>
       {prLoading ? (
-        <p role="status" className="px-3 py-1 text-[11px] text-[var(--ui-text-secondary)]">
+        <p role="status" className="px-3 py-1 text-ui-micro text-(--ui-text-secondary)">
           {t("Checking pull request…")}
         </p>
       ) : prError ? (
@@ -1441,7 +1409,7 @@ function ChangedFiles({
         <GitFeedback kind="info" title={t("This folder is not a Git repository")} />
       ) : null}
       {loading && index ? (
-        <p role="status" className="px-3 py-1 text-[11px] text-[var(--ui-text-secondary)]">
+        <p role="status" className="px-3 py-1 text-ui-micro text-(--ui-text-secondary)">
           {t("Refreshing changes…")}
         </p>
       ) : null}
@@ -1498,15 +1466,11 @@ function ChangedFiles({
         !loadError &&
         (!index || checking) ? (
           // A cached empty list may be stale until the entry read answers.
-          <div
-            role="status"
-            className={`${styles.changesLoading} ${fill ? "h-full" : ""}`}
-          >
-            <Spinner size="md" />
-            <span>{t("Loading changes…")}</span>
-          </div>
+          <LoadingText layout="fill" style={fill ? undefined : { minBlockSize: "6rem" }}>
+            {t("Loading changes…")}
+          </LoadingText>
         ) : files.length === 0 && conflicts.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">
+          <p className="px-3 py-2 text-ui-caption text-(--ui-text-muted)">
             {index?.repository === false
               ? ""
               : index
@@ -1531,14 +1495,14 @@ function ChangedFiles({
                     get title() {
                       return t("Accept All Current");
                     },
-                    icon: <PanelLeft size={14} />,
+                    icon: <PanelLeft className="icon-sm" />,
                     onClick: () => void conflictActions.acceptAll(conflicts, "ours"),
                   },
                   {
                     get title() {
                       return t("Accept All Incoming");
                     },
-                    icon: <PanelRight size={14} />,
+                    icon: <PanelRight className="icon-sm" />,
                     onClick: () => void conflictActions.acceptAll(conflicts, "theirs"),
                   },
                 ]}
@@ -1586,7 +1550,7 @@ function ChangedFiles({
                     get title() {
                       return t("Unstage All Changes");
                     },
-                    icon: <Minus className="size-3.5" strokeWidth={1.75} />,
+                    icon: <Minus className="icon-sm" strokeWidth={1.75} />,
                     onClick: () => void runAll("unstage"),
                   },
                 ]}
@@ -1643,7 +1607,7 @@ function ChangedFiles({
                     get title() {
                       return t("Stage All Changes");
                     },
-                    icon: <Plus className="size-3.5" strokeWidth={1.75} />,
+                    icon: <Plus className="icon-sm" strokeWidth={1.75} />,
                     onClick: () => void runAll("stage"),
                   },
                 ]}
@@ -1666,7 +1630,7 @@ function ChangedFiles({
               </FileSection>
             ) : null}
             {deferredFileQuery ? (
-              <p role="status" className="px-3 py-1 text-xs text-[var(--ui-text-secondary)]">
+              <p role="status" className="px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
                 {visibleStaged.length + visibleUnstaged.length} / {staged.length + unstaged.length}{" "}
                 {t("staged and unstaged entries")}
                 <span className="block">{t("All actions affect the entire repository, including hidden entries.")}</span>
@@ -1831,26 +1795,26 @@ function GitCommitActions({
       <span className="flex shrink-0 items-center gap-1.5 font-normal tabular-nums text-(--ui-text-secondary)">
         {behind > 0 ? (
           <span className="flex items-center" aria-label={countLabel(behind, true)}>
-            {twoWay ? <ArrowDown aria-hidden className="size-3" strokeWidth={2} /> : null}
+            {twoWay ? <ArrowDown aria-hidden className="icon-xs" strokeWidth={2} /> : null}
             {behind}
           </span>
         ) : null}
         {ahead > 0 ? (
           <span className="flex items-center" aria-label={countLabel(ahead, false)}>
-            {twoWay ? <ArrowUp aria-hidden className="size-3" strokeWidth={2} /> : null}
+            {twoWay ? <ArrowUp aria-hidden className="icon-xs" strokeWidth={2} /> : null}
             {ahead}
           </span>
         ) : null}
       </span>
     );
   const syncIcon = canPublish ? (
-    <CloudUpload className="size-3.5 shrink-0" strokeWidth={1.75} />
+    <CloudUpload className="icon-sm shrink-0" strokeWidth={1.75} />
   ) : twoWay || (ahead === 0 && behind === 0) ? (
-    <RefreshCw className="size-3.5 shrink-0" strokeWidth={1.75} />
+    <RefreshCw className="icon-sm shrink-0" strokeWidth={1.75} />
   ) : behind > 0 ? (
-    <ArrowDown className="size-3.5 shrink-0" strokeWidth={1.75} />
+    <ArrowDown className="icon-sm shrink-0" strokeWidth={1.75} />
   ) : (
-    <ArrowUp className="size-3.5 shrink-0" strokeWidth={1.75} />
+    <ArrowUp className="icon-sm shrink-0" strokeWidth={1.75} />
   );
 
   const lead =
@@ -1874,7 +1838,7 @@ function GitCommitActions({
             disabled: createDisabled,
             loading: busy === "pr",
             loadingLabel: t("Creating pull request…"),
-            icon: <GitPullRequest className="size-3.5 shrink-0" strokeWidth={1.75} />,
+            icon: <GitPullRequest className="icon-sm shrink-0" strokeWidth={1.75} />,
             trailing: null,
             onClick: onCreatePr,
           }
@@ -1886,7 +1850,7 @@ function GitCommitActions({
               disabled: viewDisabled,
               loading: false,
               loadingLabel: undefined,
-              icon: <ExternalLink className="size-3.5 shrink-0" strokeWidth={1.75} />,
+              icon: <ExternalLink className="icon-sm shrink-0" strokeWidth={1.75} />,
               trailing: null,
               onClick: onViewPr,
             }
@@ -1897,7 +1861,7 @@ function GitCommitActions({
               disabled: !canCommit,
               loading: committing,
               loadingLabel: undefined,
-              icon: <Check className="size-3.5" strokeWidth={2} />,
+              icon: <Check className="icon-sm" strokeWidth={2} />,
               trailing: null,
               onClick: () => onCommit(false),
             };
@@ -1990,7 +1954,7 @@ function GitCommitActions({
         variant="secondary"
         size="sm"
         className="min-w-0 max-w-full"
-        title={syncDetail}
+        tooltip={syncDetail}
         disabled={syncDisabled}
         loading={syncing}
         loadingLabel={t("Syncing…")}
@@ -2067,18 +2031,18 @@ export function FileSection({
           motion="none"
           type="button"
           aria-expanded={open}
-          title={title}
+          tooltip={title}
           onClick={onToggle}
           className="flex min-w-28 flex-1 basis-28 items-center gap-1 text-left"
         >
           {open ? (
             <ChevronDown
-              className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
+              className="icon-sm shrink-0 text-(--ui-text-secondary)"
               strokeWidth={1.75}
             />
           ) : (
             <ChevronRight
-              className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
+              className="icon-sm shrink-0 text-(--ui-text-secondary)"
               strokeWidth={1.75}
             />
           )}
@@ -2096,28 +2060,36 @@ export function FileSection({
           <div className={styles.actionSlot}>{headerExtra}</div>
           <div className={styles.actionSlot}>
           {view && onToggleView ? (
-            <IconAction
-              title={view === "tree" ? t("View as List") : t("View as Tree")}
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
+              iconOnly
+              label={view === "tree" ? t("View as List") : t("View as Tree")}
               onClick={onToggleView}
             >
               {view === "tree" ? (
-                <ListBullet className="size-3.5" strokeWidth={1.75} />
+                <ListBullet className="icon-sm" strokeWidth={1.75} />
               ) : (
-                <FolderTree className="size-3.5" strokeWidth={1.75} />
+                <FolderTree className="icon-sm" strokeWidth={1.75} />
               )}
-            </IconAction>
+            </Button>
           ) : null}
           </div>
           <div className={styles.actionSlot}>
           {overflow.length ? (
-            <IconAction
-              title={t("More actions")}
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
+              iconOnly
+              label={t("More actions")}
               onClick={(event) => setMoreAnchor(moreAnchor ? null : event.currentTarget)}
-              haspopup="menu"
-              expanded={!!moreAnchor}
+              aria-haspopup="menu"
+              aria-expanded={!!moreAnchor}
             >
               <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
-            </IconAction>
+            </Button>
           ) : null}
           </div>
           <div className={styles.actionSlot}>
@@ -2129,7 +2101,7 @@ export function FileSection({
                 motion="none"
                 key={action.title}
                 type="button"
-                title={action.title}
+                tooltip={action.title}
                 aria-label={action.title}
                 onClick={action.onClick}
                 className="shrink-0"
@@ -2137,9 +2109,17 @@ export function FileSection({
                 {action.label}
               </Button>
             ) : (
-              <IconAction key={action.title} title={action.title} onClick={action.onClick}>
+              <Button
+                size="sm"
+                variant="ghost"
+                motion="none"
+                iconOnly
+                key={action.title}
+                label={action.title}
+                onClick={action.onClick}
+              >
                 {action.icon}
-              </IconAction>
+              </Button>
             ),
           )}
           </div>
@@ -2174,39 +2154,4 @@ async function remotePrContent(cwd: string) {
     .filter(Boolean)
     .join("\n\n");
   return { title, body: body || title, base: range.base, head: range.head };
-}
-
-function IconAction({
-  title,
-  disabled,
-  onClick,
-  haspopup,
-  expanded,
-  children,
-}: {
-  title: string;
-  disabled?: boolean;
-  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
-  haspopup?: "menu";
-  expanded?: boolean;
-  children: ReactNode;
-}) {
-  useLocale();
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      onClick={onClick}
-      aria-haspopup={haspopup}
-      aria-expanded={haspopup ? !!expanded : undefined}
-      className="grid place-items-center"
-    >
-      {children}
-    </Button>
-  );
 }

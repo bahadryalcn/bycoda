@@ -1,6 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { LoaderCircle } from "../../../shared/ui/icons";
 import { Timeline } from "../../../shared/ui/Timeline";
 import {
   TASK_INPUT_REQUIRED,
@@ -107,11 +106,9 @@ export function TaskAttemptHistory({
                       type="button"
 
                       disabled={isOpeningSession(entry.workerSessionId)}
+                      loading={isOpeningSession(entry.workerSessionId)}
                       onClick={() => onOpenSession(entry.workerSessionId!)}
                     >
-                      {isOpeningSession(entry.workerSessionId) ? (
-                        <LoaderCircle className="icon-xs animate-spin" />
-                      ) : null}
                       {t("Open worker session")}
                     </Button>
                   ) : null}
@@ -121,11 +118,9 @@ export function TaskAttemptHistory({
                       type="button"
 
                       disabled={isOpeningSession(entry.reviewerSessionId)}
+                      loading={isOpeningSession(entry.reviewerSessionId)}
                       onClick={() => onOpenSession(entry.reviewerSessionId)}
                     >
-                      {isOpeningSession(entry.reviewerSessionId) ? (
-                        <LoaderCircle className="icon-xs animate-spin" />
-                      ) : null}
                       {t("Open review session")}
                     </Button>
                   ) : null}

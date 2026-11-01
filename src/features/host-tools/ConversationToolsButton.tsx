@@ -30,18 +30,14 @@ export function ConversationToolsButton({ tools }: { tools: ConversationTools })
         label={t("Conversation tools")}
         variant="ghost"
         motion="none"
-        className="size-7"
         size="sm"
         ref={trigger}
         type="button"
-
-        aria-label={t("Conversation tools")}
         aria-pressed={active}
         aria-expanded={open}
         aria-haspopup="dialog"
         onPointerEnter={() => void SessionHostTools.preload().catch(() => {})}
         onFocus={() => void SessionHostTools.preload().catch(() => {})}
-        title={t("Conversation tools")}
         onClick={() => setOpen((value) => !value)}
       >
         <Wrench className="icon-sm" strokeWidth={1.75} aria-hidden />

@@ -1,6 +1,6 @@
+import { Spinner } from "../../../shared/ui/Spinner";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Alert } from "../../../shared/ui/Alert";
-import { Loader } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 import { sameProjectPath } from "../../projects/model/recents";
 import {
@@ -49,9 +49,7 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
                 ? "warning"
                 : "success"
         }
-        icon={
-          pending ? <Loader className="icon-sm motion-safe:animate-spin" aria-hidden /> : undefined
-        }
+        icon={pending ? <Spinner size="sm" /> : undefined}
         role={status.outcome === "failed" ? "alert" : "status"}
         aria-live={status.outcome === "failed" ? "assertive" : "polite"}
         aria-atomic="true"

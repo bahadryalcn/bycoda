@@ -34,9 +34,9 @@
   gap: 12px;
   min-inline-size: 0;
   padding: 16px;
-  border: 1px solid var(--ui-editor-border);
+  border: 1px solid var(--ui-settings-group-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
+  background: var(--ui-settings-group-surface);
 }
 
 .usage-account-heading {

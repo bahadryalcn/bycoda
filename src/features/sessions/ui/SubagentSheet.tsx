@@ -1,18 +1,13 @@
 import { useFollowBottom } from "../hooks/useFollowBottom";
 import { useLocale, useT } from "../../../shared/i18n";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
 import { ArrowDown, Check, Copy, CornerDownRight, Square } from "../../../shared/ui/icons";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { Alert } from "../../../shared/ui/Alert";
 import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
 import { blockLifecycle } from "../model/activityDock";
-import {
-  commandCopyText,
-  emptyOutputReason,
-  inspectCommand,
-} from "../model/commandInspection";
+import { commandCopyText, emptyOutputReason, inspectCommand } from "../model/commandInspection";
 import type { AgentStep, Block } from "../model/session";
 import { isSubagentBlock, subagentName, subagentReport } from "../model/transcriptActivity";
 import { SubagentReport, SubagentStateLine, runLabel } from "./SubagentAnatomy";
@@ -21,7 +16,9 @@ import { AgentMarkdown } from "./AgentMarkdown";
 import { VIEW_SUBAGENT_EVENT } from "./subagentFocus";
 import { useStopRequests } from "./useStopRequests";
 import { Button } from "../../../shared/ui/Button";
-import { PanelHeader } from "../../../shared/ui/PanelHeader";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Sheet } from "../../../shared/ui/Sheet";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import styles from "./SubagentSheet.module.css";
@@ -150,7 +147,6 @@ export function SubagentSheet({
   relay?: SubagentRelay;
 }) {
   const t = useT();
-  const sheetRef = useRef<HTMLElement>(null);
   const command = !isSubagentBlock(block);
   const name = command ? t("Command details") : subagentName(block);
   const subagentModel = useSubagentModelName(block);
@@ -166,191 +162,155 @@ export function SubagentSheet({
   const stopKey = block.tool?.callId ?? block.id;
   const stopping = stops.stopping.has(stopKey);
 
-  // Esc closes from anywhere in this pane, as the side-question sheet does.
-  useEffect(() => {
-    const sheet = sheetRef.current;
-    if (!visible || !sheet) return;
-    const pane = sheet.closest("[data-session-drop]") ?? sheet.parentElement;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (event.isComposing) return;
-      const target = event.target instanceof Node ? event.target : null;
-      if (target !== document.body && !(target && pane?.contains(target))) {
-        return;
-      }
-      event.preventDefault();
-      onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [visible, onClose]);
-
-  // Focus moves into the panel when it opens; swapping agents leaves it where
-  // the reader put it.
-  useEffect(() => {
-    const sheet = sheetRef.current;
-    if (sheet && !sheet.contains(document.activeElement)) sheet.focus();
-  }, []);
-
   return (
-    <div data-subagent-overlay className="subagent-overlay absolute inset-0 z-40">
-      <div aria-hidden className="absolute inset-0" onMouseDown={onClose} />
-      <section
-        ref={sheetRef}
-        role="dialog"
-        aria-label={command ? name : t("Subagent: {p0}", { p0: name })}
-        tabIndex={-1}
-        className="subagent-sheet absolute inset-y-0 right-0 isolate w-[min(34rem,94%)] outline-none"
-      >
-        <GlassBackdrop className="subagent-sheet-glass popover-backdrop" />
-        <div
-          className={`${styles.layout} relative z-[1] flex h-full min-h-0 flex-col font-sans text-sm text-(--ui-tone-neutral-fg)`}
-        >
-          <div className="flex shrink-0 flex-col gap-0.5 py-2.5 pr-2 pl-4">
-            <PanelHeader
-              title={name}
-              onClose={onClose}
-              closeLabel={t(command ? "Close command panel" : "Close agent panel")}
-              actions={
-                <>
-                  <CopyTranscriptButton block={block} busy={busy} status={runLabel(block, busy)} />
-                  {onStop && running ? (
-                    <Button
-                      className="shrink-0"
-                      variant="ghost"
-                      type="button"
-                      disabled={stopping}
-                      title={
-                        stops.failed.has(stopKey)
-                          ? t("Could not stop it. Try again.")
-                          : t(command ? "Stop this command" : "Stop this subagent")
-                      }
-                      onClick={() => stops.request(stopKey, onStop)}
-                    >
-                      <Square className="icon-sm" aria-hidden />
-                      {stopping
-                        ? t("Stopping…")
-                        : stops.failed.has(stopKey)
-                          ? t("Could not stop. Retry")
-                          : t("Stop")}
-                    </Button>
-                  ) : null}
-                  <Button
-                    iconOnly
-                    label={t("Show in transcript")}
-                    variant="ghost"
-                    type="button"
-                    onClick={() => {
-                      setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
-                    }}
-                    title={
-                      command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
-                    }
-                    className="shrink-0"
-                  >
-                    <CornerDownRight className="icon-sm" aria-hidden />
-                  </Button>
-                </>
+    <Sheet
+      modal={false}
+      anchor="container"
+      side="end"
+      open={visible}
+      title={command ? name : t("Subagent: {p0}", { p0: name })}
+      closeLabel={t(command ? "Close command panel" : "Close agent panel")}
+      escapeScope="[data-session-drop]"
+      scroll="none"
+      bodyClassName={`${styles.layout} font-sans text-ui-body`}
+      onClose={onClose}
+      headerActions={
+        <>
+          <CopyTranscriptButton block={block} busy={busy} status={runLabel(block, busy)} />
+          {onStop && running ? (
+            <Button
+              className="shrink-0"
+              variant="ghost"
+              type="button"
+              disabled={stopping}
+              tooltip={
+                stops.failed.has(stopKey)
+                  ? t("Could not stop it. Try again.")
+                  : t(command ? "Stop this command" : "Stop this subagent")
               }
-            />
-            <SubagentStateLine block={block} busy={busy} steps={steps} model={model} />
-          </div>
-          {showFailed ? (
-            <div className="shrink-0 px-4 pt-2">
-              <Alert tone="warning" inline>
-                {t("Could not find this item in the transcript. It stays open here.")}
-              </Alert>
-            </div>
+              onClick={() => stops.request(stopKey, onStop)}
+            >
+              <Square className="icon-sm" aria-hidden />
+              {stopping
+                ? t("Stopping…")
+                : stops.failed.has(stopKey)
+                  ? t("Could not stop. Retry")
+                  : t("Stop")}
+            </Button>
           ) : null}
-          {command ? (
-            <CommandDetails
-              key={block.id}
-              block={block}
-              busy={busy}
-              cwd={cwd}
-              onLoadRemoteBlock={onLoadRemoteBlock}
-            />
-          ) : (
-            <SubagentTrail
-              key={block.id}
-              block={block}
-              steps={steps}
-              running={running}
-              cwd={cwd}
-              onOpenFile={onOpenFile}
-              onOpenDiff={onOpenDiff}
-            />
-          )}
-          {!command && relay ? (
-            <form
-              className={`${styles.composer} flex shrink-0 flex-col gap-2 bg-(--ui-surface) px-4 py-3`}
-              onSubmit={(event) => {
+          <Button
+            iconOnly
+            label={t("Show in transcript")}
+            variant="ghost"
+            type="button"
+            onClick={() => {
+              setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
+            }}
+            tooltip={
+              command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
+            }
+            className="shrink-0"
+          >
+            <CornerDownRight className="icon-sm" aria-hidden />
+          </Button>
+        </>
+      }
+      headerBelow={<SubagentStateLine block={block} busy={busy} steps={steps} model={model} />}
+    >
+      {showFailed ? (
+        <div className="shrink-0 px-4 pt-2">
+          <Alert tone="warning" inline>
+            {t("Could not find this item in the transcript. It stays open here.")}
+          </Alert>
+        </div>
+      ) : null}
+      {command ? (
+        <CommandDetails
+          key={block.id}
+          block={block}
+          busy={busy}
+          cwd={cwd}
+          onLoadRemoteBlock={onLoadRemoteBlock}
+        />
+      ) : (
+        <SubagentTrail
+          key={block.id}
+          block={block}
+          steps={steps}
+          running={running}
+          cwd={cwd}
+          onOpenFile={onOpenFile}
+          onOpenDiff={onOpenDiff}
+        />
+      )}
+      {!command && relay ? (
+        <form
+          className={`${styles.composer} flex shrink-0 flex-col gap-2 bg-(--ui-surface) px-4 py-3`}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!relay.blockedReason && relay.draft.trim()) relay.send();
+          }}
+        >
+          <TextareaField
+            className={styles.message}
+            label={t("Message for {p0}", { p0: name })}
+            rows={2}
+            value={relay.draft}
+            onChange={(event) => relay.setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                (event.ctrlKey || event.metaKey) &&
+                !event.nativeEvent.isComposing
+              ) {
                 event.preventDefault();
                 if (!relay.blockedReason && relay.draft.trim()) relay.send();
-              }}
-            >
-              <TextareaField
-                className={styles.message}
-                label={t("Message for {p0}", { p0: name })}
-                rows={2}
-                value={relay.draft}
-                onChange={(event) => relay.setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    (event.ctrlKey || event.metaKey) &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault();
-                    if (!relay.blockedReason && relay.draft.trim()) relay.send();
-                  }
-                }}
-              />
-              {relay.blockedReason ? (
-                <p className="text-ui-caption text-(--ui-text-secondary)">{relay.blockedReason}</p>
-              ) : null}
-              <p
-                role="status"
-                className={`text-ui-caption empty:hidden ${
-                  relay.status === "rejected"
-                    ? "text-(--ui-tone-danger-fg)"
-                    : "text-(--ui-text-secondary)"
-                }`}
-              >
-                {relay.status === "accepted"
-                  ? t("Request added to the main conversation. Delivery is not yet confirmed.")
-                  : relay.status === "rejected"
-                    ? t("Request was not accepted. Your message is kept here; try again.")
-                    : null}
-              </p>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <InfoPopover className="mr-auto" label={t("How messaging works")}>
-                  <p className="text-ui-secondary">
-                    {t(
-                      "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
-                    )}
-                  </p>
-                </InfoPopover>
-                <Button variant="ghost" onClick={relay.onOpenConversation}>
-                  {t("Open main conversation")}
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={!!relay.blockedReason || !relay.draft.trim()}
-                >
-                  {t("Relay via main agent")}
-                </Button>
-              </div>
-            </form>
-          ) : !command ? (
-            <p className="shrink-0 px-4 py-2 text-ui-caption text-(--ui-text-secondary)">
-              {t("Messaging is unavailable in this conversation.")}
-            </p>
+              }
+            }}
+          />
+          {relay.blockedReason ? (
+            <p className="text-ui-caption text-(--ui-text-secondary)">{relay.blockedReason}</p>
           ) : null}
-        </div>
-      </section>
-    </div>
+          <p
+            role="status"
+            className={`text-ui-caption empty:hidden ${
+              relay.status === "rejected"
+                ? "text-(--ui-tone-danger-fg)"
+                : "text-(--ui-text-secondary)"
+            }`}
+          >
+            {relay.status === "accepted"
+              ? t("Request added to the main conversation. Delivery is not yet confirmed.")
+              : relay.status === "rejected"
+                ? t("Request was not accepted. Your message is kept here; try again.")
+                : null}
+          </p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <InfoPopover className="mr-auto" label={t("How messaging works")}>
+              <p className="text-ui-secondary">
+                {t(
+                  "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
+                )}
+              </p>
+            </InfoPopover>
+            <Button variant="ghost" onClick={relay.onOpenConversation}>
+              {t("Open main conversation")}
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!!relay.blockedReason || !relay.draft.trim()}
+            >
+              {t("Relay via main agent")}
+            </Button>
+          </div>
+        </form>
+      ) : !command ? (
+        <p className="shrink-0 px-4 py-2 text-ui-caption text-(--ui-text-secondary)">
+          {t("Messaging is unavailable in this conversation.")}
+        </p>
+      ) : null}
+    </Sheet>
   );
 }
 
@@ -364,7 +324,9 @@ function commandDetailsCopyText(
   const inspection = inspectCommand(block, busy);
   const text = commandCopyText(inspection, status);
   const notices = [
-    inspection.remote ? t("[Only a summary of the output is kept here; the full output was not loaded.]") : null,
+    inspection.remote
+      ? t("[Only a summary of the output is kept here; the full output was not loaded.]")
+      : null,
     inspection.outputTruncated
       ? t("[Output was shortened; the full text may not be available.]")
       : null,
@@ -478,7 +440,9 @@ function CommandDetails({
   const unavailableText =
     reason && !error
       ? remote
-        ? t("The output is not loaded here. Only a summary is kept; load the full output to read it.")
+        ? t(
+            "The output is not loaded here. Only a summary is kept; load the full output to read it.",
+          )
         : inspection.outputTruncated
           ? t("The output was shortened and nothing is retained here, so it cannot be shown.")
           : null
@@ -571,7 +535,7 @@ function CommandDetails({
               type="button"
               onClick={jumpToLatest}
             >
-              <ArrowDown className="size-3.5" strokeWidth={1.75} />
+              <ArrowDown className="icon-sm" strokeWidth={1.75} />
               {t("Jump to latest")}
             </Button>
           ) : null}
@@ -597,12 +561,10 @@ function CommandDetails({
               </Button>
             ) : null}
             {loadState === "loading" ? (
-              <span role="status">{t("Loading full output…")}</span>
+              <LoadingText>{t("Loading full output…")}</LoadingText>
             ) : null}
             {loadState === "failed" ? (
-              <span role="alert" className="text-(--ui-tone-danger-fg)">
-                {t("Could not load the full output.")}
-              </span>
+              <InlineError>{t("Could not load the full output.")}</InlineError>
             ) : null}
           </div>
         ) : null}
@@ -632,18 +594,19 @@ function CopyTranscriptButton({
   const feedback = useCopyFeedback({ resetKeys: [block.id], successMs: 2000 });
   const command = !isSubagentBlock(block);
   const copy = () => {
-    const text = command ? commandDetailsCopyText(block, busy, status, t) : agentRunMarkdown(block, status);
+    const text = command
+      ? commandDetailsCopyText(block, busy, status, t)
+      : agentRunMarkdown(block, status);
     if (!text) return;
     feedback.copy(() => copyText(text));
   };
-  const label =
-    feedback.copied
-      ? t("Copied")
-      : feedback.failed
-        ? t("Copy failed. Try again.")
-        : command
-          ? t("Copy details")
-          : t("Copy transcript");
+  const label = feedback.copied
+    ? t("Copied")
+    : feedback.failed
+      ? t("Copy failed. Try again.")
+      : command
+        ? t("Copy details")
+        : t("Copy transcript");
   return (
     <Button
       className="shrink-0"
@@ -651,13 +614,13 @@ function CopyTranscriptButton({
       type="button"
       loading={feedback.pending}
       onClick={copy}
-      title={command ? label : t("{p0} (Markdown)", { p0: label })}
+      tooltip={command ? label : t("{p0} (Markdown)", { p0: label })}
       aria-label={label}
     >
       {feedback.copied ? (
-        <Check className="size-4" strokeWidth={1.75} />
+        <Check className="icon-md" strokeWidth={1.75} />
       ) : (
-        <Copy className="size-4" strokeWidth={1.75} />
+        <Copy className="icon-md" strokeWidth={1.75} />
       )}
     </Button>
   );

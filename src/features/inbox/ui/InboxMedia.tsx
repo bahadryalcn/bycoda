@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { Skeleton } from "../../../shared/ui/Skeleton";
 import { fetchInboxMedia, sniffInboxMedia, type InboxMediaType } from "../model/inboxMedia";
 
 type Props = {
@@ -45,9 +46,11 @@ export function InboxMedia({ src, alt }: Props) {
   if (state.status === "loading") {
     return (
       <span
-        className="inbox-media my-2 inline-block h-32 w-full max-w-xl animate-pulse rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+        className="inbox-media my-2 inline-flex h-32 w-full max-w-xl items-center justify-center rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
         aria-hidden
-      />
+      >
+        <Skeleton inline aria-hidden width="40%" />
+      </span>
     );
   }
 

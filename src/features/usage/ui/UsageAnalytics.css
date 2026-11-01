@@ -33,6 +33,9 @@
   gap: 8px 16px;
 }
 .usage-band-scope {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex: 1 1 12rem;
   min-inline-size: 0;
 }
@@ -115,9 +118,9 @@
 .usage-panel {
   min-inline-size: 0;
   padding: 16px;
-  border: 1px solid var(--ui-editor-border);
+  border: 1px solid var(--ui-settings-group-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
+  background: var(--ui-settings-group-surface);
 }
 .usage-panel > .usage-muted {
   margin-block: 8px;
@@ -185,7 +188,7 @@
   grid-column: 1 / -1;
   block-size: 4px;
   background: var(--ui-surface-hover);
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
   overflow: clip;
 }
 .usage-rank-track > span {
@@ -324,7 +327,7 @@
   inline-size: 5px;
   block-size: 5px;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: var(--ui-interaction-accent);
 }
 .usage-quota-max,
 .usage-quota-zero {

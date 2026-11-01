@@ -119,7 +119,7 @@ export function OrchestrationSidebarAgents({
               <Button
                 variant="item"
                 type="button"
-                title={`${task.title} · ${HARNESS_TITLE[task.harness]} · ${model} · ${label}`}
+                tooltip={`${task.title} · ${HARNESS_TITLE[task.harness]} · ${model} · ${label}`}
                 aria-label={t("Agent details: {p0}", { p0: task.title })}
                 fullWidth
                 className="min-w-0"
@@ -161,7 +161,7 @@ export function OrchestrationSidebarAgents({
                   ) : working ? (
                     <WorkingIndicator />
                   ) : task.status === "completed" ? (
-                    <Check className="icon-xs" strokeWidth={2.25} />
+                    <Check className="icon-xs" strokeWidth={2} />
                   ) : null}
                   <span>{label}</span>
                 </span>
@@ -184,7 +184,7 @@ export function OrchestrationSidebarAgents({
                       <Button
                         variant="ghost"
                         type="button"
-                        title={t("Open this agent beside the orchestrator")}
+                        tooltip={t("Open this agent beside the orchestrator")}
 
                         onClick={() =>
                           workers.openDetails?.({
@@ -274,7 +274,7 @@ export function OrchestrationSidebarAgents({
 
               disabled={pending || stopping || leadBusy || !!resumeBlocker}
               loading={pendingAction === "resume"}
-              title={
+              tooltip={
                 stopping
                   ? t("Wait for interrupted agents to stop")
                   : leadBusy

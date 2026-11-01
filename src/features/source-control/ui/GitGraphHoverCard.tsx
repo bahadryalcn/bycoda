@@ -3,30 +3,23 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useMemo } from "react";
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
 import { Check, Copy } from "../../../shared/ui/icons";
-import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { formatAbsoluteTime, formatRelativeTime, orderGraphRefs } from "../model/gitGraphDisplay";
 import type { HistoryItemViewModel } from "../model/gitGraph";
 import { GraphAvatar, RefPill } from "./GitGraphParts";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 
-const CARD_WIDTH = 320;
-
-/** Details of the hovered commit. Placement and dismissal belong to the list. */
+/**
+ * Details of the hovered commit, the content of the row's shared `HoverCard` (see GitGraphList):
+ * placement, hover intent and dismissal belong to the card.
+ */
 export function GitGraphHoverCard({
   commit,
   row,
-  anchor,
-  side,
-  onEnter,
-  onLeave,
 }: {
   commit: GitHistoryCommit;
   row: HistoryItemViewModel;
-  anchor: PopoverAnchor;
-  side: "right" | "bottom";
-  onEnter: () => void;
-  onLeave: () => void;
 }) {
   useLocale();
   // The card can be reused for another commit; its outcome and any copy in flight belong to one SHA.
@@ -41,44 +34,30 @@ export function GitGraphHoverCard({
   };
 
   return (
-    <Popover
-      anchor={anchor}
-      side={side}
-      align="start"
-      gap={6}
-      width={CARD_WIDTH}
-      maxHeight={320}
-      role="group"
-      aria-label={t("Commit details")}
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-      className="space-y-2 p-3 text-[12px] text-content"
-    >
+    <div className="space-y-2">
       <p className="font-medium leading-snug break-words">{commit.subject || commit.shortSha}</p>
-      <div className="flex items-center gap-2 text-[var(--ui-text-secondary)]">
+      <div className="flex items-center gap-2 text-(--ui-text-secondary)">
         <GraphAvatar name={commit.author} size={18} />
         <span className="min-w-0 truncate">{commit.author || t("Unknown author")}</span>
       </div>
-      <p className="text-[var(--ui-text-secondary)]">
+      <p className="text-(--ui-text-secondary)">
         {formatAbsoluteTime(commit.timestamp)} ({formatRelativeTime(commit.timestamp, Date.now())})
       </p>
       <div className="flex items-center gap-1.5">
-        <code className="font-mono text-[11px] text-[var(--ui-text-secondary)]">
-          {commit.shortSha}
-        </code>
+        <code className="font-mono text-ui-micro text-(--ui-text-secondary)">{commit.shortSha}</code>
         <Button
           variant="ghost"
           motion="none"
           type="button"
-          title={t("Copy commit ID")}
-          aria-label={t("Copy commit ID")}
+          size="sm"
+          iconOnly
+          label={t("Copy commit ID")}
           onClick={copy}
-          className="grid size-5 place-items-center"
         >
           {copied ? (
-            <Check className="size-3" strokeWidth={2} />
+            <Check className="icon-xs" strokeWidth={2} />
           ) : (
-            <Copy className="size-3" strokeWidth={1.75} />
+            <Copy className="icon-xs" strokeWidth={1.75} />
           )}
         </Button>
       </div>
@@ -89,19 +68,15 @@ export function GitGraphHoverCard({
           ))}
         </div>
       ) : null}
-      {copyError ? (
-        <p role="alert" className="text-danger">
-          {copyError}
-        </p>
-      ) : null}
+      {copyError ? <InlineError>{copyError}</InlineError> : null}
       {commit.parents.length > 0 ? (
-        <p className="text-[var(--ui-text-secondary)]">
+        <p className="text-(--ui-text-secondary)">
           {commit.parents.length > 1 ? t("Parents") : t("Parent")}{" "}
-          <code className="font-mono text-[11px]">
+          <code className="font-mono text-ui-micro">
             {commit.parents.map((parent) => parent.slice(0, 7)).join(", ")}
           </code>
         </p>
       ) : null}
-    </Popover>
+    </div>
   );
 }

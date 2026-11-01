@@ -6,6 +6,8 @@ import { SocialFilters } from "./SocialFilters";
 import { Alert } from "../../../shared/ui/Alert";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
+import { NumberField } from "../../../shared/ui/NumberField";
+import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { Button } from "../../../shared/ui/Button";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
@@ -720,6 +722,7 @@ function ContactForm({
     contact?.projectIds ?? (initialProject ? [initialProject] : []),
   );
   const [addConsent, setAddConsent] = useState(false);
+  const [consentDate, setConsentDate] = useState("");
   const validProjects =
     projectIds.length > 0 &&
     projectIds.every((id) => projects.some((project) => project.id === id));
@@ -779,6 +782,7 @@ function ContactForm({
               closeComposer(form);
             }
             setAddConsent(false);
+            setConsentDate("");
           }
         })();
       }}
@@ -892,12 +896,13 @@ function ContactForm({
               required
               placeholder={t("Person who gave consent and verification source")}
             />
-            <TextField
+            <DateTimeField
               disabled={socialLocked}
               label={t("Consent date")}
               name="date"
-              type="datetime-local"
               required
+              value={consentDate}
+              onChange={setConsentDate}
             />
           </>
         ) : null}
@@ -1270,10 +1275,9 @@ export function Rules({
                   </Alert>
                 ) : null}
                 <div className="social-form-pair">
-                  <TextField
+                  <NumberField
                     disabled={socialLocked}
                     label={t("Daily limit")}
-                    type="number"
                     min={1}
                     max={100}
                     value={limit}

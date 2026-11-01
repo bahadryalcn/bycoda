@@ -188,7 +188,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
                 />
               )
             ) : (
-              <div className="grid h-40 place-items-center text-[12px] text-[var(--ui-text-muted)]">
+              <div className="grid h-40 place-items-center text-ui-caption text-[var(--ui-text-muted)]">
                 {t("No background selected")}
               </div>
             )}
@@ -204,7 +204,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
           >
             {path ? t("Change image") : t("Choose image")}
           </Button>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--ui-text-muted)]">
+          <p className="mt-1.5 text-ui-micro leading-relaxed text-[var(--ui-text-muted)]">
             {path
               ? t("This image overrides the global background for this project.")
               : t("This project currently follows the global Appearance setting.")}
@@ -216,10 +216,10 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
           <div className="border-t border-stroke pt-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <span className="text-[13px] font-medium text-content">
+                <span className="text-ui-secondary font-medium text-content">
                   {t("Background effect")}
                 </span>
-                <p className="text-[11px] text-[var(--ui-text-muted)] line-clamp-1">
+                <p className="text-ui-micro text-[var(--ui-text-muted)] line-clamp-1">
                   {NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[effect]}
                 </p>
               </div>
@@ -264,7 +264,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
               onValueChange={(next) => updateOpacity("empty", next)}
               className="min-w-0 flex-1"
             />
-            <span className="w-10 shrink-0 text-right text-[12px] tabular-nums text-content">
+            <span className="w-10 shrink-0 text-right text-ui-caption tabular-nums text-content">
               {Math.round(emptyOpacity * 100)}%
             </span>
           </div>
@@ -281,7 +281,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
               onValueChange={(next) => updateOpacity("session", next)}
               className="min-w-0 flex-1"
             />
-            <span className="w-10 shrink-0 text-right text-[12px] tabular-nums text-content">
+            <span className="w-10 shrink-0 text-right text-ui-caption tabular-nums text-content">
               {Math.round(sessionOpacity * 100)}%
             </span>
           </div>
@@ -310,7 +310,7 @@ function ProjectBackgroundRow({ label, children }: { label: string; children: Re
   useLocale();
   return (
     <div className="flex items-center justify-between gap-4 border-t border-stroke pt-4">
-      <span className="text-[13px] font-medium text-content">{label}</span>
+      <span className="text-ui-secondary font-medium text-content">{label}</span>
       {children}
     </div>
   );

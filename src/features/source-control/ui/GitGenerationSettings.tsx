@@ -142,13 +142,13 @@ export function GitGenerationSettings({
         ref={anchor}
         aria-label={t("AI generation settings")}
         aria-haspopup="dialog"
-        title={`${t("Commit and pull request generation")} · ${choice ? model.name : `${t("Automatic")} · ${model.name}`}`}
+        tooltip={`${t("Commit and pull request generation")} · ${choice ? model.name : `${t("Automatic")} · ${model.name}`}`}
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         className="shrink-0"
       >
-        <ChevronDown className={`size-3 shrink-0 ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`icon-xs shrink-0 ${open ? "rotate-180" : ""}`} />
       </Button>
       {open && (
         <Popover

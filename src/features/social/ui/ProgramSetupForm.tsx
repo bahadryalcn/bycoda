@@ -9,6 +9,8 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
+import { NumberField } from "../../../shared/ui/NumberField";
+import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SocialModelField } from "./SocialModelField";
 import {
@@ -143,6 +145,12 @@ export function ProgramSetupForm({
         }}
         onSubmit={(e) => {
           e.preventDefault();
+          if (!Number.isFinite(config.schedule.startsAt)) {
+            // The shared date field does not block submit natively: send the owner back to the schedule step.
+            setSetupStep(1);
+            onError(t("Complete the time zone, start date, days and publishing times before continuing."));
+            return;
+          }
           const form = e.currentTarget;
           void pendingUi
             .run("programs.save-paused-campaign", () =>
@@ -203,7 +211,7 @@ export function ProgramSetupForm({
             const requiredFormats = generating ? ["image"] : media.length ? [...new Set(media.map((item) => item.kind))] : ["text"];
             const unsupported = formats ? requiredFormats.filter((format) => !formats.formats.includes(format)) : [];
             const imageCapability = features?.images.filter((image) => config.image.provider === "automatic" || image.provider === config.image.provider);
-            return <li key={id} className="min-w-0 break-words border-b border-(--ui-border) pb-2">
+            return <li key={id} className="min-w-0 break-words border-b border-(--ui-pane-border) pb-2">
               <strong className="font-medium">{account?.name ?? t("Removed account")}</strong> · {account ? names[account.platform] : ""}
               <p>{account?.grants[config.projectId]?.includes("draft") ? t("Draft access available") : t("Draft access to the selected project is required.")} · {account?.connected ? account.paused ? t("Account paused") : t("Connected") : t("Connect this account before publishing.")}</p>
               <p>{t("Supported formats")}: {formats ? formats.formats.join(", ") || t("No supported formats reported") : t("Unknown — check model and platform availability.")} {unsupported.length ? `${t("Selected media is not supported")}: ${unsupported.join(", ")}` : formats ? t("Selected media matches the reported formats.") : ""}</p>
@@ -846,29 +854,22 @@ export function ProgramSetupForm({
                 value={config.schedule.timeZone}
                 onChange={(e) => schedule("timeZone", e.target.value)}
               />
-              <TextField
+              <DateTimeField
                 disabled={socialLocked}
                 label={t("Campaign start (device local time)")}
-                type="datetime-local"
                 required
-                value={localDateTimeInput(config.schedule.startsAt)}
-                onChange={(e) => schedule("startsAt", new Date(e.target.value).getTime())}
+                value={Number.isFinite(config.schedule.startsAt) ? localDateTimeInput(config.schedule.startsAt) : ""}
+                onChange={(next) => schedule("startsAt", next ? new Date(next).getTime() : Number.NaN)}
               />
-              <TextField
+              <DateTimeField
                 disabled={socialLocked}
                 label={t("Campaign end (optional)")}
-                type="datetime-local"
+                clearable
                 value={config.schedule.endsAt ? localDateTimeInput(config.schedule.endsAt) : ""}
-                onChange={(e) =>
-                  schedule(
-                    "endsAt",
-                    e.target.value ? new Date(e.target.value).getTime() : undefined,
-                  )
-                }
+                onChange={(next) => schedule("endsAt", next ? new Date(next).getTime() : undefined)}
               />
-              <TextField
+              <NumberField
                 label={t("Total logical posts")}
-                type="number"
                 min={1}
                 max={10000}
                 disabled={socialLocked || config.totalPosts === null}
@@ -897,34 +898,32 @@ export function ProgramSetupForm({
                 />
               ) : (
                 <>
-                  <TextField
+                  <DateTimeField
+                    mode="time"
                     disabled={socialLocked}
                     label={t("Window start")}
-                    type="time"
                     value={config.schedule.startTime}
-                    onChange={(e) => schedule("startTime", e.target.value)}
+                    onChange={(next) => schedule("startTime", next)}
                   />
-                  <TextField
+                  <DateTimeField
+                    mode="time"
                     disabled={socialLocked}
                     label={t("Window end")}
-                    type="time"
                     value={config.schedule.endTime}
-                    onChange={(e) => schedule("endTime", e.target.value)}
+                    onChange={(next) => schedule("endTime", next)}
                   />
                   {config.schedule.mode === "interval" ? (
                     <>
-                      <TextField
+                      <NumberField
                         disabled={socialLocked}
                         label={t("Minimum interval (minutes)")}
-                        type="number"
                         min={1}
                         value={config.schedule.minIntervalMinutes}
                         onChange={(e) => schedule("minIntervalMinutes", Number(e.target.value))}
                       />
-                      <TextField
+                      <NumberField
                         disabled={socialLocked}
                         label={t("Maximum interval (minutes)")}
-                        type="number"
                         min={1}
                         value={config.schedule.maxIntervalMinutes}
                         onChange={(e) => schedule("maxIntervalMinutes", Number(e.target.value))}
@@ -932,10 +931,9 @@ export function ProgramSetupForm({
                     </>
                   ) : (
                     <>
-                      <TextField
+                      <NumberField
                         disabled={socialLocked}
                         label={t("Posts per period")}
-                        type="number"
                         min={1}
                         max={48}
                         value={config.schedule.frequency}
@@ -1104,7 +1102,7 @@ export function ProgramSetupForm({
                     "maxImageGenerations",
                   ] as const
                 ).map((key) => (
-                  <TextField
+                  <NumberField
                     disabled={socialLocked}
                     key={key}
                     label={t(
@@ -1115,7 +1113,6 @@ export function ProgramSetupForm({
                         maxImageGenerations: "Image generation budget",
                       }[key],
                     )}
-                    type="number"
                     min={1}
                     max={100000}
                     value={config.limits[key]}

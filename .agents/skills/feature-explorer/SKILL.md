@@ -198,3 +198,13 @@ using shared controls and existing menu stack; preserve all16 families. Explain
 visibility mode/scope and empty states. Fix local copy/pending/result honesty and
 post-mutation refresh recovery. Root tab centering should be addressed through
 the owning shared alignment API, without globally changing workspace tabs.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Files, viewers and pickers (`src/features/files/ui/**`), from `HANDOFF-w2-tools.md`.
+
+- Done: PdfViewer page field on `TextField numeric` and shared Button (local `ToolbarButton` removed); BinaryFileView and FilePreviewSearch local button wrappers removed (`shortcut="Alt+C|W|R"`, `Mod+G`, `Esc`); FileEditor Save `shortcut="Mod+S"`; EditorSelectionMenu uses `<ShortcutKeys>` instead of a platform sniff; load/error lines on `LoadingText`/`InlineError`/`InlineMessage`; `Spinner` in FileTree; FilePicker rows `min-h-(--ui-control-height)`; SheetGridView and FilePreviewSearch `z-*` layers reduced inside `isolate` containers.
+- Left: `FileTypeIcon size={N}` (needs an `icon-*` size prop in `FileTypeIcon`, requested twice); FilePicker `<span role="alert">` inside a `<details>` summary; `Markdown view` switch is now a `SegmentedControl` (browser specs reading `role="tab"` need updating).
+- Unverified: no screenshots or native run.

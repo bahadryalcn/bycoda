@@ -82,10 +82,10 @@
   grid-column: 1 / -1;
 }
 .social-view {
-  --social-success: var(--color-success);
-  --social-warning: var(--color-warning);
-  --social-error: var(--color-danger);
-  --social-info: var(--color-info);
+  --social-success: var(--ui-tone-success-fg);
+  --social-warning: var(--ui-tone-warning-fg);
+  --social-error: var(--ui-tone-danger-fg);
+  --social-info: var(--ui-tone-info-fg);
 }
 .social-view .social-workspace-root {
   display: flex;
@@ -524,7 +524,7 @@
   z-index: 2;
   padding-block: 0.5rem 0.75rem;
   margin-block: 0 0.75rem;
-  background: var(--color-background-base);
+  background: var(--ui-surface-panel);
 }
 .social-batch-results {
   display: grid;

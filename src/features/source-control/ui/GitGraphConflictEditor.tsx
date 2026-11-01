@@ -12,7 +12,10 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { hasConflictMarkers, resolveConflictMarkers } from "../model/conflictMarkers";
 import { buildUnifiedFile } from "../model/unifiedDiff";
 import { UnifiedDiffView } from "./UnifiedDiffView";
-import { GitFeedback, GitLoading } from "./GitFeedback";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { GitFeedback } from "./GitFeedback";
 import type { GraphRun } from "./GitGraphBranches";
 import { ConflictLayout, conflictSourcesFromMarkers } from "./ConflictLayout";
 import { MergeConflictEditor } from "./MergeConflictEditor";
@@ -163,7 +166,8 @@ export function GitGraphConflictEditor({
         onRetry={() => setRetry((value) => value + 1)}
       />
     );
-  if (!loaded) return <GitLoading text="Loading conflict versions" />;
+  if (!loaded)
+    return <LoadingText className="px-3 py-2">{t("Loading conflict versions")}</LoadingText>;
   if (loaded.disk !== null && hasConflictMarkers(loaded.disk))
     return (
       <MergeConflictEditor
@@ -197,7 +201,7 @@ export function GitGraphConflictEditor({
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
         <span
           title={relative}
-          className="min-w-0 flex-1 truncate text-ui-caption font-medium text-warning"
+          className="min-w-0 flex-1 truncate text-ui-caption font-medium text-(--ui-tone-warning-fg)"
         >
           {relative}
         </span>
@@ -267,9 +271,9 @@ export function GitGraphConflictEditor({
         >
           <div className="flex min-h-0 flex-1 flex-col">
             {hasConflictMarkers(draft) ? (
-              <p className="px-3 pb-1 text-[11px] text-warning">
+              <InlineMessage tone="warning" live="off" className="px-3 pb-1">
                 {t("Resolve every conflict marker before staging")}
-              </p>
+              </InlineMessage>
             ) : null}
             <textarea
               id="graph-conflict-output"
@@ -287,9 +291,11 @@ export function GitGraphConflictEditor({
           <div className="flex min-h-0 flex-1 flex-col">
             <UnifiedDiffView files={models} />
           </div>
-          <p className="px-3 py-2 text-[12px] text-[var(--ui-text-secondary)]">
-            {t("Choose a whole-file version to resolve this conflict")}
-          </p>
+          <EmptyState
+            size="inline"
+            className="px-3"
+            description={t("Choose a whole-file version to resolve this conflict")}
+          />
         </>
       )}
     </div>

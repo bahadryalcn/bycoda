@@ -93,15 +93,13 @@ describe("GitHub work item link preview", () => {
       await Promise.resolve();
     });
 
-    const popover = document.querySelector<HTMLElement>("[data-github-work-item-popover]")!;
-    expect(popover.getAttribute("role")).toBe("tooltip");
+    const popover = document.querySelector<HTMLElement>("[data-hover-card]")!;
     expect(popover.textContent).toContain("Make work item links easier to scan");
     expect(popover.textContent).toContain("Adds compact chips and a useful hover preview.");
     expect(popover.textContent).toContain("ada");
     expect(popover.textContent).toContain("main ← link-chips");
     expect(popover.textContent).toContain("enhancement");
     expect(popover.textContent).toContain("Updated 2 hours ago");
-    expect(chip.getAttribute("aria-describedby")).toBe(popover.id);
     expect(githubWorkItem).toHaveBeenCalledWith("/workspace/widgets", "acme/widgets", "pr", 73);
     expect(githubWorkItemDetails).toHaveBeenCalledWith(
       "/workspace/widgets",
@@ -116,9 +114,9 @@ describe("GitHub work item link preview", () => {
     act(() => root.render(createElement(UserLinkPreview, { link })));
     const chip = container.querySelector<HTMLAnchorElement>('[data-github-work-item-chip="pr"]')!;
 
-    act(() => chip.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-    act(() => vi.advanceTimersByTime(219));
-    expect(document.querySelector("[data-github-work-item-popover]")).toBeNull();
+    act(() => chip.dispatchEvent(new Event("pointerover", { bubbles: true })));
+    act(() => vi.advanceTimersByTime(299));
+    expect(document.querySelector("[data-hover-card]")).toBeNull();
 
     await act(async () => {
       vi.advanceTimersByTime(1);
@@ -126,7 +124,7 @@ describe("GitHub work item link preview", () => {
       await Promise.resolve();
     });
 
-    expect(document.querySelector("[data-github-work-item-popover]")).not.toBeNull();
+    expect(document.querySelector("[data-hover-card]")).not.toBeNull();
   });
 
   it("keeps the chip clickable and opens the original URL", () => {
@@ -143,11 +141,11 @@ describe("GitHub work item link preview", () => {
     const chip = container.querySelector<HTMLAnchorElement>('[data-github-work-item-chip="pr"]')!;
 
     expect(chip.getAttribute("data-compact")).toBe("true");
-    expect(chip.className).toContain("text-xs");
+    expect(chip.className).toContain("text-ui-caption");
     expect(chip.className).toContain("align-middle");
     expect(chip.className).toContain("border-0");
     expect(chip.className).toContain("p-0");
     expect(chip.className).toContain("gap-1");
-    expect(chip.querySelector("span")?.className).toContain("h-[18px]");
+    expect(chip.querySelector("span")?.className).toContain("h-4.5");
   });
 });

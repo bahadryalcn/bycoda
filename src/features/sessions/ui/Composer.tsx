@@ -213,10 +213,7 @@ import {
   loadNotesEnabled,
   subscribeNotesEnabled,
 } from "../../settings/model/settings";
-import {
-  isNoteMentionPath,
-  type NoteComposerCard,
-} from "../../notes";
+import { isNoteMentionPath, type NoteComposerCard } from "../../notes";
 import { resolveTabGroupLogo } from "../../workspace/model/tabGroups";
 import { UsageLimitNotice } from "./UsageLimitNotice";
 import {
@@ -732,7 +729,7 @@ function MessageQueue({
       >
         {paused ? (
           <div className="mb-1 flex h-7 items-center gap-2 text-ui-caption">
-            <Pause className="size-3.5" />
+            <Pause className="icon-sm" />
             <span className="min-w-0 flex-1 truncate" title={holdDetail}>
               {hold.kind === "held" && hold.reason === "unknown"
                 ? t("Queue held: delivery is not confirmed")
@@ -759,7 +756,7 @@ function MessageQueue({
               onClick={() => void perform("resume", onResume)}
               className="shrink-0"
             >
-              <Play className="size-3.5" />
+              <Play className="icon-sm" />
               {pendingAction === "resume" ? t("Resuming…") : t("Resume")}
             </Button>
           </div>
@@ -769,7 +766,7 @@ function MessageQueue({
             className="mb-1 flex h-7 items-center gap-2 text-ui-caption"
             data-queue-held-elsewhere
           >
-            <Pause className="size-3.5" />
+            <Pause className="icon-sm" />
             <span className="min-w-0 flex-1 truncate">
               {t("Queue held by another window, which sends it")}
             </span>
@@ -788,7 +785,7 @@ function MessageQueue({
         ) : null}
         {restored ? (
           <div className="mb-1 flex h-7 items-center gap-2 text-ui-caption">
-            <Pause className="size-3.5" />
+            <Pause className="icon-sm" />
             <span className="min-w-0 flex-1 truncate">
               {messages.length === 1
                 ? t("1 queued message restored")
@@ -815,7 +812,7 @@ function MessageQueue({
               }
               className="shrink-0"
             >
-              <Play className="size-3.5" />
+              <Play className="icon-sm" />
               {pendingAction === "resume" ? t("Sending…") : t("Send next")}
             </Button>
           </div>
@@ -862,7 +859,7 @@ function MessageQueue({
                     variant="ghost"
                     type="button"
                     data-queue-handle={message.id}
-                    title={t("Drag to reorder")}
+                    tooltip={t("Drag to reorder")}
                     shortcut="Alt+↑ / Alt+↓"
                     aria-label={t("Reorder queued message")}
                     aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
@@ -887,10 +884,10 @@ function MessageQueue({
                     onKeyDown={(event) => moveByKey(event, message.id, index)}
                     className="shrink-0"
                   >
-                    <GripVertical className="size-3.5" />
+                    <GripVertical className="icon-sm" />
                   </Button>
                 ) : (
-                  <ListEnd className="size-3.5 shrink-0" />
+                  <ListEnd className="icon-sm shrink-0" />
                 )}
                 <div className="min-w-0 py-1">
                   <div className="truncate text-(--ui-text-secondary)" title={label}>
@@ -925,7 +922,7 @@ function MessageQueue({
                       variant="ghost"
                       type="button"
                       disabled={!canSend(message)}
-                      title={
+                      tooltip={
                         busy && (message.intent === "plan" || message.intent === "orchestrate")
                           ? t("New messages wait until this turn finishes. Stop pauses the queue.")
                           : route === "switch"
@@ -948,7 +945,7 @@ function MessageQueue({
                       }
                       className="shrink-0"
                     >
-                      <CornerDownRight className="size-3.5" />
+                      <CornerDownRight className="icon-sm" />
                       {pendingAction === message.id ||
                       (pendingDelivery && delivery?.messageId === message.id)
                         ? t("Sending…")
@@ -961,12 +958,12 @@ function MessageQueue({
                     disabled={queueClosed || !!pendingAction || pendingDelivery}
                     variant="ghost"
                     type="button"
-                    title={t("Edit queued message")}
+                    tooltip={t("Edit queued message")}
                     aria-label={t("Edit queued message")}
                     onClick={() => startEdit(message)}
                     className="shrink-0"
                   >
-                    <Pencil className="size-3.5" />
+                    <Pencil className="icon-sm" />
                   </Button>
                   <ConfirmMorph
                     label={t("Remove")}
@@ -1281,7 +1278,7 @@ export const Composer = memo(function Composer({
   // resolved here on every read instead of being written back to the owner.
   const effectiveWorktreeBase =
     draftWorkspace && workspaceMode === "worktree" && worktreeBase === "HEAD"
-      ? (draftBranches?.current || worktreeBase)
+      ? draftBranches?.current || worktreeBase
       : worktreeBase;
   const workspaceCreation = useWorkspaceCreation(
     cwd,
@@ -1931,10 +1928,7 @@ export const Composer = memo(function Composer({
     // `$name` opens only while some Codex skill matches, so `$HOME` stays text.
     const dollar = token ? null : dollarTokenAt(el.value, cursor);
     setSlash(
-      token ??
-        (dollar && rankSkills(dollarSkills, dollar.query, 1).length > 0
-          ? dollar
-          : null),
+      token ?? (dollar && rankSkills(dollarSkills, dollar.query, 1).length > 0 ? dollar : null),
     );
     setMention(token ? null : mentionTokenAt(el.value, cursor));
   };
@@ -3615,8 +3609,10 @@ export const Composer = memo(function Composer({
           ref={boxRef}
           data-composer-box
           data-ui-focus-group=""
+          data-ui-focus-quiet=""
           onPointerDown={focusFromComposerSpace}
           data-composer-editing={resendEdited ? "" : undefined}
+          // z-10: in-pane stacking above sibling layers; no in-pane layer scale exists, so the literal stays.
           className={`relative z-10 rounded-xl border ${resendEdited ? "edit-last-turn-composer" : ""}`}
         >
           {attachments.length > 0 ? (
@@ -3678,7 +3674,7 @@ export const Composer = memo(function Composer({
                 ref={highlightRef}
                 aria-hidden
                 style={{ textIndent: modeIndent }}
-                className={`composer-highlight pointer-events-none absolute inset-0 max-h-40 overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-sm leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
+                className={`composer-highlight pointer-events-none absolute inset-0 max-h-40 overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-ui-body leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
                   shell ? "py-4" : "py-3"
                 }`}
               >
@@ -3720,7 +3716,7 @@ export const Composer = memo(function Composer({
               }
               aria-label={inputAriaLabel}
               disabled={disabled}
-              className={`composer-field scrollbar-none relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-sm leading-5.5 outline-none placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
+              className={`composer-field scrollbar-none relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 outline-none placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
                 shell ? "py-4" : "py-3"
               }`}
               onFocus={onFocus}
@@ -3815,7 +3811,7 @@ export const Composer = memo(function Composer({
                       variant="ghost"
                       iconOnly
                       label={t("Mode")}
-                      title={t("Mode")}
+                      tooltip={t("Mode")}
                       selected={modeOpen}
                       aria-haspopup="menu"
                       aria-expanded={modeOpen}
@@ -3828,7 +3824,7 @@ export const Composer = memo(function Composer({
                         }
                       }}
                     >
-                      <SlidersHorizontal className="size-3.5" strokeWidth={1.5} />
+                      <SlidersHorizontal className="icon-sm" />
                     </Button>
                     {modeOpen ? (
                       <DropdownMenu
@@ -3893,7 +3889,7 @@ export const Composer = memo(function Composer({
                 variant="ghost"
                 iconOnly
                 label={t("Add files or skills")}
-                title={t("Add files or skills")}
+                tooltip={t("Add files or skills")}
                 data-usage-guide="composer-plus"
                 selected={plusOpen}
                 aria-haspopup="menu"
@@ -3906,7 +3902,7 @@ export const Composer = memo(function Composer({
                   }
                 }}
               >
-                <Plus className="size-3.5" strokeWidth={1.5} />
+                <Plus className="icon-sm" />
               </Button>
               {plusOpen ? (
                 <DropdownMenu
@@ -4036,14 +4032,14 @@ export const Composer = memo(function Composer({
               <Button
                 variant="ghost"
                 type="button"
-                title={t("Stop editing last message")}
+                tooltip={t("Stop editing last message")}
                 shortcut="Esc"
                 aria-label={t("Stop editing last message")}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={exitEditMode}
                 className="shrink-0"
               >
-                <X className="size-3" strokeWidth={1.8} />
+                <X className="icon-xs" />
                 <span>{t("Cancel edit")}</span>
               </Button>
             ) : null}
@@ -4062,7 +4058,7 @@ export const Composer = memo(function Composer({
                 onClick={recallLastTurn}
                 disabled={disabled || worktreeRemoved}
               >
-                <Undo2 className="size-3.5" />
+                <Undo2 className="icon-sm" />
               </Button>
             ) : null}
             <div
@@ -4385,9 +4381,9 @@ function FileMentionRuns({
                   and this box would otherwise inherit that indent. */}
               <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 indent-0">
                 {part.file && isNoteMentionPath(part.file.path) ? (
-                  <StickyNote className="size-3.5" strokeWidth={1.75} />
+                  <StickyNote className="icon-sm" strokeWidth={1.75} />
                 ) : (
-                  <FileTypeIcon name={part.file.name} isDir={Boolean(part.file.isDir)} size={13} />
+                  <FileTypeIcon name={part.file.name} isDir={Boolean(part.file.isDir)} size="sm" />
                 )}
               </span>
             </span>
@@ -4452,7 +4448,7 @@ export function ComposerAction({
         aria-description={blockedReason}
         disabled
       >
-        <ArrowUp className="size-3.5" strokeWidth={2.25} />
+        <ArrowUp className="icon-sm" strokeWidth={2} />
       </Button>
     );
   }
@@ -4474,7 +4470,7 @@ export function ComposerAction({
                 disabled={submitting === "send"}
                 onClick={onQueue}
               >
-                <ListEnd className="size-3.5" strokeWidth={1.75} />
+                <ListEnd className="icon-sm" strokeWidth={1.75} />
               </Button>
             ) : null}
             <Button
@@ -4489,15 +4485,13 @@ export function ComposerAction({
               loading={submitting === "send"}
               loadingLabel={t("Sending…")}
               disabled={submitting === "queue"}
-              startIcon={
-                busyLabel ? <ArrowUp className="size-3.5" strokeWidth={2.25} /> : undefined
-              }
+              startIcon={busyLabel ? <ArrowUp className="icon-sm" strokeWidth={2} /> : undefined}
               onClick={onSend}
             >
               {busyLabel ? (
                 <span>{busyLabel}</span>
               ) : (
-                <ArrowUp className="size-3.5" strokeWidth={2.25} />
+                <ArrowUp className="icon-sm" strokeWidth={2} />
               )}
             </Button>
           </>
@@ -4512,7 +4506,7 @@ export function ComposerAction({
           loadingLabel={t("Stopping…")}
           onClick={onStop}
         >
-          <Square className="size-2.5 fill-current" strokeWidth={0} />
+          <Square className="size-2.5 fill-current stroke-none" />
         </Button>
       </>
     );
@@ -4533,7 +4527,7 @@ export function ComposerAction({
       onClick={onSend}
       aria-description={blockedReason}
     >
-      <ArrowUp className="size-3.5" strokeWidth={2.25} />
+      <ArrowUp className="icon-sm" strokeWidth={2} />
     </Button>
   );
 }

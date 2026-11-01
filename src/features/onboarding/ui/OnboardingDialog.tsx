@@ -218,7 +218,7 @@ export default function OnboardingDialog({
                   </div>
                   <div className="onboarding-scroll">
                     <div className="onboarding-card">
-                      <AppWindow aria-hidden className="size-5" />
+                      <AppWindow aria-hidden className="icon-lg" />
                       <div>
                         <strong>{t("This computer")}</strong>
                         <small>{t("Your local projects and agents")}</small>
@@ -227,7 +227,7 @@ export default function OnboardingDialog({
                     </div>
                     {remotes.map((machine) => (
                       <div className="onboarding-card" key={machine.id}>
-                        <Globe aria-hidden className="size-5" />
+                        <Globe aria-hidden className="icon-lg" />
                         <div>
                           <strong>{machine.name}</strong>
                           <small>{t("Remote computer")}</small>
@@ -574,7 +574,7 @@ function Projects({
           {empty ? (
             <EmptyState
               context="panel"
-              icon={<FolderOpen aria-hidden width={24} height={24} strokeWidth={1.5} />}
+              icon={<FolderOpen aria-hidden width={24} height={24} strokeWidth={1.75} />}
               description={t("No new conversation history found. Choose a project folder to start.")}
               action={chooseFolders}
             />

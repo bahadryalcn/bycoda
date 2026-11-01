@@ -31,6 +31,7 @@ import {
   ChevronDown,
 } from "../../shared/ui/icons";
 import { Button } from "../../shared/ui/Button";
+import { Tab, TabList, Tabs } from "../../shared/ui/Tabs";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import type { OpenFileFn } from "../search/model/search";
 import "./host-tools.css";
@@ -238,52 +239,30 @@ function ConversationHostTools({
       <section aria-label={t("Conversation tools")} className="host-tools-section">
         <div className="host-tools-topbar">
           {!onlyTab ? (
-            <div
-              role="tablist"
-              aria-label={t("Conversation tool selection")}
-              className="host-tools-nav"
-              onKeyDown={(event) => {
-                const index = toolOrder.indexOf(tab);
-                const next =
-                  event.key === "ArrowRight"
-                    ? (index + 1) % toolOrder.length
-                    : event.key === "ArrowLeft"
-                      ? (index - 1 + toolOrder.length) % toolOrder.length
-                      : event.key === "Home"
-                        ? 0
-                        : event.key === "End"
-                          ? toolOrder.length - 1
-                          : null;
-                if (next === null) return;
-                event.preventDefault();
-                selectTab(toolOrder[next]);
-                event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
-              }}
+            <Tabs
+              value={tab}
+              onValueChange={(next) => selectTab(next as Tab)}
+              id={panelId}
+              panels="shared"
             >
-              {toolOrder.map((id) => {
-                const Icon = toolIcons[id];
-                const selected = id === tab;
-                return (
-                  <Button
-                    key={id}
-                    variant="tab"
-                    size="sm"
-                    role="tab"
-                    id={`${panelId}-tab-${id}`}
-                    aria-controls={`${panelId}-panel`}
-                    aria-selected={selected}
-                    aria-label={t(toolLabels[id])}
-                    tooltip={t(toolLabels[id])}
-                    tabIndex={selected ? 0 : -1}
-                    className="host-tools-nav-tab"
-                    onClick={() => selectTab(id)}
-                  >
-                    <Icon className="icon-sm" aria-hidden />
-                    <span className="host-tools-nav-label">{t(toolLabels[id])}</span>
-                  </Button>
-                );
-              })}
-            </div>
+              <TabList label={t("Conversation tool selection")} className="host-tools-nav">
+                {toolOrder.map((id) => {
+                  const Icon = toolIcons[id];
+                  return (
+                    <Tab
+                      key={id}
+                      value={id}
+                      aria-label={t(toolLabels[id])}
+                      tooltip={t(toolLabels[id])}
+                      icon={<Icon className="icon-sm" aria-hidden />}
+                      className="host-tools-nav-tab"
+                    >
+                      {t(toolLabels[id])}
+                    </Tab>
+                  );
+                })}
+              </TabList>
+            </Tabs>
           ) : (
             <span className="host-tools-current-tool">{t("Logs")}</span>
           )}

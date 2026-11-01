@@ -31,8 +31,10 @@
   padding: 0.5rem 0.625rem;
   border-radius: var(--ui-radius-card);
 }
-.social-today-row:hover {
-  background: var(--ui-surface-hover);
+@media (hover: hover) and (pointer: fine) {
+  .social-today-row:hover {
+    background: var(--ui-surface-hover);
+  }
 }
 .social-today-row > div {
   min-inline-size: 0;
@@ -49,7 +51,7 @@
   overflow-wrap: anywhere;
 }
 .social-today-row[data-tone="danger"] strong {
-  color: var(--color-danger);
+  color: var(--ui-tone-danger-fg);
 }
 .social-today-when {
   color: var(--ui-text-secondary);

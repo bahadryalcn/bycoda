@@ -82,7 +82,7 @@ function AcpSettingsShell({
     <section
       id={settingDomId("acp-agents")}
       data-setting-id="acp-agents"
-      className="mt-7 min-w-0 overflow-hidden rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface)"
+      className="mt-7 min-w-0 overflow-hidden rounded-(--ui-radius-card) border border-(--ui-settings-group-border)"
       aria-label={t("ACP agents")}
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
@@ -421,7 +421,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   hideLabel
                   fieldClassName="w-full"
                   disabled={loading || !!busy}
-                  className="font-mono"
+                  monospace
                   value={form.command}
                   required
                   spellCheck={false}
@@ -445,10 +445,10 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                         hideLabel
                         disabled={loading || !!busy}
                         aria-label={t("Arguments (JSON array)")}
-                        className="min-h-20 font-mono"
+                        monospace
+                        minRows={3}
                         value={argsText}
                         spellCheck={false}
-                        rows={3}
                         onChange={(event) => setArgsText(event.target.value)}
                       />
                     </Field>
@@ -463,7 +463,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                         disabled={loading || !!busy}
 
                         autoComplete="off"
-                        className="font-mono"
+                        monospace
                         value={envText}
                         spellCheck={false}
                         onChange={(event) => setEnvText(event.target.value)}

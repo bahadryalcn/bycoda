@@ -1,7 +1,9 @@
 import { NoteSaveStatus } from "./NoteSaveStatus";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Sash } from "../../../shared/ui/Sash";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
@@ -15,16 +17,7 @@ import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n";
-import {
-  ChevronDown,
-  Copy,
-  File,
-  LoaderCircle,
-  Link,
-  Plus,
-  Trash2,
-  X,
-} from "../../../shared/ui/icons";
+import { ChevronDown, Copy, File, Link, Plus, Trash2, X } from "../../../shared/ui/icons";
 import {
   memo,
   useCallback,
@@ -34,7 +27,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
 } from "react";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
@@ -158,10 +150,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
   const {
     width: panelWidth,
     setPaneRef,
-    dragging,
-    separatorProps,
-    onPointerDown,
-    onDoubleClick,
+    sashProps,
   } = useDragResize({
     direction: "left",
     min: NOTES_PANEL_MIN_WIDTH,
@@ -315,7 +304,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
   };
 
   const shortcut = keybindingShortcutLabel(NOTES_PANEL_COMMAND, `${MOD}${ALT}N`);
-  const closeLabel = shortcut ? `Close notes (${shortcut})` : "Close notes";
   const hasNotes = offered.session.length + offered.project.length > 0;
 
   return (
@@ -327,14 +315,11 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       onKeyDown={onKeyDown}
       className="relative flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--ui-pane-border) bg-(--ui-surface-panel) text-content"
     >
-      <div
-        {...separatorProps}
-        aria-label={t("Resize notes panel")}
-        className={`absolute inset-y-0 -left-px z-10 w-1.5 cursor-col-resize touch-none ${
-          dragging ? "bg-(--ui-surface-selected)" : "hover:bg-(--ui-surface-hover)"
-        }`}
-        onPointerDown={onPointerDown}
-        onDoubleClick={onDoubleClick}
+      <Sash
+        {...sashProps}
+        label={t("Resize notes panel")}
+        appearance="hidden"
+        className="absolute inset-y-0 -left-px"
       />
       <div data-notes-header className="flex h-9 shrink-0 items-center gap-1 px-2">
         <Button
@@ -344,7 +329,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           aria-expanded={listOpen}
           aria-label={t("Switch note")}
           aria-haspopup="dialog"
-          title={selected?.title ?? t("Switch note")}
+          tooltip={selected?.title ?? t("Switch note")}
           onClick={(event) => {
             event.currentTarget.focus();
             setListOpen((open) => !open);
@@ -355,42 +340,43 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           <File className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
           <span className="min-w-0 flex-1 truncate">{selected?.title ?? t("Notes")}</span>
           <ChevronDown
-            className={`size-3 shrink-0 text-(--ui-text-secondary) transition-transform ${
+            className={`icon-xs shrink-0 text-(--ui-text-secondary) transition-transform ${
               listOpen ? "rotate-180" : ""
             }`}
             strokeWidth={1.75}
           />
         </Button>
-        <PanelIconButton
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
           label={t("New note")}
-          disabled={creating || !loaded}
+          motion="none"
+          loading={creating}
+          disabled={!loaded}
           onClick={() => void onCreate()}
         >
-          {creating ? (
-            <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} />
-          ) : (
-            <Plus className="icon-sm" strokeWidth={1.75} />
-          )}
-        </PanelIconButton>
-        <PanelIconButton label={closeLabel} onClick={() => setNotesPanelOpen(false)}>
+          <Plus className="icon-sm" strokeWidth={1.75} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Close notes")}
+          shortcut={shortcut}
+          motion="none"
+          onClick={() => setNotesPanelOpen(false)}
+        >
           <X className="icon-sm" strokeWidth={1.75} />
-        </PanelIconButton>
+        </Button>
       </div>
       {listOpen ? (
         <Popover
           anchor={listButton}
           width={Math.max(NOTES_PANEL_MIN_WIDTH, panelWidth)}
           maxHeight={420}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Switch note")}
-          autoFocus
-          tabIndex={-1}
-          onFocus={(event) => {
-            if (event.target === event.currentTarget)
-              event.currentTarget
-                .querySelector<HTMLInputElement>("input")
-                ?.focus({ preventScroll: true });
-          }}
           onDismiss={() => setListOpen(false)}
           className="session-note-picker"
         >
@@ -439,7 +425,8 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
             ) : null}
             {filtered.session.length + filtered.project.length === 0 && loaded && !error ? (
               <EmptyState
-                icon={null}
+                size="inline"
+                kind={query.trim() ? "filtered" : "empty"}
                 description={query.trim() ? t("No matching notes") : t("No notes yet.")}
               />
             ) : null}
@@ -487,21 +474,27 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           onLink={onLink}
         />
       ) : error ? null : loaded && !selected ? (
-        <div className="session-notes-empty">
-          <EmptyState icon={<File />} description={t("No notes for this session yet.")} />
-          <Button variant="primary" loading={creating} onClick={() => void onCreate()}>
-            {t("New note")}
-          </Button>
-          {hasNotes ? (
-            <Button variant="ghost" onClick={() => setListOpen(true)}>
-              {t("Browse project notes")}
-            </Button>
-          ) : null}
-        </div>
+        <EmptyState
+          icon={<File />}
+          description={t("No notes for this session yet.")}
+          className="min-h-0 flex-1"
+          action={
+            <>
+              <Button variant="primary" loading={creating} onClick={() => void onCreate()}>
+                {t("New note")}
+              </Button>
+              {hasNotes ? (
+                <Button variant="ghost" onClick={() => setListOpen(true)}>
+                  {t("Browse project notes")}
+                </Button>
+              ) : null}
+            </>
+          }
+        />
       ) : (
-        <div className="min-h-0 flex-1">
-          <SurfaceLoading label={t("Loading notes…")} />
-        </div>
+        <LoadingText layout="fill" className="min-h-0 flex-1">
+          {t("Loading notes…")}
+        </LoadingText>
       )}
       <div className="session-notes-library-link">
         <Button
@@ -515,35 +508,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         </Button>
       </div>
     </aside>
-  );
-}
-
-function PanelIconButton({
-  label,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  useLocale();
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      iconOnly
-      label={label}
-      motion="none"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
   );
 }
 
@@ -562,9 +526,7 @@ function NoteGroup({
   if (notes.length === 0) return null;
   return (
     <section aria-label={label} className="mb-1 last:mb-0">
-      <h3 className="px-2 pb-1 pt-1.5 text-ui-caption font-medium text-(--ui-text-secondary)">
-        {label}
-      </h3>
+      <SectionLabel className="px-2">{label}</SectionLabel>
       <ul className="flex flex-col gap-0.5">
         {notes.map((note) => {
           const time = formatRelativeTime(new Date(note.updatedAt).toISOString());
@@ -574,7 +536,7 @@ function NoteGroup({
                 variant="item"
                 size="sm"
                 type="button"
-                title={note.title}
+                tooltip={note.title}
                 aria-current={note.id === activeId ? "true" : undefined}
                 onClick={() => onSelect(note.id)}
                 motion="none"

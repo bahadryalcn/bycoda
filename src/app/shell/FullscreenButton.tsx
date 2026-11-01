@@ -52,14 +52,12 @@ export function FullscreenButton() {
         variant="ghost"
         motion="none"
         type="button"
-        title={shortcut ? `${label} (${shortcut})` : label}
-        aria-label={label}
+        shortcut={shortcut}
         aria-pressed={fullscreen}
         data-tauri-drag-region="false"
         onClick={() => void toggle()}
-        className="size-7"
       >
-        <Icon className="size-3.5" strokeWidth={1.75} />
+        <Icon className="icon-sm" strokeWidth={1.75} />
       </Button>
     </>
   );

@@ -1,5 +1,5 @@
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Button } from "../../../shared/ui/Button";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Select } from "../../../shared/ui/Select";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -7,7 +7,7 @@ import {
   machineProjects,
 } from "../../automations/model/machineSnapshot";
 import { useEffect, useState } from "react";
-import { LoaderCircle } from "../../../shared/ui/icons";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { backgroundMachineFor, hostProjectCwd } from "../../automations/model/hostAutomationClient";
 import { isLocalSyncMachine } from "../../connections/model/localSync";
 import type { RemoteMachine } from "../../connections/model/protocol";
@@ -132,20 +132,11 @@ export function ProjectDiscoveryStatus({
   state: ReturnType<typeof useTaskMachineProjects>;
 }) {
   return state.error ? (
-    <span
-      role="alert"
-      className="inline-flex min-w-0 flex-wrap items-center gap-2 text-(--ui-tone-warning-fg)"
-    >
-      <span>{state.error}</span>
-      <Button variant="secondary" type="button" onClick={state.retry}>
-        {t("Retry")}
-      </Button>
-    </span>
+    <InlineMessage tone="warning" live="assertive" retry={{ onRetry: state.retry }}>
+      {state.error}
+    </InlineMessage>
   ) : state.loading ? (
-    <span role="status" className="inline-flex items-center gap-1.5">
-      <LoaderCircle className="icon-xs animate-spin" />
-      {t("Loading projects…")}
-    </span>
+    <LoadingText>{t("Loading projects…")}</LoadingText>
   ) : null;
 }
 

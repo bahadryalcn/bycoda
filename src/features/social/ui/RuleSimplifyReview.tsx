@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext, useId, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
@@ -5,6 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Sparkles } from "../../../shared/ui/icons";
 import { HARNESS_TITLE } from "../../sessions/model/session";
@@ -832,9 +834,8 @@ function ProposalCard({
             disabled={frozen}
             onChange={(event) => set({ name: event.target.value })}
           />
-          <TextField
+          <NumberField
             label={t("Daily limit")}
-            type="number"
             min={1}
             max={maxLimit}
             value={item.edit.dailyLimit}
@@ -912,9 +913,7 @@ function ProposalCard({
         </p>
       ) : null}
       {item.create === "failed" ? (
-        <p className="social-rule-problem" role="alert">
-          {item.createError}
-        </p>
+        <InlineError>{item.createError}</InlineError>
       ) : null}
       {item.create === "created" ? (
         <p className="social-rule-note" role="status">
@@ -926,9 +925,7 @@ function ProposalCard({
         </p>
       ) : null}
       {item.pause === "failed" ? (
-        <p className="social-rule-problem" role="alert">
-          {t("The original rule could not be paused: {p0}", { p0: item.pauseError })}
-        </p>
+        <InlineError>{t("The original rule could not be paused: {p0}", { p0: item.pauseError })}</InlineError>
       ) : null}
       <div className="social-rule-actions">
         {item.create === "created" ? (

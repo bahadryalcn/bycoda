@@ -1,6 +1,6 @@
 import { useLocale, useT } from "../i18n";
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ChevronLeft, ChevronRight, Clock } from "./icons";
+import { Calendar, ChevronLeft, ChevronRight, Clock } from "./icons";
 import { Button } from "./Button";
 import { TextField } from "./TextField";
 import { Field, type FieldVariant } from "./Field";
@@ -536,7 +536,7 @@ export function DateTimeField({
             >
               {shown ?? shownPlaceholder}
             </span>
-            <Clock className="date-time-field-icon size-(--ui-icon-sm)" aria-hidden="true" />
+            <Calendar className="date-time-field-icon size-(--ui-icon-sm)" aria-hidden="true" />
           </SelectTrigger>
           {hiddenInput}
           {open ? (

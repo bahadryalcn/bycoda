@@ -2,6 +2,9 @@ import { Button } from "../../../shared/ui/Button";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "../../../shared/ui/icons";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import {
   DAILY_SUMMARY_OPEN_EVENT,
   DAILY_SUMMARY_STORED_EVENT,
@@ -21,9 +24,6 @@ const summaryTime = (at: number) =>
     minute: "2-digit",
   });
 
-const SUMMARY_HEADING =
-  "text-ui-micro font-medium uppercase tracking-wide text-(--ui-text-secondary)";
-
 /** What the agents did over a period, across every machine. */
 export function SummaryPanel({
   summary,
@@ -42,10 +42,10 @@ export function SummaryPanel({
   const taskSection = (label: string, items: readonly SummaryTask[], note = "") =>
     items.length ? (
       <section aria-label={label} className="flex flex-col gap-1">
-        <h3 className={SUMMARY_HEADING}>
-          {label} · {items.length}
+        <SectionLabel count={items.length}>
+          {label}
           {note}
-        </h3>
+        </SectionLabel>
         <ul className="flex flex-col gap-0.5">
           {items.map((item) => (
             <li key={item.key} className="min-w-0 text-ui-caption text-(--ui-text-secondary)">
@@ -69,9 +69,7 @@ export function SummaryPanel({
   const goalSection = (label: string, goals: DailySummary["goals"]) =>
     goals.length ? (
       <section aria-label={label} className="flex flex-col gap-1">
-        <h3 className={SUMMARY_HEADING}>
-          {label} · {goals.length}
-        </h3>
+        <SectionLabel count={goals.length}>{label}</SectionLabel>
         <ul className="flex flex-col gap-0.5">
           {goals.map((goal) => (
             <li
@@ -124,14 +122,10 @@ export function SummaryPanel({
           {busy ? t("Refreshing…") : t("Refresh now")}
         </Button>
       </div>
-      {error ? <p className="text-ui-caption text-(--ui-tone-danger-fg)">{error}</p> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {summary ? (
         <>
-          {empty ? (
-            <p className="text-ui-caption text-(--ui-text-secondary)">
-              {t("No background activity.")}
-            </p>
-          ) : null}
+          {empty ? <EmptyState size="inline" description={t("No background activity.")} /> : null}
           {taskSection(
             "Finished",
             summary.finished,
@@ -144,7 +138,7 @@ export function SummaryPanel({
           {goalSection("Goals finished", summary.goalsFinished)}
           {summary.usage.length ? (
             <section aria-label={t("Agent time")} className="flex flex-col gap-1">
-              <h3 className={SUMMARY_HEADING}>{t("Agent time today")}</h3>
+              <SectionLabel>{t("Agent time today")}</SectionLabel>
               <ul className="flex flex-col gap-0.5">
                 {summary.usage.map((entry) => (
                   <li

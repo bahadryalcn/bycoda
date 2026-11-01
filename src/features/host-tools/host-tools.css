@@ -258,8 +258,8 @@
   flex-shrink: 0;
 }
 .host-tools :is(summary, [role="tabpanel"]):focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 .host-tool-error-payload {
   overflow-wrap: anywhere;
@@ -408,23 +408,7 @@
   align-content: start;
 }
 .host-browser-empty {
-  display: grid;
-  justify-items: center;
-  align-content: center;
-  gap: 12px;
   min-block-size: min(520px, 60dvh);
-  padding: 24px;
-  text-align: center;
-  color: var(--ui-text-secondary);
-}
-.host-browser-empty h4 {
-  color: var(--color-content);
-  font-size: var(--ui-font-heading, 18px);
-  font-weight: 500;
-}
-.host-browser-empty p {
-  max-inline-size: 48ch;
-  text-wrap: pretty;
 }
 .host-browser-target {
   overflow-wrap: anywhere;
@@ -506,8 +490,8 @@
   align-content: center;
 }
 .host-browser-disclosure summary:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 .host-browser-disclosure > p {
   margin-block-start: 6px;

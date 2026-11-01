@@ -224,6 +224,7 @@
 }
 .choiceCheck,
 .choiceIcon {
+  color: var(--ui-text-secondary);
   display: grid;
   flex: none;
   place-items: center;
@@ -234,6 +235,7 @@
   color: var(--foreground);
 }
 .choiceIcon {
+  color: var(--ui-text-secondary);
   inline-size: var(--ui-icon-md);
   block-size: var(--ui-icon-md);
 }

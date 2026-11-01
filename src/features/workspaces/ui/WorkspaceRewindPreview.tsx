@@ -3,6 +3,7 @@ import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
+import { InlineError } from "../../../shared/ui/InlineError";
 import type { SessionRewindPlan } from "../model/contracts";
 
 type Preview = {
@@ -246,9 +247,7 @@ export function WorkspaceRewindPreviewHost({ sessionId }: { sessionId: string })
             {t("Undo rewind")}
           </Button>
           {error ? (
-            <span role="alert" className="text-(--ui-tone-danger-fg)">
-              {error}
-            </span>
+            <InlineError>{error}</InlineError>
           ) : null}
         </div>
       ) : null}

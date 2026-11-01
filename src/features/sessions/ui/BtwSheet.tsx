@@ -1,6 +1,8 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
+import { Sheet } from "../../../shared/ui/Sheet";
+import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Plus, RefreshCw, X } from "../../../shared/ui/icons";
@@ -15,7 +17,6 @@ import {
   type ParentAdmission,
 } from "../data/parentInputClosure";
 import { AgentTranscript } from "./AgentTranscript";
-import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
 import { preferredModelSettings, resolveModel } from "../model/models";
 import {
   btwOpenTargetTurnId,
@@ -477,9 +478,6 @@ export function BtwSheet({
 }) {
   const t = useT();
   const sheetRef = useRef<HTMLElement | null>(null);
-  const glassRef = useRef<HTMLDivElement | null>(null);
-  const contentRef = useRef<HTMLDivElement | null>(null);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
   const { open, rendered, tabs, activeTabId, messages, persisted, running } = btw;
   const harness = btw.harness;
   const finishClose = btw.finishClose;
@@ -504,8 +502,8 @@ export function BtwSheet({
     if (rendered && !open) finishClose();
   }, [open, rendered, finishClose]);
 
-  // Esc collapses the sheet from anywhere in this pane, and focus follows
-  // the sheet in so typing goes to the side question.
+  // Focus follows the sheet in, so typing goes to the side question. Escape and outside
+  // presses belong to the shared Sheet.
   useEffect(() => {
     const sheet = sheetRef.current;
     if (!open || !visible || !sheet) return;
@@ -514,51 +512,32 @@ export function BtwSheet({
         sheet.querySelector<HTMLTextAreaElement>("textarea")?.focus();
       }
     });
-    const pane = sheet.closest("[data-session-drop]") ?? sheet.parentElement;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (event.isComposing) return;
-      const target = event.target instanceof Node ? event.target : null;
-      if (target !== document.body && !(target && pane?.contains(target))) {
-        return;
-      }
-      event.preventDefault();
-      btw.close();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => cancelAnimationFrame(frame);
   }, [open, visible, activeTabId, btw.seed.key]);
 
   if (!rendered) return null;
 
   return (
-    <div
-      data-btw-overlay
-      data-state={open ? "open" : "closed"}
-      inert={!open}
-      ref={overlayRef}
-      className="btw-overlay absolute inset-0 z-40"
-    >
-      <div aria-hidden className="absolute inset-0" onMouseDown={btw.close} />
-      <section
-        ref={sheetRef}
-        role="dialog"
-        aria-label={t("By-the-way conversations")}
-        className="btw-sheet absolute inset-x-0 bottom-0 isolate mx-auto w-full max-w-4xl"
-      >
-        <GlassBackdrop ref={glassRef} className="btw-sheet-glass popover-backdrop" />
-        <div
-          ref={contentRef}
-          className="relative z-[1] flex h-full flex-col font-sans text-sm text-(--ui-tone-neutral-fg)"
-        >
-          <div className="btw-sheet-body flex h-11 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) pr-2 pl-2.5">
-            <div
-              role="tablist"
-              aria-label={t("Side questions")}
-              className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+    <Sheet
+      ref={sheetRef}
+      modal={false}
+      anchor="container"
+      side="bottom"
+      open={open && visible}
+      motion="none"
+      initialFocus={false}
+      scroll="none"
+      title={t("By-the-way conversations")}
+      escapeScope="[data-session-drop]"
+      className="btw-sheet"
+      bodyClassName="font-sans text-ui-body"
+      onClose={btw.close}
+      header={
+        <div className="flex h-11 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) pr-2 pl-2.5">
+          <Tabs value={activeTabId ?? ""} onValueChange={btw.selectTab} panels="none">
+            <TabList
+              label={t("Side questions")}
+              className="scrollbar-none min-w-0 flex-1 overflow-x-auto"
             >
               {tabs.map((tab) => {
                 const selected = tab.id === activeTabId;
@@ -567,39 +546,9 @@ export function BtwSheet({
                   <ActionHost
                     key={tab.id}
                     selected={selected}
-                    className="flex h-7 max-w-[15rem] shrink-0 items-center rounded-md"
+                    className="flex max-w-[15rem] shrink-0 items-center rounded-md"
                   >
-                    <Button
-                      variant="tab"
-                      type="button"
-                      role="tab"
-                      aria-selected={selected}
-                      tabIndex={selected ? 0 : -1}
-                      title={tab.question}
-                      onClick={() => btw.selectTab(tab.id)}
-                      onKeyDown={(event) => {
-                        if (event.altKey || event.ctrlKey || event.metaKey) return;
-                        const index = tabs.findIndex((item) => item.id === tab.id);
-                        const next =
-                          event.key === "ArrowLeft"
-                            ? (index + tabs.length - 1) % tabs.length
-                            : event.key === "ArrowRight"
-                              ? (index + 1) % tabs.length
-                              : event.key === "Home"
-                                ? 0
-                                : event.key === "End"
-                                  ? tabs.length - 1
-                                  : -1;
-                        if (next < 0) return;
-                        event.preventDefault();
-                        btw.selectTab(tabs[next].id);
-                        event.currentTarget
-                          .closest('[role="tablist"]')
-                          ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-                          [next]?.focus();
-                      }}
-                      className="min-w-0"
-                    >
+                    <Tab value={tab.id} tooltip={tab.question} className="min-w-0">
                       {tab.status ? (
                         <span
                           aria-hidden
@@ -607,7 +556,7 @@ export function BtwSheet({
                         />
                       ) : null}
                       <span className="truncate">{label}</span>
-                    </Button>
+                    </Tab>
                     <InlineAction
                       className="mr-1 shrink-0"
                       tabIndex={selected ? 0 : -1}
@@ -615,120 +564,118 @@ export function BtwSheet({
                         tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")
                       }
                       type="button"
-                      title={tab.thread ? t("Delete") : t("Discard")}
+                      tooltip={tab.thread ? t("Delete") : t("Discard")}
                       onClick={() => btw.closeTab(tab)}
                     >
-                      <X className="size-3" strokeWidth={1.75} />
+                      <X className="icon-xs" strokeWidth={1.75} />
                     </InlineAction>
                   </ActionHost>
                 );
               })}
-            </div>
-            {btw.canStartDraft ? (
-              <Button
-                iconOnly
-                label={t("New side question")}
-                variant="ghost"
-                type="button"
-                aria-label={t("New side question")}
-                title={t("New side question")}
-                onClick={btw.startDraft}
-                className="shrink-0"
-              >
-                <Plus className="size-3.5" strokeWidth={1.75} />
-              </Button>
-            ) : null}
+            </TabList>
+          </Tabs>
+          {btw.canStartDraft ? (
             <Button
               iconOnly
-              label={t("Back to the conversation")}
+              label={t("New side question")}
               variant="ghost"
               type="button"
-              aria-label={t("Back to the conversation")}
-              title={t("Back to the conversation (Esc)")}
-              onClick={btw.close}
+              onClick={btw.startDraft}
               className="shrink-0"
             >
-              <ChevronDown className="size-4" strokeWidth={1.75} />
+              <Plus className="icon-sm" strokeWidth={1.75} />
             </Button>
-          </div>
-
-          <div className="btw-sheet-body min-h-0 flex-1">
-            <AgentTranscript
-              key={activeTabId ?? ""}
-              blocks={threadBlocks}
-              busy={running}
-              visible={visible && open}
-              cwd={cwd}
-              harness={harness}
-              model={btw.model}
-              modelSettings={btw.modelSettings}
-              providerAccountId={providerAccountId}
-              onSaveNote={onSaveNote}
-              onOpenFile={onOpenFile}
-              onOpenDiff={onOpenDiff}
-            />
-          </div>
-          {persisted?.status === "error" ? (
-            <div className="btw-sheet-body shrink-0 px-5 pb-3">
-              <Alert tone="danger" role="alert">
-                <div className="min-w-0">
-                  <div className="text-(length:--ui-font-caption) font-medium text-(--ui-tone-danger-fg)">
-                    {t("Couldn’t finish")}
-                  </div>
-                  <div className="mt-1 text-ui-caption leading-4.5 text-(--ui-tone-danger-fg)">
-                    {persisted.error ||
-                      t("{p0} could not answer this side question.", {
-                        p0: HARNESS_TITLE[harness],
-                      })}
-                  </div>
-                </div>
-                <Button variant="ghost" type="button" onClick={btw.retry} className="shrink-0">
-                  <RefreshCw className="size-3" strokeWidth={1.75} />
-                  {t("Retry")}
-                </Button>
-              </Alert>
-            </div>
           ) : null}
-
-          {/* Keep the same inset as the docked composer. */}
-          <div className="btw-sheet-composer shrink-0 p-1.5 pt-0">
-            {activeTabId ? (
-              <Composer
-                key={`${activeTabId}:${btw.seed.key}`}
-                compact
-                enabled={visible && open}
-                disabled={!btw.canAskCurrentTarget}
-                focused={visible && open && !running}
-                harness={harness}
-                model={btw.model}
-                modelSettings={btw.modelSettings}
-                runtimeMode={DEFAULT_RUNTIME_MODE}
-                cwd={cwd ?? "~"}
-                executionCwd={cwd ?? "~"}
-                sessionId={activeTabId}
-                parentSessionId={btw.parentSessionId ?? null}
-                hideProjectPicker
-                hideBranchPicker
-                hideTopBar
-                placeholder={t("Ask a side question…")}
-                inputAriaLabel="By-the-way question"
-                allowedModelHarnesses={[harness]}
-                initialDraft={btw.seed.text}
-                onDraftChange={btw.changeDraft}
-                onFocus={() => {}}
-                onCwdChange={() => {}}
-                onModelChange={btw.changeModel}
-                onModelSettingsChange={btw.changeModelSettings}
-                onRuntimeModeChange={() => {}}
-                busy={running}
-                allowBusySubmit={false}
-                onStop={btw.stop}
-                onSubmit={(text, _attachments, _options, original) => btw.submit(text, original)}
-              />
-            ) : null}
-          </div>
+          <Button
+            iconOnly
+            label={t("Back to the conversation")}
+            variant="ghost"
+            type="button"
+            tooltip={t("Back to the conversation")}
+            shortcut="Esc"
+            onClick={btw.close}
+            className="shrink-0"
+          >
+            <ChevronDown className="icon-md" strokeWidth={1.75} />
+          </Button>
         </div>
-      </section>
-    </div>
+      }
+    >
+      <div className="min-h-0 flex-1">
+        <AgentTranscript
+          key={activeTabId ?? ""}
+          blocks={threadBlocks}
+          busy={running}
+          visible={visible && open}
+          cwd={cwd}
+          harness={harness}
+          model={btw.model}
+          modelSettings={btw.modelSettings}
+          providerAccountId={providerAccountId}
+          onSaveNote={onSaveNote}
+          onOpenFile={onOpenFile}
+          onOpenDiff={onOpenDiff}
+        />
+      </div>
+      {persisted?.status === "error" ? (
+        <div className="shrink-0 px-5 pb-3">
+          <Alert tone="danger" role="alert">
+            <div className="min-w-0">
+              <div className="text-ui-caption font-medium text-(--ui-tone-danger-fg)">
+                {t("Couldn’t finish")}
+              </div>
+              <div className="mt-1 text-ui-caption leading-4.5 text-(--ui-tone-danger-fg)">
+                {persisted.error ||
+                  t("{p0} could not answer this side question.", {
+                    p0: HARNESS_TITLE[harness],
+                  })}
+              </div>
+            </div>
+            <Button variant="ghost" type="button" onClick={btw.retry} className="shrink-0">
+              <RefreshCw className="icon-xs" strokeWidth={1.75} />
+              {t("Retry")}
+            </Button>
+          </Alert>
+        </div>
+      ) : null}
+
+      {/* Keep the same inset as the docked composer. */}
+      <div className="shrink-0 p-1.5 pt-0">
+        {activeTabId ? (
+          <Composer
+            key={`${activeTabId}:${btw.seed.key}`}
+            compact
+            enabled={visible && open}
+            disabled={!btw.canAskCurrentTarget}
+            focused={visible && open && !running}
+            harness={harness}
+            model={btw.model}
+            modelSettings={btw.modelSettings}
+            runtimeMode={DEFAULT_RUNTIME_MODE}
+            cwd={cwd ?? "~"}
+            executionCwd={cwd ?? "~"}
+            sessionId={activeTabId}
+            parentSessionId={btw.parentSessionId ?? null}
+            hideProjectPicker
+            hideBranchPicker
+            hideTopBar
+            placeholder={t("Ask a side question…")}
+            inputAriaLabel="By-the-way question"
+            allowedModelHarnesses={[harness]}
+            initialDraft={btw.seed.text}
+            onDraftChange={btw.changeDraft}
+            onFocus={() => {}}
+            onCwdChange={() => {}}
+            onModelChange={btw.changeModel}
+            onModelSettingsChange={btw.changeModelSettings}
+            onRuntimeModeChange={() => {}}
+            busy={running}
+            allowBusySubmit={false}
+            onStop={btw.stop}
+            onSubmit={(text, _attachments, _options, original) => btw.submit(text, original)}
+          />
+        ) : null}
+      </div>
+    </Sheet>
   );
 }

@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useState } from "react";
@@ -117,10 +118,10 @@ function CheckAnnotation({
       : annotation.level;
   const Mark = annotation.level === "failure" ? CircleX : AlertCircle;
   return (
-    <div className="min-w-0 overflow-hidden rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface)">
+    <Surface variant="raised" padding="none" className="overflow-hidden">
       {annotation.path ? (
-        <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
-          <FileTypeIcon name={annotation.path} isDir={false} size={13} />
+        <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-fill-subtle) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+          <FileTypeIcon name={annotation.path} isDir={false} />
           <span title={location} className="min-w-0 flex-1 break-all">
             {location}
           </span>
@@ -130,7 +131,7 @@ function CheckAnnotation({
               label={t("View {p0} on GitHub", { p0: location })}
               variant="ghost"
               type="button"
-              title={t("View source at the checked commit")}
+              tooltip={t("View source at the checked commit")}
               aria-label={t("View {p0} on GitHub", { p0: location })}
               onClick={() => void openUrl(fileUrl)}
               className="-my-1 -mr-1 shrink-0"
@@ -181,6 +182,6 @@ function CheckAnnotation({
           ) : null}
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }

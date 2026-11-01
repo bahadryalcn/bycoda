@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext, useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
@@ -148,7 +149,7 @@ export function TelegramChannelConnection({
           </Button>
         </div>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
     </div>
   );
 }

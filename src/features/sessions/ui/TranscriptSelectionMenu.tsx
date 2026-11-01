@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { FilePlusCorner, MessageSquarePlus, Sparkles } from "../../../shared/ui/icons";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
@@ -144,7 +145,7 @@ export function TranscriptSelectionMenu({
         action(
           `translate-${target}`,
           target === "en" ? t("Translate to English") : t("Translate to Chinese"),
-          <span className="text-xs">{target === "en" ? "EN" : "中"}</span>,
+          <span className="text-ui-caption">{target === "en" ? "EN" : "中"}</span>,
           () => onTranslate(target),
         ),
       );
@@ -184,14 +185,10 @@ export function TranscriptSelectionMenu({
         />
         {items.map(({ id }) =>
           errors[id] ? (
-            <span
-              key={id}
-              role="alert"
-              className="block min-w-0 px-2 py-1 text-ui-caption text-(--ui-tone-danger-fg) break-words"
-            >
+            <InlineError key={id} className="px-2 py-1">
               {id === "notes" ? t("Could not save note. ") : t("Could not complete this action. ")}
               {errors[id]}
-            </span>
+            </InlineError>
           ) : null,
         )}
       </div>

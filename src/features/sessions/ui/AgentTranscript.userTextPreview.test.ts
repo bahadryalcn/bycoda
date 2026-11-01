@@ -77,10 +77,13 @@ it("bounds the chat and focus preview, opens the exact full text, and copies the
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full long text"]')!;
   expect(trigger).not.toBeNull();
   expect(container.textContent).not.toContain("END OF MESSAGE");
-  act(() => trigger.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-  expect(trigger.getAttribute("aria-describedby")).not.toBeNull();
+  await act(async () => {
+    trigger.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  });
   act(() => trigger.focus());
-  const preview = document.getElementById(trigger.getAttribute("aria-describedby")!);
+  const preview = document.querySelector<HTMLElement>("[data-hover-card]");
+  expect(preview).not.toBeNull();
   expect(preview?.textContent).toContain("Long text preview");
   expect(preview?.textContent).not.toContain("END OF MESSAGE");
   expect(preview?.querySelector("pre")?.classList.contains("select-text")).toBe(true);

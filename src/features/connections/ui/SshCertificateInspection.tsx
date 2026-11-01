@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t } from "../../../shared/i18n";
 import { inspectSshCertificate, type SshCertificateMetadata } from "../model/sshCertificate";
 
@@ -27,7 +28,7 @@ export function SshCertificateInspection({
   const revision = current.current.revision;
   const metadata = result?.revision === revision ? result.metadata : undefined;
   return (
-    <div className="flex flex-col gap-2 text-xs">
+    <div className="flex flex-col gap-2 text-ui-caption">
       <div>
         <Button
           size="sm"
@@ -57,9 +58,7 @@ export function SshCertificateInspection({
         </Button>
       </div>
       {error === revision ? (
-        <p role="alert" className="text-(--ui-tone-danger-fg)">
-          {t("Couldn’t inspect the public SSH certificate.")}
-        </p>
+        <InlineError>{t("Couldn’t inspect the public SSH certificate.")}</InlineError>
       ) : null}
       {metadata ? (
         <details>

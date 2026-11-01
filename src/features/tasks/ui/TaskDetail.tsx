@@ -1,4 +1,5 @@
 import { Badge } from "../../../shared/ui/Badge";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
@@ -10,7 +11,8 @@ import { canEditTask, taskRequiresInstructions, type TaskStatus } from "../model
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { LoaderCircle, Pencil, Sparkles, X } from "../../../shared/ui/icons";
+import { Pencil, Sparkles, X } from "../../../shared/ui/icons";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { RUNTIME_MODE_LABEL } from "../../sessions/model/session";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { TaskReviewNotes } from "./TaskReviewNotes";
@@ -117,11 +119,11 @@ export function TaskDetail({
         ref={detailRoot}
         aria-label={t("Task details")}
         aria-busy={actions.pending || undefined}
-        className="flex min-h-0 w-[380px] max-w-[45%] shrink-0 flex-col border-l border-(--ui-tone-neutral-border) @max-[640px]/task-area:w-full @max-[640px]/task-area:max-w-none @max-[640px]/task-area:border-is-0"
+        className="flex min-h-0 w-95 max-w-[45%] shrink-0 flex-col border-l border-(--ui-tone-neutral-border) @max-[640px]/task-area:w-full @max-[640px]/task-area:max-w-none @max-[640px]/task-area:border-is-0"
       >
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3">
           {actions.pending ? (
-            <LoaderCircle aria-label={t("Loading…")} className="icon-xs animate-spin" />
+            <Spinner size="xs" label={t("Loading…")} />
           ) : null}
           <Badge tone="neutral" className="">
             {t(STATUS_LABELS[task.status])}
@@ -221,7 +223,7 @@ export function TaskDetail({
                     allowRemoteMedia={false}
                   />
                 ) : (
-                  <p className="text-(--ui-text-secondary)">{t("No description.")}</p>
+                  <EmptyState size="inline" description={t("No description.")} />
                 )}
               </div>
             </>

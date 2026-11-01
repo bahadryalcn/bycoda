@@ -110,9 +110,9 @@ export function FileMentionPicker({
               >
                 <span className="shrink-0">
                   {isNoteMentionPath(file.path) ? (
-                    <StickyNote className="size-3.5" strokeWidth={1.75} />
+                    <StickyNote className="icon-sm" strokeWidth={1.75} />
                   ) : (
-                    <FileTypeIcon name={file.name} isDir={Boolean(file.isDir)} size={15} />
+                    <FileTypeIcon name={file.name} isDir={Boolean(file.isDir)} size="md" />
                   )}
                 </span>
                 <span className={`min-w-0 flex-1 truncate ${highlighted ? "text-mention" : ""}`}>

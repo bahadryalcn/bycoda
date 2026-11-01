@@ -148,3 +148,13 @@ UNKNOWN: owner capture has no source stamp. Product repairs/real theme/layout/
 screen-reader/native/Host/mobile acceptance pending. Claims RPC unavailable;
 installed/provider/device evidence not supplied. No build/install/release or
 live search performed; preserve unrelated dirty work.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Search (`src/features/search/**`), from `HANDOFF-w2-tools.md`.
+
+- Done: SearchView header on `PaneHeader` (drag region, `chromeInset` replaces both spacers, Full screen/Restore as `actions`, `WindowControls` as `trailing`); loading spinner on `Spinner`; `search.css` undefined `--ui-line-height` to `--ui-leading-micro`.
+- Left: All/Conversations/Files/Projects stays `SegmentedControl` (an exclusive filter over one result list, not panels); result rows are `Button variant="item"` with no inline actions, so no `ActionHost`; `FileTypeIcon size={N}` at `SearchView.tsx` (two sites).
+- Unverified: no screenshots or native run.

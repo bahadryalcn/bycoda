@@ -6,7 +6,8 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Modal } from "../../../shared/ui/Modal";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { TextField } from "../../../shared/ui/TextField";
 import type { ServerRecord } from "../model/serverInventory";
@@ -142,6 +143,18 @@ export function TermiusImportDialog({
       onClose={() => {
         if (!pending.current) onClose();
       }}
+      footer={
+        <ModalActions>
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
+            {outcome ? t("Done") : t("Cancel")}
+          </Button>
+          {preview && !outcome ? (
+            <Button loading={busy} disabled={busy || !selected.size} onClick={() => void apply()}>
+              {t("Import selected ({p0})", { p0: selected.size })}
+            </Button>
+          ) : null}
+        </ModalActions>
+      }
     >
       <div className="flex min-h-0 flex-col gap-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -180,7 +193,7 @@ export function TermiusImportDialog({
           </Button>
         </form>
         {!preview ? (
-          <p className="text-sm text-(--ui-text-muted)">
+          <p className="text-ui-body text-(--ui-text-muted)">
             {t("Read local Termius records without changing Termius data.")}
           </p>
         ) : null}
@@ -200,7 +213,7 @@ export function TermiusImportDialog({
         ) : preview ? (
           <>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-ui-body">
                 <Checkbox
                   checked={allSelected}
                   indeterminate={selected.size > 0 && !allSelected}
@@ -213,7 +226,7 @@ export function TermiusImportDialog({
                 />
                 {t("Select all")}
               </label>
-              <span className="text-xs text-(--ui-text-muted)" role="status">
+              <span className="text-ui-caption text-(--ui-text-muted)" role="status">
                 {t("{p0} of {p1} selected", { p0: selected.size, p1: preview.hosts.length })}
               </span>
             </div>
@@ -224,7 +237,7 @@ export function TermiusImportDialog({
               aria-label={t("Search servers")}
             />
             <div
-              className="max-h-[45dvh] min-h-0 overflow-y-auto divide-y divide-(--ui-border)"
+              className="max-h-[45dvh] min-h-0 overflow-y-auto divide-y divide-(--ui-pane-border)"
               aria-label={t("Termius records")}
             >
               {visible.map((host) => {
@@ -247,7 +260,7 @@ export function TermiusImportDialog({
                         });
                       }}
                     />
-                    <div className="min-w-0 flex-1 text-sm">
+                    <div className="min-w-0 flex-1 text-ui-body">
                       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                         <span className="break-words font-medium">{host.name}</span>
                         {duplicate ? (
@@ -258,17 +271,17 @@ export function TermiusImportDialog({
                           <Badge size="sm">{t("SSH key available")}</Badge>
                         ) : null}
                       </div>
-                      <p className="break-all text-xs text-(--ui-text-muted)">
+                      <p className="break-all text-ui-caption text-(--ui-text-muted)">
                         {host.endpoint.user ? `${host.endpoint.user}@` : ""}
                         {host.endpoint.host}:{host.endpoint.port}
                       </p>
                       {host.group || host.tags.length ? (
-                        <p className="break-words text-xs text-(--ui-text-muted)">
+                        <p className="break-words text-ui-caption text-(--ui-text-muted)">
                           {[host.group, ...host.tags].filter(Boolean).join(" · ")}
                         </p>
                       ) : null}
                       {host.warnings.length ? (
-                        <details className="mt-1 text-xs text-(--ui-text-muted)">
+                        <details className="mt-1 text-ui-caption text-(--ui-text-muted)">
                           <summary>
                             {review ? t("Review required") : t("Migration details")}
                           </summary>
@@ -284,11 +297,16 @@ export function TermiusImportDialog({
                 );
               })}
               {!visible.length ? (
-                <p className="py-4 text-sm text-(--ui-text-muted)">{t("No matching servers")}</p>
+                <EmptyState
+                  size="inline"
+                  kind="filtered"
+                  description={t("No matching servers")}
+                  onReset={() => setQuery("")}
+                />
               ) : null}
             </div>
             {preview.hosts.some((host) => host.hasKey) ? (
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-ui-body">
                 <Checkbox
                   checked={importKeys}
                   disabled={busy}
@@ -297,7 +315,7 @@ export function TermiusImportDialog({
                 {t("Import linked SSH keys into private local files")}
               </label>
             ) : null}
-            <details className="text-xs text-(--ui-text-muted)">
+            <details className="text-ui-caption text-(--ui-text-muted)">
               <summary>{t("What gets imported")}</summary>
               <p className="mt-1">
                 {t(
@@ -312,16 +330,6 @@ export function TermiusImportDialog({
             </details>
           </>
         ) : null}
-        <div className="flex flex-wrap justify-end gap-2 border-t border-(--ui-border) pt-3">
-          <Button variant="ghost" disabled={busy} onClick={onClose}>
-            {outcome ? t("Done") : t("Cancel")}
-          </Button>
-          {preview && !outcome ? (
-            <Button loading={busy} disabled={busy || !selected.size} onClick={() => void apply()}>
-              {t("Import selected ({p0})", { p0: selected.size })}
-            </Button>
-          ) : null}
-        </div>
       </div>
     </Modal>
   );

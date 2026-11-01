@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { TextField } from "../../../shared/ui/TextField";
 import { Alert } from "../../../shared/ui/Alert";
 import { Progress } from "../../../shared/ui/Progress";
@@ -147,7 +149,7 @@ export function ServerFiles({
       <Modal title={t("SFTP files")} onClose={close} size="lg" fitViewport>
         <div className="flex min-h-0 flex-col gap-3 p-4">
           {serverName ? (
-            <p className="truncate text-xs text-(--ui-text-muted)">
+            <p className="truncate text-ui-caption text-(--ui-text-muted)">
               {t("Target")}: {serverName}
             </p>
           ) : null}
@@ -161,9 +163,9 @@ export function ServerFiles({
             <Button
               variant="ghost"
               size="sm"
+              iconOnly
               disabled={busy || !loaded}
-              aria-label={t("Parent directory")}
-              title={t("Parent directory")}
+              label={t("Parent directory")}
               onClick={() => void load(sftpParent(path))}
             >
               <ArrowUp className="icon-sm" />
@@ -193,7 +195,7 @@ export function ServerFiles({
                   .catch((reason) => setError(String(reason)));
               }}
             >
-              <Upload className="size-3.5" />
+              <Upload className="icon-sm" />
               {t("Upload")}
             </Button>
             {busy ? (
@@ -218,7 +220,7 @@ export function ServerFiles({
                 max={progress?.totalBytes || 1}
                 tone="neutral"
               />
-              <span className="text-xs text-(--ui-text-muted)">
+              <span className="text-ui-caption text-(--ui-text-muted)">
                 {progress
                   ? `${progress.transferredBytes.toLocaleString()}${progress.totalBytes != null ? ` / ${progress.totalBytes.toLocaleString()}` : ""} ${t("bytes")}`
                   : t("Waiting for transfer data…")}
@@ -231,7 +233,7 @@ export function ServerFiles({
             </Alert>
           ) : null}
           {status ? (
-            <p role="status" className="text-xs text-(--ui-text-muted)">
+            <p role="status" className="text-ui-caption text-(--ui-text-muted)">
               {status}
             </p>
           ) : null}
@@ -246,7 +248,7 @@ export function ServerFiles({
                   setUpload({ ...upload, name: event.target.value });
                 }}
               />
-              <label className="flex items-start gap-2 text-xs">
+              <label className="flex items-start gap-2 text-ui-caption">
                 <Checkbox
                   checked={overwrite}
                   disabled={busy}
@@ -300,7 +302,7 @@ export function ServerFiles({
             </div>
           ) : null}
           {recoveries.length ? (
-            <details className="border-y border-stroke py-2 text-xs">
+            <details className="border-y border-stroke py-2 text-ui-caption">
               <summary className="cursor-pointer">
                 {t("Paused transfers")} ({recoveries.length})
               </summary>
@@ -356,7 +358,7 @@ export function ServerFiles({
           ) : null}
           {review ? (
             <section
-              className="flex flex-col gap-2 border-b border-stroke pb-3 text-xs"
+              className="flex flex-col gap-2 border-b border-stroke pb-3 text-ui-caption"
               aria-label={t("Resume transfer review")}
             >
               <p className="break-all">
@@ -415,15 +417,13 @@ export function ServerFiles({
               onChange={(event) => setFileSearch(event.target.value)}
             />
           ) : (
-            <p className="py-4 text-center text-xs text-(--ui-text-muted)">
-              {t("Open a directory to browse files.")}
-            </p>
+            <EmptyState size="inline" description={t("Open a directory to browse files.")} />
           )}
           <div className="max-h-[55dvh] min-h-0 overflow-auto" aria-label={t("Remote files")}>
             {visibleEntries.map((entry) => (
               <div
                 key={entry.name}
-                className="flex items-center gap-2 border-b border-stroke py-1.5 text-xs"
+                className="flex items-center gap-2 border-b border-stroke py-1.5 text-ui-caption"
               >
                 {entry.kind === "directory" ? (
                   <Folder className="icon-sm shrink-0" />
@@ -443,14 +443,14 @@ export function ServerFiles({
                       }
                     }}
                   >
-                    <span className="truncate" title={entry.name}>
-                      {entry.name}
-                    </span>
+                    <Tooltip label={entry.name}>
+                      <span className="truncate">{entry.name}</span>
+                    </Tooltip>
                   </Button>
                 ) : (
-                  <span className="min-w-0 flex-1 truncate" title={entry.name}>
-                    {entry.name}
-                  </span>
+                  <Tooltip label={entry.name}>
+                    <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                  </Tooltip>
                 )}
                 {entry.kind === "symlink" ? (
                   <span className="text-(--ui-text-muted)">{t("Symlink; not followed")}</span>
@@ -458,9 +458,9 @@ export function ServerFiles({
                   <Button
                     variant="ghost"
                     size="sm"
+                    iconOnly
                     disabled={busy}
-                    aria-label={`${t("Download")} ${entry.name}`}
-                    title={t("Download")}
+                    label={`${t("Download")} ${entry.name}`}
                     onClick={() =>
                       void act(async (id) => {
                         const destination = await save({
@@ -481,23 +481,24 @@ export function ServerFiles({
                       })
                     }
                   >
-                    <Download className="size-3.5" />
+                    <Download className="icon-sm" />
                   </Button>
                 ) : null}
               </div>
             ))}
             {loaded && !entries.length ? (
-              <p className="py-6 text-center text-xs text-(--ui-text-muted)">
-                {t("Empty directory")}
-              </p>
+              <EmptyState size="inline" description={t("Empty directory")} />
             ) : null}
             {loaded && entries.length > 0 && visibleEntries.length === 0 ? (
-              <p className="py-6 text-center text-xs text-(--ui-text-muted)">
-                {t("No matching files.")}
-              </p>
+              <EmptyState
+                size="inline"
+                kind="filtered"
+                description={t("No matching files.")}
+                onReset={() => setFileSearch("")}
+              />
             ) : null}
           </div>
-          <details className="text-xs text-(--ui-text-muted)">
+          <details className="text-ui-caption text-(--ui-text-muted)">
             <summary className="cursor-pointer">{t("Connection and transfer details")}</summary>
             <p className="mbs-2">
               {t(

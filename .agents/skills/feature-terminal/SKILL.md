@@ -265,3 +265,13 @@ Existing terminal UI and SSH browser expectations updated; no new test cases.
 Only `node scripts/i18n/check-locales.mjs` ran: eight catalogs verified.
 Tests, compiler, light/dark single/split/find/menu captures and native acceptance
 are deferred to the main agent by BRIEF-V3.md. No build/install/release evidence.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Terminal dock, tools and SSH terminal chrome in the standards round, from `HANDOFF-w2-tools.md` (host-tools/terminal sub-agent).
+
+- Done: `ProjectTerminalDock` header on `PaneHeader` (single-toolbar layout kept; 36px at compact); dock and sidebar sashes on `Sash` (dock gains keyboard and Escape cancel; `useDragResize` still drives the sidebar through Sash props); "Command suggestions (Ctrl+Space)" via `shortcut=`; numeric icon sizes to `icon-sm`; popover separators to `Divider`; Suspense fallback to `LoadingText`; native `title=` to `tooltip`/`Tooltip`.
+- Left: `TerminalGhostText.tsx` `createPortal` into xterm's screen element (DOM decoration); ServersTerminalWorkspace header row and native tab strip.
+- Unverified: no screenshots or native run; PaneHeader drag region on the terminal header.

@@ -1,4 +1,5 @@
-import { Progress } from "../../../shared/ui/Progress";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale, getLocale } from "../../../shared/i18n/git";
@@ -93,7 +94,7 @@ type DialogProps = {
 
 function Loading() {
   useLocale();
-  return <Progress label={t("Loading…")} compact />;
+  return <LoadingText className="px-3 py-2">{t("Loading…")}</LoadingText>;
 }
 
 function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
@@ -133,9 +134,7 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
       ) : !commits ? (
         <Loading />
       ) : commits.length === 0 ? (
-        <p className="p-4 text-[12px] text-[var(--ui-text-secondary)]">
-          {t("No commits touch this file")}
-        </p>
+        <EmptyState size="inline" className="px-4" description={t("No commits touch this file")} />
       ) : (
         <ul className="min-h-0 overflow-y-auto p-1.5">
           {commits.map((commit) => (
@@ -145,9 +144,9 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
                 motion="none"
                 type="button"
                 onClick={() => onOpenCommit(commit)}
-                className="flex h-8 w-full items-center gap-2 text-left"
+                className="flex w-full items-center gap-2 text-left"
               >
-                <span className="shrink-0 font-mono text-[11px] text-[var(--ui-text-muted)]">
+                <span className="shrink-0 font-mono text-ui-micro text-(--ui-text-muted)">
                   {commit.shortSha}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-content">{commit.subject}</span>
@@ -209,7 +208,7 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
       ) : !data ? (
         <Loading />
       ) : (
-        <div className="min-h-0 overflow-auto p-1.5 font-mono text-[12px] leading-5">
+        <div className="min-h-0 overflow-auto p-1.5 font-mono text-ui-caption leading-5">
           {data.blame.map((entry, index) => {
             // Only the first line of a run names its commit, like an editor gutter.
             const first = data.blame[index - 1]?.sha !== entry.sha;
@@ -217,14 +216,14 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
             return (
               <div
                 key={entry.line}
-                className={`flex whitespace-pre ${first ? "border-t border-stroke/60" : ""}`}
+                className={`flex whitespace-pre ${first ? "border-t border-(--ui-pane-border)" : ""}`}
               >
                 <Button
                   variant="ghost"
                   motion="none"
                   type="button"
                   disabled={uncommitted}
-                  title={
+                  tooltip={
                     uncommitted ? t("Not committed yet") : `${entry.shortSha} ${entry.summary}`
                   }
                   onClick={() =>

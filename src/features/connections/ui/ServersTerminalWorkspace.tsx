@@ -21,7 +21,8 @@ import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { confirmCloseTerminal } from "../../terminal/model/terminalClose";
 import { ArrowLeft, Terminal, X } from "../../../shared/ui/icons";
-import { Badge } from "../../../shared/ui/Badge";
+import { Badge, StatusBadge } from "../../../shared/ui/Badge";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
 import type { ServerRecord, SshEndpoint } from "../model/serverInventory";
 import { serverTerminalRestoreState } from "../model/serverTerminalRestoreState";
@@ -355,7 +356,7 @@ export function ServersTerminalWorkspace({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {proxyApproval.dialog}
         <SshRunbookQueue openRequest={reviewQueueRequest} />
-        {closeError ? <p role="alert" className="px-3 py-1 text-ui-secondary text-(--ui-tone-danger-fg)">{closeError}</p> : null}
+        {closeError ? <InlineError className="px-3 py-1">{closeError}</InlineError> : null}
         <div
           id="servers-inventory-content"
           tabIndex={-1}
@@ -375,7 +376,7 @@ export function ServersTerminalWorkspace({
                 <ArrowLeft className="icon-sm" />
               </Button>
               <ToolHeader>
-                <div className="flex min-w-0 items-center gap-2 px-3 text-sm">
+                <div className="flex min-w-0 items-center gap-2 px-3 text-ui-body">
                   <Terminal aria-hidden className="icon-sm shrink-0 text-(--ui-text-secondary)" />
                   <span className="truncate">
                     {terminals.find((terminal) => terminal.id === active)?.name ??
@@ -411,7 +412,7 @@ export function ServersTerminalWorkspace({
                     motion="none"
                     fullWidth
                     className="min-w-0 flex-1"
-                    title={terminal.name}
+                    tooltip={terminal.name}
                     role="tab"
                     id={`tab-${terminal.id}`}
                     aria-controls={`panel-${terminal.id}`}
@@ -447,9 +448,19 @@ export function ServersTerminalWorkspace({
                   >
                     <Terminal aria-hidden className="icon-sm shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{terminal.name}</span>
-                    {!terminal.lifecycle ? <WorkingIndicator label={t("Opening…")} /> : (
+                    {!terminal.lifecycle ? (
+                      <WorkingIndicator label={t("Opening…")} />
+                    ) : terminal.lifecycle === "failed" ? (
+                      <StatusBadge status="failed" size="xs" />
+                    ) : (
                       <span className="text-ui-caption text-(--ui-text-muted)">
-                        {t(terminal.lifecycle === "opened-on-computer" ? "Running" : terminal.lifecycle === "exited" ? "Terminal closed" : terminal.lifecycle === "failed" ? "Failed" : "Closed")}
+                        {t(
+                          terminal.lifecycle === "opened-on-computer"
+                            ? "Running"
+                            : terminal.lifecycle === "exited"
+                              ? "Terminal closed"
+                              : "Closed",
+                        )}
                       </span>
                     )}
                   </Button>
@@ -482,7 +493,7 @@ export function ServersTerminalWorkspace({
                 }
               >
                 {terminal.keyGenerationPath ? (
-                  <p className="shrink-0 break-all px-3 py-2 text-xs text-(--ui-text-muted)">
+                  <p className="shrink-0 break-all px-3 py-2 text-ui-caption text-(--ui-text-muted)">
                     {t("Identity file")}: {terminal.keyGenerationPath}
                   </p>
                 ) : null}

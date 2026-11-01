@@ -3,7 +3,6 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useState } from "react";
-import { Loader } from "../../../shared/ui/icons";
 import { OPEN_CONNECTIONS_EVENT, requestMachineEdit } from "../model/connections";
 import { needsSignIn } from "../model/remoteConnection";
 import type { RemoteFailure } from "../model/remoteFailure";
@@ -67,16 +66,7 @@ export function RemoteLoadError({
       ) : null}
       <div className="mt-0.5 flex flex-wrap gap-1.5">
         {failure.kind === "unreachable" && machine ? (
-          <Button
-            type="button"
-
-            disabled={reconnecting}
-            onClick={startReconnect}
-            variant="primary"
-          >
-            {reconnecting ? (
-              <Loader className="icon-xs motion-safe:animate-spin" aria-hidden="true" />
-            ) : null}
+          <Button type="button" loading={reconnecting} onClick={startReconnect} variant="primary">
             {reconnecting
               ? t("Reconnecting…")
               : needsAuth

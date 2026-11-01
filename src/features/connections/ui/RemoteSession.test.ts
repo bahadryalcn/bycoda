@@ -1727,7 +1727,7 @@ it("starts a remote session in the worktree chosen before its first message", as
   );
   await act(async () => existing!.click());
   await settle();
-  const worktree = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+  const worktree = [...document.body.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
     (button) => button.textContent?.includes("repo-worktrees/dev") ?? false,
   );
   expect(worktree).toBeDefined();

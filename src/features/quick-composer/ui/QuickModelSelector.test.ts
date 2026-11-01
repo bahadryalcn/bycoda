@@ -162,7 +162,9 @@ it("resets reasoning and fast mode to saved user defaults", () => {
   const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast"]')!;
   expect(fast.getAttribute("aria-checked")).toBe("true");
   act(() =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Reset to saved defaults"]')!.click(),
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Reset to saved defaults")!
+      .click(),
   );
   expect(onSettingsChange).toHaveBeenCalledWith({
     effort: "high",

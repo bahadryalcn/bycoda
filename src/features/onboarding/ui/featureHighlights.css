@@ -6,7 +6,7 @@
   margin-block-start: -2px;
   margin-inline-start: -10px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--ui-interaction-accent);
   box-shadow: 0 0 0 2px var(--ui-surface);
   pointer-events: none;
 }
@@ -17,7 +17,7 @@
     inset: 0;
     border-radius: inherit;
     background: inherit;
-    animation: feature-new-dot-ping 2.4s var(--ease-enter, ease-out) infinite;
+    animation: feature-new-dot-ping 2.4s var(--motion-ease-enter) infinite;
   }
   @keyframes feature-new-dot-ping {
     0% {

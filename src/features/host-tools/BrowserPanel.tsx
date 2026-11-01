@@ -1,4 +1,6 @@
 import { Alert } from "../../shared/ui/Alert";
+import { EmptyState } from "../../shared/ui/EmptyState";
+import { InlineError } from "../../shared/ui/InlineError";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
@@ -875,16 +877,18 @@ function ProjectBrowserPanel({
               </div>
             </div>
           ) : (
-            <div className="host-browser-empty">
-              <Globe className="icon-lg" aria-hidden />
-              <p>
-                {state?.open
+            <EmptyState
+              context="panel"
+              className="host-browser-empty"
+              icon={<Globe className="icon-lg" aria-hidden />}
+              description={
+                state?.open
                   ? t("Refresh the frame to view this page.")
                   : setupRequired
                     ? t("Set up the browser above to start previewing websites.")
-                    : t("Open a website above to see its preview here.")}
-              </p>
-            </div>
+                    : t("Open a website above to see its preview here.")
+              }
+            />
           )}
         </div>
       </div>
@@ -967,9 +971,7 @@ function ProjectBrowserPanel({
               </Button>
             </div>
             {error ? (
-              <p role="alert" className="host-browser-target text-danger">
-                {error}
-              </p>
+              <InlineError className="host-browser-target">{error}</InlineError>
             ) : null}
             <details className="host-browser-disclosure">
               <summary>{t("Details")}</summary>

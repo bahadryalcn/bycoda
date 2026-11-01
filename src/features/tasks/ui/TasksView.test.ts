@@ -263,6 +263,9 @@ function buttonText(entry: HTMLButtonElement) {
 }
 const buttonName = (entry: HTMLButtonElement) =>
   entry.getAttribute("aria-label") ?? buttonText(entry);
+// A control that explains why it is off stays focusable and reports aria-disabled.
+const isDisabled = (entry: HTMLButtonElement) =>
+  entry.disabled || entry.getAttribute("aria-disabled") === "true";
 const button = (scope: ParentNode, label: string) =>
   Array.from(scope.querySelectorAll("button")).find(
     (entry) => buttonName(entry) === label || buttonText(entry) === label,
@@ -814,8 +817,8 @@ it("removes the old host's cards and write targets while a reused machine identi
   await act(async () =>
     type(form.querySelector<HTMLInputElement>('input[aria-label="Task title"]')!, "A new task"),
   );
-  expect(button(form, "Add to To do")!.disabled).toBe(true);
-  expect(button(form, "Add and start")!.disabled).toBe(true);
+  expect(isDisabled(button(form, "Add to To do")!)).toBe(true);
+  expect(isDisabled(button(form, "Add and start")!)).toBe(true);
   await act(async () => releaseProbe({ capabilities: ["tasks", "tasks.todo"] }));
   await act(async () => {});
   expect(container.querySelector('[data-remote-data-state="ready"]')).toBeTruthy();
@@ -1030,7 +1033,7 @@ it.each(["local", "remote"])(
           .find((entry) => entry.textContent?.trim() === "MacBook")!
           .click(),
       );
-      expect(button(form, "Add and start")!.disabled).toBe(true);
+      expect(isDisabled(button(form, "Add and start")!)).toBe(true);
       await act(async () =>
         form.querySelector<HTMLButtonElement>('[aria-label="Project: Choose project"]')!.click(),
       );
@@ -1085,8 +1088,8 @@ it("does not silently use a remote host in global scope when this computer is un
   await act(async () => button(container, "New task")!.click());
   const form = document.querySelector('form[aria-label="New task"]')!;
   expect(form.textContent).not.toContain("Runs on MacBook");
-  expect(button(form, "Add and start")!.disabled).toBe(true);
-  expect(button(form, "Add to To do")!.disabled).toBe(true);
+  expect(isDisabled(button(form, "Add and start")!)).toBe(true);
+  expect(isDisabled(button(form, "Add to To do")!)).toBe(true);
 });
 
 it.each(["local", "remote"])(
@@ -1157,7 +1160,7 @@ it.each(["local", "remote"])(
           .click(),
       );
       expect(form.querySelectorAll("[data-goal-project]")).toHaveLength(0);
-      expect(button(form, "Plan it")!.disabled).toBe(true);
+      expect(isDisabled(button(form, "Plan it")!)).toBe(true);
       await act(async () =>
         form.querySelector<HTMLButtonElement>('[aria-label="Project: Choose project"]')!.click(),
       );
@@ -1238,8 +1241,8 @@ it("says so when the project's machine cannot take a task", async () => {
   expect(form.querySelector('[role="alert"]')?.textContent).toContain(
     "isn’t connected, or its bycoda Host needs an update",
   );
-  expect(button(form, "Add to To do")!.disabled).toBe(true);
-  expect(button(form, "Add and start")!.disabled).toBe(true);
+  expect(isDisabled(button(form, "Add to To do")!)).toBe(true);
+  expect(isDisabled(button(form, "Add and start")!)).toBe(true);
 });
 
 it("suspends retained automatic delivery until the owner reviews changes again", async () => {
@@ -1321,7 +1324,7 @@ it("keeps goal settings and reports a failed save inline", async () => {
   );
   expect(form.querySelector('[role="alert"]')?.textContent).toContain("Close and reopen settings");
   expect(form.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
-  expect(button(form, "Save")!.disabled).toBe(false);
+  expect(isDisabled(button(form, "Save")!)).toBe(false);
 });
 
 it("disables goal settings on hosts without the update capability", async () => {
@@ -1434,7 +1437,7 @@ it("defaults a new goal to direct work with final acceptance on and plan/task re
   ]);
   expect(boxes.map((box) => box.checked)).toEqual([true, false, false, false, true]);
   expect(form.querySelector('[data-goal-project="/work/project"]')).toBeTruthy();
-  expect(button(form, "Plan it")!.disabled).toBe(true);
+  expect(isDisabled(button(form, "Plan it")!)).toBe(true);
 });
 
 it("applies a workflow to the typed task objective and submits its total budget", async () => {
@@ -1570,8 +1573,8 @@ it("adds a to-do item with a title and description, or adds and starts it", asyn
 
   let form = await open();
   // Without a description it can be a to-do item but not start.
-  expect(button(form, "Add to To do")!.disabled).toBe(false);
-  expect(button(form, "Add and start")!.disabled).toBe(true);
+  expect(isDisabled(button(form, "Add to To do")!)).toBe(false);
+  expect(isDisabled(button(form, "Add and start")!)).toBe(true);
   await describe(form, "About the card");
   await act(async () => button(form, "Add to To do")!.click());
   expect((saves()[0].params as any).task).toMatchObject({
@@ -1701,7 +1704,7 @@ it("offers to update an older host instead of adding a to-do item", async () => 
   expect(form.querySelector('[role="status"]')!.textContent).toBe(
     "Update bycoda Host on this computer to add to-do items",
   );
-  expect(button(form, "Add to To do")!.disabled).toBe(true);
+  expect(isDisabled(button(form, "Add to To do")!)).toBe(true);
   expect(requests.some((request) => request.method === "tasks.save")).toBe(false);
 });
 
@@ -2332,7 +2335,7 @@ it("saves custom daily hours above the presets and 24 hours", async () => {
   }
   for (const value of ["", "-1"]) {
     await act(async () => type(hours, value));
-    expect(button(form, "Save")!.disabled).toBe(true);
+    expect(isDisabled(button(form, "Save")!)).toBe(true);
   }
 });
 
@@ -2467,7 +2470,7 @@ it("locks task detail edits and cancellation while saving", async () => {
   await act(async () => button(form, "Save")!.click());
   expect(title.disabled).toBe(true);
   expect(form.querySelector<HTMLTextAreaElement>("textarea")!.disabled).toBe(true);
-  expect(button(form, "Cancel")!.disabled).toBe(true);
+  expect(isDisabled(button(form, "Cancel")!)).toBe(true);
   await act(async () => type(title, "Later title"));
   await escape();
   expect(form.isConnected).toBe(true);
@@ -2635,7 +2638,7 @@ it("opens the last daily summary from the Summary button", async () => {
   expect(container.querySelector('[aria-label="Summary"]')).toBeNull();
   await pickAction(container, "Summary");
   const summary = container.querySelector<HTMLElement>('[aria-label="Summary"]')!;
-  expect(summary.textContent).toContain("Finished · 1 (1 merged automatically)");
+  expect(summary.textContent).toContain("Finished (1 merged automatically)");
   expect(summary.textContent).toContain("Ship the report");
   expect(summary.textContent).toContain("MacBook (not reachable)");
 });

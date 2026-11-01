@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
 import { SshIdentityField } from "./SshIdentityField";
@@ -153,10 +154,10 @@ export function SshGroupSettings({
   return (
     <Modal title={t("SSH group settings")} onClose={onClose} size="md">
       <div className="flex min-w-0 flex-col gap-3 p-4">
-        <p className="text-xs text-(--ui-text-muted)">
+        <p className="text-ui-caption text-(--ui-text-muted)">
           {t("Target")}: {server.name}
         </p>
-        <details className="text-xs text-(--ui-text-muted)">
+        <details className="text-ui-caption text-(--ui-text-muted)">
           <summary className="cursor-pointer py-1">{t("About group settings")}</summary>
           <p className="mbs-2">
             {t(
@@ -170,7 +171,7 @@ export function SshGroupSettings({
           </Alert>
         ) : null}
         {notice ? (
-          <p role="status" className="text-xs text-(--ui-text-muted)">
+          <p role="status" className="text-ui-caption text-(--ui-text-muted)">
             {notice}
           </p>
         ) : null}
@@ -210,9 +211,9 @@ export function SshGroupSettings({
           </Button>
         </div>
         <fieldset className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-x-3 gap-y-2 border-0 p-0">
-          <legend className="mbe-2 text-xs font-medium">{t("Inherited fields")}</legend>
+          <legend className="mbe-2 text-ui-caption font-medium">{t("Inherited fields")}</legend>
           {SSH_INHERITED_FIELDS.map((field) => (
-            <label key={field} className="flex items-center gap-1 text-xs">
+            <label key={field} className="flex items-center gap-1 text-ui-caption">
               <Checkbox
                 disabled={!selected || busy || loading}
                 checked={fields.includes(field)}
@@ -229,7 +230,7 @@ export function SshGroupSettings({
               {t(labels[field])}
             </label>
           ))}
-          <label className="flex items-center gap-1 text-xs">
+          <label className="flex items-center gap-1 text-ui-caption">
             <Checkbox
               disabled={!selected || busy || loading}
               checked={environment}
@@ -280,7 +281,7 @@ export function SshGroupSettings({
           </Button>
         </div>
         {activePreview ? (
-          <section aria-label={t("Effective SSH configuration")} className="min-w-0 text-xs">
+          <section aria-label={t("Effective SSH configuration")} className="min-w-0 text-ui-caption">
             <p className="break-all font-medium">
               {sshEndpointPreview(activePreview.value.configuration.endpoint)}
             </p>
@@ -369,10 +370,10 @@ export function SshGroupSettings({
               disabled={busy}
               onChange={(event) => editDraft({ certificateFile: event.target.value })}
             />
-            <p className="text-xs text-(--ui-text-muted)">
+            <p className="text-ui-caption text-(--ui-text-muted)">
               {t("Use absolute paths or ~/ for group key and certificate references.")}
             </p>
-            <details className="text-xs text-(--ui-text-muted)">
+            <details className="text-ui-caption text-(--ui-text-muted)">
               <summary className="cursor-pointer">{t("Remote environment")}</summary>
               <p className="mbs-2">
                 {t(
@@ -442,9 +443,9 @@ export function SshGroupSettings({
               </Button>
             </details>
             {!profile ? (
-              <p role="status" className="text-xs text-(--ui-tone-danger-fg)">
+              <InlineError live="polite">
                 {t("Enter valid group defaults and literal environment values.")}
-              </p>
+              </InlineError>
             ) : null}
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="ghost" disabled={busy} onClick={() => setDraft(null)}>

@@ -183,6 +183,8 @@ export function TabGroupMenu({
     item: TabGroupMenuExtraItem;
     anchor: HTMLButtonElement;
   } | null>(null);
+  // Submenu close grace: the pointer may cross from the row into the submenu popover. This is a
+  // menu-submenu relation, not a HoverCard preview (the submenu holds required actions).
   const submenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelSubmenuClose = () => {
     if (submenuCloseTimer.current != null) clearTimeout(submenuCloseTimer.current);
@@ -256,7 +258,6 @@ export function TabGroupMenu({
             variant="ghost"
             motion="none"
             type="button"
-            title={logoPath ? t("Change project logo") : t("Add project logo")}
             aria-label={logoPath ? t("Change project logo") : t("Add project logo")}
             loading={logoBusy}
             onMouseDown={(e) => e.preventDefault()}
@@ -300,7 +301,6 @@ export function TabGroupMenu({
               variant="ghost"
               motion="none"
               type="button"
-              title={t("Remove project logo")}
               aria-label={t("Remove project logo")}
               disabled={logoBusy}
               onMouseDown={(e) => e.preventDefault()}
@@ -315,7 +315,7 @@ export function TabGroupMenu({
               }}
               className="grid shrink-0 place-items-center"
             >
-              <Trash2 className="size-3.5" strokeWidth={1.75} />
+              <Trash2 className="icon-sm" strokeWidth={1.75} />
             </Button>
           ) : null}
         </div>
@@ -369,6 +369,8 @@ export function TabGroupMenu({
     </>
   );
 
+  // Popover (not DropdownMenu) on purpose: DropdownMenu is a single-level list of action rows and
+  // cannot host this menu's name field, swatch grid, icon picker and hover submenu.
   return (
     <>
       <Popover
@@ -585,7 +587,7 @@ function MenuRow({
         }
       }}
     >
-      <Icon className="size-3.5 shrink-0" strokeWidth={1.75} />
+      <Icon className="icon-sm shrink-0" strokeWidth={1.75} />
       <span className={`min-w-0 flex-1 leading-label ${item.description ? "py-2" : "truncate"}`}>
         {item.label}
         {item.description ? (
@@ -597,7 +599,7 @@ function MenuRow({
       {item.submenu ? (
         <ChevronRight
           data-branch-indicator
-          className="size-3.5 shrink-0"
+          className="icon-sm shrink-0"
           strokeWidth={1.75}
         />
       ) : null}

@@ -6,7 +6,9 @@ import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Row } from "./settingsControls";
-import { Loader, MoreHorizontal, Check, CircleDashed, AlertCircle } from "../../../shared/ui/icons";
+import { MoreHorizontal, Check, CircleDashed, AlertCircle } from "../../../shared/ui/icons";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 
 /**
  * Remembers, for this page only, that Save and test accepted the entered credentials.
@@ -46,31 +48,40 @@ export function InboxConnectionStatus({
       )}
       feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
     >
-      <Badge
-        minWidth="16ch"
-        title={verifiedAt ? t("Verified at {p0}", { p0: new Date(verifiedAt).toLocaleTimeString([], { timeStyle: "short" }) }) : undefined}
-        aria-busy={checking || undefined}
-        tone={error ? "danger" : verified ? "success" : "neutral"}
-        icon={
-          checking ? (
-            <Loader size={14} className="motion-safe:animate-spin" />
-          ) : error ? (
-            <AlertCircle size={14} />
-          ) : configured && !checking ? (
-            <Check size={14} />
-          ) : (
-            <CircleDashed size={14} />
-          )
-        }
-        role="status"
-        aria-live="polite"
-        className="inbox-connection-status"
-        data-state={
-          checking ? "checking" : error ? "error" : verified ? "verified" : configured ? "configured" : "idle"
+      <Tooltip
+        label={
+          verifiedAt
+            ? t("Verified at {p0}", {
+                p0: new Date(verifiedAt).toLocaleTimeString([], { timeStyle: "short" }),
+              })
+            : undefined
         }
       >
-        {error ? t("Check failed") : configured ? verified ? t("Verified") : t("Configured") : t("Not configured")}
-      </Badge>
+        <Badge
+          size="sm"
+          appearance="subtle"
+          aria-busy={checking || undefined}
+          tone={error ? "danger" : verified ? "success" : "neutral"}
+          icon={
+            checking ? (
+              <Spinner size="sm" />
+            ) : error ? (
+              <AlertCircle className="icon-sm" />
+            ) : configured && !checking ? (
+              <Check className="icon-sm" />
+            ) : (
+              <CircleDashed className="icon-sm" />
+            )
+          }
+          role="status"
+          aria-live="polite"
+          data-state={
+            checking ? "checking" : error ? "error" : verified ? "verified" : configured ? "configured" : "idle"
+          }
+        >
+          {error ? t("Check failed") : configured ? verified ? t("Verified") : t("Configured") : t("Not configured")}
+        </Badge>
+      </Tooltip>
       <Button stableWidth className="shrink-0" loading={checking} disabled={busy} onClick={onCheck}>
         {error ? t("Retry") : t("Check saved configuration")}
       </Button>
@@ -91,7 +102,7 @@ export function InboxAccountActions({ disabled, loading, onDisconnect }: {
   return <>
     <Button iconOnly variant="ghost" label={t("Account actions")} disabled={disabled} loading={loading}
       aria-haspopup="menu" aria-expanded={Boolean(anchor)} onClick={(event) => setAnchor(event.currentTarget)}>
-      <MoreHorizontal size={16} />
+      <MoreHorizontal className="icon-md" />
     </Button>
     {anchor ? <DropdownMenu anchor={anchor} label={t("Account actions")}
       items={[{ kind: "item", id: "disconnect", label: t("Disconnect"), danger: true }]}

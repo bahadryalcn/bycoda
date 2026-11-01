@@ -3,7 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 
-import { useCallback, useContext, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { InboxScopeCollection } from "./InboxScopeCollection";
 
 import { JiraSettings } from "./JiraSettings";
@@ -36,6 +36,7 @@ import {
 
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { TextField } from "../../../shared/ui/TextField";
 import "./InboxSettings.css";
 
@@ -100,75 +101,44 @@ export function InboxPage() {
       active: next,
       visited: current.visited.has(next) ? current.visited : new Set([...current.visited, next]),
     }));
-  const tabsId = useId();
-  const tabs = useRef<HTMLDivElement>(null);
 
   return (
     <div className="inbox-settings">
-      <div ref={tabs} role="tablist" aria-label={t("Inbox")} className="inbox-provider-tabs">
-        {INBOX_PROVIDERS.map((provider, index) => (
-          <Button stableWidth
-            key={provider.id}
-            variant="tab"
-            role="tab"
-            id={`${tabsId}-tab-${provider.id}`}
-            aria-controls={`${tabsId}-panel-${provider.id}`}
-            aria-selected={active === provider.id}
-            selected={active === provider.id}
-            tabIndex={active === provider.id ? 0 : -1}
-            startIcon={<InboxProviderMark provider={provider.id} className="icon-md shrink-0" />}
-            onClick={() => setActive(provider.id)}
-            onKeyDown={(event) => {
-              const last = INBOX_PROVIDERS.length - 1;
-              const next =
-                event.key === "ArrowRight"
-                  ? (index + 1) % INBOX_PROVIDERS.length
-                  : event.key === "ArrowLeft"
-                    ? (index + last) % INBOX_PROVIDERS.length
-                    : event.key === "Home"
-                      ? 0
-                      : event.key === "End"
-                        ? last
-                        : -1;
-              if (next < 0) return;
-              event.preventDefault();
-              event.stopPropagation();
-              setActive(INBOX_PROVIDERS[next].id);
-              tabs.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-            }}
-          >
-            {provider.name}
-          </Button>
-        ))}
-      </div>
-      {INBOX_PROVIDERS.map(({ id, description, Component }) => (
-        <div
-          key={id}
-          role="tabpanel"
-          id={`${tabsId}-panel-${id}`}
-          aria-labelledby={`${tabsId}-tab-${id}`}
-          hidden={active !== id}
-          tabIndex={0}
-        >
-          <div className="settings-topics grid min-w-0 gap-6">
-            <Group
-              layout="full"
-              scope={t("This computer · Inbox account")}
-              id={id}
-              title={t("Connection")}
-              info={t(description)}
+      <Tabs value={active} onValueChange={setActive} size="md">
+        <TabList label={t("Inbox")} className="inbox-provider-tabs">
+          {INBOX_PROVIDERS.map((provider) => (
+            <Tab
+              key={provider.id}
+              value={provider.id}
+              stableWidth
+              icon={<InboxProviderMark provider={provider.id} className="icon-md shrink-0" />}
             >
-              {active === id || visited.has(id) ? (
-                id === "jira" ? (
-                  <JiraSettings active={active === id} />
-                ) : (
-                  <Component />
-                )
-              ) : null}
-            </Group>
-          </div>
-        </div>
-      ))}
+              {provider.name}
+            </Tab>
+          ))}
+        </TabList>
+        {INBOX_PROVIDERS.map(({ id, description, Component }) => (
+          <TabPanel key={id} value={id} keepMounted>
+            <div className="settings-topics grid min-w-0 gap-6">
+              <Group
+                layout="full"
+                scope={t("This computer · Inbox account")}
+                id={id}
+                title={t("Connection")}
+                info={t(description)}
+              >
+                {active === id || visited.has(id) ? (
+                  id === "jira" ? (
+                    <JiraSettings active={active === id} />
+                  ) : (
+                    <Component />
+                  )
+                ) : null}
+              </Group>
+            </div>
+          </TabPanel>
+        ))}
+      </Tabs>
     </div>
   );
 }
@@ -234,7 +204,7 @@ export function GithubSettings() {
         info={description}
         scope={t("This computer · GitHub CLI account")}
       >
-        <Badge minWidth="16ch" role="status" aria-live="polite" aria-busy={checking || undefined}>{label}</Badge>
+        <Badge size="sm" appearance="subtle" role="status" aria-live="polite" aria-busy={checking || undefined}>{label}</Badge>
         {!checking && status && !status.installed ? (
           <Button stableWidth
             className="shrink-0"
@@ -357,6 +327,7 @@ export function GitlabSettings() {
       />
       <Row
         label={t("Account")}
+        stacked={!(connected && !editing)}
         persistence={{
           mode: "explicit",
           state: operation === "save" ? "saving" : token ? "dirty" : "idle",
@@ -542,6 +513,7 @@ export function AzureDevOpsSettings() {
       />
       <Row
         label={t("Account")}
+        stacked={!(connected && !editing)}
         persistence={{
           mode: "explicit",
           state: operation === "save" ? "saving" : token ? "dirty" : "idle",
@@ -770,6 +742,7 @@ export function LinearSettings() {
         onCheck={() => void checkStatus()}
       />
       <Row
+        stacked={!(connected && !editing)}
         persistence={{
           mode: "explicit",
           state: operation === "save" ? "saving" : token ? "dirty" : "idle",

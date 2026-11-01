@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxPrChecks, PrChecksTab } from "./InboxPrChecks";
+import { Tabs } from "../../../shared/ui/Tabs";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
 import {
   InboxDetail as RawInboxDetail,
@@ -506,7 +507,7 @@ it("separates the initial loading state from the no-checks state", () => {
       onRefresh: () => {},
     }),
   );
-  expect(loading.querySelector(".animate-spin")).not.toBeNull();
+  expect(loading.querySelector('[role="status"]')?.textContent).toContain("Loading checks");
   expect(loading.textContent).not.toContain("No checks reported");
 
   const empty = render(
@@ -515,7 +516,7 @@ it("separates the initial loading state from the no-checks state", () => {
       onRefresh: () => {},
     }),
   );
-  expect(empty.querySelector(".animate-spin")).toBeNull();
+  expect(empty.querySelector('[role="status"]')).toBeNull();
   expect(empty.textContent).toContain("No checks reported");
 });
 
@@ -571,13 +572,16 @@ it("names the per-state counts on the tab for color-blind-safe reading", async (
     failed: 2,
     description: "2 failed, 1 passed",
   };
-  const tab = render(
-    createElement(PrChecksTab, {
-      overall: fail,
-      selected: false,
-      onSelect: () => {},
-    }),
-  );
+  // The Checks tab belongs to the PR detail's Tabs; Checks is selected when `selected`.
+  const renderTab = (overall: GithubPrChecksOverall, selected: boolean) =>
+    render(
+      createElement(
+        Tabs,
+        { value: selected ? "checks" : "summary", onValueChange: () => {}, panels: "none" },
+        createElement(PrChecksTab, { overall }),
+      ),
+    );
+  const tab = renderTab(fail, false);
   const button = tab.querySelector<HTMLButtonElement>('button[role="tab"]');
   expect(button?.getAttribute("aria-label")).toBe("Checks: 2 failed, 1 passed");
   expect(button?.getAttribute("title")).toBeNull();
@@ -585,24 +589,13 @@ it("names the per-state counts on the tab for color-blind-safe reading", async (
   expect(button?.textContent).toContain("Checks");
   expect(button?.textContent).toContain("2");
 
-  const neutral = render(
-    createElement(PrChecksTab, {
-      overall: { kind: "neutral", description: "3 skipped" },
-      selected: true,
-      onSelect: () => {},
-    }),
-  );
+  const neutral = renderTab({ kind: "neutral", description: "3 skipped" }, true);
   expect(neutral.querySelector('button[role="tab"]')?.getAttribute("aria-label")).toBe(
     "Checks: 3 skipped",
   );
+  expect(neutral.querySelector('button[role="tab"]')?.getAttribute("aria-selected")).toBe("true");
 
-  const loading = render(
-    createElement(PrChecksTab, {
-      overall: { kind: "loading", description: "Loading checks" },
-      selected: false,
-      onSelect: () => {},
-    }),
-  );
+  const loading = renderTab({ kind: "loading", description: "Loading checks" }, false);
   expect(loading.querySelector('button[role="tab"]')?.getAttribute("aria-label")).toBe(
     "Checks: Loading checks",
   );

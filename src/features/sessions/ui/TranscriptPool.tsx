@@ -403,6 +403,7 @@ const PooledEntry = memo(function PooledEntry({ entry }: { entry: TranscriptPool
   if (!entry.mounted) return null;
   // React events bubble through the portal's owner, not the pane. Forward the
   // one the pane listens for so clicking the transcript still focuses it.
+  // Pane-hosted portal: the transcript DOM moves between pane slots, not an overlay.
   return createPortal(
     <div className="contents" onMouseDown={entry.onMouseDown}>
       <PresentationVisibility.Provider

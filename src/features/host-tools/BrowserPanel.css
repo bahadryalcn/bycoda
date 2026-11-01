@@ -79,11 +79,11 @@
 }
 
 .host-browser-statusline[data-browser-state="open"] .host-browser-state-dot {
-  background: var(--color-success);
+  background: var(--ui-tone-success-solid);
 }
 
 .host-browser-statusline[data-browser-state="unavailable"] .host-browser-state-dot {
-  background: var(--color-danger);
+  background: var(--ui-tone-danger-solid);
 }
 
 .host-browser-current-url {
@@ -176,13 +176,6 @@
 .host-browser-panel .host-browser-empty {
   flex: 1;
   min-block-size: 0;
-  padding: 16px;
-  gap: 8px;
-}
-
-.host-browser-panel .host-browser-empty p {
-  margin: 0;
-  font-size: var(--ui-font-caption);
 }
 
 .host-browser-selection-mode {
@@ -231,7 +224,7 @@
   display: flex;
   align-items: start;
   gap: 8px;
-  color: var(--color-danger);
+  color: var(--ui-tone-danger-fg);
 }
 
 .host-browser-error details {

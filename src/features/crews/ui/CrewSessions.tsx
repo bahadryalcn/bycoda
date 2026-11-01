@@ -100,7 +100,7 @@ export function CrewSessions({
         </Button>
       </div>
       {state.error ? (
-        <Button variant="ghost" onClick={() => void state.refetch()} title={state.error.message}>
+        <Button variant="ghost" onClick={() => void state.refetch()} tooltip={state.error.message}>
           {t("Crew host unavailable. Retry")}
         </Button>
       ) : null}
@@ -113,7 +113,7 @@ export function CrewSessions({
             motion="none"
             className="min-w-0 w-full"
             onClick={() => setOpened({ definitionId: run.definition.id, runId: run.id })}
-            title={crewRunTitle(run)}
+            tooltip={crewRunTitle(run)}
           >
             <span className="min-w-0 flex-1 text-start">
               <span className="block truncate font-medium">{crewRunTitle(run)}</span>

@@ -269,9 +269,12 @@ it("prevents double-click connection when the target cannot connect", async () =
     row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0, detail: 2 })),
   );
   expect(onConnect).not.toHaveBeenCalled();
-  expect(row.querySelector('[title="user@long-address.example.test:2222"]')?.className).toContain(
-    "whitespace-normal",
+  const address = [...row.querySelectorAll("span")].find(
+    (element) =>
+      element.className.includes("text-ui-caption") &&
+      element.textContent?.endsWith("user@long-address.example.test:2222"),
   );
+  expect(address?.className).toContain("whitespace-normal");
 });
 
 it("selects on a single click and opens the canonical SSH record once on double click", async () => {

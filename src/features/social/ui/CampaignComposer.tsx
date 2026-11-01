@@ -19,6 +19,7 @@ import { type CampaignVariant, type SocialCampaign, type SocialPolicy } from "..
 import { socialLimit } from "../model/socialPolicy";
 import { variantCharacterCount, variantCharacterLimit } from "./CampaignBrowser";
 import { Badge } from "../../../shared/ui/Badge";
+import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { SocialMultiSelect } from "./SocialMultiSelect";
 import { socialQueryScope } from "../model/socialQuery";
 import { Composer, closeComposer, Projects, Notice, field, names, youtubeDefaults, type Props } from "./socialShared";
@@ -574,15 +575,15 @@ export function CampaignComposer({
                     }
                   />
                 ) : null}
-                  <TextField
+                  <DateTimeField
                     disabled={socialLocked}
                     label={t("One-time schedule time · this computer's time zone")}
-                    type="datetime-local"
                     required
+                    clearable
                     value={dateInput(variant.scheduledAt)}
-                    onChange={(event) =>
+                    onChange={(next) =>
                       update(variant.accountId, {
-                        scheduledAt: new Date(event.target.value).getTime(),
+                        scheduledAt: next ? new Date(next).getTime() : Number.NaN,
                       })
                     }
                   />

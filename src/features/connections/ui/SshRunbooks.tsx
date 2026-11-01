@@ -2,9 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { revokeSshHttpProxyApproval } from "../model/sshHttpProxyApproval";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
+import { StatusBadge, type BadgeStatus } from "../../../shared/ui/Badge";
 import { Modal } from "../../../shared/ui/Modal";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -34,8 +36,15 @@ import {
   type SshRunbook,
   type SshRunbookDraft,
   type SshRunbookReview,
+  type SshRunState,
   type SshRunStatus,
 } from "../model/sshRunbooks";
+
+const RUN_STATE_BADGE: Partial<Record<SshRunState, BadgeStatus>> = {
+  queued: "queued",
+  running: "running",
+  failed: "failed",
+};
 
 /** Explicit saved-script execution; reopening recovers status, never a start ticket. */
 export function SshRunbooks({
@@ -227,7 +236,7 @@ export function SshRunbooks({
     <>
       <Modal title={t("SSH runbooks")} onClose={onClose} size="lg">
         <div className="flex min-w-0 flex-col gap-3 p-4">
-          <p className="text-xs text-(--ui-text-muted)">
+          <p className="text-ui-caption text-(--ui-text-muted)">
             {t("Target")}: {server.name}
           </p>
           {error ? (
@@ -238,7 +247,7 @@ export function SshRunbooks({
           {intents.length ? (
             <section
               aria-label={t("Pending execution reviews")}
-              className="flex min-w-0 flex-col gap-2 text-xs"
+              className="flex min-w-0 flex-col gap-2 text-ui-caption"
             >
               {intents.map((intent) => (
                 <div key={intent.id} className="flex min-w-0 flex-wrap items-center gap-2">
@@ -286,7 +295,7 @@ export function SshRunbooks({
           {runId ? (
             <section
               aria-label={t("SSH execution status")}
-              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3 text-xs"
+              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3 text-ui-caption"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="min-w-0 break-all">
@@ -330,15 +339,16 @@ export function SshRunbooks({
                 >
                   <p className="min-w-0 break-all">
                     {choices.find((item) => item.id === target.serverId)?.name ?? target.serverId}:{" "}
-                    {t(
-                      {
-                        queued: "Queued",
-                        running: "Running",
-                        exited: "Exited",
-                        failed: "Failed",
-                        cancelled: "Cancelled",
-                        unknown: "Unknown",
-                      }[target.state],
+                    {RUN_STATE_BADGE[target.state] ? (
+                      <StatusBadge status={RUN_STATE_BADGE[target.state]!} />
+                    ) : (
+                      t(
+                        {
+                          exited: "Exited",
+                          cancelled: "Cancelled",
+                          unknown: "Unknown",
+                        }[target.state as "exited" | "cancelled" | "unknown"],
+                      )
                     )}
                     {target.exitCode != null ? ` · ${target.exitCode}` : ""}
                   </p>
@@ -481,7 +491,7 @@ export function SshRunbooks({
                 onChange={(event) => change({ timeoutSeconds: event.target.value })}
               />
             </div>
-            <details className="text-xs">
+            <details className="text-ui-caption">
               <summary className="cursor-pointer">{t("Runbook triggers")}</summary>
               <div className="mbs-2 flex min-w-0 flex-col gap-3">
                 <TextField
@@ -519,7 +529,7 @@ export function SshRunbooks({
               </div>
             </details>
           </fieldset>
-          <details className="text-xs text-(--ui-text-muted)">
+          <details className="text-ui-caption text-(--ui-text-muted)">
             <summary className="cursor-pointer">{t("Execution details")}</summary>
             <p className="mbs-2">
               {t(
@@ -528,9 +538,9 @@ export function SshRunbooks({
             </p>
           </details>
           {!profile ? (
-            <p role="status" className="text-xs text-(--ui-tone-danger-fg)">
+            <InlineError live="polite">
               {t("Enter a name, script, valid targets and execution limits.")}
-            </p>
+            </InlineError>
           ) : null}
           <div className="flex flex-wrap justify-end gap-2">
             {saved ? (
@@ -620,7 +630,7 @@ export function SshRunbooks({
           {activeReview ? (
             <section
               aria-label={t("SSH execution review")}
-              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3 text-xs"
+              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3 text-ui-caption"
             >
               <p>{t(selectedIntent ? "Pending review" : "Manual execution")}</p>
               <p className="font-medium">
@@ -808,9 +818,9 @@ export function SshRunbooks({
               </Button>
             </section>
           ) : review && !activeReview ? (
-            <p role="status" className="text-xs text-(--ui-text-muted)">
+            <InlineMessage tone="warning">
               {t("Execution review expired or changed. Review again.")}
-            </p>
+            </InlineMessage>
           ) : null}
         </div>
       </Modal>

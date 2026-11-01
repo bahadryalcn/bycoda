@@ -106,7 +106,7 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
       style={state.status === "loading" ? { minHeight: knownHeights.get(image.path) } : undefined}
     >
       {state.status === "loading" ? (
-        <div className="px-4 py-3 text-xs text-(--ui-text-secondary)" role="status">
+        <div className="px-4 py-3 text-ui-caption text-(--ui-text-secondary)" role="status">
           {t("Loading generated image…")}
         </div>
       ) : state.status === "error" ? (
@@ -122,7 +122,7 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
             variant="item"
             type="button"
             aria-label={t("Open {p0} full screen", { p0: image.name })}
-            title={t("Open {p0} full screen", { p0: image.name })}
+            tooltip={t("Open {p0} full screen", { p0: image.name })}
             onClick={() => setOpen(true)}
             className="max-w-full"
           >

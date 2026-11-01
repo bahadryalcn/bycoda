@@ -95,7 +95,7 @@ it("shows the action after measurement and adds the same reference on click", as
   const toolbar = document.querySelector('[role="toolbar"]');
   expect(toolbar).not.toBeNull();
   const button = toolbar!.querySelector("button")!;
-  expect(button.textContent).toContain("Ctrl+L");
+  expect(button.textContent).toContain("CtrlL");
   await act(async () => button.click());
   expect(added.mock.calls[0][0].detail).toEqual({
     text: "@src/value.ts (lines 1-2)",

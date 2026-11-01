@@ -193,7 +193,7 @@ function projectMenuExtraItems(
                       kind: "item" as const,
                       id: "rename-folder",
                       label: t("Rename folder…"),
-                      icon: <Pencil className="size-3.5" strokeWidth={1.75} />,
+                      icon: <Pencil className="icon-sm" strokeWidth={1.75} />,
                     },
                   ]
                 : []),
@@ -203,7 +203,7 @@ function projectMenuExtraItems(
                       kind: "item" as const,
                       id: "additional-dirs",
                       label: t("Additional folders…"),
-                      icon: <FolderPlus className="size-3.5" strokeWidth={1.75} />,
+                      icon: <FolderPlus className="icon-sm" strokeWidth={1.75} />,
                     },
                   ]
                 : []),
@@ -224,13 +224,13 @@ function projectMenuExtraItems(
                 kind: "item" as const,
                 id: "reconnect-machine",
                 label: t("Reconnect machine"),
-                icon: <RefreshCw className="size-3.5" strokeWidth={1.75} />,
+                icon: <RefreshCw className="icon-sm" strokeWidth={1.75} />,
               },
               {
                 kind: "item" as const,
                 id: "edit-machine",
                 label: t("Edit machine…"),
-                icon: <Pencil className="size-3.5" strokeWidth={1.75} />,
+                icon: <Pencil className="icon-sm" strokeWidth={1.75} />,
               },
             ],
           },
@@ -951,7 +951,7 @@ export function useProjectMenu({
         {
           kind: "item" as const,
           ...item,
-          icon: <item.icon className="size-3.5" strokeWidth={1.75} />,
+          icon: <item.icon className="icon-sm" strokeWidth={1.75} />,
         },
       ]),
     });
@@ -1237,7 +1237,7 @@ export function useProjectMenu({
           className="space-y-1 overflow-y-auto p-3"
         >
           <p
-            className="truncate px-1 text-xs font-medium text-content/85"
+            className="truncate px-1 text-ui-caption font-medium text-content"
             title={notificationMenu.project.name}
           >
             {notificationMenu.project.name}

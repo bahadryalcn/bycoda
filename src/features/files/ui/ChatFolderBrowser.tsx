@@ -1,5 +1,8 @@
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -184,14 +187,14 @@ export function ChatFolderBrowser({
             motion="none"
             type="button"
             aria-label={t("Parent folder")}
-            title={t("Parent folder")}
+            tooltip={t("Parent folder")}
 
             disabled={busy || !parent}
             onClick={() => parent && setDirectory(parent)}
           >
-            <ArrowUp className="size-4" />
+            <ArrowUp className="icon-md" />
           </Button>
-          <span className="min-w-0 break-all font-mono text-xs text-[var(--ui-text-secondary)]">
+          <span className="min-w-0 break-all font-mono text-ui-caption text-[var(--ui-text-secondary)]">
             {directory}
           </span>
         </div>
@@ -226,17 +229,17 @@ export function ChatFolderBrowser({
             {t("Shared folder settings")}
           </Button>
         </div>
-        <p className="text-xs text-[var(--ui-text-secondary)]">
+        <p className="text-ui-caption text-[var(--ui-text-secondary)]">
           {t(
             "Live folders show the connected computer’s current files. Remote changes are visible; writing is disabled.",
           )}
         </p>
-        <p className="text-xs text-[var(--ui-text-secondary)]">
+        <p className="text-ui-caption text-[var(--ui-text-secondary)]">
           {t("Local copies do not sync changes back to the connected machine.")}
         </p>
         {editingMapping ? (
           <form
-            className="grid gap-2 border-b border-stroke pb-3 text-sm"
+            className="grid gap-2 border-b border-stroke pb-3 text-ui-body"
             onSubmit={(event) => {
               event.preventDefault();
               void saveMapping();
@@ -301,35 +304,28 @@ export function ChatFolderBrowser({
           </form>
         ) : null}
         {copyProgress ? (
-          <p role="status" className="py-2 text-sm text-[var(--ui-text-secondary)]">
+          <LoadingText className="py-2">
             {t("Downloading…")} {copyProgress}
-          </p>
+          </LoadingText>
         ) : null}
         {actionError ? (
-          <p role="alert" className="py-2 text-sm text-danger">
+          <InlineError className="py-2">
             {t("Could not open the shared folder: ")}
             {actionError}
-          </p>
+          </InlineError>
         ) : null}
         {error ? (
-          <div role="alert" className="py-3 text-sm text-danger">
+          <InlineError className="py-3" retry={{ onRetry: () => setReload((value) => value + 1) }}>
             {error}
-            <Button variant="ghost" size="sm" onClick={() => setReload((value) => value + 1)}>
-              {t("Retry")}
-            </Button>
-          </div>
+          </InlineError>
         ) : !entries ? (
-          <p role="status" className="py-3 text-sm text-[var(--ui-text-secondary)]">
-            {t("Loading folder…")}
-          </p>
+          <LoadingText className="py-3">{t("Loading folder…")}</LoadingText>
         ) : entries.length === 0 ? (
-          <p className="py-3 text-sm text-[var(--ui-text-secondary)]">
-            {t("This folder is empty.")}
-          </p>
+          <EmptyState size="inline" className="py-3" description={t("This folder is empty.")} />
         ) : (
           <>
             {!listing?.canOpenFiles ? (
-              <p className="py-2 text-sm text-[var(--ui-text-secondary)]">
+              <p className="py-2 text-ui-body text-[var(--ui-text-secondary)]">
                 {t(
                   "This folder is outside registered projects. To access its files, open a shared folder in your file manager.",
                 )}
@@ -355,12 +351,12 @@ export function ChatFolderBrowser({
                       }}
                     >
                       {entry.isDir ? (
-                        <FolderOpen className="size-4 shrink-0" />
+                        <FolderOpen className="icon-md shrink-0" />
                       ) : (
-                        <FileTypeIcon name={entry.name} isDir={false} size={16} />
+                        <FileTypeIcon name={entry.name} isDir={false} size="md" />
                       )}
                       <span
-                        className="min-w-0 truncate text-sm"
+                        className="min-w-0 truncate text-ui-body"
                         title={displayPath(entry.path, directory)}
                       >
                         {entry.name}
@@ -375,12 +371,12 @@ export function ChatFolderBrowser({
                         type="button"
                         disabled={busy}
                         loading={pendingAction === `copy:${entry.path}`}
-                        title={t("Open local copy")}
+                        tooltip={t("Open local copy")}
                         aria-label={`${t("Open local copy")}: ${entry.name}`}
 
                         onClick={() => void openLocalCopy(entry.path)}
                       >
-                        <ExternalLink className="size-4" />
+                        <ExternalLink className="icon-md" />
                       </Button>
                     ) : null}
                   </li>

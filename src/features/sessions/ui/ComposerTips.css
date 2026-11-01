@@ -43,7 +43,7 @@
 @media (prefers-reduced-motion: no-preference) {
   [data-tip-fold-animate] .composer-tip-reveal {
     display: inline-block;
-    animation: composer-tip-reveal var(--duration-standard, 240ms)
+    animation: composer-tip-reveal var(--motion-duration-standard, 240ms)
       var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
   }
 

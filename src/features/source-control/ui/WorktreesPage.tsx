@@ -1,6 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Badge } from "../../../shared/ui/Badge";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import styles from "./WorktreesPage.module.css";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useMemo, useState } from "react";
@@ -150,7 +151,7 @@ export function WorktreesPage({
                   motion="none"
                   type="button"
                   disabled={!data || remoteProject}
-                  title={remoteProject ? remoteLifecycleNotice : undefined}
+                  tooltip={remoteProject ? remoteLifecycleNotice : undefined}
                   onClick={() => setCreating(true)}
                   className="flex items-center gap-1.5"
                 >
@@ -164,7 +165,7 @@ export function WorktreesPage({
                   type="button"
                   iconOnly
                   label={t("Refresh worktrees")}
-                  title={
+                  tooltip={
                     loadError
                       ? t("Refresh failed: {p0}. Click to retry.", {
                           p0: loadError,
@@ -243,7 +244,7 @@ export function WorktreesPage({
                               )}
                             </div>
                             {blocked || loadError || refreshingAfterFailure ? (
-                              <p className="text-ui-micro text-warning">
+                              <InlineMessage tone="warning">
                                 {blocked ??
                                   (loadError
                                     ? t(
@@ -252,7 +253,7 @@ export function WorktreesPage({
                                     : t(
                                         "Deletion is unavailable while status is being refreshed.",
                                       ))}
-                              </p>
+                              </InlineMessage>
                             ) : null}
                             <p className={styles.branch}>
                               <GitBranch
@@ -326,22 +327,13 @@ export function WorktreesPage({
                               )}
                             </div>
                             {revealFailure?.path === tree.path ? (
-                              <p role="alert" className={styles.revealFailure}>
-                                <span>
-                                  {t("Couldn't reveal this folder: {p0}", {
-                                    p0: revealFailure.message,
-                                  })}
-                                </span>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  motion="none"
-                                  type="button"
-                                  onClick={() => revealWorktree(tree.path)}
-                                >
-                                  {t("Retry")}
-                                </Button>
-                              </p>
+                              <InlineError
+                                retry={{ onRetry: () => revealWorktree(tree.path) }}
+                              >
+                                {t("Couldn't reveal this folder: {p0}", {
+                                  p0: revealFailure.message,
+                                })}
+                              </InlineError>
                             ) : null}
                             <details className={styles.details}>
                               <summary>{t("Details")}</summary>
@@ -378,13 +370,13 @@ export function WorktreesPage({
                               aria-label={t("Reveal {p0}", {
                                 p0: tree.branch ?? "worktree",
                               })}
-                              title={t("Reveal folder")}
+                              tooltip={t("Reveal folder")}
                               onClick={() => revealWorktree(tree.path)}
                             >
                               <FolderOpen className="icon-sm" />
                             </Button>
                             <Button size="sm" iconOnly variant="ghost" label={t("Actions for {p0}", { p0: tree.branch ?? "worktree" })}
-                              title={t("More actions")} aria-haspopup="menu" aria-expanded={menu?.tree.path === tree.path}
+                              tooltip={t("More actions")} aria-haspopup="menu" aria-expanded={menu?.tree.path === tree.path}
                               onClick={(event) => setMenu({ tree, anchor: event.currentTarget })}>
                               <MoreHorizontal className="icon-sm" />
                             </Button>

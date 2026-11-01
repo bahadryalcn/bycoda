@@ -88,7 +88,7 @@
 .appearance-preview-row > i {
   inline-size: 70%;
   block-size: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
   background: var(--ui-surface-hover);
 }
 .appearance-preview-row:last-child > i {
@@ -143,7 +143,7 @@
 }
 .appearance-preview-lines > i {
   block-size: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
   background: var(--ui-surface-selected);
 }
 .appearance-preview-lines > i:nth-child(2) {
@@ -164,7 +164,7 @@
 .appearance-preview-card > i {
   inline-size: 72%;
   block-size: 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
   background: var(--ui-surface-pressed);
 }
 .appearance-preview-card > i:last-child {
@@ -189,7 +189,7 @@
   flex: 1;
   block-size: 6px;
   max-inline-size: 8rem;
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
   background: var(--ui-surface-selected);
 }
 /* A narrow group keeps the rail and chat; the session list folds away first. */
@@ -214,7 +214,7 @@
 }
 .appearance-type-alphabet {
   flex: none;
-  font-size: 22px;
+  font-size: var(--ui-font-heading);
   line-height: 1;
   letter-spacing: -0.04em;
 }

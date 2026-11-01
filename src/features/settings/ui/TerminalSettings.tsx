@@ -1,5 +1,6 @@
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ChevronRight, RefreshCw } from "../../../shared/ui/icons";
@@ -210,10 +211,12 @@ function HostShellRow({
               ))}
             </ul>
           ) : (
-            <div className="settings-collection-empty">
-              <p>{t("No shells found")}</p>
-              <p>{t("Install PowerShell, Git for Windows or another shell, then look again.")}</p>
-            </div>
+            <EmptyState
+              size="inline"
+              className="settings-collection-empty"
+              title={t("No shells found")}
+              description={t("Install PowerShell, Git for Windows or another shell, then look again.")}
+            />
           )
         ) : null}
       </div>
@@ -405,9 +408,11 @@ export function RemoteMachineShells() {
         </div>
       ) : null}
       {loaded && !loading && !error && remoteMachines.length === 0 ? (
-        <div className="settings-collection-empty">
-          <p>{t("Connect a machine in Connections to configure its default shell here.")}</p>
-        </div>
+        <EmptyState
+          size="inline"
+          className="settings-collection-empty"
+          description={t("Connect a machine in Connections to configure its default shell here.")}
+        />
       ) : null}
       {remoteMachines.map((machine) => (
         <RemoteMachineShell key={machine.id} machine={machine} />

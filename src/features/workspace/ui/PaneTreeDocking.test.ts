@@ -186,6 +186,7 @@ describe("pane docking UI", () => {
     const event = new Event(type, { bubbles: true });
     Object.assign(event, {
       pointerId: 1,
+      isPrimary: true,
       button: 0,
       clientX: x,
       clientY: y,
@@ -344,8 +345,7 @@ describe("pane docking UI", () => {
 
   it("cleans a sash gesture when its layout disappears", () => {
     render(splitPane(leaf("a"), "a", "right", "b"));
-    const sash = container.querySelector<HTMLElement>('[role="separator"]')!
-      .firstElementChild as HTMLElement;
+    const sash = container.querySelector<HTMLElement>('[role="separator"]')!;
     Object.assign(sash, {
       setPointerCapture: vi.fn(),
       hasPointerCapture: () => true,

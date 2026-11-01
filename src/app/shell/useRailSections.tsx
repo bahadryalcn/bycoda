@@ -1,5 +1,5 @@
-import { Button } from "../../shared/ui/Button";
-import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
+import { InlineAction } from "../../shared/ui/ActionHost";
+import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { useT } from "../../shared/i18n";
 import {
   useEffect,
@@ -10,7 +10,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { ChevronDown, ChevronRight, MoreHorizontal } from "../../shared/ui/icons";
+import { MoreHorizontal } from "../../shared/ui/icons";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
 import {
   applyShownSectionOrder,
@@ -79,72 +79,47 @@ export function RailSectionHeader({
   actions?: ReactNode;
 }) {
   const t = useT();
-  const chevron = collapsed ? (
-    <ChevronRight className="icon-xs shrink-0" />
-  ) : (
-    <ChevronDown className="icon-xs shrink-0" />
-  );
+  const collapsible = onToggleCollapsed != null;
   return (
-    <ActionHost
-      {...drag?.headerProps}
-      tabIndex={drag ? 0 : undefined}
-      aria-keyshortcuts={drag ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
-      title={drag ? t("Drag to reorder") : undefined}
-      className={`${RAIL_SECTION_HEADER} ${drag ? RAIL_DRAG_HANDLE : ""} rounded-md outline-none focus-visible:bg-(--ui-surface-hover) @max-[140px]/rail:justify-center @max-[140px]/rail:px-0`}
+    <SectionLabel
+      host
+      compactRail
+      collapsible={collapsible}
+      expanded={!collapsed}
+      onExpandedChange={onToggleCollapsed}
+      controls={controlsId}
+      icon={icon}
+      chevron="hover"
+      // SectionLabel types `count` as a number; it renders any node, and LiveAgentsPreview passes one.
+      count={count as number | null | undefined}
+      headerProps={{
+        ...drag?.headerProps,
+        tabIndex: drag ? 0 : undefined,
+        "aria-keyshortcuts": drag ? "Alt+ArrowUp Alt+ArrowDown" : undefined,
+        title: drag ? t("Drag to reorder") : undefined,
+      }}
+      className={`px-2 ${drag ? RAIL_DRAG_HANDLE : ""} rounded-md outline-none focus-visible:bg-(--ui-surface-hover) @max-[140px]/rail:px-0`}
+      classNames={{
+        heading: collapsible ? undefined : "px-2",
+        count: "ms-auto ps-1",
+        actions: "cursor-default",
+      }}
+      actionsProps={{ "data-rail-section-actions": "" }}
+      actions={
+        actions || drag ? (
+          <>
+            {actions}
+            {drag ? (
+              <span className="contents @max-[140px]/rail:hidden">
+                <SectionMenuButton label={label} onOpen={drag.openMenu} />
+              </span>
+            ) : null}
+          </>
+        ) : undefined
+      }
     >
-      {onToggleCollapsed ? (
-        <Button
-          variant="item"
-          motion="none"
-          size="sm"
-          aria-expanded={!collapsed}
-          aria-controls={controlsId}
-          onClick={onToggleCollapsed}
-          className={`min-w-0 flex-1 ${RAIL_SECTION_LABEL} ${
-            icon ? "@max-[140px]/rail:justify-center" : "@max-[140px]/rail:hidden"
-          }`}
-        >
-          {icon ? (
-            <>
-              <span className="inline-flex shrink-0 group-hover:hidden group-has-[button:focus-visible]:hidden">
-                {icon}
-              </span>
-              <span className="hidden shrink-0 group-hover:inline-flex group-has-[button:focus-visible]:inline-flex">
-                {chevron}
-              </span>
-            </>
-          ) : (
-            chevron
-          )}
-          <span className="truncate @max-[140px]/rail:hidden">{label}</span>
-          {count != null ? (
-            <span className="ms-auto ps-1 text-ui-micro font-medium tabular-nums @max-[140px]/rail:hidden">
-              {count}
-            </span>
-          ) : null}
-        </Button>
-      ) : (
-        <span
-          className={`min-w-0 flex-1 truncate px-2 ${RAIL_SECTION_LABEL} @max-[140px]/rail:hidden`}
-        >
-          {label}
-        </span>
-      )}
-      {actions || drag ? (
-        <div
-          data-no-drag=""
-          data-rail-section-actions=""
-          className="ms-auto flex shrink-0 cursor-default items-center gap-0.5"
-        >
-          {actions}
-          {drag ? (
-            <span className="contents @max-[140px]/rail:hidden">
-              <SectionMenuButton label={label} onOpen={drag.openMenu} />
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-    </ActionHost>
+      {label}
+    </SectionLabel>
   );
 }
 
@@ -167,7 +142,7 @@ export function SectionMenuButton({
       motion="none"
       type="button"
       data-no-drag
-      title={t("Section options")}
+      tooltip={t("Section options")}
       aria-label={t("{p0} section options", { p0: label })}
       aria-haspopup="menu"
       onClick={(event) => {
@@ -176,7 +151,7 @@ export function SectionMenuButton({
       }}
       className="shrink-0"
     >
-      <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
+      <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
     </InlineAction>
   );
 }

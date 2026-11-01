@@ -51,6 +51,13 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   /** Tooltip placement. Default `bottom`. */
   tooltipSide?: PopoverSide;
   tooltipAlign?: PopoverAlign;
+  /** Wider tooltip cap (`max-w-80`) for paths and long detail lines. */
+  tooltipWide?: boolean;
+  /** When the tooltip opens. `always` (default): pointer hover and keyboard focus. `focus`:
+   *  keyboard focus only, for controls whose pointer users already see the same detail (a rail
+   *  row showing its full text on hover elsewhere). Replaces a wrapping `<Tooltip>` that
+   *  toggled itself off for pointers. */
+  tooltipOn?: "always" | "focus";
   /** Display only, shown as key caps in the tooltip: the owner resolves the current binding
    *  (`useKeybindingShortcut`) and handles the keys. Accepts `Mod+K`, `Ctrl+Shift+P`, `⌘⇧P`,
    *  `Esc Esc` and `A / B` alternatives. */
@@ -90,7 +97,11 @@ export function nativeButtonPresentation({
   variant = "ghost",
   size = "sm",
   iconOnly = false,
-}: { variant?: "ghost" | "secondary"; size?: ButtonSize; iconOnly?: boolean } = {}) {
+}: {
+  variant?: "ghost" | "secondary";
+  size?: ButtonSize;
+  iconOnly?: boolean;
+} = {}) {
   return {
     className: [
       arcStyles.button,
@@ -130,6 +141,8 @@ export function Button({
   tooltipDetails,
   tooltipSide = "bottom",
   tooltipAlign,
+  tooltipWide,
+  tooltipOn = "always",
   shortcut,
   disabledReason,
   startIcon,
@@ -177,7 +190,12 @@ export function Button({
     observer.observe(node);
     return () => observer.disconnect();
   }, [children, reserveLabel]);
-  const longPress = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
+  const longPress = useRef<{
+    timer: number;
+    x: number;
+    y: number;
+    fired: boolean;
+  } | null>(null);
   const clearLongPress = () => {
     const current = longPress.current;
     if (current) window.clearTimeout(current.timer);
@@ -219,12 +237,12 @@ export function Button({
   const blocked = !!disabled || loading || isTrue(props["aria-disabled"]);
   const active =
     selected ??
-    (pressed ??
-      (isTrue(props["aria-selected"]) ||
+    pressed ??
+    (isTrue(props["aria-selected"]) ||
       isTrue(props["aria-pressed"]) ||
       isTrue(props["aria-checked"]) ||
       isTrue(props["aria-current"]) ||
-      props["aria-current"] === "page"));
+      props["aria-current"] === "page");
   const arcVariant: ArcButtonVariant =
     hierarchy === "link" || hierarchy === "item" || hierarchy === "tab" ? "ghost" : hierarchy;
   const classes = [
@@ -269,6 +287,7 @@ export function Button({
     shortcut: hintShortcut,
     side: tooltipSide,
     align: tooltipAlign,
+    wide: tooltipWide,
     describe: false,
   });
   const accessibleName = loading && loadingLabel ? loadingLabel : (props["aria-label"] ?? label);
@@ -333,7 +352,7 @@ export function Button({
     }),
     onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => {
       props.onPointerEnter?.(event);
-      hint.trigger.onPointerEnter(event);
+      if (tooltipOn !== "focus") hint.trigger.onPointerEnter(event);
     },
     onPointerLeave: (event: PointerEvent<HTMLButtonElement>) => {
       props.onPointerLeave?.(event);

@@ -144,7 +144,7 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
         <div
           id="antigravity-account-setup"
           hidden={!expanded}
-          className="border-t border-stroke bg-(--ui-surface-muted)"
+          className="border-t border-(--ui-settings-hairline)"
         >
           {instructions}
         </div>

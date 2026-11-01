@@ -58,7 +58,7 @@ export function InlineBlameToggle({ reason }: { reason: string | null }) {
       variant="ghost"
       motion="none"
       type="button"
-      title={reason ?? t("Show git blame for each line")}
+      tooltip={reason ?? t("Show git blame for each line")}
       aria-label={t("Git blame")}
       aria-pressed={on}
       disabled={reason !== null}

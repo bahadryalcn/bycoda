@@ -16,6 +16,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { DateTimeRangePicker } from "../../../shared/ui/DateTimeRangePicker";
 import { ArrowDownCircle, ListFilter, RefreshCw } from "../../../shared/ui/icons";
@@ -484,6 +485,7 @@ export function UsageOverview({
               !unavailable &&
               ` · ${t("Updated")} ${new Date(load.refreshedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false })}`}
           </p>
+          {view === "limits" ? <InfoPopover label={t("About limit filters")}>{t("Provider and account filters apply to account limits and history. Local budget rules keep their own scope.")}</InfoPopover> : null}
         </div>
         <div className="usage-analytics-actions">
           <Select
@@ -534,7 +536,7 @@ export function UsageOverview({
           autoFocus
         >
           <div className="usage-filter-panel">
-            <h3>{t("Filters")}</h3>
+            <SectionLabel>{t("Filters")}</SectionLabel>
             <DateTimeRangePicker
               minDate={new Date(0)}
               maxDate={new Date(new Date().setHours(24, 0, 0, 0))}
@@ -547,7 +549,7 @@ export function UsageOverview({
             />
             {!limitsOnly && view !== "limits" && (
               <>
-                <h3>{t("Chart options")}</h3>
+                <SectionLabel>{t("Chart options")}</SectionLabel>
                 <div className="usage-controls">
                   <Select
                     label={t("Chart metric")}
@@ -590,20 +592,19 @@ export function UsageOverview({
               </>
             )}
             {filterKeys.map((key) => (
-              <div key={key} className="grid min-w-0 gap-1">
-                <span className="text-ui-caption text-(--ui-text-secondary)">{t(names[key])}</span>
-                <SearchableSelect
-                  multiple
-                  label={t(names[key])}
-                  placeholder={t("All")}
-                  value={effectiveFilters[key]}
-                  options={[...options[key]].map(([value, label]) => ({ value, label: t(label) }))}
-                  onChange={(values) => {
-                    setFilters((f) => ({ ...f, [key]: values }));
-                    setSelectedSession(null);
-                  }}
-                />
-              </div>
+              <SearchableSelect
+                key={key}
+                multiple
+                visibleLabel
+                label={t(names[key])}
+                placeholder={t("All")}
+                value={effectiveFilters[key]}
+                options={[...options[key]].map(([value, label]) => ({ value, label: t(label) }))}
+                onChange={(values) => {
+                  setFilters((f) => ({ ...f, [key]: values }));
+                  setSelectedSession(null);
+                }}
+              />
             ))}
             <Button
               variant="ghost"
@@ -622,7 +623,7 @@ export function UsageOverview({
         <p className="usage-muted">
           {t(metricNames[metric])} · {t(names[dimension])} · {t(({ "15m": "15 minutes", hour: "Hourly", day: "Daily", week: "Weekly" })[actualResolution])}
         </p>
-      ) : <InfoPopover label={t("About limit filters")}>{t("Provider and account filters apply to account limits and history. Local budget rules keep their own scope.")}</InfoPopover>}
+      ) : null}
       {view !== "limits" && firstLoad && (
         <p role="status" className="usage-empty">
           {t("Loading usage…")}

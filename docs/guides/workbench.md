@@ -51,6 +51,14 @@ many files changed; the added and removed line totals appear when the tab has
 room, and its tooltip names both counts. Keyboard focus on a session row opens
 a small detail card with the title, model, branch or worktree, path and status.
 
+Hints and previews are consistent across the app. Hover an icon button for about half a
+second, or focus it with the keyboard, to see its name, its shortcut as key caps and, for
+a disabled action, the reason it is unavailable; hints never appear on touch. Rich previews
+(session and link previews, graph commits, the context meter) open after a short rest
+or on keyboard focus, can be entered with the pointer, and close with Escape. Background
+notices, reminders and approval requests stack in one column per screen corner instead of
+overlapping.
+
 While you scroll up to read earlier messages, the message box shrinks to its text
 (one line when empty) to give the conversation more room. Click or tab into it, or
 open one of its menus, and it returns to full size; it shrinks again when you go

@@ -55,10 +55,6 @@
   flex-basis: 100%;
   font-weight: 500;
 }
-.jira-board-empty {
-  padding: 12px 4px;
-  color: var(--ui-text-secondary);
-}
 .jira-board-detail {
   display: flex;
   flex-direction: column;

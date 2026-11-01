@@ -33,12 +33,12 @@ export const MarkdownDocumentPreview = memo(function MarkdownDocumentPreview({
             <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg px-3 py-2 text-ui-caption text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color) [&::-webkit-details-marker]:hidden">
               <ChevronRight
                 aria-hidden="true"
-                className="size-3.5 shrink-0 text-(--ui-text-secondary) group-open/metadata:hidden"
+                className="icon-sm shrink-0 text-(--ui-text-secondary) group-open/metadata:hidden"
                 strokeWidth={1.75}
               />
               <ChevronDown
                 aria-hidden="true"
-                className="hidden size-3.5 shrink-0 text-(--ui-text-secondary) group-open/metadata:block"
+                className="hidden icon-sm shrink-0 text-(--ui-text-secondary) group-open/metadata:block"
                 strokeWidth={1.75}
               />
               {metadataLabel}

@@ -206,13 +206,6 @@
   flex: 1 1 14rem;
   min-inline-size: min(100%, 14rem);
 }
-.task-filter-active {
-  inline-size: 0.35rem;
-  block-size: 0.35rem;
-  flex: none;
-  border-radius: 50%;
-  background: var(--ui-tone-accent-fg);
-}
 /* Drop cues use theme tokens only: the column that would accept the card, and a
    line where a reorder lands. Both clear on drop, cancel (dragend) and leave. */
 .bycoda-task-column[data-drop-active="true"] {
@@ -224,7 +217,7 @@
   display: block;
   block-size: 0.1875rem;
   margin-block-end: 0.25rem;
-  border-radius: 1px;
+  border-radius: 0.0625rem;
   background: var(--ui-focus-ring-color);
 }
 .bycoda-task-column li[data-dragging] > article {
@@ -566,10 +559,6 @@
   color: var(--ui-text-secondary);
 }
 
-[data-task-prompt] textarea {
-  max-block-size: clamp(10rem, 28dvh, 20rem);
-  overflow-y: auto;
-}
 .task-form-label {
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);

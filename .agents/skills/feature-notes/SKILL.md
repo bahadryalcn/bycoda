@@ -297,3 +297,13 @@ drafts require their actual input/operation ports. Host Notes can separately
 write the same physical database and has no Native-window admission handoff.
 Neither these Native tests nor a saved row proves complete Notes/Native Buffers
 coverage, restart-safe dirty-draft recovery or cross-device migration.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Notes (`src/features/notes/**`, `notifications/**`), from `HANDOFF-w2-work-notes.md`. Drift 19 -> 0.
+
+- Done: mode tabs on `Tabs`; NotesView header on `PaneHeader` + chrome inset (one macOS inset; the old header stacked 16px + 78px for `compactRail && !besideRail`, so eyeball that combination); group headings on `SectionLabel`; `Spinner`/`LoadingText`, `InlineError`, inline `EmptyState`; NoteDraftRecoveryNotice on `ToastSlot`/`Toast` (no `createPortal`); "Close notes" now translated; `title=` to `tooltip`.
+- Left: two `useDragResize` handles use `Sash` only as the separator shell.
+- Unverified: no screenshots or native run.

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { basename } from "../../../platform/tauri/fs";
@@ -42,7 +42,7 @@ export function RenameProjectFolderDialog({
             .finally(() => setBusy(false));
         }}
       >
-        <p className="break-all text-xs text-(--ui-text-secondary)">{path}</p>
+        <p className="break-all text-ui-caption text-(--ui-text-secondary)">{path}</p>
         <TextField
           label={t("Folder name")}
           autoFocus
@@ -54,7 +54,7 @@ export function RenameProjectFolderDialog({
             setError(null);
           }}
         />
-        <div className="flex justify-end gap-2">
+        <ModalActions inline>
           <Button type="button" disabled={busy} onClick={onClose} variant="ghost">
             {t("Cancel")}
           </Button>
@@ -67,7 +67,7 @@ export function RenameProjectFolderDialog({
           >
             {busy ? t("Renaming…") : t("Rename folder")}
           </Button>
-        </div>
+        </ModalActions>
       </form>
     </Modal>
   );

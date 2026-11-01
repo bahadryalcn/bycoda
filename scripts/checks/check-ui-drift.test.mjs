@@ -6,7 +6,7 @@ import test from "node:test";
 import { baselineFile, checkUiDrift, collectDefinitions, scanFile } from "./check-ui-drift.mjs";
 
 const arcCss = `.bycoda-arc {\n  --radius-control: 4px;\n  --space-2: 0.375rem;\n}\n`;
-const indexCss = `@source "../node_modules/x/dist/*.js";\n:root { --ui-surface: red; --motion: cubic-bezier(0, 0, 1, 1); }\n.a { transition: opacity 120ms ease; z-index: 50; }\n`;
+const indexCss = `@source "../node_modules/x/dist/*.js";\n:root { --ui-surface: red; --layer-popover: 80; --color-accent: red; --motion-duration-fast: 1s; --motion-ease-out: ease; --motion: cubic-bezier(0, 0, 1, 1); }\n.a { transition: opacity 120ms ease; z-index: 50; }\n`;
 
 function rulesOf(file, text, extra = []) {
   const sources = new Map([
@@ -23,12 +23,11 @@ test("flags token drift but keeps defined, inline-set and Arc-rooted variables",
     'import { X } from "../../shared/ui/icons";',
     'const a = <div className="bg-(--ui-surface) text-(--missing) rounded-(--radius-control)" />;',
     'const b = <div style={{ "--local": 1 }} className="w-(--local)" />;',
-    'const c = <X className="size-3.5 text-danger animate-spin" strokeWidth={1.5} />;',
+    'const c = <X className="size-3.5 text-danger bg-accent animate-spin z-[var(--layer-popover)]" strokeWidth={1.5} />;',
     '// className="text-[13px]" in a comment is ignored',
   ].join("\n");
   assert.deepEqual(rulesOf("src/features/demo/A.tsx", tsx).sort(), [
     "arc-var-outside-arc",
-    "color-base-hue",
     "icon-size-class",
     "icon-stroke-width",
     "loading-motion",
@@ -54,6 +53,21 @@ test("JSX attribute rules read the whole opening tag", () => {
     "popover-menu",
     "role-alert-text",
   ]);
+});
+
+test("semantic status utilities pass; raw base hue vars and literal layers/motion are flagged", () => {
+  assert.deepEqual(
+    rulesOf(
+      "src/features/demo/D.tsx",
+      '<div className="text-danger bg-warning border-success z-(--layer-popover) z-[50]" />',
+    ),
+    ["layer"],
+  );
+  const css = [
+    ".a { color: var(--color-accent); z-index: var(--layer-popover); }",
+    ".b { transition: opacity var(--motion-duration-fast) var(--motion-ease-out); z-index: 50; }",
+  ].join("\n");
+  assert.deepEqual(rulesOf("src/features/demo/d.css", css).sort(), ["color-base-hue", "layer"]);
 });
 
 test("shared stylesheet scan skips :root tokens and string globs", () => {

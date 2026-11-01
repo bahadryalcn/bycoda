@@ -1,3 +1,4 @@
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useSocialPending } from "./useSocialPending";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
@@ -208,7 +209,7 @@ export function SocialBrowserWorkspace({
         <p role="status">{t("X encrypted Chat cannot be read with this connection.")}</p>
       ) : null}
       {monitor.isError ? (
-        <p role="alert">{t("Automatic monitoring status could not be read.")}</p>
+        <InlineError>{t("Automatic monitoring status could not be read.")}</InlineError>
       ) : null}
       {monitor.data?.coverage?.length ? (
         <p role="status">
@@ -368,13 +369,13 @@ export function SocialBrowserWorkspace({
         <p role="status">{t("Chrome or Edge was not found on the selected host.")}</p>
       ) : null}
       {query.isError ? (
-        <p role="alert">
+        <InlineError>
           {t(
             "Browser status could not be read. Check the host version and connection, then refresh.",
           )}
-        </p>
+        </InlineError>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {statusError ? <div role="status" className="flex flex-wrap items-center gap-2 text-ui-caption text-(--ui-tone-warning-fg)">
         <span>{statusError}</span>
         <Button variant="ghost" loading={busy} disabled={socialLocked} onClick={() => void perform(async () => undefined, true)}>{t("Refresh status")}</Button>

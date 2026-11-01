@@ -1,5 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, useT } from "../../../shared/i18n";
+import { Divider } from "../../../shared/ui/Divider";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Check } from "../../../shared/ui/icons";
 import { type ReactNode } from "react";
 import { Popover } from "../../../shared/ui/Popover";
@@ -106,6 +108,7 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
   };
 
   return (
+    // Kept as Popover role=menu: filter toggles keep the menu open, DropdownMenu closes on pick.
     <Popover
       anchor={{ x, y }}
       gap={0}
@@ -119,7 +122,9 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
     >
       <FilterItem label={t("Archived")} checked={filters.showArchived} onClick={toggleArchived} />
 
-      <SectionLabel>{t("Status")}</SectionLabel>
+      <SectionLabel as="div" className="px-2">
+        {t("Status")}
+      </SectionLabel>
       <FilterItem
         label={t("Working")}
         checked={filters.status.working}
@@ -136,7 +141,9 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
         onClick={() => toggleStatus("done")}
       />
 
-      <SectionLabel>{t("Time")}</SectionLabel>
+      <SectionLabel as="div" className="px-2">
+        {t("Time")}
+      </SectionLabel>
       {TIME_OPTIONS.map((option) => (
         <FilterItem
           key={option.id}
@@ -148,7 +155,9 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
 
       {harnesses.length > 0 ? (
         <>
-          <SectionLabel>{t("Provider")}</SectionLabel>
+          <SectionLabel as="div" className="px-2">
+            {t("Provider")}
+          </SectionLabel>
           {harnesses.map((harness) => (
             <FilterItem
               key={harness}
@@ -161,7 +170,9 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
         </>
       ) : null}
 
-      <SectionLabel>{t("View")}</SectionLabel>
+      <SectionLabel as="div" className="px-2">
+        {t("View")}
+      </SectionLabel>
       {DENSITY_OPTIONS.map((option) => (
         <FilterItem
           key={option.id}
@@ -184,7 +195,7 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
 
       {hasActiveSessionFilters(filters) ? (
         <>
-          <div role="separator" className="my-1 h-px bg-(--color-stroke)" />
+          <Divider />
           <Button
             fullWidth
             variant="item"
@@ -199,15 +210,6 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
         </>
       ) : null}
     </Popover>
-  );
-}
-
-function SectionLabel({ children }: { children: string }) {
-  useLocale();
-  return (
-    <div className="px-2 pb-0.5 pt-2 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
-      {children}
-    </div>
   );
 }
 
@@ -238,7 +240,7 @@ function FilterItem({
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {checked ? <Check className="size-3.5 shrink-0" strokeWidth={2.25} /> : null}
+      {checked ? <Check className="icon-sm shrink-0" strokeWidth={2} /> : null}
     </Button>
   );
 }

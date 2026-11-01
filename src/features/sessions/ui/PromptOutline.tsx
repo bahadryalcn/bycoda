@@ -248,6 +248,7 @@ export const PromptOutline = memo(function PromptOutline({
       onMouseLeave={leaveRail}
       onBlur={blurRail}
       onKeyDown={onKeyDown}
+      // z-30: in-pane overlay above the transcript; no in-pane layer scale exists, so the literal stays.
       className="absolute top-1/2 right-4 z-30 flex -translate-y-1/2 flex-col items-end @max-[58rem]:hidden"
     >
       {bars.map((prompt, index) => {
@@ -313,11 +314,11 @@ export const PromptOutline = memo(function PromptOutline({
           aria-label={t("Prompt preview")}
           className="pointer-events-none flex flex-col gap-1.5 p-3 font-sans"
         >
-          <p className="line-clamp-2 text-sm leading-snug text-(--ui-tone-neutral-fg)">
+          <p className="line-clamp-2 text-ui-body leading-snug text-(--ui-tone-neutral-fg)">
             {preview.title}
           </p>
           {preview.reply ? (
-            <p className="line-clamp-2 text-sm leading-snug text-(--ui-text-secondary)">
+            <p className="line-clamp-2 text-ui-body leading-snug text-(--ui-text-secondary)">
               {preview.reply}
             </p>
           ) : null}

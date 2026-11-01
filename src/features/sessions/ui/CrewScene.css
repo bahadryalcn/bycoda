@@ -1,3 +1,5 @@
+/* Decorative scene: label and title sizes below scale with the scene's container width (cqi) and
+   stay far smaller than any text role, so the clamp() font sizes are kept on purpose. */
 .crew-scene {
   container-type: inline-size;
   inline-size: 100%;
@@ -89,7 +91,7 @@
   inline-size: 60%;
   margin-inline: auto;
   margin-block: 4px 3px;
-  border-radius: 2px;
+  border-radius: var(--ui-radius-control);
   background: var(--ui-surface-pressed);
   overflow: clip;
 }

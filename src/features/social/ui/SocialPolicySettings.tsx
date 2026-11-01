@@ -4,7 +4,7 @@ import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { NativeSelect } from "../../../shared/ui/Select";
-import { TextField } from "../../../shared/ui/TextField";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { Button } from "../../../shared/ui/Button";
 import { useRef, useState } from "react";
 import { Notice } from "./socialShared";
@@ -254,12 +254,11 @@ export function SocialPolicySettings({
             <h3>{t("Character limits")}</h3>
             <div className="social-field-grid">
               {SOCIAL_LIMIT_FIELDS.map((field) => (
-                <TextField
+                <NumberField
                   disabled={saving || socialLocked}
                   key={field}
                   label={labels[field]}
                   name={field}
-                  type="number"
                   min={1}
                   max={20000}
                   step={1}

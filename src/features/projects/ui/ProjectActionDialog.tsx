@@ -8,6 +8,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Switch } from "../../../shared/ui/Switch";
 import { Select } from "../../../shared/ui/Select";
 import { Alert } from "../../../shared/ui/Alert";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { CodeBlock, FolderOpen, Globe, Play, Terminal, Wrench } from "../../../shared/ui/icons";
 import { prettyCwd } from "../../../shared/lib/paths";
 import {
@@ -51,8 +52,8 @@ const presets = [
     url: "",
   },
 ];
-const heading = "block text-[13px] font-medium text-content";
-const help = "text-xs leading-relaxed text-(--ui-text-secondary)";
+const heading = "block text-ui-secondary font-medium text-content";
+const help = "text-ui-caption leading-relaxed text-(--ui-text-secondary)";
 
 export function ProjectActionDialog({
   action,
@@ -118,9 +119,9 @@ export function ProjectActionDialog({
       >
         <div className="space-y-4 px-6 pb-5 pt-4">
           <div className="flex items-center gap-2.5 rounded-lg border border-stroke bg-(--ui-surface) px-3 py-2">
-            <FolderOpen className="mt-0.5 size-4 shrink-0 text-(--ui-text-muted)" />
+            <FolderOpen className="mt-0.5 icon-md shrink-0 text-(--ui-text-muted)" />
             <div className="min-w-0">
-              <p title={cwd} className="truncate text-xs text-(--ui-text-secondary)">
+              <p title={cwd} className="truncate text-ui-caption text-(--ui-text-secondary)">
                 <span className="mr-2 text-(--ui-text-muted)">{t("Working folder")}</span>
                 <span className="font-mono">{prettyCwd(cwd)}</span>
               </p>
@@ -129,7 +130,7 @@ export function ProjectActionDialog({
           {!editing ? (
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-(--ui-text-muted)">{t("Examples")}</span>
+                <span className="text-ui-caption text-(--ui-text-muted)">{t("Examples")}</span>
                 {presets.map((preset) => (
                   <Button
                     type="button"
@@ -236,9 +237,7 @@ export function ProjectActionDialog({
               )}
             </p>
             {shortcutError || shortcutHint ? (
-              <p role="status" className="text-xs text-warning">
-                {shortcutError || shortcutHint}
-              </p>
+              <InlineMessage tone="warning">{shortcutError || shortcutHint}</InlineMessage>
             ) : null}
           </div>
           <div className="space-y-2">
@@ -250,7 +249,8 @@ export function ProjectActionDialog({
               hideLabel
               id={`${uid}-command`}
               rows={2}
-              className="resize-y font-mono leading-relaxed"
+              monospace
+              className="resize-y leading-relaxed"
               placeholder={t("e.g. pnpm dev, npm run dev, or bun test")}
               value={draft.command}
               onChange={(event) => setDraft({ ...draft, command: event.target.value })}
@@ -263,7 +263,7 @@ export function ProjectActionDialog({
                   : "Runs in a new terminal in this folder using your default shell. Leave empty for a web link action.",
               )}
             </p>
-            <label className="flex items-center gap-2 text-xs text-(--ui-text-secondary)">
+            <label className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
               <Checkbox
                 checked={draft.devServer}
                 onChange={(event) => setDraft({ ...draft, devServer: event.target.checked })}
@@ -298,7 +298,7 @@ export function ProjectActionDialog({
           {!draft.devServer ? (
             <div className="flex items-center justify-between gap-4 rounded-lg bg-(--ui-surface) p-3">
               <div>
-                <span id={`${uid}-open-label`} className="text-[13px] font-medium text-content">
+                <span id={`${uid}-open-label`} className="text-ui-secondary font-medium text-content">
                   {t("Open web address when this action runs")}
                 </span>
                 <p id={`${uid}-open-help`} className={`${help} mt-1`}>
@@ -328,7 +328,7 @@ export function ProjectActionDialog({
               {t("Delete action")}
             </Button>
           ) : null}
-          <p aria-live="polite" className="min-w-0 flex-1 text-xs text-(--ui-text-muted)">
+          <p aria-live="polite" className="min-w-0 flex-1 text-ui-caption text-(--ui-text-muted)">
             {missing ||
               (draft.devServer
                 ? t("Starts a managed development server on this project's host.")

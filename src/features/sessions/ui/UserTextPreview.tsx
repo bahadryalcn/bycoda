@@ -1,8 +1,8 @@
 import { Button } from "../../../shared/ui/Button";
 import { useLocale, getLocale, useT } from "../../../shared/i18n";
-import { memo, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { memo, useRef, useState, type ReactNode } from "react";
 import { Modal } from "../../../shared/ui/Modal";
-import { Popover } from "../../../shared/ui/Popover";
+import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { boundedTextPreview, type UserTextPart } from "../model/userTextPreview";
 import type { Attachment } from "../model/session";
 import { AttachmentTokenText } from "./AttachmentTokenText";
@@ -20,39 +20,24 @@ function TextCard({
 }) {
   const t = useT();
   const trigger = useRef<HTMLButtonElement>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [hovered, setHovered] = useState(false);
   const [open, setOpen] = useState(false);
-  const previewId = useId();
+  // A rested pointer or keyboard focus previews the text; a click opens the full content.
+  const hover = useHoverCard({
+    side: "bottom",
+    align: "start",
+    width: 440,
+    disabled: open,
+    className: "",
+  });
   const label = part.kind === "json" ? "JSON" : "Long text";
-  const cancel = () => {
-    if (timer.current !== null) clearTimeout(timer.current);
-    timer.current = null;
-  };
-  useEffect(
-    () => () => {
-      if (timer.current !== null) clearTimeout(timer.current);
-    },
-    [],
-  );
-  const enter = () => {
-    cancel();
-    setHovered(true);
-  };
-  const leave = () => {
-    cancel();
-    timer.current = setTimeout(() => setHovered(false), 150);
-  };
   const showFull = () => {
-    cancel();
-    setHovered(false);
+    hover.close();
     setOpen(true);
   };
   const dismiss = () => {
-    cancel();
+    hover.close();
     setOpen(false);
     trigger.current?.focus();
-    setHovered(false);
   };
   return (
     <>
@@ -64,15 +49,11 @@ function TextCard({
         aria-label={t("Show full {p0}", { p0: label.toLowerCase() })}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-describedby={hovered && !open ? previewId : undefined}
-        onMouseEnter={enter}
-        onMouseLeave={leave}
-        onFocus={enter}
-        onBlur={leave}
+        {...hover.trigger}
         onClick={showFull}
         className="my-1 block w-full min-w-0 text-left"
       >
-        <span className="flex items-center justify-between gap-6 text-xs">
+        <span className="flex items-center justify-between gap-6 text-ui-caption">
           <span className="font-medium text-(--ui-text-secondary)">{label}</span>
           <span className="text-(--ui-text-secondary)">
             {part.text.length.toLocaleString(getLocale())}
@@ -80,53 +61,39 @@ function TextCard({
           </span>
         </span>
         <span
-          className={`mt-1 block whitespace-pre-wrap break-words text-xs text-(--ui-text-secondary) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
+          className={`mt-1 block whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
         >
           {boundedTextPreview(part.text, 160, 2)}
         </span>
-        <span className="mt-1.5 block text-xs text-(--ui-text-secondary)">
+        <span className="mt-1.5 block text-ui-caption text-(--ui-text-secondary)">
           {t("Show full content ↗")}
         </span>
       </Button>
-      {hovered && !open ? (
-        <Popover
-          anchor={trigger}
-          width={440}
-          maxHeight={360}
-          onDismiss={() => {
-            cancel();
-            setHovered(false);
-          }}
-          onMouseEnter={enter}
-          onMouseLeave={leave}
-          onFocusCapture={enter}
-          onBlurCapture={leave}
-        >
-          <div id={previewId} className="p-3">
-            <div className="mb-2 text-xs font-medium text-(--ui-text-secondary)">
-              {label}
-              {t(" preview")}
-            </div>
-            <pre
-              className={`max-h-56 select-text overflow-auto whitespace-pre-wrap break-words text-xs text-(--ui-text-secondary) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
-            >
-              {boundedTextPreview(part.text)}
-            </pre>
-            <div className="mt-2 flex flex-wrap items-center gap-1">{renderActions(dismiss)}</div>
-            <Button motion="none" variant="ghost" type="button" onClick={showFull} className="mt-2">
-              {t("Show full content")}
-            </Button>
+      {hover.card(() => (
+        <div className="p-3">
+          <div className="mb-2 text-ui-caption font-medium text-(--ui-text-secondary)">
+            {label}
+            {t(" preview")}
           </div>
-        </Popover>
-      ) : null}
+          <pre
+            className={`max-h-56 select-text overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
+          >
+            {boundedTextPreview(part.text)}
+          </pre>
+          <div className="mt-2 flex flex-wrap items-center gap-1">{renderActions(dismiss)}</div>
+          <Button motion="none" variant="ghost" type="button" onClick={showFull} className="mt-2">
+            {t("Show full content")}
+          </Button>
+        </div>
+      ))}
       {open ? (
         <Modal title={label} size="lg" onClose={dismiss}>
-          <div className="sticky top-0 z-[1] flex flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-4 py-3">
+          <div className="sticky top-0 z-1 flex flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-4 py-3">
             {renderActions(dismiss, true)}
           </div>
           <pre
             data-selectable-agent-response={messageId}
-            className={`m-4 max-h-[65dvh] select-text overflow-auto whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-4 text-sm text-(--ui-tone-neutral-fg) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
+            className={`m-4 max-h-[65dvh] select-text overflow-auto whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-4 text-ui-body text-(--ui-tone-neutral-fg) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
           >
             <AttachmentTokenText text={part.text} attachments={attachments} />
           </pre>
@@ -149,7 +116,7 @@ export const UserTextPreview = memo(function UserTextPreview({
 }) {
   useLocale();
   return (
-    <div className="min-w-0 text-sm">
+    <div className="min-w-0 text-ui-body">
       {parts.map((part, index) =>
         part.compact ? (
           <TextCard

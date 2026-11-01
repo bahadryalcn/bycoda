@@ -10072,5 +10072,22 @@
   "Pure": "Puro",
   "Tinted": "Tingido",
   "Pure is true black in dark mode and white in light mode.": "Puro é preto absoluto no modo escuro e branco no modo claro.",
-  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "As cores de superfície personalizadas mantêm o próprio fundo. Escolha uma paleta de tema para usar Puro."
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "As cores de superfície personalizadas mantêm o próprio fundo. Escolha uma paleta de tema para usar Puro.",
+  "The editor is busy closing or moving. Try again in a moment.": "O editor está sendo fechado ou movido. Tente novamente em instantes.",
+  "Match Case": "Diferenciar maiúsculas de minúsculas",
+  "Match Whole Word": "Corresponder palavra inteira",
+  "Use Regular Expression": "Usar expressão regular",
+  "Notes sections": "Seções de notas",
+  "Close notes": "Fechar notas",
+  "Add folder": "Adicionar pasta",
+  "Open folder": "Abrir pasta",
+  "The draft changed while it was being prepared. Send it again.": "O rascunho mudou enquanto era preparado. Envie-o novamente.",
+  "Work item preview": "Visualização do item de trabalho",
+  "New worktree": "Nova árvore de trabalho",
+  "Type “{p0}” to confirm": "Digite “{p0}” para confirmar",
+  "Choose a date": "Escolher uma data",
+  "Resize panel": "Redimensionar painel",
+  "or": "ou",
+  "Alt": "Alt",
+  "Windows": "Windows"
 }

@@ -1,7 +1,6 @@
-import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle } from "../../../shared/ui/icons";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import {
   sessionCheckpointFileDiff,
@@ -155,26 +154,22 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
 
   if (!cwd || cwd === "~") {
     return (
-      <p className="grid h-full place-items-center text-[13px] text-[var(--ui-text-muted)]">
-        {t("No project folder")}
-      </p>
+      <div className="grid h-full place-items-center">
+        <EmptyState key="no-project" context="panel" description={t("No project folder")} />
+      </div>
     );
   }
   if (error) {
     return (
-      <div className="grid h-full place-items-center p-6 text-center">
-        <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
-        <p className="text-[13px] text-content">{t("Couldn’t load session changes")}</p>
-        <p className="mt-1 text-[12px] text-[var(--ui-text-secondary)]">{error}</p>
-        <Button
-          variant="ghost"
-          motion="none"
-          type="button"
-          onClick={() => setRetry((value) => value + 1)}
-          className="mt-3"
-        >
-          {t("Retry")}
-        </Button>
+      <div className="grid h-full place-items-center p-6">
+        <EmptyState
+          key="load-error"
+          kind="unavailable"
+          context="panel"
+          title={t("Couldn’t load session changes")}
+          description={error}
+          onRetry={() => setRetry((value) => value + 1)}
+        />
       </div>
     );
   }
@@ -185,9 +180,9 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
   }
   if (files.length === 0) {
     return (
-      <p className="grid h-full place-items-center text-[13px] text-[var(--ui-text-muted)]">
-        {t("No session changes")}
-      </p>
+      <div className="grid h-full place-items-center">
+        <EmptyState context="panel" description={t("No session changes")} />
+      </div>
     );
   }
 

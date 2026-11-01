@@ -165,7 +165,7 @@ export default function GuidedTour({
             className="usage-guide-tryit"
             variant="secondary"
             size="sm"
-            startIcon={<Play size={13} aria-hidden="true" />}
+            startIcon={<Play className="icon-sm" aria-hidden="true" />}
             onClick={() => tryIt(step)}
           >
             {step.tryIt.label}

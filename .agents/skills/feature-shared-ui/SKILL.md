@@ -229,3 +229,16 @@ color (`--color-active`, bars no longer follow currentColor) and `size="xs|sm|md
 on the icon scale; consumer color/width/font classes are inert. Consumer cleanup
 and `TerminalSpinner` size forwarding belong to the owning lines; see
 `temp/local/2026-10-28-overlays-impl/handoff.json`.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Shared primitives built and rules set in this round. API, when-to-use and "replaces" notes are in `docs/reference/ui-component-catalog.md` (including "Layout and structure" and "Control-choice boundaries"); tokens in `ui-design-system.md` ("Global tokens"); enforcement in "UI drift ratchet" there.
+
+- New or extended shared parts: `Tabs`/`TabStrip`, `PaneHeader`/`WindowChromeInset`, `SectionLabel`, `Surface`, `Divider`, `Sash`, `Meter`, `ToastRegion`/`Toast`/`ToastSlot`/`useToast`, `Sheet`, `InlineError`/`InlineMessage`, `EmptyState size="inline"`, `Spinner`/`LoadingText`, ConfirmDialog extensions, `ModalActions`, `Popover kind="dialog"`, TextareaField autosize/monospace, `PromptField`, `PopoverSearchHeader`, the picker kit, SearchableSelect icon/meta/group, `StatusBadge` and `Badge xs`, `DateTimeField`/`DateTimePicker` modes, identity icons, the shared Tooltip (shortcut, delay), `HoverCard`, the one shortcut formatter.
+- Tokens: one focus contract (`data-ui-focus-quiet`), one disabled model, `--layer-*`, `--motion-*`, `--ui-fill-*`, status utilities, global radius/space aliases, `--ui-surface-floating`.
+- Enforcement: `scripts/checks/check-ui-drift.mjs` with `scripts/checks/ui-drift-baseline.json` (1,964 findings at creation, 243 after wave 2); wired into `check:staged` and `check:changed`. CI wiring (`.github/workflows/ci.yml` preflight) is requested, not added.
+- Owner decisions recorded in `docs/reference/DESIGN.md` (2026-11-01, owner chat): "tamam düzeltmelere başla lütfen hepsini"; composer surface "buranın rengi 1e1e1e bunun yerine 0e0e0e ve light modda da tam tersi yada uygun şekilde".
+- Open requests from the handoffs: `Tab` `iconOnly`/`label`; `FileTypeIcon` size token; `SegmentedControl` leading icon per segment; `useDragResize` Sash props; `Skeleton` inline span; `ActionHost as`; `ColorSwatchRow showCustom`; `--layer-pane-overlay`/in-pane layer scale; a translucent native-popup colour role; SearchableSelect `triggerProps` tooltip; SkillPromptField on PromptField; browser specs that read native `title`, `[role="radio"]` section switches or Sash centres.
+- Unverified: no native run; fixture captures only for w1 tokens, layout, feedback, fields and w2-git (`temp/verification/ui-standards/`). The full vitest suite and `check-ui-boundaries` were not part of this round.

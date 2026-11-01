@@ -1,7 +1,17 @@
-import { Alert } from "../../../shared/ui/Alert";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Button } from "../../../shared/ui/Button";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import {
+  PickerFooter,
+  PickerList,
+  PickerPopover,
+  PopoverSearchHeader,
+  filterPickerOptions,
+  usePickerList,
+  type PickerOption,
+} from "../../../shared/ui/picker";
 import { t, useLocale } from "../../../shared/i18n";
 import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
 import {
@@ -9,8 +19,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useId,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
@@ -18,23 +31,17 @@ import { useProjectWorktrees } from "../../source-control/hooks/useProjectWorktr
 import type { Worktree } from "../../source-control/model/worktrees";
 import { MOD, SHIFT } from "../../../platform/tauri/platform";
 import { prettyCwd } from "../../../shared/lib/paths";
-import { isImeComposition } from "../../../shared/lib/keyboard";
 import type { WorkspaceMode } from "../../sessions/model/session";
 import {
-  Check,
   ChevronDown,
   ChevronRight,
   Folder,
   FolderTree,
   GitBranch,
-  Loader,
-  Search,
   Settings,
 } from "../../../shared/ui/icons";
 import { GitPickerTrigger } from "../../source-control/ui/GitPickerTrigger";
-import { Popover } from "../../../shared/ui/Popover";
 import { LAYER } from "../../../shared/lib/layers";
-import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { keybindingPressed, keybindingShortcutTokens } from "../../settings/model/settings";
 import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 
@@ -145,14 +152,15 @@ export function WorkspaceIdentity({ worktree }: { worktree: boolean }) {
   const Icon = worktree ? FolderTree : Folder;
   const label = worktree ? "Worktree" : "Current checkout";
   return (
-    <div
-      title={t("Workspace: {p0}", { p0: label })}
-      aria-label={t("Workspace {p0}", { p0: label })}
-      className="flex h-6 min-w-0 shrink-0 items-center gap-1.5 text-[12px] text-(--ui-text-secondary)"
-    >
-      <Icon className="size-3.5 shrink-0" />
-      <span className="truncate">{t(label)}</span>
-    </div>
+    <Tooltip label={t("Workspace: {p0}", { p0: label })}>
+      <div
+        aria-label={t("Workspace {p0}", { p0: label })}
+        className="flex h-6 min-w-0 shrink-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)"
+      >
+        <Icon className="icon-sm shrink-0" />
+        <span className="truncate">{t(label)}</span>
+      </div>
+    </Tooltip>
   );
 }
 
@@ -190,7 +198,11 @@ function WorkspaceModePicker({
   const [busyPath, setBusyPath] = useState<string>();
   const [pickError, setPickError] = useState<string>();
   const anchor = useRef<HTMLDivElement>(null);
-  const worktreeAnchor = useRef<HTMLButtonElement>(null);
+  const worktreeAnchor = useRef<HTMLElement | null>(null);
+  const listId = useId();
+  const existingRowId = `${listId}-option-2`;
+  const flyoutListId = `${listId}-worktrees`;
+  const [flyoutFocus, setFlyoutFocus] = useState(false);
   const closeWorktreeTimer = useRef<number | null>(null);
   const { data, error: loadError } = useProjectWorktrees(
     cwd,
@@ -237,11 +249,14 @@ function WorkspaceModePicker({
       setBusyPath(undefined);
     }
   };
-  const openWorktreeMenu = () => {
+  /** `focus` moves focus into the flyout (keyboard, click); hover leaves it where it is. */
+  const openWorktreeMenu = (focus = false) => {
     if (closeWorktreeTimer.current != null) {
       window.clearTimeout(closeWorktreeTimer.current);
       closeWorktreeTimer.current = null;
     }
+    worktreeAnchor.current = document.getElementById(existingRowId);
+    setFlyoutFocus(focus);
     setWorktreeMenu(true);
   };
   const closeWorktreeMenu = () => {
@@ -251,6 +266,10 @@ function WorkspaceModePicker({
     }
     setWorktreeMenu(false);
     setPickError(undefined);
+  };
+  const closeWorktreeMenuAndFocusList = () => {
+    closeWorktreeMenu();
+    document.getElementById(listId)?.focus({ preventScroll: true });
   };
   const scheduleCloseWorktreeMenu = () => {
     if (closeWorktreeTimer.current != null) {
@@ -270,6 +289,60 @@ function WorkspaceModePicker({
   );
   const Icon = mode === "worktree" ? FolderTree : Folder;
 
+  // "Existing worktree…" is an action row of the kit list (it opens the flyout instead of
+  // changing the mode); the flyout anchors to that row, found again by its option id.
+  const modeOptions: PickerOption[] = [
+    { value: "current", title: t("Current checkout"), icon: <Folder className="icon-md" /> },
+    { value: "worktree", title: t("New worktree"), icon: <FolderTree className="icon-md" /> },
+    ...(onSelectWorktree
+      ? [
+          {
+            value: "existing",
+            title: t("Existing worktree…"),
+            icon: <FolderTree className="icon-md" />,
+            trailing: <ChevronRight aria-hidden className="icon-sm" strokeWidth={1.75} />,
+            onAction: () => openWorktreeMenu(true),
+          },
+        ]
+      : []),
+  ];
+  const worktreeOptions: PickerOption[] = worktrees.map((tree) => ({
+    value: tree.path,
+    title: tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) }),
+    description: prettyCwd(tree.path),
+    icon: busyPath === tree.path ? <Spinner size="md" /> : <FolderTree className="icon-md" />,
+  }));
+
+  // The row keeps the submenu semantics of the flyout it opens.
+  useEffect(() => {
+    if (!open || !onSelectWorktree) return;
+    const row = document.getElementById(existingRowId);
+    row?.setAttribute("aria-haspopup", "menu");
+    row?.setAttribute("aria-expanded", String(worktreeMenu));
+  }, [open, worktreeMenu, onSelectWorktree, existingRowId]);
+
+  const onListMouseOver = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!onSelectWorktree || !(event.target instanceof Element)) return;
+    const row = event.target.closest<HTMLElement>('[role="option"]');
+    if (!row) return;
+    if (row.id === existingRowId) openWorktreeMenu(false);
+    else closeWorktreeMenu();
+  };
+  const onListKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!onSelectWorktree) return;
+    if (
+      event.key === "ArrowRight" &&
+      event.target instanceof Element &&
+      event.target.getAttribute("aria-activedescendant") === existingRowId
+    ) {
+      event.preventDefault();
+      openWorktreeMenu(true);
+    } else if (event.key === "ArrowLeft" && worktreeMenu) {
+      event.preventDefault();
+      closeWorktreeMenu();
+    }
+  };
+
   return (
     <div ref={anchor} className="relative flex min-w-0 shrink-0">
       {!host ? (
@@ -278,7 +351,7 @@ function WorkspaceModePicker({
           motion="none"
           type="button"
           disabled={!enabled}
-          title={t("Workspace: {p0}", { p0: label })}
+          tooltip={t("Workspace: {p0}", { p0: label })}
           shortcut={shortcut}
           aria-label={t("Workspace {p0}", { p0: label })}
           aria-keyshortcuts={shortcutTokens ?? undefined}
@@ -294,90 +367,39 @@ function WorkspaceModePicker({
           }}
           className="-ml-1.5 flex min-w-0 max-w-48 items-center gap-1.5"
         >
-          <Icon className="size-3.5 shrink-0" />
+          <Icon className="icon-sm shrink-0" />
           <span className="truncate">{label}</span>
-          <ChevronDown className="size-3 shrink-0 text-(--ui-text-secondary)" />
+          <ChevronDown className="icon-xs shrink-0 text-(--ui-text-secondary)" />
         </Button>
       ) : null}
-      {open ? (
-        <Popover
-          anchor={anchor}
-          side={popoverSide}
-          width={240}
-          constrainHeight={false}
-          onDismiss={dismiss}
-          ignore={WORKSPACE_SURFACES}
-          role="dialog"
-          aria-label={t("Workspace")}
-          data-workspace-picker
-          className="overflow-hidden p-1.5"
-        >
-          <div className="flex items-center justify-between gap-3 px-2 py-1 text-[11px] font-medium text-(--ui-text-secondary)">
-            <span>{t("Workspace")}</span>
-            {shortcut ? <ShortcutKbd size="xs">{shortcut}</ShortcutKbd> : null}
+      <PickerPopover
+        open={open}
+        anchor={anchor}
+        side={popoverSide}
+        width={240}
+        maxHeight={400}
+        onDismiss={dismiss}
+        ignore={WORKSPACE_SURFACES}
+        label={t("Workspace")}
+        data-workspace-picker=""
+        header={
+          <div className="px-3">
+            <SectionLabel
+              as="div"
+              actions={shortcut ? <ShortcutKbd size="xs">{shortcut}</ShortcutKbd> : undefined}
+            >
+              {t("Workspace")}
+            </SectionLabel>
           </div>
-          {(
-            [
-              ["current", "Current checkout", Folder],
-              ["worktree", "New worktree", FolderTree],
-            ] as const
-          ).map(([value, text, RowIcon]) => (
-            <Button
-              variant="item"
-              motion="none"
-              key={value}
-              type="button"
-              aria-pressed={mode === value}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={closeWorktreeMenu}
-              onClick={() => {
-                onChange(value);
-                dismiss();
-              }}
-              className={`flex w-full items-center gap-2 `}
-            >
-              <RowIcon className="size-4 shrink-0 text-(--ui-text-secondary)" />
-              <span className="flex-1">{text}</span>
-              {mode === value ? <Check className="size-3.5" /> : null}
-            </Button>
-          ))}
-          {onSelectWorktree ? (
-            <Button
-              variant="item"
-              motion="none"
-              ref={worktreeAnchor}
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={worktreeMenu}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={openWorktreeMenu}
-              onMouseLeave={scheduleCloseWorktreeMenu}
-              onFocus={openWorktreeMenu}
-              onClick={openWorktreeMenu}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowRight") {
-                  event.preventDefault();
-                  openWorktreeMenu();
-                }
-                if (event.key === "ArrowLeft" && worktreeMenu) {
-                  event.preventDefault();
-                  closeWorktreeMenu();
-                }
-              }}
-              className={`flex w-full items-center gap-2 `}
-            >
-              <FolderTree className="size-4 shrink-0 text-(--ui-text-secondary)" />
-              <span className="flex-1">{t("Existing worktree…")}</span>
-              <ChevronRight className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
-            </Button>
-          ) : null}
-          {onOpenSettings ? (
-            <div className="h-9 border-t border-stroke">
+        }
+        footer={
+          onOpenSettings ? (
+            <PickerFooter align="start">
               <Button
-                variant="item"
-                motion="none"
+                variant="ghost"
+                size="sm"
                 type="button"
-                title={t("Open worktree settings")}
+                tooltip={t("Open worktree settings")}
                 aria-label={t("Open worktree settings")}
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={closeWorktreeMenu}
@@ -385,90 +407,92 @@ function WorkspaceModePicker({
                   setOpen(false);
                   onOpenSettings();
                 }}
-                className="flex h-full w-full items-center gap-2"
               >
-                <Settings
-                  className="size-4 shrink-0 text-(--ui-text-secondary)"
-                  strokeWidth={1.75}
-                />
-                <span className="flex-1">{t("Worktree settings")}</span>
+                <Settings aria-hidden className="icon-sm" strokeWidth={1.75} />
+                {t("Worktree settings")}
               </Button>
-            </div>
-          ) : null}
-        </Popover>
-      ) : null}
-      {open && worktreeMenu ? (
-        <Popover
-          anchor={worktreeAnchor}
-          side="right"
-          gap={SUBMENU_GAP}
-          width={300}
-          maxHeight={320}
-          layer={LAYER.submenu}
-          role="menu"
-          aria-label={t("Existing worktrees")}
-          data-existing-worktrees-submenu
-          className="flex flex-col overflow-hidden p-1.5"
-          onMouseEnter={openWorktreeMenu}
+            </PickerFooter>
+          ) : null
+        }
+      >
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          onMouseOver={onListMouseOver}
+          onMouseLeave={onSelectWorktree ? scheduleCloseWorktreeMenu : undefined}
+          onKeyDown={onListKeyDown}
+        >
+          <PickerList
+            id={listId}
+            label={t("Workspace")}
+            options={modeOptions}
+            value={mode}
+            onChange={(value: string) => {
+              onChange(value as WorkspaceMode);
+              dismiss();
+            }}
+          />
+        </div>
+      </PickerPopover>
+      <PickerPopover
+        open={open && worktreeMenu}
+        anchor={worktreeAnchor}
+        side="right"
+        gap={SUBMENU_GAP}
+        width={300}
+        maxHeight={320}
+        layer={LAYER.submenu}
+        role="presentation"
+        restoreFocus={false}
+        label={t("Existing worktrees")}
+        data-existing-worktrees-submenu=""
+        onDismiss={(reason) => {
+          // An outside press is the workspace menu to handle; Escape closes only the flyout.
+          if (reason === "escape") closeWorktreeMenuAndFocusList();
+        }}
+      >
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          onMouseEnter={() => openWorktreeMenu(false)}
           onMouseLeave={scheduleCloseWorktreeMenu}
           onKeyDown={(event) => {
             if (event.key === "ArrowLeft") {
               event.preventDefault();
-              closeWorktreeMenu();
-              worktreeAnchor.current?.focus();
+              closeWorktreeMenuAndFocusList();
             }
           }}
         >
-          {!data && !loadError ? (
-            <p className="flex items-center gap-2 px-2 py-3 text-[12px] text-(--ui-text-secondary)">
-              <Loader className="size-3.5 animate-spin" />
-              {t("Loading worktrees…")}
-            </p>
-          ) : null}
-          <div className="min-h-0 overflow-y-auto">
-            {worktrees.map((tree) => (
-              <Button
-                variant="item"
-                motion="none"
-                key={tree.path}
-                type="button"
-                role="menuitem"
-                title={tree.path}
-                disabled={!!busyPath}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => void selectWorktree(tree)}
-                className="flex min-h-11 w-full items-center gap-2"
-              >
-                {busyPath === tree.path ? (
-                  <Loader className="size-4 shrink-0 animate-spin text-(--ui-text-secondary)" />
-                ) : (
-                  <FolderTree className="size-4 shrink-0 text-(--ui-text-secondary)" />
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px]">
-                    {tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) })}
-                  </span>
-                  <span className="block truncate font-mono text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-                    {prettyCwd(tree.path)}
-                  </span>
-                </span>
-              </Button>
-            ))}
-            {data && worktrees.length === 0 ? (
-              <p className="px-2 py-3 text-[12px] text-(--ui-text-secondary)">
-                {t("No existing worktrees")}
-              </p>
-            ) : null}
-          </div>
-          {pickError || loadError ? (
-            <Alert tone="danger" role="alert">
-              {pickError || loadError}
-            </Alert>
-          ) : null}
-        </Popover>
-      ) : null}
+          <FocusOnMount enabled={flyoutFocus} id={flyoutListId} />
+          <PickerList
+            id={flyoutListId}
+            label={t("Existing worktrees")}
+            options={worktreeOptions}
+            value={null}
+            onChange={(path: string) => {
+              const tree = worktrees.find((item) => item.path === path);
+              if (tree) void selectWorktree(tree);
+            }}
+            disabled={!!busyPath}
+            loading={!data && !loadError}
+            loadingLabel={t("Loading worktrees…")}
+            error={pickError || loadError}
+            emptyLabel={t("No existing worktrees")}
+          />
+        </div>
+      </PickerPopover>
     </div>
   );
+}
+
+/** Moves focus to a list after the popover has placed itself (its first pass is hidden). */
+function FocusOnMount({ enabled, id }: { enabled: boolean; id: string }) {
+  useEffect(() => {
+    if (!enabled) return;
+    const frame = requestAnimationFrame(() =>
+      document.getElementById(id)?.focus({ preventScroll: true }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [enabled, id]);
+  return null;
 }
 
 type BaseBranch = { name: string; remote: string | null };
@@ -506,22 +530,17 @@ export function WorktreeBasePicker({
   useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
   const [query, setQuery] = useState("");
   const anchor = useRef<HTMLDivElement>(null);
-  const search = useRef<HTMLInputElement>(null);
-  const rows = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+  const options = useMemo<PickerOption[]>(() => {
     const unique = new Map<string, BaseBranch>();
     for (const branch of branches) unique.set(branchRef(branch), branch);
-    return [...unique.values()].filter((branch) =>
-      branchRef(branch).toLowerCase().includes(needle),
-    );
-  }, [branches, query]);
-  const [active, setActive] = useKeyedActiveIndex(`${open}:${query}`, rows.length);
+    return [...unique.keys()].map((ref) => ({
+      value: ref,
+      title: ref,
+      icon: <GitBranch className="icon-md" />,
+    }));
+  }, [branches]);
+  const rows = useMemo(() => filterPickerOptions(options, query), [options, query]);
 
-  useEffect(() => {
-    if (!open) return;
-    const frame = requestAnimationFrame(() => search.current?.focus());
-    return () => cancelAnimationFrame(frame);
-  }, [open]);
   // A disabled picker closes.
   if (!enabled && open) setOpen(false);
 
@@ -530,6 +549,15 @@ export function WorktreeBasePicker({
     setQuery("");
     onClose?.();
   };
+  const picker = usePickerList({
+    options: rows,
+    value: selected,
+    onChange: (ref) => {
+      onChange(ref);
+      dismiss();
+    },
+    resetKey: `${open}:${query}`,
+  });
 
   return (
     <div ref={anchor} className="relative flex min-w-0 shrink-0">
@@ -544,95 +572,33 @@ export function WorktreeBasePicker({
         label={t("From {p0}", { p0: selected })}
         loading={loading}
       />
-      {open ? (
-        <Popover
-          anchor={anchor}
-          side={popoverSide}
-          width={280}
-          minHeight={160}
-          maxHeight={280}
-          onDismiss={dismiss}
-          role="dialog"
-          aria-label={t("Worktree base branch")}
-          className="flex flex-col overflow-hidden"
-        >
-          <label className="flex shrink-0 items-center gap-2 border-b border-stroke px-2 py-2.5 text-(--ui-text-secondary)">
-            <Search className="size-3.5 shrink-0" />
-            <SearchInput
-              ref={search}
-              value={query}
-              placeholder={t("Search base branches…")}
-              aria-label={t("Search base branches")}
-              spellCheck={false}
-              onChange={(event) => {
-                setQuery(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (isImeComposition(event.nativeEvent)) return;
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setActive((index) =>
-                    Math.max(
-                      0,
-                      Math.min(rows.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
-                    ),
-                  );
-                }
-                if (event.key === "Enter" && rows[active]) {
-                  event.preventDefault();
-                  onChange(branchRef(rows[active]));
-                  dismiss();
-                }
-              }}
-              className="min-w-0 flex-1"
-            />
-          </label>
-          <div
-            role="listbox"
-            aria-label={t("Base branches")}
-            className="min-h-0 flex-1 overflow-y-auto p-1.5"
-          >
-            {rows.map((branch, index) => {
-              const ref = branchRef(branch);
-              const selectedRow = ref === selected;
-              const highlighted = index === active;
-              return (
-                <Button
-                  selected={highlighted}
-                  fullWidth
-                  variant="item"
-                  motion="none"
-                  key={ref}
-                  type="button"
-                  role="option"
-                  aria-selected={selectedRow}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setActive(index)}
-                  onClick={() => {
-                    onChange(ref);
-                    dismiss();
-                  }}
-                  className={`flex w-full items-center gap-2 `}
-                >
-                  {selectedRow ? (
-                    <Check className="size-3.5 shrink-0" />
-                  ) : (
-                    <GitBranch className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
-                  )}
-                  <span className={`min-w-0 flex-1 truncate ${selectedRow ? "font-medium" : ""}`}>
-                    {ref}
-                  </span>
-                </Button>
-              );
-            })}
-            {rows.length === 0 ? (
-              <p className="px-2 py-3 text-[12px] text-(--ui-text-secondary)">
-                {t("No matching branches")}
-              </p>
-            ) : null}
-          </div>
-        </Popover>
-      ) : null}
+      <PickerPopover
+        open={open}
+        anchor={anchor}
+        side={popoverSide}
+        width={280}
+        minHeight={160}
+        maxHeight={280}
+        onDismiss={dismiss}
+        label={t("Worktree base branch")}
+        header={
+          <PopoverSearchHeader
+            label={t("Search base branches")}
+            placeholder={t("Search base branches…")}
+            value={query}
+            onValueChange={setQuery}
+            {...picker.searchProps}
+          />
+        }
+      >
+        <PickerList
+          label={t("Base branches")}
+          controller={picker}
+          query={query}
+          checkPlacement="icon"
+          emptyLabel={t("No matching branches")}
+        />
+      </PickerPopover>
     </div>
   );
 }

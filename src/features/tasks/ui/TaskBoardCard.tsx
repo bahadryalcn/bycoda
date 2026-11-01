@@ -1,7 +1,9 @@
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge } from "../../../shared/ui/Badge";
 import { Modal } from "../../../shared/ui/Modal";
-import { InlineAction } from "../../../shared/ui/ActionHost";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { taskWorkspaceState } from "../../workspaces/model/taskWorkspaceState";
 import { type BoardTask, taskTimeLabel } from "../model/taskClient";
@@ -24,7 +26,6 @@ import {
   ChevronUp,
   GitBranch,
   GripVertical,
-  LoaderCircle,
   MessageSquare,
   MoreHorizontal,
   Pencil,
@@ -145,7 +146,9 @@ function TaskCardBody({
     ) : null;
   return (
     // A click anywhere on the card but its buttons opens the detail panel.
-    <article
+    <ActionHost
+      as="article"
+      selected={selected}
       aria-label={task.title}
       aria-busy={actions.pending || undefined}
       aria-current={selected || undefined}
@@ -154,8 +157,7 @@ function TaskCardBody({
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && event.key === "Enter") onOpen();
       }}
-      data-selected={selected || undefined}
-      className="task-board-card cursor-pointer rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-2.5 py-2 hover:bg-(--ui-surface-hover) data-[selected]:bg-(--ui-surface-selected)"
+      className="task-board-card cursor-pointer rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-2.5 py-2"
     >
       {goal ? (
         <p
@@ -172,10 +174,7 @@ function TaskCardBody({
         className="line-clamp-2 break-words text-ui-secondary font-medium text-(--ui-tone-neutral-fg)"
       >
         {actions.pending ? (
-          <LoaderCircle
-            aria-label={t("Loading…")}
-            className="mr-1 inline-block icon-xs animate-spin"
-          />
+          <Spinner size="xs" label={t("Loading…")} className="mr-1 inline-block" />
         ) : null}
         <GripVertical aria-hidden="true" className="task-drag-grip icon-xs" strokeWidth={1.75} />
         {task.title}
@@ -194,6 +193,7 @@ function TaskCardBody({
             tone="danger"
             layout="text"
             align="start"
+            data-no-drag=""
             onClick={(event) => {
               event.stopPropagation();
               setFailureOpen(true);
@@ -300,7 +300,7 @@ function TaskCardBody({
           </Modal>
         </div>
       ) : null}
-    </article>
+    </ActionHost>
   );
 }
 
@@ -548,7 +548,7 @@ export function TaskActions({
     id: action.id,
     label: shortLabel(action),
     ariaLabel: action.label,
-    icon: action.loading ? <LoaderCircle className="icon-xs animate-spin" /> : action.icon,
+    icon: action.loading ? <Spinner size="xs" /> : action.icon,
     disabled: action.disabled,
     tone: "neutral" as const,
     onSelect: action.run,
@@ -582,6 +582,7 @@ export function TaskActions({
   return (
     <div
       className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1"
+      data-no-drag=""
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
     >
@@ -605,12 +606,7 @@ export function TaskActions({
         />
       ) : null}
       {reviewError ? (
-        <span
-          role="alert"
-          className="basis-full break-words text-ui-caption text-(--ui-tone-danger-fg)"
-        >
-          {reviewError}
-        </span>
+        <InlineError className="basis-full">{reviewError}</InlineError>
       ) : null}
       {compact && overflow.length > 0 ? (
         <>

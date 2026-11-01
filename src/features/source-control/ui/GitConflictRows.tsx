@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
-import { MoreHorizontal, FileDiff } from "../../../shared/ui/icons";
+import { FileDiff } from "../../../shared/ui/icons";
+import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { relativeDirname as dirname } from "../../../shared/lib/paths";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -55,69 +56,56 @@ export function GitConflictRows({
         const disabled = busy !== null;
         return (
           <li key={row.relative} data-conflict={row.relative}>
-            <div
-              className={`pr-2 pl-2 ${
-                selected === row.relative ? "bg-selection" : "hover:bg-[var(--ui-surface-hover)]"
-              }`}
+            <ActionHost
+              selected={selected === row.relative}
+              className="h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 pl-2 leading-none"
             >
-              <div className="flex h-7 w-full items-center gap-1 leading-none">
-                <Button
-                  variant="item"
-                  motion="none"
-                  type="button"
-                  title={
-                    hasFile ? t("Open {p0} in the editor", { p0: row.relative }) : row.relative
-                  }
-                  disabled={!hasFile || disabled}
-                  onClick={() => onOpen(row)}
-                  onDoubleClick={() => onOpen(row, true)}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                >
-                  <FileTypeIcon name={name} isDir={false} size={16} />
-                  <span className="min-w-0 flex-1 truncate">
-                    <span className="text-[13px] font-medium">{name}</span>
-                    {dir ? (
-                      <span className="ml-1.5 text-[11px] text-[var(--ui-text-muted)]">{dir}</span>
-                    ) : null}
-                  </span>
-                </Button>
-                {canCompare && conflictCanCompare(row.kind) ? (
-                  <Button
-                    variant="ghost"
-                    motion="none"
-                    iconOnly
-                    label={t("Compare")}
-                    tooltip={t(
-                      "Compare the current and incoming versions with the base, read-only",
-                    )}
-                    disabled={disabled}
-                    onClick={() => onCompare(row)}
-                  >
-                    <FileDiff size={14} />
-                  </Button>
-                ) : null}
-                <Button
-                  variant="ghost"
-                  motion="none"
-                  iconOnly
-                  label={t("Resolve {p0}", { p0: row.relative })}
-                  loading={working}
-                  disabled={disabled}
-                  aria-haspopup="menu"
-                  aria-expanded={menu?.row.relative === row.relative}
-                  onClick={(event) => setMenu({ row, anchor: event.currentTarget })}
-                >
-                  <MoreHorizontal size={14} />
-                </Button>
-                <span
-                  title={info.title}
-                  aria-label={info.label}
-                  className="w-5 shrink-0 text-right font-mono text-[11px] font-semibold text-danger"
-                >
-                  {info.letter}
+              <Button
+                variant="item"
+                motion="none"
+                type="button"
+                tooltip={
+                  hasFile ? t("Open {p0} in the editor", { p0: row.relative }) : row.relative
+                }
+                disabled={!hasFile || disabled}
+                onClick={() => onOpen(row)}
+                onDoubleClick={() => onOpen(row, true)}
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+              >
+                <FileTypeIcon name={name} isDir={false} />
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="text-ui-secondary font-medium">{name}</span>
+                  {dir ? (
+                    <span className="ml-1.5 text-ui-micro text-(--ui-text-muted)">{dir}</span>
+                  ) : null}
                 </span>
-              </div>
-            </div>
+              </Button>
+              {canCompare && conflictCanCompare(row.kind) ? (
+                <InlineAction
+                  label={t("Compare")}
+                  tooltip={t("Compare the current and incoming versions with the base, read-only")}
+                  disabled={disabled}
+                  onClick={() => onCompare(row)}
+                >
+                  <FileDiff className="icon-sm" aria-hidden />
+                </InlineAction>
+              ) : null}
+              <InlineMoreAction
+                label={t("Resolve {p0}", { p0: row.relative })}
+                reveal={working ? "always" : "interaction"}
+                loading={working}
+                disabled={disabled}
+                expanded={menu?.row.relative === row.relative}
+                onOpen={(anchor) => setMenu({ row, anchor })}
+              />
+              <span
+                title={info.title}
+                aria-label={info.label}
+                className="w-5 shrink-0 text-right font-mono text-ui-micro font-semibold text-(--ui-tone-danger-fg)"
+              >
+                {info.letter}
+              </span>
+            </ActionHost>
           </li>
         );
       })}

@@ -127,7 +127,9 @@ it("uses the interface typeface for branch names and search", async () => {
   const search = picker.querySelector<HTMLInputElement>(
     'input[aria-label="Search or create a branch"]',
   )!;
-  const branchName = picker.querySelector<HTMLElement>('[role="option"] span')!;
+  const branchName = [...picker.querySelectorAll<HTMLElement>('[role="option"] span')].find(
+    (node) => node.textContent === "main" && node.className.includes("font-medium"),
+  )!;
 
   expect(search.className).not.toContain("font-mono");
   expect(branchName.className).not.toContain("font-mono");

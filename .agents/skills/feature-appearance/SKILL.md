@@ -320,3 +320,13 @@ Delivered in source (uncommitted; unit/fixture checks pending, no installed-buil
 - The Motion section states that the OS reduced-motion setting keeps decorative animations still. Agent crew group and row titles no longer repeat.
 - Proposal (not owner-confirmed): visual Light/Dark/System preview cards and theme cards with light/dark tones were in the V3-020 target; the delivered source keeps the existing mode/palette controls and one live preview.
 - Unverified: 1280/800 light/dark/custom-theme screenshots.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Appearance (`src/features/settings/ui/Appearance*`, `RailBackgroundControls`, `src/styles/**`) in the standards round.
+
+- Done: mode cards on `RadioTiles` (selected tile `--ui-border-accent`, not the focus ring colour); interface scale is a Slider applied on release (`onValueCommit`); rail background colour is a swatch Button + `Popover kind="dialog"` hosting `ColorPickerPopover` (no native colour input); Pure/Tinted background and the composer surface step recorded as owner decisions in `DESIGN.md` (2026-11-01 composer quote); focus ring, disabled model, `--layer-*`, `--motion-*`, `--ui-fill-*`, status utilities and `--ui-surface-floating` documented under "Global tokens" in `ui-design-system.md`.
+- Left: tiny chart/preview radii (3px/2px) in `AppearancePreviews`/`AppearanceSettings` css; `AppearancePreviews.css` 22px.
+- Unverified: 1280/800 light/dark/custom-theme screenshots of the tiles and scale slider; fixture captures of the focus contract are in `temp/verification/ui-standards/w1-tokens/` (fixture, not the native app).

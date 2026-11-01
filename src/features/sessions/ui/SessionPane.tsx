@@ -1,7 +1,8 @@
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { useLocale, useT } from "../../../shared/i18n";
-import { ChevronDown, GripVertical, Loader, StickyNote, X } from "../../../shared/ui/icons";
+import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
 import { sessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
@@ -307,7 +308,7 @@ function RewoundHistoryDisclosure({
   return (
     <details
       data-rewind-history
-      className="mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto border-b border-(--ui-tone-neutral-border) px-3 py-2 text-xs text-[var(--ui-text-secondary)]"
+      className="mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto border-b border-(--ui-tone-neutral-border) px-3 py-2 text-ui-caption text-[var(--ui-text-secondary)]"
     >
       <summary className="cursor-pointer hover:text-(--ui-tone-neutral-fg)">
         {t("Rewound history ({p0})", { p0: history.length })}
@@ -680,11 +681,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (requestId: number, decision: ApprovalDecision) => onApproval(session.id, requestId, decision),
     [onApproval, session.id],
   );
-  const approvalContext = useMemo(() => ({
-    get session() { return currentSessionRef.current; },
-    getSession: () => currentSessionRef.current,
-    dispatch: onApproval,
-  }), [onApproval, currentSessionRef]);
+  const approvalContext = useMemo(
+    () => ({
+      get session() {
+        return currentSessionRef.current;
+      },
+      getSession: () => currentSessionRef.current,
+      dispatch: onApproval,
+    }),
+    [onApproval, currentSessionRef],
+  );
   const replyQuestion = useCallback(
     (requestId: number, reply: UserQuestionReply) => onQuestionReply(session.id, requestId, reply),
     [onQuestionReply, session.id],
@@ -1052,7 +1058,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (provider: ProviderAccountProvider, accountId: string) =>
       onSelectProviderAccount?.(session.id, provider, accountId),
   );
-  const composerPromptHistory = useStableCallback(() => userPromptHistory(currentSessionRef.current));
+  const composerPromptHistory = useStableCallback(() =>
+    userPromptHistory(currentSessionRef.current),
+  );
   const stopDockAgent = useStableCallback((agent: DockAgent) =>
     agent.callId ? stopBackground(agent.callId) : Promise.reject(new Error("No call to stop")),
   );
@@ -1385,7 +1393,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             label: t("Notes"),
             ariaLabel: t("Open notes panel"),
             shortcut: notesShortcut,
-            icon: <StickyNote className="size-3.5" strokeWidth={1.75} />,
+            icon: <StickyNote className="icon-sm" strokeWidth={1.75} />,
             onSelect: toggleNotesPanel,
           },
         ]
@@ -1409,7 +1417,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             shortcut={closeShortcut}
             onClick={() => onClose(session.id)}
           >
-            <X className="size-3.5" strokeWidth={1.75} />
+            <X className="icon-sm" strokeWidth={1.75} />
           </Button>
         ) : null
       }
@@ -1469,7 +1477,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           >
             {onPaneDragStart ? (
               <GripVertical
-                className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+                className="icon-sm shrink-0 text-(--ui-text-secondary)"
                 strokeWidth={1.75}
               />
             ) : null}
@@ -1495,7 +1503,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
       ) : null}
       {!hasPaneHeader ? (
         titleBarSlot ? (
-          // A lone chat's actions live in the title bar's chrome row beside its tab.
+          // A lone chat's actions live in the title bar's chrome row beside its tab (pane-hosted portal,
+          // not a popover: the target is the title bar slot).
           visible ? (
             createPortal(
               <>
@@ -1566,7 +1575,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           {fileRevertNotice ? (
             <Alert tone={fileRevertNotice.skipped.length ? "warning" : "info"} role="status">
               <div
-                className="flex max-h-48 min-w-0 flex-col gap-2 overflow-auto text-sm"
+                className="flex max-h-48 min-w-0 flex-col gap-2 overflow-auto text-ui-body"
                 data-session-files-revert-result
               >
                 <p>
@@ -1611,13 +1620,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             />
           ) : null}
           {remoteSessionLoading ? (
-            <div
-              role="status"
-              className="flex h-full min-h-0 items-center justify-center gap-2 text-ui-secondary text-(--ui-text-secondary)"
-            >
-              <Loader className="size-4 shrink-0 animate-spin" strokeWidth={1.75} aria-hidden />
-              {t("Loading conversation…")}
-            </div>
+            <LoadingText layout="fill">{t("Loading conversation…")}</LoadingText>
           ) : isEmpty ? (
             session.inboxAsk ? (
               <div className="scrollbar-none h-full min-h-0 overflow-y-auto">
@@ -1695,7 +1698,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           : undefined
                       }
                       onHandoff={
-                        !session.inboxAsk && !session.worktreeRemoved && onHandoff ? handoff : undefined
+                        !session.inboxAsk && !session.worktreeRemoved && onHandoff
+                          ? handoff
+                          : undefined
                       }
                       onJumpToBottomChange={setShowJumpToBottom}
                       onReadingChange={setReadingHistory}
@@ -1754,18 +1759,19 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 )}
               </LiveSessionBlocks>
               {showJumpToBottom ? (
+                // z-30: in-pane overlay above the transcript; no in-pane layer scale exists, so the literal stays.
                 <div className="pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center">
                   <Button
                     iconOnly
                     label={t("Jump to latest")}
                     variant="ghost"
                     type="button"
-                    title={t("Jump to latest")}
+                    tooltip={t("Jump to latest")}
                     aria-label={t("Jump to latest")}
                     data-jump-to-bottom
                     onClick={() => jumpToBottomRef.current?.()}
                   >
-                    <ChevronDown className="size-4" strokeWidth={2} />
+                    <ChevronDown className="icon-md" strokeWidth={2} />
                   </Button>
                 </div>
               ) : null}

@@ -163,7 +163,9 @@ export function TaskBoardColumns({
               >
                 <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-ui-caption font-medium text-(--ui-text-secondary)">
                   <span className="min-w-0 flex-1 truncate">{t(COLUMN_LABELS[status])}</span>
-                  <Badge className="shrink-0 tabular-nums">{column.length}</Badge>
+                  <Badge variant="count" className="shrink-0 tabular-nums">
+                    {column.length}
+                  </Badge>
                 </h2>
                 <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 pb-1.5">
                   {column.map((task) => (

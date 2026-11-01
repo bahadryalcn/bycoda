@@ -21,6 +21,7 @@ import { JobList } from "./SocialManagement";
 import { SocialBulkComposer } from "./SocialBulkComposer";
 import { threadTarget } from "./socialBulk";
 import { Composer, Empty, Notice, StatusBadge, names, time, type Props } from "./socialShared";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 
 export function Inbox({
   client,
@@ -146,7 +147,7 @@ export function Inbox({
             <Button variant="ghost" size="sm" loading={pollingPending} disabled={socialLocked || pollingPending || !snapshot.hostOnline}
               aria-pressed={!!snapshot.pollingEnabled}
               aria-label={snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
-              title={snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
+              tooltip={snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
               onClick={() => void pendingUi.run("inbox.toggle-refresh", async () => {
                 setPollingPending(true);
                 try { await run(() => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }), snapshot.pollingEnabled ? t("Inbox auto-refresh turned off.") : t("Auto-refresh turned on for permitted accounts.")); }
@@ -490,7 +491,7 @@ export function Inbox({
               </label>
               <div className="social-conversation">
                 {detail.loading ? (
-                  <Notice kind="loading" title={t("Loading conversation history")} />
+                  <LoadingText>{t("Loading conversation history")}</LoadingText>
                 ) : null}
                 {detail.error ? <Notice kind="error">{detail.error}<Button variant="link" loading={detail.loading} onClick={detail.retry}>{t("Retry loading history")}</Button></Notice> : null}
                 {(!summary?.eventsPreview || detail.value ? thread.events : []).map((event) => (

@@ -10,7 +10,9 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Modal } from "../../../shared/ui/Modal";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import "./ServersView.css";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
@@ -20,6 +22,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { QuickConnect } from "./QuickConnect";
 import {
   useOpenQuickServerTerminal,
@@ -39,7 +42,6 @@ import {
 } from "../model/serverInventory";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import {
-  Loader,
   LayoutGrid,
   ListBullet,
   Plus,
@@ -391,21 +393,20 @@ export function ServersView({
       data-app-servers
       className="@container/servers flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-surface) text-content"
     >
-      <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
-        data-tauri-drag-region="deep"
+      <PaneHeader
+        dragRegion
+        chromeInset={!besideRail ? true : compactRail ? "compact" : false}
+        className="select-none"
+        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        trailing={IS_MAC ? null : <WindowControls />}
       >
-        {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-sm">
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-body">
             <Server aria-hidden className="icon-sm shrink-0 text-(--ui-text-muted)" />
             <span className="truncate">{t("Servers")}</span>
           </div>
         </ToolHeader>
-        {IS_MAC ? null : <WindowControls />}
-      </div>
+      </PaneHeader>
       <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
         <div className="servers-search-actions flex min-w-0 basis-64 flex-1 items-center gap-2">
           {showCollectionTools ? (
@@ -429,7 +430,7 @@ export function ServersView({
             onClick={() => setFiltersOpen(!filtersOpen)}
           >
             <ListFilter aria-hidden className="icon-sm" />
-            {filterCount > 0 ? <span aria-hidden className="text-xs tabular-nums">{filterCount}</span> : null}
+            {filterCount > 0 ? <span aria-hidden className="text-ui-caption tabular-nums">{filterCount}</span> : null}
           </Button>
           {filtersOpen ? (
             <Popover
@@ -570,13 +571,9 @@ export function ServersView({
         </div>
       ) : null}
       {loading ? (
-        <div
-          role="status"
-          className="flex items-center gap-2 px-3 py-2 text-sm text-(--ui-text-muted)"
-        >
-          <Loader aria-hidden className="icon-sm animate-spin motion-reduce:animate-none" />
+        <LoadingText className="px-3 py-2">
           {loaded ? t("Refreshing servers…") : t("Loading servers…")}
-        </div>
+        </LoadingText>
       ) : null}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col @min-[44rem]/servers:flex-row">
         <div
@@ -612,7 +609,7 @@ export function ServersView({
           {servers.length > 0 || !loaded ? (
             <div
               aria-busy={bulkBusy}
-              className="servers-selection-bar sticky top-0 z-[1] bg-(--ui-surface) text-xs"
+              className="servers-selection-bar sticky top-0 z-1 bg-(--ui-surface) text-ui-caption"
             >
               {checkedServers.length > 0 ? (
                 <Checkbox
@@ -633,7 +630,7 @@ export function ServersView({
                   }}
                 />
               ) : null}
-              <h1 className="min-w-0 text-sm font-medium">
+              <h1 className="min-w-0 text-ui-body font-medium">
                 {t("Servers")}{" "}
                 <span className="text-(--ui-text-muted) tabular-nums">
                   {loaded ? (filtered.length === servers.length
@@ -681,7 +678,9 @@ export function ServersView({
               ) : (
                 <span className="ms-auto min-w-0 text-right text-(--ui-text-muted)">
                   {filterSummary ? (
-                    <span className="block truncate" title={filterSummary}>{filterSummary}</span>
+                    <Tooltip label={filterSummary}>
+                      <span className="block truncate">{filterSummary}</span>
+                    </Tooltip>
                   ) : null}
                   {recentFirst ? <span className="block">{t("Recently used first")}</span> : null}
                 </span>
@@ -743,9 +742,11 @@ export function ServersView({
             >
               <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-4 py-3">
                 <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
-                <h2 className="min-w-0 flex-1 truncate text-base font-medium" title={selected.name}>
-                  {selected.name}
-                </h2>
+                <Tooltip label={selected.name}>
+                  <h2 className="min-w-0 flex-1 truncate text-ui-title font-medium">
+                    {selected.name}
+                  </h2>
+                </Tooltip>
                 {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
                 <Button
                   variant="ghost"
@@ -787,7 +788,7 @@ export function ServersView({
                     </div>
                   </div>
                 ) : null}
-                  <dl className="mbe-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
+                  <dl className="mbe-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-ui-caption">
                     <dt className="text-(--ui-text-muted)">{t("Address")}</dt>
                     <dd className="break-all">{address(selected)}</dd>
                     {selected.machine?.ssh || selected.sshEndpoint ? (
@@ -877,7 +878,7 @@ export function ServersView({
             </div>
           }
         >
-          <div className="flex flex-col gap-3 p-4 text-sm">
+          <div className="flex flex-col gap-3 p-4 text-ui-body">
             <p>
               {t(
                 "Removes saved connections from bycoda. Remote machines and their running sessions are not deleted.",
@@ -887,7 +888,7 @@ export function ServersView({
               {bulkTargets.map((server) => (
                 <li key={server.id} className="py-1">
                   <span className="font-medium">{server.name}</span>
-                  <span className="block break-all text-xs text-(--ui-text-muted)">
+                  <span className="block break-all text-ui-caption text-(--ui-text-muted)">
                     {address(server)}
                   </span>
                 </li>
@@ -912,9 +913,9 @@ export function ServersView({
             if (!deleting) setDeleteTarget(undefined);
           }}
         >
-          <div className="flex flex-col gap-3 p-3 text-sm">
+          <div className="flex flex-col gap-3 p-3 text-ui-body">
             <p className="font-medium">{t("Delete {p0}?", { p0: deleteTarget.server.name })}</p>
-            <p className="text-xs text-(--ui-text-muted)">
+            <p className="text-ui-caption text-(--ui-text-muted)">
               {deleteTarget.server.kind === "ssh"
                 ? t("Removes this SSH server from bycoda. The remote machine is not changed.")
                 : t(

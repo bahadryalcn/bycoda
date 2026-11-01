@@ -213,3 +213,13 @@ Source only, uncommitted; no build/install/release stamp. Current full checklist
 Delivered in source (uncommitted; unit evidence only):
 
 - The compact Projects flyout filters its own list through `projectFilter` (`ProjectRail.tsx`); the separate project picker was removed from the compact flyout, so there is one search and one list. Per-project actions (including delete) remain on the flyout rows. Covered by `SidebarRename.test.ts`.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Projects, folder/cwd pickers and project dialogs (`src/features/projects/**`, `workspaces/**`), from `HANDOFF-w2-tools.md`.
+
+- Done: RemoveProjectDialog on `ConfirmDialog` (consequences, details, count body, `confirmDisabled`, `pendingLabel`); RailBackgroundControls native colour input to swatch Button + `Popover kind="dialog"`; ProjectSearch pill to `Badge count`, `LoadingText`, `InlineError`, `iconOnly` Buttons; FolderPicker shortcut tooltips and `ActionHost` rows; CwdPicker typography/icons/tooltips and the flyout timer on the shared `useHoverIntent`; ProjectActionDialog `TextareaField monospace`; WorkspaceDirectoryRemoval `ModalActions` with filled danger; rename/name-conflict dialogs on `ModalActions inline`.
+- Left: two `Popover role="menu"` in CwdPicker (keyboard model on trigger plus search field plus hover flyout; the picker kit has no flyout); `FileTypeIcon size={N}` at `ProjectSearch.tsx`.
+- Unverified: no screenshots or native run; the project-delete ConfirmDialog and the nested colour popover are not natively run.

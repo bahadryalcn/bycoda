@@ -1,7 +1,6 @@
 import { useLocale, useT } from "../../../shared/i18n";
 import { useCallback, useSyncExternalStore, type ReactNode } from "react";
-import { Button } from "../../../shared/ui/Button";
-import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 
 export type MarkdownViewMode = "preview" | "source";
 
@@ -47,42 +46,16 @@ type ToggleProps = {
 export function MarkdownModeToggle({ mode, onChange }: ToggleProps) {
   const t = useT();
   return (
-    <ButtonGroup role="tablist" aria-label={t("Markdown view")} className="shrink-0">
-      <ModeTab
-        label={t("Preview")}
-        selected={mode === "preview"}
-        onSelect={() => onChange("preview")}
-      />
-      <ModeTab
-        label={t("Source")}
-        selected={mode === "source"}
-        onSelect={() => onChange("source")}
-      />
-    </ButtonGroup>
-  );
-}
-
-function ModeTab({
-  label,
-  selected,
-  onSelect,
-}: {
-  label: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  useLocale();
-  return (
-    <Button
-      variant="tab"
-      size="sm"
-      role="tab"
-      selected={selected}
-      aria-selected={selected}
-      onClick={onSelect}
-    >
-      {label}
-    </Button>
+    <SegmentedControl
+      label={t("Markdown view")}
+      className="shrink-0"
+      value={mode}
+      options={[
+        { value: "preview", label: t("Preview") },
+        { value: "source", label: t("Source") },
+      ]}
+      onValueChange={(next) => onChange(next as MarkdownViewMode)}
+    />
   );
 }
 

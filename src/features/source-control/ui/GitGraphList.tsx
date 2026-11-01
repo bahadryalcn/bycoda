@@ -4,7 +4,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -21,6 +20,7 @@ import {
   orderGraphRefs,
 } from "../model/gitGraphDisplay";
 import { visibleRange } from "../model/gitGraphWindow";
+import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { GitGraphHoverCard } from "./GitGraphHoverCard";
 import { GraphAvatar, GraphLane, RefPills } from "./GitGraphParts";
 import styles from "./GitGraphList.module.css";
@@ -57,9 +57,6 @@ type Props = {
 const OVERSCAN = 10;
 /** Used until the scroller has been measured (and where nothing measures). */
 const FALLBACK_VIEWPORT_PX = 600;
-const HOVER_DELAY_MS = 400;
-/** Time to cross from a row onto its card without the card closing. */
-const HOVER_GRACE_MS = 150;
 const NOW_REFRESH_MS = 60_000;
 
 const WIDE_HEADER_PX = 32;
@@ -142,48 +139,8 @@ export function GitGraphList({
     scroller?.scrollTo({ top: 0 });
   }, [filters, plain, scroller]);
 
-  // Hover card: one at a time, owned here so a scroll or a leave closes it.
-  const [hover, setHover] = useState<{
-    item: GraphListItem;
-    anchor: HTMLElement;
-  } | null>(null);
-  const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearTimers = useCallback(() => {
-    if (showTimer.current != null) clearTimeout(showTimer.current);
-    if (hideTimer.current != null) clearTimeout(hideTimer.current);
-    showTimer.current = null;
-    hideTimer.current = null;
-  }, []);
-  const hideHover = useCallback(() => {
-    clearTimers();
-    setHover(null);
-  }, [clearTimers]);
-  const scheduleHide = useCallback(() => {
-    clearTimers();
-    hideTimer.current = setTimeout(() => setHover(null), HOVER_GRACE_MS);
-  }, [clearTimers]);
-  const cancelHide = useCallback(() => {
-    if (hideTimer.current != null) clearTimeout(hideTimer.current);
-    hideTimer.current = null;
-  }, []);
-
-  useEffect(() => clearTimers, [clearTimers]);
-  useEffect(() => {
-    if (suspendHover) hideHover();
-  }, [suspendHover, hideHover]);
-
-  const startHover = (item: GraphListItem, anchor: HTMLElement) => {
-    if (suspendHover) return;
-    clearTimers();
-    setHover((current) => (current?.item === item ? current : null));
-    showTimer.current = setTimeout(() => setHover({ item, anchor }), HOVER_DELAY_MS);
-  };
-
   const onScroll = () => {
     if (!scroller) return;
-    hideHover();
     // Re-render when a row boundary is crossed, not on every pixel.
     const row = Math.floor(Math.max(0, scroller.scrollTop - topOffset) / GRAPH_ROW_PX);
     setFirstRow((current) => (current === row ? current : row));
@@ -219,7 +176,12 @@ export function GitGraphList({
       ref={attach}
       onScroll={onScroll}
       className={`min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none ${workspace ? `overflow-x-auto ${styles.workspace}` : "overflow-x-hidden"}`}
-      style={workspace ? ({ "--git-graph-width": `${graphWidth}px` } as CSSProperties) : undefined}
+      style={
+        {
+          "--git-graph-row": `${GRAPH_ROW_PX}px`,
+          ...(workspace ? { "--git-graph-width": `${graphWidth}px` } : null),
+        } as CSSProperties
+      }
     >
       {empty && !wide ? (
         empty
@@ -227,7 +189,7 @@ export function GitGraphList({
         <>
           {wide ? (
             <div
-              className={`sticky top-0 z-[2] grid items-center border-b border-stroke bg-(--ui-surface) text-(length:--ui-font-caption) text-(--ui-text-secondary) ${workspace ? styles.workspaceHeader : "font-semibold"}`}
+              className={`sticky top-0 z-1 grid items-center border-b border-(--ui-pane-border) bg-(--ui-surface-panel) text-ui-caption text-(--ui-text-secondary) ${workspace ? styles.workspaceHeader : "font-semibold"}`}
               style={{
                 height: WIDE_HEADER_PX,
                 gridTemplateColumns: workspace ? undefined : columns,
@@ -305,18 +267,10 @@ export function GitGraphList({
                 plain,
                 now,
                 active: selectedSha === commit.sha,
-                onOpen: (pin?: boolean) => {
-                  hideHover();
-                  onOpen(commit, pin);
-                },
-                onMenu: onMenu
-                  ? (x: number, y: number) => {
-                      hideHover();
-                      onMenu(x, y, commit);
-                    }
-                  : undefined,
-                onHoverStart: (el: HTMLElement) => startHover(item, el),
-                onHoverEnd: scheduleHide,
+                suspendHover,
+                side: wide ? ("bottom" as const) : ("right" as const),
+                onOpen: (pin?: boolean) => onOpen(commit, pin),
+                onMenu: onMenu ? (x: number, y: number) => onMenu(x, y, commit) : undefined,
               };
               return wide ? (
                 <WideRow key={commit.sha} {...rowProps} columns={columns} workspace={workspace} />
@@ -339,16 +293,6 @@ export function GitGraphList({
           ) : null}
         </>
       )}
-      {hover ? (
-        <GitGraphHoverCard
-          commit={hover.item.commit}
-          row={hover.item.row}
-          anchor={hover.anchor}
-          side={wide ? "bottom" : "right"}
-          onEnter={cancelHide}
-          onLeave={scheduleHide}
-        />
-      ) : null}
     </div>
   );
 }
@@ -358,28 +302,52 @@ type RowProps = {
   plain: boolean;
   now: number;
   active: boolean;
+  /** A context menu is open: no hover card while it is. */
+  suspendHover: boolean;
+  side: "right" | "bottom";
   onOpen: (pin?: boolean) => void;
   onMenu?: (x: number, y: number) => void;
-  onHoverStart: (el: HTMLElement) => void;
-  onHoverEnd: () => void;
 };
 
-function rowButtonProps({ item, active, onOpen, onMenu, onHoverStart, onHoverEnd }: RowProps) {
+/**
+ * One hover card per row (shared hover intent, 300 ms rest, the pointer may cross onto the card);
+ * only the hovered row ever mounts the card content. No `title` on the row: the card carries
+ * the details, and a tooltip would open on top of it.
+ */
+function useRowHoverCard({ side, suspendHover }: RowProps) {
+  return useHoverCard({
+    side,
+    align: "start",
+    width: 320,
+    disabled: suspendHover,
+    "aria-label": t("Commit details"),
+    className: "space-y-2 p-3 text-ui-caption text-content",
+  });
+}
+
+function rowButtonProps(
+  { item, active, onOpen, onMenu }: RowProps,
+  hover: ReturnType<typeof useRowHoverCard>,
+) {
   const { row } = item;
   return {
     type: "button" as const,
-    // No `title`: the hover card carries the details, and a native tooltip
-    // would open on top of it.
-    onClick: () => onOpen(),
-    onDoubleClick: () => onOpen(true),
+    ...hover.trigger,
+    onClick: () => {
+      hover.close();
+      onOpen();
+    },
+    onDoubleClick: () => {
+      hover.close();
+      onOpen(true);
+    },
     onContextMenu: onMenu
       ? (event: ReactMouseEvent) => {
           event.preventDefault();
+          hover.close();
           onMenu(event.clientX, event.clientY);
         }
       : undefined,
-    onMouseEnter: (event: ReactMouseEvent<HTMLElement>) => onHoverStart(event.currentTarget),
-    onMouseLeave: onHoverEnd,
     "aria-pressed": active,
     className: `git-history-item min-w-0 w-full overflow-visible text-left ${
       row.kind === "HEAD" ? "is-head" : ""
@@ -389,7 +357,7 @@ function rowButtonProps({ item, active, onOpen, onMenu, onHoverStart, onHoverEnd
 
 function subjectClass(item: GraphListItem): string {
   const { commit, row } = item;
-  return `min-w-0 truncate text-[12px] leading-[22px] ${
+  return `min-w-0 truncate text-ui-caption leading-(--git-graph-row) ${
     row.kind === "HEAD"
       ? "font-semibold"
       : isMergeCommit(commit)
@@ -403,7 +371,8 @@ function CompactRow(props: RowProps) {
   const { item, plain, now } = props;
   const { commit, row } = item;
   const refs = useMemo(() => orderGraphRefs(row.refs, commit.head), [row.refs, commit.head]);
-  const button = rowButtonProps(props);
+  const hover = useRowHoverCard(props);
+  const button = rowButtonProps(props, hover);
   return (
     // The row is the container the author and date hide against.
     <li className="git-graph-row min-w-0 overflow-visible" style={{ height: GRAPH_ROW_PX }}>
@@ -411,7 +380,7 @@ function CompactRow(props: RowProps) {
         variant="item"
         motion="none"
         {...button}
-        className={`   ${button.className}  flex h-[22px] items-stretch  `}
+        className={`${button.className} flex h-full items-stretch`}
       >
         {plain ? null : <GraphLane row={row} />}
         <span className="ml-1 flex min-w-0 flex-1 items-center">
@@ -426,11 +395,12 @@ function CompactRow(props: RowProps) {
         <GraphAvatar name={commit.author} className="git-graph-author ml-1.5 self-center" />
         <span
           title={formatAbsoluteTime(commit.timestamp)}
-          className="git-graph-date ml-1.5 w-7 shrink-0 text-right text-(length:--ui-font-caption) leading-[22px] text-(--ui-text-secondary)"
+          className="git-graph-date ml-1.5 w-7 shrink-0 text-right text-ui-caption leading-(--git-graph-row) text-(--ui-text-secondary)"
         >
           {formatRelativeTime(commit.timestamp, now)}
         </span>
       </Button>
+      {hover.card(<GitGraphHoverCard commit={commit} row={row} />)}
     </li>
   );
 }
@@ -440,7 +410,8 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
   const { item, plain, now, columns, workspace } = props;
   const { commit, row } = item;
   const refs = useMemo(() => orderGraphRefs(row.refs, commit.head), [row.refs, commit.head]);
-  const button = rowButtonProps(props);
+  const hover = useRowHoverCard(props);
+  const button = rowButtonProps(props, hover);
   const dim = isMergeCommit(commit) && row.kind !== "HEAD" ? "text-[var(--ui-text-secondary)]" : "";
   return (
     <li className="min-w-0 overflow-visible" style={{ height: GRAPH_ROW_PX }}>
@@ -448,7 +419,7 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
         variant="item"
         motion="none"
         {...button}
-        className={`${button.className} grid h-[22px] items-center ${workspace ? styles.workspaceRow : ""}`}
+        className={`${button.className} grid h-full items-center ${workspace ? styles.workspaceRow : ""}`}
         style={workspace ? undefined : { gridTemplateColumns: columns }}
       >
         {!workspace ? (
@@ -456,7 +427,7 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
             <RefPills refs={refs} budgetPx={workspace ? 104 : WIDE_REFS_PX - 16} maxWidth="100%" />
           </span>
         ) : null}
-        <span className="flex h-[22px] min-w-0 items-stretch overflow-x-clip">
+        <span className="flex h-full min-w-0 items-stretch overflow-x-clip">
           {plain ? null : <GraphLane row={row} />}
         </span>
         {workspace ? (
@@ -475,7 +446,7 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
         {!workspace ? (
           <span className={`flex min-w-0 items-center gap-1.5 pr-2 ${dim}`}>
             <GraphAvatar name={commit.author} />
-            <span className="min-w-0 truncate text-[12px] text-[var(--ui-text-secondary)]">
+            <span className="min-w-0 truncate text-ui-caption text-(--ui-text-secondary)">
               {commit.author}
             </span>
           </span>
@@ -483,15 +454,16 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
         {
           <span
             title={formatAbsoluteTime(commit.timestamp)}
-            className={`truncate text-[12px] text-[var(--ui-text-secondary)] ${workspace ? styles.date : ""}`}
+            className={`truncate text-ui-caption text-(--ui-text-secondary) ${workspace ? styles.date : ""}`}
           >
             {formatRelativeTime(commit.timestamp, now)}
           </span>
         }
-        <span className="truncate font-mono text-[11px] text-[var(--ui-text-secondary)]">
+        <span className="truncate font-mono text-ui-micro text-(--ui-text-secondary)">
           {commit.shortSha}
         </span>
       </Button>
+      {hover.card(<GitGraphHoverCard commit={commit} row={row} />)}
     </li>
   );
 }

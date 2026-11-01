@@ -130,7 +130,7 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path, fitCon
       variant="ghost"
       motion="none"
       type="button"
-      title={t(
+      tooltip={t(
         localCopy
           ? "Changes to this local copy are not saved to the connected machine."
           : "Open in default app",

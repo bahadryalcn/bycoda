@@ -1,8 +1,8 @@
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown } from "../../../shared/ui/icons";
-import { Popover } from "../../../shared/ui/Popover";
+import { ChevronDown } from "../../../shared/ui/icons";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import {
   accountStatus,
   accountUsageKey,
@@ -16,7 +16,6 @@ import {
   type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
 import { AccountColorDot } from "../../providers/ui/AccountColorDot";
-import { AccountStatusLabel } from "../../providers/ui/ProviderAccountUsage";
 import { useModelSource } from "./modelSource";
 
 /**
@@ -45,7 +44,8 @@ export function ProviderAccountMenu({
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => subscribeProviderAccounts(() => setVersion((value) => value + 1)), []);
   const localAccounts = source.accounts === undefined ? providerAccounts(provider) : [];
-  const accounts = source.accounts === undefined ? localAccounts : source.accounts[provider] ?? [];
+  const accounts =
+    source.accounts === undefined ? localAccounts : (source.accounts[provider] ?? []);
   const usage = useProviderAccountUsage(version, {
     provider,
     enabled: source.accounts === undefined && open && accounts.length > 1,
@@ -58,16 +58,14 @@ export function ProviderAccountMenu({
     return null;
   if (accounts.length === 0) return null;
 
-  const label = source.accounts === undefined
-    ? providerAccountLabel(provider, accountId)
-    : accounts.find((account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID))?.label ?? t("Unavailable Host account");
+  const label =
+    source.accounts === undefined
+      ? providerAccountLabel(provider, accountId)
+      : (accounts.find((account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID))
+          ?.label ?? t("Unavailable Host account"));
   const current = accounts.find(
     (account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID),
   );
-  const dismiss = (restoreFocus: boolean) => {
-    setOpen(false);
-    if (restoreFocus) onClose?.();
-  };
 
   return (
     <>
@@ -76,7 +74,7 @@ export function ProviderAccountMenu({
         variant="ghost"
         ref={trigger}
         type="button"
-        title={
+        tooltip={
           variant === "pill"
             ? t("Account: {p0}", { p0: label })
             : t("Continue this conversation with another account")
@@ -88,62 +86,50 @@ export function ProviderAccountMenu({
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setOpen((value) => !value)}
       >
-        {current && localAccounts.find((account) => account.id === current.id) ? <AccountColorDot account={localAccounts.find((account) => account.id === current.id)!} /> : null}
+        {current && localAccounts.find((account) => account.id === current.id) ? (
+          <AccountColorDot account={localAccounts.find((account) => account.id === current.id)!} />
+        ) : null}
         <span className={variant === "pill" ? "min-w-0 truncate text-ui-micro" : ""}>
           {variant === "pill" ? label : t("Switch account")}
         </span>
         <ChevronDown
-          className={`size-3 shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""}`}
+          className={`icon-xs shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""}`}
           strokeWidth={1.75}
         />
       </Button>
       {open ? (
-        <Popover
+        <DropdownMenu
           anchor={trigger}
           side="top"
           align={variant === "pill" ? "start" : "end"}
           width={260}
-          autoFocus
-          onDismiss={(reason) => dismiss(reason === "escape")}
-          role="menu"
-          aria-label={variant === "pill" ? t("Account") : t("Continue with another account")}
-          tabIndex={-1}
+          label={variant === "pill" ? t("Account") : t("Continue with another account")}
           data-model-control
-          className="p-1 font-sans"
-        >
-          {accounts.map((account) => {
-            const selected = account.id === accountId;
+          items={accounts.map((account) => {
             const local = localAccounts.find((entry) => entry.id === account.id);
-            const status = local ? accountStatus(usage.usage[accountUsageKey(local)], usage.now) : undefined;
-            return (
-              <Button
-                fullWidth
-                variant="item"
-                key={account.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  dismiss(true);
-                  if (!selected) onSelect(account.id);
-                }}
-                className="w-full text-left"
-              >
-                {local ? <AccountColorDot account={local} /> : null}
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate">{account.label}</span>
-                  {status ? <span className="text-(length:--ui-font-caption)">
-                    <AccountStatusLabel status={status} />
-                  </span> : null}
-                </span>
-                {selected ? (
-                  <Check className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
-                ) : null}
-              </Button>
-            );
+            const status = local
+              ? accountStatus(usage.usage[accountUsageKey(local)], usage.now)
+              : undefined;
+            return {
+              kind: "item" as const,
+              id: account.id,
+              label: account.label,
+              icon: local ? <AccountColorDot account={local} /> : undefined,
+              description: status
+                ? status.detail
+                  ? `${status.label} · ${status.detail}`
+                  : status.label
+                : undefined,
+              checked: account.id === accountId,
+              selectionRole: "radio" as const,
+            };
           })}
-        </Popover>
+          onPick={(id) => {
+            onClose?.();
+            if (id !== accountId) onSelect(id);
+          }}
+          onClose={() => setOpen(false)}
+        />
       ) : null}
     </>
   );

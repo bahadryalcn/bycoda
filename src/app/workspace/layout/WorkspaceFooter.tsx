@@ -46,8 +46,6 @@ export interface WorkspaceFooterProps {
   // Approval toasts
   pendingNotifications: ApprovalProps["notices"];
   hiddenApprovalToasts: ApprovalProps["popupNotices"];
-  reminderNoticesHeight: number;
-  harnessUpdateHeight: number;
   onOpenApprovalSession: ApprovalProps["onFocusSession"];
   onApproval: ApprovalProps["onApproval"];
 }
@@ -80,8 +78,6 @@ function WorkspaceFooterComponent({
   onOpenFile,
   pendingNotifications,
   hiddenApprovalToasts,
-  reminderNoticesHeight,
-  harnessUpdateHeight,
   onOpenApprovalSession,
   onApproval,
 }: WorkspaceFooterProps) {
@@ -146,11 +142,6 @@ function WorkspaceFooterComponent({
         <ApprovalToasts
           notices={pendingNotifications}
           popupNotices={hiddenApprovalToasts}
-          topOffset={
-            48 +
-            (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0) +
-            (harnessUpdateHeight ? harnessUpdateHeight + 8 : 0)
-          }
           onFocusSession={onOpenApprovalSession}
           onOpenHistorySession={(sessionId) => onOpenApprovalSession(sessionId)}
           onOpenSettings={() => openSettings("notifications", "notifications")}

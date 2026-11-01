@@ -1,4 +1,7 @@
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { DateTimeField } from "../../../shared/ui/DateTimePicker";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge } from "../../../shared/ui/Badge";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -8,7 +11,6 @@ import { NumberField } from "../../../shared/ui/NumberField";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { TextField } from "../../../shared/ui/TextField";
 import { taskMatchesProject, type TaskProjectScope } from "../model/taskBoardScope";
 import { HostModelSource } from "../../connections/ui/HostModelSource";
 import { formatTaskSpan, TASK_MACHINE_ERROR } from "../model/taskClient";
@@ -17,7 +19,6 @@ import { type FormEvent, useMemo, useState } from "react";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
 import {
   Bot,
-  LoaderCircle,
   MoreHorizontal,
   Pencil,
   Play,
@@ -196,12 +197,11 @@ function StewardsPanel({
                   </span>
                   <div className="ml-auto flex flex-wrap items-center gap-0.5">
                     {pending ? (
-                      <LoaderCircle className="mx-1.5 icon-xs animate-spin text-(--ui-text-secondary)" />
+                      <Spinner size="xs" className="mx-1.5 text-(--ui-text-secondary)" />
                     ) : null}
                     <span className="flex items-center gap-1.5 px-1.5 text-ui-micro text-(--ui-text-secondary)">
                       <Switch
                         aria-label={t("Enabled")}
-                        title={t("Enabled")}
                         checked={steward.enabled}
                         disabled={busy}
                         onCheckedChange={() => onToggle(steward)}
@@ -396,9 +396,9 @@ function StewardForm({
                 {machine}
               </span>
             ) : (
-              <span role="alert" className="text-(--ui-tone-warning-fg)">
+              <InlineMessage tone="warning" live="assertive">
                 {TASK_MACHINE_ERROR}
-              </span>
+              </InlineMessage>
             )}
           </div>
           <TextareaField
@@ -440,14 +440,15 @@ function StewardForm({
             {draft.scheduleKind === "hourly" ? (
               number("Minute", draft.minute, 59, "minute", 0)
             ) : (
-              <TextField
+              <DateTimeField
+                mode="time"
                 hideLabel
-                label=""
-                type="time"
-                aria-label={t("Time")}
+                // The schedule row is a single line; the HH:mm placeholder is the hint.
+                description=""
+                label={t("Time")}
                 value={draft.time}
-                onChange={(event) => {
-                  if (event.target.value) update("time", event.target.value);
+                onChange={(value) => {
+                  if (value) update("time", value);
                 }}
               />
             )}

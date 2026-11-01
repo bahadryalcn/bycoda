@@ -123,7 +123,7 @@ describe("BTW conversation", () => {
 
   it("stays hidden until opened", async () => {
     await render();
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
   });
 
   it("opens an empty tab for a bare /btw without sending", async () => {
@@ -180,7 +180,7 @@ describe("BTW conversation", () => {
       composer?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
     );
     expect(btw.open).toBe(false);
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
   });
 
   it("closes on Escape when nothing is focused", async () => {
@@ -223,7 +223,7 @@ describe("BTW conversation", () => {
       opened = btw.openWith("hi");
     });
     expect(opened).toBe(false);
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
   });
 
   it("stays closed when availability returns after forcing the sheet closed", async () => {
@@ -233,11 +233,11 @@ describe("BTW conversation", () => {
 
     await render({ available: false });
     expect(btw.open).toBe(false);
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
 
     await render({ available: true });
     expect(btw.open).toBe(false);
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
   });
 
   it("opens saved threads when there is no eligible turn for a new draft", async () => {
@@ -306,7 +306,7 @@ describe("BTW conversation", () => {
     expect(accepted).toBe(false);
     expect(btw.open).toBe(false);
     expect(btw.running).toBe(false);
-    expect(container.querySelector("[data-btw-overlay]")).toBeNull();
+    expect(container.querySelector("[data-sheet-overlay]")).toBeNull();
   });
 
   it("stops a streaming answer from the side composer", async () => {

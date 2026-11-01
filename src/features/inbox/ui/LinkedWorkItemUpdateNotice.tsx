@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
@@ -20,7 +21,6 @@ import {
   GitMerge,
   GitPullRequest,
   GitPullRequestClosed,
-  Loader,
   MessageSquare,
   Trash2,
 } from "../../../shared/ui/icons";
@@ -222,13 +222,12 @@ export function LinkedWorkItemUpdateNotice({
               <Button
                 variant="ghost"
                 type="button"
-                title={t("Archive session")}
                 disabled={Boolean(cleanupAction) || !onArchiveSession}
                 onClick={() => void runCleanup("archive", onArchiveSession)}
                 className="min-w-0"
               >
                 {cleanupAction === "archive" ? (
-                  <Loader className="icon-xs shrink-0 animate-spin" />
+                  <Spinner size="xs" />
                 ) : (
                   <Archive className="icon-xs shrink-0" strokeWidth={1.75} />
                 )}
@@ -238,13 +237,13 @@ export function LinkedWorkItemUpdateNotice({
                 variant="ghost"
                 tone="danger"
                 type="button"
-                title={t("Delete session")}
+                tooltip={t("Delete session")}
                 disabled={Boolean(cleanupAction) || !onDeleteSession}
                 onClick={() => void runCleanup("delete", onDeleteSession)}
                 className="ml-auto min-w-0"
               >
                 {cleanupAction === "delete" ? (
-                  <Loader className="icon-xs shrink-0 animate-spin" />
+                  <Spinner size="xs" />
                 ) : (
                   <Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />
                 )}
@@ -258,7 +257,7 @@ export function LinkedWorkItemUpdateNotice({
           <Button
             variant="ghost"
             type="button"
-            title={agentLabel}
+            tooltip={agentLabel}
             className="min-w-0 flex-1 truncate"
             onClick={() => {
               onAcknowledge();
@@ -270,7 +269,7 @@ export function LinkedWorkItemUpdateNotice({
           <Button
             variant="ghost"
             type="button"
-            title={openLabel}
+            tooltip={openLabel}
             className="min-w-0 flex-1 truncate"
             onClick={openActivity}
           >

@@ -4,7 +4,12 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useEffect, useRef, useState } from "react";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { Divider } from "../../../shared/ui/Divider";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Surface } from "../../../shared/ui/Surface";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { ArrowUp, ChevronRight, Folder, FolderPlus } from "../../../shared/ui/icons";
 import { OPEN_CONNECTIONS_EVENT, remoteRequest, useRemoteMachines } from "../model/connections";
@@ -270,12 +275,14 @@ function AddRemoteProjectForm({
       ) : null}
       {!loaded || (machinesError && !machine) ? null : !machine ? (
         <>
-          <p className="text-ui-caption leading-snug text-(--ui-text-muted)">
-            {t(
+          <EmptyState
+            size="inline"
+            kind="empty"
+            description={t(
               "No machines are connected yet. Add one in Settings, then open a folder on it here.",
             )}
-          </p>
-          <div className="flex justify-end gap-2">
+          />
+          <ModalActions inline>
             <Button type="button" onClick={cancel} variant="ghost">
               {t("Cancel")}
             </Button>
@@ -289,7 +296,7 @@ function AddRemoteProjectForm({
             >
               {t("Add a machine")}
             </Button>
-          </div>
+          </ModalActions>
         </>
       ) : (
         <>
@@ -335,10 +342,7 @@ function AddRemoteProjectForm({
             hideLabel
             fieldClassName="min-w-0 flex-1"
           />
-          <nav
-            aria-label={t("Locations")}
-            className="flex flex-wrap items-center gap-1 border-b border-stroke pb-2"
-          >
+          <nav aria-label={t("Locations")} className="flex flex-wrap items-center gap-1">
             <Button
               type="button"
               aria-label={t("Parent folder")}
@@ -379,6 +383,7 @@ function AddRemoteProjectForm({
               {t("New folder")}
             </Button>
           </nav>
+          <Divider decorative />
           {newName !== null ? (
             <div className="flex items-center gap-2">
               <TextField
@@ -431,14 +436,16 @@ function AddRemoteProjectForm({
             disabled={opening || creating}
           />
           {directory && (loading || browseError) ? (
-            <p className="text-ui-caption text-(--ui-text-muted)">
+            <InlineMessage tone="neutral" icon={null}>
               {t("Showing last loaded folder: ")}
               {directory.path}
-            </p>
+            </InlineMessage>
           ) : null}
-          <div
+          <Surface
+            variant="outline"
+            padding="none"
             aria-label={t("Folders")}
-            className="h-[min(340px,45vh)] min-h-24 overflow-y-auto overscroll-contain rounded-md border border-stroke"
+            className="h-[min(340px,45vh)] min-h-24 overflow-y-auto overscroll-contain"
           >
             <div className="p-1">
               {directory?.parent ? (
@@ -457,27 +464,29 @@ function AddRemoteProjectForm({
                 />
               ))}
               {directory && !directory.entries.length ? (
-                <p className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">
-                  {t("No subfolders")}
-                </p>
+                <EmptyState
+                  size="inline"
+                  kind="empty"
+                  className="px-2"
+                  description={t("No subfolders")}
+                />
               ) : null}
               {!directory && loading ? (
-                <p className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">
-                  {t("Loading folders…")}
-                </p>
+                <LoadingText className="px-2 py-1.5">{t("Loading folders…")}</LoadingText>
               ) : null}
             </div>
-          </div>
+          </Surface>
           {error ? (
             <Alert role="alert" tone="danger">
               {error}
             </Alert>
           ) : null}
-          <div className="flex justify-end gap-2">
+          <ModalActions inline>
             <Button type="button" onClick={cancel} variant="ghost">
               {t("Cancel")}
             </Button>
-            <Button reserveLabels={[t("Opening…")]}
+            <Button
+              reserveLabels={[t("Opening…")]}
               type="submit"
               loading={opening}
               disabled={
@@ -492,7 +501,7 @@ function AddRemoteProjectForm({
             >
               {opening ? t("Opening…") : t("Open")}
             </Button>
-          </div>
+          </ModalActions>
         </>
       )}
     </form>

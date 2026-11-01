@@ -3,8 +3,9 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
-import { TransientNotice } from "../../../shared/ui/TransientNotice";
-import { Check, Loader } from "../../../shared/ui/icons";
+import { Toast } from "../../../shared/ui/ToastRegion";
+import { Check } from "../../../shared/ui/icons";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { isPickerProviderVisible } from "../../sessions/model/models";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
@@ -46,13 +47,7 @@ async function runLaunchCheck(): Promise<HarnessUpdate[]> {
 }
 
 /** Checked once per app launch, in whichever window asks first. */
-export function HarnessUpdateNotice({
-  topOffset = 12,
-  onHeightChange,
-}: {
-  topOffset?: number;
-  onHeightChange?: (height: number) => void;
-}) {
+export function HarnessUpdateNotice() {
   useLocale();
   const [updates, setUpdates] = useState<HarnessUpdate[]>([]);
   const { runs } = useSyncExternalStore(
@@ -103,16 +98,15 @@ export function HarnessUpdateNotice({
   };
 
   return (
-    <TransientNotice
+    <Toast
       aria-label={t("Harness updates")}
       tone="info"
       title={updates.length === 1 ? t("Harness update available") : t("Harness updates available")}
       durationMs={allUpdated ? 5000 : null}
       placement="top-end"
+      order={1}
       width="lg"
-      offset={topOffset}
       onDismiss={dismiss}
-      onHeightChange={onHeightChange}
       actions={
         pending.length > 1 ? (
           <Button variant="ghost" size="sm" type="button" onClick={() => start(pending)}>
@@ -136,7 +130,7 @@ export function HarnessUpdateNotice({
           ? t("CLI version verified. Model discovery can be retried in Providers.")
           : t("New models often need the latest version.")}
       </p>
-    </TransientNotice>
+    </Toast>
   );
 }
 
@@ -183,7 +177,7 @@ function HarnessUpdateRow({
           >
             {state.status === "updating" ? (
               <>
-                <Loader className="icon-xs animate-spin" />
+                <Spinner size="xs" />
                 {t("Updating")}
               </>
             ) : state.status === "failed" ? (

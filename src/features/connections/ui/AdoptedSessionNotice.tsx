@@ -1,3 +1,4 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -45,7 +46,9 @@ export function BackgroundSessionIndicator({ session }: { session: Session }) {
           role="dialog"
           aria-label={t(ADOPTED_RUNNING_REASON)}
         >
-          <p className="p-3 text-xs text-(--ui-text-secondary)">{t(ADOPTED_RUNNING_REASON)}</p>
+          <p className="p-3 text-ui-caption text-(--ui-text-secondary)">
+            {t(ADOPTED_RUNNING_REASON)}
+          </p>
         </Popover>
       ) : null}
     </span>
@@ -136,13 +139,120 @@ export function AdoptedSessionNotice({
   };
   const hostRunning = !!session.continuingElsewhere && !session.busy;
   if (!session.adoptedSyncConflict && !feedback && !refreshing && !hostRunning) return null;
+  const attention = !!session.adoptedSyncConflict || !!feedback?.error;
+  const showSync =
+    !!onRefresh && !choosing && (!!session.adoptedSyncConflict || !!feedback?.error || refreshing);
   return (
-    <div
-      role={session.adoptedSyncConflict || feedback?.error ? "alert" : "status"}
-      className={`shrink-0 border-b px-4 py-2 text-xs text-(--ui-tone-neutral-fg) ${session.adoptedSyncConflict || feedback?.error ? "border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle)" : "border-(--ui-tone-info-border) bg-(--ui-tone-info-subtle)"}`}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0 flex-1 space-y-1">
+    <div className="shrink-0 px-4 py-2">
+      <Alert
+        tone={attention ? "warning" : "info"}
+        role={attention ? "alert" : "status"}
+        action={
+          confirming || choosing || showSync ? (
+            <>
+              {confirming ? (
+                <>
+                  <Button
+                    key="discard"
+                    type="button"
+                    onClick={keep}
+                    disabled={refreshing}
+                    variant="danger"
+                  >
+                    {t("Discard and keep this")}
+                  </Button>
+                  {onRefresh ? (
+                    <Button
+                      key="both"
+                      type="button"
+                      onClick={() => void refresh("keep-both")}
+                      disabled={refreshing || session.busy}
+                      aria-busy={refreshing}
+                      tooltip={t(
+                        "Keep the other version here and save this computer's version as a new conversation.",
+                      )}
+                      variant="secondary"
+                    >
+                      {t("Keep both")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    key="back"
+                    type="button"
+                    onClick={() => setConfirmingId(undefined)}
+                    disabled={refreshing}
+                    variant="ghost"
+                  >
+                    {t("Back")}
+                  </Button>
+                </>
+              ) : choosing ? (
+                <>
+                  <Button
+                    key="keep-this"
+                    type="button"
+                    onClick={() => setConfirmingId(session.id)}
+                    disabled={refreshing}
+                    tooltip={t(
+                      "Keep this computer's version. The other computer catches up with it. Nothing is copied.",
+                    )}
+                    variant="ghost"
+                  >
+                    {t("Keep this")}
+                  </Button>
+                  {onRefresh ? (
+                    <>
+                      <Button
+                        type="button"
+                        onClick={() => void refresh("keep-other")}
+                        disabled={refreshing || session.busy}
+                        aria-busy={refreshing}
+                        tooltip={t(
+                          "Replace this computer's version with the other one. Changes made only here are discarded.",
+                        )}
+                        variant="ghost"
+                      >
+                        {t("Keep other")}
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => void refresh("keep-both")}
+                        disabled={refreshing || session.busy}
+                        aria-busy={refreshing}
+                        tooltip={t(
+                          "Keep the other version here and save this computer's version as a new conversation.",
+                        )}
+                        variant="secondary"
+                      >
+                        {t("Keep both")}
+                      </Button>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
+              {onRefresh &&
+              !choosing &&
+              (session.adoptedSyncConflict || feedback?.error || refreshing) ? (
+                <Button
+                  type="button"
+                  onClick={() => void refresh()}
+                  disabled={refreshing || session.busy}
+                  aria-busy={refreshing}
+                  tooltip={t("Load the latest conversation and compare it with this one.")}
+                  variant="secondary"
+                >
+                  {refreshing
+                    ? t("Refreshing…")
+                    : feedback?.error
+                      ? t("Retry refresh")
+                      : t("Sync conversation")}
+                </Button>
+              ) : null}
+            </>
+          ) : undefined
+        }
+      >
+        <div className="min-w-0 space-y-1">
           {hostRunning && !session.adoptedSyncConflict ? (
             <div>
               {t(ADOPTED_RUNNING_REASON)}{" "}
@@ -161,107 +271,7 @@ export function AdoptedSessionNotice({
           ) : null}
           {feedback ? <div>{t(feedback.text)}</div> : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {confirming ? (
-            <>
-              <Button
-                key="discard"
-                type="button"
-                onClick={keep}
-                disabled={refreshing}
-                variant="danger"
-              >
-                {t("Discard and keep this")}
-              </Button>
-              {onRefresh ? (
-                <Button
-                  key="both"
-                  type="button"
-                  onClick={() => void refresh("keep-both")}
-                  disabled={refreshing || session.busy}
-                  aria-busy={refreshing}
-                  title={t(
-                    "Keep the other version here and save this computer's version as a new conversation.",
-                  )}
-                  variant="secondary"
-                >
-                  {t("Keep both")}
-                </Button>
-              ) : null}
-              <Button
-                key="back"
-                type="button"
-                onClick={() => setConfirmingId(undefined)}
-                disabled={refreshing}
-                variant="ghost"
-              >
-                {t("Back")}
-              </Button>
-            </>
-          ) : choosing ? (
-            <>
-              <Button
-                key="keep-this"
-                type="button"
-                onClick={() => setConfirmingId(session.id)}
-                disabled={refreshing}
-                title={t(
-                  "Keep this computer's version. The other computer catches up with it. Nothing is copied.",
-                )}
-                variant="ghost"
-              >
-                {t("Keep this")}
-              </Button>
-              {onRefresh ? (
-                <>
-                  <Button
-                    type="button"
-                    onClick={() => void refresh("keep-other")}
-                    disabled={refreshing || session.busy}
-                    aria-busy={refreshing}
-                    title={t(
-                      "Replace this computer's version with the other one. Changes made only here are discarded.",
-                    )}
-                    variant="ghost"
-                  >
-                    {t("Keep other")}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => void refresh("keep-both")}
-                    disabled={refreshing || session.busy}
-                    aria-busy={refreshing}
-                    title={t(
-                      "Keep the other version here and save this computer's version as a new conversation.",
-                    )}
-                    variant="secondary"
-                  >
-                    {t("Keep both")}
-                  </Button>
-                </>
-              ) : null}
-            </>
-          ) : null}
-          {onRefresh &&
-          !choosing &&
-          (session.adoptedSyncConflict || feedback?.error || refreshing) ? (
-            <Button
-              type="button"
-              onClick={() => void refresh()}
-              disabled={refreshing || session.busy}
-              aria-busy={refreshing}
-              title={t("Load the latest conversation and compare it with this one.")}
-              variant="secondary"
-            >
-              {refreshing
-                ? t("Refreshing…")
-                : feedback?.error
-                  ? t("Retry refresh")
-                  : t("Sync conversation")}
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      </Alert>
     </div>
   );
 }

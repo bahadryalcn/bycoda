@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Switch } from "../../../shared/ui/Switch";
-import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { t } from "../../../shared/i18n";
 import { loadWorkspaceSnapshot } from "../../sessions/data/sessionStore";
 import { useServerInventory, type ServerRecord } from "../model/serverInventory";
@@ -22,12 +22,9 @@ function PendingServerTabs({
   return (
     <div className="max-h-[35vh] overflow-auto">
       {inventory.error ? (
-        <p className="text-xs text-(--ui-tone-danger-fg)" role="alert">
+        <InlineError retry={{ onRetry: inventory.refresh, pending: inventory.loading }}>
           {t("Couldn’t load saved SSH tabs.")}
-          <Button size="sm" variant="ghost" loading={inventory.loading} onClick={inventory.refresh}>
-            {t("Retry")}
-          </Button>
-        </p>
+        </InlineError>
       ) : null}
       <ServerTerminalRestorePreview
         defaultOpen={false}
@@ -64,6 +61,20 @@ export function ServerTerminalRestoreControls({
     setSeenCompact(compact);
     setExpanded(!compact);
   }
+  const retryLoad = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const raw = await loadWorkspaceSnapshot();
+      serverTerminalRestoreState.initialize(
+        raw && typeof raw === "object" && "serversRestore" in raw ? raw.serversRestore : undefined,
+      );
+    } catch {
+      serverTerminalRestoreState.loadFailed();
+    } finally {
+      setLoading(false);
+    }
+  };
   if (!state.owner) return null;
   return (
     <details
@@ -91,21 +102,16 @@ export function ServerTerminalRestoreControls({
           </p>
         ) : null}
         {state.saveStatus === "failed" ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-(--ui-tone-danger-fg)" role="alert">
-              {t("Couldn’t save SSH tabs.")}
-              {state.saveError ? ` ${state.saveError}` : ""}
-            </p>
-            {state.canRetrySave ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => void serverTerminalRestoreState.retrySave()}
-              >
-                {t("Retry")}
-              </Button>
-            ) : null}
-          </div>
+          <InlineError
+            retry={
+              state.canRetrySave
+                ? { onRetry: () => void serverTerminalRestoreState.retrySave() }
+                : undefined
+            }
+          >
+            {t("Couldn’t save SSH tabs.")}
+            {state.saveError ? ` ${state.saveError}` : ""}
+          </InlineError>
         ) : null}
         {!state.pending.length ? (
           <p className="text-(--ui-text-muted)">
@@ -115,34 +121,9 @@ export function ServerTerminalRestoreControls({
           </p>
         ) : null}
         {state.loadFailed ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-(--ui-tone-danger-fg)" role="alert">
-              {t("Couldn’t load saved SSH tabs.")}
-            </p>
-            <Button
-              size="sm"
-              variant="ghost"
-              loading={loading}
-              onClick={async () => {
-                if (loading) return;
-                setLoading(true);
-                try {
-                  const raw = await loadWorkspaceSnapshot();
-                  serverTerminalRestoreState.initialize(
-                    raw && typeof raw === "object" && "serversRestore" in raw
-                      ? raw.serversRestore
-                      : undefined,
-                  );
-                } catch {
-                  serverTerminalRestoreState.loadFailed();
-                } finally {
-                  setLoading(false);
-                }
-              }}
-            >
-              {t("Retry")}
-            </Button>
-          </div>
+          <InlineError retry={{ onRetry: () => void retryLoad(), pending: loading }}>
+            {t("Couldn’t load saved SSH tabs.")}
+          </InlineError>
         ) : null}
         {state.pending.length ? <PendingServerTabs onConnect={onConnect} /> : null}
       </div>

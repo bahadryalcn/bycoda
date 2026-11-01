@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
+import { NumberField } from "../../../shared/ui/NumberField";
+import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Sparkles } from "../../../shared/ui/icons";
 import type { SocialAccount, SocialAgent, SocialCampaign, SocialPolicy } from "../model/social";
@@ -100,26 +102,25 @@ export function PlanScheduleFields({
         ))}
       </div>
       <div className="social-form-grid">
-        <TextField
+        <DateTimeField
+          mode="time"
           disabled={disabled}
           label={t("Start time")}
-          type="time"
           value={value.startTime}
-          onChange={(event) => onChange({ startTime: event.target.value })}
+          onChange={(next) => onChange({ startTime: next })}
           required
         />
-        <TextField
+        <DateTimeField
+          mode="time"
           disabled={disabled}
           label={t("End time")}
-          type="time"
           value={value.endTime}
-          onChange={(event) => onChange({ endTime: event.target.value })}
+          onChange={(next) => onChange({ endTime: next })}
           required
         />
-        <TextField
+        <NumberField
           disabled={disabled}
           label={t("Shortest interval · hours")}
-          type="number"
           step="any"
           min="0"
           max="168"
@@ -127,10 +128,9 @@ export function PlanScheduleFields({
           onChange={(event) => onChange({ minHours: event.target.value })}
           required
         />
-        <TextField
+        <NumberField
           disabled={disabled}
           label={t("Longest interval · hours")}
-          type="number"
           step="any"
           min="0"
           max="168"

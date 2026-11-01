@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -149,9 +150,7 @@ function EvaluationEditor({ task, onSaveEvaluation }: Props) {
         )}
       </p>
       {error ? (
-        <p role="alert" className="break-words text-ui-caption text-(--ui-tone-danger-fg)">
-          {error}
-        </p>
+        <InlineError>{error}</InlineError>
       ) : null}
       {message ? (
         <p role="status" className="text-ui-caption">

@@ -7,6 +7,7 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Popover } from "../../../shared/ui/Popover";
 import { MenuRow } from "../../../shared/ui/MenuRow";
+import { Divider } from "../../../shared/ui/Divider";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import {
   ChevronDown,
@@ -207,7 +208,7 @@ export function TerminalTools({
               disabled={!query}
               onClick={() => find(true)}
             >
-              <ChevronUp size={14} />
+              <ChevronUp className="icon-sm" />
             </Button>
             <Button
               variant="ghost"
@@ -218,7 +219,7 @@ export function TerminalTools({
               disabled={!query}
               onClick={() => find(false)}
             >
-              <ChevronDown size={14} />
+              <ChevronDown className="icon-sm" />
             </Button>
             <span role="status" className={styles.hint}>
               {query && !found ? t("No matches") : query && results && searchDecorations ? (
@@ -292,9 +293,10 @@ export function TerminalTools({
                 onSelect: () => onEnableShellIntegration("powershell"),
               },
             ]}
-            title={`${t(
+            tooltip={t(
               "Opens a new Bash terminal with session-only suggestions. No remote shell files are changed.",
-            )} (Bash 4.4+ · ls/cd/pwd/git)`}
+            )}
+            tooltipDetails={["Bash 4.4+ · ls/cd/pwd/git"]}
             onClick={() => onEnableShellIntegration("bash")}
           />
         ) : null}
@@ -318,7 +320,7 @@ export function TerminalTools({
               void onStartupReview().then(complete, complete);
             }}
           >
-            <CheckList size={14} />
+            <CheckList className="icon-sm" />
           </Button>
         ) : null}
         {(mode === "search" || mode === "remote") && (
@@ -330,12 +332,12 @@ export function TerminalTools({
             tooltip={t("Close")}
             onClick={close}
           >
-            <X size={14} />
+            <X className="icon-sm" />
           </Button>
         )}
       </div>
       {mode !== "search" && remoteShell ? (
-        <details className="px-2 py-1 text-xs text-(--ui-text-muted)">
+        <details className="px-2 py-1 text-ui-caption text-(--ui-text-muted)">
           <summary className="cursor-pointer">{t("Suggestion settings")}</summary>
           <div className="flex flex-wrap items-center gap-2 py-1">
             <Switch
@@ -404,7 +406,7 @@ export function TerminalTools({
             disabled={!terminal}
             onClick={() => changeMode("search")}
           >
-            <Search size={14} />
+            <Search className="icon-sm" />
           </Button>
         {suggestionsAllowed && (
           <Button
@@ -412,7 +414,7 @@ export function TerminalTools({
             size="sm"
             iconOnly
             label={t("Command suggestions")}
-            tooltip={`${t("Command suggestions")} (Ctrl+Space)`}
+            shortcut="Ctrl+Space"
             aria-pressed={mode === "command"}
             disabled={!ready || alternate}
             onClick={() => {
@@ -420,7 +422,7 @@ export function TerminalTools({
               else changeMode("command");
             }}
           >
-            <TerminalIcon size={14} />
+            <TerminalIcon className="icon-sm" />
           </Button>
         )}
         {onEnableShellIntegration ? (
@@ -435,7 +437,7 @@ export function TerminalTools({
             aria-haspopup="dialog"
             onClick={() => setHelpOpen(!helpOpen)}
           >
-            <Info aria-hidden size={14} />
+            <Info aria-hidden className="icon-sm" />
           </Button>
         ) : null}
           {terminal ? (
@@ -451,7 +453,7 @@ export function TerminalTools({
                 aria-haspopup="dialog"
                 onClick={() => setMenuOpen(!menuOpen)}
               >
-                <MoreHorizontal size={14} />
+                <MoreHorizontal className="icon-sm" />
               </Button>
               {menuOpen ? (
                 <Popover
@@ -478,7 +480,7 @@ export function TerminalTools({
                     }}>{t("Clear terminal")}</MenuRow>
                     {fontSize !== undefined ? (
                       <>
-                        <div role="separator" className={styles.separator} />
+                        <Divider className="my-1" />
                         <div className={styles.fontRow} role="group" aria-label={t("Terminal font size")}>
                           <Button variant="ghost" size="sm" iconOnly
                             label={t("Decrease terminal text size")} tooltip={t("Decrease terminal text size")}
@@ -505,7 +507,7 @@ export function TerminalTools({
                     ) : null}
                     {remoteShell || onSavedCommands || onEnableShellIntegration || onStartupReview ? (
                       <div className={styles.popoverBody}>
-                        <div role="separator" className={styles.separator} />
+                        <Divider className="my-1" />
                         {controls}
                       </div>
                     ) : null}
@@ -526,7 +528,7 @@ export function TerminalTools({
           width={340}
           onDismiss={() => setHelpOpen(false)}
         >
-          <div className="p-3 text-xs text-(--ui-text-muted)">
+          <div className="p-3 text-ui-caption text-(--ui-text-muted)">
             <p className="mbs-2">
               {t(
                 "Windows PowerShell suggestions require PowerShell 7+ and PSReadLine 2.4+. A new session starts with -NoProfile; custom profile key bindings and history settings are not loaded.",

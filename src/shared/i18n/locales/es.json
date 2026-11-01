@@ -10072,5 +10072,22 @@
   "Pure": "Puro",
   "Tinted": "Tintado",
   "Pure is true black in dark mode and white in light mode.": "Puro es negro absoluto en modo oscuro y blanco en modo claro.",
-  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "Los colores de superficie personalizados mantienen su propio fondo. Elige una paleta de tema para usar Puro."
+  "Custom surface colors keep their own background. Choose a theme palette to use Pure.": "Los colores de superficie personalizados mantienen su propio fondo. Elige una paleta de tema para usar Puro.",
+  "The editor is busy closing or moving. Try again in a moment.": "El editor se está cerrando o moviendo. Inténtalo de nuevo en un momento.",
+  "Match Case": "Coincidir mayúsculas y minúsculas",
+  "Match Whole Word": "Coincidir palabra completa",
+  "Use Regular Expression": "Usar expresión regular",
+  "Notes sections": "Secciones de notas",
+  "Close notes": "Cerrar notas",
+  "Add folder": "Agregar carpeta",
+  "Open folder": "Abrir carpeta",
+  "The draft changed while it was being prepared. Send it again.": "El borrador cambió mientras se preparaba. Envíalo de nuevo.",
+  "Work item preview": "Vista previa del elemento de trabajo",
+  "New worktree": "Nuevo árbol de trabajo",
+  "Type “{p0}” to confirm": "Escribe “{p0}” para confirmar",
+  "Choose a date": "Elegir una fecha",
+  "Resize panel": "Cambiar el tamaño del panel",
+  "or": "o",
+  "Alt": "Alt",
+  "Windows": "Windows"
 }

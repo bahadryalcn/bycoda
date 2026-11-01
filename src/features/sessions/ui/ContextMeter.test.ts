@@ -131,20 +131,24 @@ it("keeps the hover panel reachable across the portal gap and compacts once", as
   const onCompact = vi.fn();
   await act(async () => root.render(createElement(ContextMeter, { usage, onCompact })));
   const trigger = container.querySelector("button")!;
-  await act(async () => trigger.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-  expect(dialog()).not.toBeNull();
+  const card = () => document.querySelector<HTMLElement>("[data-hover-card]");
   await act(async () => {
-    trigger.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    trigger.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    vi.advanceTimersByTime(350);
+  });
+  expect(card()).not.toBeNull();
+  await act(async () => {
+    trigger.dispatchEvent(new Event("pointerout", { bubbles: true }));
     vi.advanceTimersByTime(100);
-    dialog()!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    card()!.dispatchEvent(new Event("pointerover", { bubbles: true }));
     vi.advanceTimersByTime(250);
   });
-  expect(dialog()).not.toBeNull();
+  expect(card()).not.toBeNull();
   await act(async () =>
-    dialog()!.querySelector<HTMLButtonElement>(".context-meter-actions button")!.click(),
+    card()!.querySelector<HTMLButtonElement>(".context-meter-actions button")!.click(),
   );
   expect(onCompact).toHaveBeenCalledTimes(1);
-  expect(dialog()).toBeNull();
+  expect(card()).toBeNull();
 });
 
 it("explains why compact is unavailable and preserves cost and API duration", async () => {
@@ -207,7 +211,7 @@ it("keeps the signal icon uncluttered and exposes completed TPS, context and com
   expect(trigger.textContent).toBe("");
   expect(trigger.getAttribute("aria-label")).toContain("23%");
   expect(trigger.getAttribute("aria-label")).toContain("50.0 TPS");
-  expect(trigger.querySelector("svg")!.getAttribute("data-speed-fill")).toBe("0.75");
+  expect(trigger.querySelector("[data-speed-fill]")!.getAttribute("data-speed-fill")).toBe("0.75");
   await act(async () => trigger.click());
   expect(dialog()!.textContent).toContain("50.0 TPS");
   expect(dialog()!.textContent).not.toContain("output tokens");
@@ -255,7 +259,9 @@ it("changes bolt fill with the completed speed while keeping context independent
     );
     const trigger = container.querySelector("button")!;
     expect(trigger.getAttribute("aria-label")).toContain("23%");
-    expect(trigger.querySelector("svg")!.getAttribute("data-speed-fill")).toBe(String(fill));
+    expect(trigger.querySelector("[data-speed-fill]")!.getAttribute("data-speed-fill")).toBe(
+      String(fill),
+    );
   }
 });
 
@@ -265,8 +271,10 @@ it("animates only the HTML pulse box around the bolt SVG, and only while working
   expect(frame.getAttribute("data-working")).toBe("true");
   const pulse = frame.querySelector("span.context-speed-pulse")!;
   expect(pulse.querySelector(":scope > svg.context-speed-bolt")).not.toBeNull();
-  // The signal ring keeps its own fill contract as the first svg.
-  expect(container.querySelector("svg")!.getAttribute("data-speed-fill")).not.toBeNull();
+  // The signal ring keeps its own fill contract.
+  expect(
+    container.querySelector("[data-speed-fill]")!.getAttribute("data-speed-fill"),
+  ).not.toBeNull();
 
   await act(async () => root.render(createElement(ContextMeter, { usage, working: false })));
   expect(container.querySelector(".context-signal-frame")!.hasAttribute("data-working")).toBe(

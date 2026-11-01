@@ -131,17 +131,6 @@
   gap: 6px 12px;
   font-variant-numeric: tabular-nums;
 }
-
-.revealFailure {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  color: var(--ui-tone-danger-fg);
-  font-size: var(--ui-font-caption);
-  overflow-wrap: anywhere;
-}
-
 .rowActions {
   flex-shrink: 0;
   gap: 4px;

@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Modal } from "../../../shared/ui/Modal";
@@ -343,8 +344,9 @@ export function FilePicker({
         {!paletteMode && (error || retrying) ? (
           <div className="flex min-w-0 items-start gap-2 px-3 py-2 text-ui-caption">
             {error && detailedError ? (
-              <details className="min-w-0 flex-1 break-words text-danger">
+              <details className="min-w-0 flex-1 break-words text-(--ui-tone-danger-fg)">
                 <summary className="cursor-pointer" title={t("Error details")}>
+                  {/* Live region inside <summary> (a block InlineError is not valid there); the test reads summary [role=alert]. */}
                   <span role="alert" className="line-clamp-2">
                     {errorSummary}…
                   </span>
@@ -354,9 +356,7 @@ export function FilePicker({
                 </p>
               </details>
             ) : error ? (
-              <p role="alert" className="min-w-0 flex-1 break-words text-danger">
-                {error}
-              </p>
+              <InlineError className="min-w-0 flex-1 break-words">{error}</InlineError>
             ) : null}
             <Button
               variant="ghost"
@@ -479,7 +479,7 @@ function ActionList({
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onActive(index)}
             onClick={() => onRun(action)}
-            className={`  flex h-8 w-full items-center gap-2 text-left leading-none  ${
+            className={`  flex min-h-(--ui-control-height) w-full items-center gap-2 text-left leading-none  ${
               highlighted ? "" : ""
             }   `}
           >
@@ -572,7 +572,7 @@ function FileList({
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onRowEnter(index)}
             onClick={() => onPick(file)}
-            className={`  flex h-8 w-full items-center gap-2 text-left leading-none  ${
+            className={`  flex min-h-(--ui-control-height) w-full items-center gap-2 text-left leading-none  ${
               highlighted ? "" : ""
             }   `}
           >
@@ -589,7 +589,7 @@ function FileList({
               />
             </span>
             {dir ? (
-              <span className="min-w-0 max-w-[45%] truncate font-mono text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+              <span className="min-w-0 max-w-[45%] truncate font-mono text-ui-caption text-(--ui-text-secondary)">
                 <MatchText
                   text={dir}
                   positions={file.positions.filter((pos) => pos < slash)}

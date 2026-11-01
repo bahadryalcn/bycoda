@@ -688,3 +688,13 @@ Pages on the shared V3-022/V3-013 row and group pattern (source only, uncommitte
 - Providers (V3-008, `feature-providers`), Appearance (V3-020, `feature-appearance`), MCP and Skills edit modes (V3-010/V3-009, `feature-mcp`), Inbox and Connections (V3-014/V3-016, `feature-inbox-settings`), Source control and worktrees (V3-015/V3-027, `feature-source-control`), Limits & budgets and Notifications (V3-011/V3-019), Keybindings (V3-018), Chat, General and Privacy (V3-012/V3-021/V3-017), Crews (V3-013).
 - Common behavior: framed groups without gray fill, one visible description line with long help behind ⓘ, closed Advanced rows, reset icons only while a value is modified, dependent rows inert with the reason as a tooltip, stable control widths during async state.
 - Follow-ups recorded by the page agents: the settings search index label "Separate permissions" is stale (`settings.ts`); unused `VoiceSettings.module.css` classes remain (voice area, owned elsewhere); the paired-phone roster needs real data.
+
+## UI standards round 2026-11-01 (uncommitted)
+
+Round reference: owner request "tamam düzeltmelere başla lütfen hepsini" (2026-11-01, owner chat); primitives and rules in `docs/reference/ui-component-catalog.md` and `ui-design-system.md`. Source only, uncommitted on `main`; nothing built or installed.
+
+Settings, providers, crews, skills UI, usage, onboarding, group lock (`src/features/settings/**` and neighbours), from `HANDOFF-w2-settings.md`. `mcp` and `keybindings` are not folders (McpSettings and ShortcutSettings live in `settings/ui`).
+
+- Done: `Row` `disabledReason` through the shared tooltip hook (no native `title`); PoliciesSettings and the SettingsView category rail on vertical `Tabs`; InboxSettings on `Tabs`; Settings title bar on `PaneHeader` (back Button in `leading`, `WindowControls` in `trailing`); daily summary time on `DateTimeField mode="time"`; interface scale as a Slider applied on release; `monospace` text fields (GenericAcp, SkillPicker); inline `EmptyState` in six collections; ForgotLockPasswordDialog on `ConfirmDialog requireText`; `HarnessUpdateNotice` joins the toast stack; `RadioTiles` for Appearance and onboarding tiles.
+- Left: `SkillPromptField` to PromptField (overlay + slash popover + AutomationsView frame); `AccountColorPicker` swatches to `ColorSwatchRow` (needs `showCustom={false}`); provider status pills stay `Badge` (auth state, not run states); about 46 baseline-tracked findings (status utilities, `<p role="alert">` in two crew forms, tiny chart radii, onboarding 160 ms).
+- Unverified: no screenshots or native run (onboarding tiles, Settings rail as Tabs, interface-scale slider, macOS inset).

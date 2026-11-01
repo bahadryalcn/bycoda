@@ -2,6 +2,7 @@ import { useId, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { TextField } from "../../../shared/ui/TextField";
 import { updateServerMetadata, type ServerRecord } from "../model/serverInventory";
 
@@ -38,7 +39,7 @@ export function ServerOrganization({
   const Container = expanded ? "section" : "details";
   const Heading = expanded ? "h3" : "summary";
   return (
-    <Container className="mbs-4 border-t border-stroke pbs-4 text-xs">
+    <Container className="mbs-4 border-t border-stroke pbs-4 text-ui-caption">
       <Heading className="font-medium">{t("Organization")}</Heading>
       <form
         className="mbs-3 flex flex-col gap-3"
@@ -111,11 +112,7 @@ export function ServerOrganization({
           />
           {t("Favorite")}
         </label>
-        {error ? (
-          <p role="alert" className="text-(--ui-tone-danger-fg)">
-            {error}
-          </p>
-        ) : null}
+        {error ? <InlineError>{error}</InlineError> : null}
         <div className="flex items-center justify-between gap-2">
           <span role="status" className="text-(--ui-text-muted)">
             {saved ? t("Saved") : ""}

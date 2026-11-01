@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   ArrowLeft,
   Check,
@@ -153,7 +154,7 @@ export default function GuideHub({
                   aria-current={item === upNext ? "step" : undefined}
                   startIcon={
                     item.done ? (
-                      <Check size={13} aria-hidden="true" />
+                      <Check className="icon-sm" aria-hidden="true" />
                     ) : (
                       <span className="guide-hub-ring" aria-hidden="true" />
                     )
@@ -184,7 +185,7 @@ export default function GuideHub({
             <Button
               variant="ghost"
               size="sm"
-              startIcon={<Play size={13} aria-hidden="true" />}
+              startIcon={<Play className="icon-sm" aria-hidden="true" />}
               onClick={() => {
                 onClose();
                 startTour("first-run");
@@ -207,18 +208,17 @@ export default function GuideHub({
                     variant="item"
                     selected={item.id === topic.id}
                     aria-current={item.id === topic.id ? "true" : undefined}
-                    startIcon={<Icon size={15} />}
+                    startIcon={<Icon className="icon-md" />}
                     onClick={() => setActiveId(item.id)}
                   >
                     <span className="guide-hub-nav-label">{item.title}</span>
                     {complete ? (
                       <Check
-                        size={13}
-                        className="guide-hub-complete"
+                        className="icon-sm guide-hub-complete"
                         aria-label={t("Done")}
                       />
                     ) : seen.includes(item.id) ? (
-                      <Check size={13} className="guide-hub-seen" aria-label={t("Viewed")} />
+                      <Check className="icon-sm guide-hub-seen" aria-label={t("Viewed")} />
                     ) : null}
                   </Button>
                 );
@@ -238,7 +238,7 @@ export default function GuideHub({
             <Button
               variant="primary"
               disabled={!!blocker}
-              endIcon={<ChevronRight size={14} />}
+              endIcon={<ChevronRight className="icon-sm" />}
               onClick={tryIt}
             >
               {topic.action.label}
@@ -246,7 +246,7 @@ export default function GuideHub({
             {topic.tour ? (
               <Button
                 variant="secondary"
-                startIcon={<Play size={14} />}
+                startIcon={<Play className="icon-sm" />}
                 onClick={() => onStartTour(topic.id)}
               >
                 {t("Quick tour")}
@@ -269,17 +269,21 @@ export default function GuideHub({
                 const automatic = !!step.done && signals.has(step.done);
                 return (
                   <li key={step.id} data-done={done ? "true" : undefined}>
-                    <button
-                      type="button"
-                      className="guide-hub-step-mark"
-                      aria-pressed={done}
-                      aria-label={done ? t("Mark as not done") : t("Mark as done")}
-                      title={automatic ? t("Done") : undefined}
-                      disabled={automatic}
-                      onClick={() => setDoneSteps(setGuideStepDone(step.id, !done))}
-                    >
-                      {done ? <Check size={12} aria-hidden="true" /> : position + 1}
-                    </button>
+                    {/* aria-disabled (not disabled) keeps the pointer and focus events the tooltip needs. */}
+                    <Tooltip label={automatic ? t("Done") : undefined}>
+                      <button
+                        type="button"
+                        className="guide-hub-step-mark"
+                        aria-pressed={done}
+                        aria-label={done ? t("Mark as not done") : t("Mark as done")}
+                        aria-disabled={automatic || undefined}
+                        onClick={() => {
+                          if (!automatic) setDoneSteps(setGuideStepDone(step.id, !done));
+                        }}
+                      >
+                        {done ? <Check className="icon-xs" aria-hidden="true" /> : position + 1}
+                      </button>
+                    </Tooltip>
                     <div className="guide-hub-step-body">
                       <span className="guide-hub-step-title">{step.title}</span>
                       <span id={`guide-step-${step.id}`} className="guide-hub-step-text">
@@ -290,7 +294,7 @@ export default function GuideHub({
                       <Button
                         variant="ghost"
                         size="sm"
-                        startIcon={<Eye size={14} aria-hidden="true" />}
+                        startIcon={<Eye className="icon-sm" aria-hidden="true" />}
                         aria-describedby={`guide-step-${step.id}`}
                         onClick={() => onShowStep(topic.id, step.id)}
                       >
@@ -305,7 +309,7 @@ export default function GuideHub({
           {topic.tips.length > 0 ? (
             <details className="guide-hub-tips">
               <summary>
-                <ChevronRight size={13} aria-hidden="true" />
+                <ChevronRight className="icon-sm" aria-hidden="true" />
                 {t("Tips")}
               </summary>
               <ul>
@@ -325,7 +329,7 @@ export default function GuideHub({
             {previous ? (
               <Button
                 variant="ghost"
-                startIcon={<ArrowLeft size={14} />}
+                startIcon={<ArrowLeft className="icon-sm" />}
                 onClick={() => setActiveId(previous.id)}
               >
                 {t("Previous: {p0}", { p0: previous.title })}
@@ -336,7 +340,7 @@ export default function GuideHub({
             {next ? (
               <Button
                 variant="ghost"
-                endIcon={<ChevronRight size={14} />}
+                endIcon={<ChevronRight className="icon-sm" />}
                 onClick={() => setActiveId(next.id)}
               >
                 {t("Next: {p0}", { p0: next.title })}

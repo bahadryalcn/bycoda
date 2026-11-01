@@ -1,4 +1,6 @@
 import { Button } from "../../shared/ui/Button";
+import { WindowChromeInset } from "../../shared/ui/PaneHeader";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { t, useLocale, useT } from "../../shared/i18n";
@@ -408,7 +410,7 @@ function TitleTabItem({
         align="start"
         motion="none"
         type="button"
-        title={accessibleTooltip}
+        tooltip={accessibleTooltip}
         aria-label={accessibleTooltip}
         aria-current={active ? "page" : undefined}
         data-tauri-drag-region="false"
@@ -439,12 +441,12 @@ function TitleTabItem({
           />
         ) : tab.terminal || !fileIcon ? (
           <Terminal
-            className={`size-3.5 shrink-0 ${active ? "text-content" : "text-(--ui-text-secondary)"}`}
+            className={`icon-sm shrink-0 ${active ? "text-content" : "text-(--ui-text-secondary)"}`}
             strokeWidth={1.75}
           />
         ) : (
           <span className={!active ? "opacity-55" : undefined}>
-            <FileTypeIcon name={fileIcon} isDir={false} size={14} />
+            <FileTypeIcon name={fileIcon} isDir={false} size="sm" />
           </span>
         )}
         {/* One 28px row: the headline leads, secondary meta follows when there is room. */}
@@ -456,28 +458,34 @@ function TitleTabItem({
               {headline}
             </TabLabel>
             {tab.pendingWindowMove || tab.movingWindow ? (
-              <span
-                className="shrink-0 text-accent"
-                title={
-                  tab.movingWindow
-                    ? t("Opening new window…")
-                    : t("Moves to a new window when the response finishes")
-                }
-                aria-label={
+              <Tooltip
+                label={
                   tab.movingWindow
                     ? t("Opening new window…")
                     : t("Moves to a new window when the response finishes")
                 }
               >
-                <AppWindow className="icon-xs" strokeWidth={1.75} />
-              </span>
+                <span
+                  className="shrink-0 text-accent"
+                  role="img"
+                  aria-label={
+                    tab.movingWindow
+                      ? t("Opening new window…")
+                      : t("Moves to a new window when the response finishes")
+                  }
+                >
+                  <AppWindow className="icon-xs" strokeWidth={1.75} />
+                </span>
+              </Tooltip>
             ) : null}
             {tab.dirty ? (
-              <span
-                className="size-1.5 shrink-0 rounded-full bg-(--ui-text-secondary)"
-                title={t("Unsaved changes")}
-                aria-label={t("Unsaved changes")}
-              />
+              <Tooltip label={t("Unsaved changes")}>
+                <span
+                  role="img"
+                  className="size-1.5 shrink-0 rounded-full bg-(--ui-text-secondary)"
+                  aria-label={t("Unsaved changes")}
+                />
+              </Tooltip>
             ) : null}
           </span>
           {meta ? (
@@ -492,7 +500,7 @@ function TitleTabItem({
           label={t("Close {p0}", { p0: headline })}
           motion="none"
           type="button"
-          title={t("Close Tab")}
+          tooltip={t("Close Tab")}
           aria-label={t("Close {p0}", { p0: headline })}
           data-no-drag
           data-tauri-drag-region="false"
@@ -527,14 +535,12 @@ function TabStripChevron({ side, onClick }: { side: "left" | "right"; onClick: (
       variant="ghost"
       motion="none"
       type="button"
-      title={label}
-      aria-label={label}
       data-tauri-drag-region="false"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
-      className={`absolute top-1/2 z-40 -translate-y-1/2 ${side === "left" ? "left-1" : "right-1"}`}
+      className={`absolute top-1/2 z-1 -translate-y-1/2 ${side === "left" ? "left-1" : "right-1"}`}
     >
-      <Icon className="size-3.5" strokeWidth={1.75} />
+      <Icon className="icon-sm" strokeWidth={1.75} />
     </Button>
   );
 }
@@ -568,8 +574,6 @@ export function IconButton({
       variant="ghost"
       motion="none"
       type="button"
-      title={label}
-      aria-label={label}
       aria-pressed={active || accent}
       aria-disabled={disabled}
       data-tauri-drag-region="false"
@@ -622,8 +626,6 @@ function AppMenuButton() {
         variant="ghost"
         motion="none"
         type="button"
-        title={t("Application menu")}
-        aria-label={t("Application menu")}
         aria-haspopup="menu"
         data-tauri-drag-region="false"
         onClick={(event) => {
@@ -658,15 +660,16 @@ export function DevModeIndicator({ className }: { className?: string }) {
       data-dev-mode-indicator=""
       className={`flex min-w-0 shrink-0 items-center px-3 pb-2 pt-1 @max-[140px]/rail:justify-center @max-[140px]/rail:px-0 ${className ?? ""}`}
     >
-      <span
-        role="img"
-        title={t("Development build")}
-        aria-label={t("Development build")}
-        className="inline-flex min-w-0 items-center gap-1.5 text-ui-caption font-medium text-(--ui-tone-info-fg)"
-      >
-        <Wrench className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
-        <span className="truncate @max-[140px]/rail:hidden">{t("Development")}</span>
-      </span>
+      <Tooltip label={t("Development build")} side="top">
+        <span
+          role="img"
+          aria-label={t("Development build")}
+          className="inline-flex min-w-0 items-center gap-1.5 text-ui-caption font-medium text-(--ui-tone-info-fg)"
+        >
+          <Wrench className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+          <span className="truncate @max-[140px]/rail:hidden">{t("Development")}</span>
+        </span>
+      </Tooltip>
     </div>
   );
 }
@@ -1142,8 +1145,8 @@ function TitleBarComponent({
               selected={layoutMenu != null}
               motion="none"
               type="button"
+              tooltip={t("Split and arrange panes")}
               aria-label={t("Layout")}
-              title={t("Split and arrange panes")}
               onClick={() => {
                 if (layoutMenu) {
                   setLayoutMenu(null);
@@ -1227,7 +1230,7 @@ function TitleBarComponent({
           title bar takes over the traffic lights and the rail toggle. */}
       {projectless && railClosed && !compactRail ? (
         <>
-          {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
+          <WindowChromeInset />
           <div className="flex shrink-0 items-center px-1.5">
             <IconButton
               label={t("Toggle Sidebar")}
@@ -1240,16 +1243,18 @@ function TitleBarComponent({
         </>
       ) : null}
       {!sessionSidebarOpen && !projectless && onToggleSessionSidebar ? (
-        <div className="flex shrink-0 items-center px-1.5">
-          {IS_MAC && railClosed && !compactRail ? <div className="w-[70px] shrink-0" /> : null}
-          <IconButton
-            label={t("Toggle Session Sidebar")}
-            command="App: Toggle Session Sidebar"
-            onClick={onToggleSessionSidebar}
-          >
-            <DashboardSquare className="icon-sm" strokeWidth={1.75} />
-          </IconButton>
-        </div>
+        <>
+          <WindowChromeInset active={railClosed && !compactRail} />
+          <div className="flex shrink-0 items-center px-1.5">
+            <IconButton
+              label={t("Toggle Session Sidebar")}
+              command="App: Toggle Session Sidebar"
+              onClick={onToggleSessionSidebar}
+            >
+              <DashboardSquare className="icon-sm" strokeWidth={1.75} />
+            </IconButton>
+          </div>
+        </>
       ) : null}
       {showProjectButton && onSelectProject ? (
         <CwdPicker
@@ -1309,7 +1314,7 @@ function TitleBarComponent({
                   {!entry.closing && paneToTabDrop?.targetTabId === tab.id ? (
                     <span
                       data-pane-tab-drop-hint
-                      className={`pointer-events-none absolute inset-y-1 z-50 w-0.5 rounded-full ${paneToTabDrop.invalid ? "bg-danger" : "bg-accent"} ${
+                      className={`pointer-events-none absolute inset-y-1 z-1 w-0.5 rounded-full ${paneToTabDrop.invalid ? "bg-danger" : "bg-accent"} ${
                         paneToTabDrop.position === "before" ? "left-0" : "right-0"
                       }`}
                     />
@@ -1372,7 +1377,7 @@ function TitleBarComponent({
             onClick={onReturnToMain}
             className="return-to-main my-1 shrink-0"
             aria-label={t("Return to main window")}
-            title={t(
+            tooltip={t(
               "Return all sessions to the main window; running responses finish before moving",
             )}
           >

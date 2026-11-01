@@ -1,3 +1,4 @@
+import { Surface } from "../../../shared/ui/Surface";
 import { useMemo, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { storedFlag } from "../../../shared/lib/storedSetting";
@@ -129,7 +130,11 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
       id: "copy",
       label: feedback.copied ? t("Copied") : feedback.failed ? t("Retry copy") : t("Copy"),
       icon: feedback.copied ? <Check /> : feedback.failed ? <RotateCcw /> : <Copy />,
-      tone: feedback.copied ? ("success" as const) : feedback.failed ? ("danger" as const) : undefined,
+      tone: feedback.copied
+        ? ("success" as const)
+        : feedback.failed
+          ? ("danger" as const)
+          : undefined,
       disabled: !copyText,
       loading: feedback.pending,
       onSelect: copy,
@@ -150,9 +155,11 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
   // One quiet code-block surface: the sections are spaced, not ruled, and the
   // single icon group (Copy, Wrap) lives on the first heading instead of a bar of its own.
   return (
-    <div
+    <Surface
+      variant="outline"
+      padding="none"
       data-tool-inspection
-      className="flex min-w-0 flex-col gap-2 overflow-clip rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) pb-2"
+      className="flex min-w-0 flex-col gap-2 overflow-clip pb-2"
     >
       {sections.map((section, index) => {
         const json = isJson(section) ? inspectionJson(section.text) : null;
@@ -226,6 +233,6 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
           {t("Output left out to keep this run small.")}
         </p>
       ) : null}
-    </div>
+    </Surface>
   );
 }

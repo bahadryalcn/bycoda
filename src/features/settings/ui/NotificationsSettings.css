@@ -25,5 +25,5 @@
   overflow: visible;
 }
 .project-notification-settings .project-notification-categories {
-  background: var(--ui-surface);
+  background: transparent;
 }

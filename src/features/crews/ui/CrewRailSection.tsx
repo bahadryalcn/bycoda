@@ -3,6 +3,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { InlineError } from "../../../shared/ui/InlineError";
 import type { PopoverAnchor } from "../../../shared/ui/Popover";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import {
@@ -324,7 +325,7 @@ export function CrewRailSection({
                 selected={menu?.crewId === crew.id}
                 motion="none"
                 type="button"
-                title={[crew.name, scope, statusText].filter(Boolean).join("\n")}
+                tooltip={[crew.name, scope, statusText].filter(Boolean).join("\n")}
                 aria-label={[crew.name, statusText].filter(Boolean).join(", ")}
                 disabled={pending}
                 loading={pendingCrew === crew.id}
@@ -399,9 +400,7 @@ export function CrewRailSection({
           );
         })}
         {error ? (
-          <p role="alert" className="px-2 text-ui-micro leading-tight text-danger">
-            {error}
-          </p>
+          <InlineError className="px-2">{error}</InlineError>
         ) : null}
       </div>
       {menu?.kind === "crew" && menuCrew ? (

@@ -11,8 +11,10 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ComponentPropsWithRef,
+  type FocusEvent,
   type KeyboardEvent,
   type MouseEvent,
+  type PointerEvent,
   type ReactElement,
   type ReactNode,
   type Ref,
@@ -28,6 +30,7 @@ import type { PopoverAlign } from "../lib/popover";
 import { Popover } from "./Popover";
 import { InlineAction } from "./ActionHost";
 import { Button } from "./Button";
+import { useTooltip, type TooltipContent } from "./Tooltip";
 import { isImeComposition } from "../lib/keyboard";
 import { SelectTrigger, SelectValue } from "./arc/select/select";
 import {
@@ -70,6 +73,11 @@ export type SearchableSelectTriggerRender = {
     "data-state": "open" | "closed";
     onClick: (event: MouseEvent<HTMLButtonElement>) => void;
     onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
+    /** Hover and focus wiring of the shared `tooltip`; spread with the rest. */
+    onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => void;
+    onPointerLeave: (event: PointerEvent<HTMLButtonElement>) => void;
+    onFocus: (event: FocusEvent<HTMLButtonElement>) => void;
+    onBlur: (event: FocusEvent<HTMLButtonElement>) => void;
   };
   open: boolean;
   /** The selected label (or a summary for several values); undefined means the placeholder shows. */
@@ -122,32 +130,42 @@ type FieldOptions = {
   fieldVariant?: FieldVariant;
 };
 
-type SelectionOptions = AsyncOptions & FieldOptions & {
-  /** Locale used for case folding, independently of the UI language. */
-  searchLocale?: string;
-  triggerProps?: Omit<
-    ComponentPropsWithRef<"button">,
-    "children" | "value" | "onChange" | "disabled"
-  >;
-  showSelectedValues?: boolean;
-  loopNavigation?: boolean;
-  selectionLabels?: {
-    menu?: string;
-    summary?: (count: number) => string;
-    missing?: string;
-    remove?: (label: string) => string;
-    selected?: string;
-    clear?: string;
-    done?: string;
+type SelectionOptions = AsyncOptions &
+  FieldOptions & {
+    /** Locale used for case folding, independently of the UI language. */
+    searchLocale?: string;
+    triggerProps?: Omit<
+      ComponentPropsWithRef<"button">,
+      "children" | "value" | "onChange" | "disabled"
+    > & {
+      /** Same as the `tooltip` prop (the prop wins). */
+      tooltip?: SelectionOptions["tooltip"];
+    };
+    /** Shared tooltip on the trigger while the list is closed (hover and keyboard focus). A string
+     *  is the title; an object adds `details`, `shortcut`, `side`, `wide`. Also read from
+     *  `triggerProps.tooltip`. Never a native `title`. */
+    tooltip?:
+      | string
+      | Pick<TooltipContent, "label" | "details" | "shortcut" | "side" | "align" | "wide">;
+    showSelectedValues?: boolean;
+    loopNavigation?: boolean;
+    selectionLabels?: {
+      menu?: string;
+      summary?: (count: number) => string;
+      missing?: string;
+      remove?: (label: string) => string;
+      selected?: string;
+      clear?: string;
+      done?: string;
+    };
+    /**
+     * Replaces the default trigger. Spread `trigger.props` on a Button (or another button element) so the
+     * open state, keyboard opening, labelling and field wiring stay intact.
+     */
+    renderTrigger?: (trigger: SearchableSelectTriggerRender) => ReactElement;
+    /** Actions below the list ("Manage…", "New…"); `close` closes the menu and returns focus to the trigger. */
+    footer?: ReactNode | ((menu: { close: () => void }) => ReactNode);
   };
-  /**
-   * Replaces the default trigger. Spread `trigger.props` on a Button (or another button element) so the
-   * open state, keyboard opening, labelling and field wiring stay intact.
-   */
-  renderTrigger?: (trigger: SearchableSelectTriggerRender) => ReactElement;
-  /** Actions below the list ("Manage…", "New…"); `close` closes the menu and returns focus to the trigger. */
-  footer?: ReactNode | ((menu: { close: () => void }) => ReactNode);
-};
 
 export function SearchableSelect(
   props: {
@@ -178,6 +196,7 @@ export function SearchableSelect(
     align = "start",
     searchLocale,
     triggerProps,
+    tooltip,
     showSelectedValues,
     selectionLabels,
     loopNavigation,
@@ -209,6 +228,7 @@ export function SearchableSelect(
         align,
         searchLocale,
         triggerProps,
+        tooltip,
         showSelectedValues,
         selectionLabels,
         loopNavigation,
@@ -299,13 +319,9 @@ const OptionRow = memo(function OptionRow({
         option.description ? "min-h-8 py-1.5" : compact ? "h-7" : "h-8"
       }`}
     >
-      {option.icon != null ? (
-        <span className={styles.optionIcon} aria-hidden>
-          {option.icon}
-        </span>
-      ) : null}
       <ComboboxChoice
         selected={selected}
+        icon={option.icon}
         label={
           <MatchText
             text={option.label}
@@ -324,7 +340,11 @@ const OptionRow = memo(function OptionRow({
 
 /** Consecutive options sharing a group; ungrouped lists stay one flat section. */
 function optionSections(options: readonly SearchableSelectOption[]) {
-  const sections: { group?: string; start: number; options: SearchableSelectOption[] }[] = [];
+  const sections: {
+    group?: string;
+    start: number;
+    options: SearchableSelectOption[];
+  }[] = [];
   options.forEach((option, index) => {
     const current = sections[sections.length - 1];
     if (current && current.group === option.group) current.options.push(option);
@@ -350,6 +370,7 @@ function SearchableSelectMenu({
   align = "start",
   searchLocale,
   triggerProps,
+  tooltip: tooltipProp,
   showSelectedValues,
   selectionLabels,
   loopNavigation,
@@ -550,6 +571,18 @@ function SearchableSelectMenu({
     options.length === 0 && !normalizedQuery ? (noOptionsLabel ?? emptyLabel) : emptyLabel;
 
   const selectedOption = optionLookup.get(values[0] ?? "");
+  // Shared tooltip: only while the list is closed, so it never covers the open menu.
+  const { tooltip: triggerTooltip, ...triggerDomProps } = triggerProps ?? {};
+  const tooltipSource = tooltipProp ?? triggerTooltip;
+  const tooltipContent: TooltipContent =
+    typeof tooltipSource === "string" ? { label: tooltipSource } : (tooltipSource ?? {});
+  const hint = useTooltip({
+    ...tooltipContent,
+    label: open ? undefined : tooltipContent.label,
+    details: open ? undefined : tooltipContent.details,
+    shortcut: open ? undefined : tooltipContent.shortcut,
+    describe: false,
+  });
   // The trigger's state, labelling, field wiring and opening keys; shared by the default and a custom trigger.
   const triggerWiring: SearchableSelectTriggerRender["props"] = {
     id: composed ? triggerId : triggerProps?.id,
@@ -570,13 +603,31 @@ function SearchableSelectMenu({
     "aria-haspopup": "dialog",
     "aria-controls": open ? `${listId}-menu` : undefined,
     "data-state": open ? "open" : "closed",
+    onPointerEnter: (event) => {
+      triggerProps?.onPointerEnter?.(event);
+      hint.trigger.onPointerEnter(event);
+    },
+    onPointerLeave: (event) => {
+      triggerProps?.onPointerLeave?.(event);
+      hint.trigger.onPointerLeave();
+    },
+    onFocus: (event) => {
+      triggerProps?.onFocus?.(event);
+      if (!event.defaultPrevented) hint.trigger.onFocus(event);
+    },
+    onBlur: (event) => {
+      hint.hide();
+      triggerProps?.onBlur?.(event);
+    },
     onClick: (event) => {
+      hint.hide();
       triggerProps?.onClick?.(event);
       if (event.defaultPrevented) return;
       if (open) close();
       else openMenu();
     },
     onKeyDown: (event) => {
+      if (event.key === "Escape") hint.hide();
       triggerProps?.onKeyDown?.(event);
       if (event.defaultPrevented || isImeComposition(event.nativeEvent)) return;
       if (open || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
@@ -604,54 +655,55 @@ function SearchableSelectMenu({
           loading,
         })
       ) : (
-      <SelectTrigger
-        {...triggerProps}
-        {...triggerWiring}
-        data-select-variant={variant}
-        data-disabled={disabled || undefined}
-        data-loading={loading || undefined}
-        className={[
-          triggerProps?.className,
-          // Field and transparent triggers share the Select frame (border, surface, height, hover, focus, invalid and
-          // disabled roles); the compact variants are deliberate toolbar shapes with their own utilities.
-          framed
-            ? `bycoda-arc-select text-left ${variant === "transparent" ? "bg-transparent" : ""}`
-            : variant === "row"
-              ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]"
-              : variant === "panel"
-                ? "flex h-14 w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-[14px] font-medium hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.995]"
-                : "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        {!multiple && selectedOption?.icon != null ? (
-          <span className={styles.triggerIcon} aria-hidden>
-            {selectedOption.icon}
-          </span>
-        ) : null}
-        <span
-          className={`min-w-0 truncate ${variant === "panel" ? "flex-1 text-right" : compact ? "" : "flex-1"} ${framed || !selectedLabel ? "" : "text-content"}`}
-          data-placeholder={selectedLabel ? undefined : ""}
-          title={selectedLabel}
+        <SelectTrigger
+          {...triggerDomProps}
+          {...triggerWiring}
+          data-select-variant={variant}
+          data-disabled={disabled || undefined}
+          data-loading={loading || undefined}
+          className={[
+            triggerProps?.className,
+            // Field and transparent triggers share the Select frame (border, surface, height, hover, focus, invalid and
+            // disabled roles); the compact variants are deliberate toolbar shapes with their own utilities.
+            framed
+              ? `bycoda-arc-select text-left ${variant === "transparent" ? "bg-transparent" : ""}`
+              : variant === "row"
+                ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]"
+                : variant === "panel"
+                  ? "flex h-14 w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-[14px] font-medium hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.995]"
+                  : "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         >
-          <SelectValue value={value} label={selectedLabel ?? placeholder} />
-        </span>
-        {/* A closed picker still shows that its options are loading; the open list has its own status row. */}
-        {loading && !open && !failed ? (
-          <Spinner
-            data-select-loading=""
-            size={compact ? "xs" : "sm"}
-            className="text-(--ui-text-secondary)"
-          />
-        ) : (
-          <ChevronDown
-            className={`shrink-0 text-(--ui-text-secondary) motion-safe:transition-transform duration-150 ease-out ${compact ? "size-3" : "size-3.5"} ${open ? "rotate-180" : ""}`}
-            strokeWidth={1.75}
-          />
-        )}
-      </SelectTrigger>
+          {!multiple && selectedOption?.icon != null ? (
+            <span className={styles.triggerIcon} aria-hidden>
+              {selectedOption.icon}
+            </span>
+          ) : null}
+          <span
+            className={`min-w-0 truncate ${variant === "panel" ? "flex-1 text-right" : compact ? "" : "flex-1"} ${framed || !selectedLabel ? "" : "text-content"}`}
+            data-placeholder={selectedLabel ? undefined : ""}
+            title={selectedLabel}
+          >
+            <SelectValue value={value} label={selectedLabel ?? placeholder} />
+          </span>
+          {/* A closed picker still shows that its options are loading; the open list has its own status row. */}
+          {loading && !open && !failed ? (
+            <Spinner
+              data-select-loading=""
+              size={compact ? "xs" : "sm"}
+              className="text-(--ui-text-secondary)"
+            />
+          ) : (
+            <ChevronDown
+              className={`shrink-0 text-(--ui-text-secondary) motion-safe:transition-transform duration-150 ease-out ${compact ? "size-3" : "size-3.5"} ${open ? "rotate-180" : ""}`}
+              strokeWidth={1.75}
+            />
+          )}
+        </SelectTrigger>
       )}
+      {open ? null : hint.tooltip}
       {showSelectedValues && multiple && values.length ? (
         <div
           className={`bycoda-selection-values ${styles.values} ${disabled ? styles.valuesDisabled : ""}`}

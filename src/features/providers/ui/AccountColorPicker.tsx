@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRef, useState } from "react";
-import { Check } from "../../../shared/ui/icons";
+import { ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
 import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
 import {
   setProviderAccountColor,
@@ -40,35 +40,12 @@ export function AccountColorPopover({
       tabIndex={-1}
       className="p-2"
     >
-      <div className="grid grid-cols-3 gap-1">
-        {PROVIDER_ACCOUNT_COLORS.map((color) => {
-          const selected = current.id === color.id;
-          return (
-            <Button
-              variant="ghost"
-              size="sm"
-              key={color.id}
-              type="button"
-              title={color.label}
-              aria-label={color.label}
-              aria-pressed={selected}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => pick(color.id)}
-              className="flex items-center gap-2"
-            >
-              <span
-                className="grid size-4 place-items-center rounded-full"
-                style={{ background: color.value }}
-              >
-                {selected ? (
-                  <Check className="size-2.5 text-on-solid" strokeWidth={3} aria-hidden />
-                ) : null}
-              </span>
-              <span>{color.label}</span>
-            </Button>
-          );
-        })}
-      </div>
+      <ColorSwatchRow
+        colors={PROVIDER_ACCOUNT_COLORS.map((color) => color.value)}
+        labels={PROVIDER_ACCOUNT_COLORS.map((color) => color.label)}
+        colorIndex={PROVIDER_ACCOUNT_COLORS.findIndex((color) => color.id === current.id)}
+        onPickIndex={(index) => pick(PROVIDER_ACCOUNT_COLORS[index].id)}
+      />
       {account.color ? (
         <Button
           variant="ghost"
@@ -105,7 +82,7 @@ export function AccountColorPicker({
         ref={trigger}
         type="button"
         disabled={disabled}
-        title={t("Account color")}
+        tooltip={t("Account color")}
         aria-label={t("Color for {p0}: {p1}", { p0: account.label, p1: current.label })}
         aria-expanded={open}
         aria-haspopup="dialog"

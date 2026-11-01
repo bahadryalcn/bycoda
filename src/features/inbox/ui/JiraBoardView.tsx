@@ -2,9 +2,11 @@ import { Alert } from "../../../shared/ui/Alert";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ChevronDown, ChevronRight, GripVertical } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Surface } from "../../../shared/ui/Surface";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import {
@@ -1029,7 +1031,11 @@ export function JiraBoardView({
               </Button>
             ))
           ) : (
-            <p>{t("No allowed transition to this column.")}</p>
+            <EmptyState
+              size="inline"
+              kind="empty"
+              description={t("No allowed transition to this column.")}
+            />
           )}
           <Button
             variant="ghost"
@@ -1046,10 +1052,20 @@ export function JiraBoardView({
         </div>
       ) : null}
       {!loading && !boards.length && !error ? (
-        <p className="jira-board-hint">{t("No Jira boards found")}</p>
+        <EmptyState
+          size="inline"
+          kind="empty"
+          description={t("No Jira boards found")}
+          className="px-3"
+        />
       ) : null}
       {!loading && board?.kind === "scrum" && configuration?.sprints.length === 0 ? (
-        <p className="jira-board-hint">{t("No active or future sprints on this board.")}</p>
+        <EmptyState
+          size="inline"
+          kind="empty"
+          description={t("No active or future sprints on this board.")}
+          className="px-3"
+        />
       ) : null}
       {mode === "kanban" ? (
         <div className="jira-board-columns flex min-h-0 flex-1 items-stretch gap-3 overflow-auto px-3 pb-3 pt-2">
@@ -1080,7 +1096,12 @@ export function JiraBoardView({
                   </span>
                 </header>
                 {!column.statusIds.length ? (
-                  <p className="jira-board-hint">{t("No statuses mapped to this column.")}</p>
+                  <EmptyState
+                    size="inline"
+                    kind="empty"
+                    description={t("No statuses mapped to this column.")}
+                    className="px-1"
+                  />
                 ) : null}
                 {visible(issues).map((issue) => card(issue, group, column))}
                 {group.loaded &&
@@ -1088,9 +1109,14 @@ export function JiraBoardView({
                 !group.error &&
                 !visible(issues).length &&
                 column.statusIds.length ? (
-                  <p className="jira-board-empty">
-                    {search.trim() || group.token ? t("No matching loaded issues") : t("No issues")}
-                  </p>
+                  <EmptyState
+                    size="inline"
+                    kind={search.trim() || group.token ? "filtered" : "empty"}
+                    description={
+                      search.trim() || group.token ? t("No matching loaded issues") : t("No issues")
+                    }
+                    className="px-1"
+                  />
                 ) : null}
               </section>
             );
@@ -1136,9 +1162,12 @@ export function JiraBoardView({
             const open = expanded ? expanded.includes(group.id) : index === 0;
             const contentId = `jira-group-${boardId}-${group.id.replace(":", "-")}`;
             return (
-              <section
+              <Surface
+                as="section"
+                variant="outline"
+                padding="sm"
                 key={group.id}
-                className="jira-board-sprint mb-3 rounded-(--ui-radius-card) border border-(--ui-editor-border) p-2"
+                className="jira-board-sprint mb-3"
                 aria-label={group.name}
                 data-jira-drop={group.id}
                 data-jira-group={group.id}
@@ -1189,16 +1218,21 @@ export function JiraBoardView({
                     ) : null}
                     {visible(group.issues).map((issue) => card(issue, group))}
                     {group.loaded && !visible(group.issues).length ? (
-                      <p className="jira-board-empty">
-                        {search.trim() || group.token
-                          ? t("No matching loaded issues")
-                          : t("Drop issues here")}
-                      </p>
+                      <EmptyState
+                        size="inline"
+                        kind={search.trim() || group.token ? "filtered" : "empty"}
+                        description={
+                          search.trim() || group.token
+                            ? t("No matching loaded issues")
+                            : t("Drop issues here")
+                        }
+                        className="px-1"
+                      />
                     ) : null}
                     {groupRecovery(group)}
                   </div>
                 ) : null}
-              </section>
+              </Surface>
             );
           })}
         </div>
