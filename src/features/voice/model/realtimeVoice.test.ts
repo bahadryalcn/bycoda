@@ -110,7 +110,8 @@ function candidateInput(socket: Socket, id: string) {
     Math.round(4000 * Math.sin((2 * Math.PI * 150 * i) / 24000)),
   );
   for (let i = 0; i < 9; i++) pushFrame(speech);
-  for (let i = 0; i < 16; i++) pushFrame(new Int16Array(1024));
+  // End-of-turn silence (REALTIME_END_SILENCE) at 1024-sample frames.
+  for (let i = 0; i < 30; i++) pushFrame(new Int16Array(1024));
   socket.emit({ type: "input_audio_buffer.committed", item_id: id });
 }
 
@@ -157,6 +158,8 @@ it("authenticates per provider and disables automatic provider responses/interru
     "composer_attachment",
     "session_context",
     "submit_work",
+    "memory_save",
+    "memory_forget",
     "stop_work",
   ]);
   openai.close();
@@ -673,17 +676,55 @@ it("rejects late tools when a newer spoken turn cancels a response before respon
   voice.close();
 });
 
-it("times out a missing transcription and releases microphone rather than retaining unbounded input", async () => {
+function candidateAudio() {
+  const speech = Int16Array.from({ length: 1024 }, (_, i) =>
+    Math.round(4000 * Math.sin((2 * Math.PI * 150 * i) / 24000)),
+  );
+  for (let i = 0; i < 9; i++) pushFrame(speech);
+  for (let i = 0; i < 30; i++) pushFrame(new Int16Array(1024));
+}
+
+async function connectedWithFakeTimers(events: ReturnType<typeof callbacks>) {
+  setup();
+  const voice = new RealtimeVoice("openai", events, "tr");
+  const connection = voice.connect(secret("openai"));
+  await vi.advanceTimersByTimeAsync(0);
+  await connection;
+  return voice;
+}
+
+it("drops a committed candidate the provider never transcribes and keeps voice running", async () => {
   vi.useFakeTimers();
   try {
-    setup();
     const events = callbacks();
-    const voice = new RealtimeVoice("openai", events, "tr");
-    const connection = voice.connect(secret("openai"));
-    await vi.advanceTimersByTimeAsync(0);
-    await connection;
-    candidateInput(sockets[0], "pending");
-    await vi.advanceTimersByTimeAsync(10_000);
+    const voice = await connectedWithFakeTimers(events);
+    candidateInput(sockets[0], "noise");
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(events.error).not.toHaveBeenCalled();
+    expect(sockets[0].close).not.toHaveBeenCalled();
+    expect(sockets[0].sent()).toContainEqual({ type: "conversation.item.delete", item_id: "noise" });
+    // A late transcript of the dropped item is ignored; the next turn still works.
+    sockets[0].emit({
+      type: "conversation.item.input_audio_transcription.completed",
+      item_id: "noise",
+      transcript: "late",
+    });
+    acceptInput(sockets[0], "merhaba", "next");
+    expect(events.transcript).toHaveBeenCalledExactlyOnceWith("merhaba");
+    expect(sockets[0].sent().filter((event) => event.type === "response.create")).toHaveLength(1);
+    voice.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("ends voice when the provider never acknowledges a commit", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = callbacks();
+    const voice = await connectedWithFakeTimers(events);
+    candidateAudio();
+    await vi.advanceTimersByTimeAsync(15_000);
     expect(events.error).toHaveBeenCalledWith(
       "Voice connection is too slow. Start voice again.",
       true,
@@ -695,4 +736,65 @@ it("times out a missing transcription and releases microphone rather than retain
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("treats a rejected commit as an unconfirmed candidate, not a user-visible failure", async () => {
+  setup();
+  const events = callbacks();
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  candidateAudio();
+  sockets[0].emit({
+    type: "error",
+    error: { code: "input_audio_buffer_commit_empty", message: "buffer too small" },
+  });
+  expect(events.error).not.toHaveBeenCalled();
+  acceptInput(sockets[0], "evet", "after");
+  expect(events.transcript).toHaveBeenCalledExactlyOnceWith("evet");
+  voice.close();
+});
+
+it("tolerates a briefly full send buffer and fails only on a sustained stall", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = callbacks();
+    const voice = await connectedWithFakeTimers(events);
+    sockets[0].bufferedAmount = 1_000_000;
+    pushFrame(new Int16Array(1024));
+    await vi.advanceTimersByTimeAsync(5_000);
+    pushFrame(new Int16Array(1024));
+    expect(events.error).not.toHaveBeenCalled();
+    sockets[0].bufferedAmount = 0;
+    pushFrame(new Int16Array(1024));
+    sockets[0].bufferedAmount = 1_000_000;
+    pushFrame(new Int16Array(1024));
+    await vi.advanceTimersByTimeAsync(16_000);
+    pushFrame(new Int16Array(1024));
+    expect(events.error).toHaveBeenCalledWith(
+      "Voice connection is too slow. Start voice again.",
+      true,
+    );
+    voice.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("waits for a natural mid-sentence pause before ending the turn", async () => {
+  setup();
+  const voice = new RealtimeVoice("openai", callbacks(), "tr");
+  await voice.connect(secret("openai"));
+  const speech = Int16Array.from({ length: 1024 }, (_, i) =>
+    Math.round(4000 * Math.sin((2 * Math.PI * 150 * i) / 24000)),
+  );
+  for (let i = 0; i < 9; i++) pushFrame(speech);
+  // About 0.85 s of thinking pause, then the sentence continues.
+  for (let i = 0; i < 20; i++) pushFrame(new Int16Array(1024));
+  const appends = () =>
+    sockets[0].sent().filter((event) => event.type === "input_audio_buffer.append");
+  expect(appends()).toHaveLength(0);
+  for (let i = 0; i < 9; i++) pushFrame(speech);
+  for (let i = 0; i < 30; i++) pushFrame(new Int16Array(1024));
+  expect(appends()).toHaveLength(1);
+  voice.close();
 });

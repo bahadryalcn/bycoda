@@ -1,5 +1,5 @@
 /* Arc free radio-group presentation, adapted to shared bycoda semantic roles. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 /* F3 contract: caller className may change placement (width, margins, flex/grid
    placement), layered below Tailwind utilities; presentation below stays unlayered. */
 @layer components {

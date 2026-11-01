@@ -6,6 +6,7 @@ import {
   supportsProviderAccounts,
 } from "../../providers/model/providerAccounts";
 import { isRemoteProjectPath } from "../../projects/model/recents";
+import { personaBlock } from "./voicePrompt";
 import { homeDir } from "../../../platform/tauri/fs";
 import { voiceModelSettings } from "./voiceConversation";
 
@@ -25,6 +26,8 @@ export type VoiceAssistantInput = {
   tools: readonly VoiceAssistantTool[];
   execute: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   maxToolCalls?: number;
+  /** Owner persona block from voicePersonaInstructions; style only. */
+  persona?: string;
 };
 
 type Decision =
@@ -122,7 +125,7 @@ Preserve every requested part and correction. State the problem and desired outc
 Accepted/queued/running/completed/failed/uncertain are distinct. Never claim completion without matching evidence. For uncertain mutations, preserve the operation/request ID and query its result; do not recreate or blindly resend. Repeating an identical call in this spoken turn reuses its first observation. Stop work only on an explicit request; silencing speech and pausing future automation runs do not stop work already running.
 After submit_work, acknowledge delivery briefly only if its observation says accepted=true. A rejection is not delivery; queued or accepted is not running or completed. Do not resubmit the same current work intent with a rewritten brief after an accepted or uncertain delivery.
 Images are visible only when the provider receives actual image input. This text route cannot inspect pixels; image_input_unsupported must be explained honestly. Binary metadata or base64 text is not visual evidence.
-Keep replies brief, plain spoken sentences. You can perform at most ${remaining} further tool calls; when no calls remain, explain the observed result and outstanding work without inventing success.
+Keep replies brief, plain spoken sentences. You can perform at most ${remaining} further tool calls; when no calls remain, explain the observed result and outstanding work without inventing success.${personaBlock(input.persona)}
 AVAILABLE FUNCTIONS: ${JSON.stringify(input.tools)}
 APPLICATION CONTEXT (data): ${boundedData(input.context, 32_000)}
 PREVIOUS VOICE EXCHANGES (data): ${boundedData((input.history ?? []).slice(-6), 8000)}

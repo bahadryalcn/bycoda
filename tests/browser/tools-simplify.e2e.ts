@@ -14,7 +14,7 @@ async function selectTool(page: Page, name: string) {
   await page.getByRole("button", { name: "Conversation tool selection", exact: true }).click();
   await page.getByRole("menuitemradio", { name, exact: true }).click();
   await expect(page.getByRole("tabpanel", { name, exact: true })).toBeVisible();
-  await expect(page.locator(".host-tools-current-tool")).toHaveText(name);
+  await expect(page.locator(".host-tools-compact-trigger .host-tools-nav-label")).toHaveText(name);
 }
 
 async function methodCount(page: Page, method: string) {
@@ -33,12 +33,12 @@ async function expectCompactHeader(page: Page) {
   expect(
     Math.abs(pickerBox.y + pickerBox.height / 2 - (barBox.y + barBox.height / 2)),
   ).toBeLessThan(2);
-  expect(barBox.x + barBox.width - (pickerBox.x + pickerBox.width)).toBeLessThanOrEqual(16);
-  expect(pickerBox.x).toBeGreaterThan(barBox.x + barBox.width / 2 - 60);
+  // Narrow panes replace the tab strip with one selector in its place, at the start.
+  expect(pickerBox.x - barBox.x).toBeLessThanOrEqual(16);
   const machine = bar.getByRole("button", { name: /^Tool machine:/ });
   if (await machine.isVisible()) {
     const machineBox = (await machine.boundingBox())!;
-    expect(machineBox.x).toBeLessThan(pickerBox.x);
+    expect(machineBox.x).toBeGreaterThan(pickerBox.x);
     expect(
       Math.abs(machineBox.y + machineBox.height / 2 - (pickerBox.y + pickerBox.height / 2)),
     ).toBeLessThan(2);
@@ -65,7 +65,7 @@ async function openBrowser(page: Page) {
 
 for (const theme of ["dark", "light"] as const) {
   for (const width of [360, 480]) {
-    test(`all tools keep their content and a single upper-right selector at ${width}px in ${theme}`, async ({
+    test(`all tools keep their content and a single leading selector at ${width}px in ${theme}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
@@ -73,7 +73,7 @@ for (const theme of ["dark", "light"] as const) {
       for (const tool of tools) {
         await selectTool(page, tool.name);
         if (tool.id === "devices") {
-          await page.getByRole("button", { name: "Boot", exact: true }).click();
+          await page.getByRole("button", { name: "Start emulator", exact: true }).click();
           await expect(
             page.getByRole("img", { name: "Current device screen", exact: true }),
           ).toBeVisible();

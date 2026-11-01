@@ -66,6 +66,11 @@ fn absolute_operation_deadline_includes_handshake_admission_without_dispatch() {
                         | std::io::ErrorKind::ConnectionReset
                         | std::io::ErrorKind::UnexpectedEof
                 ) => {}
+            // The expired client drops its TCP stream without a close frame;
+            // Linux reports that as a reset rather than an I/O error.
+            Ok(Some(Err(tokio_tungstenite::tungstenite::Error::Protocol(
+                tokio_tungstenite::tungstenite::error::ProtocolError::ResetWithoutClosingHandshake,
+            )))) => {}
             observed => {
                 panic!("Expired operation must not dispatch a domain request: {observed:?}")
             }

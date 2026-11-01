@@ -18,9 +18,12 @@ import { voiceContext } from "./voiceSession";
 import { voiceWorkText } from "./voiceWork";
 
 export type VoiceDecision = {
-  action: "reply" | "submit" | "stop" | "silence";
+  action: "reply" | "submit" | "stop" | "silence" | "remember" | "forget";
   reply: string;
+  /** Work brief for submit, note text for remember. */
   text?: string;
+  /** Memory note id for forget. */
+  id?: string;
 };
 
 export function immediateVoiceDecision(text: string, session: Session): VoiceDecision | undefined {
@@ -141,6 +144,16 @@ export function parseVoiceDecision(output: string, transcript: string): VoiceDec
         ),
         reply: "",
       };
+    const exact = (...keys: string[]) => Object.keys(value).every((key) => keys.includes(key));
+    const spokenReply = typeof value.reply === "string" ? speakable(value.reply) : "";
+    if (
+      value.action === "remember" &&
+      typeof value.text === "string" &&
+      exact("action", "text", "reply")
+    )
+      return { action: "remember", text: value.text, reply: spokenReply.slice(0, REPLY_LIMIT) };
+    if (value.action === "forget" && typeof value.id === "string" && exact("action", "id", "reply"))
+      return { action: "forget", id: value.id, reply: spokenReply.slice(0, REPLY_LIMIT) };
     if (value.action === "reply" && typeof value.reply === "string" && value.reply.trim())
       return { action: "reply", reply: value.reply.slice(0, REPLY_LIMIT) };
   } catch {
@@ -229,6 +242,7 @@ export async function converseWithSession(
   history: { role: string; text: string }[],
   signal: AbortSignal,
   onSentence?: (sentence: string) => void,
+  persona = "",
 ): Promise<VoiceDecision> {
   const immediate = immediateVoiceDecision(transcript, session);
   if (immediate) return immediate;
@@ -246,7 +260,7 @@ export async function converseWithSession(
     ephemeral: true,
     timeoutMs: 30_000,
     signal,
-    prompt: buildVoicePrompt(voiceContext(session), transcript, history),
+    prompt: buildVoicePrompt(voiceContext(session), transcript, history, persona),
     ...(sentences
       ? {
           onEvent: (event: HarnessEvent) => {

@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* Placement and box layout are caller-adjustable (width, gap, padding, radius for a
    tab strip versus a list row); the highlight states below are owned here. */

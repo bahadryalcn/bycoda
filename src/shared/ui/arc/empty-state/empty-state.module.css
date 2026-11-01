@@ -1,5 +1,5 @@
 /* Adapted official free Arc source; bycoda semantic theme owns presentation. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* Box layout is layered so consumer utilities can size or space the state. */
 @layer components {

@@ -97,7 +97,9 @@ function ProjectBrowserPanel({
   const [url, setUrl] = useState(initialUrl ?? "http://localhost:3000");
   const [text, setText] = useState("");
   const [frame, setFrame] = useState<Frame>();
-  const [busy, setBusy] = useState(false);
+  // Mounting always starts with a status read; controls wait for it instead of
+  // accepting a submit that the pending read would drop.
+  const [busy, setBusy] = useState(true);
   const [live, setLive] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [actualSize, setActualSize] = useState(false);

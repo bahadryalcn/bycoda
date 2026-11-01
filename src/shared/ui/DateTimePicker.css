@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this stylesheet loads before the global one. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* External layout shares the components layer so a caller utility can size or place the picker.
    Day cells, type, ink and states stay unlayered so a caller class cannot reskin the calendar. */

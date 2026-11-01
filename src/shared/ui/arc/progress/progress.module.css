@@ -1,5 +1,5 @@
 /* Official free Arc registry source, adapted for bycoda. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 /* Consumers can size an inline meter without fighting an unlayered 100% width. */
 @layer components {
   .progress {

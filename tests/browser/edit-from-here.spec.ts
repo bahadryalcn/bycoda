@@ -100,7 +100,7 @@ test("unavailable history disables file revert with its reason and permits keep 
   const files = dialog(page).getByRole("button", { name: "Revert files too", exact: true });
   await expect(files).toBeDisabled();
   await expect(files).toHaveAttribute(
-    "title",
+    "aria-description",
     "File history for this older message is unavailable.",
   );
   await expect(dialog(page)).toContainText("File history for this older message is unavailable.");

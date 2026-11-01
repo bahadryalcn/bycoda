@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* Placement of the stepper group is external layout, so a caller utility can still move it. */
 @layer components {

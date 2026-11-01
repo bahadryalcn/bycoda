@@ -737,6 +737,9 @@ mod tests {
                         Err(error) => panic!("activity admission fixture was not called: {error}"),
                     }
                 };
+                // BSD-derived platforms let accepted sockets inherit the
+                // listener's non-blocking mode; the fixture reads blocking.
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(std::time::Duration::from_secs(5)))
                     .unwrap();

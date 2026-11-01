@@ -19,6 +19,10 @@ export const VAD_TUNING = {
   /** A short word that already passed sustained onset must survive the end gate.
    * Two 64 ms voiced frames are enough for e.g. a brief yes/no. */
   minUtteranceVoiced: 0.12,
+  /** Within a turn, loud unvoiced audio (consonants) counts as speech only this
+   * long after the last voiced frame, so steady fan/hum noise cannot keep a
+   * finished turn open until the 20 s cap. */
+  unvoicedCarry: 0.5,
   /** While the assistant speaks: longer speech and a louder margin. */
   strictVoiced: 0.26,
   strictWindow: 0.39,
@@ -75,6 +79,8 @@ export class VoiceVad {
   private count = 0;
   private voiced = 0;
   private quiet = 0;
+  /** Samples since the last voiced (pitched and loud) frame in this turn. */
+  private sinceVoiced = 0;
   private talking = false;
   /** Background loudness, tracked while nobody speaks. */
   private floor = 0.003;
@@ -133,11 +139,15 @@ export class VoiceVad {
       this.count = this.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
       this.voiced = voicedFrames * samples.length;
       this.quiet = 0;
+      this.sinceVoiced = 0;
       this.start();
       return;
     }
-    // Within a turn, consonants and soft endings count by loudness alone.
-    const voice = loud;
+    // Within a turn, consonants and soft endings count by loudness alone, as long
+    // as they are close to pitched speech.
+    this.sinceVoiced =
+      loud && periodicity >= VAD_TUNING.minPeriodicity ? 0 : this.sinceVoiced + samples.length;
+    const voice = loud && this.sinceVoiced <= this.rate * VAD_TUNING.unvoicedCarry;
     this.chunks.push(samples);
     this.count += samples.length;
     this.quiet = voice ? 0 : this.quiet + samples.length;
@@ -190,6 +200,7 @@ export class VoiceVad {
     this.count = 0;
     this.voiced = 0;
     this.quiet = 0;
+    this.sinceVoiced = 0;
     this.talking = false;
     this.paused = false;
     this.pauseId++;

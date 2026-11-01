@@ -492,7 +492,10 @@ test("conflict sonucu panel içinde düzenlenip stage edilir ve merge sürdürü
 }, testInfo) => {
   await page.setViewportSize({ width: 1500, height: 900 });
   await open(page, true);
-  await page.locator('button[title="Open src/conflict.ts in the editor"]').click();
+  await page
+    .locator('[data-conflict="src/conflict.ts"]')
+    .getByRole("button", { name: /^conflict\.ts/ })
+    .click();
   await page.getByRole("separator", { name: "Resize inspector" }).press("End");
   const output = page.getByRole("textbox", {
     name: "Resolved output",
@@ -523,7 +526,7 @@ test("conflict sonucu panel içinde düzenlenip stage edilir ve merge sürdürü
   expect(left.y).toBe(right.y);
   expect(middle.y).toBeGreaterThan(left.y);
   await page.screenshot({ path: testInfo.outputPath("conflict-stacked.png") });
-  await page.getByRole("button", { name: "Side by side", exact: true }).click();
+  await page.getByRole("radio", { name: "Side by side", exact: true }).click();
   [left, middle, right] = await boxes();
   expect(left.x).toBeLessThan(middle.x);
   expect(middle.x).toBeLessThan(right.x);
@@ -539,10 +542,10 @@ test("conflict sonucu panel içinde düzenlenip stage edilir ve merge sürdürü
   await output.locator(".cm-line").first().click();
   await output.press("ControlOrMeta+a");
   await page.keyboard.insertText("const theme = 'merged';\n");
-  await page.getByRole("button", { name: "Result only", exact: true }).click();
+  await page.getByRole("radio", { name: "Result only", exact: true }).click();
   await expect(ours).toBeHidden();
   await expect(output.locator(".cm-line").first()).toHaveText("const theme = 'merged';");
-  await page.getByRole("button", { name: "Sources above", exact: true }).click();
+  await page.getByRole("radio", { name: "Sources above", exact: true }).click();
   await expect(output.locator(".cm-line").first()).toHaveText("const theme = 'merged';");
   await page.setViewportSize({ width: 700, height: 900 });
   [left, middle, right] = await boxes();

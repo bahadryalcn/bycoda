@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* Root placement stays caller-adjustable (F3 style-ownership contract): a caller may
    position the sash absolutely (`absolute`, offsets) instead of in the flex flow. */

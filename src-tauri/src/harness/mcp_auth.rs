@@ -1,6 +1,6 @@
 //! Claude's login command requires a real terminal even when its browser handles
 //! the callback. Keep that terminal hidden and its OAuth transcript private.
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -29,7 +29,7 @@ pub(super) fn login(
         .try_clone_reader()
         .map_err(|_| "Could not read the MCP sign-in terminal".to_string())?;
     // Holding stdin open is essential: Claude checks isTTY before authentication.
-    let _writer = pair
+    let mut writer = pair
         .master
         .take_writer()
         .map_err(|_| "Could not open the MCP sign-in terminal input".to_string())?;
@@ -45,9 +45,27 @@ pub(super) fn login(
     drop(pair.slave);
     // Drain continuously to avoid blocking a verbose CLI. Do not retain, log or
     // return browser URLs, callback parameters, tokens or terminal escape codes.
+    // Act as the hidden terminal: ConPTY inherits the cursor by sending a
+    // cursor-position query and, on some hosts (e.g. Windows Server), stalls
+    // the child's console output until it is answered. The drain owns stdin
+    // until the terminal closes.
     thread::spawn(move || {
+        const CURSOR_QUERY: &[u8] = b"\x1b[6n";
         let mut buffer = [0_u8; 4096];
-        while matches!(reader.read(&mut buffer), Ok(count) if count > 0) {}
+        let mut matched = 0;
+        while let Ok(count @ 1..) = reader.read(&mut buffer) {
+            for &byte in &buffer[..count] {
+                matched = if byte == CURSOR_QUERY[matched] {
+                    matched + 1
+                } else {
+                    usize::from(byte == CURSOR_QUERY[0])
+                };
+                if matched == CURSOR_QUERY.len() {
+                    let _ = writer.write_all(b"\x1b[1;1R");
+                    matched = 0;
+                }
+            }
+        }
     });
     let started = Instant::now();
     let mut completed = false;

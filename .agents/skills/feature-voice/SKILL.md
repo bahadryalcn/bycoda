@@ -33,6 +33,10 @@ draft/caret/send. Source paths below are repository-relative.
   matching and authorized response IDs. External cancellation still wins.
 - Keep finite ASR confidence checks and non-speech transcript handling without
   discarding short lexical/code utterances. Text filtering is not acoustic proof.
+- Cloud turns end after `REALTIME_END_SILENCE` (1.2 s) so mid-sentence pauses are
+  not answered. An untranscribed, rejected or overflowing idle candidate is dropped
+  silently; only an unacknowledged commit or a send backlog that does not drain
+  ends voice. Steady unvoiced noise must not extend a turn to the 20 s cap.
 - Silence is not Stop work. Preserve accepted-job tracking, abortable side replies,
   pin/follow behavior and the existing permission gates.
 - Dictation inserts through the composer draft/selection owner, preserving IME,
@@ -45,7 +49,14 @@ draft/caret/send. Source paths below are repository-relative.
   playback and tools stay in the owning workspace window; the overlay renders its
   state snapshot and sends whitelisted commands. Overlay labels are never
   workspace windows (quit, tray, reap, window-state). Owner close/reload closes
-  the overlay; overlay close docks without disconnecting voice.
+  the overlay. Overlay close (its only close button, and the native close) docks
+  and shows the app without disconnecting voice; floating is a Voice options item.
+- The owner persona is style only. It is appended after each route's core rules,
+  quotes free text and never grants authority, changes targets or reply format.
+  First run asks only while the status is `unset`; skip/reset never re-asks.
+- Memory notes are device-local quoted data, saved only from current user speech
+  or Settings, never from session/tool/draft content. Confirm a save/forget only
+  after the store changed; disabled memory rejects saves on every route.
 - Keep CPU/GPU/automatic processing, cloud/system/natural voice choices and setup
   retry/error truth. Setup changes do not authorize installing in this task.
 

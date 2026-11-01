@@ -1,4 +1,4 @@
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 /* Placement belongs to the caller; presentation below stays unlayered and mirrors the Input roles. */
 @layer components {
   .field {

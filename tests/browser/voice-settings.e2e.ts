@@ -46,9 +46,10 @@ for (const theme of ["light", "dark"]) {
       await group.screenshot({ path: join(captures, `voice-missing-${theme}-${width}.png`) });
       const bounds = await group.boundingBox();
       // Conversation provider and speaker are now independent controls. On a
-      // phone, labels and controls stack; the whole seven-row group still fits
-      // in the viewport without the former technical setup instructions.
-      expect(bounds!.height).toBeLessThan(width < 600 ? 800 : 560);
+      // phone, labels and controls stack. The nine-row group (with companion
+      // identity and memory) stays compact without the former technical setup
+      // instructions.
+      expect(bounds!.height).toBeLessThan(width < 600 ? 1000 : 680);
     });
   }
 }

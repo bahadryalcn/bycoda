@@ -1,0 +1,43 @@
+/* Persona form: reading/form density, sections separated by spacing only. */
+.form {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  min-width: 0;
+}
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 12px 16px;
+  min-width: 0;
+}
+.duties {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.legend {
+  margin-block-end: 4px;
+  padding: 0;
+  color: var(--color-content);
+  font-size: var(--text-ui-body);
+  font-weight: 500;
+}
+.choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 8px 16px;
+}
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  color: var(--color-content);
+  font-size: var(--text-ui-body);
+  line-height: var(--text-ui-body--line-height);
+  cursor: pointer;
+}

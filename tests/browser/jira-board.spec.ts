@@ -161,7 +161,8 @@ for (const variant of [
     const clear = page.getByRole("button", { name: "Clear search", exact: true });
     await input.press("Tab");
     await expect(clear).toBeFocused();
-    const field = await input.boundingBox(),
+    // The shared field frame owns the boundary; the clear action is its end adornment.
+    const field = await input.locator("xpath=ancestor::*[@data-field-control][1]").boundingBox(),
       button = await clear.boundingBox();
     expect(field).toBeTruthy();
     expect(field!.width).toBeGreaterThanOrEqual(140);

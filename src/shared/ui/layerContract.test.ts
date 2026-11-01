@@ -59,8 +59,8 @@ it.each(Object.entries(modules))(
   (file, roots) => {
     const css = readFileSync(join(__dirname, file), "utf8");
     expect(
-      css.startsWith("@layer theme, base, components, utilities;") ||
-        css.includes("\n@layer theme, base, components, utilities;"),
+      css.startsWith("@layer properties, theme, base, components, utilities;") ||
+        css.includes("\n@layer properties, theme, base, components, utilities;"),
     ).toBe(true);
     const { layered, rest } = split(css);
     for (const root of roots) {
@@ -92,7 +92,7 @@ it("every shared stylesheet with a components layer pins the layer order", () =>
     const css = readFileSync(file, "utf8");
     return (
       css.includes("@layer components") &&
-      !css.includes("@layer theme, base, components, utilities;")
+      !css.includes("@layer properties, theme, base, components, utilities;")
     );
   });
   expect(unpinned).toEqual([]);

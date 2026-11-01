@@ -1,4 +1,4 @@
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 /* Placement belongs to the caller (layered below utilities); presentation stays unlayered. */
 @layer components {
   .frame,

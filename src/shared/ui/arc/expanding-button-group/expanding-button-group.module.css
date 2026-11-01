@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* External layout: callers can size or place the tray with Tailwind utilities. The reveal below is layout-only CSS and stays unlayered. */
 @layer components {

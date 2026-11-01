@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* External layout: callers can constrain or place the field with Tailwind utilities. The text/field metrics shared by display
    and input, the frame states and the action slot below stay unlayered. */

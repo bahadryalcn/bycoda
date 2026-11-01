@@ -20,6 +20,9 @@ saveVoiceSettings({
   visual: (params.get("visual") || "mark") as VoiceVisual,
   compact: false,
 });
+// Persona setup appears on first launch; scenarios opt in with ?first-run.
+if (params.has("first-run")) localStorage.removeItem("bycoda.voice.persona");
+else localStorage.setItem("bycoda.voice.persona", JSON.stringify({ status: "skipped" }));
 const session = {
   id: "fixture",
   title: "Voice visual styles · a long session title to verify truncation",

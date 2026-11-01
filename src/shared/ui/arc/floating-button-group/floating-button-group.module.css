@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* External layout: callers can size or align the tray with Tailwind utilities; the tray's surface and the shared highlight
    below stay unlayered. Actions keep the shared Button skin. */

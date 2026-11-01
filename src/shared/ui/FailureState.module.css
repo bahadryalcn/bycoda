@@ -1,4 +1,4 @@
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* Box layout is layered so a host surface can size or place the state with utilities. */
 @layer components {

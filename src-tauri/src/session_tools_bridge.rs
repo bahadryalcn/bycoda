@@ -916,6 +916,9 @@ mod tests {
                         Err(error) => panic!("fixture accept failed: {error}"),
                     }
                 };
+                // BSD-derived platforms let accepted sockets inherit the
+                // listener's non-blocking mode; the fixture reads blocking.
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(3)))
                     .unwrap();

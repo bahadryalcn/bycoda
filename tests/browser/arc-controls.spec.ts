@@ -1330,6 +1330,8 @@ test.describe("shared control state matrix", () => {
   test("keyboard Tab order follows the document with one :focus-visible owner per stop", async ({
     page,
   }) => {
+    // Walks every stop in the matrix; CI WebKit needs more than the default budget.
+    test.setTimeout(120_000);
     await page.emulateMedia({ reducedMotion: "reduce" });
     await openMatrix(page);
     // Start on the layout selector, the first tab stop, so every later stop is counted.

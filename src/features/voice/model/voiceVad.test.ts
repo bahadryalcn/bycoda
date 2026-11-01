@@ -169,3 +169,14 @@ it("does not mistake silence or impulsive keyboard clicks for voiced onset", () 
   expect(start).not.toHaveBeenCalled();
   expect(end).not.toHaveBeenCalled();
 });
+
+it("ends the turn when steady unvoiced room noise follows speech", () => {
+  const end = vi.fn();
+  const vad = new VoiceVad(16000, vi.fn(), end);
+  for (let i = 0; i < 6; i++) vad.push(voicedFrame());
+  // A fan louder than the onset threshold, but without pitch.
+  for (let i = 0; i < 400; i++) vad.push(breathFrame(i + 1)); // 25 s
+  expect(end).toHaveBeenCalledTimes(1);
+  // The turn ended near the speech, not at the 20 s cap.
+  expect(end.mock.calls[0][0].length).toBeLessThan(16000 * 3);
+});

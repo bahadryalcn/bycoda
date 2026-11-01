@@ -1,6 +1,6 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet;
    otherwise `components` would precede `base` and Preflight's button reset would win. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 /* Box layout and typography are layered so consumer utilities (Tailwind `@layer utilities`)
    can size, align, hide, reveal or retype a control. Presentation stays unlayered and owned by Arc. */
 @layer components {

@@ -402,12 +402,16 @@ datetime), not native date inputs.
 ### Style ownership: caller className sets placement only
 
 Every shared control uses one override contract. Its CSS module pins
-`@layer theme, base, components, utilities;` and places only the root's outer
+`@layer properties, theme, base, components, utilities;` and places only the root's outer
 placement (width/inline size, min/max size, margins, `align-self`/`justify-self`,
 flex/grid placement) inside `@layer components`. Tailwind utilities passed through
 `className`/`fieldClassName` therefore win for placement. Internal presentation
 (height, padding, typography, color, border, radius and every interaction state)
 stays unlayered and owned by the component, so a caller class cannot reskin it.
+Keep `properties` first in that statement: a module sheet can load before
+Tailwind's, and an unlisted `properties` layer would then rank above `utilities`,
+so Tailwind's `@property` fallback (WebKit without `margin-trim`, Firefox) resets
+`translate`, `rotate`, shadow and similar utility variables to their initial values.
 
 - Use explicit APIs for internal changes: `size`, `fieldSize`, `variant`, `tone`,
   `align`, `selected`, `inset`, density and appearance props. Ask the owner for a

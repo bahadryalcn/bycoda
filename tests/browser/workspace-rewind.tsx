@@ -285,6 +285,9 @@ Object.assign(window, {
           return { commandId: input.commandId, sessionId: authoritative.id, revision };
         }
         case "sessions.sync":
+          // Like the Host, a poll at the current revision is unchanged, so the
+          // open Edit from here dialog keeps the transcript it was opened on.
+          if (args.params.revision === revision) return { kind: "unchanged", revision };
           return {
             kind: "snapshot",
             value: {

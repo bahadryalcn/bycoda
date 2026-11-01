@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this stylesheet loads before the global one. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* The panel's width belongs to this dialog's identity and sits in front of the Popover frame's own utilities,
    so it stays unlayered; only the trigger's text and the form rhythm are defined here. */

@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
-  testMatch: ["voice-visual-styles.e2e.ts", "voice-overlay.e2e.ts"],
+  testMatch: ["voice-visual-styles.e2e.ts", "voice-overlay.e2e.ts", "voice-persona.e2e.ts"],
   outputDir: "../../temp/test-results/voice-visual-styles",
   workers: 1,
   timeout: 180_000,

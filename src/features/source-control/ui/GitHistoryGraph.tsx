@@ -344,6 +344,35 @@ export function GitHistoryGraph({
     );
   };
 
+  // Inside the Commit Graph dialog the menu must open in the dialog's popover layer,
+  // otherwise the modal covers it.
+  const commitMenu = menu ? (
+    <ExplorerMenu
+      x={menu.x}
+      y={menu.y}
+      ariaLabel={t("Commit actions")}
+      width={264}
+      header={
+        <div className="px-2 py-1.5 text-ui-caption text-(--ui-text-secondary)">
+          <code className="mr-2">{menu.commit.shortSha}</code>
+          <span className="block truncate text-content">{menu.commit.subject}</span>
+        </div>
+      }
+      items={commitMenuItems(menu.commit, !actions || !!busy)}
+      onPick={(id) => {
+        const { commit } = menu;
+        setMenu(null);
+        void onPick(id, commit).catch((error) =>
+          setGitFeedback(cwd, {
+            kind: "error",
+            title: t("Git operation failed"),
+            detail: errorText(error),
+          }),
+        );
+      }}
+      onClose={() => setMenu(null)}
+    />
+  ) : null;
   return (
     <div aria-busy={loading} className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <SectionLabel
@@ -475,37 +504,10 @@ export function GitHistoryGraph({
               graph={list("workspace")}
             />
           </Suspense>
+          {commitMenu}
         </GitGraphDialog>
       ) : null}
-      {menu ? (
-        <ExplorerMenu
-          x={menu.x}
-          y={menu.y}
-          ariaLabel={t("Commit actions")}
-          width={264}
-          header={
-            <div className="px-2 py-1.5 text-ui-caption text-(--ui-text-secondary)">
-              <code className="mr-2">{menu.commit.shortSha}</code>
-              <span className="block truncate text-content">
-                {menu.commit.subject}
-              </span>
-            </div>
-          }
-          items={commitMenuItems(menu.commit, !actions || !!busy)}
-          onPick={(id) => {
-            const { commit } = menu;
-            setMenu(null);
-            void onPick(id, commit).catch((error) =>
-              setGitFeedback(cwd, {
-                kind: "error",
-                title: t("Git operation failed"),
-                detail: errorText(error),
-              }),
-            );
-          }}
-          onClose={() => setMenu(null)}
-        />
-      ) : null}
+      {fullOpen ? null : commitMenu}
       {naming ? (
         <RefNameDialog
           title={naming.kind === "branch" ? t("New branch") : t("New tag")}

@@ -5,7 +5,6 @@ import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Button } from "../../../shared/ui/Button";
 import {
-  AppWindow,
   Maximize2,
   Minimize2,
   Mic,
@@ -110,7 +109,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   const summary = state ? voiceSummaryLine(state) : statusText;
   const moveLabel = t("Move voice window. Use arrow keys to reposition.");
   const micLabel = t(status === "idle" ? "Start voice" : muted ? "Resume" : "Pause mic");
+  // One close: the floating window returns to the app and voice keeps running,
+  // matching the native close. Disconnect stays an explicit body action.
   const backLabel = t("Return voice companion to the app");
+  function returnToApp() {
+    send("dock");
+    showApp();
+  }
   const sizeLabel = t(compact ? "Expand voice companion" : "Compact voice companion");
 
   const handle = (
@@ -186,9 +191,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             {muted ? <MicOff size={14} /> : <Mic size={14} />}
           </Button>
         )}
-        <Button iconOnly label={backLabel} title={backLabel} onClick={() => send("dock")}>
-          <AppWindow size={14} />
-        </Button>
         <Button
           iconOnly
           label={sizeLabel}
@@ -198,16 +200,9 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         >
           {compact ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
         </Button>
-        {!compact && (
-          <Button
-            iconOnly
-            label={t("Close voice companion")}
-            title={t("Close voice companion")}
-            onClick={() => send("close")}
-          >
-            <X size={14} />
-          </Button>
-        )}
+        <Button iconOnly label={backLabel} title={backLabel} onClick={returnToApp}>
+          <X size={14} />
+        </Button>
       </header>
       <div role="status" className={compact ? styles.srOnly : styles.status}>
         {state?.error || statusText}
@@ -287,9 +282,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 </Button>
               </>
             )}
-            <Button variant="ghost" className={styles.showApp} onClick={showApp}>
-              {t("Show app")}
-            </Button>
           </div>
         </div>
       )}

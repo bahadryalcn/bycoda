@@ -31,10 +31,10 @@ test("merge editor selects individual source conflicts, preserves manual edits a
     .getByRole("group", { name: "Conflict 2 of 2", exact: true })
     .getByRole("button", { name: "Mark as Resolved", exact: true })
     .click();
-  await page.getByRole("button", { name: "Side by side", exact: true }).click();
+  await page.getByRole("radio", { name: "Side by side", exact: true }).click();
   await expect(output).toContainText("name=custom");
   await page.screenshot({ path: info.outputPath("three-column.png") });
-  await page.getByRole("button", { name: "Sources above", exact: true }).click();
+  await page.getByRole("radio", { name: "Sources above", exact: true }).click();
   await expect(output).toContainText("name=custom");
   await page.screenshot({ path: info.outputPath("twin-source.png") });
   await page.getByRole("button", { name: "Save and stage", exact: true }).click();

@@ -6,11 +6,12 @@ import { Button } from "../../../shared/ui/Button";
 import { hasActiveOverlay, useOverlay } from "../../../shared/ui/overlay";
 import {
   AppWindow,
-  ExternalLink,
+  Globe,
   GripVertical,
   Minimize2,
   Maximize2,
   MessageSquare,
+  MessageMultiple,
   Mic,
   MicOff,
   Square,
@@ -58,6 +59,10 @@ import {
   type VoiceOverlayPlacement,
 } from "../model/voiceOverlay";
 import { useVoiceOverlayHost } from "./useVoiceOverlayHost";
+import { loadVoicePersona } from "../model/voicePersona";
+import { voiceOwnerInstructions } from "../model/voiceOwner";
+import { forgetVoiceNote, rememberVoiceNote } from "../model/voiceMemory";
+import { VoicePersonaDialog } from "./VoicePersonaDialog";
 
 /** Cloud speech-to-speech providers, signed in through Grok Build or Codex. */
 const REALTIME: Record<"grok" | "openai", { provider: RealtimeProvider; name: string }> = {
@@ -96,6 +101,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const audioLevel = useRef(0);
   const latest = useRef(props);
   const [open, setOpen] = useState(false);
+  // First launch offers persona setup until the owner saves or skips it.
+  const [welcome, setWelcome] = useState(false);
   const [status, setStatus] = useState<"idle" | "connecting" | "live">("idle");
   const [phase, setPhase] = useState<"listening" | "speaking" | "transcribing" | "replying">(
     "listening",
@@ -262,6 +269,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }
   useOverlay(panel, false, undefined, open && !detached, undefined, false, true);
   useLayoutEffect(() => {
+    // The first-run persona dialog owns focus while it is open.
+    if (open && welcome) return;
     if (open)
       (compact
         ? compactToggle.current
@@ -398,6 +407,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           history: exchanges,
           signal: controller.signal,
           tools: voiceTools,
+          persona: voiceOwnerInstructions(),
           execute: async (name, args) => {
             if (
               controller.signal.aborted ||
@@ -435,6 +445,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           reply(sentence, session, streamed);
           streamed = true;
         },
+        voiceOwnerInstructions(),
       );
       if (
         controller.signal.aborted ||
@@ -449,6 +460,21 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       if (decision.action === "stop") {
         latest.current.onStop(session.id);
         reply(decision.reply, session);
+        return;
+      }
+      if (decision.action === "remember" || decision.action === "forget") {
+        // Confirm only what actually changed on this device.
+        const result =
+          decision.action === "remember"
+            ? rememberVoiceNote(decision.text)
+            : forgetVoiceNote(decision.id);
+        const done = "saved" in result ? result.saved : result.forgotten;
+        const spoken = done
+          ? decision.reply ||
+            t(decision.action === "remember" ? "I'll remember that." : "Forgotten.")
+          : t(("error" in result && result.error) || "Memory could not be changed.");
+        recordResponse({ role: "assistant", text: spoken });
+        reply(spoken, session);
         return;
       }
       if (decision.action === "submit") {
@@ -528,6 +554,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     const isActive = () => active() && turnRevision.current === revision;
     if (generation.current !== epoch || !isActive())
       return { error: "The voice connection is no longer active." };
+    // Memory belongs to this device, not to a session or project.
+    if (name === "memory_save") return rememberVoiceNote(args.text);
+    if (name === "memory_forget") return forgetVoiceNote(args.id);
     if (
       latest.current.workspace &&
       [
@@ -600,6 +629,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       locale.split("-")[0],
       audioLevel,
       settings.speakers[settings.mode === "grok" ? "grok" : "openai"],
+      voiceOwnerInstructions(),
     );
     client.current = voice;
     try {
@@ -819,6 +849,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           label={t("Voice companion")}
           tooltip={t("Voice companion")}
           onClick={() => {
+            if (loadVoicePersona().status === "unset") setWelcome(true);
             try {
               const saved = JSON.parse(localStorage.getItem("bycoda:voice-position") ?? "null") as {
                 x?: unknown;
@@ -989,6 +1020,21 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               </span>
             </OverflowTooltip>
           </div>
+        ) : props.workspace ? (
+          // Scope first: Global manages the whole app; Session picks its target below.
+          <div className={styles.session}>
+            <SegmentedControl
+              label={t("Voice scope")}
+              value={globalScope ? "global" : "session"}
+              onValueChange={(value) => {
+                setGlobalScope(value === "global");
+              }}
+              options={[
+                { value: "global", label: t("Global"), icon: <Globe size={13} /> },
+                { value: "session", label: t("Session"), icon: <MessageMultiple size={13} /> },
+              ]}
+            />
+          </div>
         ) : (
           <div className={styles.session}>
             <VoiceSessionPicker
@@ -999,19 +1045,20 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             />
           </div>
         )}
-        {compact ? micButton : <VoiceOptionsMenu />}
-        {canDetach && (
-          <Button
-            iconOnly
-            label={t("Float outside the app")}
-            tooltip={t("Float outside the app")}
-            onClick={() => {
-              const rect = panel.current?.getBoundingClientRect();
-              void popOut({ fromCursor: false, x: rect?.x ?? 0, y: rect?.y ?? 0 });
-            }}
-          >
-            <ExternalLink size={14} />
-          </Button>
+        {compact ? (
+          micButton
+        ) : (
+          // Floating is rare (dragging outside the app also floats), so it lives in the menu.
+          <VoiceOptionsMenu
+            onFloat={
+              canDetach
+                ? () => {
+                    const rect = panel.current?.getBoundingClientRect();
+                    void popOut({ fromCursor: false, x: rect?.x ?? 0, y: rect?.y ?? 0 });
+                  }
+                : undefined
+            }
+          />
         )}
         <Button
           ref={compactToggle}
@@ -1041,18 +1088,15 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         </div>
       )}
       <div className={styles.body} hidden={compact}>
-        {props.workspace && (
-          <SegmentedControl
-            label={t("Voice scope")}
-            value={globalScope ? "global" : "session"}
-            onValueChange={(value) => {
-              setGlobalScope(value === "global");
-            }}
-            options={[
-              { value: "global", label: t("Global") },
-              { value: "session", label: t("Session") },
-            ]}
-          />
+        {props.workspace && !globalScope && (
+          <div className={styles.target}>
+            <VoiceSessionPicker
+              sessions={props.sessions}
+              activeId={props.activeId}
+              pinned={pinned}
+              onPin={setPinned}
+            />
+          </div>
         )}
         <div className={styles.state}>
           <VoiceVisualizer
@@ -1151,6 +1195,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           )}
         </div>
       </div>
+      {welcome ? <VoicePersonaDialog purpose="welcome" onClose={() => setWelcome(false)} /> : null}
     </section>
   );
 }

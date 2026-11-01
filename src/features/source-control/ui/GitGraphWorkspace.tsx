@@ -1,5 +1,12 @@
 import { Button } from "../../../shared/ui/Button";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
   gitDiffIndex,
@@ -106,23 +113,48 @@ function useSashPane({
     },
     [property],
   );
+  // The size the user chose; a smaller window narrows the pane and a larger one restores it.
+  const preferred = useRef(size);
+  const dragging = useRef(false);
   const commit = (next: number) => {
     const value = clamp(next);
+    preferred.current = value;
     apply(value);
     setSize(value);
     commitRef.current(value);
   };
+  useEffect(() => {
+    const resize = () => {
+      if (dragging.current) return;
+      const next = clamp(preferred.current);
+      if (next === sizeRef.current) return;
+      apply(next);
+      setSize(next);
+    };
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, [apply, clamp]);
   const sashProps = {
     orientation,
     value: size,
     min,
     onResizeStart: () => {
+      dragging.current = true;
       start.current = sizeRef.current;
     },
     onResize: (delta: number) => apply(clamp(start.current + (inverse ? -delta : delta))),
-    onResizeEnd: (delta: number, info: { cancelled: boolean }) =>
-      commit(info.cancelled ? start.current : start.current + (inverse ? -delta : delta)),
+    onResizeEnd: (delta: number, info: { cancelled: boolean }) => {
+      dragging.current = false;
+      commit(info.cancelled ? start.current : start.current + (inverse ? -delta : delta));
+    },
     onReset: () => commit(defaultSize),
+    // Separator keys: Home/End jump to the smallest/largest size (arrows stay built in).
+    onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Home" && event.key !== "End") return;
+      event.preventDefault();
+      event.stopPropagation();
+      commit(event.key === "Home" ? 0 : limits.current.max());
+    },
   };
   return { size, setPaneRef, sashProps };
 }

@@ -12,9 +12,8 @@ test("uzun metin önizlemesi ve penceresinde metin fareyle seçilip kopyalanır"
   const trigger = page.getByRole("button", { name: "Show full long text" });
   await trigger.hover();
   const preview = page
-    .locator("[id]")
-    .filter({ has: page.getByText("Long text preview", { exact: true }) })
-    .last();
+    .locator("[data-hover-card]")
+    .filter({ has: page.getByText("Long text preview", { exact: true }) });
   await expect(preview.getByRole("button", { name: "Copy message" })).toBeVisible();
   const selectExcerpt = async (selector: string) => {
     const pre = page.locator(selector);
@@ -51,7 +50,7 @@ test("uzun metin önizlemesi ve penceresinde metin fareyle seçilip kopyalanır"
         .toBe("Selectable excerpt");
     }
   };
-  await selectExcerpt("[id] > pre.select-text");
+  await selectExcerpt("[data-hover-card] pre.select-text");
   await page.getByRole("button", { name: "Show full content", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("button", { name: "Copy message" })).toBeVisible();

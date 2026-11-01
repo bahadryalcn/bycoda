@@ -205,7 +205,10 @@ test("the first click on a compact control opens its menu and the layout stays n
   // First click on a compact control opens it; nothing is sent or switched.
   await page.locator("[data-composer-model-controls] button").first().click();
   await expect(reading(page)).toHaveCount(0);
-  const menu = page.locator("[data-popover-side]").first();
+  // Shared tooltips also use popover frames; the pointer may rest on a hinted control.
+  const menu = page
+    .locator("[data-popover-side]:not([role='tooltip']):not(:has([role='tooltip']))")
+    .first();
   await expect(menu).toBeVisible();
   await page.waitForTimeout(350);
   // The menu stays attached to its trigger after the layout swap.

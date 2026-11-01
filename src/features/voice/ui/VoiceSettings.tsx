@@ -37,6 +37,10 @@ import {
   type VoiceVisual,
 } from "../model/voiceSettings";
 import styles from "./VoiceSettings.module.css";
+import { useVoicePersona } from "../model/voicePersona";
+import { VoicePersonaDialog, voicePersonaSummary } from "./VoicePersonaDialog";
+import { loadVoiceMemory, saveVoiceMemory, useVoiceMemory } from "../model/voiceMemory";
+import { VoiceMemoryDialog } from "./VoiceMemoryDialog";
 
 type PathKey = "python" | "whisperPath" | "ttsPath";
 type Failure = { message: string; detail: string };
@@ -77,6 +81,10 @@ export function VoiceSettings() {
   const [checkedKey, setCheckedKey] = useState("");
   const [locating, setLocating] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const persona = useVoicePersona();
+  const [editingPersona, setEditingPersona] = useState(false);
+  const memory = useVoiceMemory();
+  const [managingMemory, setManagingMemory] = useState(false);
   const moreAnchor = useRef<HTMLButtonElement>(null);
   const [browsing, setBrowsing] = useState<PathKey | null>(null);
   const browsePending = useRef(false);
@@ -335,6 +343,32 @@ export function VoiceSettings() {
       </Row>
       {settings.enabled ? (
         <>
+          <Row
+            id="voice-persona"
+            label={t("Companion identity")}
+            description={t("Name, how it addresses you, tone, tasks and ground rules.")}
+          >
+            <Badge tone="neutral">{voicePersonaSummary(persona)}</Badge>
+            <Button onClick={() => setEditingPersona(true)}>{t("Customize")}</Button>
+          </Row>
+          {editingPersona ? (
+            <VoicePersonaDialog purpose="edit" onClose={() => setEditingPersona(false)} />
+          ) : null}
+          <Row
+            id="voice-memory"
+            label={t("Memory")}
+            description={t("Keeps short notes about you between conversations on this device.")}
+          >
+            <Button onClick={() => setManagingMemory(true)}>
+              {t("Manage ({p0})", { p0: memory.notes.length })}
+            </Button>
+            <Toggle
+              label={t("Memory")}
+              on={memory.enabled}
+              onChange={(enabled) => saveVoiceMemory({ ...loadVoiceMemory(), enabled })}
+            />
+          </Row>
+          {managingMemory ? <VoiceMemoryDialog onClose={() => setManagingMemory(false)} /> : null}
           {/* A deliberate full-width chooser: four previews need more room than the control column. */}
           <Row id="voice-visual-style" label={t("Visual style")} stacked>
             <SegmentedControl

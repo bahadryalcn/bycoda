@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* External layout shares the components layer so a caller utility can size or place the control.
    Presentation (type, ink, track, thumb, states) stays unlayered so a caller class cannot reskin it. */

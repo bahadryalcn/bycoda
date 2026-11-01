@@ -1,7 +1,7 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet.
    Box layout shares the `components` layer so consumer utilities can size the frame;
    color, border and state presentation stay unlayered. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 @layer components {
   .root {
     position: relative;

@@ -5,7 +5,13 @@ import { projectDisplayName } from "../../projects/model/projectNames";
 import { Button } from "../../../shared/ui/Button";
 import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { AudioLines, Laptop, SlidersHorizontal, UserRound } from "../../../shared/ui/icons";
+import {
+  AudioLines,
+  ExternalLink,
+  Laptop,
+  SlidersHorizontal,
+  UserRound,
+} from "../../../shared/ui/icons";
 import { speakerEngine, speakerLabel, speakerOptions } from "../model/voiceSpeakers";
 import { t } from "../../../shared/i18n";
 import {
@@ -92,7 +98,8 @@ const REPLIES = [
  * Conversation, reply voice and speaker in one menu. A change disconnects a live
  * connection; Start voice uses the new choice.
  */
-export function VoiceOptionsMenu() {
+/** Voice choices plus rarer panel actions, keeping the header to a few icons. */
+export function VoiceOptionsMenu({ onFloat }: { onFloat?: () => void } = {}) {
   const settings = useVoiceSettings();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const change = (patch: Partial<VoiceSettings>) =>
@@ -144,6 +151,16 @@ export function VoiceOptionsMenu() {
         checked: option.value === settings.speakers[speaker],
       })),
     });
+  if (onFloat)
+    items.push(
+      { kind: "sep" },
+      {
+        kind: "item",
+        id: "float",
+        label: t("Float outside the app"),
+        icon: <ExternalLink size={14} />,
+      },
+    );
   return (
     <>
       <Button
@@ -164,6 +181,11 @@ export function VoiceOptionsMenu() {
           items={items}
           onClose={() => setAnchor(null)}
           onPick={(id) => {
+            if (id === "float") {
+              setAnchor(null);
+              onFloat?.();
+              return;
+            }
             const [kind, value] = id.split(":");
             if (!value) return;
             if (kind === "mode") change({ mode: value as VoiceMode });

@@ -13,7 +13,7 @@ for (const [theme, width] of [
     const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
     await expect(prompt).toBeFocused();
     await prompt.fill("A retained native composer draft");
-    await page.getByTitle("Model (⌘.)", { exact: true }).click();
+    await page.getByRole("button", { name: "Fixture model 0", exact: true }).click();
     const search = page.getByRole("combobox", { name: "Search models", exact: true });
     await expect(search).toBeFocused();
     await search.fill("model 37");
@@ -21,18 +21,16 @@ for (const [theme, width] of [
     await search.dispatchEvent("keydown", { key: "Enter", isComposing: true });
     await expect(search).toBeVisible();
     await search.press("Enter");
-    await expect(page.getByRole("option", { name: /Fixture model 37/ })).toHaveAttribute(
-      "aria-selected",
-      "true",
+    // Picking a model collapses the list; the Model row names the choice above its settings.
+    const selector = page.getByRole("region", { name: "Model selector", exact: true });
+    await expect(selector.getByRole("button", { name: "Model", exact: true })).toContainText(
+      "Fixture model 37",
     );
     await expect(prompt).toHaveValue("A retained native composer draft");
-    await page.getByRole("slider", { name: "Reasoning", exact: true }).focus();
-    await page.keyboard.press("End");
-    await expect(page.getByRole("slider", { name: "Reasoning", exact: true })).toHaveAttribute(
-      "aria-valuetext",
-      "High",
-    );
-    await page.keyboard.press("Escape");
+    const reasoning = selector.getByRole("combobox", { name: "Reasoning", exact: true });
+    await reasoning.selectOption({ label: "High" });
+    await expect(reasoning.locator("option:checked")).toHaveText("High");
+    await reasoning.press("Escape");
     await expect(prompt).toBeFocused();
     await page.getByRole("button", { name: "Permissions", exact: true }).click();
     await page.getByRole("listbox", { name: "Permissions", exact: true }).press("Escape");

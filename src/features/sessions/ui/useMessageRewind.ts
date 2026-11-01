@@ -42,6 +42,16 @@ type Options = {
   currentSessionRef: RefObject<Session>;
 };
 
+/** The transcript the dialog was opened on is unchanged. Session owners may rebuild the
+ *  blocks array on every render (a remote pane filters unconfirmed drafts), so compare
+ *  the block objects rather than the array identity. */
+function sameTranscript(current: readonly Block[], opened: readonly Block[]): boolean {
+  return (
+    current === opened ||
+    (current.length === opened.length && current.every((block, index) => block === opened[index]))
+  );
+}
+
 /**
  * Edit-from-here / return-to-here controller of one session pane: the request,
  * the file-history plan preview, the confirmation and the unsent-draft hand-off
@@ -193,7 +203,7 @@ export function useMessageRewind({
       if (requestedSessionId !== session.id) return;
       if (
         !canRewindConversation(session, pendingRewind.block.id) ||
-        session.blocks !== pendingRewind.source.blocks ||
+        !sameTranscript(session.blocks, pendingRewind.source.blocks) ||
         session.adoptedAuthorityGeneration !== pendingRewind.authorityGeneration ||
         managed ||
         session.inboxAsk ||
@@ -239,7 +249,7 @@ export function useMessageRewind({
             setFileRevertNotice(result);
           }
           if (
-            currentSessionRef.current.blocks !== pendingRewind.source.blocks ||
+            !sameTranscript(currentSessionRef.current.blocks, pendingRewind.source.blocks) ||
             currentSessionRef.current.adoptedAuthorityGeneration !==
               pendingRewind.authorityGeneration ||
             !canRewindConversation(currentSessionRef.current, pendingRewind.block.id)

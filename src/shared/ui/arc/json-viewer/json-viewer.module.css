@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* External layout: callers can size, stretch or constrain the viewer and its toolbar with Tailwind utilities.
    Presentation, typography, colour and state rules below stay unlayered. */

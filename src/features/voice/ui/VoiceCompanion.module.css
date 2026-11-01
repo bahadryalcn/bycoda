@@ -71,8 +71,13 @@
   padding-top: 4px;
 }
 .session {
+  display: flex;
   flex: 1;
   min-inline-size: 0;
+}
+/* Session scope: the voice target sits above the state it applies to. */
+.target {
+  margin: -2px 0 10px;
 }
 .state {
   display: flex;

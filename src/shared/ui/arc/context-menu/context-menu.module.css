@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /*
  * One row primitive for every menu: DropdownMenu, ContextMenu (point/anchor/submenu),

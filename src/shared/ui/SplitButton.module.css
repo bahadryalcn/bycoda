@@ -1,7 +1,7 @@
 /* Primary action and options trigger form one joined control with independent gates.
    The seam is a 1px gap for solid actions and a shared border for outlined ones; only
    the outer corners stay rounded. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 /* F3 contract: caller className may change placement (width, margins, flex/grid
    placement), layered below Tailwind utilities; presentation below stays unlayered. */
 @layer components {

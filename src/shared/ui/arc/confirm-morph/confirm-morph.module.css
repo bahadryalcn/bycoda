@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* External layout: callers can place, size or align the control with Tailwind utilities. Its surface, face choreography and the
    confirm/cancel hierarchy below stay unlayered. Actions are shared Buttons: Cancel is a quiet neutral ghost, and only the

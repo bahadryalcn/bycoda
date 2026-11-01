@@ -2,7 +2,7 @@
    State grammar: selected = tinted fill, hover/pressed = neutral fill, keyboard focus = inset ring,
    drop destination = inset accent frame (never a fill, so it stays distinct from selection),
    cut/dragging = dimmed content. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 /* F3 contract: caller className may change placement (width, margins, flex/grid
    placement), layered below Tailwind utilities; presentation below stays unlayered. */
 @layer components {

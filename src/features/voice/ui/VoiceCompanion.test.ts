@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Session } from "../../sessions/model/session";
 import type { VoiceAssistantInput } from "../model/voiceAssistant";
 const mock = vi.hoisted(() => ({
@@ -104,13 +104,18 @@ vi.mock("../../../shared/i18n", () => ({
   t: (key: string) => key,
   useT: () => (key: string) => key,
   useLocale: () => "tr",
+  translateAt: (_locale: string, key: string) => key,
 }));
 import { VoiceCompanion } from "./VoiceCompanion";
 let root: Root, container: HTMLDivElement;
+// Existing scenarios start after the owner skipped persona setup; first run is covered below.
+beforeEach(() => localStorage.setItem("bycoda.voice.persona", JSON.stringify({ status: "skipped" })));
 afterEach(async () => {
   if (root) await act(async () => root.unmount());
   container?.remove();
   localStorage.removeItem("bycoda.voice");
+  localStorage.removeItem("bycoda.voice.persona");
+  localStorage.removeItem("bycoda.voice.memory");
   vi.clearAllMocks();
 });
 const a = { id: "a", title: "Alpha", cwd: "/a", blocks: [], busy: true } as unknown as Session;
@@ -140,6 +145,15 @@ async function click(label: string) {
     container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click(),
   );
 }
+/** Floating is an item of the voice options menu. */
+async function floatOut() {
+  await click("Voice options");
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((element) =>
+    element.textContent?.includes("Float outside the app"),
+  );
+  expect(item).toBeDefined();
+  await act(async () => item!.click());
+}
 async function speech(text: string, binding?: any) {
   let turn = binding;
   if (!turn)
@@ -152,6 +166,24 @@ async function speech(text: string, binding?: any) {
   });
   return turn;
 }
+it("offers persona setup on first launch and not again after skipping", async () => {
+  localStorage.removeItem("bycoda.voice.persona");
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  const props = { activeId: "a", sessions: [a, b], onSubmit: vi.fn(() => true), onStop: vi.fn() };
+  await act(async () => root.render(createElement(VoiceCompanion, props)));
+  await click("Voice companion");
+  const skip = () =>
+    [...document.body.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Skip customization"),
+    );
+  expect(document.body.textContent).toContain("Make the voice companion yours");
+  await act(async () => skip()!.click());
+  expect(skip()).toBeUndefined();
+  expect(JSON.parse(localStorage.getItem("bycoda.voice.persona")!).status).toBe("skipped");
+});
 it("captures the target at local speech onset and follows only the next utterance", async () => {
   const { render, onSubmit } = await setup();
   let binding: any;
@@ -208,6 +240,24 @@ it("answers while the job is busy without submitting the question", async () => 
   expect(mock.warm.mock.calls.length).toBeGreaterThan(warmed);
   expect(mock.speak).toHaveBeenCalledWith("Still working.", false);
   expect(onSubmit).not.toHaveBeenCalled();
+});
+it("saves a spoken memory note and confirms only after it is stored", async () => {
+  mock.converse.mockResolvedValueOnce({
+    action: "remember",
+    text: "Prefers Turkish replies",
+    reply: "I will remember.",
+  });
+  const { onSubmit } = await setup();
+  await speech("Türkçe cevap vermeyi unutma");
+  expect(JSON.parse(localStorage.getItem("bycoda.voice.memory")!).notes).toEqual([
+    expect.objectContaining({ text: "Prefers Turkish replies" }),
+  ]);
+  expect(mock.speak).toHaveBeenCalledWith("I will remember.", false);
+  expect(onSubmit).not.toHaveBeenCalled();
+  localStorage.setItem("bycoda.voice.memory", JSON.stringify({ enabled: false, notes: [] }));
+  mock.converse.mockResolvedValueOnce({ action: "remember", text: "x", reply: "Saved." });
+  await speech("Bunu hatırla");
+  expect(mock.speak).toHaveBeenLastCalledWith("Memory is turned off in Settings.", false);
 });
 it("speaks a streamed reply from its first sentence and shows it progressively", async () => {
   let finish!: (value: unknown) => void;
@@ -549,7 +599,7 @@ it("floats outside the app while the session and microphone stay in this window"
   overlay.native = true;
   try {
     const { onStop } = await setup();
-    await click("Float outside the app");
+    await floatOut();
     expect(overlay.open).toHaveBeenCalledWith(expect.objectContaining({ fromCursor: false }));
     expect(container.querySelector("section")).toBeNull();
     expect(overlay.host?.detached).toBe(true);
@@ -562,7 +612,7 @@ it("floats outside the app while the session and microphone stay in this window"
     await act(async () => overlay.host!.onClosed());
     expect(container.querySelector("section")).not.toBeNull();
     expect(mock.close).not.toHaveBeenCalled();
-    await click("Float outside the app");
+    await floatOut();
     await act(async () => overlay.host!.onCommand("close"));
     expect(container.querySelector("section")).toBeNull();
     expect(mock.close).toHaveBeenCalled();
@@ -577,7 +627,7 @@ it("keeps the panel in the app when the floating window cannot open", async () =
   overlay.open.mockRejectedValueOnce("Window creation failed");
   try {
     await setup();
-    await click("Float outside the app");
+    await floatOut();
     expect(container.querySelector("section")).not.toBeNull();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("Window creation failed");
     expect(mock.close).not.toHaveBeenCalled();

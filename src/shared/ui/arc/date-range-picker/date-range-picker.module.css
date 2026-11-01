@@ -1,5 +1,5 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 /* External placement shares the components layer so a caller utility can reposition the picker.
    Its width is owned by the morphing surface (an inline motion value), so no size utility lives here.

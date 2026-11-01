@@ -10,6 +10,34 @@ Open the speech bubble at the bottom right, select a session, then choose
 requested only after start. Closing the companion releases the microphone and
 its local recognizer without stopping coding work.
 
+## Companion identity
+
+The first time you open the companion, it offers to make it yours: its name,
+your name, how it addresses you (by name, casual or formal), its tone, the tasks
+it focuses on and your own ground rules. Every choice has ready options and also
+accepts your own words. **Skip customization** keeps the default companion and
+the question is not asked again; closing the window without a choice asks again
+next time. Change or reset it later in **Settings → Chat → Voice companion →
+Companion identity**.
+
+The identity is stored on this device and applies to local, Grok Voice and
+OpenAI Realtime conversations. Cloud conversations pick up a change at the next
+**Start voice**. It shapes how the companion talks, never what it may do:
+approvals, work submission, targets and safety rules stay unchanged.
+
+## Memory
+
+The companion keeps up to 40 short notes about you on this device between
+conversations. Say "remember that I prefer short answers" or "forget that" in
+any conversation mode; it confirms only after the note was actually saved or
+removed. It may also save a clearly stated lasting preference. It never saves
+content read from sessions, drafts or tool results, or secrets.
+
+See, add and delete notes in **Settings → Chat → Voice companion → Memory →
+Manage**, or turn memory off there. Notes are sent to the conversation's provider
+with each turn as background facts, never as instructions or permission. Cloud
+conversations see notes added in Settings at the next **Start voice**.
+
 ## Visual style and compact mode
 
 Choose **Settings → Chat → Voice companion → Visual style** to select
@@ -37,7 +65,7 @@ when moved, resized or expanded; position is saved independently of visual style
 ### Floating outside the app
 
 In the desktop app on Windows, macOS and Linux, choose **Float outside the app**
-in the companion header, or drag the visual/grip past the edge of the bycoda
+from the **Voice options** menu in the companion header, or drag the visual/grip past the edge of the bycoda
 window and release it there. The companion continues as a small always-on-top
 window that you can drag anywhere on any screen, so you can keep talking and
 control voice while bycoda is in the background, minimized or hidden. While it
@@ -45,9 +73,10 @@ floats, the app shows a **Return voice companion to this window** button in the
 companion's usual corner.
 
 The floating window offers the same visual, session title, latest line,
-**Start voice**, **Pause mic**/**Resume**, **Silence**, **Disconnect voice**,
-compact/expand and **Close voice companion** actions, plus **Show app** and
-**Return voice companion to the app**. Drag its visual or empty surface to move it;
+**Start voice**, **Pause mic**/**Resume**, **Silence**, **Disconnect voice** and
+compact/expand actions. Its close button (**Return voice companion to the app**)
+puts the companion back in bycoda and brings the app forward; voice keeps running.
+Use **Disconnect voice** to end the conversation. Drag its visual or empty surface to move it;
 focus the visual and use arrow keys for keyboard movement. It stays inside the
 screen's work area. Choosing a session, voice options and Global/Session scope
 remain in the app panel.

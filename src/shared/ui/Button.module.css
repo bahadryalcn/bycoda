@@ -1,6 +1,6 @@
 /* Pin Tailwind's layer order even when this module loads before the global stylesheet;
    otherwise `components` would precede `base` and Preflight's button reset would win. */
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 .control {
   box-sizing: border-box;
 }

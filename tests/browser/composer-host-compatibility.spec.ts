@@ -3,6 +3,8 @@ import { expect, test } from "@playwright/test";
 const fixture = "/tests/browser/composer-host-compatibility.html";
 const waiting =
   "The Host update on this computer is waiting for active sessions to finish and will install automatically.";
+// A blocked Send names its reason after the action.
+const blockedSend = /^Send\. /;
 
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -14,7 +16,8 @@ for (const theme of ["light", "dark"] as const) {
   test(`compact composer offers current checkout while the Host update waits (${theme})`, async ({
     page,
   }) => {
-    await page.goto(`${fixture}?compact`);
+    // Only an explicit worktree choice waits for the Host; a default draft uses the checkout.
+    await page.goto(`${fixture}?compact&mode=worktree`);
     await page.waitForLoadState("networkidle");
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -22,7 +25,7 @@ for (const theme of ["light", "dark"] as const) {
     );
     const status = page.locator("[data-workspace-creation-status]");
     await expect(status).toContainText(waiting);
-    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: blockedSend })).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Use current checkout", exact: true }),
     ).toBeInViewport();
@@ -66,7 +69,7 @@ for (const theme of ["light", "dark"] as const) {
   test(`deferred local Host update offers an explicit current checkout choice (${theme})`, async ({
     page,
   }) => {
-    await page.goto(fixture);
+    await page.goto(`${fixture}?mode=worktree`);
     await page.waitForLoadState("networkidle");
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -74,7 +77,7 @@ for (const theme of ["light", "dark"] as const) {
     );
     const status = page.locator("[data-workspace-creation-status]");
     await expect(status).toContainText(waiting);
-    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: blockedSend })).toBeDisabled();
     await page.screenshot({ path: `temp/verification/c1/deferred-host-update-${theme}.png` });
     await page.setViewportSize({ width: 800, height: 900 });
     await expect(
@@ -100,7 +103,7 @@ for (const theme of ["light", "dark"] as const) {
   test(`old Host without a pending bundle update retains the update-required message (${theme})`, async ({
     page,
   }) => {
-    await page.goto(`${fixture}?bundle=current`);
+    await page.goto(`${fixture}?mode=worktree&bundle=current`);
     await page.waitForLoadState("networkidle");
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -111,7 +114,7 @@ for (const theme of ["light", "dark"] as const) {
       "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.",
     );
     await expect(status).not.toContainText(waiting);
-    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: blockedSend })).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Use current checkout", exact: true }),
     ).toBeEnabled();
@@ -132,7 +135,9 @@ for (const theme of ["light", "dark"] as const) {
     await page
       .getByRole("button", { name: "Simulate Host upgrade and reconnect", exact: true })
       .click();
-    await expect(status).toContainText("Based on main @ 01234567; 0 uncommitted paths excluded");
+    // The consequence leads; the exact ref and commit are the hover detail.
+    await expect(status).toContainText("New worktree from main");
+    await expect(status.locator('[title="Based on main @ 01234567"]')).toBeVisible();
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
       "Keep this draft while the Host updates",
