@@ -308,7 +308,7 @@ test("older Host permits conversation rewind while disabling only file revert", 
   const dialog = page.getByRole("dialog", { name: "Edit from here?", exact: true });
   const files = dialog.getByRole("button", { name: "Revert files too", exact: true });
   await expect(files).toBeDisabled();
-  await expect(files).toHaveAttribute("title", /Update bycoda Host/);
+  await expect(files).toHaveAttribute("aria-description", /Update bycoda Host/);
   await dialog.getByRole("button", { name: "Revert and keep changes", exact: true }).click();
   await expect(message).toHaveCount(0);
   await expect(page.locator("textarea")).toHaveValue("Remove this later change.");

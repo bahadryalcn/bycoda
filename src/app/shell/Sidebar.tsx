@@ -5530,11 +5530,14 @@ const SessionCard = memo(function SessionCard({
       setDetailOpen(true);
     }, SESSION_DETAIL_DELAY_MS);
   };
+  // Keyboard focus opened the detail; the anchored card follows its row while focus stays.
+  const detailFromFocus = useRef(false);
   const hideDetail = useCallback(() => {
     if (detailTimer.current != null) {
       window.clearTimeout(detailTimer.current);
       detailTimer.current = null;
     }
+    detailFromFocus.current = false;
     setDetailOpen(false);
   }, []);
   useEffect(() => {
@@ -5545,7 +5548,10 @@ const SessionCard = memo(function SessionCard({
     if (!view) return;
     // Scrolling can move or clip a row without delivering pointerleave. Cancel
     // the pending open too, so a delayed card cannot appear after the row moved.
+    // Focusing a partly hidden row scrolls it into view; that scroll must not close the
+    // detail the focus just opened.
     const onScroll = (event: Event) => {
+      if (detailFromFocus.current && root.contains(doc.activeElement)) return;
       const target = event.target;
       if (target === doc || (target instanceof Node && target.contains(root))) hideDetail();
     };
@@ -5754,8 +5760,10 @@ const SessionCard = memo(function SessionCard({
             onKeyDown={onKeyDown}
             // Only keyboard focus lands here (mouse presses blur it), so focus opens the details.
             onFocus={(event) => {
-              if (event.target === event.currentTarget && !orchestration && !selectionMode)
+              if (event.target === event.currentTarget && !orchestration && !selectionMode) {
+                detailFromFocus.current = true;
                 setDetailOpen(true);
+              }
             }}
             onBlur={hideDetail}
             onMouseDown={(event) => {

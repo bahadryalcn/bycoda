@@ -386,12 +386,17 @@ impl ProcessOwner {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn observe_exit(state: &mut State) -> io::Result<bool> {
+    exited_unreaped(state.child.id())
+}
+/// Non-reaping exit observation of this exact original child.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn exited_unreaped(child: u32) -> io::Result<bool> {
     loop {
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
         let result = unsafe {
             libc::waitid(
                 libc::P_PID,
-                state.child.id() as libc::id_t,
+                child as libc::id_t,
                 &mut info,
                 libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
             )
@@ -401,7 +406,7 @@ fn observe_exit(state: &mut State) -> io::Result<bool> {
             if pid == 0 {
                 return Ok(false);
             }
-            if pid as u32 == state.child.id()
+            if pid as u32 == child
                 && matches!(
                     info.si_code,
                     libc::CLD_EXITED | libc::CLD_KILLED | libc::CLD_DUMPED
@@ -447,16 +452,30 @@ fn signal_original(state: &State, signal: i32) -> io::Result<()> {
     let leader = unsafe { libc::kill(pid, signal) };
     if leader != 0 {
         let error = io::Error::last_os_error();
-        if error.raw_os_error() != Some(libc::ESRCH) {
+        if !no_live_target(state, &error) {
             return Err(error);
         }
     }
     if let Some(error) = group_error {
-        if error.raw_os_error() != Some(libc::ESRCH) {
+        if !no_live_target(state, &error) {
             return Err(error);
         }
     }
     Ok(())
+}
+/// ESRCH: nothing left to signal. Darwin also answers EPERM when the target
+/// (or every member of its group) is a zombie; Linux counts the zombie leader
+/// and succeeds. Accept that EPERM only while this exact original child is
+/// proven exited and still unreaped, so a real permission failure stays an error.
+#[cfg(unix)]
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+fn no_live_target(state: &State, error: &io::Error) -> bool {
+    match error.raw_os_error() {
+        Some(libc::ESRCH) => true,
+        #[cfg(target_os = "macos")]
+        Some(libc::EPERM) => exited_unreaped(state.child.id()).unwrap_or(false),
+        _ => false,
+    }
 }
 
 #[derive(Default)]

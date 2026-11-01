@@ -45,8 +45,10 @@ test("conversation HTML links retain the chat and draft beside a reusable previe
 }) => {
   await page.route("http://html-preview.localhost/**", (route) =>
     route.fulfill({
-      contentType: "text/html",
-      body: "<!doctype html><html><body><h1>Canım anam</h1><p>Yolların sonu yok, anamın duası çok.</p></body></html>",
+      // Declare the charset (header and meta): without it the browser decodes the Turkish text as
+      // windows-1252, and WebKit does not apply the routed header's charset to the frame.
+      contentType: "text/html; charset=utf-8",
+      body: '<!doctype html><html><head><meta charset="utf-8"></head><body><h1>Canım anam</h1><p>Yolların sonu yok, anamın duası çok.</p></body></html>',
     }),
   );
   for (const theme of ["light", "dark"]) {

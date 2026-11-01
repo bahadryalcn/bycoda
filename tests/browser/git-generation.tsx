@@ -15,6 +15,8 @@ import { modelsForClaudeVersion } from "../../src/integrations/harness/providers
 import { languageReady } from "../../src/shared/i18n";
 import { Button } from "../../src/shared/ui/Button";
 import { WandSparkles } from "../../src/shared/ui/icons";
+// Shared tokens (control heights, field roles) so shared Buttons size as in the app.
+import "../../src/styles/index.css";
 import "./git-generation.css";
 
 setHarnessModels("claude", modelsForClaudeVersion("2.1.300"));

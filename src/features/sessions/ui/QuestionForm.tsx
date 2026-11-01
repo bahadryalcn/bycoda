@@ -619,7 +619,16 @@ function QuestionFields({
   const customInput = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    if (customSelected && !locked) customInput.current?.focus({ preventScroll: true });
+    if (!customSelected || locked) return;
+    customInput.current?.focus({ preventScroll: true });
+    // Some engines (Linux WebKit) finish a label click by focusing its radio after the change
+    // handlers ran; hand focus back once, but only from this question's own option inputs.
+    const timer = window.setTimeout(() => {
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement && fields.current?.contains(active))
+        customInput.current?.focus({ preventScroll: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [customSelected, locked]);
 
   const highlight = (index: number) => {

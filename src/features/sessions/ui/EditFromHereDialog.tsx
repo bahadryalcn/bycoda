@@ -75,9 +75,8 @@ export function EditFromHereDialog({
           </Button>
           <Button
             variant="danger"
-            disabled={!!pending}
-            aria-disabled={!!pending || !!unavailable}
-            tooltip={unavailable}
+            disabled={!!pending || !!unavailable}
+            disabledReason={unavailable}
             loading={pending === "files"}
             loadingLabel={t("Reverting files…")}
             onClick={() => {

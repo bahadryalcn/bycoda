@@ -52,6 +52,8 @@ const wireRetirements = new Map<LiveText | TextSetup, Promise<void>>();
 const TEXT_CHILD_ID = "bycoda-opencode-text";
 const SERVER_TIMEOUT_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 45_000;
+/** Bounded wait for text-session wire cleanup before its child is killed. */
+const WIRE_BEFORE_KILL_MS = 5_000;
 
 type LiveText = {
   child?: ChildProcessHandle;
@@ -531,7 +533,22 @@ async function dropLive(
             "Original OpenCode text cleanup failed",
           );
       };
-      await settleProviderRetirements([wire(), ...(child ? [retirements.retire([child])] : [])]);
+      // Abort/delete/close must reach the original server: killing the child first
+      // closes its HTTP origin and turns this cleanup into a refused request. A hung
+      // server cannot hold the kill past the grace; its failure still joins below.
+      const wired = wire();
+      let grace: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        wired.then(
+          () => {},
+          () => {},
+        ),
+        new Promise<void>((done) => {
+          grace = setTimeout(done, WIRE_BEFORE_KILL_MS);
+        }),
+      ]);
+      clearTimeout(grace);
+      await settleProviderRetirements([wired, ...(child ? [retirements.retire([child])] : [])]);
     });
     retainTextWireRetirement(current, current.stop);
   }

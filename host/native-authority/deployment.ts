@@ -12,7 +12,12 @@ import {
   type FileHandle,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize } from "node:path";
-import { protectWindowsDirectory, psQuote, runPowerShell } from "../windows";
+import {
+  protectWindowsDirectory,
+  psQuote,
+  runPowerShell,
+  windowsCoreModulesImport,
+} from "../windows";
 import {
   NativeAuthorityHelperRuntime,
   NativeHelperClientError,
@@ -167,7 +172,8 @@ $claimedAcl.SetOwner([Security.Principal.WindowsIdentity]::GetCurrent().User)
 $claimed.SetAccessControl($claimedAcl)
 `
     : "";
-  return `${claim}
+  return `${windowsCoreModulesImport}
+${claim}
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $allowed = @($sid, 'S-1-5-18', 'S-1-5-32-544')
 foreach ($p in @(${[...new Set(paths.flatMap(ancestors))].map(psQuote).join(",")})) {

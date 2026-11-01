@@ -1577,7 +1577,8 @@ fn http_staging_keeps_original_capacity_when_escaped_wrapper_exceeds_body_limit(
     drop(inflated);
     let expected = original.clone();
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    // About 190 separate HTTP RPCs carry the 12 MB original in a debug build.
+    let server = Server::spawn_with_watchdog(DEFAULT_RPC_TIMEOUT, move |listener| async move {
         let mut received = Vec::new();
         let mut status = Value::Null;
         let mut commits = 0;

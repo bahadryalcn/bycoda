@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import {
   dropAnnouncer,
   dropBadge,
@@ -7,6 +7,24 @@ import {
   files,
   textDrag,
 } from "./external-drop";
+
+/** Hover hints are the shared Tooltip (no native title): a label line plus shortcut key caps. */
+async function expectHint(
+  page: Page,
+  target: Locator,
+  label: string | RegExp,
+  keys: (string | RegExp)[] | RegExp | null,
+) {
+  await target.hover();
+  const hint = page.getByRole("tooltip");
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText(label);
+  if (keys === null) await expect(hint.locator("kbd")).toHaveCount(0);
+  else if (Array.isArray(keys)) await expect(hint.locator("kbd")).toHaveText(keys);
+  else await expect(hint).toContainText(keys);
+  await page.mouse.move(0, 0);
+  await expect(hint).toHaveCount(0);
+}
 
 test("composer attachment submission stays local and keeps Stop available", async ({
   page,
@@ -202,7 +220,7 @@ test("chat shortcut hints follow custom bindings and expose rewind at narrow wid
     name: "Rewind and edit",
     exact: true,
   });
-  await expect(rewind).toHaveAttribute("title", "Rewind and edit (Esc Esc)");
+  await expectHint(page, rewind, "Rewind and edit", ["Esc", "Esc"]);
   for (const light of [false, true]) {
     await page.evaluate(
       (value) =>
@@ -237,19 +255,16 @@ test("chat shortcut hints follow custom bindings and expose rewind at narrow wid
       new StorageEvent("storage", { key: "bycoda.keybindingOverrides" }),
     );
   });
-  await expect(stop).toHaveAttribute("title", /M.*Ctrl\+C/);
-  await expect(queue).toHaveAttribute(
-    "title",
-    "Queue message for when this turn finishes",
-  );
+  await expectHint(page, stop, "Stop", /M.*Ctrl\s*C/);
+  await expectHint(page, queue, "Queue message for when this turn finishes", null);
   await page.evaluate(() => {
     localStorage.removeItem("bycoda.keybindingOverrides");
     window.dispatchEvent(
       new StorageEvent("storage", { key: "bycoda.keybindingOverrides" }),
     );
   });
-  await expect(stop).toHaveAttribute("title", "Stop (Esc / Ctrl+C)");
-  await expect(queue).toHaveAttribute("title", /Tab/);
+  await expectHint(page, stop, "Stop", ["Esc", "Ctrl", "C"]);
+  await expectHint(page, queue, "Queue message", /Tab/);
 });
 
 test("custom context signal exposes completed TPS and compact and respects reduced motion", async ({
@@ -263,10 +278,7 @@ test("custom context signal exposes completed TPS and compact and respects reduc
     name: /^Context usage: 50%.*50.0 TPS/,
   });
   await expect(trigger).toHaveText("");
-  await expect(trigger.locator("svg.context-signal")).toHaveAttribute(
-    "data-speed-fill",
-    "0.75",
-  );
+  await expect(trigger.locator(".context-signal")).toHaveAttribute("data-speed-fill", "0.75");
   for (const light of [false, true]) {
     await page.evaluate(
       (value) =>
@@ -276,11 +288,11 @@ test("custom context signal exposes completed TPS and compact and respects reduc
     for (const width of [390, 1000]) {
       await page.setViewportSize({ width, height: 800 });
       await trigger.hover();
-      const panel = page.getByRole("dialog", {
-        name: "Context usage",
-        exact: true,
-      });
+      // Hover previews the panel in the shared HoverCard (a click pins it as a dialog).
+      const panel = page.locator('[data-hover-card][aria-label="Context usage"]');
       await expect(panel).toBeInViewport();
+      // The card is the only hint: no second tooltip repeats its heading.
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
       await expect(panel.getByRole("meter")).toHaveAttribute(
         "aria-valuenow",
         "50",
@@ -298,7 +310,7 @@ test("custom context signal exposes completed TPS and compact and respects reduc
       await expect(
         panel.getByRole("button", { name: "Compact now", exact: true }),
       ).toBeEnabled();
-      await expect(trigger.locator("svg.context-signal")).toBeVisible();
+      await expect(trigger.locator(".context-signal")).toBeVisible();
       await trigger.screenshot({
         path: testInfo.outputPath(
           `signal-${light ? "light" : "dark"}-${width}.png`,
@@ -517,9 +529,9 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
     exact: true,
   });
   const stop = page.getByRole("button", { name: "Stop", exact: true });
-  await expect(send).toHaveAttribute("title", "Steer (Enter)");
-  await expect(queue).toHaveAttribute("title", /Shift\+Tab/);
-  await expect(stop).toHaveAttribute("title", "Stop (Esc / Ctrl+C)");
+  await expectHint(page, send, "Steer", ["Enter"]);
+  await expectHint(page, queue, "Queue message", ["Shift", "Tab"]);
+  await expectHint(page, stop, "Stop", ["Esc", "Ctrl", "C"]);
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
       (value) =>
@@ -875,13 +887,18 @@ test("chat busy actions explain steering and queuing without losing the draft", 
   await expect(send).toContainText("Queue message");
   await input.fill("Keep my work");
   await expect(send).toContainText("Steer");
-  await expect(send).toHaveAttribute("title", "Steer (Enter)");
-  await expect(
+  await expectHint(page, send, "Steer", ["Enter"]);
+  await expectHint(
+    page,
     page.getByRole("button", { name: "Queue message", exact: true }),
-  ).toHaveAttribute("title", /Shift\+Tab/);
-  await expect(
-    page.getByRole("button", { name: "Stop", exact: true }),
-  ).toHaveAttribute("title", "Stop (Esc / Ctrl+C)");
+    "Queue message",
+    ["Shift", "Tab"],
+  );
+  await expectHint(page, page.getByRole("button", { name: "Stop", exact: true }), "Stop", [
+    "Esc",
+    "Ctrl",
+    "C",
+  ]);
   for (const width of [320, 420, 1000]) {
     await page.setViewportSize({ width, height: 800 });
     await expect(send).toBeInViewport();
@@ -892,12 +909,14 @@ test("chat busy actions explain steering and queuing without losing the draft", 
     ).toBe(true);
   }
   await expect(page.locator("[data-activity-dock]")).toBeVisible();
-  // The summary row never paints a patch over the dock it sits in.
-  await expect(page.locator(".activity-dock-summary")).toHaveCSS(
-    "background-color",
+  // The summary row never paints a patch over the dock it sits in: it is transparent (or matches).
+  const dockBackground = await page
+    .locator("[data-activity-dock]")
+    .evaluate((dock) => getComputedStyle(dock).backgroundColor);
+  expect(["rgba(0, 0, 0, 0)", "transparent", dockBackground]).toContain(
     await page
-      .locator("[data-activity-dock]")
-      .evaluate((dock) => getComputedStyle(dock).backgroundColor),
+      .locator(".activity-dock-summary")
+      .evaluate((summary) => getComputedStyle(summary).backgroundColor),
   );
   await page.setViewportSize({ width: 420, height: 800 });
   await page.screenshot({
@@ -1275,9 +1294,10 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
 
   await page.getByRole("button", { name: "codex", exact: true }).click();
   await main.click();
+  // Stable order (modelPickerData SETTING_ORDER): Fast/Service Tier, Reasoning, then Model.
   await expect(menu.getByRole("menuitem")).toHaveText([
-    "ReasoningMedium",
     "Service TierStandard",
+    "ReasoningMedium",
     "ModelGPT-5.4",
   ]);
   await expect(row("Advisor")).toHaveCount(0);
@@ -1299,9 +1319,8 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
     animations: "disabled",
   });
   await row("Model").click();
-  await expect(
-    page.getByRole("textbox", { name: "Search models", exact: true }),
-  ).toBeVisible();
+  // The shared popover search drives the model listbox, so it is a combobox.
+  await expect(page.getByRole("combobox", { name: "Search models", exact: true })).toBeVisible();
   await expect(page.locator("[data-model-extras-entry]")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "grok", exact: true }).click();

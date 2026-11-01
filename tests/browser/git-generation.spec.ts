@@ -20,27 +20,33 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   expect(
     Math.abs(extrasBounds.x - (generateBounds.x + generateBounds.width)),
   ).toBeLessThan(2);
+  // Without a saved choice the trigger hint reports the automatic selection.
+  await page.getByRole("button", { name: "AI generation settings" }).hover();
+  await expect(page.getByRole("tooltip")).toContainText("Automatic");
   await page.getByRole("button", { name: "AI generation settings" }).click();
-  await expect(page.getByText("Automatic", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Commit and pull request generation", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Main model", { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Extras", exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: /Claude Haiku 4.5/ }).click();
-  await page.getByRole("button", { name: /^Extras/ }).click();
-  // Advisor and subagent model use the shared searchable picker; its native select stays hidden.
-  const advisor = page.getByRole("button", { name: "Advisor", exact: true });
-  await expect(advisor).toBeVisible();
-  await expect(advisor).toHaveCSS("color-scheme", "dark");
-  await advisor.click();
-  await page.getByRole("option", { name: "Opus", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Subagent model", exact: true })
-    .click();
-  await page.getByRole("option", { name: "Haiku", exact: true }).click();
-  await page
-    .getByRole("combobox", { name: "Subagent model policy", exact: true })
-    .selectOption("force");
+  // Advisor and subagent settings are rows of the one model menu (no separate Extras entry).
+  const modelButton = page.getByRole("button", { name: /Claude Haiku 4.5/ });
+  const menu = page.getByRole("menu", { name: "Model and settings", exact: true });
+  const row = (name: string) =>
+    menu.getByRole("menuitem").filter({ has: page.getByText(name, { exact: true }) });
+  const choose = async (name: string, option: string) => {
+    if (!(await menu.isVisible())) await modelButton.click();
+    await row(name).click();
+    await page.getByRole("menuitemradio", { name: option, exact: true }).click();
+  };
+  await modelButton.click();
+  await expect(row("Advisor")).toBeVisible();
+  await expect(row("Advisor")).toHaveCSS("color-scheme", "dark");
+  await choose("Advisor", "Opus");
+  await choose("Subagent model", "Haiku");
+  await choose("Subagent model policy", "Apply to all subagents");
   await expect(page.getByTestId("choice")).toHaveText(/"advisor":"opus"/);
   await expect(page.getByTestId("choice")).toHaveText(
     /"subagentModel":"haiku"/,
@@ -72,6 +78,7 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     page.getByRole("button", { name: "AI generation settings" }),
   ).toHaveText("");
   await page.getByRole("button", { name: "AI generation settings" }).click();
-  await page.getByRole("button", { name: "Use default selection" }).click();
+  // A saved project choice offers one way back to the global selection.
+  await page.getByRole("button", { name: "Use global" }).click();
   await expect(page.getByTestId("choice")).toHaveText("");
 });

@@ -68,9 +68,19 @@ async function fixture(page: Page, browser: Browser, language = "en") {
     }
   });
   await page.goto(`/tests/browser/browser-annotation.html?lang=${language}`);
-  await page
-    .getByRole("tab", { name: language === "tr" ? "Tarayıcı" : "Host browser", exact: true })
-    .click();
+  // Wide panes show the tool tabs; narrow panes replace them with one tool menu.
+  const toolName = language === "tr" ? "Tarayıcı" : "Host browser";
+  const toolTab = page.getByRole("tab", { name: toolName, exact: true });
+  const toolMenu = page.getByRole("button", {
+    name: language === "tr" ? "Konuşma aracı seçimi" : "Conversation tool selection",
+    exact: true,
+  });
+  await expect(toolTab.or(toolMenu)).toBeVisible();
+  if (await toolTab.isVisible()) await toolTab.click();
+  else {
+    await toolMenu.click();
+    await page.getByRole("menuitemradio", { name: toolName, exact: true }).click();
+  }
   await expect(page.locator("img.host-browser-frame")).toBeVisible();
   return {
     source,

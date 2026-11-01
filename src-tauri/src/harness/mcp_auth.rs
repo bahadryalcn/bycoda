@@ -91,7 +91,10 @@ mod tests {
 
     #[test]
     fn login_has_terminal_stdin_and_drains_output() {
-        powershell("if ([Console]::IsInputRedirected) { exit 21 }; [Console]::Write(('x' * 1048576)); exit 0", Duration::from_secs(20)).unwrap();
+        // 256 KiB is several times any pty pipe buffer, so an undrained terminal
+        // still blocks the child. Older Server ConPTY renders far slower than a
+        // desktop one; the bound only catches a hang, a healthy run returns at exit.
+        powershell("if ([Console]::IsInputRedirected) { exit 21 }; [Console]::Write(('x' * 262144)); exit 0", Duration::from_secs(60)).unwrap();
     }
 
     #[test]

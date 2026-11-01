@@ -180,18 +180,22 @@ test("chat messages, attachment references and running work keep a readable hier
   await expect(group.locator(".zen-phase-summary")).toHaveCount(0);
   await expect(group.getByText(/very-long-command-path-0/).first()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 900 });
-  const command = group.locator(".tool-command-label").first();
+  // Trail rows keep one line height; a long command ends in an ellipsis inside its row
+  // while the row's name and overflow hint keep the full command.
+  const row = group.getByLabel(/^Tool call: .*very-long-command-path-0\.tsx$/).first();
+  const command = row.getByText(/very-long-command-path-0\.tsx/).first();
   await expect(command).toContainText("very-long-command-path-0.tsx");
   expect(
     await command.evaluate((node) => {
       const box = node.getBoundingClientRect();
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      return [...range.getClientRects()].every(
-        (rect) => rect.left >= box.left - 1 && rect.right <= box.right + 1,
-      );
+      const style = getComputedStyle(node);
+      return {
+        inside: box.left >= 0 && box.right <= innerWidth + 1,
+        oneLine: box.height <= parseFloat(style.lineHeight) * 1.5,
+        ellipsis: style.textOverflow === "ellipsis",
+      };
     }),
-  ).toBe(true);
+  ).toEqual({ inside: true, oneLine: true, ellipsis: true });
   const lastImage = bubble.getByRole("button", {
     name: "Open screenshot-7.png full screen",
     exact: true,

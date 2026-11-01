@@ -224,7 +224,10 @@ export async function main(args = process.argv.slice(2)) {
     await page.goto(server.origin);
     await page.locator(report.selector).waitFor({ state: "visible", timeout: 60_000 });
     if (values.boundary === "native-unavailable") {
-      const reload = page.locator(report.selector).getByRole("alert").getByRole("button").first();
+      // The alert announces only the failure message; recovery actions sit beside it.
+      const surface = page.locator(report.selector);
+      await surface.getByRole("alert").waitFor({ state: "visible" });
+      const reload = surface.getByRole("button").first();
       await reload.waitFor({ state: "visible" });
       report.reloadLabel = await reload.innerText();
       if (!report.reloadLabel.trim()) throw new Error("The reload control has no accessible label");

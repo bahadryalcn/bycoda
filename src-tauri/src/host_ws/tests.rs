@@ -444,6 +444,16 @@ impl Server {
         F: FnOnce(TcpListener) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + 'static,
     {
+        Self::spawn_with_watchdog(Duration::from_secs(8), run)
+    }
+    /// The watchdog only turns a hung fixture into a failure. Volume-bound
+    /// fixtures (tens of MiB through hundreds of round trips in a debug build)
+    /// use the product's own RPC budget so slow shared CI runners do not trip it.
+    pub(crate) fn spawn_with_watchdog<F, Fut>(watchdog: Duration, run: F) -> Self
+    where
+        F: FnOnce(TcpListener) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + 'static,
+    {
         let (tx, rx) = mpsc::sync_channel(1);
         let task = thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()
@@ -454,7 +464,7 @@ impl Server {
                 let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
                 tx.send(format!("http://{}", listener.local_addr().unwrap()))
                     .unwrap();
-                time::timeout(Duration::from_secs(8), run(listener))
+                time::timeout(watchdog, run(listener))
                     .await
                     .expect("fixture server timed out");
             });

@@ -1062,7 +1062,9 @@ fn exact_32mib_format_result_uses_chunks_and_retains_all_guards_and_reservation(
     drop(target);
     let source = json!({"sha256":format!("{:x}",Sha256::digest(&bytes)),"byteLength":bytes.len()});
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    // 512 chunk round trips carry 32 MiB in a debug build; `workspace.run`
+    // keeps the default RPC budget, so the fixture watchdog matches it.
+    let server = Server::spawn_with_watchdog(DEFAULT_RPC_TIMEOUT, move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,

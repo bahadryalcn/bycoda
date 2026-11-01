@@ -98,6 +98,8 @@ test("session detail closes on ancestor scroll and cancels a pending hover", asy
     await select.press("Escape");
     await expect(detail).toHaveCount(0);
     await expect(select).toBeFocused();
+    // The next theme focuses the row again, so leave it unfocused.
+    await select.blur();
   }
 });
 
@@ -290,13 +292,17 @@ test("navigation chrome and session rows grow with comfortable and touch density
       return {
         escaped,
         floor,
+        // The list panel fills what the chrome leaves, so the chrome above it carries the growth.
+        chrome:
+          root.querySelector("[data-session-list-panel]")!.getBoundingClientRect().top -
+          root.getBoundingClientRect().top,
         panel: root.querySelector("[data-session-list-panel]")!.getBoundingClientRect().height,
       };
     }, minimum[density]);
     expect(report.escaped, `${density} controls must stay inside their chrome rows`).toEqual([]);
     expect(report.panel).toBeGreaterThanOrEqual(minimum[density] - 0.5);
-    expect(report.panel).toBeGreaterThanOrEqual(previous);
-    previous = report.panel;
+    expect(report.chrome).toBeGreaterThanOrEqual(previous);
+    previous = report.chrome;
     for (const height of await rows.evaluateAll((nodes) =>
       nodes.map((node) => node.getBoundingClientRect().height),
     ))

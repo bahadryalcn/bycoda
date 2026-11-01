@@ -96,6 +96,8 @@ export function ContextMeter({
       : []),
   ].join(". ");
   const panelOpen = hover.open || open;
+  // The speed explanation is per opening: a hover card closed by Escape or leave starts collapsed.
+  if (!panelOpen && speedInfoOpen) setSpeedInfoOpen(false);
   const percent = ratio === null ? t("Unknown") : `${Math.round(ratio * 100)}%`;
 
   // Built only while a panel shows: the meter re-renders with the composer.
@@ -226,7 +228,8 @@ export function ContextMeter({
         label={t("Context usage")}
         className="context-meter-summary"
         type="button"
-        tooltip={t("Context usage")}
+        // The hover/focus card already previews the full panel; a hint would cover it twice.
+        title=""
         aria-label={`${t("Context usage")}: ${percent}. ${speed ? `${t("Response speed")}: ${speed.tps.toFixed(1)} TPS. ` : ""}${label}`}
         aria-haspopup="dialog"
         aria-expanded={panelOpen}

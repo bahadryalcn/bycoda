@@ -20,7 +20,11 @@ test("keyboard button hints stay visible without stealing focus while tabbing", 
         const hint = page.getByRole("tooltip");
         await expect(hint).toBeVisible();
         await expect(hint).toContainText(name);
-        if (name === "Native keyboard hint") await expect(hint).toContainText("Ctrl+Shift+K");
+        // The shortcut renders as key caps (Ctrl, Shift, K) with a spoken label on its group.
+        if (name === "Native keyboard hint") {
+          await expect(hint).toContainText(/Ctrl\s*Shift\s*K|⌃\s*⇧\s*K/);
+          await expect(hint.getByRole("img")).toHaveAccessibleName(/Shift/);
+        }
         await expect(button).toBeFocused();
         const bounds = (await hint.boundingBox())!;
         expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -88,6 +92,7 @@ test("password reveal stays inside the input independently of its label and help
   const region = page.getByRole("region", { name: "Shared field families", exact: true });
   const input = region.getByLabel("Fixture credential", { exact: true });
   const reveal = region.getByRole("button", { name: "Show fixture credential", exact: true });
+  const frame = input.locator("xpath=ancestor::*[@data-field-control][1]");
   for (const reducedMotion of ["reduce", "no-preference"] as const) {
     await page.emulateMedia({ reducedMotion });
     for (const width of [320, 390, 768, 1440]) {
@@ -98,17 +103,17 @@ test("password reveal stays inside the input independently of its label and help
           light,
         );
         await input.scrollIntoViewIfNeeded();
-        const field = (await input.boundingBox())!;
+        // The field frame (FieldControl) owns the border; the reveal action is its own end
+        // column, so it sits inside the frame without overlapping the editable text.
+        const field = (await frame.boundingBox())!;
+        const editor = (await input.boundingBox())!;
         const action = (await reveal.boundingBox())!;
         expect(action.x).toBeGreaterThan(field.x);
         expect(action.x + action.width).toBeLessThan(field.x + field.width);
         expect(action.y).toBeGreaterThanOrEqual(field.y);
         expect(action.y + action.height).toBeLessThanOrEqual(field.y + field.height);
         expect(Math.abs(action.y + action.height / 2 - field.y - field.height / 2)).toBeLessThan(1);
-        const reserved = await input.evaluate((element) =>
-          parseFloat(getComputedStyle(element).paddingInlineEnd),
-        );
-        expect(reserved).toBeGreaterThan(action.width);
+        expect(action.x).toBeGreaterThanOrEqual(editor.x + editor.width - 1);
         expect(await region.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
           true,
         );
@@ -606,6 +611,22 @@ test("shared tone specimen preserves contrast, independent info and narrow layou
   }
 });
 
+/** Field focus contract: the frame border turns the focus ink and gains the soft ring, no outline. */
+async function expectFieldFocus(owner: Locator, resting?: string) {
+  await expect
+    .poll(() =>
+      owner.evaluate((node, before) => {
+        const css = getComputedStyle(node);
+        return {
+          outline: css.outlineStyle,
+          ring: /0px 0px 0px 2px/.test(css.boxShadow),
+          border: before === undefined || css.borderTopColor !== before,
+        };
+      }, resting),
+    )
+    .toEqual({ outline: "none", ring: true, border: true });
+}
+
 test("search focus has one owner across shared fields and host tool overrides", async ({
   page,
 }) => {
@@ -621,8 +642,13 @@ test("search focus has one owner across shared fields and host tool overrides", 
       );
       for (const name of ["Inline search", "Standalone search", "Fixture log search"]) {
         const field = region.getByLabel(name, { exact: true });
-        const owner = name === "Standalone search" ? field : field.locator("..");
+        // Grouped searches own their frame; the standalone field renders inside a FieldControl frame.
+        const owner =
+          name === "Standalone search"
+            ? field.locator("xpath=ancestor::*[@data-field-control][1]")
+            : field.locator("..");
         const before = await owner.boundingBox();
+        const resting = await owner.evaluate((node) => getComputedStyle(node).borderTopColor);
         await field.click();
         for (const keyboard of [false, true]) {
           if (keyboard) {
@@ -630,30 +656,18 @@ test("search focus has one owner across shared fields and host tool overrides", 
             await page.keyboard.press("Shift+Tab");
           }
           await expect(field).toBeFocused();
-          await expect(owner).toHaveCSS("outline-style", "solid");
-          await expect(owner).toHaveCSS("outline-width", "2px");
-          await expect(owner).toHaveCSS("outline-offset", "-1px");
-          await expect(owner).toHaveCSS("box-shadow", "none");
-          expect(
-            await owner.evaluate((node) => {
-              const css = getComputedStyle(node);
-              return css.outlineColor === css.color;
-            }),
-          ).toBe(false);
-          if (name !== "Standalone search") await expect(field).toHaveCSS("outline-style", "none");
+          // Field focus contract (src/styles/arc.css): the frame's border turns the focus ink and
+          // the frame carries the soft ring; no inset outline and no second ring on the editor.
+          await expectFieldFocus(owner, resting);
+          await expect(field).toHaveCSS("outline-style", "none");
+          await expect(field).toHaveCSS("box-shadow", "none");
         }
         const after = await owner.boundingBox();
         expect(after!.width).toBe(before!.width);
         expect(after!.height).toBe(before!.height);
         await field.fill("focus check");
-        const clear = owner
-          .locator("..")
-          .getByRole("button", { name: "Clear search", exact: true });
-        // The group owns its clear button; standalone places it beside the input.
-        const button =
-          name === "Standalone search"
-            ? clear
-            : owner.getByRole("button", { name: "Clear search", exact: true });
+        // The frame owns its clear button in every appearance.
+        const button = owner.getByRole("button", { name: "Clear search", exact: true });
         await page.keyboard.press("Tab");
         await expect(button).toBeFocused();
         await expect(button).toHaveCSS("outline-style", "solid");
@@ -664,8 +678,9 @@ test("search focus has one owner across shared fields and host tool overrides", 
       const combo = region.getByRole("combobox", { name: "Focus combobox", exact: true });
       await combo.click();
       await expect(combo).toHaveCSS("outline-style", "none");
-      await expect(combo.locator("..")).toHaveCSS("outline-width", "2px");
-      await expect(combo.locator("..")).toHaveCSS("outline-offset", "-1px");
+      await expect(combo).toHaveCSS("box-shadow", "none");
+      // The open combobox frame keeps the ring; its border follows the open state.
+      await expectFieldFocus(combo.locator(".."));
       await combo.fill("First");
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Enter");
@@ -702,6 +717,10 @@ test("text fields keep focus on one border with pointer and keyboard", async ({ 
       ]) {
         const field = region.getByRole("textbox", { name, exact: true });
         const before = await field.boundingBox();
+        // Text areas render inside a FieldControl frame, which then owns the border and ring.
+        const framed = await field.evaluate((node) => !!node.closest("[data-field-control]"));
+        const owner = framed ? field.locator("xpath=ancestor::*[@data-field-control][1]") : field;
+        const resting = await owner.evaluate((node) => getComputedStyle(node).borderTopColor);
         await field.click();
         await expect(field).toBeFocused();
         for (const keyboard of [false, true]) {
@@ -710,38 +729,27 @@ test("text fields keep focus on one border with pointer and keyboard", async ({ 
             await page.keyboard.press("Shift+Tab");
             await expect(field).toBeFocused();
           }
-          // Reduced-motion transitions still finish on a subsequent browser frame.
-          await expect
-            .poll(() =>
-              field.evaluate((node) => {
-                const css = getComputedStyle(node);
-                return css.outlineColor === css.borderTopColor;
-              }),
-            )
-            .toBe(true);
-          const style = await field.evaluate((node) => {
-            const css = getComputedStyle(node);
-            return {
-              outline: css.outlineStyle,
-              width: css.outlineWidth,
-              offset: css.outlineOffset,
-              color: css.outlineColor,
-              border: css.borderTopColor,
-              shadow: css.boxShadow,
-            };
-          });
-          expect(style).toEqual({
-            outline: "solid",
-            width: "2px",
-            offset: "-1px",
-            color: style.border,
-            border: style.border,
-            shadow: "none",
-          });
-          if (!name.startsWith("Invalid")) {
-            expect(style.color).not.toBe(
-              await field.evaluate((node) => getComputedStyle(node).color),
-            );
+          if (name.startsWith("Invalid")) {
+            // Invalid fields keep their danger border and show the invalid ring.
+            await expect
+              .poll(() =>
+                owner.evaluate((node, before) => {
+                  const css = getComputedStyle(node);
+                  return {
+                    outline: css.outlineStyle,
+                    ring: /0px 0px 0px 2px/.test(css.boxShadow),
+                    border: css.borderTopColor === before,
+                  };
+                }, resting),
+              )
+              .toEqual({ outline: "none", ring: true, border: true });
+          } else {
+            // Reduced-motion transitions still finish on a subsequent browser frame.
+            await expectFieldFocus(owner, resting);
+          }
+          if (framed) {
+            await expect(field).toHaveCSS("outline-style", "none");
+            await expect(field).toHaveCSS("box-shadow", "none");
           }
         }
         const after = await field.boundingBox();
@@ -771,9 +779,10 @@ test("shared button API preserves geometry, popup anchors, direct rows and busy 
   const icon = region.getByRole("button", { name: "Button API filters", exact: true });
   await icon.focus();
   expect(await icon.evaluate((node) => getComputedStyle(node).outlineStyle)).toBe("solid");
+  // Medium buttons share the md form-field height (--ui-field-height-md) so they align with fields.
   for (const [label, size] of [
     ["Button API filters", 28],
-    ["Medium button", 36],
+    ["Medium button", 32],
     ["Large button", 40],
   ] as const) {
     const rect = await region.getByRole("button", { name: label, exact: true }).boundingBox();
@@ -892,7 +901,11 @@ test("search clearing fits compact and wide layouts, both themes and keyboard us
   page,
 }) => {
   const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => {
+    // The browser's benign ResizeObserver loop notice (WebKit reports it as an error event while
+    // the clear action resizes the field); it is not an application exception.
+    if (!/^ResizeObserver loop/.test(error.message)) errors.push(error.message);
+  });
   await page.goto("/tests/browser/arc-controls.html");
   const region = page.getByRole("region", { name: "Search clear controls" });
   for (const width of [390, 768, 1024, 1440]) {
@@ -1675,13 +1688,16 @@ test.describe("shared control state matrix", () => {
     for (const width of [1280, 800]) {
       await page.setViewportSize({ width, height: 900 });
       await openMatrix(page);
+      // Inputs inside a FieldControl are borderless editors; their frame carries the height.
       const heights = await page
         .getByTestId("matrix-field-text")
         .locator("input:not([type='hidden'])")
         .evaluateAll((nodes) =>
           nodes.map((node) => ({
             name: (node as HTMLInputElement).labels?.[0]?.textContent ?? "",
-            height: Math.round(node.getBoundingClientRect().height),
+            height: Math.round(
+              (node.closest("[data-field-control]") ?? node).getBoundingClientRect().height,
+            ),
           })),
         );
       expect(heights.length).toBeGreaterThan(6);
@@ -2062,9 +2078,16 @@ test.describe("shared control state matrix", () => {
           const tail = halves[halves.length - 1];
           const head = halves[0];
           const tailBox = tail.getBoundingClientRect();
+          // Natural width of the full value in the same font, to know whether it needs shortening.
+          const probe = document.createElement("span");
+          probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
+          probe.textContent = readable.textContent;
+          root.append(probe);
+          const fits = probe.getBoundingClientRect().width <= frame.width;
+          probe.remove();
           return {
             value: readable.textContent,
-            title: root.getAttribute("title"),
+            fits,
             joined: halves.map((half) => half.textContent).join(""),
             tailText: tail.textContent,
             tailInside:
@@ -2078,9 +2101,15 @@ test.describe("shared control state matrix", () => {
           };
         });
         expect.soft(state.value, `${kind} ${width}: full value is readable text`).toBeTruthy();
-        expect
-          .soft(state.title, `${kind} ${width}: title carries the full value`)
-          .toBe(state.value);
+        // A shortened value recovers its full text through the shared overflow hint (no native title).
+        if (state.headClipped || state.tailClipped) {
+          await row.locator("[data-middle-truncate]").hover();
+          await expect
+            .soft(page.getByRole("tooltip"), `${kind} ${width}: hint carries the full value`)
+            .toHaveText(state.value!);
+          await page.mouse.move(0, 0);
+          await expect(page.getByRole("tooltip")).toHaveCount(0);
+        }
         expect
           .soft(state.joined, `${kind} ${width}: visible halves reconstruct the value`)
           .toBe(state.value);
@@ -2096,7 +2125,8 @@ test.describe("shared control state matrix", () => {
           expect.soft(state.headClipped, "path 160: the head is what gets shortened").toBe(true);
           expect.soft(state.tailText.endsWith("test.tsx")).toBe(true);
         }
-        if (kind === "path" && width === 480) {
+        if (kind === "path" && width === 480 && state.fits) {
+          // Platform fonts differ; only a value that fits must stay unshortened.
           expect.soft(state.headClipped, "path 480: nothing needs shortening").toBe(false);
         }
       }
@@ -2193,17 +2223,23 @@ test.describe("shared control state matrix", () => {
         return {
           tailText: tail.textContent,
           inside: box.width > 0 && box.right <= frame.right + 1,
-          title: node.querySelector("[data-middle-truncate]")?.getAttribute("title"),
         };
       });
       expect(label.tailText?.endsWith("v2.tsx"), `${width}: extension survives`).toBe(true);
       expect(label.inside, `${width}: tail inside strip`).toBe(true);
-      expect(label.title).toBe("Quarterly-report.final.v2.tsx");
+      // The shortened label recovers its full name through the shared overflow hint.
+      await strip.locator("[data-middle-truncate]").hover();
+      await expect(page.getByRole("tooltip")).toHaveText("Quarterly-report.final.v2.tsx");
+      await page.mouse.move(0, 0);
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
     }
     // The end-truncating label fades and exposes its full text only while it is clipped.
     const end = page.getByTestId("matrix-tabs-end-120").locator(".tab-label");
     await expect(end).toHaveAttribute("data-overflow", "true");
-    await expect(end).toHaveAttribute("title", "Quarterly-report.final.v2.tsx");
+    await end.hover();
+    await expect(page.getByRole("tooltip")).toHaveText("Quarterly-report.final.v2.tsx");
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
     // The unsaved dot must stay visible when the end-truncating label is clipped.
     const endStrip = page.getByTestId("matrix-tabs-end-120");
     const endBox = (await endStrip.boundingBox())!;

@@ -34,7 +34,9 @@ test("Git actions show progress in place without losing focus or repeating mutat
         light,
       );
       expect(
-        await page.locator("#root > div.border-r").evaluate((node) => node.scrollWidth <= node.clientWidth),
+        await page
+          .locator("#root > div.border-r")
+          .evaluate((node) => node.scrollWidth <= node.clientWidth),
       ).toBe(true);
       await page.screenshot({
         path: testInfo.outputPath(`git-pending-${width}-${light ? "light" : "dark"}.png`),
@@ -48,7 +50,12 @@ test("Git actions show progress in place without losing focus or repeating mutat
   );
   await expect(sync).not.toHaveAttribute("aria-busy", "true");
   await page.getByRole("button", { name: /^Stashes/ }).click();
-  const stashMenu = page.getByTitle("Actions for WIP: keyboard navigation", { exact: true });
+  // The row's more action is named "Actions for …" at rest and its loading label while busy.
+  const stashMenu = page
+    .getByRole("listitem")
+    .filter({ hasText: "WIP: keyboard navigation" })
+    .locator('button[aria-haspopup="menu"]');
+  await expect(stashMenu).toHaveAccessibleName("Actions for WIP: keyboard navigation");
   await stashMenu.click();
   await page.getByRole("menuitem", { name: /^Apply\b/ }).click();
   await expect(stashMenu).toHaveAttribute("aria-busy", "true");
@@ -81,13 +88,19 @@ test("hunk targets retain identity and allow keyboard and pointer recovery after
   const repository = "/fixture/engineering/long-repository-name-for-working-tree-review";
   const relative =
     "src/features/a-very-long-feature-directory/another-long-nested-directory/selected-hunk-review.ts";
-  await expect(page.getByTitle(repository, { exact: true })).toBeVisible();
+  // The header shows the folder name; the shared tooltip carries the full repository path.
+  const hint = page.getByRole("tooltip");
+  await page.getByText("long-repository-name-for-working-tree-review", { exact: true }).hover();
+  await expect(hint).toHaveText(repository);
+  await page.mouse.move(0, 0);
+  await expect(hint).toHaveCount(0);
   const file = page.locator(`[data-diff-file="${repository}/${relative}"]`);
-  // The file header is a labelled action group; its middle-truncated path keeps the full path in `title`.
-  await expect(file.getByRole("group").first().locator("span[title]").first()).toHaveAttribute(
-    "title",
-    /selected-hunk-review\.ts/,
-  );
+  // The file header is a labelled action group; its middle-truncated path recovers the full path
+  // through the shared overflow hint.
+  await file.getByRole("group").first().locator("[data-middle-truncate]").first().hover();
+  await expect(hint).toContainText(/selected-hunk-review\.ts/);
+  await page.mouse.move(0, 0);
+  await expect(hint).toHaveCount(0);
   const hunks = file.getByRole("button", { name: "Stage hunk", exact: true });
   await expect(hunks.first()).toBeAttached();
   await hunks.first().focus();
@@ -149,7 +162,10 @@ test("repository overview collapses with keyboard and preserves open panels and 
   const row = panel.locator("header button[aria-expanded]").first();
   await expect(row).toHaveAttribute("aria-expanded", "false");
   // Repository identity occupies one line; its full path remains discoverable.
-  await expect(row).toHaveAttribute("title", /core-pack.*\/fixture\/core-pack/);
+  await row.hover();
+  await expect(page.getByRole("tooltip")).toHaveText(/core-pack.*\/fixture\/core-pack/);
+  await page.mouse.move(0, 0);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
   expect((await panel.locator("header").boundingBox())!.height).toBeLessThanOrEqual(40);
   for (const width of [280, 390]) {
     await page.setViewportSize({ width, height: 700 });
@@ -354,9 +370,12 @@ test("grouped commit forms retain their height and drafts after disclosure and r
   const panel = page.locator("[data-git-repository]").first();
   const toggle = panel.locator("header button[aria-expanded]").first();
   const message = panel.getByRole("textbox", { name: "Commit message", exact: true });
+  // The borderless editor sits inside a FieldControl frame, which owns the visible height.
+  const frame = message.locator("xpath=ancestor::*[@data-field-control][1]");
   await toggle.click();
   await expect(message).toBeVisible();
-  expect((await message.boundingBox())!.height).toBeGreaterThanOrEqual(32);
+  // The commit message is a compact (fieldSize="sm", 28px) field that grows with its draft.
+  expect((await frame.boundingBox())!.height).toBeGreaterThanOrEqual(28);
   const draft =
     "Preserve the worktree commit draft while its panel is reopened\n\nA longer body that wraps differently as the sidebar width changes.";
   await message.fill(draft);
@@ -374,8 +393,8 @@ test("grouped commit forms retain their height and drafts after disclosure and r
         (value) => document.documentElement.classList.toggle("theme-light", value),
         light,
       );
-      await expect.poll(async () => (await message.boundingBox())!.height).toBeGreaterThan(32);
-      const input = (await message.boundingBox())!;
+      await expect.poll(async () => (await frame.boundingBox())!.height).toBeGreaterThan(32);
+      const input = (await frame.boundingBox())!;
       // One contextual primary (Commit or sync) sits in a single row with its menu.
       const primary = panel.locator('[data-split-part="primary"]').first();
       const commit = (await primary.boundingBox())!;
@@ -419,7 +438,11 @@ test("compact checkout header and branch fetch remain usable across widths and t
       expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );
-      await expect(branch).toHaveAttribute("title", /Switch branch in this working copy/);
+      // The switch hint is the shared tooltip (no native title).
+      await branch.hover();
+      await expect(page.getByRole("tooltip")).toContainText("Switch branch in this working copy");
+      await page.mouse.move(0, 0);
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
       await branch.focus();
       await page.keyboard.press("Enter");
       const picker = page.locator("[data-branch-picker]");
@@ -482,8 +505,20 @@ test("checkout rows preserve identity, keyboard selection and searchable selecti
   await page.getByRole("button", { name: /^Working copy:/ }).click();
   await page.getByRole("option", { name: "All checkouts", exact: true }).click();
   const list = page.locator("[data-checkout-list]");
-  const row = list.locator('button[title="/trees/audit/very-long-worktree-folder-name"]');
+  // Rows carry their full path in the shared tooltip rather than a native title.
+  const checkoutRow = (text: string) =>
+    list.getByRole("listitem").filter({ hasText: text }).getByRole("button").first();
+  const row = checkoutRow("very-long-worktree-folder-name");
   await expect(list.locator("li")).toHaveCount(3);
+  for (const [target, path] of [
+    [row, "/trees/audit/very-long-worktree-folder-name"],
+    [checkoutRow("This session"), "/fixture"],
+  ] as const) {
+    await target.hover();
+    await expect(page.getByRole("tooltip")).toHaveText(path);
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+  }
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 850 });
     for (const light of [false, true]) {
@@ -494,7 +529,7 @@ test("checkout rows preserve identity, keyboard selection and searchable selecti
       await expect(row).toContainText("audit/2026-10-14-long-branch-name-for-responsive-review");
       await expect(row).toContainText("very-long-worktree-folder-name");
       await expect(row.getByRole("img", { name: "Uncommitted changes" })).toBeVisible();
-      await expect(list.locator('button[title="/fixture"]')).toContainText("This session");
+      await expect(checkoutRow("This session")).toHaveAttribute("aria-current", "location");
       // Poll: the picker's value roll briefly overflows while the old label exits.
       await expect
         .poll(() =>
@@ -511,7 +546,7 @@ test("checkout rows preserve identity, keyboard selection and searchable selecti
     }
   }
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const detachedRow = list.locator('button[title="/trees/detached"]');
+  const detachedRow = checkoutRow("fd3caac");
   await expect(detachedRow).toContainText("fd3caac");
   await detachedRow.focus();
   await page.keyboard.press("Enter");

@@ -102,6 +102,8 @@
 .recovery-rail-count {
   display: none;
   flex-shrink: 0;
+  /* The absolute corner badge shrinks to the narrow rail control; "99+" must stay on one line. */
+  white-space: nowrap;
 }
 .recovery-rail-number {
   flex-shrink: 0;

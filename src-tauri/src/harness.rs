@@ -6829,7 +6829,12 @@ mod tests {
             Duration::from_millis(100),
         )
         .unwrap_err();
-        assert!(error.contains("stdin write timed out"));
+        // A timed-out write may have partially reached the provider: the outcome
+        // is unknown and must not be retried.
+        assert!(
+            error.contains("stdin delivery outcome unknown") && error.contains("do not retry"),
+            "{error}"
+        );
         assert!(started.elapsed() < Duration::from_secs(3));
         // A pure timeout never stops the child; the caller stops it explicitly.
         assert!(!retained.writers.is_closing());

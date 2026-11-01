@@ -397,7 +397,13 @@ export function MorphSelect({
     const target = pendingFocus.current;
     pendingFocus.current = null;
     if (target === "input") inputRef.current?.focus({ preventScroll: true });
-    if (target === "trigger") triggerRef.current?.focus({ preventScroll: true });
+    if (target === "trigger") {
+      // An owner's onClose may already have moved focus on purpose (a composer pill returns it to
+      // the draft); only restore the trigger while focus is still in this select or was dropped.
+      const active = document.activeElement;
+      if (!active || active === document.body || rootRef.current?.contains(active))
+        triggerRef.current?.focus({ preventScroll: true });
+    }
   }, [open]);
 
   const typeahead = useRef({ buffer: "", at: 0 });

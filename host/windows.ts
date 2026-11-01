@@ -63,8 +63,19 @@ export async function runPowerShell(script: string): Promise<string> {
   });
 }
 
+/** Windows PowerShell 5.1 autoloads even its own Management/Utility/Security
+ * modules by first analysing every module on PSModulePath. That analysis is
+ * cached only under the LocalApplicationData known folder; when it is cold or
+ * unresolvable (an isolated or fresh profile), each launch rescans all installed
+ * modules, which takes tens of seconds on machines with large module sets.
+ * Importing the in-box modules by their $PSHOME path skips that discovery. */
+export const windowsCoreModulesImport =
+  'Import-Module -Name "$PSHOME\\Modules\\Microsoft.PowerShell.Management", "$PSHOME\\Modules\\Microsoft.PowerShell.Utility", "$PSHOME\\Modules\\Microsoft.PowerShell.Security"';
+
 export async function protectWindowsDirectory(directory: string): Promise<void> {
-  await runPowerShell(`${aclScript}\nProtect-BycodaDirectory ${psQuote(directory)}`);
+  await runPowerShell(
+    `${windowsCoreModulesImport}\n${aclScript}\nProtect-BycodaDirectory ${psQuote(directory)}`,
+  );
 }
 
 export function windowsUninstallPreflightScript(): string {

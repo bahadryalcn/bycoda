@@ -3376,6 +3376,9 @@ mod tests {
                         Err(error) => panic!("HTTP fixture failed: {error}"),
                     }
                 };
+                // BSD/macOS accept() inherits O_NONBLOCK from the listener; the
+                // timeouts below only apply to a blocking stream.
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(3)))
                     .unwrap();

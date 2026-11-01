@@ -776,7 +776,9 @@ test("polling keeps the selected work when another delivery becomes newest", asy
 test("crew settings work view opens the selected conversation", async ({ page }) => {
   await page.goto("/tests/browser/crews.html");
   await page.getByRole("button", { name: "Crew settings page", exact: true }).click();
-  await page.getByRole("button", { name: "Crew work: Website Crew", exact: true }).click();
+  // Crew work sits in the crew row's overflow menu beside the direct Edit action.
+  await page.getByRole("button", { name: "Crew actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Crew work", exact: true }).click();
   const management = page.getByRole("dialog", { name: "Website Crew", exact: true });
   await management
     .locator('[data-crew-run="run"]')
