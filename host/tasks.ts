@@ -238,7 +238,8 @@ const WORKER_COMPLETION_GUIDANCE = [
   "End with a short final summary of at most about 8 lines: what changed, checks run with their results, and anything the owner must know (assumptions, unavailable checks, remaining risks).",
 ].join("\n");
 function workerPrompt(task: HostTask, projectCwd: string, sharedEdits: string[] = []): string {
-  return `${workerInstructions(task, projectCwd, sharedEdits)}\n\n${WORKER_COMPLETION_GUIDANCE}`;
+  // Leads the prompt so a first-run task contract stays the trailing JSON block.
+  return `${WORKER_COMPLETION_GUIDANCE}\n\n${workerInstructions(task, projectCwd, sharedEdits)}`;
 }
 function workerInstructions(task: HostTask, projectCwd: string, sharedEdits: string[] = []): string {
   const shared = sharedEdits.length
@@ -3070,7 +3071,7 @@ export class HostTasks {
       if (
         session.status !== "running" ||
         session.runId !== task.runId ||
-        !question ||
+        !question?.questions.length ||
         hasPendingApproval(session.session.blocks) ||
         ["sending", "queued", "unknown"].includes(question.delivery ?? "") ||
         (question.dismissAction !== undefined && question.dismissAction !== "skip")
