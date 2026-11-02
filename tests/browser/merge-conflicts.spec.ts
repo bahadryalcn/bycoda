@@ -148,15 +148,42 @@ test("merge editor panes resize with separators and scroll to matching conflicts
       );
       return line?.textContent ?? "";
     });
+  // All three panes read in one task, so a follower is never compared with a
+  // leader position from an earlier frame.
+  const topLines = () =>
+    page.evaluate(() =>
+      Object.fromEntries(
+        ["result", "ours", "theirs"].map((side) => {
+          const scroller = document.querySelector(`.conflict-pane-${side} .cm-scroller`)!;
+          const top = scroller.getBoundingClientRect().top;
+          const line = [...scroller.querySelectorAll(".cm-line")].find(
+            (item) => item.getBoundingClientRect().bottom > top + 2,
+          );
+          return [side, line?.textContent ?? ""];
+        }),
+      ),
+    );
   await page.locator(".conflict-pane-result .cm-content").hover();
   await page.mouse.wheel(0, 240);
-  await expect.poll(() => topLine(".conflict-pane-result")).toMatch(/unchanged context/);
+  // WebKit animates wheel scrolling: compare the panes once the result has
+  // stopped moving, not against a position captured mid-animation.
+  let previous = "";
   await expect
-    .poll(() => topLine(".conflict-pane-ours"))
-    .toBe(await topLine(".conflict-pane-result"));
-  await expect
-    .poll(() => topLine(".conflict-pane-theirs"))
-    .toBe(await topLine(".conflict-pane-result"));
+    .poll(async () => {
+      const lines = await topLines();
+      const current = JSON.stringify(lines);
+      const settled = current === previous;
+      previous = current;
+      return settled ? lines : { unsettled: lines };
+    })
+    .toEqual({
+      result: expect.stringMatching(/unchanged context/),
+      ours: expect.stringMatching(/unchanged context/),
+      theirs: expect.stringMatching(/unchanged context/),
+    });
+  const aligned = await topLines();
+  expect(aligned.ours).toBe(aligned.result);
+  expect(aligned.theirs).toBe(aligned.result);
   await page.getByRole("button", { name: "Sync scrolling", exact: true }).click();
   const before = await topLine(".conflict-pane-ours");
   await page.locator(".conflict-pane-result .cm-content").hover();

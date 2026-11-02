@@ -22,6 +22,22 @@ const UPLOAD: &[&str] = &[
     STATUS,
 ];
 
+/// A busy shared CI runner can stall the whole test process (store migrations,
+/// journal writes and the broker handshake) for several seconds, so fixture
+/// watchdogs, rendezvous waits and retry deadlines that only turn a hung
+/// exchange into a failure use the product's RPC budget, not a fixed few
+/// seconds. Buffer originals do not charge the service helper result budget
+/// and each fixture owns its upload registry, so these run in parallel.
+const FIXTURE_WAIT: Duration = DEFAULT_RPC_TIMEOUT;
+
+fn serve<F, Fut>(run: F) -> Server
+where
+    F: FnOnce(tokio::net::TcpListener) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + 'static,
+{
+    Server::spawn_with_watchdog(FIXTURE_WAIT, run)
+}
+
 struct Fixture {
     root: PathBuf,
     path: PathBuf,
@@ -220,8 +236,7 @@ fn ack(
 }
 
 async fn await_done(socket: &mut WebSocketStream<tokio::net::TcpStream>, done: mpsc::Receiver<()>) {
-    let mut wait =
-        tokio::task::spawn_blocking(move || done.recv_timeout(Duration::from_secs(5)).unwrap());
+    let mut wait = tokio::task::spawn_blocking(move || done.recv_timeout(FIXTURE_WAIT).unwrap());
     loop {
         tokio::select! {
             result=&mut wait => { result.unwrap();return; }
@@ -271,7 +286,7 @@ fn retained_count(store: &SessionStore, table: &str) -> i64 {
 #[test]
 fn v2_buffer_compaction_keeps_exact_semantic_barrier_after_reopen_and_downgrade() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let methods = [
             APPLY,
             STATUS,
@@ -373,7 +388,7 @@ fn v2_buffer_compaction_keeps_exact_semantic_barrier_after_reopen_and_downgrade(
 #[test]
 fn v2_buffer_lost_compaction_reply_reopens_to_floor_only_without_effect_or_consumer() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let methods = [
             APPLY,
             STATUS,
@@ -449,7 +464,7 @@ fn v2_buffer_lost_compaction_reply_reopens_to_floor_only_without_effect_or_consu
 #[test]
 fn v2_buffer_restored_original_cannot_use_a_downgraded_catalog_for_status_or_apply() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -614,7 +629,7 @@ fn real_host_epoch_buffer_roundtrip() {
 #[test]
 fn remote_retirement_follows_local_full_ack_and_keeps_original_terminal() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(&mut socket, &[APPLY, STATUS, ACK], "host.1").await;
         let apply = next(&mut socket).await;
@@ -670,7 +685,7 @@ fn remote_retirement_follows_local_full_ack_and_keeps_original_terminal() {
 #[test]
 fn lost_remote_ack_reopens_to_ack_only_without_replaying_original_or_consumer() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(&mut socket, &[APPLY, STATUS, ACK], "host.1").await;
         let apply = next(&mut socket).await;
@@ -702,7 +717,7 @@ fn lost_remote_ack_reopens_to_ack_only_without_replaying_original_or_consumer() 
     drop(transport);
     fixture.restart();
     let transport = fixture.ack_transport();
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + FIXTURE_WAIT;
     while !fixture.remote_ack_outbox().is_empty() {
         transport
             .reconcile_buffer_acknowledgements(fixture.store())
@@ -721,7 +736,7 @@ fn lost_remote_ack_reopens_to_ack_only_without_replaying_original_or_consumer() 
 fn remote_ack_mismatched_echo_keeps_outbox_without_reversing_successful_source_ack() {
     for wrong_original in [true, false] {
         let (done, wait) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut socket = accept(&listener).await;
             hello(&mut socket, &[APPLY, STATUS, ACK], "host.1").await;
             let apply = next(&mut socket).await;
@@ -757,7 +772,7 @@ fn remote_ack_mismatched_echo_keeps_outbox_without_reversing_successful_source_a
 fn failed_source_consumer_and_retired_original_guard_never_send_remote_ack() {
     for consume_fails in [true, false] {
         let (done, wait) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut socket = accept(&listener).await;
             hello(&mut socket, &[APPLY, STATUS, ACK], "host.1").await;
             let apply = next(&mut socket).await;
@@ -795,7 +810,7 @@ fn failed_source_consumer_and_retired_original_guard_never_send_remote_ack() {
 #[test]
 fn remote_ack_enqueue_retains_the_actual_original_reply_lifecycle_guard() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(&mut socket, &[APPLY, STATUS, ACK], "host.1").await;
         let apply = next(&mut socket).await;
@@ -851,7 +866,7 @@ fn http_recovery_ack_rechecks_current_caller_without_any_ws_reply_guard() {
     for retire_during_http in [false, true] {
         let (http_started, started) = mpsc::channel();
         let (release, released) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut socket = accept(&listener).await;
             // The canonical ACK route is absent from this authenticated hello,
             // selecting HTTP before its dispatch without fabricating a guard.
@@ -889,11 +904,9 @@ fn http_recovery_ack_rechecks_current_caller_without_any_ws_reply_guard() {
                 serde_json::from_slice(&wire[body_start..body_start + length]).unwrap();
             assert_eq!(request["method"], ACK);
             http_started.send(()).unwrap();
-            tokio::task::spawn_blocking(move || {
-                released.recv_timeout(Duration::from_secs(5)).unwrap()
-            })
-            .await
-            .unwrap();
+            tokio::task::spawn_blocking(move || released.recv_timeout(FIXTURE_WAIT).unwrap())
+                .await
+                .unwrap();
             let body = json!({"result":retired(&request["params"])}).to_string();
             http.write_all(
                 format!(
@@ -933,7 +946,7 @@ fn http_recovery_ack_rechecks_current_caller_without_any_ws_reply_guard() {
         std::thread::scope(|scope| {
             let request =
                 scope.spawn(|| transport.reconcile_buffer_acknowledgements(fixture.store()));
-            started.recv_timeout(Duration::from_secs(5)).unwrap();
+            started.recv_timeout(FIXTURE_WAIT).unwrap();
             if retire_during_http {
                 fixture
                     .state
@@ -957,7 +970,7 @@ fn http_recovery_ack_rechecks_current_caller_without_any_ws_reply_guard() {
 #[test]
 fn failed_remote_marker_commit_retains_outbox_and_retries_only_idempotent_ack() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(&mut socket, &[APPLY, STATUS, ACK], "host.1").await;
         let apply = next(&mut socket).await;
@@ -1009,7 +1022,7 @@ fn small_original_uses_exact_utf8_hash_id_and_ack_under_actual_reply_gates() {
     let raw = serde_json::to_string(&original_params).unwrap();
     let expected = raw.clone();
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(&mut socket, &[APPLY, STATUS], "host.1").await;
         let request = next(&mut socket).await;
@@ -1063,7 +1076,7 @@ fn small_original_uses_exact_utf8_hash_id_and_ack_under_actual_reply_gates() {
 #[test]
 fn lost_accepted_reply_reopen_recovers_by_status_without_freshening_current_raw_report() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut first = accept(&listener).await;
         hello(&mut first, &[APPLY, STATUS], "host.1").await;
         let accepted = next(&mut first).await;
@@ -1120,7 +1133,7 @@ fn lost_accepted_reply_reopen_recovers_by_status_without_freshening_current_raw_
 #[test]
 fn failed_consumer_keeps_recorded_original_and_next_invocation_queries_status_only() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(&mut socket, &[APPLY, STATUS], "host.1").await;
         let apply = next(&mut socket).await;
@@ -1158,7 +1171,7 @@ fn failed_consumer_keeps_recorded_original_and_next_invocation_queries_status_on
 #[test]
 fn saved_token_replacement_rejects_old_authority_before_any_recovery_request() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(&mut socket, &[APPLY, STATUS], "host.1").await;
         let apply = next(&mut socket).await;
@@ -1195,7 +1208,7 @@ fn saved_token_replacement_rejects_old_authority_before_any_recovery_request() {
 fn mismatching_original_result_identity_is_withheld_without_recording_or_consuming() {
     for field in ["originalId", "sha256", "byteLength"] {
         let (done, wait) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut socket = accept(&listener).await;
             hello(&mut socket, &[APPLY, STATUS], "host.1").await;
             let apply = next(&mut socket).await;
@@ -1239,7 +1252,7 @@ fn large_original_stages_exact_raw_bytes_with_binding_outside_payload() {
     ));
     let expected = original.clone();
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(&mut socket, UPLOAD, "host.1").await;
         let start = next(&mut socket).await;
@@ -1304,7 +1317,7 @@ fn large_original_stages_exact_raw_bytes_with_binding_outside_payload() {
 #[test]
 fn changed_payload_for_one_physical_original_is_not_a_new_apply() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(&mut socket, &[APPLY, STATUS], "host.1").await;
         let apply = next(&mut socket).await;
@@ -1341,7 +1354,7 @@ fn changed_payload_for_one_physical_original_is_not_a_new_apply() {
 fn absent_or_unknown_status_never_replays_a_possible_original() {
     for absent in [true, false] {
         let (done, wait) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut first = accept(&listener).await;
             hello(&mut first, &[APPLY, STATUS], "host.1").await;
             let apply = next(&mut first).await;
@@ -1379,7 +1392,7 @@ fn absent_or_unknown_status_never_replays_a_possible_original() {
         assert!(first.is_err());
         // A lost reply can precede the replacement socket becoming ready. Only
         // retry this read-only status reconciliation; never retry the apply.
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let deadline = std::time::Instant::now() + FIXTURE_WAIT;
         loop {
             match transport.reconcile_buffer_deliveries(fixture.store()) {
                 Ok(()) => break,
@@ -1405,7 +1418,7 @@ fn absent_or_unknown_status_never_replays_a_possible_original() {
 #[test]
 fn legacy_accepted_lost_reply_restored_without_status_capability_does_not_replay() {
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(&mut socket, &["native.buffers.update"], "host.1").await;
         let update = next(&mut socket).await;
@@ -1413,7 +1426,7 @@ fn legacy_accepted_lost_reply_restored_without_status_capability_does_not_replay
         socket.close(None).await.unwrap();
         drop(socket);
         let mut complete =
-            tokio::task::spawn_blocking(move || wait.recv_timeout(Duration::from_secs(5)).unwrap());
+            tokio::task::spawn_blocking(move || wait.recv_timeout(FIXTURE_WAIT).unwrap());
         // The pre-restart broker may reconnect before `fixture.restart()` and
         // then close, so every connection until completion is served alike:
         // a closed one is skipped and the next accepted one is watched.
@@ -1480,12 +1493,11 @@ fn legacy_accepted_lost_reply_restored_without_status_capability_does_not_replay
 fn one_held_binding_cannot_starve_later_pending_originals_across_pages() {
     let (bindings, wait_bindings) = mpsc::channel::<Vec<Value>>();
     let (done, wait) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
-        let expected = tokio::task::spawn_blocking(move || {
-            wait_bindings.recv_timeout(Duration::from_secs(5)).unwrap()
-        })
-        .await
-        .unwrap();
+    let server = serve(move |listener| async move {
+        let expected =
+            tokio::task::spawn_blocking(move || wait_bindings.recv_timeout(FIXTURE_WAIT).unwrap())
+                .await
+                .unwrap();
         let mut socket = accept(&listener).await;
         hello(&mut socket, &[APPLY, STATUS], "host.1").await;
         for (index, binding) in expected.iter().enumerate() {
@@ -1586,7 +1598,7 @@ fn http_staging_keeps_original_capacity_when_escaped_wrapper_exceeds_body_limit(
     let expected = original.clone();
     let (done, wait) = mpsc::channel();
     // About 190 separate HTTP RPCs carry the 12 MB original in a debug build.
-    let server = Server::spawn_with_watchdog(DEFAULT_RPC_TIMEOUT, move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut received = Vec::new();
         let mut status = Value::Null;
         let mut commits = 0;
@@ -1680,7 +1692,7 @@ fn http_staging_keeps_original_capacity_when_escaped_wrapper_exceeds_body_limit(
         // a fixed 5 s window tripped on loaded shared CI runners. The wait only
         // keeps the listener open to catch a resend, so give it the RPC budget.
         let mut complete =
-            tokio::task::spawn_blocking(move || wait.recv_timeout(DEFAULT_RPC_TIMEOUT).unwrap());
+            tokio::task::spawn_blocking(move || wait.recv_timeout(FIXTURE_WAIT).unwrap());
         tokio::select! {
             result=&mut complete=>result.unwrap(),
             _connection=listener.accept()=>panic!("completed HTTP original was sent or committed again"),

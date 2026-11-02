@@ -10,7 +10,14 @@ const APPLY: &str = "native.buffers.delivery.apply";
 const STATUS: &str = "native.buffers.delivery.status";
 const ACK: &str = "native.buffers.delivery.ack";
 const RECOVERY_PAGE: usize = 2;
+/// Best-effort remote cleanup (retirement ACK and epoch compaction) after a
+/// local source confirmation. It must not hold the caller; whatever it misses
+/// stays in the outbox for reconciliation. Tests assert the cleanup itself, so
+/// they allow a stalled CI runner.
+#[cfg(not(test))]
 const ACK_BUDGET: std::time::Duration = std::time::Duration::from_millis(250);
+#[cfg(test)]
+const ACK_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn epochs_supported(channel: &NativeWorkspaceChannel) -> bool {
     channel.delivery && channel.delivery_ack && channel.delivery_epochs

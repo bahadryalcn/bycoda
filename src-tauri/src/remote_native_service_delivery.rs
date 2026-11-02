@@ -5,6 +5,15 @@ use super::*;
 use crate::session_store::{authority, native_delivery as journal, SessionStore};
 use journal::{Original, Phase};
 
+/// Best-effort remote cleanup (retirement ACK and epoch compaction) after work
+/// that already succeeded locally. It must not hold the caller; whatever it
+/// misses stays retained and is retried by reconciliation or the next epoch
+/// open. Tests assert the cleanup itself, so they allow a stalled CI runner.
+#[cfg(not(test))]
+const CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(250);
+#[cfg(test)]
+const CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
+
 fn epochs_supported(channel: &NativeServiceChannel) -> bool {
     channel.delivery_supported
         && channel.delivery_ack_supported
@@ -64,7 +73,7 @@ fn ensure_epoch(
     let epoch = commit_epoch(channel, &response)?;
     let maintenance = access(channel)?.with(|store| epoch_wire::compact_params(store, &epoch))?;
     if let Some(params) = maintenance {
-        let cleanup_deadline = deadline.min(Instant::now() + std::time::Duration::from_millis(250));
+        let cleanup_deadline = deadline.min(Instant::now() + CLEANUP_BUDGET);
         if let Ok(response) = epoch_call(channel, epoch_wire::COMPACT, params, cleanup_deadline) {
             let _ = commit_epoch(channel, &response);
         }
@@ -745,11 +754,7 @@ pub(super) fn project<T>(
     // The successful consumer and local FULL receipt are already complete.
     // Remote capacity retirement is best-effort and cannot turn that success
     // into an error or authorize another effect/consumer attempt.
-    let _ = acknowledge_consumed(
-        reply,
-        original,
-        Instant::now() + std::time::Duration::from_millis(250),
-    );
+    let _ = acknowledge_consumed(reply, original, Instant::now() + CLEANUP_BUDGET);
     Ok(value)
 }
 

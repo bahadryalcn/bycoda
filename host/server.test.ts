@@ -283,7 +283,14 @@ describe("managed workspace owner RPCs", () => {
       ...project,
       expectedRevision: policy.value.result.revision,
       idempotencyKey: "rpc-policy",
-      policy: { defaultMode: "worktree", root: join(s.directory, "managed") },
+      // The default 20 GiB free-space floor depends on the runner's disk and
+      // pauses materialization on smaller CI volumes; storage admission has
+      // its own tests.
+      policy: {
+        defaultMode: "worktree",
+        root: join(s.directory, "managed"),
+        disk: { minimumFreeBytes: 1 },
+      },
     };
     expect((await s.call("projects.workspacePolicy.update", update, "invalid")).status).toBe(401);
     expect((await s.call("projects.workspacePolicy.update", update)).value.error).toBeUndefined();

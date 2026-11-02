@@ -291,6 +291,8 @@ for (const dpr of [1, 2, 3]) {
     test("retains CSS and selectable text geometry at 25 and 500 percent", async ({
       page,
     }, info) => {
+      // Software-composited WebKit repaints the high-DPR raster on every press.
+      test.setTimeout(90_000);
       await page.goto("/tests/browser/artifact-formats.html", { waitUntil: "domcontentloaded" });
       await page.getByRole("button", { name: "Open proof.pdf full screen", exact: true }).click();
       const dialog = page.getByRole("dialog");
@@ -302,10 +304,11 @@ for (const dpr of [1, 2, 3]) {
           name: zoom === 0.25 ? "Zoom out" : "Zoom in",
           exact: true,
         });
-        for (let step = 0; step < 20; step++) await button.click();
-        await expect(
-          dialog.getByText(zoom === 0.25 ? "25%" : "500%", { exact: true }),
-        ).toBeVisible();
+        const reached = dialog.getByText(zoom === 0.25 ? "25%" : "500%", { exact: true });
+        // Each press repaints a large raster; stop at the clamp instead of
+        // spending the test budget on presses that cannot change the zoom.
+        for (let step = 0; step < 20 && !(await reached.isVisible()); step++) await button.click();
+        await expect(reached).toBeVisible();
         await expect(layer).toContainText("PDF preview verified");
         const frame = dialog.locator('[data-page="1"]');
         await expect
@@ -364,7 +367,10 @@ for (const dpr of [1, 2, 3]) {
       expect(metrics[1].textWidth / metrics[0].textWidth).toBeCloseTo(20, 1);
       const metricPath = info.outputPath(`pdf-raster-dpr-${dpr}.json`);
       await writeFile(metricPath, JSON.stringify(metrics, null, 2));
-      await info.attach(`pdf-raster-dpr-${dpr}.json`, { path: metricPath, contentType: "application/json" });
+      await info.attach(`pdf-raster-dpr-${dpr}.json`, {
+        path: metricPath,
+        contentType: "application/json",
+      });
     });
   });
 }

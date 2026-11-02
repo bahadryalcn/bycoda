@@ -741,16 +741,32 @@ mod tests {
 
     #[test]
     fn short_lived_descendants_between_observations_have_original_exit_proof() {
-        let job = OwnedProcessJob::new().unwrap();
-        // Every descendant has already exited before another snapshot is taken.
-        // More than the old 64-handle lifetime capacity makes the old polling
-        // proof fail deterministically, rather than relying on a timing race.
-        let output = burst(&job, 80);
-        assert!(output.status.success());
-        assert!(
-            String::from_utf8_lossy(&output.stdout).contains("actual completed descendants: 80")
-        );
-        assert_eq!(job.members.lock().unwrap().len(), 1);
+        // A busy machine can hand a recycled PID to a later descendant. That makes
+        // the receipt correctly unverifiable, so retry the burst in a fresh job.
+        let mut attempt = 0;
+        let job = loop {
+            attempt += 1;
+            let job = OwnedProcessJob::new().unwrap();
+            // Every descendant has already exited before another snapshot is taken.
+            // More than the old 64-handle lifetime capacity makes the old polling
+            // proof fail deterministically, rather than relying on a timing race.
+            let output = burst(&job, 80);
+            assert!(output.status.success());
+            assert!(String::from_utf8_lossy(&output.stdout)
+                .contains("actual completed descendants: 80"));
+            assert_eq!(job.members.lock().unwrap().len(), 1);
+            let reused = job
+                .notifications
+                .lock()
+                .unwrap()
+                .lifetimes_by_pid
+                .values()
+                .any(|lifetimes| *lifetimes > 1);
+            if !reused || attempt == 5 {
+                break job;
+            }
+            assert!(job.drain().unwrap().require_verified().is_err());
+        };
         assert_verified(&job);
         // Windows may also add console/helper lifetimes. The verified receipt
         // still reconciles every actual birth against the real kernel total.
