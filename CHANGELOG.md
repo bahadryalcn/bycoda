@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1]
+
+### Personal assistant
+
+- Add persistent jobs, session supervision, owner decisions, notes and memory that remain available when voice is disconnected.
+- Simplify the assistant Room, conversations and settings while preserving drafts, approvals and recovery controls.
+- Show colored availability indicators and recognize project display names alongside folder names.
+
+### Voice and reliability
+
+- Add explicit turn-ending controls for longer requests and recover safely when audio cleanup cannot be confirmed.
+- Preserve session ownership, task follow-up status and saved daily summaries across reconnects and retries.
+- Correct macOS packaged Host runtime discovery.
+
 ### Sounds
 
 - Replace the six interface sounds with CC0 recordings from Openverse/Freesound; credits are in CREDITS.md.
