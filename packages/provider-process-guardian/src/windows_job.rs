@@ -51,6 +51,9 @@ struct JobNotifications {
     incomplete: bool,
     #[cfg(test)]
     observed: std::collections::VecDeque<(u32, usize)>,
+    /// First branch that withheld proof, for CI triage of unverified drains.
+    #[cfg(test)]
+    incomplete_reason: Option<&'static str>,
 }
 
 impl JobNotifications {
@@ -99,7 +102,15 @@ impl JobNotifications {
             incomplete: false,
             #[cfg(test)]
             observed: std::collections::VecDeque::new(),
+            #[cfg(test)]
+            incomplete_reason: None,
         })
+    }
+
+    fn mark_incomplete(&mut self, _reason: &'static str) {
+        self.incomplete = true;
+        #[cfg(test)]
+        self.incomplete_reason.get_or_insert(_reason);
     }
 
     fn record(&mut self, message: u32, value: usize) {
@@ -123,34 +134,38 @@ impl JobNotifications {
             return;
         }
         let Ok(pid) = u32::try_from(value) else {
-            self.incomplete = true;
+            self.mark_incomplete("pid out of range");
             return;
         };
         if pid <= 1 {
-            self.incomplete = true;
+            self.mark_incomplete("reserved pid");
             return;
         }
         if message == JOB_OBJECT_MSG_NEW_PROCESS {
             // Notifications carry no creation time. A repeated PID is ambiguous
             // even after EXIT: a delayed old event cannot close a later lifetime.
-            if self.active.len() >= 4096 || !self.active.insert(pid) {
-                self.incomplete = true;
+            if self.active.len() >= 4096 {
+                self.mark_incomplete("active set full");
+                return;
+            }
+            if !self.active.insert(pid) {
+                self.mark_incomplete("NEW for an active pid");
                 return;
             }
             if self.lifetimes_by_pid.len() >= 65_536 && !self.lifetimes_by_pid.contains_key(&pid) {
-                self.incomplete = true;
+                self.mark_incomplete("lifetime map full");
                 return;
             }
             let lifetimes = self.lifetimes_by_pid.entry(pid).or_default();
             *lifetimes += 1;
             if *lifetimes != 1 {
-                self.incomplete = true;
+                self.mark_incomplete("pid reused after its EXIT");
             }
             self.births += 1;
         } else if self.active.remove(&pid) {
             self.exits += 1;
         } else {
-            self.incomplete = true;
+            self.mark_incomplete("EXIT for an inactive pid");
         }
     }
 
@@ -609,16 +624,24 @@ mod tests {
                     .unwrap()
                     .parse::<usize>()
                     .unwrap();
+                // Windows recycles a PID once its last HANDLE closes, and the
+                // product correctly withholds proof for a repeated PID. Keep each
+                // exited descendant's HANDLE open until the burst ends, and detach
+                // it so no per-child conhost lifetime (whose PID nobody holds) joins
+                // the job. Every descendant still exits before any job snapshot.
+                let mut exited = Vec::with_capacity(count);
                 for _ in 0..count {
-                    let status = child_command()
+                    let mut child = child_command()
                         .env_remove("BYCODA_OWNED_JOB_CHILD_MODE")
                         .env_remove("BYCODA_OWNED_JOB_CHILD_COUNT")
+                        .creation_flags(windows_sys::Win32::System::Threading::DETACHED_PROCESS)
                         .stdin(Stdio::null())
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
-                        .status()
+                        .spawn()
                         .unwrap();
-                    assert!(status.success());
+                    assert!(child.wait().unwrap().success());
+                    exited.push(child);
                 }
                 println!("actual completed descendants: {count}");
             }
@@ -665,20 +688,25 @@ mod tests {
         .unwrap()
     }
 
-    fn assert_verified(job: &OwnedProcessJob) {
-        let drained = job.drain().unwrap();
+    fn census(job: &OwnedProcessJob) -> String {
         let notifications = job.notifications.lock().unwrap();
-        assert!(
-            drained.require_verified().is_ok(),
-            "births={} exits={} active={:?} incomplete={} captured={} uncertain={} packets={:?}",
+        format!(
+            "births={} exits={} active={:?} incomplete={} reason={:?} captured={} uncertain={} \
+             latest 256 packets={:?}",
             notifications.births,
             notifications.exits,
             notifications.active,
             notifications.incomplete,
+            notifications.incomplete_reason,
             job.members.lock().unwrap().len(),
             job.uncertain.load(Ordering::Acquire),
             notifications.observed,
-        );
+        )
+    }
+
+    fn assert_verified(job: &OwnedProcessJob) {
+        let drained = job.drain().unwrap();
+        assert!(drained.require_verified().is_ok(), "{}", census(job));
     }
 
     fn restricted_handle(job: &OwnedProcessJob, rights: u32) -> OwnedHandle {
@@ -741,36 +769,37 @@ mod tests {
 
     #[test]
     fn short_lived_descendants_between_observations_have_original_exit_proof() {
-        // A busy machine can hand a recycled PID to a later descendant. That makes
-        // the receipt correctly unverifiable, so retry the burst in a fresh job.
-        let mut attempt = 0;
-        let job = loop {
-            attempt += 1;
+        for attempt in 1..=3 {
             let job = OwnedProcessJob::new().unwrap();
             // Every descendant has already exited before another snapshot is taken.
             // More than the old 64-handle lifetime capacity makes the old polling
             // proof fail deterministically, rather than relying on a timing race.
+            // The burst holds exited HANDLEs, so no job PID can recycle mid-burst.
             let output = burst(&job, 80);
             assert!(output.status.success());
             assert!(String::from_utf8_lossy(&output.stdout)
                 .contains("actual completed descendants: 80"));
             assert_eq!(job.members.lock().unwrap().len(), 1);
-            let reused = job
-                .notifications
-                .lock()
-                .unwrap()
-                .lifetimes_by_pid
-                .values()
-                .any(|lifetimes| *lifetimes > 1);
-            if !reused || attempt == 5 {
-                break job;
+            if job.drain().unwrap().require_verified().is_ok() {
+                // The verified receipt reconciles every actual birth against the
+                // real kernel total.
+                assert!(job.notifications.lock().unwrap().births >= 81);
+                return;
             }
-            assert!(job.drain().unwrap().require_verified().is_err());
-        };
-        assert_verified(&job);
-        // Windows may also add console/helper lifetimes. The verified receipt
-        // still reconciles every actual birth against the real kernel total.
-        assert!(job.notifications.lock().unwrap().births >= 81);
+            // Windows documents job NEW/EXIT packets as best-effort. A dropped
+            // EXIT leaves an uncaptured PID active; a dropped NEW makes its EXIT
+            // unmatched. Both are correctly unverified, never a false proof. With
+            // HANDLEs held no other branch is legitimate, so anything else fails.
+            let lost_packet = matches!(
+                job.notifications.lock().unwrap().incomplete_reason,
+                None | Some("EXIT for an inactive pid")
+            );
+            assert!(
+                lost_packet && attempt < 3,
+                "attempt {attempt}: {}",
+                census(&job)
+            );
+        }
     }
 
     #[test]

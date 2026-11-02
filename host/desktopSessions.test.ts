@@ -13,6 +13,10 @@ import { verifyRemoteProjectAlias } from "../src/features/connections/model/remo
 import { blockDigest, conversationHead } from "../src/features/sync/model/conversationDigest";
 import type { Block } from "../src/features/sessions/model/session";
 
+// The Host answers these over real HTTP and SQLite; busy Windows CI runners need
+// more than the 1 s default, while staying under DESKTOP_WRITER_TRANSFER_MS (12 s).
+const WAIT_FOR_DESKTOP_JOB = { timeout: 10_000 };
+
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
@@ -142,13 +146,15 @@ describe("desktop sessions on the host", () => {
       sessionId: "warm",
       text: "continue",
     });
+    // A failed wait tears the server down first; keep that from becoming an unhandled rejection.
+    void sending.catch(() => {});
     let job: { id: string } | undefined;
     await vi.waitFor(async () => {
       job = (await beat()).result.commands.find(
         (command: { type: string }) => command.type === "retire-writer",
       );
       expect(job).toBeDefined();
-    });
+    }, WAIT_FOR_DESKTOP_JOB);
     expect(s.send).not.toHaveBeenCalled();
     expect(
       (
@@ -161,7 +167,7 @@ describe("desktop sessions on the host", () => {
     ).toMatch(/^LEASE_HELD:/);
     await beat([], [job!.id]);
     expect((await sending).error).toBeUndefined();
-    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), WAIT_FOR_DESKTOP_JOB);
   });
 
   it("refuses continuation when the desktop still owns its writer and releases the transfer fence", async () => {
@@ -181,13 +187,14 @@ describe("desktop sessions on the host", () => {
       sessionId: "warm",
       text: "continue",
     });
+    void sending.catch(() => {});
     let job: { id: string } | undefined;
     await vi.waitFor(async () => {
       job = (await beat()).result.commands.find(
         (command: { type: string }) => command.type === "retire-writer",
       );
       expect(job).toBeDefined();
-    });
+    }, WAIT_FOR_DESKTOP_JOB);
     await beat([job!.id]);
     expect((await sending).error).toContain("still owns");
     expect(s.send).not.toHaveBeenCalled();
@@ -251,10 +258,10 @@ describe("desktop sessions on the host", () => {
         (command: { type: string }) => command.type === "retire-writer",
       );
       expect(job).toBeDefined();
-    });
+    }, WAIT_FOR_DESKTOP_JOB);
     expect(s.send).not.toHaveBeenCalled();
     await beat([], [job!.id]);
-    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), WAIT_FOR_DESKTOP_JOB);
   });
 
   it("never caches an unreadable desktop database as an empty project", async () => {
@@ -421,11 +428,12 @@ describe("desktop sessions on the host", () => {
       projectId: s.project.id,
       sessionId: "a",
     });
+    void deleting.catch(() => {});
     let jobs: any[] = [];
     await vi.waitFor(async () => {
       jobs = (await beat()).result.deletions.jobs;
       expect(jobs).toHaveLength(1);
-    });
+    }, WAIT_FOR_DESKTOP_JOB);
     expect(jobs[0]).toMatchObject({ sessionId: "a", cwd: s.project.cwd });
     expect(await s.store.session("a")).toBeDefined();
     s.desktopDb.prepare("DELETE FROM sessions WHERE id='a'").run();
@@ -468,11 +476,12 @@ describe("desktop sessions on the host", () => {
       projectId: s.project.id,
       sessionId: "a",
     });
+    void deleting.catch(() => {});
     let jobs: any[] = [];
     await vi.waitFor(async () => {
       jobs = (await beat()).result.deletions.jobs;
       expect(jobs).toHaveLength(1);
-    });
+    }, WAIT_FOR_DESKTOP_JOB);
     await beat([{ id: jobs[0].id, error: "Stop this session before deleting it" }]);
     expect((await deleting).error).toMatch(/Stop this session/);
     expect(await s.store.session("a")).toBeDefined();
