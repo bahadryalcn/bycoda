@@ -301,11 +301,15 @@ for (const { width, theme } of [
       .getByRole("textbox", { name: "Reviewer instructions", exact: true })
       .fill(reviewerInstructions);
     await reviewer.getByRole("button", { name: /^Claude Code/ }).click();
-    await page
+    const effort = page
       .getByRole("menu", { name: "Model and settings", exact: true })
-      .getByRole("menuitem", { name: /^(Effort|Reasoning)/ })
-      .click();
-    await page.getByRole("menuitemradio", { name: "High", exact: true }).click();
+      .getByRole("menuitem", { name: /^(Effort|Reasoning)/ });
+    // Hovering the row opens its flyout; at narrow widths the flyout covers the row,
+    // so only click the row when hovering did not open it.
+    await effort.hover();
+    const high = page.getByRole("menuitemradio", { name: "High", exact: true });
+    await high.waitFor({ timeout: 1000 }).catch(() => effort.click());
+    await high.click();
     await form
       .locator("summary")
       .filter({ hasText: /^Required resources/ })

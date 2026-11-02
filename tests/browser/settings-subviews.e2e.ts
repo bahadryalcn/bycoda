@@ -197,7 +197,16 @@ for (const theme of ["light", "dark"])
         path: `temp/verification/2026-10-16-ui-system/W5a-SETTINGS-mcp-${theme}-${width}.png`,
       });
       const scroller = page.locator("[data-settings-scroller]");
-      await connections.getByRole("button", { name: "Show more connections", exact: true }).click();
+      const showMore = connections.getByRole("button", {
+        name: "Show more connections",
+        exact: true,
+      });
+      await expect(showMore).toBeVisible();
+      await expect(showMore).toBeEnabled();
+      // Scrolling the continuation into the list viewport also reveals the next batch and
+      // unmounts the button, so a scrolling click() can lose that race; dispatch the click
+      // in place to exercise the button itself.
+      await showMore.dispatchEvent("click");
       await expect(details).toHaveCount(25);
       // The range status only shows while more connections remain to reveal.
       await expect(connections.getByRole("status")).toHaveCount(0);
