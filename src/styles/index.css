@@ -464,11 +464,28 @@ html.theme-light {
      Popups, menus and modals use --ui-surface-floating. */
   --ui-chat-canvas: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
   --ui-composer-surface: var(--ui-surface);
+  /* Chat cards (changed files, plan, task list, tool output) share the composer's quiet step:
+     near black / near white on the pure canvas instead of a mid gray card (owner 2026-11-03). */
+  --ui-surface-quiet: var(--ui-composer-surface);
   --ui-composer-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-composer-surface));
   --ui-composer-shadow: none;
-  /* Floating turn activity reveals the transcript while its labels stay crisp. */
-  --ui-activity-dock-glass: color-mix(in oklab, var(--ui-surface) 68%, transparent);
-  --ui-activity-dock-blur: min(6px, var(--glass-blur));
+  /* Floating turn activity is frosted glass over the transcript while its labels stay crisp.
+     A thin canvas tint plus a dimmed, saturated blur keeps blurred text from turning into a
+     flat gray slab (owner 2026-11-03: "çok gri duruyor"); a hairline edge and top light
+     mark the pane. */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--color-background-base) 28%, transparent);
+  --ui-activity-dock-blur: var(--glass-blur);
+  --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.5) brightness(0.8);
+  --ui-activity-dock-edge:
+    inset 0 0 0 1px color-mix(in oklab, var(--color-content) 8%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--color-content) 7%, transparent);
+  /* Frosted hover cards (session details): a thin tint over a strong, saturated blur, so the
+     pane beneath shows through as color instead of a flat gray card (owner 2026-11-03:
+     "bu gri tasarımı sevmiyorum ... blurlu glass efektli"). Opaque fallback: .popover-frosted. */
+  --ui-frosted-glass: color-mix(in oklab, var(--color-background-base) 22%, transparent);
+  --ui-frosted-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(1.8) brightness(0.82);
+  --ui-frosted-edge: inset 0 1px 0 color-mix(in oklab, var(--color-content) 10%, transparent);
+  --ui-frosted-divider: var(--ui-fill-subtle);
   /* Large editable regions and boxed setting groups are identified by surface
      and caret; their edge is quieter than a 3:1 small-field border. */
   --ui-editor-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-surface));
@@ -734,6 +751,16 @@ html.theme-light {
   --ui-composer-surface: var(--palette-solidInk);
   --ui-composer-border: color-mix(in oklab, var(--color-content) 13%, var(--palette-solidInk));
   --ui-composer-shadow: 0 1px 2px color-mix(in oklab, var(--color-content) 5%, transparent);
+  /* Light glass: a milky canvas veil that brightens the blur instead of dimming it. */
+  --ui-activity-dock-glass: color-mix(in oklab, var(--color-background-base) 45%, transparent);
+  --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.4) brightness(1.06);
+  /* Light frosted cards: a milky veil that brightens what it blurs. */
+  --ui-frosted-glass: color-mix(in oklab, var(--color-background-base) 36%, transparent);
+  --ui-frosted-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.6) brightness(1.05);
+  --ui-frosted-edge: inset 0 1px 0 color-mix(in oklab, var(--color-background-base) 85%, transparent);
+  --ui-activity-dock-edge:
+    inset 0 0 0 1px color-mix(in oklab, var(--color-content) 8%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--color-background-base) 80%, transparent);
   --link-color: var(--palette-hsl_211_92pct_40pct);
   --color-skill: var(--palette-hexa07c10);
   --color-mention: var(--palette-hex0284c7);
@@ -3853,6 +3880,38 @@ html.theme-light .popover-backdrop {
 /* Opaque popover surface for live canvases; no backdrop sampling. */
 .popover-solid {
   background: var(--ui-surface-floating);
+}
+
+/* Frosted glass for non-interactive hover cards (Popover `frosted`). The doubled selector outranks
+   the shared .popover-backdrop rules below; without blur the opaque floating surface stays readable. */
+.popover-backdrop.popover-frosted,
+html.theme-light .popover-backdrop.popover-frosted {
+  background: var(--ui-frosted-glass);
+  box-shadow: var(--ui-frosted-edge);
+  -webkit-backdrop-filter: var(--ui-frosted-filter);
+  backdrop-filter: var(--ui-frosted-filter);
+}
+
+html[data-performance-no-blur] .popover-backdrop.popover-frosted {
+  background: var(--ui-surface-floating);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .popover-backdrop.popover-frosted,
+  html.theme-light .popover-backdrop.popover-frosted {
+    background: var(--ui-surface-floating);
+  }
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  .popover-backdrop.popover-frosted,
+  html.theme-light .popover-backdrop.popover-frosted {
+    background: var(--ui-surface-floating);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 /* Animate content only; its sibling glass stays still. Finish at `none` and

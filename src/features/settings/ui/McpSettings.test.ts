@@ -355,7 +355,8 @@ it("adds a standard mcpServers entry to the selected provider and project", asyn
     config: json,
     scope: "project",
   });
-  expect(invoke).toHaveBeenLastCalledWith("claude_mcp_list", { cwd: "/other" });
+  expect(invoke).toHaveBeenCalledWith("claude_mcp_list", { cwd: "/other" });
+  expect(invoke).toHaveBeenCalledWith("codex_mcp_list", { cwd: "/other" });
 });
 
 it("navigates provider choices with arrow keys", async () => {
@@ -457,6 +458,36 @@ it("shows checking instead of sign-in until Claude health arrives, then keeps a 
   expect(row("arc").textContent).toContain("Sign in");
 });
 
+it("uses Codex sign-in state, tags scopes and explains a missing Cursor CLI", async () => {
+  invoke.mockImplementation(async (command: string) => command === "mcp_discover"
+    ? [
+        { provider: "codex", name: "cloudflare", scope: "user", configPath: "/home/.codex/config.toml", transport: "http" },
+        { provider: "codex", name: "stripe", scope: "user", configPath: "/home/.codex/config.toml", transport: "http" },
+        { provider: "codex", name: "mem0", scope: "user", configPath: "/home/.codex/config.toml", transport: "http" },
+        { provider: "cursor", name: "hostinger", scope: "project", configPath: "/repo/.cursor/mcp.json", transport: "http" },
+      ]
+    : command === "codex_mcp_list"
+      ? [
+          { name: "cloudflare", authStatus: "o_auth" },
+          { name: "stripe", authStatus: "not_logged_in" },
+          { name: "mem0", authStatus: "unsupported" },
+        ]
+      : command === "mcp_provider_login" ? Promise.reject("cursor CLI not found")
+        : command === "claude_mcp_list" ? "" : undefined);
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  const row = (name: string) => container.querySelector(`[aria-label="Actions for ${name}"]`)!.parentElement!;
+  expect(row("cloudflare").textContent).toContain("Signed in");
+  expect(row("cloudflare").textContent).not.toContain("Sign in");
+  expect(row("stripe").textContent).toContain("Sign in");
+  expect(row("mem0").textContent).not.toContain("Sign in");
+  expect(row("cloudflare").textContent).toContain("Global");
+  expect(row("hostinger").textContent).toContain("Project");
+  const signIn = [...row("hostinger").querySelectorAll("button")].find((button) => button.textContent === "Sign in")!;
+  await act(async () => signIn.click());
+  expect(container.textContent).toContain("Cursor CLI (cursor-agent) is not installed.");
+  expect(container.textContent).not.toContain("Showing the last successful result.");
+});
+
 it("shows only configured provider chips until the filter button reveals all", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await openFilters();
@@ -517,12 +548,12 @@ it("ignores discovery from a previous project after cwd changes", async () => {
 
 it("reuses the loaded list when returning to the page and reloads on Refresh", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
-  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(invoke).toHaveBeenCalledTimes(3);
   await act(async () => root.render(null));
   await act(() => root.render(createElement(McpSettings, { cwd: "/repo" })));
   expect(container.textContent).toContain("sentry");
   expect(container.textContent).not.toContain("Checking servers…");
-  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(invoke).toHaveBeenCalledTimes(3);
 
   invoke.mockImplementation(async (command: string) =>
     command === "mcp_discover"
@@ -541,7 +572,7 @@ it("reuses the loaded list when returning to the page and reloads on Refresh", a
     (button) => button.getAttribute("aria-label") === "Refresh",
   )!;
   await act(async () => refresh.click());
-  expect(invoke).toHaveBeenCalledTimes(4);
+  expect(invoke).toHaveBeenCalledTimes(5);
   expect(container.textContent).toContain("updated");
   expect(container.textContent).not.toContain("sentry");
 
@@ -549,7 +580,7 @@ it("reuses the loaded list when returning to the page and reloads on Refresh", a
   await act(() => root.render(createElement(McpSettings, { cwd: "/repo" })));
   expect(container.textContent).toContain("updated");
   expect(container.textContent).not.toContain("Checking servers…");
-  expect(invoke).toHaveBeenCalledTimes(4);
+  expect(invoke).toHaveBeenCalledTimes(5);
 });
 
 it("shares the first request across StrictMode and navigation while loading", async () => {
@@ -604,7 +635,7 @@ it("caches discovery failures and lets Refresh retry", async () => {
   await act(async () => refresh.click());
   expect(container.textContent).toContain("sentry");
   expect(container.textContent).not.toContain("Discovery failed");
-  expect(invoke).toHaveBeenCalledTimes(3);
+  expect(invoke).toHaveBeenCalledTimes(4);
 });
 
 it("uses the shared project picker and caches each project's list", async () => {

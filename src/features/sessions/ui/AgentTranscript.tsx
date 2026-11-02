@@ -1,4 +1,5 @@
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { SessionMessageAuthor } from "./SessionMessageAuthor";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Alert } from "../../../shared/ui/Alert";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
@@ -2179,6 +2180,7 @@ function UserMessageBlock({
       data-editing-last-turn={editing ? "true" : undefined}
       className={`user-message-row group/usermsg flex min-w-0 flex-col overflow-visible ${questionAnswer ? "" : "items-end pbs-1.5 pe-4 pbe-5 ps-14"}`}
     >
+      <SessionMessageAuthor author={block.author} onOpen={block.author?.kind === "assistant"||block.author?.kind==="assistant-manual" ? () => window.dispatchEvent(new CustomEvent("bycoda:open-assistant",{detail:{tab:"history",...(block.author?.kind === "assistant"?{jobId:block.author.jobId}:block.author?.kind==="assistant-manual"?{supervisionId:block.author.supervisionId}:{})}})) : undefined} />
       {/* Give actions the pane width while the bubble keeps its content width. */}
       <div
         className={`user-message-hover-zone flex w-full min-w-0 max-w-full flex-col overflow-visible ${questionAnswer ? "" : "items-end"}`}

@@ -3,7 +3,7 @@ import { t } from "../../../shared/i18n";
 import { revokeSshHttpProxyApproval } from "../model/sshHttpProxyApproval";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import { StatusBadge, type BadgeStatus } from "../../../shared/ui/Badge";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
@@ -234,7 +234,99 @@ export function SshRunbooks({
   }, [review]);
   return (
     <>
-      <Modal title={t("SSH runbooks")} onClose={onClose} size="lg">
+      <Modal
+        title={t("SSH runbooks")}
+        onClose={onClose}
+        size="lg"
+        footer={
+          <ModalActions
+            start={
+              saved ? (
+                <ConfirmMorph
+                  label={t("Delete runbook")}
+                  tone="danger"
+                  disabled={busy || frozen}
+                  onConfirm={() =>
+                    operation(async () => {
+                      await removeSshRunbook(saved.id, saved.revision);
+                      if (!mounted.current) return;
+                      setProfiles((items) => items.filter((item) => item.id !== saved.id));
+                      setDraft(sshRunbookDraft(undefined, server.id));
+                      setReview(undefined);
+                    })
+                  }
+                />
+              ) : undefined
+            }
+          >
+            <Button
+              disabled={busy || frozen || !profile}
+              onClick={() =>
+                void operation(async () => {
+                  if (!profile) return;
+                  const value = await saveSshRunbook(profile, saved?.revision ?? null);
+                  if (!mounted.current) return;
+                  setProfiles((items) => [...items.filter((item) => item.id !== value.id), value]);
+                  setDraft(sshRunbookDraft(value));
+                  setReview(undefined);
+                })
+              }
+            >
+              {t("Save runbook")}
+            </Button>
+            <Button
+              disabled={busy || frozen || !clean}
+              onClick={() =>
+                void operation(async () => {
+                  if (!saved) return;
+                  const requestedScope = scope;
+                  if (
+                    selectedIntent &&
+                    !intents.some(
+                      (item) =>
+                        item.id === selectedIntent &&
+                        item.automationId === saved.id &&
+                        item.revision === saved.revision &&
+                        item.status === "pendingReview",
+                    )
+                  )
+                    throw new Error(t("Runbook changed. Refresh and review again."));
+                  const value = selectedIntent
+                    ? await reviewSshRunbook(saved.id, saved.revision, selectedIntent)
+                    : await reviewSshRunbook(saved.id, saved.revision);
+                  if (!mounted.current || scopeRef.current !== requestedScope) return;
+                  if (
+                    !sameSshRunbook(value.profile, saved) ||
+                    !value.review.reviewId ||
+                    !/^[a-f0-9]{64}$/.test(value.review.digest) ||
+                    !Number.isFinite(value.review.expiresInSeconds) ||
+                    value.review.expiresInSeconds <= 0 ||
+                    value.review.expiresInSeconds > 120 ||
+                    value.targets.length !== saved.targetIds.length ||
+                    value.targets.some(
+                      (target, index) =>
+                        target.serverId !== saved.targetIds[index] ||
+                        !validSshEndpointPreview(target.endpoint) ||
+                        (target.configuration != null &&
+                          !validSshRuntimeConfiguration(target.configuration)),
+                    )
+                  )
+                    throw new Error(t("Runbook changed. Refresh and review again."));
+                  const now = Date.now();
+                  setClock(now);
+                  setReview({
+                    value,
+                    scope: requestedScope,
+                    expiresAt: now + value.review.expiresInSeconds * 1000,
+                  });
+                })
+              }
+            >
+              {t("Review execution")}
+            </Button>
+          </ModalActions>
+        }
+      >
         <div className="flex min-w-0 flex-col gap-3 p-4">
           <p className="text-ui-caption text-(--ui-text-muted)">
             {t("Target")}: {server.name}
@@ -542,91 +634,6 @@ export function SshRunbooks({
               {t("Enter a name, script, valid targets and execution limits.")}
             </InlineError>
           ) : null}
-          <div className="flex flex-wrap justify-end gap-2">
-            {saved ? (
-              <span className="me-auto">
-                <ConfirmMorph
-                  label={t("Delete runbook")}
-                  tone="danger"
-                  disabled={busy || frozen}
-                  onConfirm={() =>
-                    operation(async () => {
-                      await removeSshRunbook(saved.id, saved.revision);
-                      if (!mounted.current) return;
-                      setProfiles((items) => items.filter((item) => item.id !== saved.id));
-                      setDraft(sshRunbookDraft(undefined, server.id));
-                      setReview(undefined);
-                    })
-                  }
-                />
-              </span>
-            ) : null}
-            <Button
-              disabled={busy || frozen || !profile}
-              onClick={() =>
-                void operation(async () => {
-                  if (!profile) return;
-                  const value = await saveSshRunbook(profile, saved?.revision ?? null);
-                  if (!mounted.current) return;
-                  setProfiles((items) => [...items.filter((item) => item.id !== value.id), value]);
-                  setDraft(sshRunbookDraft(value));
-                  setReview(undefined);
-                })
-              }
-            >
-              {t("Save runbook")}
-            </Button>
-            <Button
-              disabled={busy || frozen || !clean}
-              onClick={() =>
-                void operation(async () => {
-                  if (!saved) return;
-                  const requestedScope = scope;
-                  if (
-                    selectedIntent &&
-                    !intents.some(
-                      (item) =>
-                        item.id === selectedIntent &&
-                        item.automationId === saved.id &&
-                        item.revision === saved.revision &&
-                        item.status === "pendingReview",
-                    )
-                  )
-                    throw new Error(t("Runbook changed. Refresh and review again."));
-                  const value = selectedIntent
-                    ? await reviewSshRunbook(saved.id, saved.revision, selectedIntent)
-                    : await reviewSshRunbook(saved.id, saved.revision);
-                  if (!mounted.current || scopeRef.current !== requestedScope) return;
-                  if (
-                    !sameSshRunbook(value.profile, saved) ||
-                    !value.review.reviewId ||
-                    !/^[a-f0-9]{64}$/.test(value.review.digest) ||
-                    !Number.isFinite(value.review.expiresInSeconds) ||
-                    value.review.expiresInSeconds <= 0 ||
-                    value.review.expiresInSeconds > 120 ||
-                    value.targets.length !== saved.targetIds.length ||
-                    value.targets.some(
-                      (target, index) =>
-                        target.serverId !== saved.targetIds[index] ||
-                        !validSshEndpointPreview(target.endpoint) ||
-                        (target.configuration != null &&
-                          !validSshRuntimeConfiguration(target.configuration)),
-                    )
-                  )
-                    throw new Error(t("Runbook changed. Refresh and review again."));
-                  const now = Date.now();
-                  setClock(now);
-                  setReview({
-                    value,
-                    scope: requestedScope,
-                    expiresAt: now + value.review.expiresInSeconds * 1000,
-                  });
-                })
-              }
-            >
-              {t("Review execution")}
-            </Button>
-          </div>
           {activeReview ? (
             <section
               aria-label={t("SSH execution review")}

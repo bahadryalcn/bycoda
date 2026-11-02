@@ -21,4 +21,11 @@ Paths are repository-root relative. This is an entry map, not a qualification ch
 
 ## Verification selection
 
+- Remote connection recovery: `src/features/connections/model/remoteConnection.ts`,
+  `remoteFailure.ts`, `connections.ts` and `src/features/connections/ui/RemoteSession.tsx`
+  keep blocked transport state separate from ordinary operation errors. An HTTP
+  success alone must not clear a blocked native lane. `src-tauri/src/remote.rs`
+  and `host_ws/` own identity-verified explicit recovery without mutation replay;
+  workspace path confinement remains in `host/workspace-commands.ts`.
+
 Start with tests beside the changed schema/service/provider/native module. For actual interop choose isolated Host/native profiles and original process/window/Store owners; use fake repositories and scoped data. Include unauthorized/old clients, late original callbacks, duplicate commands, unknown write/cleanup outcomes, restart/recovery and capacity refusal when affected. Never turn an earlier checkpoint's test count, all26 label or installed version into present acceptance.

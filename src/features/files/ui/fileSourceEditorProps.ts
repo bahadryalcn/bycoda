@@ -20,6 +20,7 @@ export type FileSourceEditorContract = Pick<
   | "onDirtyChange"
   | "onErrorCountChange"
   | "onSave"
+  | "onPeerSaved"
   | "saveRequestRef"
   | "onStageGit"
   | "onDocumentChange"

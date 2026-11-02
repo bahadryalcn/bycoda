@@ -31,8 +31,8 @@
 .pane {
   min-inline-size: 0;
   overflow: clip;
+  border: 1px solid var(--ui-pane-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
 }
 
 .paneHeader {
@@ -115,27 +115,10 @@
   inline-size: 65%;
 }
 
-.footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
 .hint {
   flex: 1 1 220px;
   margin: 0;
   line-height: 1.5;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-inline-start: auto;
 }
 
 @media (max-width: 640px) {
@@ -147,13 +130,5 @@
   .placeholder {
     min-block-size: 96px;
     max-block-size: 24dvh;
-  }
-
-  .footer {
-    align-items: stretch;
-  }
-
-  .actions {
-    inline-size: 100%;
   }
 }

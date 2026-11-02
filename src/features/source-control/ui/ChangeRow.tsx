@@ -137,7 +137,6 @@ export const ChangeRow = memo(function ChangeRow({
           motion="none"
           type="button"
           aria-label={file.relative}
-          title={file.relative}
           data-git-file={file.path}
           onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
             event.currentTarget.focus({ preventScroll: true });

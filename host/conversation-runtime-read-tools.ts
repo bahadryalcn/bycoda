@@ -2,7 +2,7 @@ import { basename, resolve } from "node:path";
 import { statSync } from "node:fs";
 import type { HostStore } from "./store";
 import type { HostLimits } from "./limits";
-import type { RuntimeLogPrincipal } from "./runtime-log-tools";
+import type { RuntimeLogSubjectPrincipal } from "./runtime-log-tools";
 import { listShellProfiles } from "./shellProfiles";
 import { attachmentPath, readAttachmentChunk, MAX_REMOTE_ATTACHMENT_BYTES } from "./attachments";
 import { scrubRuntimeLogText } from "./runtime-logs";
@@ -58,7 +58,7 @@ export class ConversationRuntimeReadTools {
   async call(
     action: RuntimeReadConversationTool,
     input: Record<string, unknown>,
-    principal: RuntimeLogPrincipal,
+    principal: RuntimeLogSubjectPrincipal,
     authorized: () => boolean | Promise<boolean>,
   ): Promise<unknown> {
     const check = async () => {
@@ -96,6 +96,7 @@ export class ConversationRuntimeReadTools {
         chosenId: installed.has(profiles.chosenId ?? "") ? profiles.chosenId : null,
       };
     }
+    if (principal.kind !== "session") throw new Error("This tool requires a real focused session.");
     const session = await this.session(principal.sessionId);
     if (session.projectId !== principal.projectId)
       throw new Error("Session belongs to another project.");

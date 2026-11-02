@@ -56,6 +56,8 @@ type MatchGroup = {
   path: string;
   relative: string;
   name: string;
+  /** Parent folder of the file; empty at the project root. */
+  directory: string;
   matches: ProjectSearchMatch[];
 };
 
@@ -331,20 +333,21 @@ function ProjectSearchContent({
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         {groups.map((group) => (
           <section key={group.path} className="border-b border-stroke">
-            <div className="flex items-center gap-1.5 px-2 py-1.5">
+            {/* One line per file: name, then its folder (full path on hover when it is cut). */}
+            <div className="flex min-w-0 items-center gap-1.5 px-2 py-1">
               <FileTypeIcon name={group.name} isDir={false} size="md" />
-              <span className="min-w-0 flex-1 truncate text-ui-caption text-content">{group.name}</span>
+              <span className="min-w-0 max-w-[60%] shrink-0 truncate text-ui-caption text-content">
+                {group.name}
+              </span>
+              <OverflowTooltip label={group.relative}>
+                <span className="min-w-0 flex-1 truncate text-ui-micro text-(--ui-text-muted)">
+                  {group.directory}
+                </span>
+              </OverflowTooltip>
               <Badge variant="count" size="xs" tone="accent" max={Infinity}>
                 {group.matches.length}
               </Badge>
             </div>
-            <OverflowTooltip label={group.relative}>
-              <p
-                className="truncate px-2 pb-1 text-ui-caption text-(--ui-text-secondary)"
-              >
-                {group.relative}
-              </p>
-            </OverflowTooltip>
             <ul>
               {group.matches.map((match) => (
                 <li key={`${match.path}:${match.line}:${match.column}`}>
@@ -413,10 +416,12 @@ function groupMatches(matches: ProjectSearchMatch[]): MatchGroup[] {
       existing.matches.push(match);
       continue;
     }
+    const slash = match.relative.lastIndexOf("/");
     byPath.set(match.path, {
       path: match.path,
       relative: match.relative,
-      name: match.relative.split("/").pop() ?? match.relative,
+      name: match.relative.slice(slash + 1),
+      directory: slash < 0 ? "" : match.relative.slice(0, slash),
       matches: [match],
     });
   }

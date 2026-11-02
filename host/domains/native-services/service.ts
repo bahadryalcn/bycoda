@@ -39,11 +39,23 @@ export function createNativeServicesService() {
     if (!owner) throw new HostDomainAuthorizationError();
     // Desktop authorization has always rejected unknown keys, even on HTTP.
     const params: Record<string, unknown> =
-      options.legacy && method !== "native.services.conversation.desktop.authorize"
+      options.legacy && method !== "native.services.conversation.desktop.authorize" && method !== "native.services.desktop.stop" && method !== "native.services.desktop.status"
         ? raw
         : NATIVE_SERVICES_RPC_SCHEMAS[method].params.parse(raw);
     let result: unknown;
-    if (method.endsWith(".bridge.describe"))
+    if(method==="native.services.assistant.presence.get") {
+      if(!owner.assistantPresence)throw new Error("Native assistant presence is unavailable.");
+      result=await owner.assistantPresence();
+    } else if(method==="native.services.assistant.presence.set") {
+      if(!owner.setAssistantPresence)throw new Error("Native assistant presence is unavailable.");
+      result=await owner.setAssistantPresence(params.state as "present"|"away"|"dnd");
+    } else if(method==="native.services.desktop.status") {
+      if(!owner.desktopStatus)throw new Error("Native desktop status is unavailable.");
+      result=await owner.desktopStatus();
+    } else if(method==="native.services.desktop.stop") {
+      if(!owner.stopDesktop)throw new Error("Native desktop Stop is unavailable.");
+      result=await owner.stopDesktop();
+    } else if (method.endsWith(".bridge.describe"))
       result = await owner.describe(
         method.includes("runtimeLogs")
           ? "runtime-logs"

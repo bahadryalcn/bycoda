@@ -1,7 +1,7 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Modal } from "../../../shared/ui/Modal";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { formatCooldown, WRONG_PASSWORD_DELAY_MS } from "../model/attemptThrottle";
 import { changeLockPassword, lockCooldownMs, setLockPassword } from "../model/groupLock";
 import { PASSWORD_MIN_LENGTH, passwordProblem } from "../model/passwordRecord";
@@ -25,6 +25,7 @@ type Props = {
  */
 export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
   useLocale();
+  const formId = useId();
   const current = useRef<HTMLInputElement>(null);
   const next = useRef<HTMLInputElement>(null);
   const confirm = useRef<HTMLInputElement>(null);
@@ -101,7 +102,9 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
 
   const message =
     cooldown.remainingMs > 0
-      ? t("Too many wrong passwords. Try again in {p0}.", { p0: formatCooldown(cooldown.remainingMs) })
+      ? t("Too many wrong passwords. Try again in {p0}.", {
+          p0: formatCooldown(cooldown.remainingMs),
+        })
       : error;
 
   return (
@@ -112,8 +115,24 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
       fitViewport
       // The running change cannot be cancelled, so the dialog stays until it finishes.
       onClose={busy ? () => {} : onClose}
+      footer={
+        <ModalActions>
+          <Button type="button" onClick={onClose} variant="ghost" disabled={busy}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={busy || cooldown.remainingMs > 0}
+            variant="primary"
+            loading={busy}
+          >
+            {mode === "set" ? t("Set password") : t("Change password")}
+          </Button>
+        </ModalActions>
+      }
     >
-      <form onSubmit={submit} className="flex flex-col gap-3 p-4">
+      <form id={formId} onSubmit={submit} className="flex flex-col gap-3 p-4">
         {mode === "change" ? (
           <PasswordField
             label={t("Current password")}
@@ -148,19 +167,6 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
             )}
           </li>
         </ul>
-        <div className="flex justify-end gap-2">
-          <Button type="button" onClick={onClose} variant="ghost" disabled={busy}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="submit"
-            disabled={busy || cooldown.remainingMs > 0}
-            variant="primary"
-            loading={busy}
-          >
-            {mode === "set" ? t("Set password") : t("Change password")}
-          </Button>
-        </div>
       </form>
     </Modal>
   );

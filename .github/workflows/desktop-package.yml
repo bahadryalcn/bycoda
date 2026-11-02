@@ -235,11 +235,26 @@ jobs:
         with:
           shared-key: desktop-release-${{ matrix.runner }}
           save-if: false
+      - name: Prepare pinned desktop helper for this platform
+        shell: bash
+        run: node scripts/setup/agent-desktop.mjs --prepare
       - name: Package the exact bundled Host
         shell: bash
+        env:
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+          BYCODA_WINDOWS_SIGNING_CERT_SHA1: ${{ vars.BYCODA_WINDOWS_SIGNING_CERT_SHA1 }}
+          BYCODA_WINDOWS_SIGNING_STORE: ${{ vars.BYCODA_WINDOWS_SIGNING_STORE }}
         run: |
           started=$SECONDS
-          node host/package.mjs
+          package_args=(--desktop-helper)
+          if [ "$RUNNER_OS" = 'Windows' ] && [ "$RELEASE_CHANNEL" = 'stable' ]; then
+            if [ -n "$BYCODA_WINDOWS_SIGNING_CERT_SHA1" ]; then
+              package_args+=(--sign-desktop-helper)
+            else
+              echo "Desktop helper Authenticode signing is unconfigured; this package has no helper signing acceptance." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          node host/package.mjs "${package_args[@]}"
           echo "Bundled Host packaging: $((SECONDS-started))s; Rust cache hit: ${{ steps.rust-cache.outputs.cache-hit || 'persistent-local' }}" >> "$GITHUB_STEP_SUMMARY"
       - name: Start native package timing
         id: native-start

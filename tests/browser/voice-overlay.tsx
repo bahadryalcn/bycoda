@@ -4,6 +4,7 @@
  * placement, always-on-top and cross-application dragging need the desktop app.
  */
 import type { VoiceOverlayState } from "../../src/features/voice/model/voiceOverlay";
+import {parseVoiceChoice} from "../../src/features/voice/model/voiceChoices";
 
 const params = new URLSearchParams(location.search);
 document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
@@ -52,7 +53,10 @@ const state: VoiceOverlayState = {
   message:
     "Evet, 238 test geçti. VoiceCompanion.tsx, yeni yüzen pencere ve Rust tarafındaki voice_overlay modülü değişti.",
   error: "",
+  ...(params.has("manual")?{manualTurnEnd:true}:{}),
+  ...(params.has("remote")?{notice:"Remote conversation history is unavailable on this Host. Voice tools use the selected remote session."}:{}),
   privacy: "Audio is processed on this computer.",
+  ...(params.has("choice")?{choice:parseVoiceChoice({question:"Which project should I follow?",options:[{id:"monocode",label:"monocode"},{id:"clinic",label:"Clinic"}]})}:{}),
 };
 Object.assign(window, {
   fixtureOverlay: {
@@ -76,6 +80,7 @@ settings.saveVoiceSettings({
   compact: params.get("compact") !== "0",
 });
 document.body.style.margin = "0";
+if(params.has("choice")||params.has("remote"))document.getElementById("root")!.style.maxWidth="380px";
 createRoot(document.getElementById("root")!).render(<VoiceOverlayWindow owner="main" />);
 // The owner answers the overlay's "sync" request with its snapshot.
 const answer = setInterval(() => {

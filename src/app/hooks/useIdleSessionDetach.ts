@@ -9,12 +9,28 @@ import {
 import type { OrchestrationRun } from "../../features/orchestration/model/orchestration";
 import { rememberLoadedSession } from "../../features/sessions/data/sessionCache";
 import { shouldPersistSession } from "../../features/sessions/data/sessionStore";
+import { sessionWithClosedDraft } from "../../features/sessions/model/closedChatDraft";
+import { clearComposerDraft, composerDraftOf } from "../../features/sessions/model/draftCache";
 import { sessionChildHarnesses } from "../../features/sessions/model/handoff";
 import type { Session } from "../../features/sessions/model/session";
 import { leafIds, type WorkspaceTab } from "../../features/workspace/model/layout";
 import { forgetHarnessSession } from "../../integrations/harness/core/registry";
 
 const SESSION_DETACH_DELAY_MS = 250;
+
+/**
+ * Closing a blank chat must not lose what was typed into it. Its unsent
+ * composer text becomes the chat's saved draft turn, which puts the chat in
+ * project history; removing that draft later discards the chat as before.
+ * Chats that already persist keep their composer draft where it is.
+ */
+function retainClosedChatDraft(session: Session): Session {
+  if (shouldPersistSession(session)) return session;
+  const retained = sessionWithClosedDraft(session, composerDraftOf(session.id));
+  if (!retained || !shouldPersistSession(retained)) return session;
+  clearComposerDraft(session.id);
+  return retained;
+}
 
 export function useIdleSessionDetach({
   sessions,
@@ -88,8 +104,9 @@ export function useIdleSessionDetach({
         !(keepUnseen && unseenFinishedRef.current.has(session.id)),
     );
     if (idleDetached.length === 0) return;
-    for (const session of idleDetached) {
-      if (skipForgetSessionIds.current.has(session.id)) continue;
+    for (const detached of idleDetached) {
+      if (skipForgetSessionIds.current.has(detached.id)) continue;
+      const session = retainClosedChatDraft(detached);
       if (shouldPersistSession(session)) {
         rememberLoadedSession(loadedSessionCache.current, session);
       }

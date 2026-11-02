@@ -18,20 +18,31 @@
   gap: 4px;
   padding: 4px;
 }
+/* A card is a frame (Surface outline) around one ActionHost: the identity button fills it and
+   the actions sit over its top-right corner, level with the name. The name row reserves their
+   width, so every card has the same identity-first layout at any grid width. */
 .server-card {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  --server-card-actions: 3.25rem;
 }
-.server-card[data-selection-mode] .server-identity {
-  flex-basis: calc(100% - 36px);
+.server-card > [data-action-host] {
+  align-self: stretch;
+  align-items: stretch;
 }
-/* Connect and overflow sit beside the identity (top-right of the card), not in a footer. */
+.server-card .server-card-head {
+  padding-inline-end: var(--server-card-actions);
+}
 .server-card .server-row-actions {
-  align-self: flex-start;
-  justify-content: flex-end;
-  margin-inline-start: auto;
-  padding: 8px 8px 8px 0;
+  position: absolute;
+  inset-block-start: 0.75rem;
+  inset-inline-end: 0.5rem;
+  padding: 0;
+  gap: 2px;
+}
+.server-card .server-selection {
+  align-items: flex-start;
+  flex-basis: 32px;
+  padding-block-start: 0.875rem;
 }
 .servers-selection-bar {
   display: flex;

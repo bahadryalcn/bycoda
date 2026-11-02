@@ -89,6 +89,10 @@ fn native_service_method(method: &str) -> bool {
     matches!(
         method,
         "native.services.runtimeLogs.bridge.describe"
+            | "native.services.desktop.stop"
+            | "native.services.desktop.status"
+            | "native.services.assistant.presence.get"
+            | "native.services.assistant.presence.set"
             | "native.services.runtimeLogs.access.issue"
             | "native.services.runtimeLogs.terminals.append"
             | "native.services.conversation.bridge.describe"
@@ -114,6 +118,27 @@ fn native_service_method(method: &str) -> bool {
             | "native.services.delivery.ack"
             | "native.services.delivery.result.read"
     ) || native_delivery_epoch_method(method)
+}
+
+#[cfg(test)]
+mod desktop_stop_scope_tests {
+    use super::*;
+    #[test]
+    fn emergency_stop_is_a_local_native_service_only() {
+        assert!(native_service_method("native.services.desktop.stop"));
+        assert!(native_service_method("native.services.desktop.status"));
+        assert!(!native_peer_service_method(
+            "native.services.desktop.status"
+        ));
+        assert!(!native_peer_service_method("native.services.desktop.stop"));
+        assert!(!native_service_method("native.services.desktop.act"));
+        assert!(!native_service_method("native.services.desktop.resume"));
+        assert!(!native_service_method("desktop.request"));
+        for method in ["native.services.assistant.presence.get","native.services.assistant.presence.set"] {
+            assert!(native_service_method(method));assert!(!native_peer_service_method(method));
+        }
+        assert!(!native_service_method("native.services.assistant.request"));
+    }
 }
 
 pub(crate) fn native_peer_service_method(method: &str) -> bool {
@@ -1248,6 +1273,35 @@ impl HostWsBroker {
             }
             handle.shared.changed.notify_one();
             keep
+        });
+    }
+
+    /// A successful owner-requested identity probe may retry a blocked lane.
+    /// Healthy sockets and unrelated native authority lanes keep their lifetimes.
+    /// Requests from the retired lane are never replayed.
+    pub fn retry_blocked_machine(&self, machine_id: &str) {
+        let mut connections = self
+            .connections
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        connections.retain(|_, handle| {
+            if handle.shared.route.machine_id != machine_id {
+                return true;
+            }
+            let blocked = matches!(
+                handle.shared.last_state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .as_ref(),
+                Some(NativeEvent::State { phase, .. }) if phase == "blocked"
+            );
+            if !blocked {
+                return true;
+            }
+            handle.shared.stop.store(true, Ordering::Release);
+            handle.shared.permits.revoke_all();
+            handle.shared.changed.notify_one();
+            false
         });
     }
 

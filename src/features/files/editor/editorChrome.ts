@@ -66,16 +66,21 @@ function editorThemeStyles(dark: boolean) {
         backgroundColor: "var(--ui-editor-active-line)",
         color: "var(--ui-editor-gutter-active-text)",
       },
-      // Native range, painted with the shared selection pair: the opaque fill and its ink are
-      // derived together (accentContrast.ts), so syntax colours yield to the guaranteed
-      // contrast instead of sitting on a tint that no pair can vouch for.
-      ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
-        backgroundColor: "var(--ui-text-selection-background) !important",
+      // Code keeps its syntax colours under a selection, so the range is the shared overlay
+      // tint (as in other code editors), not the opaque prose fill whose paired ink CodeMirror's
+      // drawn selection layer cannot apply. Unfocused editors keep a quieter neutral range.
+      ".cm-selectionBackground, ::selection": {
+        backgroundColor: "var(--ui-selection-inactive) !important",
       },
-      "::selection": {
-        color: "var(--ui-text-selection-foreground)",
-        WebkitTextFillColor: "var(--ui-text-selection-foreground)",
-        textDecorationColor: "var(--ui-text-selection-foreground)",
+      "&.cm-focused .cm-selectionBackground, &.cm-focused ::selection": {
+        backgroundColor: "var(--ui-overlay-selection-background) !important",
+      },
+      // The global prose rule recolours selected glyphs with the opaque fill's ink; code keeps
+      // each token's own colour under the tint.
+      ".cm-content ::selection, .cm-content::selection": {
+        color: "currentcolor",
+        WebkitTextFillColor: "currentcolor",
+        textDecorationColor: "currentcolor",
       },
       ".cm-cursor, .cm-dropCursor": {
         borderLeftColor: "var(--color-content)",

@@ -66,6 +66,52 @@ beforeEach(() => {
     attachments: [],
   }));
 });
+it("invalidates before renderer data or image disclosure and captures causal context only for actual Host calls",async()=>{
+ const f=setup(),invalidate=vi.fn(async()=>{}),receipt={id:"context",receive:vi.fn()};f.ports.invalidateCausalContext=invalidate;f.ports.causalContext=async()=>receipt;
+ mock.draft.mockImplementation(()=>{expect(invalidate).toHaveBeenCalledTimes(1);return{unsent:true,text:"draft"};});await f.controller.execute("composer_context",{});
+ await f.controller.execute("app_tool_call",{family:"conversation",action:"notes.list",input:{},requestId:"captured-read"});expect(mock.call.mock.calls[0][0]).toMatchObject({causalContext:receipt});
+ f.workspace.execute.mockImplementation(async()=>{expect(invalidate).toHaveBeenCalledTimes(2);return{status:"accepted"};});await f.controller.execute("app_tool_call",{family:"workspace",action:"workspace.projects.list",input:{},requestId:"workspace"});
+ expect(invalidate).toHaveBeenCalledTimes(2);
+});
+it("uses a captured thread for project notes without creating a management session",async()=>{
+  const {controller,ports,state,source}=setup();ports.getThreadId=()=>"thread-a";controller.captureTurn();state.active="b";
+  await controller.execute("app_tool_call",{family:"conversation",action:"notes.create",input:{id:"one",body:"Owner note"},requestId:"thread-note"});
+  expect(mock.call).toHaveBeenCalledWith({cwd:"/a",threadId:"thread-a"},expect.objectContaining({action:"notes.create"}));expect(source).not.toHaveBeenCalled();
+});
+it("keeps remote tools bound to their real captured session without requiring or forwarding a local thread",async()=>{
+  const {controller,ports,state}=setup();
+  const remote={...a,id:"remote-session",cwd:"remote://paired/repo"};
+  state.projects.push({path:remote.cwd});state.sessions.push(remote);state.active=remote.id;
+  ports.getThreadId=()=>undefined;controller.captureTurn();
+  await controller.execute("app_tool_call",{family:"conversation",action:"notes.create",input:{id:"remote-note"},requestId:"remote-op"});
+  expect(mock.call).toHaveBeenCalledWith({cwd:remote.cwd,sessionId:remote.id},expect.objectContaining({action:"notes.create"}));
+});
+it("does not replace a captured missing thread with a later selected thread",async()=>{
+  const {controller,ports}=setup();let thread:string|undefined;ports.getThreadId=()=>thread;controller.captureTurn();thread="later-thread";
+  await expect(controller.execute("app_tool_call",{family:"conversation",action:"notes.read",input:{id:"one"},requestId:"missing-thread"})).rejects.toThrow("verified assistant conversation");
+  expect(mock.call).not.toHaveBeenCalled();
+});
+it("awaits the captured canonical thread lookup without following a later turn",async()=>{
+  const {controller,ports}=setup();const pending=deferred<string>();ports.getThreadId=()=>pending.promise;controller.captureTurn();
+  const result=controller.execute("app_tool_call",{family:"conversation",action:"notes.read",input:{id:"one"},requestId:"pending-thread"});
+  ports.getThreadId=()=>"later-thread";pending.resolve("captured-thread");await result;
+  expect(mock.call).toHaveBeenCalledWith({cwd:"/a",threadId:"captured-thread"},expect.objectContaining({action:"notes.read"}));
+});
+it("project scope permits explicit focus within the same project while rejecting another project",async()=>{
+  const {controller,ports,state}=setup();state.sessions.push({...b,id:"same-project",cwd:"/a"});ports.getScope=()=>"project";controller.captureTurn();
+  await controller.execute("app_tools_list",{sessionId:"same-project"});
+  expect(mock.discover).toHaveBeenCalledWith({cwd:"/a",sessionId:"same-project"},{});
+  await expect(controller.execute("composer_context",{sessionId:"b"})).rejects.toThrow("another project");
+});
+it("does not let a later Global selection broaden a captured Project turn",async()=>{
+  const {controller,ports}=setup();let scope:"project"|"global"="project";ports.getScope=()=>scope;controller.captureTurn();scope="global";
+  await expect(controller.execute("composer_context",{sessionId:"b"})).rejects.toThrow("another project");
+  expect(mock.call).not.toHaveBeenCalled();
+});
+it("requires a real focused session for working-copy tools even with a valid thread",async()=>{
+  const {controller,ports,state,source}=setup();ports.getThreadId=()=>"thread-a";state.active=undefined;controller.captureTurn();
+  await expect(controller.execute("app_tool_call",{family:"conversation",action:"files.read",input:{path:"README.md"},requestId:"thread-file"})).rejects.toThrow("real focused session");expect(source).not.toHaveBeenCalled();expect(mock.call).not.toHaveBeenCalled();
+});
 
 it("captures a stable target for context, draft and catalog while the active tab changes", async () => {
   const { controller, state } = setup();
@@ -162,6 +208,49 @@ it("retains uncertain failures so a same-ID retry cannot repeat a possible effec
   await expect(controller.execute("app_tool_call", args)).rejects.toThrow("after dispatch");
   await expect(controller.execute("app_tool_call", args)).rejects.toThrow("after dispatch");
   expect(mock.call).toHaveBeenCalledOnce();
+});
+
+it("keeps tools available after more than 256 acknowledged operations", async () => {
+  const { controller, workspace } = setup();
+  for (let index = 0; index < 300; index++) {
+    await controller.execute("app_tool_call", {
+      family: "workspace", action: "workspace.sessions.create", input: {}, requestId: `job-${index}`,
+    });
+  }
+  await controller.execute("app_tool_call", {
+    family: "workspace", action: "workspace.sessions.create", input: {}, requestId: "job-299",
+  });
+  expect(workspace.execute).toHaveBeenCalledTimes(300);
+});
+
+it("never evicts an uncertain call while rotating successful history", async () => {
+  const { controller, workspace } = setup();
+  const uncertain = { family: "social", action: "messages.send", input: {}, requestId: "uncertain" };
+  mock.call.mockRejectedValue(new Error("Unknown outcome"));
+  await expect(controller.execute("app_tool_call", uncertain)).rejects.toThrow("Unknown outcome");
+  for (let index = 0; index < 300; index++) {
+    await controller.execute("app_tool_call", {
+      family: "workspace", action: "workspace.sessions.create", input: {}, requestId: `job-${index}`,
+    });
+  }
+  await expect(controller.execute("app_tool_call", uncertain)).rejects.toThrow("Unknown outcome");
+  expect(mock.call).toHaveBeenCalledOnce();
+  expect(workspace.execute).toHaveBeenCalledTimes(300);
+});
+
+it("retains in-flight requests at capacity without dispatching extra effects", async () => {
+  const { controller, workspace } = setup();
+  const pending = deferred<{ status: string }>();
+  workspace.execute.mockReturnValue(pending.promise);
+  const calls = Array.from({ length: 256 }, (_, index) => controller.execute("app_tool_call", {
+    family: "workspace", action: "workspace.sessions.create", input: {}, requestId: `pending-${index}`,
+  }));
+  await expect(controller.execute("app_tool_call", {
+    family: "workspace", action: "workspace.sessions.create", input: {}, requestId: "extra",
+  })).rejects.toThrow("awaiting confirmation");
+  expect(workspace.execute).toHaveBeenCalledTimes(256);
+  pending.resolve({ status: "accepted" });
+  await Promise.all(calls);
 });
 
 it("permits an explicit different visible project without inheriting the old session", async () => {

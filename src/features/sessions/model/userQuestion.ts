@@ -1,53 +1,5 @@
-/** Shared clarifying-question model for every harness that can ask the user. */
-
-export const CUSTOM_OPTION_ID = "__custom__";
-
-export type UserQuestionOption = {
-  id: string;
-  label: string;
-  description?: string;
-  /** Literal schema value; labels such as Other must not become a free-text option. */
-  literal?: boolean;
-};
-
-export type UserQuestion = {
-  id: string;
-  header?: string;
-  prompt: string;
-  multiSelect: boolean;
-  allowCustom: boolean;
-  /** Typed form text is a value, including meaningful leading/trailing spaces. */
-  preserveCustomWhitespace?: boolean;
-  options: UserQuestionOption[];
-};
-
-/** Provider-owned execution semantics; omission means the provider did not report it. */
-export type UserQuestionBehavior = "blocking" | "nonBlocking";
-export type UserQuestionDelivery = "sending" | "queued" | "failed" | "unknown";
-export type UserQuestionDismissAction = "skip" | "cancel" | "decline";
-
-export type UserQuestionPrompt = {
-  requestId: number;
-  title?: string;
-  questions: UserQuestion[];
-  behavior?: UserQuestionBehavior;
-  dismissAction?: UserQuestionDismissAction;
-  providerTurnId?: string;
-  callId?: string;
-  /** Transport state, never a claim that the model consumed the answer. */
-  delivery?: UserQuestionDelivery;
-  error?: string;
-  /** Deadline owned by the harness; interaction can disable automatic skipping. */
-  autoResolveAt?: number;
-};
-
-export type UserQuestionReply =
-  | {
-      kind: "answered";
-      answers: Record<string, string[]>;
-      custom?: Record<string, string>;
-    }
-  | { kind: "skipped" };
+import { CUSTOM_OPTION_ID, type UserQuestionOption, type UserQuestion, type UserQuestionReply } from "../../../shared/model/userQuestion";
+export { CUSTOM_OPTION_ID, type UserQuestionOption, type UserQuestion, type UserQuestionBehavior, type UserQuestionDelivery, type UserQuestionDismissAction, type UserQuestionPrompt, type UserQuestionReply } from "../../../shared/model/userQuestion";
 
 export function questionsFromUnknown(value: unknown): UserQuestion[] {
   const rec = asRecord(value);

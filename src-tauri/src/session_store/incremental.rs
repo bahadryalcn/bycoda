@@ -227,6 +227,14 @@ pub(super) fn apply_observed(
       s.context_used,s.context_window,s.branch,s.worktree_cwd,i64::from(s.worktree_removed),linked,s.automation_id,updated_at,
       rewind_history,s.pending_context_replay,i64::from(archived_user),s.adopted_divergence,s.adopted_base,s.workspace_id,s.workspace_revision,
       s.workspace_mode]).map_err(|e|e.to_string())?;
+    if let Some(management) = &s.managed_by {
+        let raw = serde_json::to_string(management).map_err(|e| e.to_string())?;
+        tx.execute(
+            "UPDATE sessions SET assistant_management_json=?2 WHERE id=?1",
+            params![id, raw],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     for change in &delta.changes {
         remember_worker_from_blocks(&tx, id, &json!([change.block])).map_err(|e| e.to_string())?;
     }
@@ -268,6 +276,7 @@ pub async fn session_apply_delta(
                 delta.session.branch = super::stored_branch(&delta.session, git);
             }
             let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            super::provenance::protect_client_delta(&conn, &mut delta)?;
             let mut written = write_receipts::apply_delta(&store, &conn, &delta, owner)?;
             if let (Some(git), Some(written)) = (git, written.as_mut()) {
                 // The write is committed; a failed summary read must not report it

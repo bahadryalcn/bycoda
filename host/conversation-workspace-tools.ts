@@ -3,7 +3,7 @@ import type { HostStore } from "./store";
 import type { HostNotesAccess } from "./host-notes-async";
 import type { HostAutomations } from "./automations";
 import type { ProviderInboxBridge } from "./provider-inbox";
-import type { RuntimeLogPrincipal } from "./runtime-log-tools";
+import type { RuntimeLogPrincipal, RuntimeLogSubjectPrincipal } from "./runtime-log-tools";
 import type { Session } from "../src/features/sessions/model/session";
 import {
   inboxOperationWrites,
@@ -33,7 +33,7 @@ export class ConversationWorkspaceTools {
     private readonly inbox: ProviderInboxBridge,
     private readonly attentionInbox: (
       projectId: string,
-      principal: RuntimeLogPrincipal,
+      principal: RuntimeLogSubjectPrincipal,
     ) => Promise<unknown[]>,
     private readonly approveInboxWrite: (
       operation: Record<string, unknown>,
@@ -46,8 +46,8 @@ export class ConversationWorkspaceTools {
   async call(
     action: ConversationTool,
     input: Record<string, unknown>,
-    principal: RuntimeLogPrincipal,
-    session: Session,
+    principal: RuntimeLogSubjectPrincipal,
+    session: Session | undefined,
     authorized: () => boolean | Promise<boolean>,
   ): Promise<unknown> {
     if (!(await authorized())) throw new Error("Session authority revoked.");
@@ -103,6 +103,7 @@ export class ConversationWorkspaceTools {
       );
     }
     if (action.startsWith("automations.")) {
+      if (principal.kind !== "session" || !session) throw new Error("This tool requires a real focused session grant.");
       const list = await this.automations.list();
       if (action === "automations.list")
         return page(
@@ -187,6 +188,7 @@ export class ConversationWorkspaceTools {
           this.store.environmentId,
           principal.projectId,
           principal.sessionId,
+          principal.kind === "assistant-thread" ? principal.threadId : "session",
           principal.provider,
         ]),
       )
@@ -218,6 +220,7 @@ export class ConversationWorkspaceTools {
       await this.inbox.assertListedTarget(owner, operation.item, project.cwd);
     if (!inboxOperationWrites(operation))
       return await this.inbox.request(owner, input.requestId, operation);
+    if (principal.kind !== "session") throw new Error("Inbox writes require a real focused session for owner approval.");
     const key = `${owner}:${input.requestId}`;
     const signature = JSON.stringify(operation);
     const pending = this.pendingWrites.get(key);

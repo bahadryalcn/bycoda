@@ -4,6 +4,7 @@ import { MenuRow } from "../../../shared/ui/MenuRow";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Surface } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -512,7 +513,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
   const fieldLabel = "mb-1 block text-ui-micro leading-tight text-(--ui-text-secondary)";
   return (
     <Surface
-      variant="raised"
+      variant="quiet"
       padding="none"
       className="mb-2 overflow-hidden font-sans"
       aria-label={t("Orchestration proposal")}
@@ -694,12 +695,19 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                       </p>
                     )}
                     {!!task.dependsOn.length && (
-                      <p>
-                        {t("After ·")}{" "}
-                        {task.dependsOn
-                          .map((id) => proposal.tasks.find((entry) => entry.id === id)?.title ?? id)
-                          .join(", ")}
-                      </p>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="shrink-0">{t("After ·")}</span>
+                        <BadgeList
+                          label={t("After")}
+                          size="xs"
+                          max={2}
+                          className="min-w-0"
+                          items={task.dependsOn.map((id, index) => {
+                            const title = proposal.tasks.find((entry) => entry.id === id)?.title ?? id;
+                            return { id: `${index}:${title}`, label: title };
+                          })}
+                        />
+                      </div>
                     )}
                   </div>
                 )}

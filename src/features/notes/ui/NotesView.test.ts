@@ -730,7 +730,7 @@ it("filters and collapses project groups while retaining an edited note outside 
     node.textContent?.includes("portognjeeen"),
   )!;
   await act(async () => option.click());
-  expect(container.querySelectorAll("[data-note-library] li")).toHaveLength(1);
+  expect(container.querySelectorAll("[data-note-library] [data-note-id]")).toHaveLength(1);
   expect(container.textContent).toContain("This note is outside the current filters.");
   expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(
     "Plan",

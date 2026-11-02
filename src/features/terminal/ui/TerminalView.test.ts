@@ -106,6 +106,7 @@ vi.mock("@xterm/xterm", () => ({
   },
 }));
 import { TerminalView } from "./TerminalView";
+import { WEBGL_IDLE_DROP_MS } from "../runtime/terminalWebgl";
 import { queueTerminalCommand } from "../model/terminalLaunchCommand";
 import { takeTerminalCommand } from "../model/terminalLaunchCommand";
 import {
@@ -649,7 +650,8 @@ it("fits before replaying hidden output and redraws on return even at the same s
     const firstRenderer = xterm.webgl[0];
     expect(pty.setPtyVisible).toHaveBeenLastCalledWith("visibility-replay", true);
     await act(async () => intersect([{ isIntersecting: false }]));
-    expect(firstRenderer.dispose).toHaveBeenCalledOnce();
+    // A quick hide/show keeps the renderer; it is only dropped after a grace period.
+    expect(firstRenderer.dispose).not.toHaveBeenCalled();
     // The native side holds output while the terminal is off screen.
     expect(pty.setPtyVisible).toHaveBeenLastCalledWith("visibility-replay", false);
     term.write.mockClear();
@@ -662,7 +664,8 @@ it("fits before replaying hidden output and redraws on return even at the same s
     expect(events.slice(0, 4)).toEqual(["fit", "write:background output", "drain", "fit"]);
     expect(pty.setPtyVisible).toHaveBeenLastCalledWith("visibility-replay", true);
     expect(term.refresh).toHaveBeenCalledWith(0, 23);
-    expect(xterm.webgl).toHaveLength(2);
+    expect(xterm.webgl).toHaveLength(1);
+    expect(firstRenderer.dispose).not.toHaveBeenCalled();
     expect(pty.resizePty).not.toHaveBeenCalled();
     expect(pty.spawnPty).toHaveBeenCalledOnce();
     expect(pty.killPty).not.toHaveBeenCalled();
@@ -703,9 +706,13 @@ it("ignores a stale output drain after hiding and restores a visible window with
     await act(async () => drains.shift()!());
     expect(term.refresh).toHaveBeenCalledWith(0, 23);
     expect(xterm.webgl).toHaveLength(1);
+    vi.useFakeTimers();
     hidden = true;
     await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(xterm.webgl[0].dispose).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(WEBGL_IDLE_DROP_MS));
     expect(xterm.webgl[0].dispose).toHaveBeenCalledOnce();
+    vi.useRealTimers();
     hidden = false;
     await act(async () => document.dispatchEvent(new Event("visibilitychange")));
     await act(async () => root.unmount());
@@ -714,6 +721,7 @@ it("ignores a stale output drain after hiding and restores a visible window with
     expect(term.refresh).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
+    vi.useRealTimers();
     hiddenSpy.mockRestore();
     host.remove();
   }

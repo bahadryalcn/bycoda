@@ -2,6 +2,8 @@ import { useSidebarActions } from "./workspace/layout/useSidebarActions";
 import { useLocalSessionReferences } from "./workspace/sessions/useLocalSessionReferences";
 import { LocalSessionReferenceProvider } from "../features/sessions/ui/LocalSessionReferenceContext";
 import { VoiceCompanionGate } from "../features/voice/ui/VoiceCompanionGate";
+import { DesktopControlStrip } from "../features/host-tools/DesktopControlStrip";
+import { AssistantNotifications } from "../features/assistant/ui/AssistantNotifications";
 import { useVoiceAppBridge } from "./workspace/bridges/useVoiceAppBridge";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
 import {
@@ -168,6 +170,7 @@ import { useRemoteRailProjects } from "./workspace/bridges/useRemoteRailProjects
 import { useSessionRecoveryState } from "./workspace/sessions/useSessionRecoveryState";
 import { useSessionRecoveryActions } from "./workspace/sessions/useSessionRecoveryActions";
 import { useOpenRecoveredSessions } from "./workspace/sessions/useOpenRecoveredSessions";
+import { useRecoveryAutoResolve } from "./workspace/sessions/useRecoveryAutoResolve";
 import {
   useHarnessEventQueue,
   useHarnessBeforePaintFlush,
@@ -360,7 +363,7 @@ function Workspace({
     setRecoveryOpen,
     sessionDeleteDialog,
     setSessionDeleteDialog,
-  } = useSessionRecoveryState({ windowTransfer, toolWindow });
+  } = useSessionRecoveryState();
   useKeepAwake(sessions);
   const switchingWorktrees = useRef(new Map<string, string>());
   const removingWorktreePaths = useRef(new Set<string>());
@@ -2809,6 +2812,15 @@ function Workspace({
       tabsRef,
       activeTabIdRef,
     });
+  useRecoveryAutoResolve({
+    enabled: !windowTransfer && !toolWindow,
+    sessionRecovery,
+    sessions,
+    remoteSessions: listedRemoteSessions,
+    lockSnapshot,
+    removeRecoveredSessions,
+    setRecoveryOpen,
+  });
   const { openRecoveredSessions } = useOpenRecoveredSessions({
     sessionRecovery,
     lockSnapshot,
@@ -2959,6 +2971,8 @@ function Workspace({
             }`}
           >
             {compactTitleBar ? workspaceTitleBar : null}
+            {!detachedSessionWindow && <DesktopControlStrip />}
+            {!detachedSessionWindow && <AssistantNotifications />}
             <VoiceCompanionGate
               {...voiceApp}
               activeId={activeSessionId}
@@ -3267,6 +3281,7 @@ function Workspace({
                     compactRailActive={compactRailActive}
                     onToggleSidebar={onToggleSidebar}
                     pickProject={pickProject}
+                    onSelectAssistantProject={onSelectProject}
                     onLeaveInbox={onLeaveInbox}
                     onStartInboxItem={onStartInboxItem}
                     onAskInboxItem={onAskInboxItem}

@@ -283,7 +283,54 @@ export const BACKGROUND_NOTIFICATION_TARGETS = {
   tasks: "background:tasks",
   automations: "background:automations",
   summary: "background:summary",
+  assistant: "background:assistant",
 } as const;
+
+/** Assistant messages keep the same native delivery, mute and privacy gates. */
+export async function notifyAssistant(input: {
+  title: string;
+  body: string;
+  kind: AttentionKind;
+  projectPath?: string;
+  projectPaths?: string[];
+  occurredAt: number;
+}): Promise<boolean> {
+  if (
+    !shouldNotify({
+      enabled: loadNotificationsEnabled() && loadNotificationEvents()[input.kind],
+      permission,
+      windowFocused,
+      sessionVisible: false,
+    })
+  )
+    return false;
+  for (const path of new Set([
+    ...(input.projectPaths ?? []),
+    ...(input.projectPath ? [input.projectPath] : []),
+  ])) {
+    const project = knownNotificationProject(path);
+    if (
+      !project ||
+      !allowsProjectNotification({
+        projectId: project.id,
+        category: EVENT_CATEGORY[input.kind],
+        occurredAt: input.occurredAt,
+      })
+    )
+      return false;
+    // A queued event cannot reveal a project that was locked after creation.
+    if (isProjectLocked(path)) return false;
+  }
+  return deliver({
+    sessionId: BACKGROUND_NOTIFICATION_TARGETS.assistant,
+    kind: input.kind,
+    title: input.title,
+    subtitle: "",
+    body: input.body,
+    projectName: "",
+    sessionTitle: "",
+  });
+}
 
 /** The daily summary of background work. The global switch applies; it has no
  * event setting of its own beyond the summary's own toggle. */
@@ -314,7 +361,7 @@ export async function notifyDailySummary(headline: string): Promise<boolean> {
  * switch and the event's own setting still apply.
  */
 export async function notifyBackground(transition: {
-  target: Exclude<keyof typeof BACKGROUND_NOTIFICATION_TARGETS, "summary">;
+  target: Exclude<keyof typeof BACKGROUND_NOTIFICATION_TARGETS, "summary" | "assistant">;
   kind: AttentionKind;
   message: string;
 }): Promise<boolean> {

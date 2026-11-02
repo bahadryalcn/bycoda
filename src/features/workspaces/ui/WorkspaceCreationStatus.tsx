@@ -5,18 +5,22 @@ import { shortWorkspaceRef } from "../model/workspaceCreation";
 
 export function WorkspaceCreationStatus({
   preview,
-  pending,
   error,
   onRetry,
   onUseCurrentCheckout,
 }: {
   preview?: WorkspaceCreationPreview;
+  /** Kept for callers; the brief check shows nothing while pending. */
   pending: boolean;
   error?: string;
   onRetry: () => void;
   onUseCurrentCheckout?: () => void;
 }) {
   useLocale();
+  // The policy check is brief and the send button already explains the hold, so a
+  // passing "Checking…" line only flickers under the composer: show nothing until
+  // there is a result (the new worktree preview) or an error.
+  if (!error && !preview) return null;
   return (
     <div
       data-workspace-creation-status
@@ -35,8 +39,6 @@ export function WorkspaceCreationStatus({
             {t("Retry")}
           </Button>
         </>
-      ) : pending ? (
-        t("Checking workspace policy…")
       ) : preview ? (
         // The consequence leads; the exact ref and commit are the hover detail.
         <span

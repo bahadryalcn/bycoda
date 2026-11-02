@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -275,11 +276,15 @@ export function TermiusImportDialog({
                         {host.endpoint.user ? `${host.endpoint.user}@` : ""}
                         {host.endpoint.host}:{host.endpoint.port}
                       </p>
-                      {host.group || host.tags.length ? (
-                        <p className="break-words text-ui-caption text-(--ui-text-muted)">
-                          {[host.group, ...host.tags].filter(Boolean).join(" · ")}
-                        </p>
-                      ) : null}
+                      <BadgeList
+                        label={t("Tags")}
+                        size="xs"
+                        max={4}
+                        className="mt-1"
+                        items={[host.group ?? "", ...host.tags]
+                          .filter(Boolean)
+                          .map((label, index) => ({ id: `${index}:${label}`, label }))}
+                      />
                       {host.warnings.length ? (
                         <details className="mt-1 text-ui-caption text-(--ui-text-muted)">
                           <summary>

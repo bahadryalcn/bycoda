@@ -12,14 +12,11 @@ import {
   EditorSelection,
   EditorState,
   Prec,
-  StateField,
   Transaction,
   type Extension,
   type Text,
 } from "@codemirror/state";
 import {
-  Decoration,
-  type DecorationSet,
   EditorView,
   highlightActiveLine,
   highlightActiveLineGutter,
@@ -64,6 +61,7 @@ import { editorBlame, refreshBlame } from "../editor/editorBlame";
 import { conflictBlocks, editorConflicts, stepConflict } from "../editor/editorConflicts";
 import { languageForPath, schemeExtensions } from "../editor/editorChrome";
 import { editorReadability } from "../editor/editorReadability";
+import { editorWrappedIndent } from "../editor/editorWrappedIndent";
 import {
   preserveEditorViewport,
   replaceEditorDoc,
@@ -73,6 +71,7 @@ import {
 } from "../editor/editorDoc";
 import { editorTyping, tryExpandEmmet } from "../editor/editorEditing";
 import { EditorSelectionMenu, type EditorSelectionTarget } from "./EditorSelectionMenu";
+import { EditorContextMenu, type EditorContextTarget } from "./EditorContextMenu";
 import { editorCodeSelection, formatEditorSelectionReference } from "../model/editorSelection";
 import { requestAddToChat } from "../../sessions/model/quoteDraft";
 import {
@@ -105,6 +104,12 @@ import { MergeConflictEditor } from "../../source-control/ui/MergeConflictEditor
 import { useInlineBlame, useInlineBlameUnavailableReason } from "./InlineBlameToggle";
 
 import { FILE_EDITOR_AUTOSAVE_DELAY_MS } from "../editor/editorTiming";
+import {
+  editorSharedHistory,
+  isSharedPeerChange,
+  sharedDocumentSaved,
+  type SharedDocumentHooks,
+} from "../editor/editorSharedHistory";
 import { registerClosingEditor } from "../model/editorClose";
 import {
   installEditorInputGate,
@@ -209,6 +214,7 @@ function StandardCodeMirrorEditor({
   onDirtyChange,
   onErrorCountChange,
   onSave,
+  onPeerSaved,
   canAutosave,
   onStageGit,
   onDocChange,
@@ -237,6 +243,8 @@ function StandardCodeMirrorEditor({
   onDirtyChange: (dirty: boolean) => void;
   onErrorCountChange: (count: number) => void;
   onSave: (content: string, ticket?: EditorWorkTicket) => Promise<void>;
+  /** Another editor on this file, showing the same text, saved `content`. */
+  onPeerSaved?: (content: string) => void;
   canAutosave: () => boolean;
   onStageGit?: (contents: string) => Promise<void>;
   /** Receives the whole text after each change: pass it only while it is shown. */
@@ -265,6 +273,7 @@ function StandardCodeMirrorEditor({
   const onDirtyChangeRef = useRef(onDirtyChange);
   const onErrorCountChangeRef = useRef(onErrorCountChange);
   const onSaveRef = useRef(onSave);
+  const onPeerSavedRef = useRef(onPeerSaved);
   const canAutosaveRef = useRef(canAutosave);
   const onStageGitRef = useRef(onStageGit);
   const canStage = onStageGit !== undefined;
@@ -336,6 +345,8 @@ function StandardCodeMirrorEditor({
   blameOnRef.current = blameOn;
   const [blameError, setBlameError] = useState<string | null>(null);
   const [formatError, setFormatError] = useState<string | null>(null);
+  const [contextTarget, setContextTarget] = useState<EditorContextTarget | null>(null);
+  const [contextError, setContextError] = useState<string | null>(null);
   const scheduleBlameRef = useRef<(() => void) | null>(null);
   const saveNowRef = useRef<((parent?: EditorWorkTicket) => Promise<boolean>) | null>(null);
   const [chunkNav, setChunkNav] = useState<{
@@ -354,6 +365,7 @@ function StandardCodeMirrorEditor({
   onDirtyChangeRef.current = onDirtyChange;
   onErrorCountChangeRef.current = onErrorCountChange;
   onSaveRef.current = onSave;
+  onPeerSavedRef.current = onPeerSaved;
   canAutosaveRef.current = canAutosave;
   onStageGitRef.current = onStageGit;
   onDocChangeRef.current = onDocChange;
@@ -451,6 +463,8 @@ function StandardCodeMirrorEditor({
     };
 
     const formatDocument = async (manual = false, parent?: EditorWorkTicket) => {
+      if (disposed || (!parent && (view.state.readOnly || !view.state.facet(EditorView.editable))))
+        return;
       const settled = captureObserverRef.current?.operation("formatter", parent);
       if (captureObserverRef.current && !settled) return;
       const generation = ++formatGeneration;
@@ -521,6 +535,7 @@ function StandardCodeMirrorEditor({
         };
         if (settled) settled.apply(apply);
         else apply();
+        sharedDocumentSaved(view, document);
         scheduleBlame();
         return true;
       })().finally(() => settled?.());
@@ -566,6 +581,13 @@ function StandardCodeMirrorEditor({
       { cwd: gitTargetRef.current.cwd },
     );
 
+    function cancelAutosave() {
+      if (!autosaveTimer) return;
+      window.clearTimeout(autosaveTimer);
+      autosaveTimer = 0;
+      captureObserverRef.current?.changed();
+    }
+
     function scheduleAutosave() {
       window.clearTimeout(autosaveTimer);
       autosaveTimer = 0;
@@ -582,12 +604,80 @@ function StandardCodeMirrorEditor({
 
     // Folding would pull one pane's lines out of line with the other, and the
     // pair scrolls as a whole, so the editor's own scrollbar has no job.
+    const openContextMenu = (editor: EditorView, x = 0, y = 0) => {
+      selectionMeasureVersion++;
+      setSelectionTarget(null);
+      setContextError(null);
+      const position = x || y ? editor.posAtCoords({ x, y }) : null;
+      // Preserve the selected code when opening its menu; otherwise move the caret.
+      if (
+        position !== null &&
+        !editor.state.selection.ranges.some(
+          (range) => !range.empty && position >= range.from && position <= range.to,
+        )
+      ) {
+        editor.dispatch({ selection: { anchor: position } });
+      }
+      selectionMeasureVersion++;
+      setSelectionTarget(null);
+      const caret = editor.coordsAtPos(editor.state.selection.main.head);
+      setContextTarget({
+        x: x || caret?.left || 0,
+        y: y || caret?.bottom || 0,
+        view: editor,
+        isCurrent: () => !disposed,
+        ...(editor === view
+          ? {
+              format: () => void formatDocument(true),
+              save: () => {
+                save();
+              },
+            }
+          : {}),
+      });
+    };
+    const contextMenu = EditorView.domEventHandlers({
+      contextmenu(event, editor) {
+        event.preventDefault();
+        event.stopPropagation();
+        openContextMenu(editor, event.clientX, event.clientY);
+        return true;
+      },
+      keydown(event, editor) {
+        if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return false;
+        event.preventDefault();
+        openContextMenu(editor);
+        return true;
+      },
+    });
+    // Other editors on this file share this text; see editorSharedHistory.
+    const sharedDocument: SharedDocumentHooks = {
+      external: (apply) => applyExternalEditorUpdate(captureObserverRef.current, apply),
+      saved: (document) =>
+        applyExternalEditorUpdate(captureObserverRef.current, () => {
+          if (disposed) return;
+          savedDocumentRef.current = document;
+          initialDirtyRef.current = false;
+          markDirty();
+          if (!dirtyRef.current) cancelAutosave();
+          onPeerSavedRef.current?.(document.toString());
+          scheduleBlame();
+        }),
+      peerLeft: () => {
+        if (disposed || !dirtyRef.current) return false;
+        scheduleAutosave();
+        return true;
+      },
+    };
     const extensions: Extension[] = [
+      contextMenu,
       editorZoom(),
       minimalSetup,
       carry?.state.field(historyField, false)
         ? historyField.init(() => carry.state.field(historyField))
         : [],
+      // Text and undo/redo shared with other editors on this file, e.g. its review tab.
+      editorSharedHistory(path, sharedDocument),
       editorGitConfig.of(showDiffRef.current && !splitDiff ? editorGit(gitOptions) : []),
       // Ahead of the line numbers, so the blame gutter is the leftmost one.
       editorBlameConfig.of(blameOnRef.current ? inlineBlameExtension : []),
@@ -597,7 +687,7 @@ function StandardCodeMirrorEditor({
       highlightActiveLine(),
       highlightActiveLineGutter(),
       EditorView.lineWrapping,
-      wrappedLineIndent,
+      editorWrappedIndent,
       language.of([]),
       editorScheme.of(schemeExtensions(isLightScheme() ? "light" : "dark")),
       editorReadability(path),
@@ -684,7 +774,9 @@ function StandardCodeMirrorEditor({
         }
         onDocumentChangeRef.current?.(update.state.doc);
         markDirty();
-        scheduleAutosave();
+        // The editor that made a shared edit saves it; one pending save at a time.
+        if (update.transactions.some(isSharedPeerChange)) cancelAutosave();
+        else scheduleAutosave();
       }),
       EditorView.domEventHandlers({
         compositionstart: () => {
@@ -729,13 +821,14 @@ function StandardCodeMirrorEditor({
         doc: initialDoc,
         extensions,
         originalExtensions: [
+          contextMenu,
           editorZoom(),
           minimalSetup,
           editorReadability(path),
           editorNavigation(cwd, path, (...args) => onOpenFileRef.current?.(...args)),
           lineNumbers(),
           EditorView.lineWrapping,
-          wrappedLineIndent,
+          editorWrappedIndent,
           language.of([]),
           editorScheme.of(schemeExtensions(isLightScheme() ? "light" : "dark")),
         ],
@@ -829,6 +922,7 @@ function StandardCodeMirrorEditor({
     const unsubscribeAutosave = subscribeAutosave(scheduleAutosave);
     return () => {
       disposed = true;
+      setContextTarget(null);
       captureObserverRef.current?.attach(null);
       inputGate.release();
       originalGate?.release();
@@ -1103,6 +1197,7 @@ function StandardCodeMirrorEditor({
 
   // The selection menu never outlives the editor being active.
   if (!active && selectionTarget !== null) setSelectionTarget(null);
+  if (!active && contextTarget !== null) setContextTarget(null);
 
   return (
     <>
@@ -1134,6 +1229,9 @@ function StandardCodeMirrorEditor({
             {formatError}
           </InlineError>
         ) : null}
+        {contextError ? (
+          <InlineError className="shrink-0 px-3 py-1">{contextError}</InlineError>
+        ) : null}
         {blameOn && blameError ? (
           <p
             role="status"
@@ -1161,6 +1259,14 @@ function StandardCodeMirrorEditor({
         />
       ) : null}
       <EditorSelectionMenu selection={selectionTarget} onDismiss={() => setSelectionTarget(null)} />
+      {contextTarget ? (
+        <EditorContextMenu
+          target={contextTarget}
+          path={commentPath}
+          onClose={() => setContextTarget(null)}
+          onError={setContextError}
+        />
+      ) : null}
     </>
   );
 }
@@ -1281,8 +1387,12 @@ function DiffChunkStat({ additions, deletions }: { additions: number; deletions:
   }
   return (
     <span className="flex min-w-0 shrink-0 items-center gap-1.5 font-sans text-ui-micro font-medium tabular-nums">
-      {additions > 0 ? <span className="text-(--ui-tone-success-fg)">+{formatInteger(additions)}</span> : null}
-      {deletions > 0 ? <span className="text-(--ui-tone-danger-fg)">-{formatInteger(deletions)}</span> : null}
+      {additions > 0 ? (
+        <span className="text-(--ui-tone-success-fg)">+{formatInteger(additions)}</span>
+      ) : null}
+      {deletions > 0 ? (
+        <span className="text-(--ui-tone-danger-fg)">-{formatInteger(deletions)}</span>
+      ) : null}
     </span>
   );
 }
@@ -1339,8 +1449,6 @@ function indentOrInsertTab(view: EditorView): boolean {
   return true;
 }
 
-type LineRange = { from: number; to: number };
-
 export type EditorCarry = {
   /** Document and history carried when path-specific extensions are rebuilt. */
   doc: Text | null;
@@ -1349,77 +1457,3 @@ export type EditorCarry = {
   topLine: number;
   focused: boolean;
 };
-
-const wrappedLineIndent = StateField.define<DecorationSet>({
-  create(state) {
-    return Decoration.set(indentDecorations(state, [{ from: 0, to: state.doc.length }]), true);
-  },
-  update(decorations, transaction) {
-    if (!transaction.docChanged) return decorations;
-    const ranges: LineRange[] = [];
-    transaction.changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
-      const from = transaction.state.doc.lineAt(fromB).from;
-      const to = transaction.state.doc.lineAt(toB).to;
-      ranges.push({ from, to });
-    });
-    const changedLines = mergeLineRanges(ranges);
-    return decorations.map(transaction.changes).update({
-      filter: (from) => !changedLines.some((range) => from >= range.from && from <= range.to),
-      add: indentDecorations(transaction.state, changedLines),
-      sort: true,
-    });
-  },
-  provide: (field) => EditorView.decorations.from(field),
-});
-
-function indentDecorations(state: EditorState, ranges: LineRange[]) {
-  const decorations = [];
-  for (const range of ranges) {
-    let line = state.doc.lineAt(range.from);
-    while (line.from <= range.to) {
-      const columns = leadingIndentColumns(line.text, state.tabSize);
-      if (columns > 0) {
-        const indent = Math.min(columns, 40);
-        decorations.push(
-          Decoration.line({
-            attributes: {
-              class: "cm-wrapped-indent",
-              style: `padding-left: calc(${indent}ch + 6px); text-indent: -${indent}ch`,
-            },
-          }).range(line.from),
-        );
-      }
-      if (line.number >= state.doc.lines) break;
-      line = state.doc.line(line.number + 1);
-    }
-  }
-  return decorations;
-}
-
-function leadingIndentColumns(text: string, tabSize: number): number {
-  let columns = 0;
-  for (const character of text) {
-    if (character === " ") {
-      columns += 1;
-    } else if (character === "\t") {
-      columns += tabSize - (columns % tabSize);
-    } else {
-      break;
-    }
-  }
-  return columns;
-}
-
-function mergeLineRanges(ranges: LineRange[]): LineRange[] {
-  const sorted = [...ranges].sort((a, b) => a.from - b.from);
-  const merged: LineRange[] = [];
-  for (const range of sorted) {
-    const previous = merged[merged.length - 1];
-    if (previous && range.from <= previous.to + 1) {
-      previous.to = Math.max(previous.to, range.to);
-    } else {
-      merged.push({ ...range });
-    }
-  }
-  return merged;
-}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Compartment, EditorState, type Text } from "@codemirror/state";
-import { Decoration, EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { Decoration, EditorView, keymap } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { openSearchPanel } from "@codemirror/search";
 import {
@@ -18,6 +18,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { languageForPath, schemeExtensions } from "../../files/editor/editorChrome";
 import { editorReadability } from "../../files/editor/editorReadability";
+import { editorSurface } from "../../files/editor/editorSurface";
 import { editorSearch } from "../../files/editor/editorSearch";
 import { editorZoom } from "../../files/editor/editorZoom";
 import {
@@ -138,7 +139,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
       doc: initial.doc,
       extensions: [
         minimalSetup,
-        lineNumbers(),
+        editorSurface,
         editorSearch,
         editorZoom(),
         field,
@@ -468,6 +469,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
               motion="none"
               iconOnly
               label={t("Find in this pane")}
+              tooltip={t("Find in this pane")}
               onClick={() => {
                 if (viewRef.current) openSearchPanel(viewRef.current);
               }}

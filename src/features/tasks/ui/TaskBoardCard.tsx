@@ -3,6 +3,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Modal } from "../../../shared/ui/Modal";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
@@ -40,6 +41,7 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import { taskStatusLine, type TaskStatusKind } from "../model/taskStatusLine";
+import {AssistantTaskBadge} from "./AssistantTaskBadge";
 import { TaskStatusText } from "./TaskStatusLine";
 import { unreadReviewNotes } from "../model/taskReviewNotes";
 import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
@@ -189,6 +191,7 @@ function TaskCardBody({
         {task.title}
       </h3>
       {planning ? <p className="task-planning-caption">{planning}</p> : null}
+      <AssistantTaskBadge task={task}/>
       {statusBadges ? (
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">{statusBadges}</div>
       ) : null}
@@ -239,10 +242,20 @@ function TaskCardBody({
         </p>
       ) : null}
       {waitingFor.length > 0 ? (
-        <p className="break-words text-ui-micro text-(--ui-tone-warning-fg)">
-          {t("Waiting for: ")}
-          {waitingFor.join(", ")}
-        </p>
+        // The list's "+N" is a button of its own, so its clicks must not open the card.
+        <div
+          data-no-drag
+          className="flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-tone-warning-fg)"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <span className="shrink-0">{t("Waiting for: ")}</span>
+          <BadgeList
+            label={t("Waiting for")}
+            size="xs"
+            className="min-w-0 flex-1"
+            items={waitingFor.map((title, index) => ({ id: `${index}:${title}`, label: title }))}
+          />
+        </div>
       ) : null}
       {description ? (
         <p

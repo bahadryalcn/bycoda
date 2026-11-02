@@ -92,7 +92,7 @@ export function TaskOwnerNotices({ task }: { task: HostTask }) {
     <section
       aria-label={t("What you should know")}
       data-task-owner-notices
-      className="space-y-1.5 rounded-(--ui-radius-card) bg-(--ui-surface-raised) px-3 py-2 text-ui-caption"
+      className="space-y-1.5 rounded-(--ui-radius-card) border border-(--ui-pane-border) px-3 py-2 text-ui-caption"
     >
       <h3 className="font-medium text-(--ui-tone-neutral-fg)">{t("What you should know")}</h3>
       {task.completedWithFindings ? (

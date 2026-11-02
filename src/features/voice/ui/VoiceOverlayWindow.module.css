@@ -2,7 +2,7 @@
 .panel {
   display: grid;
   box-sizing: border-box;
-  inline-size: 100vw;
+  inline-size: 100%;
   max-block-size: 640px;
   overflow: hidden;
   border: 1px solid var(--ui-tone-neutral-border);

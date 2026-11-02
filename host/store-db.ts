@@ -351,6 +351,16 @@ export class StoreDatabase {
   withAuthorization<T>(guard: StoreAuthorization, work: () => T): T {
     return this.authorizations.run(guard, work);
   }
+  /** Capture only authority, never an SQL owner or recovery/internal admission. */
+  async captureAuthorization():Promise<()=>Promise<void>>{
+    const owner=this.owners.getStore();if(owner&&owner.phase!=="open")throw new Error("Database operation escaped its closed owner scope.");
+    const original=this.authorizations.getStore();
+    if(original&&typeof original!=="function"&&this.ownsScope)throw new Error("Prepare structured authorization before SQL admission.");
+    const prepared=original&&typeof original!=="function"?await this.authorizations.exit(()=>original.prepare()):undefined;
+    const check=typeof original==="function"?original:original?.check;
+    const captured=async()=>{const current=this.owners.getStore();if(current&&current.phase!=="open")throw new Error("Database operation escaped its closed owner scope.");await this.authorize(check);if(prepared&&prepared!==check)await this.authorize(prepared);};
+    await captured();return captured;
+  }
   /** @internal Only an already-owned failure's blocked-state/operation bookkeeping.
    * Keeps the current SQL owner; never use for new effects, retries or normal commands. */
   runRecoveryBookkeeping<T>(work: () => T): T {

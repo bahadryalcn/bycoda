@@ -43,6 +43,9 @@ export type GoalVerifyDefaults = {
   /** Have a second agent review each task's result. */
   review: boolean;
 };
+/** Optional planner model identity only. Goal permissions, time limits, workers
+ * and independent reviewers keep their existing execution settings. */
+export type GoalPlannerExecution={harness:RemoteProvider;providerAccountId?:string;model:string;modelSettings:Record<string,string>};
 
 export type HostGoalInput = {
   /** False runs tasks directly in the selected checkout without a task branch. */
@@ -63,6 +66,7 @@ export type HostGoalInput = {
   providerAccountId?: string;
   model: string;
   modelSettings: Record<string, string>;
+  plannerExecution?:GoalPlannerExecution;
   runtimeMode: RuntimeMode;
   /** Stop the planner, or any of the goal's runs, after this long; zero
    * means off. */
@@ -70,6 +74,8 @@ export type HostGoalInput = {
   verifyDefaults: GoalVerifyDefaults;
   /** Wait for the owner to approve the plan before any task is created. */
   approvePlan: boolean;
+  /** Optional size-aware admission; absent preserves approvePlan for legacy callers. */
+  planApprovalPolicy?: "always" | "large" | "never";
   /** Merge every task the goal creates once its checks pass, without waiting
    * for approval. Absent counts as false. */
   autoMerge?: boolean;
@@ -120,6 +126,17 @@ export type GoalPlanTask = {
 
 export type GoalPlan = { tasks: GoalPlanTask[] };
 
+/** Evaluate the accepted owner's policy against the parsed plan, before tasks exist. */
+export function goalPlanNeedsApproval(goal: Pick<HostGoalInput,"approvePlan"|"planApprovalPolicy"|"projectIds"> & {plan?:GoalPlan}):boolean {
+  switch(goal.planApprovalPolicy){
+    case undefined:return goal.approvePlan;
+    case "always":return true;
+    case "never":return false;
+    case "large":return !goal.plan||goal.plan.tasks.length>=4||new Set(goal.projectIds).size>1;
+    default:return true;
+  }
+}
+
 /** Operational settings editable without replanning or changing execution identity. */
 export type GoalSettings = {
   autoMerge: boolean;
@@ -131,6 +148,8 @@ export type GoalSettings = {
 };
 
 export type HostGoal = HostGoalInput & {
+  /** A restored goal is quiescent until a separate owner restart decision. */
+  awaitingOwnerRestart?:boolean;
   /** Persisted automatic delivery is suspended pending a fresh task-level review. */
   deliveryApprovalRequired?: boolean;
   status: GoalStatus;
@@ -165,6 +184,14 @@ export function isGoalStatus(value: unknown): value is GoalStatus {
 }
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
+function parseGoalPlannerExecution(value:unknown):GoalPlannerExecution{
+  if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("Invalid goal planner execution.");
+  const selected=value as Record<string,unknown>;
+  if(Object.keys(selected).some(key=>!["harness","model","modelSettings","providerAccountId"].includes(key))||!isRemoteProvider(selected.harness)||typeof selected.model!=="string"||!selected.model.trim()||selected.model.length>200)throw new Error("Invalid goal planner execution.");
+  const settings=selected.modelSettings??{};
+  if(!settings||typeof settings!=="object"||Array.isArray(settings)||Object.values(settings).some(value=>typeof value!=="string"))throw new Error("Invalid goal planner execution.");
+  return {harness:selected.harness,model:selected.model,modelSettings:{...settings as Record<string,string>},...(selected.providerAccountId===undefined?{}:{providerAccountId:parseProviderAccountId(selected.providerAccountId,selected.harness)})};
+}
 
 /** Validates what a desktop sent. Throws with the reason on bad input. */
 export function parseHostGoal(input: unknown): HostGoalInput {
@@ -226,6 +253,8 @@ export function parseHostGoal(input: unknown): HostGoalInput {
   }
   if (!Number.isInteger(limit) || Number(limit) < 0 || Number(limit) > 10_080)
     throw new Error("Invalid goal run limit");
+  if (v.planApprovalPolicy !== undefined && !["always", "large", "never"].includes(String(v.planApprovalPolicy)))
+    throw new Error("Invalid goal plan approval policy");
   if (
     (v.approvePlan !== undefined && typeof v.approvePlan !== "boolean") ||
     (v.isolate !== undefined && typeof v.isolate !== "boolean") ||
@@ -265,6 +294,7 @@ export function parseHostGoal(input: unknown): HostGoalInput {
       : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
     model: v.model,
     modelSettings: settings as Record<string, string>,
+    ...(v.plannerExecution===undefined?{}:{plannerExecution:parseGoalPlannerExecution(v.plannerExecution)}),
     runtimeMode: v.runtimeMode as RuntimeMode,
     maxRunMinutes: Number(limit),
     ...(typeof v.isolate === "boolean" ? { isolate: v.isolate } : {}),
@@ -276,6 +306,7 @@ export function parseHostGoal(input: unknown): HostGoalInput {
       review: review !== false,
     },
     approvePlan: v.approvePlan === true,
+    ...(v.planApprovalPolicy === undefined ? {} : {planApprovalPolicy:v.planApprovalPolicy as HostGoalInput["planApprovalPolicy"]}),
     ...(v.autoMerge === true ? { autoMerge: true } : {}),
     ...(v.continueUntilDone === true ? { continueUntilDone: true } : {}),
     ...(v.finalReview === true ? { finalReview: true } : {}),

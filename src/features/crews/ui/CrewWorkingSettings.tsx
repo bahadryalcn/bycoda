@@ -1,6 +1,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -267,6 +268,8 @@ export function CrewWorkingSettings({
         ? t("Quality")
         : t("Balanced");
 
+  // Every catalog ends this caption with its name list, so an empty list leaves the lead-in.
+  const narrowedLead = t("Fewer candidates (eligible/total): {p0}", { p0: "" }).trimEnd();
   const eligibilityFeedback =
     impact.blocked.length || impact.narrowed.length ? (
       <div className="flex min-w-0 flex-col gap-1.5">
@@ -278,11 +281,18 @@ export function CrewWorkingSettings({
           </Alert>
         ) : null}
         {impact.narrowed.length ? (
-          <p className="text-ui-caption text-(--ui-text-secondary)">
-            {t("Fewer candidates (eligible/total): {p0}", {
-              p0: memberNames(impact.narrowed, true),
-            })}
-          </p>
+          <div className="flex min-w-0 flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
+            <span>{narrowedLead}</span>
+            <BadgeList
+              label={narrowedLead.replace(/\s*[:：]$/, "")}
+              size="xs"
+              max={5}
+              items={impact.narrowed.map(({ agent, eligible, pool }) => ({
+                id: agent.id,
+                label: `${agent.name || t("Unnamed member")} (${eligible}/${pool})`,
+              }))}
+            />
+          </div>
         ) : null}
       </div>
     ) : null;

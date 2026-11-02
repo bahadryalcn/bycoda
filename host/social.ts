@@ -10,6 +10,7 @@ import {
   SessionAuthorityUnavailable,
   type SessionAuthorityIdentity,
   type SessionAuthorityResolver,
+  assertAssistantThreadScope,assertAssistantThreadGrantScope,type AssistantThreadAuthorityResolver,type AssistantThreadGrantScope,
   type SessionGrantScope,
 } from "./session-authority";
 import type { HostSession } from "../src/features/connections/model/protocol";
@@ -110,7 +111,9 @@ import {
   type SocialImageAdapters,
 } from "./social-images";
 export type SocialPrincipal = {
-  kind: "owner" | "session" | "external";
+  kind: "owner" | "session" | "external" | "assistant-thread";
+  threadId?: string;
+  assistantThreadId?:string;
   actorId: string;
   projectId?: string;
   sessionId?: string;
@@ -217,6 +220,8 @@ export class SocialService {
     return (await this.peerSession?.(id)) ?? (await this.session(id));
   }
   private authorityResolver?: SessionAuthorityResolver;
+  private assistantThread?:AssistantThreadAuthorityResolver;
+  setAssistantThreadResolver(resolver:AssistantThreadAuthorityResolver){this.assistantThread=resolver;}
   setSessionAuthorityResolver(resolver: SessionAuthorityResolver) {
     this.authorityResolver = resolver;
   }
@@ -604,6 +609,10 @@ export class SocialService {
       throw new Error("Only the account owner can change authorization or approve external sends.");
   }
   private async validate(principal: SocialPrincipal) {
+    if(principal.kind==="assistant-thread"){
+      if(principal.sessionId||!principal.projectId||!principal.threadId||principal.provider!=="assistant"||principal.actorId!==`assistant-thread:${principal.threadId}`)throw new Error("Verified assistant thread identity required.");
+      await assertAssistantThreadScope(this.assistantThread,principal.threadId,principal.projectId);
+    }
     if (principal.kind === "external" && (!principal.projectId || principal.sessionId))
       throw new Error("Verified external project identity required.");
     if (principal.projectId) await this.store.project(principal.projectId);
@@ -613,6 +622,7 @@ export class SocialService {
       const current = await this.sessionAuthority(principal.sessionId);
       if (current.projectId !== principal.projectId || current.provider !== principal.provider)
         throw new Error("Session identity changed. Reconnect social tools.");
+      if(principal.assistantThreadId)await assertAssistantThreadScope(this.assistantThread,principal.assistantThreadId,principal.projectId);
     }
   }
   private async access(
@@ -841,6 +851,7 @@ export class SocialService {
     sessionId: string,
     deviceHash?: string,
     expectedScope?: unknown,
+    assistantThreadId?:string,
   ): Promise<{
     token: string;
     expiresAt: number;
@@ -859,6 +870,7 @@ export class SocialService {
       )
         throw new Error("Device revoked.");
       const identity = await this.sessionAuthority(sessionId);
+      if(assistantThreadId)await assertAssistantThreadScope(this.assistantThread,assistantThreadId,identity.projectId);
       if (identity.projectId !== initial.projectId || identity.provider !== initial.provider)
         throw new SessionAuthorityUnavailable();
       const scope: SessionGrantScope = {
@@ -884,6 +896,7 @@ export class SocialService {
           sessionId,
           projectId: identity.projectId,
           provider: identity.provider,
+          ...(assistantThreadId?{assistantThreadId}:{}),
         },
         expiresAt,
         deviceHash,
@@ -895,6 +908,20 @@ export class SocialService {
     });
   }
   /** Drops one memory-only grant when the provider child that held it has ended. */
+  async issueThreadGrant(threadId:string,projectId:string,deviceHash?:string,expectedScope?:unknown):Promise<{token:string;expiresAt:number;scope:AssistantThreadGrantScope}>{
+    await this.ready;await assertAssistantThreadScope(this.assistantThread,threadId,projectId);
+    return this.store.db.scope(async()=>{
+      await this.store.project(projectId);
+      if(deviceHash&&!(await this.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(deviceHash)))throw new Error("Device revoked.");
+      await assertAssistantThreadScope(this.assistantThread,threadId,projectId);
+      const scope:AssistantThreadGrantScope={kind:"assistant-thread",threadId,projectId,environmentId:this.store.environmentId};assertAssistantThreadGrantScope(expectedScope,scope);
+      for(const [key,grant] of this.grants)if(grant.expiresAt<=this.now())this.grants.delete(key);
+      if(this.grants.size>=4096)throw new Error("Social session grant capacity reached.");
+      const token=randomBytes(32).toString("base64url");const expiresAt=this.now()+5*60_000;
+      const grant:Grant={principal:{kind:"assistant-thread",threadId,projectId,provider:"assistant",actorId:`assistant-thread:${threadId}`},expiresAt,deviceHash};
+      this.store.afterCommit(()=>{this.grants.set(hash(token),grant);});return {token,expiresAt,scope};
+    });
+  }
   revokeSessionGrant(token: string): void {
     this.grants.delete(hash(token));
   }
@@ -910,7 +937,7 @@ export class SocialService {
       check,
       prepare: async () => {
         const grant = this.grants.get(hash(token));
-        if (grant && grant.expiresAt > this.now()) {
+        if (grant && grant.expiresAt > this.now() && grant.principal.kind === "session") {
           try {
             await this.prepareSessionIdentity(grant.principal.sessionId!);
           } catch {
@@ -925,7 +952,7 @@ export class SocialService {
     const grant = this.grants.get(hash(token));
     if (!grant || grant.expiresAt <= this.now()) return undefined;
     await this.ready;
-    if (!this.store.db.ownsScope) {
+    if (!this.store.db.ownsScope && grant.principal.kind === "session") {
       try {
         await this.prepareSessionIdentity(grant.principal.sessionId!);
       } catch {

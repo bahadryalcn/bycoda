@@ -709,7 +709,7 @@ function SwitchSuggestion({
 }) {
   const t = useT();
   return (
-    <section className="mt-2 flex items-center gap-2.5 rounded-lg bg-(--ui-surface-muted) px-3 py-2.5 ring-1 ring-inset ring-(--color-stroke)">
+    <section className="mt-2 flex items-center gap-2.5 rounded-lg px-3 py-2.5 ring-1 ring-inset ring-(--color-stroke)">
       <div className="min-w-0 flex-1">
         <p className="text-ui-caption leading-4 text-(--ui-text-secondary)">
           {exhausted ? t("Out of usage") : t("Running low")}
@@ -1109,7 +1109,7 @@ function BankedResetRow({
 function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; loading: boolean }) {
   const t = useT();
   return (
-    <Surface variant="inset" className="flex flex-col gap-2" role="status">
+    <Surface variant="outline" className="flex flex-col gap-2" role="status">
       <span className="text-ui-micro font-medium">
         {loading
           ? t("Loading usage…")

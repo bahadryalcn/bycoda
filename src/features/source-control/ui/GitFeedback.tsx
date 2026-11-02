@@ -4,7 +4,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { createNote } from "../../notes";
 import { requestAddToChat } from "../../sessions/model/quoteDraft";
 import { copyText } from "../../../platform/tauri/clipboard";
@@ -28,7 +28,12 @@ type GitFeedbackProps = {
 export function GitFeedback(props: GitFeedbackProps) {
   // Each diagnostic owns its pending actions and feedback, even when A is
   // replaced by B and then returns before an old A request finishes.
-  return <GitFeedbackContent key={JSON.stringify([props.kind, props.title, props.detail, props.cwd])} {...props} />;
+  return (
+    <GitFeedbackContent
+      key={JSON.stringify([props.kind, props.title, props.detail, props.cwd])}
+      {...props}
+    />
+  );
 }
 
 function GitFeedbackContent({
@@ -52,7 +57,9 @@ function GitFeedbackContent({
   const notePending = useRef(false);
   useEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const context = [title, cwd, detail].filter(Boolean).join("\n\n");
   const branchInWorktree =
@@ -91,24 +98,12 @@ function GitFeedbackContent({
         <p className="mt-1 text-[var(--ui-text-secondary)]">{t("Showing what was last loaded.")}</p>
       ) : null}
       {open && detail ? (
-        <Modal title={title} languageDomain="git" onClose={() => setOpen(false)}>
-          <div className="flex min-w-0 flex-col gap-3 p-4">
-            {cwd ? <p className="break-all text-(--ui-text-secondary)">{cwd}</p> : null}
-            {branchInWorktree ? (
-              <p className="[margin-block-start:0.25rem] text-(--ui-text-secondary)">
-                {t(
-                  "This branch is in use by a worktree. Delete the worktree first, then delete the branch.",
-                )}
-              </p>
-            ) : null}
-            <pre
-              tabIndex={0}
-              aria-label={t("Output")}
-              className="max-h-[50dvh] min-w-0 overflow-auto whitespace-pre-wrap break-all select-text font-mono text-ui-caption text-content"
-            >
-              {detail}
-            </pre>
-            <div className="flex flex-wrap gap-2">
+        <Modal
+          title={title}
+          languageDomain="git"
+          onClose={() => setOpen(false)}
+          footer={
+            <ModalActions align="start">
               <Button
                 variant="link"
                 loading={copying}
@@ -121,7 +116,8 @@ function GitFeedbackContent({
                     await copyText(detail);
                     if (alive.current) setCopied(true);
                   } catch (error) {
-                    if (alive.current) setCopyError(error instanceof Error ? error.message : String(error));
+                    if (alive.current)
+                      setCopyError(error instanceof Error ? error.message : String(error));
                   } finally {
                     copyPending.current = false;
                     if (alive.current) setCopying(false);
@@ -142,7 +138,8 @@ function GitFeedbackContent({
                     await createNote({ title, body: context, sourceCwd: cwd });
                     if (alive.current) setSaved(true);
                   } catch (error) {
-                    if (alive.current) setCopyError(error instanceof Error ? error.message : String(error));
+                    if (alive.current)
+                      setCopyError(error instanceof Error ? error.message : String(error));
                   } finally {
                     notePending.current = false;
                     if (alive.current) setSaving(false);
@@ -159,15 +156,31 @@ function GitFeedbackContent({
               >
                 {t("Add to chat")}
               </Button>
-            </div>
+            </ModalActions>
+          }
+        >
+          <div className="flex min-w-0 flex-col gap-3 p-4">
+            {cwd ? <p className="break-all text-(--ui-text-secondary)">{cwd}</p> : null}
+            {branchInWorktree ? (
+              <p className="[margin-block-start:0.25rem] text-(--ui-text-secondary)">
+                {t(
+                  "This branch is in use by a worktree. Delete the worktree first, then delete the branch.",
+                )}
+              </p>
+            ) : null}
+            <pre
+              tabIndex={0}
+              aria-label={t("Output")}
+              className="max-h-[50dvh] min-w-0 overflow-auto whitespace-pre-wrap break-all select-text font-mono text-ui-caption text-content"
+            >
+              {detail}
+            </pre>
             {copied || saved ? (
               <p role="status" className="text-(--ui-text-secondary)">
                 {t(saved ? "Saved" : "Copied")}
               </p>
             ) : null}
-            {copyError ? (
-              <InlineError>{copyError}</InlineError>
-            ) : null}
+            {copyError ? <InlineError>{copyError}</InlineError> : null}
             {branchInWorktree && cwd ? (
               <Button variant="link" onClick={() => requestWorktreeManagement(cwd)}>
                 {t("Manage worktrees…")}

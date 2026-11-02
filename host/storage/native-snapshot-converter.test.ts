@@ -237,6 +237,19 @@ function richFence(value: Source): NativeFenceEvidence {
 }
 
 describe("production native snapshot converter", () => {
+  it.each(["job","manual"])("retains %s assistant management and message authors only when the native source rows agree",scope=>{
+    const value=rich();const source=scope==="job"?{jobId:"assistant-job"}:{supervisionId:"manual-grant"};const management={assistant:true,...source,managedAt:123};
+    value.session.managedBy=management;
+    value.retainedNativeRows.sessions[0].assistant_management_json=JSON.stringify(management);
+    const author={kind:scope==="job"?"assistant":"assistant-manual",name:"Owner Name",...source,reason:"nudge",operationId:"original-effect"};
+    value.session.blocks[0].author=author;
+    value.retainedNativeRows.session_blocks[0].block_json=JSON.stringify(value.session.blocks[0]);
+    const converted=convert(value,richFence(value));
+    expect(converted.hostSession.session.managedBy).toEqual(management);
+    expect(converted.hostSession.session.blocks[0].author).toEqual(author);
+    const mismatch=clone(value);mismatch.retainedNativeRows.sessions[0].assistant_management_json=JSON.stringify({...management,...(scope==="job"?{jobId:"forged"}:{supervisionId:"forged"})});
+    expect(()=>convert(mismatch,richFence(mismatch))).toThrow("metadata disagrees");
+  });
   it("converts the real-native-derived serialized fixture and preserves its complete source layout", () => {
     expect(createHash("sha256").update(captured.sourceJson).digest("hex")).toBe(
       captured.fence.sourceDigest,

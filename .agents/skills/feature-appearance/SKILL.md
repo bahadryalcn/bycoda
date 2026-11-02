@@ -25,6 +25,7 @@ Use for Appearance controls, durable preference outcomes, live previews, global/
 - Retain platform capability gates, dark-mode values and light opaque policy for native glass; blur-radius applicability is platform-specific.
 - Preserve global/project image precedence, original asset access, choose/change/remove/cancel, validation, pending ownership and partial-write recovery.
 - Retain worker generations, error/retry, object-URL cleanup and canvas idle/visibility/reduced-motion/GPU lifecycle. Ambient crew appearance does not change executable Crew settings.
+- Live scenes follow the appear/hold/rest rhythm in `live-background/calmSignal.ts`: a shown scene stays 10–15 s through output pauses and after the reply ends, rests 8–16 s, returns with later output of the same turn, and mouths move only while output arrives. The canvas keeps painting while the driver is awake and still settles once the scene is hidden.
 - Preserve density and scale behavior, including applying scale on release; source inclusion must be verified before diagnosing an owner capture.
 - Keep every preference reachable while changing disclosure/layout. The historical advanced-visibility disagreement is recorded in the reference; this skill does not select a new policy.
 

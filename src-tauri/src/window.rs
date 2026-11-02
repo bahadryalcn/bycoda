@@ -92,6 +92,7 @@ fn tool_window_url(tool: &str, cwd: &str, grouped: bool) -> Result<tauri::Webvie
         "notes",
         "conversation-tools",
         "terminal",
+        "assistant",
     ]
     .contains(&tool)
     {
@@ -490,6 +491,7 @@ pub fn is_workspace_window(label: &str) -> bool {
     label != QUICK_COMPOSER_LABEL
         && label != QUICK_COMPOSER_GIT_LABEL
         && !crate::voice_overlay::is_voice_overlay(label)
+        && !crate::desktop_control_window::is_indicator(label)
 }
 
 /// Every workspace window, sorted by label.

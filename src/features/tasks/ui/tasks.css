@@ -348,8 +348,10 @@
 }
 .task-session-message[data-role="user"] {
   padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-stroke);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface-panel);
+  /* Same bubble as the chat transcript; the panel role is the canvas in pure mode. */
+  background: var(--ui-surface);
 }
 .task-session-activity {
   min-inline-size: 0;

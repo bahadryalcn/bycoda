@@ -1,4 +1,5 @@
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, useT } from "../../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -322,23 +323,22 @@ function GithubWorkItemCard({
 
       {labels.length > 0 || assignees.length > 0 ? (
         <div className="mt-2.5 flex min-w-0 items-center gap-1.5">
-          <div className="flex min-w-0 flex-1 flex-wrap gap-1">
-            {labels.slice(0, 3).map((label) => (
-              <Badge tone="neutral" key={label.name} className="max-w-28">
+          <BadgeList
+            label={t("Labels")}
+            max={3}
+            className="min-w-0 flex-1"
+            items={labels.map((label, index) => ({
+              id: `${index}:${label.name}`,
+              label: label.name,
+              icon: (
                 <span
                   aria-hidden="true"
                   className="size-1.5 shrink-0 rounded-full"
                   style={{ backgroundColor: labelColor(label.color) }}
                 />
-                <span className="truncate">{label.name}</span>
-              </Badge>
-            ))}
-            {labels.length > 3 ? (
-              <span className="px-1 text-ui-caption text-(--ui-text-secondary)">
-                +{labels.length - 3}
-              </span>
-            ) : null}
-          </div>
+              ),
+            }))}
+          />
           {assignees.length > 0 ? (
             <div
               className="flex shrink-0 -space-x-1"

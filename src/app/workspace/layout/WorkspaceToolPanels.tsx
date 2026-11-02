@@ -1,9 +1,19 @@
 import { OverlayNav } from "../../shell/TitleBar";
+import { AssistantView } from "../surfaces/lazySurfaces";
+import { isProjectLocked } from "../../../features/group-lock/model/groupLock";
+import { invoke } from "@tauri-apps/api/core";
+import { remoteRequest } from "../../../features/connections/model/connections";
+import type { HostGoal } from "../../../features/tasks/model/hostGoals";
+import { AssistantResponseValidationSchema } from "../../../shared/model/host-contracts/assistant";
+import {HostAutomationSchema} from "../../../shared/model/host-contracts/automations";
+import {assistantAutomationProject,type AssistantAutomationReveal} from "../../../features/assistant/model/assistantAutomationReveal";
+import {assistantJobTasksGoal} from "../../../features/assistant/model/assistantJobTasksReveal";
+import type { RemoteMachine, HostSession } from "../../../features/connections/model/protocol";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { WindowControls } from "../../shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { ConversationTools } from "../../../features/host-tools/SessionHostTools";
 import { lazySurface } from "../../../shared/ui/lazySurface";
@@ -73,6 +83,7 @@ export interface WorkspaceToolPanelsProps {
   compactRailActive: boolean;
   onToggleSidebar: InboxProps["onToggleSidebar"];
   pickProject: InboxProps["onOpenProject"];
+  onSelectAssistantProject?: (path: string) => void;
   // Inbox
   onLeaveInbox: InboxProps["onClose"];
   onStartInboxItem: InboxProps["onStart"];
@@ -132,6 +143,7 @@ function WorkspaceToolPanelsComponent({
   compactRailActive,
   onToggleSidebar,
   pickProject,
+  onSelectAssistantProject,
   onLeaveInbox: leaveInbox,
   onStartInboxItem,
   onAskInboxItem,
@@ -151,6 +163,49 @@ function WorkspaceToolPanelsComponent({
   onLaunchAutomationAssistant,
 }: WorkspaceToolPanelsProps) {
   const [terminalId] = useState(() => `tools-terminal-${crypto.randomUUID()}`);
+  const [goalReveal, setGoalReveal] = useState<{
+    machineId: string;
+    goalId: string;
+    token: number;
+  }>();
+  const [automationReveal,setAutomationReveal]=useState<AssistantAutomationReveal>();
+  const canOpenAssistantProject = useStableCallback((path: string) => {
+    const key = (value: string) => value.replace(/\\/g, "/").replace(/\/$/, "").toLocaleLowerCase();
+    return (
+      !isProjectLocked(path) && visibleRecents.some((project) => key(project.path) === key(path))
+    );
+  });
+  const [assistantNavigation, setAssistantNavigation] = useState<{
+    tab: "today" | "memory" | "settings" | "history";
+    token: number;
+  }>({ tab: "today", token: 0 });
+  useEffect(() => {
+    const openAssistant = (event: Event) => {
+      const requested = (event as CustomEvent<{ tab?: string }>).detail?.tab;
+      const tab =
+        requested === "memory" || requested === "settings" || requested === "history"
+          ? requested
+          : "today";
+      setAssistantNavigation((previous) => ({ tab, token: previous.token + 1 }));
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setServersViewOpen(false);
+      setAutomationsViewOpen(true);
+      setSocialBoardShown(false);
+      setTaskBoardShown(false);
+      setAuxiliaryTool?.("assistant");
+    };
+    window.addEventListener("bycoda:open-assistant", openAssistant);
+    return () => window.removeEventListener("bycoda:open-assistant", openAssistant);
+  }, [
+    setInboxViewOpen,
+    setNotesViewOpen,
+    setServersViewOpen,
+    setAutomationsViewOpen,
+    setSocialBoardShown,
+    setTaskBoardShown,
+    setAuxiliaryTool,
+  ]);
   const onLeaveInbox = navigation?.onBack ?? leaveInbox;
   const onLeaveNotes = navigation?.onBack ?? leaveNotes;
   const onLeaveServers = navigation?.onBack ?? leaveServers;
@@ -212,9 +267,12 @@ function WorkspaceToolPanelsComponent({
         tool === "tasks" ||
         tool === "automations" ||
         tool === "terminal" ||
-        tool === "conversation-tools",
+        tool === "conversation-tools" ||
+        tool === "assistant",
     );
-    setAuxiliaryTool?.(tool === "terminal" || tool === "conversation-tools" ? tool : null);
+    setAuxiliaryTool?.(
+      tool === "terminal" || tool === "conversation-tools" || tool === "assistant" ? tool : null,
+    );
     setSocialBoardShown(tool === "social");
     setTaskBoardShown(tool === "tasks");
   });
@@ -242,9 +300,150 @@ function WorkspaceToolPanelsComponent({
   );
   return (
     <ToolNavigationContext.Provider value={toolNavigation}>
+      <ToolPanel active={automationsViewOpen && auxiliaryTool === "assistant"}>
+        {auxiliaryHeader}
+        <AssistantView
+          projectPath={projectCwd}
+          visibleProjectPaths={visibleRecents.map((project) => project.path)}
+          initialTab={assistantNavigation.tab}
+          navigationToken={assistantNavigation.token}
+          onClose={onLeaveAutomations}
+          onOpenProject={
+            onSelectAssistantProject
+              ? (path) => {
+                  if (!canOpenAssistantProject(path))
+                    throw new Error("The linked project is unavailable.");
+                  onSelectAssistantProject(path);
+                }
+              : undefined
+          }
+          onOpenGoal={async (target) => {
+            const machine = await invoke<RemoteMachine | null>("local_host_connect");
+            if (!machine) throw new Error("The approval's original Host is unavailable.");
+            const [environment, projects, goals] = await Promise.all([
+              remoteRequest<{ environmentId: string }>(
+                machine.id,
+                "environment.describe",
+                {},
+                false,
+                false,
+                target.environmentId,
+              ),
+              remoteRequest(
+                machine.id,
+                "assistant.request",
+                { op: "projects.list" },
+                false,
+                false,
+                target.environmentId,
+              ).then((value) => AssistantResponseValidationSchema.parse(value)),
+              remoteRequest<HostGoal[]>(
+                machine.id,
+                "goals.list",
+                {},
+                false,
+                false,
+                target.environmentId,
+              ),
+            ]);
+            const project = projects.projects?.find((value) => value.id === target.projectId);
+            const goal = goals.find((value) => value.id === target.goalId);
+            const expectedProjects = [...new Set(target.projectIds ?? [target.projectId])].sort();
+            const actualProjects = [...new Set(goal?.projectIds ?? [])].sort();
+            const allVisible = actualProjects.every((id) => {
+              const value = projects.projects?.find((project) => project.id === id);
+              return !!value && canOpenAssistantProject(value.path);
+            });
+            if (
+              environment.environmentId !== target.environmentId ||
+              !project ||
+              !allVisible ||
+              !canOpenAssistantProject(project.path) ||
+              !goal ||
+              goal.status !== "awaiting-approval" ||
+              JSON.stringify(actualProjects) !== JSON.stringify(expectedProjects) ||
+              !goal.projectIds.includes(project.id) ||
+              goal.updatedAt !== target.updatedAt ||
+              JSON.stringify(goal.plan) !== target.planIdentity
+            )
+              throw new Error("The original goal approval changed or its project is unavailable.");
+            setGoalReveal({ machineId: machine.id, goalId: goal.id, token: Date.now() });
+            onSelectTool("tasks");
+          }}
+          onReviewJobTasks={async target=>{
+            const machine=await invoke<RemoteMachine|null>("local_host_connect");
+            if(!machine||!target.environmentId)throw new Error("The linked job's Host identity is unavailable.");
+            const [environment,projects,response,goals]=await Promise.all([
+              remoteRequest<{environmentId:string}>(machine.id,"environment.describe",{},false,false,target.environmentId),
+              remoteRequest(machine.id,"assistant.request",{op:"projects.list"},false,false,target.environmentId).then(value=>AssistantResponseValidationSchema.parse(value)),
+              remoteRequest(machine.id,"assistant.request",{op:"jobs.get",id:target.jobId},false,false,target.environmentId).then(value=>AssistantResponseValidationSchema.parse(value)),
+              remoteRequest<HostGoal[]>(machine.id,"goals.list",{},false,false,target.environmentId),
+            ]);
+            const current=await invoke<RemoteMachine|null>("local_host_connect");
+            if(current?.id!==machine.id||current.environmentId!==target.environmentId)throw new Error("The linked job's Host identity is unavailable.");
+            const goal=assistantJobTasksGoal(target,environment.environmentId,response.job,goals,projects.projects??[],canOpenAssistantProject);
+            setGoalReveal({machineId:machine.id,goalId:goal.id,token:Date.now()});
+            onSelectTool("tasks");
+          }}
+          onOpenAutomation={async target=>{
+            const machine=await invoke<RemoteMachine|null>("local_host_connect");
+            if(!machine)throw new Error("This computer's Host is unavailable.");
+            const expectedEnvironmentId=target.environmentId??machine.environmentId;
+            if(!expectedEnvironmentId)throw new Error("The linked automation's Host identity is unavailable.");
+            const [environment,projects,automations]=await Promise.all([
+              remoteRequest<{environmentId:string}>(machine.id,"environment.describe",{},false,false,expectedEnvironmentId),
+              remoteRequest(machine.id,"assistant.request",{op:"projects.list"},false,false,expectedEnvironmentId).then(value=>AssistantResponseValidationSchema.parse(value)),
+              remoteRequest(machine.id,"automations.list",{},false,false,expectedEnvironmentId).then(value=>HostAutomationSchema.array().parse(value)),
+            ]);
+            const current=await invoke<RemoteMachine|null>("local_host_connect");
+            if(current?.id!==machine.id||current.environmentId!==expectedEnvironmentId)throw new Error("The linked automation's Host identity is unavailable.");
+            assistantAutomationProject(target,expectedEnvironmentId,environment.environmentId,projects.projects??[],automations,canOpenAssistantProject);
+            setAutomationReveal({id:target.id,projectId:target.projectId,environmentId:expectedEnvironmentId,machineId:machine.id,token:Date.now()});
+            onSelectTool("automations");
+          }}
+          onOpenSession={async (sessionId, sourceEnvironmentId?: string) => {
+            const machine = await invoke<RemoteMachine | null>("local_host_connect");
+            if (!machine) throw new Error("This computer's Host is unavailable.");
+            const expectedEnvironmentId = sourceEnvironmentId ?? machine.environmentId;
+            if (!expectedEnvironmentId)
+              throw new Error("The linked session's Host identity is unavailable.");
+            const [host, projects] = await Promise.all([
+              remoteRequest<HostSession | null>(
+                machine.id,
+                "sessions.get",
+                {
+                  sessionId,
+                  preview: true,
+                  summary: true,
+                },
+                false,
+                false,
+                expectedEnvironmentId,
+              ),
+              remoteRequest(
+                machine.id,
+                "assistant.request",
+                { op: "projects.list" },
+                false,
+                false,
+                expectedEnvironmentId,
+              ).then((value) => AssistantResponseValidationSchema.parse(value)),
+            ]);
+            const project = projects.projects?.find((value) => value.id === host?.projectId);
+            if (!host || !project || !canOpenAssistantProject(project.path))
+              throw new Error("The linked session is unavailable.");
+            await onOpenBackgroundSession({
+              machineId: machine.id,
+              projectId: host.projectId,
+              cwd: host.session.cwd,
+              sessionId,
+            });
+          }}
+        />
+      </ToolPanel>
       <ToolPanel active={automationsViewOpen && auxiliaryTool === "conversation-tools"}>
         <NavigationBoundary name="Conversation tools" onBack={onLeaveAutomations}>
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-surface)">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {auxiliaryHeader}
             <SessionHostTools
               {...(conversationTools ?? { cwd: projectCwd, sessionId: "", title: "" })}
@@ -326,6 +525,7 @@ function WorkspaceToolPanelsComponent({
       <ToolPanel active={automationsViewOpen && taskBoardShown && !socialBoardShown}>
         <NavigationBoundary name="Tasks" onBack={onLeaveAutomations}>
           <TasksView
+            goalReveal={goalReveal}
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
             compactRail={compactRailActive}
             cwd={projectCwd}
@@ -341,6 +541,7 @@ function WorkspaceToolPanelsComponent({
       >
         <NavigationBoundary name="Automations" onBack={onLeaveAutomations}>
           <AutomationsView
+            revealAutomation={automationReveal}
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
             compactRail={compactRailActive}
             cwd={projectCwd}

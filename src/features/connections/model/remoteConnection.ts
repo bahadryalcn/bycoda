@@ -1,4 +1,4 @@
-import { classifyRemoteError, remoteErrorText } from "./remoteFailure";
+import { classifyRemoteError, nativeConnectionFailureCode, remoteErrorText } from "./remoteFailure";
 import { classifySshFailure, parseSshStartFailure } from "./sshFailure";
 
 /** What this computer last learned about one remote machine, from the outcome
@@ -16,6 +16,8 @@ export type RemoteConnectionStatus =
   | "host-key"
   /** The saved bycoda Host identity changed; the machine must be added again. */
   | "identity-mismatch"
+  /** Native authentication or protocol admission needs an explicit reconnect. */
+  | "connection-blocked"
   /** SSH works, but Bycoda Host is not listening on the machine. */
   | "host-not-running"
   /** The host answered, but is too old for something the app asked. */
@@ -82,6 +84,8 @@ export function connectionOutcome(error: unknown): {
   error?: string;
   specific?: boolean;
 } {
+  if (["RPC_WS_BLOCKED", "RPC_WS_SCHEMA", "RPC_WS_TLS"].includes(nativeConnectionFailureCode(error) ?? ""))
+    return { status: "connection-blocked", error: sanitizeConnectionError(remoteErrorText(error)), specific: true };
   const failure = classifyRemoteError(error);
   if (failure.kind === "identity")
     return {
@@ -135,11 +139,13 @@ export function reduceConnection(
     case "ok":
       // An old host keeps answering what it knows, so only a reconnect or an
       // update clears that notice.
-      if (state.status === "outdated-host" || state.status === "identity-mismatch") return state;
+      if (state.status === "outdated-host" || state.status === "identity-mismatch" || state.status === "connection-blocked") return state;
       return { status: "connected", lastSeen: event.at };
     case "failure": {
       const outcome = connectionOutcome(event.error);
       if (state.status === "identity-mismatch" && outcome.status !== "identity-mismatch")
+        return state;
+      if (state.status === "connection-blocked" && !["identity-mismatch", "outdated-host", "connection-blocked"].includes(outcome.status))
         return state;
       if (outcome.status === "connected")
         return reduceConnection(state, { type: "ok", at: event.at });
@@ -188,6 +194,7 @@ export const blocksSending = (status: RemoteConnectionStatus) =>
   status === "needs-auth" ||
   status === "host-key" ||
   status === "host-not-running" ||
+  status === "connection-blocked" ||
   status === "identity-mismatch";
 
 /** Whether only a sign-in, answered in Connections settings, can fix it. */

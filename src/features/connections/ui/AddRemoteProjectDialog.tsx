@@ -3,8 +3,8 @@ import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useEffect, useRef, useState } from "react";
-import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { useEffect, useId, useRef, useState } from "react";
+import { Modal, ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { Divider } from "../../../shared/ui/Divider";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -95,6 +95,7 @@ function AddRemoteProjectForm({
   onOpen: (key: string) => void;
 }) {
   useLocale();
+  const formId = useId();
   const [path, setPath] = useState("");
   const [directory, setDirectory] = useState<HostDirectory>();
   const [loading, setLoading] = useState(false);
@@ -254,8 +255,11 @@ function AddRemoteProjectForm({
     }
   };
 
+  const noMachines = loaded && !(machinesError && !machine) && !machine;
+
   return (
     <form
+      id={formId}
       onSubmit={(event) => {
         event.preventDefault();
         if (newName !== null) void createFolder();
@@ -282,21 +286,6 @@ function AddRemoteProjectForm({
               "No machines are connected yet. Add one in Settings, then open a folder on it here.",
             )}
           />
-          <ModalActions inline>
-            <Button type="button" onClick={cancel} variant="ghost">
-              {t("Cancel")}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                cancel();
-                window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT));
-              }}
-              variant="primary"
-            >
-              {t("Add a machine")}
-            </Button>
-          </ModalActions>
         </>
       ) : (
         <>
@@ -481,13 +470,29 @@ function AddRemoteProjectForm({
               {error}
             </Alert>
           ) : null}
-          <ModalActions inline>
-            <Button type="button" onClick={cancel} variant="ghost">
-              {t("Cancel")}
+        </>
+      )}
+      <ModalFooter>
+        <ModalActions>
+          <Button type="button" onClick={cancel} variant="ghost">
+            {t("Cancel")}
+          </Button>
+          {noMachines ? (
+            <Button
+              type="button"
+              onClick={() => {
+                cancel();
+                window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT));
+              }}
+              variant="primary"
+            >
+              {t("Add a machine")}
             </Button>
+          ) : loaded && machine ? (
             <Button
               reserveLabels={[t("Opening…")]}
               type="submit"
+              form={formId}
               loading={opening}
               disabled={
                 creating ||
@@ -501,9 +506,9 @@ function AddRemoteProjectForm({
             >
               {opening ? t("Opening…") : t("Open")}
             </Button>
-          </ModalActions>
-        </>
-      )}
+          ) : null}
+        </ModalActions>
+      </ModalFooter>
     </form>
   );
 }

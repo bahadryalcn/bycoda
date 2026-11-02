@@ -1,6 +1,8 @@
 //! Conversation grants remain in native memory and provider children.
 //! The renderer receives executable metadata, never host or session credentials.
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -271,6 +273,50 @@ fn execute_desktop_request_inner(
             taken,
         );
     }
+    if action == "desktop.act.authorize" {
+        let approval = desktop_action_approval(request, now)?;
+        static DESKTOP_APPROVAL_GATE: Mutex<()> = Mutex::new(());
+        let _gate = DESKTOP_APPROVAL_GATE
+            .lock()
+            .map_err(|_| "Desktop approval is unavailable")?;
+        let check = || -> Result<(), String> {
+            taken.check()?;
+            if !issuer.is_current() {
+                return Err("Desktop approval issuer changed".into());
+            }
+            let at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "Clock unavailable")?
+                .as_millis() as u64;
+            if approval.deadline <= at {
+                return Err("Desktop approval expired; no action was authorized".into());
+            }
+            let authorized = issuer.project(
+                "conversation.desktop.authorize",
+                json!({"id": approval.relay_id, "action": "desktop.act.authorize"}),
+                |result| {
+                    Ok(result.as_object().is_some_and(|value| {
+                        value.len() == 1 && value.get("authorized") == Some(&Value::Bool(true))
+                    }))
+                },
+            )?;
+            if !authorized {
+                return Err("The original desktop action authority was revoked".into());
+            }
+            taken.check()?;
+            Ok(())
+        };
+        return desktop_approval_decision(&approval, check, || {
+            app.dialog()
+                .message(&approval.message)
+                .title("bycoda — Desktop action approval")
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    "Approve this exact action".into(),
+                    "Cancel".into(),
+                ))
+                .blocking_show()
+        });
+    }
     if action == "tasks.write.authorize" {
         let operation = &input["operation"];
         let message = task_approval_message(operation)?;
@@ -416,6 +462,264 @@ fn execute_desktop_request_inner(
         ),
         _ => Err("Unsupported desktop tool".into()),
     }
+}
+
+/// Field order is the internal relay's canonical JSON.stringify(operation) order.
+/// Never hash a Value map: its serialization order need not match JavaScript.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DesktopRefApprovalOperation {
+    request_id: String,
+    snapshot_id: String,
+    app: String,
+    window_id: String,
+    #[serde(rename = "ref")]
+    target_ref: String,
+    action: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    headed: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DesktopLaunchApprovalOperation {
+    kind: String,
+    request_id: String,
+    app: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DesktopClipboardApprovalOperation {
+    kind: String,
+    request_id: String,
+    target: String,
+    action: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+}
+
+/// Untagged retains the original ref-action byte order/hash without adding a
+/// discriminator. New targets have explicit kinds and no fabricated refs.
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+enum DesktopApprovalOperation {
+    Ref(DesktopRefApprovalOperation),
+    Launch(DesktopLaunchApprovalOperation),
+    Clipboard(DesktopClipboardApprovalOperation),
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DesktopApprovalInput {
+    operation: DesktopApprovalOperation,
+    operation_hash: String,
+}
+
+struct DesktopActionApproval {
+    relay_id: String,
+    deadline: u64,
+    operation_hash: String,
+    message: String,
+}
+
+impl DesktopActionApproval {
+    fn result(&self, approved: bool) -> Value {
+        // Only the actual native dialog result is passed here. No input boolean
+        // or original tool arguments can select this value.
+        json!({"approved": approved, "operationHash": self.operation_hash})
+    }
+}
+
+fn desktop_approval_decision(
+    approval: &DesktopActionApproval,
+    check: impl Fn() -> Result<(), String>,
+    decide: impl FnOnce() -> bool,
+) -> Result<Value, String> {
+    check()?;
+    let approved = decide();
+    check()?;
+    Ok(approval.result(approved))
+}
+
+fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApproval, String> {
+    if request["action"].as_str() != Some("desktop.act.authorize") {
+        return Err("Invalid desktop approval action".into());
+    }
+    let field = |key: &str, max: usize| -> Result<String, String> {
+        let value = request[key]
+            .as_str()
+            .ok_or("Original desktop approval identity required")?;
+        if value.trim().is_empty()
+            || value.chars().count() > max
+            || value.chars().any(char::is_control)
+        {
+            return Err("Invalid original desktop approval identity".into());
+        }
+        Ok(value.to_string())
+    };
+    let relay_id = field("id", 200)?;
+    uuid::Uuid::parse_str(&relay_id).map_err(|_| "Invalid original desktop request identity")?;
+    let session_id = field("sessionId", 200)?;
+    let cwd = field("cwd", 4096)?;
+    let environment_id = field("environmentId", 200)?;
+    let deadline = request["deadline"]
+        .as_u64()
+        .filter(|value| *value > now)
+        .ok_or("Desktop approval expired; no action was authorized")?;
+    if request["input"]["operation"]
+        .get("text")
+        .is_some_and(Value::is_null)
+    {
+        return Err("Desktop action text must be a string when present".into());
+    }
+    let input: DesktopApprovalInput = serde_json::from_value(request["input"].clone())
+        .map_err(|_| "Invalid exact desktop approval input")?;
+    if input.operation_hash.len() != 64
+        || !input
+            .operation_hash
+            .bytes()
+            .all(|value| value.is_ascii_hexdigit())
+    {
+        return Err("Invalid desktop operation hash".into());
+    }
+    let operation = &input.operation;
+    let plain = |value: &str, max: usize| {
+        !value.trim().is_empty()
+            && value.chars().count() <= max
+            && !value.chars().any(char::is_control)
+    };
+    match operation {
+        DesktopApprovalOperation::Launch(operation) => {
+            if operation.kind != "launch"
+                || !plain(&operation.request_id, 200)
+                || !plain(&operation.app, 200)
+                || operation.app.starts_with('-')
+            {
+                return Err("Invalid exact desktop launch target".into());
+            }
+        }
+        DesktopApprovalOperation::Clipboard(operation) => {
+            if operation.kind != "clipboard"
+                || operation.target != "global-clipboard"
+                || !plain(&operation.request_id, 200)
+                || !matches!(operation.action.as_str(), "get" | "set" | "clear")
+                || (operation.action == "set") != operation.text.is_some()
+                || operation
+                    .text
+                    .as_ref()
+                    .is_some_and(|text| text.chars().count() > 10000 || text.contains('\0'))
+            {
+                return Err("Invalid exact global clipboard operation".into());
+            }
+        }
+        DesktopApprovalOperation::Ref(operation) => {
+            for (value, max) in [
+                (&operation.request_id, 200),
+                (&operation.snapshot_id, 100),
+                (&operation.app, 200),
+                (&operation.window_id, 200),
+                (&operation.target_ref, 200),
+            ] {
+                if value.trim().is_empty()
+                    || value.chars().count() > max
+                    || value.chars().any(char::is_control)
+                {
+                    return Err("Invalid exact desktop action target".into());
+                }
+            }
+            if !operation
+                .target_ref
+                .starts_with(&format!("@{}:", operation.snapshot_id))
+            {
+                return Err("Desktop action ref does not belong to its reviewed snapshot".into());
+            }
+            if !matches!(
+                operation.action.as_str(),
+                "click"
+                    | "set-value"
+                    | "clear"
+                    | "type"
+                    | "select"
+                    | "check"
+                    | "uncheck"
+                    | "toggle"
+                    | "expand"
+                    | "collapse"
+                    | "scroll-to"
+                    | "focus"
+                    | "double-click"
+                    | "right-click"
+                    | "press"
+            ) {
+                return Err("Unsupported desktop action approval".into());
+            }
+            let requires_text = matches!(
+                operation.action.as_str(),
+                "set-value" | "type" | "select" | "press"
+            );
+            if requires_text != operation.text.is_some()
+                || operation
+                    .text
+                    .as_ref()
+                    .is_some_and(|text| text.chars().count() > 10000)
+            {
+                return Err("Desktop action text does not match its reviewed operation".into());
+            }
+            if matches!(operation.action.as_str(), "press" | "double-click") && !operation.headed {
+                return Err("This desktop action requires explicit physical input review".into());
+            }
+        }
+    }
+    let canonical =
+        serde_json::to_string(operation).map_err(|_| "Desktop action cannot be reviewed")?;
+    let actual_hash = format!("{:x}", Sha256::digest(canonical.as_bytes()));
+    if actual_hash != input.operation_hash.to_ascii_lowercase() {
+        return Err("Desktop approval hash does not match the exact operation".into());
+    }
+    // Display escaped literal values so newlines/quotes cannot imitate dialog
+    // labels. The complete text is preserved; nothing is silently truncated.
+    let literal = |value: &str| {
+        // Directional formatting is legal input data, but must not visually
+        // reorder the native approval labels or conceal the reviewed payload.
+        serde_json::to_string(value)
+            .unwrap_or_default()
+            .chars()
+            .map(|ch| match ch {
+                '\u{061c}'
+                | '\u{200e}'
+                | '\u{200f}'
+                | '\u{202a}'..='\u{202e}'
+                | '\u{2066}'..='\u{2069}' => format!("\\u{:04x}", ch as u32),
+                _ => ch.to_string(),
+            })
+            .collect::<String>()
+    };
+    let message = match operation {
+      DesktopApprovalOperation::Ref(operation) => format!(
+        "Review this exact desktop action. Approval applies once to this operation only.\n\nHost: {}\nAgent session: {}\nProject: {}\nApplication: {}\nWindow: {}\nSnapshot: {}\nTarget ref: {}\nAction: {}\nInput mode: {}\nRequest: {}\nText (JSON literal): {}\n\nOperation SHA-256: {}",
+        literal(&environment_id), literal(&session_id), literal(&cwd), literal(&operation.app), literal(&operation.window_id), literal(&operation.snapshot_id), literal(&operation.target_ref), literal(&operation.action),
+        if operation.headed { "PHYSICAL — may move the pointer or change focus" } else { "HEADLESS — no physical input grant" },
+        literal(&operation.request_id), operation.text.as_ref().map(|text| literal(text)).unwrap_or_else(|| "(none)".into()), input.operation_hash,
+    ),
+      DesktopApprovalOperation::Launch(operation) => format!(
+        "Review this exact application launch. Approval applies once to this operation only.\n\nHost: {}\nAgent session: {}\nProject: {}\nApplication: {}\nAction: LAUNCH OR ATTACH — headless, no activation, arguments, environment or CDP access\nRequest: {}\n\nOperation SHA-256: {}",
+        literal(&environment_id), literal(&session_id), literal(&cwd), literal(&operation.app), literal(&operation.request_id), input.operation_hash,
+      ),
+      DesktopApprovalOperation::Clipboard(operation) => format!(
+        "Review this exact GLOBAL clipboard operation. Approval applies once to this operation only.\n\nHost: {}\nAgent session: {}\nProject: {}\nTarget: GLOBAL SYSTEM CLIPBOARD — shared by all applications\nAction: {}\nConsequence: {}\nRequest: {}\nText (JSON literal): {}\n\nOperation SHA-256: {}",
+        literal(&environment_id), literal(&session_id), literal(&cwd), literal(&operation.action),
+        match operation.action.as_str() { "get" => "Read up to 10000 plain-text characters and disclose them to this agent conversation. The clipboard may contain sensitive information.", "set" => "Replace the global clipboard with exactly the reviewed plain text.", _ => "Clear the global clipboard, removing its current contents." },
+        literal(&operation.request_id), operation.text.as_ref().map(|text| literal(text)).unwrap_or_else(|| "(none)".into()), input.operation_hash,
+      ),
+    };
+    Ok(DesktopActionApproval {
+        relay_id,
+        deadline,
+        operation_hash: input.operation_hash,
+        message,
+    })
 }
 
 fn task_approval_message(operation: &Value) -> Result<String, String> {
@@ -740,6 +1044,226 @@ pub(crate) fn issue_child_grant(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn desktop_approval_fixture() -> Value {
+        json!({"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","action":"desktop.act.authorize","sessionId":"session-one","cwd":"C:\\project","environmentId":"host-one","deadline":1000,
+          "input":{"operation":{"requestId":"operation-one","snapshotId":"snapshot-one","app":"Editor","windowId":"window-one","ref":"@snapshot-one:field","action":"set-value","text":"Ayşe: \"tam metin\"\nikinci satır","headed":false},
+            "operationHash":"cda2228a143366523aa9ee7b26f5c6fc160dea48fb37689770ae5f6f7efd0682"}})
+    }
+    #[test]
+    fn desktop_approval_shows_exact_context_and_matches_javascript_hash() {
+        // Fixed SHA-256 from Node JSON.stringify, not this Rust serializer.
+        let request = desktop_approval_fixture();
+        let approval = desktop_action_approval(&request, 10).unwrap();
+        for text in [
+            "session-one",
+            "C:\\\\project",
+            "host-one",
+            "Editor",
+            "window-one",
+            "snapshot-one",
+            "@snapshot-one:field",
+            "set-value",
+            "Ayşe: \\\"tam metin\\\"\\nikinci satır",
+            "operation-one",
+            "HEADLESS",
+        ] {
+            assert!(
+                approval.message.contains(text),
+                "Missing displayed field: {text}"
+            );
+        }
+        assert_eq!(
+            approval.result(false),
+            json!({"approved":false,"operationHash":request["input"]["operationHash"]})
+        );
+        assert!(!approval
+            .message
+            .contains("Ayşe: \"tam metin\"\nikinci satır"));
+    }
+    #[test]
+    fn desktop_launch_and_clipboard_approval_match_javascript_hash_without_fabricated_refs() {
+        for (operation, hash, required) in [
+            (
+                json!({"kind":"launch","requestId":"launch-one","app":"Notepad"}),
+                "f13425b74660e9303b9f74aa4957d4fdf0d73d52d781814f7994ad9f108259d4",
+                vec!["Notepad", "LAUNCH OR ATTACH", "headless"],
+            ),
+            (
+                json!({"kind":"clipboard","requestId":"clipboard-one","target":"global-clipboard","action":"set","text":"Ayşe: \"tam metin\"\nikinci satır"}),
+                "606539e22b382156f830663a0aedd7b3e08d7c078a6f472f392dbab940c7b423",
+                vec![
+                    "GLOBAL SYSTEM CLIPBOARD",
+                    "Replace the global clipboard",
+                    "Ayşe: \\\"tam metin\\\"\\nikinci satır",
+                ],
+            ),
+            (
+                json!({"kind":"clipboard","requestId":"clipboard-read","target":"global-clipboard","action":"get"}),
+                "832e8caa64b06b39daf6b52d33a41d724604355672aed7828aa0279098792e41",
+                vec![
+                    "GLOBAL SYSTEM CLIPBOARD",
+                    "disclose them to this agent conversation",
+                    "sensitive information",
+                ],
+            ),
+        ] {
+            let mut request = desktop_approval_fixture();
+            request["input"] = json!({"operation":operation,"operationHash":hash});
+            let approval = desktop_action_approval(&request, 10).unwrap();
+            for value in required {
+                assert!(
+                    approval.message.contains(value),
+                    "Missing displayed consequence: {value}"
+                );
+            }
+            for fake in ["Snapshot:", "Target ref:", "Window:"] {
+                assert!(!approval.message.contains(fake));
+            }
+            assert_eq!(approval.result(false)["approved"], false);
+            let mut changed = request.clone();
+            changed["input"]["operation"]["requestId"] = json!("changed");
+            assert!(desktop_action_approval(&changed, 10).is_err());
+        }
+    }
+    #[test]
+    fn desktop_global_approval_rejects_self_grants_alternate_channels_and_invalid_union_shapes() {
+        let mut request = desktop_approval_fixture();
+        request["input"]["operation"] = json!({"kind":"clipboard","requestId":"clear","target":"global-clipboard","action":"clear"});
+        let canonical: DesktopApprovalOperation =
+            serde_json::from_value(request["input"]["operation"].clone()).unwrap();
+        request["input"]["operationHash"] = json!(format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_string(&canonical).unwrap().as_bytes())
+        ));
+        assert!(desktop_action_approval(&request, 10)
+            .unwrap()
+            .message
+            .contains("removing its current contents"));
+        for (key, value) in [
+            ("approved", json!(true)),
+            ("app", json!("Editor")),
+            ("snapshotId", json!("fake")),
+            ("format", json!("image")),
+            ("out", json!("private.png")),
+            ("text", json!("unexpected")),
+            ("target", json!("per-app")),
+            ("kind", json!("act")),
+            ("action", json!("read-all")),
+        ] {
+            let mut invalid = request.clone();
+            invalid["input"]["operation"][key] = value;
+            assert!(
+                desktop_action_approval(&invalid, 10).is_err(),
+                "Accepted {key}"
+            );
+        }
+        for operation in [
+            json!({"kind":"launch","requestId":"l","app":"-option"}),
+            json!({"kind":"launch","requestId":"l","app":"Editor","args":["--cdp"]}),
+            json!({"kind":"launch","requestId":"l","app":"Editor","activate":true}),
+            json!({"kind":"clipboard","requestId":"s","target":"global-clipboard","action":"set"}),
+            json!({"kind":"clipboard","requestId":"s","target":"global-clipboard","action":"set","text":"NUL\0value"}),
+        ] {
+            let mut invalid = request.clone();
+            invalid["input"]["operation"] = operation;
+            assert!(desktop_action_approval(&invalid, 10).is_err());
+        }
+    }
+    #[test]
+    fn desktop_approval_rejects_forged_booleans_changed_targets_and_expiry() {
+        let request = desktop_approval_fixture();
+        for field in [
+            "app",
+            "windowId",
+            "snapshotId",
+            "ref",
+            "action",
+            "text",
+            "requestId",
+        ] {
+            let mut changed = request.clone();
+            changed["input"]["operation"][field] = json!("changed");
+            assert!(
+                desktop_action_approval(&changed, 10).is_err(),
+                "Accepted changed {field}"
+            );
+        }
+        for field in ["approved", "cwd", "principal", "sessionId"] {
+            let mut changed = request.clone();
+            changed["input"][field] = json!(true);
+            assert!(desktop_action_approval(&changed, 10).is_err());
+            let mut changed = request.clone();
+            changed["input"]["operation"][field] = json!(true);
+            assert!(desktop_action_approval(&changed, 10).is_err());
+        }
+        let mut invalid = request.clone();
+        invalid["input"]["operationHash"] = json!("x".repeat(64));
+        assert!(desktop_action_approval(&invalid, 10).is_err());
+        assert!(desktop_action_approval(&request, 1000).is_err());
+        let mut invalid = request.clone();
+        invalid["sessionId"] = json!("");
+        assert!(desktop_action_approval(&invalid, 10).is_err());
+        let mut invalid = request.clone();
+        invalid["input"]["operation"]["text"] = Value::Null;
+        assert!(desktop_action_approval(&invalid, 10).is_err());
+        let mut invalid = request.clone();
+        invalid["input"]["operation"]["action"] = json!("press");
+        assert!(desktop_action_approval(&invalid, 10)
+            .err()
+            .unwrap()
+            .contains("physical input"));
+    }
+    #[test]
+    fn desktop_approval_denial_checks_authority_before_and_after_native_decision() {
+        use std::cell::Cell;
+        let approval = desktop_action_approval(&desktop_approval_fixture(), 10).unwrap();
+        let shown = Cell::new(false);
+        let denied = desktop_approval_decision(
+            &approval,
+            || Err("revoked".into()),
+            || {
+                shown.set(true);
+                false
+            },
+        );
+        assert!(denied.is_err());
+        assert!(!shown.get());
+        let checks = Cell::new(0);
+        let expired = desktop_approval_decision(
+            &approval,
+            || {
+                checks.set(checks.get() + 1);
+                if checks.get() == 2 {
+                    Err("expired".into())
+                } else {
+                    Ok(())
+                }
+            },
+            || false,
+        );
+        assert!(expired.is_err());
+        assert_eq!(checks.get(), 2);
+        let denied = desktop_approval_decision(&approval, || Ok(()), || false).unwrap();
+        assert_eq!(denied["approved"], false);
+        assert_eq!(
+            denied["operationHash"],
+            desktop_approval_fixture()["input"]["operationHash"]
+        );
+    }
+    #[test]
+    fn desktop_approval_displays_directional_text_as_a_visible_json_escape() {
+        let mut request = desktop_approval_fixture();
+        request["input"]["operation"]["text"] = json!("review \u{202e}exact\u{202c} text");
+        let operation: DesktopApprovalOperation =
+            serde_json::from_value(request["input"]["operation"].clone()).unwrap();
+        request["input"]["operationHash"] = json!(format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_string(&operation).unwrap().as_bytes())
+        ));
+        let approval = desktop_action_approval(&request, 10).unwrap();
+        assert!(approval.message.contains("review \\u202eexact\\u202c text"));
+        assert!(!approval.message.contains('\u{202e}'));
+    }
     #[test]
     fn task_approval_is_exact_and_rejects_unimplemented_actions() {
         let operation = json!({"action":"tasks.transfer", "taskId":"task-1", "title":"Move pending work", "expectedUpdatedAt":42, "targetProjectId":"target", "targetProjectName":"Destination"});

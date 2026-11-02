@@ -33,3 +33,11 @@ Owner quote, 2026-11-01; source: owner chat in the live background refresh sessi
 > daha sakin bir yüz yapabilirdik bu kalsın ama birde sakin ılımlı bir yüz yapalım tam bir robot olmasın ayrı bi tane daha yapalım yani
 
 This added the separate `serene-face` scene (Code visage stays): a halftone face with closed eyes and a soft smile, lit mostly from the front, fading into the dark, with two faint accent seams as the only machine hint (`createSereneFaceScene` and `sereneTone` in `live-background/latentFace.ts`).
+
+## Live scene timing
+
+Owner quote, 2026-11-03; source: owner chat in the live background timing session:
+
+> live background effektleri çok kısa sürede kayboluyor belli bir süre gözüküp kaybolması gerekiyor msela yüzler 10 15 saniye sonra kaybolup yine bir süre sonra belirmesi gerekiyor ama şuanda öyle değil
+
+This set the appear/hold/rest rhythm in `live-background/calmSignal.ts` (`SHOW_SECONDS`, `REST_SECONDS`) for every live scene. Reappearance needs new output from the running turn, and an idle pane stays at rest; both are implementation choices, not owner decisions.

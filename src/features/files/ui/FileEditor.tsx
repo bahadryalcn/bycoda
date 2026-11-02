@@ -937,6 +937,33 @@ export function FileEditor({
     [cwd, path, documentId, captureDraft, editorClosure],
   );
 
+  // Another editor on this file, showing the same text, wrote `content`: adopt
+  // it as the disk baseline as this editor's own save would, so that write is
+  // not mistaken for a change on disk.
+  const peerSaved = useCallback(
+    (content: string) => {
+      const latest = latestDocumentRef.current;
+      const serializedContent = restoreLineEnding(content, eolRef.current);
+      loadGeneration.current += 1;
+      recoveryReviewRef.current = false;
+      diskTextRef.current = serializedContent;
+      setDiskVerificationError(null);
+      draftBaselineRef.current = serializedContent;
+      pendingDiskRef.current = false;
+      setDiskConflict(false);
+      setLoadState((current) =>
+        current.status === "ready" ? { status: "ready", content } : current,
+      );
+      const draftHandle = draftHandleRef.current;
+      const capture = captureDraft(content);
+      if (capture && draftHandle) void draftHandle.reportSaved(capture).catch(() => {});
+      // Text typed after that save is still a draft here.
+      if (latest !== null && latest.toString() !== content) captureDraft(latest);
+      setSaveState({ status: "saved" });
+    },
+    [captureDraft],
+  );
+
   const stageGit = useCallback(
     async (contents: string) => {
       const relative = displayPath(path, cwd);
@@ -1204,6 +1231,7 @@ export function FileEditor({
     onDirtyChange: dirtyChange,
     onErrorCountChange: errorCountChange,
     onSave: save,
+    onPeerSaved: peerSaved,
     saveRequestRef,
     onStageGit: showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined,
     onDocumentChange: captureDraft,

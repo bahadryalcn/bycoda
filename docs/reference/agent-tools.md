@@ -72,6 +72,32 @@ existing signature-bound receipts. Missing IDs retain legacy UUID behavior.
 An ID does not grant send authority. Unknown external delivery must be reconciled;
 it is never an instruction to resend with a fresh ID.
 
+## Optional desktop control
+
+`desktop.status` reports readiness and the owner's allowlisted app names.
+`desktop.windows.list`, `desktop.snapshot`, `desktop.find` and `desktop.screenshot`
+observe only an allowed app; window-specific reads bind its actual process and
+window. Search returns at most 50 matches. `desktop.wait` observes a current
+same-conversation ref for at most 10 seconds. Screenshot bytes are MCP image
+content, with only metadata duplicated into text.
+
+`desktop.act` and its `desktop.click`, `desktop.setValue` and `desktop.press`
+entry points share snapshot ownership, exact-operation approvals and durable
+request identities. Physical shortcuts retain their separate grant. A stopped,
+locked, revoked or stale target cannot be bypassed by a model argument.
+`desktop.launch` accepts only an allowlisted app, without arbitrary command-line
+arguments, environment, working directory, activation or debugging options.
+`desktop.clipboard` supports bounded plain-text get/set/clear; every clipboard
+operation requires actual focused native owner approval and current presence.
+An owner's ordinary RPC identity alone cannot supply that approval.
+
+Clipboard contents never enter durable receipts or audit. Retrying a clipboard
+read returns its receipt, without cached text. Unknown effects must be inspected
+before another operation. Stop invalidates queued observations/input while keeping
+already-issued operation outcomes available as metadata. The helper's temporary
+accessibility-ref cache belongs to one Host instance and is removed after its
+Stop/close settles; a crash may leave that private temporary cache for recovery.
+
 ## Verification boundaries
 
 Registry tests check coverage, bounded continuation, scope preservation and metadata.

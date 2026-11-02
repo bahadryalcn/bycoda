@@ -1,5 +1,50 @@
 import { describe, expect, it } from "vitest";
-import { CLOSED_SIGNAL, createLiveSignalDriver } from "./calmSignal";
+import {
+  CLOSED_SIGNAL,
+  FADE_SECONDS,
+  REST_SECONDS,
+  SHOW_SECONDS,
+  createLiveSignalDriver,
+} from "./calmSignal";
+import type { LiveSignal } from "./types";
+
+const FRAME = 1 / 30;
+type Driver = ReturnType<typeof createLiveSignalDriver>;
+
+/** Runs `seconds` of 30 fps frames; `lengths` gives text and activity per frame time. */
+function play(
+  driver: Driver,
+  from: number,
+  seconds: number,
+  lengths: (time: number) => readonly [number, number],
+): LiveSignal[] {
+  const frames: LiveSignal[] = [];
+  const count = Math.round(seconds / FRAME);
+  for (let frame = 0; frame < count; frame++) {
+    const time = from + frame * FRAME;
+    const [text, activity] = lengths(time);
+    frames.push(driver.update(time, FRAME, text, activity));
+  }
+  return frames;
+}
+
+/** Lengths of the runs of visible and hidden frames, in seconds, starting with a visible run. */
+function runs(frames: LiveSignal[]): { shown: number[]; hidden: number[] } {
+  const shown: number[] = [];
+  const hidden: number[] = [];
+  let visible = frames[0]!.presence > 0;
+  let length = 0;
+  for (const { presence } of frames) {
+    if (presence > 0 === visible) {
+      length++;
+      continue;
+    }
+    (visible ? shown : hidden).push(length * FRAME);
+    visible = presence > 0;
+    length = 1;
+  }
+  return { shown, hidden };
+}
 
 describe("calm activity envelope", () => {
   it("responds equally to slow text, large bursts and tool-only activity", () => {
@@ -14,24 +59,100 @@ describe("calm activity envelope", () => {
     }
   });
 
-  it("eases without jumps and fully rests before the two-second paint cutoff", () => {
+  it("eases in without jumps and holds after a short reply instead of vanishing", () => {
     const driver = createLiveSignalDriver();
     let previous = 0;
-    for (let frame = 0; frame < 90; frame++) {
-      const { presence } = driver.update(frame / 30, 1 / 30, 1);
+    for (const { presence } of play(driver, 0, 1, (t) => [Math.floor(t * 40), 0])) {
       expect(presence).toBeGreaterThanOrEqual(previous);
       expect(presence - previous).toBeLessThan(0.12);
       previous = presence;
     }
     expect(previous).toBe(1);
-    let resting = CLOSED_SIGNAL;
-    for (let frame = 0; frame < 57; frame++) {
-      resting = driver.update(3 + frame / 30, 1 / 30, -1);
-      expect(resting.presence).toBeLessThanOrEqual(previous);
-      expect(previous - resting.presence).toBeLessThan(0.05);
-      previous = resting.presence;
+    // The reply ends after one second; the scene stays for the rest of its show window.
+    const held = play(driver, 1, SHOW_SECONDS[0] - 1.1, () => [-1, -1]);
+    expect(held.every(({ presence }) => presence === 1)).toBe(true);
+    // Then it fades out smoothly and rests.
+    const fading = play(
+      driver,
+      SHOW_SECONDS[0] - 0.1,
+      SHOW_SECONDS[1] - SHOW_SECONDS[0] + 2,
+      () => [-1, -1],
+    );
+    for (const { presence } of fading) {
+      expect(presence).toBeLessThanOrEqual(previous);
+      expect(previous - presence).toBeLessThan(0.05);
+      previous = presence;
     }
-    expect(resting).toEqual(CLOSED_SIGNAL);
+    expect(fading.at(-1)).toEqual(CLOSED_SIGNAL);
+    expect(driver.awake()).toBe(false);
+  });
+
+  it("does not return while the pane is idle", () => {
+    const driver = createLiveSignalDriver();
+    play(driver, 0, 1, (t) => [Math.floor(t * 40), Math.floor(t * 40)]);
+    const idle = play(driver, 1, 60, () => [-1, -1]);
+    const last = idle.findLastIndex(({ presence }) => presence > 0);
+    expect(last * FRAME).toBeLessThan(SHOW_SECONDS[1] + FADE_SECONDS);
+    expect(idle.slice(last + 1).every((signal) => signal.presence === 0)).toBe(true);
+  });
+
+  it("alternates between showing and resting through a long reply", () => {
+    const driver = createLiveSignalDriver();
+    const frames = play(driver, 0, 120, (t) => [Math.floor(t * 40), Math.floor(t * 60)]);
+    const { shown, hidden } = runs(frames);
+    expect(shown.length).toBeGreaterThanOrEqual(3);
+    expect(hidden.length).toBeGreaterThanOrEqual(3);
+    for (const length of shown) {
+      expect(length).toBeGreaterThanOrEqual(SHOW_SECONDS[0]);
+      expect(length).toBeLessThanOrEqual(SHOW_SECONDS[1] + FADE_SECONDS + 0.1);
+    }
+    for (const length of hidden) {
+      expect(length).toBeGreaterThanOrEqual(REST_SECONDS[0] - 0.1);
+      expect(length).toBeLessThanOrEqual(REST_SECONDS[1] + 0.1);
+    }
+    // Lengths vary between appearances.
+    expect(new Set(shown.map((length) => Math.round(length))).size).toBeGreaterThan(1);
+  });
+
+  it("waits for new output after its rest while a tool runs silently", () => {
+    const driver = createLiveSignalDriver();
+    play(driver, 0, 1, (t) => [Math.floor(t * 40), 40]);
+    // The tool runs for a minute without output: the scene shows once, then stays hidden.
+    const waiting = play(driver, 1, 60, () => [-1, 80]);
+    expect(waiting.at(-1)).toEqual(CLOSED_SIGNAL);
+    expect(runs(waiting).shown).toHaveLength(1);
+    // Output resumes after the rest: the scene returns within half a second.
+    const resumed = play(driver, 61, 0.5, (t) => [Math.floor((t - 61) * 40) + 1, 80]);
+    expect(resumed.at(-1)!.presence).toBe(1);
+  });
+
+  it("lets a new turn appear at once, even during the previous turn's rest", () => {
+    const driver = createLiveSignalDriver();
+    play(driver, 0, 1, (t) => [Math.floor(t * 40), Math.floor(t * 40) + 500]);
+    play(driver, 1, SHOW_SECONDS[1] + FADE_SECONDS + 0.5, () => [-1, -1]);
+    expect(driver.awake()).toBe(false);
+    const next = play(driver, 20, 0.5, () => [-1, 0]);
+    expect(next.at(-1)!.presence).toBe(1);
+  });
+
+  it("stops speaking soon after output pauses while the scene stays", () => {
+    const driver = createLiveSignalDriver();
+    const talking = play(driver, 0, 2, (t) => [Math.floor(t * 40), Math.floor(t * 40)]);
+    expect(talking.at(-1)!.speaking).toBeGreaterThan(0.9);
+    const paused = play(driver, 2, 2, () => [80, 80]);
+    expect(paused.at(-1)!.presence).toBe(1);
+    expect(paused.at(-1)!.speaking).toBeLessThan(0.05);
+  });
+
+  it("follows the wall clock across paused frames", () => {
+    const driver = createLiveSignalDriver();
+    for (let frame = 0; frame < 30; frame++)
+      driver.update(0, FRAME, frame, frame, 100 + frame * FRAME);
+    expect(driver.awake()).toBe(true);
+    // The canvas slept for twenty seconds; the show window has passed.
+    driver.update(0, FRAME, 29, 29, 121);
+    for (let frame = 0; frame < 45; frame++) driver.update(0, FRAME, 29, 29, 121 + frame * FRAME);
+    expect(driver.awake()).toBe(false);
   });
 
   it("does not jump after a suspended window or invalid timing", () => {
@@ -50,7 +171,7 @@ describe("calm activity envelope", () => {
     expect(presence).toBe(1);
   });
 
-  it("responds to new text while a busy but stalled turn settles", () => {
+  it("responds to new text while a busy but stalled turn holds", () => {
     const streaming = createLiveSignalDriver();
     const stalled = createLiveSignalDriver();
     let moving = CLOSED_SIGNAL;
@@ -75,8 +196,7 @@ describe("calm activity envelope", () => {
       previous = energy;
     }
     expect(previous).toBeGreaterThan(0.5);
-    let resting = CLOSED_SIGNAL;
-    for (let frame = 0; frame < 60; frame++) resting = driver.update(2 + frame / 30, 1 / 30, -1);
-    expect(resting).toEqual(CLOSED_SIGNAL);
+    const resting = play(driver, 2, SHOW_SECONDS[1] + FADE_SECONDS, () => [-1, -1]);
+    expect(resting.at(-1)).toEqual(CLOSED_SIGNAL);
   });
 });

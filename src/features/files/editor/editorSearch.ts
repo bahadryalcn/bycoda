@@ -682,7 +682,7 @@ const findTheme = EditorView.theme(
       maxWidth: "none",
       flexShrink: "0",
       zIndex: "40",
-      backgroundColor: "var(--ui-surface)",
+      backgroundColor: "var(--color-background-base)",
       border: "0",
       borderBottom: "1px solid var(--color-stroke)",
       pointerEvents: "auto",

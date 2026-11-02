@@ -590,6 +590,43 @@ describe("Conversation Tools boundary", () => {
       ),
     ).rejects.toThrow("[conversation credential redacted]");
   });
+  it("returns an allowed desktop window screenshot as actual MCP image content with content-free metadata", async () => {
+    const input = new PassThrough(),
+      output = new PassThrough();
+    let raw = "";
+    output.on("data", (chunk) => {
+      raw += String(chunk);
+    });
+    const run = runConversationMcp(input, output, async () => ({
+      screenshot: {
+        app: "Editor",
+        windowId: "one",
+        mimeType: "image/png",
+        data: "aGVsbG8=",
+        width: 1,
+        height: 1,
+      },
+    }));
+    input.end(
+      JSON.stringify({
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "conversation_desktop_screenshot",
+          arguments: { app: "Editor", windowId: "one" },
+        },
+      }) + "\n",
+    );
+    await run;
+    const result = JSON.parse(raw.trim()).result;
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: JSON.stringify({
+        screenshot: { app: "Editor", windowId: "one", mimeType: "image/png", width: 1, height: 1 },
+      }),
+    });
+    expect(result.content[1]).toEqual({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
+  });
   it("returns screenshots as MCP image content and reports unsupported tools", async () => {
     const input = new PassThrough();
     const output = new PassThrough();

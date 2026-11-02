@@ -5,6 +5,7 @@ import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { useContext, useRef, useState } from "react";
 import { SocialBusyContext, SocialPanelActiveContext } from "./socialContext";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { SocialPrograms } from "./SocialPrograms";
@@ -118,8 +119,11 @@ export function Campaigns({
       setComposerOpen((current) => current + 1);
     } else if (selected && !selectedBlocked) startEdit(selected);
   };
-  const projectNames = (ids: string[]) =>
-    ids.map((id) => projects.find((project) => project.id === id)?.name || t("Project")).join(", ");
+  const projectItems = (ids: string[]) =>
+    ids.map((id, index) => ({
+      id: `${index}:${id}`,
+      label: projects.find((project) => project.id === id)?.name || t("Project"),
+    }));
   const parkedCampaign = parkedEdit
     ? snapshot.campaigns.find((campaign) => campaign.id === parkedEdit.id)
     : undefined;
@@ -200,7 +204,12 @@ export function Campaigns({
               </Badge>
               {parkedCampaign ? (
                 <>
-                  <span className="social-muted">{projectNames(parkedCampaign.projectIds)}</span>
+                  <BadgeList
+                    label={t("Projects")}
+                    size="xs"
+                    className="min-w-0 flex-[1_1_8rem]"
+                    items={projectItems(parkedCampaign.projectIds)}
+                  />
                   <StatusBadge
                     status={campaignState(parkedCampaign, snapshot.jobs, snapshot.campaignStates)}
                     label={campaignStateLabel(parkedCampaign, snapshot)}

@@ -7,6 +7,14 @@ preview, disabled-skill restrictions and uncertain Social send reconciliation.
 Their paired controls distinguish valid but inappropriate tool choices from
 invalid input. The baseline remains synthetic; passing is not a live-model result.
 
+Assistant rule cases import the production `voiceInstructions`,
+`voiceOwnerProfileInstructions` and `captureVoiceOwnerRule` functions. Sanitized
+fruit/breakfast exclusions, quoted worker contradictions, manual Finish-turn
+pauses and approval/rule-promotion escalation have paired synthetic positive and
+negative responses. The graders check bounded format and specified constraints;
+they do not certify natural language meaning, acoustic interruption or a model's
+compliance. Prompt/source hashes in the report identify the code actually read.
+
 ```sh
 pnpm exec vitest run --config evals/vitest.config.ts
 pnpm exec tsc-rs --noEmit -p evals/tsconfig.json

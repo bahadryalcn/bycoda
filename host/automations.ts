@@ -62,6 +62,7 @@ export class HostAutomations {
     // Request authority follows manual preparation; scheduled work has no
     // creator grant. Keep the actual engine admission guarded after every wait.
     this.engine = {
+      withMessageAuthor:engine.withMessageAuthor?.bind(engine),
       command: async (...args) => {
         await store.db.checkAuthorization();
         return engine.command(...args);
@@ -121,6 +122,8 @@ export class HostAutomations {
       return work();
     });
   }
+  /** Internal composition check; a quick creation receipt shares this exact store. */
+  usesStore(store:HostStore):boolean{return this.store===store;}
   /** Newest first. */
   async runs(automationId: string): Promise<HostAutomationRun[]> {
     await this.ready;
@@ -386,9 +389,11 @@ export class HostAutomations {
             return receipt;
           },
           updateSession: (...args) => this.engine.updateSession(...args),
+          withMessageAuthor:this.engine.withMessageAuthor?.bind(this.engine),
         },
         {
           projectId: automation.projectId,
+          author:{kind:"automation",id:automation.id,name:automation.name,reason:"kickoff"},
           harness: automation.harness,
           model: automation.model,
           modelSettings: automation.modelSettings,

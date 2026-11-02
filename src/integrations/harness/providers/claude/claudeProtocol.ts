@@ -6,7 +6,10 @@ import type {
   TurnMetrics,
 } from "../../../../features/sessions/model/session";
 import type { TurnUsage } from "../../../../features/sessions/model/sessionUsage";
-import { attachmentPathText, promptText } from "../../../../features/sessions/model/attachmentPrompt";
+import {
+  attachmentPathText,
+  promptText,
+} from "../../../../features/sessions/model/attachmentPrompt";
 import { parseResetTimestamp } from "../../../../features/providers/model/rateLimits";
 import {
   isTaskListToolName,
@@ -243,6 +246,8 @@ export function buildClaudeSpawnArgs(input: {
   includePartialMessages?: boolean;
   maxTurns?: number;
   isolated?: boolean;
+  /** Retain only the provider transcript while preserving isolated hooks/MCP policy. */
+  persistSession?: boolean;
   /** Folders beyond the cwd the session may read and edit. */
   additionalDirs?: readonly string[];
   disabledSkills?: readonly string[];
@@ -278,7 +283,7 @@ export function buildClaudeSpawnArgs(input: {
     ...(input.isolated ? { disableAllHooks: true } : {}),
   };
   if (input.isolated) {
-    args.push("--no-session-persistence");
+    if (!input.persistSession) args.push("--no-session-persistence");
     args.push("--strict-mcp-config");
     args.push("--mcp-config", JSON.stringify({ mcpServers: {} }));
     args.push("--settings", JSON.stringify(settings));
@@ -505,8 +510,11 @@ export function compactionPhaseFromSystem(
 /** Claude can report an API failure as an assistant row before a success result. */
 export function errorFromAssistant(rec: Record<string, unknown>): string | undefined {
   if (rec.type !== "assistant" || isSubagentMessage(rec)) return undefined;
-  if (rec.isApiErrorMessage !== true && (typeof rec.error !== "string" || !rec.error.trim())) return undefined;
-  return assistantTextBlocks(rec).join("").trim() || String(rec.error || "Claude API request failed.");
+  if (rec.isApiErrorMessage !== true && (typeof rec.error !== "string" || !rec.error.trim()))
+    return undefined;
+  return (
+    assistantTextBlocks(rec).join("").trim() || String(rec.error || "Claude API request failed.")
+  );
 }
 
 export function turnStatusFromResult(rec: Record<string, unknown>): {

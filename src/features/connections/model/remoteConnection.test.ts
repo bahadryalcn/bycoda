@@ -18,6 +18,16 @@ const denied =
 const timedOut = "SSH timed out connecting to the machine.";
 
 describe("connectionOutcome", () => {
+  it.each(["RPC_WS_BLOCKED", "RPC_WS_TLS", "RPC_WS_SCHEMA"])("holds sending for %s until explicit recovery", (code) => {
+    const error = Object.assign(new Error(`${code}: Host admission failed`), { code });
+    const state = reduceConnection({ status: "connected", lastSeen: 10 }, { type: "failure", error, at: 20 });
+    expect(state).toMatchObject({ status: "connection-blocked", lastSeen: 10 });
+    expect(blocksSending(state.status)).toBe(true);
+    expect(shouldAutoRetry(state.status, undefined, 30)).toBe(false);
+    expect(reduceConnection(state, { type: "ok", at: 30 })).toBe(state);
+    expect(reduceConnection(state, { type: "failure", error: down, at: 40 })).toBe(state);
+    expect(reduceConnection(state, { type: "recovered", at: 50 })).toEqual({ status: "connected", lastSeen: 50 });
+  });
   it("tells a silent machine from one that needs a sign-in", () => {
     expect(connectionOutcome(down).status).toBe("unreachable");
     expect(

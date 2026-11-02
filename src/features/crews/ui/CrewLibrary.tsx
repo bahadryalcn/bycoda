@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
@@ -134,11 +135,14 @@ export function CrewLibrary({
                     {/* Identity is data, not help text: it stays visible in the row. */}
                     <div className="flex min-w-0 items-center gap-1.5">
                       <span className="settings-collection-title min-w-0">{agent.name}</span>
-                      {agent.groups?.map((name) => (
-                        <Badge key={name} size="sm" className="max-w-32 shrink-0 truncate">
-                          {name}
-                        </Badge>
-                      ))}
+                      {agent.groups?.length ? (
+                        <div className="max-w-[60%] min-w-0 shrink-0">
+                          <BadgeList
+                            label={t("Groups")}
+                            items={agent.groups.map((name) => ({ id: name, label: name }))}
+                          />
+                        </div>
+                      ) : null}
                     </div>
                     <CrewMemberMeta agent={agent} catalog={data.catalog} />
                   </div>

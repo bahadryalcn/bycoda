@@ -8,6 +8,7 @@ import {
   assertSessionGrantScope,
   SessionAuthorityUnavailable,
   type SessionGrantScope,
+  assertAssistantThreadScope,assertAssistantThreadGrantScope,type AssistantThreadAuthorityResolver,type AssistantThreadGrantScope,type AssistantThreadPrincipal,
 } from "./session-authority";
 
 export const RUNTIME_LOG_TOOLS = ["read", "sources"] as const;
@@ -17,8 +18,10 @@ export type RuntimeLogPrincipal = {
   projectId: string;
   sessionId: string;
   provider: string;
+  assistantThreadId?:string;
 };
-type Grant = { principal: RuntimeLogPrincipal; expiresAt: number; deviceHash?: string };
+export type RuntimeLogSubjectPrincipal = RuntimeLogPrincipal | AssistantThreadPrincipal;
+type Grant = { principal: RuntimeLogSubjectPrincipal; expiresAt: number; deviceHash?: string };
 const digest = (token: string) => createHash("sha256").update(token).digest("hex");
 
 /** Separate read-only grants preserve Social Media authorization and never follow
@@ -31,6 +34,7 @@ export class RuntimeLogAccess {
       "store" | "prepareSessionIdentity" | "sessionAuthority"
     >,
     private readonly now = Date.now,
+    private readonly assistantThread?:AssistantThreadAuthorityResolver,
   ) {}
 
   get environmentId(): string {
@@ -61,6 +65,7 @@ export class RuntimeLogAccess {
     sessionId: string,
     deviceHash?: string,
     expectedScope?: unknown,
+    assistantThreadId?:string,
   ): Promise<Awaited<{ token: string; expiresAt: number; scope: SessionGrantScope }>> {
     await this.identity.store.ready;
     if (!sessionId || sessionId.length > 300)
@@ -77,6 +82,7 @@ export class RuntimeLogAccess {
       )
         throw new Error("Device revoked.");
       const session = await this.identity.sessionAuthority(sessionId);
+      if(assistantThreadId)await assertAssistantThreadScope(this.assistantThread,assistantThreadId,session.projectId);
       if (session.projectId !== initial.projectId || session.provider !== initial.provider)
         throw new SessionAuthorityUnavailable();
       const scope: SessionGrantScope = {
@@ -101,6 +107,7 @@ export class RuntimeLogAccess {
           sessionId,
           projectId: session.projectId,
           provider: session.provider,
+          ...(assistantThreadId?{assistantThreadId}:{}),
         },
         expiresAt,
         deviceHash,
@@ -110,6 +117,22 @@ export class RuntimeLogAccess {
         this.grants.set(digest(token), grant);
       });
       return { token, expiresAt, scope };
+    });
+  }
+  async issueThreadGrant(threadId:string,projectId:string,deviceHash?:string,expectedScope?:unknown):Promise<{token:string;expiresAt:number;scope:AssistantThreadGrantScope}> {
+    await this.identity.store.ready;
+    await assertAssistantThreadScope(this.assistantThread,threadId,projectId);
+    return this.identity.store.db.scope(async()=>{
+      await this.identity.store.project(projectId);
+      if(deviceHash&&!(await this.identity.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(deviceHash)))throw new Error("Device revoked.");
+      await assertAssistantThreadScope(this.assistantThread,threadId,projectId);
+      const scope:AssistantThreadGrantScope={kind:"assistant-thread",threadId,projectId,environmentId:this.environmentId};assertAssistantThreadGrantScope(expectedScope,scope);
+      for(const [key,grant] of this.grants)if(grant.expiresAt<=this.now())this.grants.delete(key);
+      if(this.grants.size>=4096)throw new Error("Runtime log grant capacity reached.");
+      const token=randomBytes(32).toString("base64url");const expiresAt=this.now()+5*60_000;
+      const grant:Grant={principal:{kind:"assistant-thread",threadId,projectId,provider:"assistant"},expiresAt,deviceHash};
+      this.identity.store.afterCommit(()=>{this.grants.set(digest(token),grant);});
+      return {token,expiresAt,scope};
     });
   }
 
@@ -129,7 +152,7 @@ export class RuntimeLogAccess {
       check,
       prepare: async () => {
         const grant = this.grants.get(digest(token));
-        if (grant && grant.expiresAt > this.now()) {
+        if (grant && grant.expiresAt > this.now() && grant.principal.kind === "session") {
           try {
             await this.identity.prepareSessionIdentity(grant.principal.sessionId);
           } catch {
@@ -141,13 +164,13 @@ export class RuntimeLogAccess {
     };
   }
 
-  async principalForToken(token: string): Promise<Awaited<RuntimeLogPrincipal | undefined>> {
+  async principalForToken(token: string): Promise<RuntimeLogSubjectPrincipal | undefined> {
     const key = digest(token);
     const grant = this.grants.get(key);
     // A pure miss cannot grant authority and must not join the global SQL FIFO.
     if (!grant || grant.expiresAt <= this.now()) return undefined;
     await this.identity.store.ready;
-    if (!this.identity.store.db.ownsScope) {
+    if (!this.identity.store.db.ownsScope && grant.principal.kind === "session") {
       try {
         await this.identity.prepareSessionIdentity(grant.principal.sessionId);
       } catch {
@@ -166,6 +189,11 @@ export class RuntimeLogAccess {
         )
           throw new Error("Device revoked.");
         await this.identity.store.project(grant.principal.projectId);
+        if(grant.principal.kind === "assistant-thread"){
+          await assertAssistantThreadScope(this.assistantThread,grant.principal.threadId,grant.principal.projectId);
+          return {...grant.principal};
+        }
+        if(grant.principal.assistantThreadId)await assertAssistantThreadScope(this.assistantThread,grant.principal.assistantThreadId,grant.principal.projectId);
         const current = await this.identity.sessionAuthority(grant.principal.sessionId);
         if (
           grant.expiresAt <= this.now() ||
@@ -288,12 +316,12 @@ function validateInput(action: string, input: Record<string, unknown>): RuntimeL
 export function runtimeLogToolQuery(
   action: string,
   input: Record<string, unknown>,
-  principal: RuntimeLogPrincipal,
+  principal: RuntimeLogSubjectPrincipal,
 ): RuntimeLogQuery {
   if (
-    principal.kind !== "session" ||
+    !["session","assistant-thread"].includes(principal.kind) ||
     !principal.projectId ||
-    !principal.sessionId ||
+    (principal.kind === "session" ? !principal.sessionId : !principal.threadId) ||
     !principal.provider
   )
     throw new Error("Verified session identity required.");

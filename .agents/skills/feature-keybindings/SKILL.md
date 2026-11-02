@@ -9,12 +9,13 @@ All code paths below are repository-relative; linked skill resources are relativ
 
 ## When to use
 
-Use for Settings Keybindings, shortcut defaults/overrides, app dispatch and macOS Quick composer global shortcuts. Shared focus/filter presentation follows shared UI guidance; this card does not own every feature's filter model.
+Use for Settings Keybindings, shortcut defaults/overrides, app dispatch, emergency computer Stop and macOS Quick composer global shortcuts. Shared focus/filter presentation follows shared UI guidance; this card does not own every feature's filter model.
 
 ## Start here
 
 - `src/features/settings/ui/ShortcutSettings.tsx` and `src/shared/ui/ShortcutRecorder.tsx` own editing/recording.
 - `src/features/settings/model/settings.ts`, `appShortcuts.ts` and `useKeybindingShortcut.ts` own defaults, resolution and subscriptions.
+- Emergency Stop shares the override store through `desktopStopKeybinding.ts`; `src-tauri/src/desktop_shortcut.rs` owns OS registration and captured local Host Stop.
 - Read [surfaces](references/surfaces.md) for runtime/native dispatch, storage and targeted checks.
 
 ## Preserve

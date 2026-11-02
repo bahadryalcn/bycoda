@@ -677,16 +677,16 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
 
   if (!liveWorkspace && !quitting) bootingResumed = workspace;
   if (workspace) {
+    // Recovery is for work the app closed in the middle of, not for every open chat.
+    // Remote chats keep running on their Host, so they enter only when the in-flight
+    // list names them. A still-loading placeholder is kept when its id was in flight.
     const recoverable = workspace.sessions.filter(
       (session) =>
+        interrupted.has(session.id) &&
         !session.inboxAsk &&
         !session.orchestrationLeadId &&
         // Drafts live in their own store and stay with the tab, so they do not keep it here.
-        !isUnsentRemoteChat(session, remoteShellState(session, { hasDraft: false })) &&
-        (session.cwd.startsWith("remote://") ||
-          session.historyLoading ||
-          session.blocks.some((block) => block.role === "user") ||
-          (session.rewindHistory?.length ?? 0) > 0),
+        !isUnsentRemoteChat(session, remoteShellState(session, { hasDraft: false })),
     );
     if (recoverable.length) {
       setSessionRecovery(

@@ -543,7 +543,7 @@ function InboxComment({
 
   if (nested) return <article>{inner}</article>;
   return (
-    <Surface as="article" variant="raised" padding="none" className="overflow-hidden">
+    <Surface as="article" variant="outline" padding="none" className="overflow-hidden">
       {inner}
     </Surface>
   );

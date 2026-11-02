@@ -434,7 +434,7 @@ html.theme-light .project-sigil {
   background: var(--ui-text-secondary);
 }
 .workspace-tab-dot[data-tone="working"] {
-  background: var(--color-accent);
+  background: var(--color-active);
 }
 .workspace-tab-stats {
   display: none;

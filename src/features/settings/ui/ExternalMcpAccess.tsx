@@ -1,15 +1,16 @@
 import { SettingsFeedback } from "./settingsControls";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
 import { CircleHelp, RefreshCw, ListFilter, RotateCcw } from "../../../shared/ui/icons";
 import { copyText } from "../../../platform/tauri/clipboard";
@@ -114,6 +115,7 @@ function CreateToken({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [uncertain, setUncertain] = useState(false);
+  const formId = useId();
   const pending = useRef(false);
   const alive = useRef(true);
   const nameField = useRef<HTMLInputElement>(null);
@@ -184,6 +186,35 @@ function CreateToken({
         }
       }}
       size="sm"
+      footer={
+        secret ? (
+          <ModalActions start={<CopyButton value={secret} label={t("Copy token")} />}>
+            <Button
+              onClick={() => {
+                setSecret(null);
+                onClose();
+              }}
+            >
+              {t("Done")}
+            </Button>
+          </ModalActions>
+        ) : (
+          <ModalActions>
+            <Button disabled={busy} onClick={onClose}>
+              {t("Cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              type="submit"
+              form={formId}
+              loading={busy}
+              disabled={uncertain}
+            >
+              {t("Create token")}
+            </Button>
+          </ModalActions>
+        )
+      }
     >
       {secret ? (
         <div className={styles.stack}>
@@ -196,20 +227,14 @@ function CreateToken({
             autoComplete="off"
             spellCheck={false}
           />
-          <div className={styles.actions}>
-            <CopyButton value={secret} label={t("Copy token")} />
-            <Button
-              onClick={() => {
-                setSecret(null);
-                onClose();
-              }}
-            >
-              {t("Done")}
-            </Button>
-          </div>
         </div>
       ) : (
-        <form onSubmit={(event) => void submit(event)} className={styles.stack} aria-busy={busy}>
+        <form
+          id={formId}
+          onSubmit={(event) => void submit(event)}
+          className={styles.stack}
+          aria-busy={busy}
+        >
           <TextField
             ref={nameField}
             label={t("Token name")}
@@ -262,14 +287,6 @@ function CreateToken({
             onChange={(e) => setDays(e.target.value)}
           />
           {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
-          <div className={styles.actions}>
-            <Button disabled={busy} onClick={onClose}>
-              {t("Cancel")}
-            </Button>
-            <Button variant="primary" type="submit" loading={busy} disabled={uncertain}>
-              {t("Create token")}
-            </Button>
-          </div>
         </form>
       )}
     </Modal>
@@ -474,14 +491,17 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
               </span>
               <section>
                 <h3>{t("Scopes")}</h3>
-                <span className={styles.metadata}>
-                  {Object.entries(grant.scopes)
-                    .map(
-                      ([group, modes]) =>
-                        `${group}: ${modes.map((mode) => (mode === "read" ? t("Read") : t("Write"))).join(", ")}`,
-                    )
-                    .join(" · ")}
-                </span>
+                {/* The grant list is a grid of auto tracks; a zero base width keeps the list's own
+                    full-row measuring copy from widening the track. */}
+                <div className={`${styles.metadata} w-0 min-w-full`}>
+                  <BadgeList
+                    label={t("Scopes")}
+                    items={Object.entries(grant.scopes).map(([group, modes]) => ({
+                      id: group,
+                      label: `${group}: ${modes.map((mode) => (mode === "read" ? t("Read") : t("Write"))).join(", ")}`,
+                    }))}
+                  />
+                </div>
               </section>
             </div>
             {grant.revokedAt === undefined && (

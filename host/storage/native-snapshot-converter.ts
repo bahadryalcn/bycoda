@@ -47,6 +47,7 @@ const rewind = z.strictObject({
 });
 
 const NativeSessionRecordSchema = z.strictObject({
+  managedBy:z.union([z.strictObject({assistant:z.literal(true),jobId:IdentifierSchema,managedAt:SafeCounterSchema}),z.strictObject({assistant:z.literal(true),supervisionId:IdentifierSchema,managedAt:SafeCounterSchema})]).optional(),
   transcriptRevision: SafeCounterSchema.optional(),
   orchestrationLeadId: text.optional(),
   id: IdentifierSchema,
@@ -449,11 +450,12 @@ function validateRows(source: NativeSource): SqlRow {
     "Native model settings disagree",
   );
   for (const [property, column] of [
+    ["managedBy", "assistant_management_json"],
     ["linkedWorkItem", "linked_work_item_json"],
     ["rewindHistory", "rewind_history_json"],
   ] as const) {
     matching(
-      session[column] === null ? undefined : embedded(session[column]),
+      session[column] == null ? undefined : embedded(session[column]),
       source.session[property],
       "Retained feature metadata disagrees",
     );

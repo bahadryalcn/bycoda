@@ -63,9 +63,16 @@ export type TextPromptInput = {
   /** Codex defaults to unsaved threads; false allows resumable side questions. */
   ephemeral?: boolean;
   threadId?: string;
-  onThreadId?: (threadId: string) => void;
+  onThreadId?: (threadId: string) => void | Promise<void>;
+  /** Internal isolated-thread maintenance; never a user/project session command. */
+  compactBefore?:boolean;
+  onCompacted?:(receipt:{threadId:string})=>Promise<void>;
   intent?: TurnIntent;
   prompt: string;
+  /** Internal isolated utility allowance; adapters must not invent unsupported provider fields. */
+  maxOutputTokens?: number;
+  /** Local bound on received assistant/reasoning text, not provider tokens or charges. */
+  maxOutputChars?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
@@ -401,8 +408,7 @@ async function endOperationControl(
     warnCleanup("native control turn finish", error);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
-    if (nativeControlTurns.get(sessionId)?.handle === control)
-      nativeControlTurns.delete(sessionId);
+    if (nativeControlTurns.get(sessionId)?.handle === control) nativeControlTurns.delete(sessionId);
   }
 }
 
@@ -485,8 +491,8 @@ function scheduleIdlePark(harness: HarnessId, sessionId: string): void {
     sessionId,
     setTimeout(() => {
       idleParkTimers.delete(sessionId);
-      void queueSessionOperation(sessionId, () => stopHarnessSession(harness, sessionId)).catch((error: unknown) =>
-        warnCleanup("idle park", error),
+      void queueSessionOperation(sessionId, () => stopHarnessSession(harness, sessionId)).catch(
+        (error: unknown) => warnCleanup("idle park", error),
       );
     }, HARNESS_IDLE_PARK_MS),
   );
@@ -502,11 +508,8 @@ async function releaseIdleHarness(
   // Untracked Codex operations still release the thread's writer immediately.
   // Never reject: a completed turn must not fail because its cleanup did.
   try {
-    if (
-      harness === "codex" &&
-      !lightweightWorktree &&
-      retainedWriters.get(sessionId) !== harness
-    ) await stopHarnessSession(harness, sessionId);
+    if (harness === "codex" && !lightweightWorktree && retainedWriters.get(sessionId) !== harness)
+      await stopHarnessSession(harness, sessionId);
     else scheduleIdlePark(harness, sessionId);
   } catch (error) {
     warnCleanup("idle release", error);
@@ -606,11 +609,7 @@ export function sendHarnessTurn(
         if (runtime.status === "rejected") throw runtime.reason;
         if (policy.status === "rejected") throw policy.reason;
         const thread = { harness: input.harness, providerAccountId: input.providerAccountId };
-        const hint = pendingRuntimeHint(
-          input.sessionId,
-          thread,
-          runtime.value,
-        );
+        const hint = pendingRuntimeHint(input.sessionId, thread, runtime.value);
         const text =
           input.harness === "codex" ? input.text : withRuntimeHint(input.harness, input.text, hint);
         const deliversHint = turnCarriesRuntimeHint(input.harness, input.text, text, hint);
@@ -623,11 +622,7 @@ export function sendHarnessTurn(
         const owner = beginAdapterOperation(input.sessionId, adapter, controlTurn, processes);
         submission.owner = owner;
         try {
-          const restricted = withSkillPolicy(
-            input.harness,
-            input,
-            policy.value,
-          );
+          const restricted = withSkillPolicy(input.harness, input, policy.value);
           if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
             throw new Error("Turn cancelled before it started");
           const preparedInput = {
@@ -865,10 +860,13 @@ export function steerHarnessTurn(request: SteerTurnInput & { harness: HarnessId 
     } catch (error) {
       // These adapter guards run before any provider write. Do not classify
       // transport errors or unknown acknowledgements as safe to replay.
-      if (error instanceof Error && (
-        error.message === "The previous turn has finished. Send this follow-up as a new message." ||
-        /^No active (Codex|Cursor|Hermes Agent) session$/.test(error.message)
-      )) throw new TurnNotReadyError(error.message);
+      if (
+        error instanceof Error &&
+        (error.message ===
+          "The previous turn has finished. Send this follow-up as a new message." ||
+          /^No active (Codex|Cursor|Hermes Agent) session$/.test(error.message))
+      )
+        throw new TurnNotReadyError(error.message);
       throw error;
     }
   });

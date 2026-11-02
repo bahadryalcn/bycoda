@@ -20,6 +20,7 @@ pub(crate) mod native_delivery;
 #[cfg(all(test, windows))]
 mod native_projection_join_tests;
 pub(crate) mod native_raw_capture;
+mod provenance;
 pub(crate) mod references;
 #[path = "session_rewind.rs"]
 pub(crate) mod rewind;
@@ -387,6 +388,8 @@ mod search_index_start_tests {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionUpsert {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed_by: Option<Value>,
     pub id: String,
     pub cwd: String,
     pub harness: String,
@@ -446,6 +449,8 @@ pub struct SessionUpsert {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed_by: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript_revision: Option<i64>,
     pub id: String,
@@ -493,6 +498,8 @@ pub struct SessionSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed_by: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript_revision: Option<i64>,
     pub id: String,
@@ -545,7 +552,7 @@ pub struct SessionRecord {
 pub async fn session_upsert(
     app: tauri::AppHandle,
     window: tauri::Window,
-    session: SessionUpsert,
+    mut session: SessionUpsert,
     expected_updated_at: Option<i64>,
     expected_revision: Option<i64>,
     expect_missing: Option<bool>,
@@ -556,12 +563,14 @@ pub async fn session_upsert(
         // Capture before admission/effects. A reload must never rebind old work to
         // the replacement physical owner after the SQL write has already started.
         let owner = write_receipts::capture_owner(&window, &store, capture_output_receipt);
-        crate::native_window_lifecycle::session_persistence_write(&window, &session.id, || {
+        let session_id = session.id.clone();
+        crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
             validate_upsert(&session)?;
             // Git lookups can spawn processes; never do that while holding the
             // connection every other store command waits on.
             let git = upsert_git_info(&session);
             let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+            provenance::protect_client_upsert(&conn, &mut session)?;
             write_receipts::upsert(
                 &store,
                 &conn,
@@ -697,6 +706,7 @@ fn delta_summary(
         return Ok(None);
     };
     Ok(Some(SessionSummary {
+        managed_by: provenance::stored_management(conn, &session.id)?,
         transcript_revision: Some(revision),
         id: session.id.clone(),
         orchestration_lead_id: worker_parent(conn, &session.id)?,
@@ -780,17 +790,19 @@ fn validate_upsert(session: &SessionUpsert) -> Result<(), String> {
 pub async fn session_import(
     app: tauri::AppHandle,
     window: tauri::Window,
-    session: SessionUpsert,
+    mut session: SessionUpsert,
 ) -> Result<Option<SessionSummary>, String> {
     crate::harness::run_blocking("session_import", move || {
         let store = app.state::<crate::session_store::SessionStore>();
-        crate::native_window_lifecycle::session_persistence_write(&window, &session.id, || {
+        let session_id = session.id.clone();
+        crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
             validate_upsert(&session)?;
             let git = upsert_git_info(&session);
             let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
             if import_already_stored(&conn, &session).map_err(|e| e.to_string())? {
                 return Ok(None);
             }
+            provenance::protect_client_upsert(&conn, &mut session)?;
             upsert_session_with_git(&conn, &session, git, None).map_err(|e| e.to_string())
         })
     })
@@ -2144,6 +2156,7 @@ fn migrate_versions(conn: &Connection) -> rusqlite::Result<()> {
     ensure_session_column(conn, "workspace_id", "TEXT")?;
     ensure_session_column(conn, "workspace_revision", "INTEGER")?;
     ensure_session_column(conn, "workspace_mode", "TEXT")?;
+    ensure_session_column(conn, "assistant_management_json", "TEXT")?;
     if current < 20 {
         // Existing execution is retained independently of transcript clearing,
         // including sessions cleared by an older build before this migration.
@@ -2515,8 +2528,9 @@ pub(crate) fn session_metadata_unchanged(
             .filter(|value| !value.is_empty())
             .map(str::to_owned)
     };
-    conn.query_row(
-        "SELECT cwd IS ?2 AND harness IS ?3 AND model IS ?4 AND model_settings IS ?5
+    let same = conn
+        .query_row(
+            "SELECT cwd IS ?2 AND harness IS ?3 AND model IS ?4 AND model_settings IS ?5
             AND runtime_mode IS ?6 AND title IS ?7 AND provider_session_id IS ?8
             AND provider_account_id IS ?9 AND worktree_cwd IS ?10
             AND worktree_removed IS ?11 AND linked_work_item_json IS ?12
@@ -2524,30 +2538,37 @@ pub(crate) fn session_metadata_unchanged(
             AND pending_context_replay IS ?15
             AND workspace_id IS ?16 AND workspace_revision IS ?17 AND workspace_mode IS ?18
          FROM sessions WHERE id = ?1",
-        params![
-            session.id,
-            session.cwd,
-            session.harness,
-            session.model,
-            model_settings,
-            session.runtime_mode,
-            session.title,
-            trimmed(&session.provider_session_id),
-            trimmed(&session.provider_account_id),
-            trimmed(&session.worktree_cwd),
-            i64::from(session.worktree_removed),
-            linked_work_item_json,
-            trimmed(&session.automation_id),
-            rewind_history_json,
-            session.pending_context_replay,
-            session.workspace_id,
-            session.workspace_revision,
-            session.workspace_mode,
-        ],
-        |row| row.get::<_, Option<bool>>(0),
-    )
-    .optional()
-    .map(|value| value.flatten().unwrap_or(false))
+            params![
+                session.id,
+                session.cwd,
+                session.harness,
+                session.model,
+                model_settings,
+                session.runtime_mode,
+                session.title,
+                trimmed(&session.provider_session_id),
+                trimmed(&session.provider_account_id),
+                trimmed(&session.worktree_cwd),
+                i64::from(session.worktree_removed),
+                linked_work_item_json,
+                trimmed(&session.automation_id),
+                rewind_history_json,
+                session.pending_context_replay,
+                session.workspace_id,
+                session.workspace_revision,
+                session.workspace_mode,
+            ],
+            |row| row.get::<_, Option<bool>>(0),
+        )
+        .optional()
+        .map(|value| value.flatten().unwrap_or(false))?;
+    Ok(same
+        && match &session.managed_by {
+            Some(value) => {
+                provenance::stored_management(conn, &session.id)?.as_ref() == Some(value)
+            }
+            None => true,
+        })
 }
 
 fn upsert_session_core(
@@ -2726,7 +2747,16 @@ fn upsert_session_core(
     )?;
 
     remember_worker_from_blocks(conn, &session.id, &session.blocks)?;
+    if let Some(managed_by) = &session.managed_by {
+        let raw = serde_json::to_string(managed_by)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        conn.execute(
+            "UPDATE sessions SET assistant_management_json=?2 WHERE id=?1",
+            params![session.id, raw],
+        )?;
+    }
     Ok(Some(SessionSummary {
+        managed_by: provenance::stored_management(conn, &session.id)?,
         transcript_revision: None,
         id: session.id.clone(),
         orchestration_lead_id: worker_parent(conn, &session.id)?,
@@ -3114,6 +3144,7 @@ fn list_by_project_with_git(
         let pinned: i64 = row.get(11)?;
         let linked_work_item = optional_json(row.get(12)?);
         Ok(SessionSummary {
+            managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -3170,6 +3201,7 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
         let archived: i64 = row.get(10)?;
         let pinned: i64 = row.get(11)?;
         Ok(SessionSummary {
+            managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -3242,6 +3274,7 @@ fn recent_rows(
         let worktree_removed = row.get::<_, i64>(14)? != 0;
         let branch: Option<String> = row.get(9)?;
         Ok(SessionSummary {
+            managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -3487,6 +3520,7 @@ fn read_session_row_from(
             let model_settings_raw: String = row.get(4)?;
             let blocks_raw: String = row.get(8)?;
             let record = SessionRecord {
+                managed_by: provenance::stored_management(conn, session_id)?,
                 transcript_revision: conn.query_row("SELECT revision FROM session_block_state WHERE session_id=?1", [session_id], |r|r.get(0)).optional()?,
                 id: row.get(0)?,
                 orchestration_lead_id: worker_parent(conn, session_id)?,
@@ -3759,6 +3793,7 @@ mod tests {
 
     fn sample(id: &str, cwd: &str, title: &str) -> SessionUpsert {
         SessionUpsert {
+            managed_by: None,
             id: id.into(),
             cwd: cwd.into(),
             harness: "cursor".into(),

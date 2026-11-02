@@ -1,4 +1,61 @@
 import { expect, test } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+
+for (const mode of ["file", "inline", "split"]) {
+  test(`editor context menu works in ${mode}`, async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        value: {
+          invoke: async () => null,
+          transformCallback: () => 0,
+        },
+        configurable: true,
+      });
+    });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/tests/browser/editor-selection.html?search=${mode}`, {
+      waitUntil: "domcontentloaded",
+    });
+    const editors = page.locator(".cm-editor");
+    const content = editors.last().locator(".cm-content");
+    await content.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.insertText("const value={x:1,y:2}");
+    const captureDir = "temp/verification/2026-11-03-editor-format";
+    mkdirSync(captureDir, { recursive: true });
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        light,
+      );
+      await content.click({ button: "right" });
+      const menu = page.getByRole("menu", { name: "Editor actions" });
+      await expect(menu.getByRole("menuitem", { name: "Format document" })).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "Save", exact: true })).toBeEnabled();
+      await page.screenshot({ path: `${captureDir}/${mode}-${light ? "light" : "dark"}.png` });
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+    }
+    await content.click();
+    await page.keyboard.press("Shift+F10");
+    await page.getByRole("menuitem", { name: "Format document" }).click();
+    await expect(content).toContainText("const value = { x: 1, y: 2 };");
+    await page.keyboard.press("Control+z");
+    await expect(content).toContainText("const value={x:1,y:2}");
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Shift+F10");
+    await page.getByRole("menuitem", { name: "Copy", exact: true }).click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe("const value={x:1,y:2}");
+    if (mode === "split") {
+      await editors.first().locator(".cm-content").click({ button: "right" });
+      await expect(page.getByRole("menuitem", { name: "Paste", exact: true })).toBeDisabled();
+      await expect(page.getByRole("menuitem", { name: "Format document" })).toHaveCount(0);
+    }
+  });
+}
 
 for (const mode of ["file", "inline", "split"]) {
   test(`readability preserves drafts and visible structure in ${mode}`, async ({ page }, info) => {

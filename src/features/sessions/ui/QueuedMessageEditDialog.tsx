@@ -13,7 +13,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { FilePlus } from "../../../shared/ui/icons";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { droppedFileCount } from "../../../shared/lib/externalDrop";
 import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
@@ -324,13 +324,82 @@ function QueueEditContent({
     Array.from(event.dataTransfer?.types ?? []).includes("Files");
 
   return (
-    <Modal title={t("Edit queued message")} size="md" fitViewport onClose={requestClose}>
+    <Modal
+      title={t("Edit queued message")}
+      size="md"
+      fitViewport
+      onClose={requestClose}
+      footer={
+        confirmingDiscard ? (
+          <div className="min-w-0 flex-1">
+            <Alert tone="warning" role="alert">
+              <span className="mr-auto">{t("Discard your changes?")}</span>
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={() => {
+                  parentChanged();
+                  setConfirmingDiscard(false);
+                }}
+              >
+                {t("Keep editing")}
+              </Button>
+              <Button
+                variant="secondary"
+                tone="danger"
+                type="button"
+                onClick={() => {
+                  parentChanged();
+                  onCancel();
+                }}
+              >
+                {t("Discard")}
+              </Button>
+            </Alert>
+          </div>
+        ) : (
+          <ModalActions
+            start={
+              empty ? (
+                <Button
+                  variant="ghost"
+                  tone="danger"
+                  type="button"
+                  disabled={parentClosed}
+                  onClick={() => mutateParentInput(parentChanged, onRemove)}
+                >
+                  {t("Remove from queue")}
+                </Button>
+              ) : undefined
+            }
+          >
+            <Button variant="ghost" type="button" onClick={requestClose}>
+              {t("Cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              type="button"
+              disabled={parentClosed || empty || loadingAttachments > 0}
+              onClick={save}
+              tooltip={t("Save")}
+              shortcut="Mod+Enter"
+            >
+              {t("Save")}
+            </Button>
+          </ModalActions>
+        )
+      }
+    >
       <div
         className="flex flex-col gap-3 p-4"
         onDragOver={(event) => {
           if (!hasFiles(event)) return;
           event.preventDefault();
-          const block = !canAttach ? "unsupported" : !parentChanged.canMutate() ? "unavailable" : null;
+          const block = !canAttach
+            ? "unsupported"
+            : !parentChanged.canMutate()
+              ? "unavailable"
+              : null;
           event.dataTransfer.dropEffect = block ? "none" : "copy";
           dropFeedback.show(
             dropBox.current,
@@ -428,60 +497,6 @@ function QueueEditContent({
         {parentClosed ? (
           <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
         ) : null}
-        {confirmingDiscard ? (
-          <Alert tone="warning" role="alert">
-            <span className="mr-auto">{t("Discard your changes?")}</span>
-            <Button
-              variant="ghost"
-              type="button"
-              onClick={() => {
-                parentChanged();
-                setConfirmingDiscard(false);
-              }}
-            >
-              {t("Keep editing")}
-            </Button>
-            <Button
-              variant="secondary"
-              tone="danger"
-              type="button"
-              onClick={() => {
-                parentChanged();
-                onCancel();
-              }}
-            >
-              {t("Discard")}
-            </Button>
-          </Alert>
-        ) : (
-          <div className="flex items-center justify-end gap-2">
-            {empty ? (
-              <Button
-                variant="ghost"
-                tone="danger"
-                type="button"
-                disabled={parentClosed}
-                onClick={() => mutateParentInput(parentChanged, onRemove)}
-                className="mr-auto"
-              >
-                {t("Remove from queue")}
-              </Button>
-            ) : null}
-            <Button variant="ghost" type="button" onClick={requestClose}>
-              {t("Cancel")}
-            </Button>
-            <Button
-              variant="primary"
-              type="button"
-              disabled={parentClosed || empty || loadingAttachments > 0}
-              onClick={save}
-              tooltip={t("Save")}
-              shortcut="Mod+Enter"
-            >
-              {t("Save")}
-            </Button>
-          </div>
-        )}
       </div>
     </Modal>
   );

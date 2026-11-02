@@ -391,7 +391,7 @@ export function ServersView({
     <section
       aria-label={t("Servers")}
       data-app-servers
-      className="@container/servers flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-surface) text-content"
+      className="@container/servers flex min-h-0 min-w-0 flex-1 flex-col text-content"
     >
       <PaneHeader
         dragRegion
@@ -609,7 +609,7 @@ export function ServersView({
           {servers.length > 0 || !loaded ? (
             <div
               aria-busy={bulkBusy}
-              className="servers-selection-bar sticky top-0 z-1 bg-(--ui-surface) text-ui-caption"
+              className="servers-selection-bar sticky top-0 z-1 bg-(--color-background-base) text-ui-caption"
             >
               {checkedServers.length > 0 ? (
                 <Checkbox

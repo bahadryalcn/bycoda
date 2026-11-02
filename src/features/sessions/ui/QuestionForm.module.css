@@ -2,7 +2,7 @@
   min-inline-size: 0;
   border: 1px solid var(--ui-editor-border);
   border-radius: var(--radius-panel, var(--ui-radius-popup));
-  background: var(--ui-surface);
+  background: var(--ui-surface-quiet);
   color: var(--ui-tone-neutral-fg);
   font-family: var(--font-sans);
 }

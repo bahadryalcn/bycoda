@@ -9,6 +9,9 @@ import { routeWindowDestination } from "../model/windowNavigation";
 import { preloadToolSurface } from "../workspace/surfaces/lazySurfaces";
 
 vi.mock("../workspace/surfaces/lazySurfaces", () => ({ preloadToolSurface: vi.fn() }));
+vi.mock("../../features/assistant/model/assistantClient", () => ({
+  useAssistantIdentity: () => ({name:"Arif",room:"Arif's Room",setupComplete:true}),
+}));
 
 vi.mock("../model/windowNavigation", () => ({
   routeWindowDestination: vi.fn().mockResolvedValue(false),
@@ -268,8 +271,8 @@ it("retains edits between tool tabs and suspends hidden listeners", async () => 
 
 it("includes and selects all added tools in a grouped window", async () => {
   const { container, onSelect } = await mount(true, true, "inbox", true, true);
-  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(8);
-  for (const label of ["Servers", "Conversation tools", "Terminal"]) {
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(9);
+  for (const label of ["Servers", "Conversation tools", "Terminal", "Arif's Room"]) {
     // Tabs are named by their visible label; the hint rides in the shared tooltip.
     const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((item) =>
       [...item.querySelectorAll("span")].some((span) => span.textContent === label),
@@ -281,5 +284,6 @@ it("includes and selects all added tools in a grouped window", async () => {
     "servers",
     "conversation-tools",
     "terminal",
+    "assistant",
   ]);
 });

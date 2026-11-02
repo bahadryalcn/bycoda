@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { IS_MAC } from "../../../platform/tauri/platform";
+import { startDesktopStopShortcut } from "../../../features/host-tools/desktopStopShortcut";
 import type { FocusDir, SplitDir } from "../../../features/workspace/model/layout";
 import type { LayoutPreset } from "../../../features/workspace/model/layoutPresets";
 import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView";
@@ -71,6 +72,10 @@ export function useWorkspaceActions(handlers: WorkspaceActions): WorkspaceAction
     if (name === debounce.current.name && now - debounce.current.at < 80) return;
     debounce.current = { name, at: now };
     fn();
+  }, []);
+
+  useEffect(() => {
+    return startDesktopStopShortcut();
   }, []);
 
   useEffect(() => {

@@ -37,13 +37,14 @@ export function useSurfaceBoardFlags({ toolWindow }: SurfaceViewStateDeps) {
     toolWindow?.active === "notes" && loadNotesEnabled(),
   );
   const [auxiliaryTool, setAuxiliaryTool] = useState<AuxiliaryToolId | null>(
-    toolWindow?.active === "terminal" || toolWindow?.active === "conversation-tools"
+    toolWindow?.active === "terminal" || toolWindow?.active === "conversation-tools" || toolWindow?.active === "assistant"
       ? toolWindow.active
       : null,
   );
   const [automationsViewOpen, setAutomationsViewOpenState] = useState(
     toolWindow?.active === "terminal" ||
       toolWindow?.active === "conversation-tools" ||
+      toolWindow?.active === "assistant" ||
       toolWindow?.active === "automations" ||
       toolWindow?.active === "tasks" ||
       toolWindow?.active === "social",

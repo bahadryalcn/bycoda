@@ -50,8 +50,10 @@ import c48 from "./playwright.composer-compact.config.ts";
 import c49 from "./playwright.field-message.config.ts";
 import c50 from "./tooltip-policy.playwright.config.ts";
 import c51 from "./playwright.global-voice.config.ts";
+import assistantRoom from "./playwright.assistant-room.config.ts";
 
 export const fixtureConfigs = {
+  "tests/browser/playwright.assistant-room.config.ts": assistantRoom,
   "tests/browser/compact-navigation.playwright.config.ts": c0,
   "tests/browser/composer-host-compatibility.playwright.config.ts": c1,
   "tests/browser/edit-from-here.playwright.config.ts": c2,

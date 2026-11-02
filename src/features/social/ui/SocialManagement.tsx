@@ -9,6 +9,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { Button } from "../../../shared/ui/Button";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -1364,7 +1365,18 @@ export function Rules({
                   </div>
                   <div>
                     <dt>{t("Stop phrases")}</dt>
-                    <dd>{stopWords.length ? stopWords.join(", ") : t("None")}</dd>
+                    <dd>
+                      {stopWords.length ? (
+                        <BadgeList
+                          label={t("Stop phrases")}
+                          max={6}
+                          rows={2}
+                          items={stopWords.map((word, index) => ({ id: `${index}:${word}`, label: word }))}
+                        />
+                      ) : (
+                        t("None")
+                      )}
+                    </dd>
                   </div>
                   <div>
                     <dt>{t("AI agent")}</dt>
@@ -1549,7 +1561,10 @@ export function Rules({
                       {ruleModeLabel(rule.mode)} · {t("Daily {p0}", { p0: rule.dailyLimit })}
                     </p>
                     <StatusBadge status={rule.enabled ? "active" : "paused"} />
-                    <p>{rule.topics.join(", ")}</p>
+                    <BadgeList
+                      label={t("Topics")}
+                      items={rule.topics.map((topic, index) => ({ id: `${index}:${topic}`, label: topic }))}
+                    />
                     {rule.pausedReason ? (
                       <Notice kind="warning" title={t("Rule paused")}>
                         {rule.pausedReason}

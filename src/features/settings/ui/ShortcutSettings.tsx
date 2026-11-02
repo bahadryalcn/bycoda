@@ -13,6 +13,8 @@ import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPrefere
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { IS_MAC } from "../../../platform/tauri/platform";
+import { DESKTOP_STOP_COMMAND } from "../model/desktopStopKeybinding";
+import { applyDesktopStopShortcut } from "../../host-tools/desktopStopShortcut";
 
 import {
   filterKeybindings,
@@ -515,22 +517,30 @@ export function KeybindingsPage() {
       const previous = loadKeybindingOverrides();
       const next = prepareKeybindingOverride(command, override);
       let nativeAttempted = false;
+      let desktopAttempted = false;
       try {
+        if(command===DESKTOP_STOP_COMMAND){desktopAttempted=true;await applyDesktopStopShortcut(next);}
         if (IS_MAC) {
           nativeAttempted = true;
           await invoke("keybindings_set_overrides", { overrides: next });
         }
         saveKeybindingOverride(command, override);
       } catch (error) {
+        const rollbackErrors:unknown[]=[];
+        if(desktopAttempted){
+          try{await applyDesktopStopShortcut(previous);}
+          catch(rollbackError){rollbackErrors.push(rollbackError);}
+        }
         if (nativeAttempted) {
           try {
             await invoke("keybindings_set_overrides", { overrides: previous });
           } catch (rollbackError) {
-            throw new Error(t("Shortcut save failed: {p0}. Restoring the native shortcut also failed: {p1}", {
-              p0: String(error), p1: String(rollbackError),
-            }));
+            rollbackErrors.push(rollbackError);
           }
         }
+        if(rollbackErrors.length)throw new Error(t("Shortcut save failed: {p0}. Restoring the native shortcut also failed: {p1}",{
+          p0:String(error),p1:rollbackErrors.map(String).join("; "),
+        }));
         throw error;
       }
     } finally {
@@ -570,7 +580,7 @@ export function KeybindingsPage() {
         <InfoPopover label={t("Shortcut help")}>
           <p>
             {t(
-              "App shortcuts apply while this app is focused. Quick composer uses a global shortcut on this computer.",
+              "Most shortcuts apply while this app is focused. Stop computer use and Quick composer use global shortcuts on this computer.",
             )}
           </p>
           <p>

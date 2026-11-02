@@ -1,7 +1,10 @@
+import { AssistantManagedBadge } from "./AssistantManagedBadge";
+import { AssistantSessionControl } from "./AssistantSessionControl";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { useLocale, useT } from "../../../shared/i18n";
 import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
 import { sessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
@@ -338,7 +341,7 @@ function RewoundHistoryDisclosure({
               .map((block, index) => (
                 <article
                   key={`${block.id}:${index}`}
-                  className="min-w-0 rounded-md bg-[var(--ui-surface)] px-2.5 py-2"
+                  className="min-w-0 rounded-md border border-(--ui-pane-border) px-2.5 py-2"
                 >
                   {block.text ? (
                     <pre className="select-text whitespace-pre-wrap break-words font-sans text-(--ui-tone-neutral-fg)">
@@ -346,9 +349,18 @@ function RewoundHistoryDisclosure({
                     </pre>
                   ) : null}
                   {block.attachments?.length ? (
-                    <p className="mt-1 break-words text-[var(--ui-text-secondary)]">
-                      {t("Attachments")}: {block.attachments.map((file) => file.name).join(", ")}
-                    </p>
+                    <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[var(--ui-text-secondary)]">
+                      <span className="shrink-0">{t("Attachments")}:</span>
+                      <BadgeList
+                        label={t("Attachments")}
+                        size="xs"
+                        className="min-w-0 flex-1"
+                        items={block.attachments.map((file, index) => ({
+                          id: `${index}:${file.name}`,
+                          label: file.name,
+                        }))}
+                      />
+                    </div>
                   ) : null}
                 </article>
               ))}
@@ -1497,6 +1509,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
           </div>
           {workingBadge}
           <div className="session-pane-header-actions">
+            <AssistantManagedBadge management={session.managedBy} local={!remote} />
+            <AssistantSessionControl sessionId={session.id} cwd={session.cwd} management={session.managedBy} local={!remote}/>
             {headerStatus}
             <BackgroundSessionIndicator key={session.id} session={session} />
             {projectActions}
@@ -1511,6 +1525,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
             createPortal(
               <>
                 {workingBadge ? <div className="min-w-0 max-w-56">{workingBadge}</div> : null}
+                <AssistantManagedBadge management={session.managedBy} local={!remote} />
+                <AssistantSessionControl sessionId={session.id} cwd={session.cwd} management={session.managedBy} local={!remote}/>
                 {headerStatus}
                 <BackgroundSessionIndicator key={session.id} session={session} />
                 {projectActions}
@@ -1524,6 +1540,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
             className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center justify-end gap-1 px-2 py-0.5"
           >
             {workingBadge ? <div className="me-auto min-w-0">{workingBadge}</div> : null}
+            <AssistantManagedBadge management={session.managedBy} local={!remote} />
+            <AssistantSessionControl sessionId={session.id} cwd={session.cwd} management={session.managedBy} local={!remote}/>
             {headerStatus}
             <BackgroundSessionIndicator key={session.id} session={session} />
             {projectActions}

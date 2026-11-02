@@ -11,6 +11,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -922,10 +923,18 @@ export function UsageOverview({
               {totals.tokens ? formatUsagePercent((pricedTokens / totals.tokens) * 100) : "—"}.
             </p>
             {unpriced.length > 0 && (
-              <p>
-                {t("Models without prices")}: {unpriced.join(", ")}.{" "}
-                {t("Their tokens are included; their cost is unavailable.")}
-              </p>
+              <>
+                <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+                  <span className="shrink-0">{t("Models without prices")}:</span>
+                  <BadgeList
+                    label={t("Models without prices")}
+                    size="xs"
+                    className="min-w-0 flex-1"
+                    items={unpriced.map((model, index) => ({ id: `${index}:${model}`, label: model }))}
+                  />
+                </div>
+                <p>{t("Their tokens are included; their cost is unavailable.")}</p>
+              </>
             )}
             {prices === null && (
               <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>

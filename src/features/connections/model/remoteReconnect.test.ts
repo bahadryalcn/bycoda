@@ -25,6 +25,7 @@ import {
   reconnectRemoteMachine,
   startRemoteAutoRecovery,
   isReconnecting,
+  isReconnectRequested,
   cancelRemoteReconnect,
 } from "./remoteReconnect";
 import { invalidateConnection, readRemoteLifecycle } from "./remoteLifecycle";
@@ -195,6 +196,27 @@ describe("a dropped tunnel", () => {
 });
 
 describe("reconnectRemoteMachine", () => {
+  it("marks only the attempts the user asked for, so background retries stay quiet", async () => {
+    let finish!: (value: unknown) => void;
+    request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    recordRemoteConnection("env", down);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(isReconnecting("env")).toBe(true);
+    expect(isReconnectRequested("env")).toBe(false);
+    // Asking while a background attempt runs joins it and shows progress.
+    const pending = reconnectRemoteMachine("env");
+    expect(isReconnectRequested("env")).toBe(true);
+    finish({});
+    expect(await pending).toEqual({ ok: true });
+    expect(isReconnecting("env")).toBe(false);
+    expect(isReconnectRequested("env")).toBe(false);
+  });
+
   it("ignores a late recovery after the route changes, without ending the replacement attempt", async () => {
     const finishes: ((value: unknown) => void)[] = [];
     request.mockImplementation(() => new Promise((resolve) => finishes.push(resolve)));

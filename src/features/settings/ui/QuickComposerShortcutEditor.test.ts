@@ -60,6 +60,19 @@ async function render() {
   await act(async () => root.render(createElement(QuickComposerShortcutEditor)));
 }
 
+it("keeps the previous emergency global shortcut when the OS rejects its replacement",async()=>{
+ await act(async()=>root.render(createElement(KeybindingsPage)));
+ vi.mocked(invoke).mockRejectedValueOnce(new Error("OS shortcut conflict"));
+ const input=container.querySelector<HTMLButtonElement>('[aria-label="Change App: Stop computer use shortcut"]')!;
+ expect(input).not.toBeNull();
+ await act(async()=>input.click());
+ await act(async()=>document.body.dispatchEvent(new KeyboardEvent("keydown",{key:"x",code:"KeyX",ctrlKey:true,altKey:true,bubbles:true,cancelable:true})));
+ expect(invoke).toHaveBeenCalledWith("desktop_shortcut_configure",{shortcut:"Control+Option+KeyX"});
+ expect(invoke).toHaveBeenCalledWith("desktop_shortcut_configure",{shortcut:"Control+Option+Escape"});
+ expect(loadKeybindingOverrides()["App: Stop computer use"]).toBeUndefined();
+ expect(container.querySelector('[role="alert"]')?.textContent).toContain("OS shortcut conflict");
+});
+
 it("keeps a sibling-disabled global shortcut disabled while recording a new chord", async () => {
   await render();
   act(() => {

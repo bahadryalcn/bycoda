@@ -203,7 +203,6 @@
   padding: clamp(12px, 2cqi, 18px);
   border: 1px solid var(--color-stroke);
   border-radius: var(--radius-panel);
-  background: var(--ui-surface-raised);
 }
 .host-tool-card > button {
   justify-self: start;
@@ -404,7 +403,6 @@
   min-inline-size: 0;
   padding: 12px;
   border-radius: var(--radius-panel);
-  background: var(--ui-surface);
   align-content: start;
 }
 .host-browser-empty {
@@ -420,7 +418,6 @@
   padding: 16px;
   overflow: auto;
   color: var(--color-content);
-  background: var(--ui-surface);
   font-size: var(--ui-font-secondary);
   line-height: 1.5;
 }
@@ -456,7 +453,6 @@
   min-inline-size: 0;
   padding: 12px;
   border-radius: var(--radius-panel);
-  background: var(--ui-surface);
 }
 .host-browser-side-section h4 {
   font-size: var(--ui-font-secondary);

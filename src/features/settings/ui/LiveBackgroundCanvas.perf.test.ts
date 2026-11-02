@@ -7,6 +7,7 @@ import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
 const state = vi.hoisted(() => ({
   draw: vi.fn(),
   focused: true,
+  awake: false,
   listeners: new Set<() => void>(),
 }));
 vi.mock("../model/decorativeMotion", () => ({
@@ -19,7 +20,10 @@ vi.mock("../model/decorativeMotion", () => ({
 }));
 vi.mock("./live-background", () => ({
   CLOSED_SIGNAL: {},
-  createLiveSignalDriver: () => ({ update: () => ({}) }),
+  createLiveSignalDriver: () => ({
+    update: () => ({}),
+    awake: () => state.awake,
+  }),
   createLiveBackgroundScene: () => ({
     resize: vi.fn(),
     draw: state.draw,
@@ -53,6 +57,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.draw.mockClear();
   state.focused = true;
+  state.awake = false;
   state.listeners.clear();
   frameQueue = [];
   nextFrame = 0;
@@ -148,6 +153,18 @@ describe("live background frame loop", () => {
     render({ speech: -1, activity: 92 });
     expect(runFor(500)).toBeGreaterThan(0);
     expect(state.draw).toHaveBeenCalled();
+  });
+
+  it("keeps painting while a shown scene holds after output stops, then settles", () => {
+    state.awake = true;
+    render({ speech: 40, activity: 80 });
+    runFor(5_000);
+    state.draw.mockClear();
+    expect(runFor(2_000)).toBeGreaterThan(0);
+    expect(state.draw.mock.calls.length).toBeGreaterThan(30);
+    state.awake = false;
+    runFor(3_000);
+    expect(runFor(2_000)).toBe(0);
   });
 
   it("keeps animating while a reply is streaming", () => {

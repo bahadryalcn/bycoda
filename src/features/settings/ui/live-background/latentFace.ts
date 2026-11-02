@@ -791,7 +791,8 @@ function createCodeFigureScene(
       rush += Math.max(0, Math.min(delta, 0.1)) * energy * ENERGY_RUSH;
       const level = (0.35 + 0.65 * presence) * (0.9 + 0.1 * energy);
       const kindle = presence * 1.25;
-      const mouth = mouthOpening(time, presence, energy);
+      // A face that stays after the reply pauses keeps its lips closed.
+      const mouth = mouthOpening(time, presence * clamp01(signal.speaking ?? 1), energy);
 
       for (let i = 0; i < count; i++) {
         cellAlpha[i] = 0;

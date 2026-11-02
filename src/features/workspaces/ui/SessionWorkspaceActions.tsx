@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { MoreHorizontal } from "../../../shared/ui/icons";
 import { shouldPersistSession, upsertSession } from "../../sessions/data/sessionStore";
 import { setSessions, useSession } from "../../sessions/model/sessionsStore";
 import { remotePath, parseRemotePath } from "../../connections/model/remoteProjects";
+import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import { useRemoteConnection } from "../../connections/model/useRemoteConnection";
+import { classifyRemoteError, isConnectionFailure } from "../../connections/model/remoteFailure";
+import { subscribeRemoteRecovered } from "../../connections/model/remoteHealth";
 import type { ManagedWorkspace } from "../model/contracts";
 import {
   getWorkspaceCapabilities,
@@ -32,6 +37,8 @@ export function SessionWorkspaceActions({
 }) {
   const t = useT();
   const session = useSession(sessionId);
+  const environmentId = parseRemotePath(cwd)?.environmentId ?? (session && hostSessionBinding(session)?.environmentId);
+  const connection = useRemoteConnection(environmentId);
   const workspaceId = (session as ManagedIdentity | undefined)?.workspaceId;
   const [workspace, setWorkspace] = useState<ManagedWorkspace | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -44,6 +51,13 @@ export function SessionWorkspaceActions({
   const lock = useRef(false);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const managedCandidate = enabled && !!cwd && (!!workspaceId || !!session?.worktreeCwd);
+  useEffect(
+    () => subscribeRemoteRecovered((recovered) => {
+      if (managedCandidate && environmentId && (!recovered || recovered === environmentId))
+        setRetry((value) => value + 1);
+    }),
+    [environmentId, managedCandidate],
+  );
   useEffect(() => {
     setWorkspace(null);
     setError(null);
@@ -140,6 +154,12 @@ export function SessionWorkspaceActions({
     }
   }
   if (!managedCandidate) return null;
+  const connectionIssueHandled =
+    !!environmentId &&
+    connection.status !== "connected" &&
+    (connection.status !== "connecting" || connection.reconnecting) &&
+    !!error && isConnectionFailure(classifyRemoteError(error));
+  if (!workspace && connectionIssueHandled) return null;
   if (!workspace && !error && !pending) return null;
   const removed = workspace?.directoryState === "removed";
   const quickDelete =
@@ -212,15 +232,9 @@ export function SessionWorkspaceActions({
               <MoreHorizontal />
             </Button>
           </>
-        ) : (
-          <Button
-            variant="ghost"
-            loading={pending === "load"}
-            onClick={() => setRetry((value) => value + 1)}
-          >
-            {t("Retry workspace")}
-          </Button>
-        )}
+        ) : pending === "load" ? (
+          <LoadingText />
+        ) : null}
       </div>
       {removed && (
         <p className="text-ui-caption text-(--ui-text-secondary)">
@@ -232,7 +246,7 @@ export function SessionWorkspaceActions({
           {t("Update bycoda Host to review and deliver workspace changes.")}
         </p>
       )}
-      {error && (
+      {error && !connectionIssueHandled && (
         <div
           role="alert"
           className="flex flex-wrap items-center gap-2 text-ui-caption text-(--ui-tone-danger-fg)"

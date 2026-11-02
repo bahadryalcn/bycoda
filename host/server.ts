@@ -14,13 +14,15 @@ import {
   MOBILE_DEVICE_PREVIEW_METHODS,
 } from "../src/shared/model/host-contracts/native-devices";
 import { ModelCatalogCache } from "./model-catalog-cache";
+import { projectDisplayNames } from "./project-display-names";
 import { hostProviderAccounts } from "./provider-accounts";
 import { createRealtimeSecret, createVoiceClientSecret } from "./voice";
 import { VoiceCloudCredentials } from "./voice-cloud-credentials";
 import { LocalVoiceService } from "./voice-local";
 import { inspectVoiceRuntime } from "./voice-runtime";
 import { VoiceSetupService } from "./voice-setup";
-import { prepareVoiceToolDispatch, validateVoiceToolList, voiceToolCatalog } from "./voice-tools";
+import { prepareVoiceToolDispatch, validateVoiceToolList, voiceToolCatalog,parseVoiceToolCall } from "./voice-tools";
+import {HostVoiceToolDisclosure} from "./voice-tool-disclosure";
 import { readSessionUsage } from "./usage-report";
 import {
   desktopActorId,
@@ -173,6 +175,20 @@ import { HostTasks } from "./tasks";
 import { HostSprints } from "./sprints";
 import { AttachmentOwnership } from "./attachment-ownership";
 import { HostGoals } from "./goals";
+import { HostAssistant } from "./assistant/service";
+import type { ConversationTool } from "./conversation-tools";
+import { assistantExecutionPorts } from "./assistant-runtime";
+import {AssistantTurnPolicyDeferredError} from "./assistant-turn-policy";
+import { assistantDomain } from "./assistant-domain";
+import { assistantSessionRuntime } from "./assistant-session-runtime";
+import {HostAssistantManualSessions} from "./assistant-manual-sessions";
+import { HostAssistantKeepAwake } from "./assistant-keep-awake";
+import { HostDesktopControl } from "./desktop-control-host";
+import { desktopControlDomain } from "./desktop-control-domain";
+import { HostDesktopHelper } from "./desktop-helper";
+import { desktopHelperDomain } from "./desktop-helper-domain";
+import { readDesktopPresence } from "./desktop-presence";
+import { ConversationDesktopControlTools, isDesktopControlConversationTool } from "./conversation-desktop-control-tools";
 import { HostStewards } from "./stewards";
 import { dirname, join } from "node:path";
 import { DeviceHost } from "./device-host";
@@ -571,6 +587,65 @@ export async function createHostServer(
   await sprints.ready;
   const goals = goalsOverride ?? new HostGoals(engine.store, engine, tasks);
   await goals.ready;
+  const assistantPorts = assistantExecutionPorts(engine.store, goals, tasks, () => hostNotes, () => automations);
+  const namedProjects = async () => {
+    const registered = await engine.store.projects();
+    return projectDisplayNames(registered, desktop.live.projectDirectory(registered, engine.store.environmentId));
+  };
+  assistantPorts.listProjects = async () => (await namedProjects()).map(project => ({id:project.id,path:project.cwd,name:project.name}));
+  const assistantKeepAwake=new HostAssistantKeepAwake();
+  assistantPorts.keepAwake=enabled=>assistantKeepAwake.setEnabled(enabled);
+  assistantPorts.readPresence=readDesktopPresence;
+  const assistant = new HostAssistant(engine.store, assistantPorts);
+  await assistant.ready;
+  tasks.assistantGoalAdmission=goalId=>assistant.autonomousJobAllowed(goalId);
+  const previousProviderSchedule=engine.beforeProviderTurn;
+  engine.beforeProviderTurn=async input=>{
+    await previousProviderSchedule?.(input);
+    if(input.author?.kind!=="task")return;
+    const authorId=input.author.id;
+    const task=await tasks.get(authorId);
+    const goalId=task?.goalId??(await goals.list()).find(goal=>goal.id===authorId)?.id;
+    if(goalId&&!await assistant.autonomousJobAllowed(goalId))throw new AssistantTurnPolicyDeferredError();
+  };
+  assistantPorts.manualProjectVisible=async id=>{const directory=desktop.live.projectDirectory(await engine.store.projects(),engine.store.environmentId);return directory.privacyReady&&directory.projects.some(project=>project.id===id);};
+  const manualAssistantSessions=new HostAssistantManualSessions(engine.store,{enabled:()=>assistant.manualSupervisionAllowed(),name:()=>assistant.identityName(),visibleProject:id=>assistant.manualProjectAllowed(id)});
+  await manualAssistantSessions.ready;assistantPorts.manual=manualAssistantSessions;
+  const managedAssistantSessions=assistantSessionRuntime(engine.store,engine,assistant,tasks,manualAssistantSessions);
+  await managedAssistantSessions.ready;
+  assistantPorts.detachSession=async input=>{
+    const result=await managedAssistantSessions.detach(input.jobId,input.sessionId,input.expectedVersion);
+    await engine.store.markAssistantManagedSession(input.sessionId,input.jobId);
+    return result;
+  };
+  assistantPorts.manageSession=async input=>{
+    const result=await managedAssistantSessions.request({op:"nudge",...input},{kind:"chief",id:`assistant-chief:${engine.store.environmentId}`});
+    if(result.recovery)return result.recovery;
+    if(result.operation?.delivery!=="delivered")throw new Error("Managed session delivery remains unknown; inspect its state before continuing.");
+  };
+  assistantPorts.manageManualSession=async input=>{
+    const result=await managedAssistantSessions.request({op:"nudge",...input},{kind:"chief",id:`assistant-chief:${engine.store.environmentId}`});
+    if(result.operation?.delivery!=="delivered")throw new Error("Manual conversation delivery remains unknown; inspect its state before continuing.");
+  };
+  assistantPorts.answerSession=async input=>{
+    const result=await managedAssistantSessions.request({op:"answer",...input},{kind:"chief",id:`assistant-chief:${engine.store.environmentId}`});
+    if(result.operation?.delivery!=="submitted")throw new Error("Worker question submission remains unknown; inspect the original question before continuing.");
+  };
+  assistantPorts.onPause=()=>managedAssistantSessions.stop();
+  assistantPorts.onResume=()=>managedAssistantSessions.resume();
+  assistantPorts.onJobPause=id=>managedAssistantSessions.pauseJob(id);
+  assistantPorts.onJobResume=id=>managedAssistantSessions.resumeJob(id);
+  const desktopControl = new HostDesktopControl(engine.store, {
+    onOperation:event=>assistant.recordDesktopOperation(event),
+    presence:readDesktopPresence,
+    // Headed actions on this route are explicitly requested by the device owner.
+    // Agents use their separate captured principal and never inherit this grant.
+    physicalGrant:async principal => principal.kind === "owner",
+  });
+  await desktopControl.ready;
+  const desktopHelper=new HostDesktopHelper({outsideScope:work=>engine.store.db.outsideScope(work)});
+  const previousOwnerInstructions = engine.ownerInstructions;
+  engine.ownerInstructions = async () => [await previousOwnerInstructions?.(), await assistant.instructions("sessions")].filter(Boolean).join("\n");
   const stewards =
     stewardsOverride ??
     new HostStewards(engine.store, engine, tasks, undefined, {
@@ -805,15 +880,27 @@ export async function createHostServer(
   social.setSessionAuthorityResolver(
     createSessionAuthorityResolver(engine.store, desktop, providers),
   );
+  social.setAssistantThreadResolver(id => assistant.threadBinding(id));
   social.forgetBrowserSession ??= async (accountId) => {
     await xBrowser.workflows.cancelAccount(social, accountId);
     await xBrowser.forget(accountId);
   };
   social.cancelBrowserWorkflow ??= async (accountId) =>
     await xBrowser.workflows.cancelAccount(social, accountId);
-  const runtimeLogAccess = new RuntimeLogAccess(social);
-  const conversationAccess = new RuntimeLogAccess(social);
+  const runtimeLogAccess = new RuntimeLogAccess(social, Date.now, id => assistant.threadBinding(id));
+  const conversationAccess = new RuntimeLogAccess(social, Date.now, id => assistant.threadBinding(id));
   const conversationDesktop = new ConversationDesktopRelay(engine.store.environmentId);
+  const conversationDesktopControl = new ConversationDesktopControlTools({
+    environmentId:engine.store.environmentId,
+    desktop:desktopControl,
+    presence:async()=>{
+      const native=await readDesktopPresence();
+      const manual=await assistant.ownerPresence();
+      if(manual.state==="dnd")throw new Error("Desktop input is deferred while Do not disturb is active.");
+      return {supported:native.supported,locked:native.locked,ownerPresent:native.idleMs===undefined?undefined:manual.state==="away"||native.idleMs>=10*60000?false:true};
+    },
+    approveOperation:({operation,operationHash,cwd,principal},authorized)=>conversationDesktop.call("desktop.act.authorize",{operation,operationHash},cwd,principal,authorized),
+  });
   let desktopSigningKey: string | undefined;
   const desktopSigningSecret = async () =>
     (desktopSigningKey ??= await desktopReviewSecret(engine.store));
@@ -1616,7 +1703,7 @@ export async function createHostServer(
           goals: await goals.list(),
           automations: await automations.list(),
           threads: (
-            await social.snapshot({ ...principal, actorId: `session:${principal.sessionId}` })
+            await social.snapshot({ ...principal, actorId: principal.kind === "assistant-thread" ? `thread:${principal.threadId}` : `session:${principal.sessionId}` })
           ).threads,
         },
         projectId,
@@ -1714,6 +1801,8 @@ export async function createHostServer(
         ...new Set([...providers, ...((await genericAcp.list()).length ? ["acp" as const] : [])]),
       ],
       capabilities: [
+        "assistant.v1",
+        "desktop.control.v1",
         HOST_WS_READ_CAPABILITY,
         "transport.ws.sessions.v2",
         "sessions.approvalOccurrence.v1",
@@ -1914,7 +2003,7 @@ export async function createHostServer(
     }),
   });
   const projectsService = createProjectsService({
-    list: async () => await engine.store.projects(),
+    list: namedProjects,
     directoryPorts: {
       directory: async () =>
         desktop.live.projectDirectory(await engine.store.projects(), engine.store.environmentId),
@@ -2143,6 +2232,10 @@ export async function createHostServer(
         runtimeLogs: runtimeLogAccess,
         terminalLogs,
         desktop: conversationDesktop,
+        desktopControl,
+        assistantName:()=>assistant.identityName(),
+        assistantPresence:()=>assistant.nativePresenceStatus(),
+        setAssistantPresence:async state=>{await assistant.request({op:"presence.set",state},"owner");},
         workspace,
         inHost,
         desktopProjectCwd: (id) => desktop.projectCwdAsync(id),
@@ -2179,6 +2272,9 @@ export async function createHostServer(
     environment: environmentService,
     projects: projectsService,
     operations: {
+      "assistant.request": assistantDomain(assistant, engine.store),
+      "desktop.request": desktopControlDomain(desktopControl, engine.store),
+      "desktop.helper.request":desktopHelperDomain(desktopHelper,engine.store),
       ...Object.fromEntries(
         NATIVE_DELIVERY_METHODS.map((method) => [
           method,
@@ -2588,6 +2684,7 @@ export async function createHostServer(
         let dispatchMethod: unknown;
         let deviceEffectAdmitted = false;
         let releaseVoiceTool: (() => void) | undefined;
+        let voiceDisclosure:HostVoiceToolDisclosure|undefined;
         let voiceBrowserOwner: string | undefined;
         try {
           if (await bulkHandler(request, response)) return;
@@ -2703,6 +2800,12 @@ export async function createHostServer(
           dispatchStarted = performance.now();
           dispatchMethod = input.method;
           let result: unknown;
+          const endResult=async(value:unknown,verify?:()=>Promise<void>)=>{
+            const inline=serializedResponse(value);
+            const body=voiceDisclosure?await voiceDisclosure.body(value):inline===undefined?JSON.stringify({result:value}):`{"result":${inline}}`;
+            await verify?.();
+            response.end(body);voiceDisclosure?.markSent();
+          };
           if (await mcpHttp.rpc(input.method, params, token, response)) return;
           if (peerIdentity) {
             result = await engine.store.db.withAuthorization(
@@ -2739,11 +2842,23 @@ export async function createHostServer(
               response.end(JSON.stringify({ result: { tools: voiceToolCatalog() } }));
               return;
             }
+            const call=parseVoiceToolCall(params);
+            if(call.causalContextId){
+              voiceDisclosure=new HostVoiceToolDisclosure({
+                authorized:async()=>!response.destroyed&&await engine.store.authenticated(ownerToken),
+                begin:input=>assistant.beginVoiceToolDisclosure(input),
+                finish:(id,source)=>assistant.finishVoiceToolDisclosure(id,source),
+                fail:id=>assistant.failVoiceToolDisclosure(id),
+              },serializedResponse);
+              await voiceDisclosure.begin(call.causalContextId,call.requestId!);
+              response.once("close",()=>{void voiceDisclosure?.fail().catch(()=>undefined);});
+            }
             const delegated = await prepareVoiceToolDispatch(params, {
               authorized: async () =>
                 !response.destroyed && (await engine.store.authenticated(ownerToken)),
               environmentId: engine.store.environmentId,
               deviceHash: tokenHash,
+              threadIdentity:id=>assistant.threadBinding(id),
               sessionIdentity: async (sessionId) => {
                 const own = await featureMeta(sessionId);
                 await engine.store.project(own.projectId);
@@ -2756,6 +2871,7 @@ export async function createHostServer(
               },
             });
             releaseVoiceTool = delegated.release;
+            voiceDisclosure?.bind(delegated.source);
             voiceBrowserOwner = delegated.browserOwner;
             response.once("close", delegated.release);
             if (response.destroyed) {
@@ -2781,6 +2897,24 @@ export async function createHostServer(
             if (!conversationPrincipal)
               throw new Error("A scoped conversation credential is required.");
             const boundPrincipal = conversationPrincipal;
+            if (boundPrincipal.kind === "assistant-thread") {
+              const action=String(params.action??"");
+              const args=params.input as Record<string,unknown>;
+              validateConversationTool(action,args);
+              const authorized=async()=>{
+                const current=await conversationAccess.principalForToken(token);
+                return current?.kind === "assistant-thread" && current.threadId === boundPrincipal.threadId && current.projectId === boundPrincipal.projectId;
+              };
+              result=await engine.store.db.withAuthorization(conversationAccess.authorization(token),async()=>{
+                if (isDesktopControlConversationTool(action)) return conversationDesktopControl.call(action,args,boundPrincipal,(await engine.store.project(boundPrincipal.projectId)).cwd,authorized);
+                if (/^(notes|inbox)\./.test(action)) return conversationWorkspace.call(action as ConversationTool,args,boundPrincipal,undefined,authorized);
+                if (action === "host.limits.status" || action === "shell.profiles") return conversationRuntimeReads.call(action,args,boundPrincipal,authorized);
+                throw new Error("Choose a focused session before using this conversation tool.");
+              });
+              if (!(await authorized())) throw new Error("Conversation authority revoked.");
+              await endResult(result,async()=>{if(!(await authorized()))throw new Error("Conversation authority revoked.");});
+              return;
+            }
             return await engine.store.db.withAuthorization(
               conversationAccess.authorization(token),
               async () => {
@@ -2798,7 +2932,10 @@ export async function createHostServer(
                 const scopedDeviceEffect = { authorized: scopedDeviceAuthorized };
                 const projectId = boundPrincipal.projectId;
                 const project = await engine.store.project(projectId);
-                if (action === "sessions.list" || action === "sessions.read") {
+                if (isDesktopControlConversationTool(action)) {
+                  const cwd=sessionWorkCwd((await featureMeta(boundPrincipal.sessionId)).session);
+                  result=await conversationDesktopControl.call(action,args,boundPrincipal,cwd,scopedDeviceAuthorized);
+                } else if (action === "sessions.list" || action === "sessions.read") {
                   if (!(await inHost(boundPrincipal.sessionId)))
                     result = await conversationDesktop.call(
                       action,
@@ -3324,17 +3461,13 @@ export async function createHostServer(
                   }
                 } else if (action === "resources.read")
                   result = diagnostics.read(`session:${boundPrincipal.sessionId}`);
-                const scopedBody = JSON.stringify({ result });
-                if (action.startsWith("devices.") && !(await scopedDeviceAuthorized()))
-                  throw new Error("Device authority revoked.");
-                if (action === "devices.preview" || action === "devices.preview.status") {
-                  const original = devicePreviews.resultAuthority(
-                    (result as { id: string }).id,
-                    `${projectId}:${boundPrincipal.sessionId}`,
-                  );
-                  if (!(await original())) throw new Error("Preview authority expired.");
-                }
-                response.end(scopedBody);
+                await endResult(result,async()=>{
+                  if(!(await scopedDeviceAuthorized()))throw new Error("Session authority revoked.");
+                  if(action==="devices.preview"||action==="devices.preview.status"){
+                    const original=devicePreviews.resultAuthority((result as {id:string}).id,`${projectId}:${boundPrincipal.sessionId}`);
+                    if(!await original())throw new Error("Preview authority expired.");
+                  }
+                });
                 return;
               },
             );
@@ -3356,7 +3489,7 @@ export async function createHostServer(
               action === "sources" || action === "runtimeLogs.sources"
                 ? runtimeLogs.sources(query)
                 : runtimeLogs.read(query);
-            response.end(JSON.stringify({ result }));
+            await endResult(result,async()=>{if(!await runtimeLogAccess.principalForToken(token))throw new Error("Session authority revoked.");});
             return;
           }
           if (typeof input.method === "string" && input.method.startsWith("social.")) {
@@ -3391,7 +3524,7 @@ export async function createHostServer(
                   if (principal.kind !== "owner") throw new Error("Native owner device required.");
                   throw new Error("Unsupported native social operation.");
                 } else result = await socialTransport.rpc(principal, String(input.method), params);
-                response.end(JSON.stringify({ result }));
+                await endResult(result,()=>engine.store.db.checkAuthorization());
                 return;
               },
             );
@@ -3893,6 +4026,25 @@ export async function createHostServer(
                   );
                   break;
                 }
+                case "desktop.status":
+                  result=await nativeServicesService.call("native.services.desktop.status",params,domainContext);
+                  break;
+                case "desktop.stop":
+                  result=await nativeServicesService.call("native.services.desktop.stop",params,domainContext);
+                  break;
+                case "assistant.request":
+                  result=await assistantDomain(assistant,engine.store)(params,domainContext);
+                  break;
+                case "desktop.request":
+                  result=await desktopControlDomain(desktopControl,engine.store)(params,domainContext);
+                  break;
+                case "desktop.helper.request":
+                  result=await desktopHelperDomain(desktopHelper,engine.store)(params,domainContext);
+                  break;
+                case "native.services.desktop.stop":
+                case "native.services.assistant.presence.get":
+                case "native.services.assistant.presence.set":
+                case "native.services.desktop.status":
                 case "native.services.runtimeLogs.bridge.describe":
                 case "native.services.runtimeLogs.access.issue":
                 case "native.services.runtimeLogs.terminals.append":
@@ -4001,22 +4153,40 @@ export async function createHostServer(
                 case "browser.resize":
                 case "browser.frame":
                 case "browser.input":
-                case "browser.close":
+                case "browser.close": {
                   if (params.projectId !== undefined)
                     await engine.store.project(String(params.projectId));
+                  let browserParams = params;
                   if (params.sessionId !== undefined) {
-                    const session = await featureMeta(String(params.sessionId));
-                    if (params.projectId !== undefined && session.projectId !== params.projectId)
+                    // The conversation only labels the browser's logs. One this host
+                    // cannot read (not yet synced, another provider) must not block the
+                    // owner's own browser; it opens without that label instead.
+                    const session = await featureMeta(String(params.sessionId)).catch(
+                      (error: unknown) => {
+                        if (
+                          error instanceof Error &&
+                          error.message === "Session not found on this machine"
+                        )
+                          return undefined;
+                        throw error;
+                      },
+                    );
+                    if (!session) browserParams = { ...params, sessionId: undefined };
+                    else if (
+                      params.projectId !== undefined &&
+                      session.projectId !== params.projectId
+                    )
                       throw new Error("Browser belongs to another project");
                   }
                   // Only paired owner RPCs may explicitly take control. Conversation
                   // tools use dispatchForSession and cannot enable this option.
                   result = await browserRuntime.describe(
-                    await sharedBrowser.dispatch(input.method, params, token, {
+                    await sharedBrowser.dispatch(input.method, browserParams, token, {
                       takeover: input.method === "browser.claim" && params.takeover === true,
                     }),
                   );
                   break;
+                }
                 case "browser.annotation.start":
                 case "browser.annotation.hover":
                 case "browser.annotation.select":
@@ -5408,12 +5578,7 @@ export async function createHostServer(
               }
             },
           );
-          const inline = serializedResponse(result);
-          const serializedBody =
-            inline === undefined ? JSON.stringify({ result }) : `{"result":${inline}}`;
-          for (const check of resultAuthorities)
-            if (!(await check())) throw new Error("Result authority expired.");
-          response.end(serializedBody);
+          await endResult(result,async()=>{for(const check of resultAuthorities)if(!await check())throw new Error("Result authority expired.");});
         } catch (error) {
           if (!response.destroyed)
             response
@@ -5445,6 +5610,7 @@ export async function createHostServer(
                 }),
               );
         } finally {
+          await voiceDisclosure?.fail().catch(()=>undefined);
           releaseVoiceTool?.();
           if (dispatchStarted !== undefined)
             perfMetrics.recordDuration(dispatchMethod, performance.now() - dispatchStarted);
@@ -5545,6 +5711,7 @@ export async function createHostServer(
       await queueDrainer.start();
       if (closing) return;
       crews.start();
+      assistant.start();
       perfMetrics.start();
       await attachmentOwnership.start();
       if (closing) return;
@@ -5595,6 +5762,12 @@ export async function createHostServer(
       drain(() => managed.nativeActivity.closeBufferRecoveryCatalog());
       drain(async () => await queueDrainer.close());
       drain(() => localVoice.close());
+      drain(() => assistant.close());
+      drain(() => assistantKeepAwake.close());
+      drain(() => managedAssistantSessions.close());
+      drain(() => desktopControl.close());
+      drain(() => desktopHelper.close());
+      engine.ownerInstructions = previousOwnerInstructions;
       drain(() => voiceSetup.close());
       drain(() => crews.close());
       drain(() => attachmentOwnership.close());

@@ -9,6 +9,9 @@ import {
 
 it("accepts only known commands from the floating window", () => {
   expect(isVoiceOverlayCommand("toggleMute")).toBe(true);
+  expect(isVoiceOverlayCommand("manualTurnEnd")).toBe(true);
+  expect(isVoiceOverlayCommand("automaticTurnEnd")).toBe(true);
+  expect(isVoiceOverlayCommand({manualTurnEnd:true})).toBe(false);
   expect(isVoiceOverlayCommand("submit_work")).toBe(false);
   expect(isVoiceOverlayCommand({ command: "start" })).toBe(false);
 });

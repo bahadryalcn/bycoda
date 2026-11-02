@@ -1,6 +1,6 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { useId, useState } from "react";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -83,6 +83,7 @@ export function ProjectActionDialog({
   }));
   const [shortcutHint, setShortcutHint] = useState("");
   const uid = useId();
+  const formId = useId();
   const shortcutError = projectActionShortcutError(draft.shortcut, actions, draft.id);
   const missing = !draft.name.trim()
     ? "Enter a name for this action."
@@ -104,8 +105,26 @@ export function ProjectActionDialog({
       size="md"
       onClose={onClose}
       className="[&_header]:px-6 [&_header]:pt-5"
+      footerStart={
+        editing ? (
+          <Button type="button" variant="link" tone="danger" onClick={onDelete}>
+            {t("Delete action")}
+          </Button>
+        ) : undefined
+      }
+      footer={
+        <ModalActions>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button type="submit" form={formId} disabled={Boolean(missing)} variant="primary">
+            {t("Save action")}
+          </Button>
+        </ModalActions>
+      }
     >
       <form
+        id={formId}
         onSubmit={(event) => {
           event.preventDefault();
           if (!missing)
@@ -118,7 +137,7 @@ export function ProjectActionDialog({
         }}
       >
         <div className="space-y-4 px-6 pb-5 pt-4">
-          <div className="flex items-center gap-2.5 rounded-lg border border-stroke bg-(--ui-surface) px-3 py-2">
+          <div className="flex items-center gap-2.5 rounded-lg border border-stroke px-3 py-2">
             <FolderOpen className="mt-0.5 icon-md shrink-0 text-(--ui-text-muted)" />
             <div className="min-w-0">
               <p title={cwd} className="truncate text-ui-caption text-(--ui-text-secondary)">
@@ -296,9 +315,12 @@ export function ProjectActionDialog({
             </p>
           </div>
           {!draft.devServer ? (
-            <div className="flex items-center justify-between gap-4 rounded-lg bg-(--ui-surface) p-3">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-(--ui-pane-border) p-3">
               <div>
-                <span id={`${uid}-open-label`} className="text-ui-secondary font-medium text-content">
+                <span
+                  id={`${uid}-open-label`}
+                  className="text-ui-secondary font-medium text-content"
+                >
                   {t("Open web address when this action runs")}
                 </span>
                 <p id={`${uid}-open-help`} className={`${help} mt-1`}>
@@ -321,14 +343,7 @@ export function ProjectActionDialog({
             </p>
           )}
           {error ? <Alert tone="danger">{error}</Alert> : null}
-        </div>
-        <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-stroke bg-background-base px-6 py-4">
-          {editing ? (
-            <Button type="button" variant="link" tone="danger" onClick={onDelete}>
-              {t("Delete action")}
-            </Button>
-          ) : null}
-          <p aria-live="polite" className="min-w-0 flex-1 text-ui-caption text-(--ui-text-muted)">
+          <p aria-live="polite" className="text-ui-caption text-(--ui-text-muted)">
             {missing ||
               (draft.devServer
                 ? t("Starts a managed development server on this project's host.")
@@ -340,12 +355,6 @@ export function ProjectActionDialog({
                     )
                   : t("Opens the web address in your browser."))}
           </p>
-          <Button type="button" variant="secondary" onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button type="submit" disabled={Boolean(missing)} variant="primary">
-            {t("Save action")}
-          </Button>
         </div>
       </form>
     </Modal>

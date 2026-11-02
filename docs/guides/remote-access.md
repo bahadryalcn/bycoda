@@ -109,6 +109,20 @@ cross-device acceptance of this new local entry point is still pending.
 
 ## Connection changes and active tools
 
+When a Host connection is blocked, the conversation shows one connection recovery
+notice. Use **Reconnect** there to verify the saved machine and open a fresh
+connection. The conversation, queue and workspace reload after recovery; a failed
+queue read continues to hold sending. Reconnecting never resends a message whose
+delivery is uncertain. Authentication or machine identity failures may require
+signing in or correcting the saved connection in **Connection settings**.
+
+A workspace path belongs to the computer that stores that project. A local
+Windows project must be opened through that computer's Host, with the project
+registered there. A remote server cannot use its own Host to write a path on your
+computer. A path rejection remains a separate workspace error once connectivity
+is restored; reconnecting does not grant access to folders outside registered
+projects.
+
 Terminal log streams, pending desktop tools and development previews keep the
 computer selected when that operation started. Replacing or removing a connection
 stops new access through the old operation; it does not send its remaining output
@@ -169,6 +183,8 @@ Prerequisites:
 - Windows provider discovery supports native `.exe` installations and npm-generated `.cmd` shims. The host reads a shim's target without running `cmd.exe`: Node scripts run with the bundled Node runtime, installer shims with their own `node.exe`, and native targets directly. Targets outside the shim's directory and custom `.cmd` wrappers with other commands are not supported. Registry ACP agent installs use npm from the user's Node.js installation or PATH. SSH aliases can supply Windows domain/user names through the normal SSH config.
 
 SSH host verification and password/passphrase prompts appear in Settings. Changed host keys are rejected by OpenSSH. Passwords/passphrases are used only for the current authentication, not saved. When key/agent authentication is available, opening the remote view restores a lost tunnel automatically. If SSH needs another prompt, use **Reconnect** in Settings. Reconnecting uses the saved device credential and checks the host's identity.
+
+While a machine is off or out of reach, bycoda checks it again in the background: after 2, 5, 15 and 30 seconds, then every minute, and at once when the window regains focus or the network returns. Checks stop after the window has been hidden for 10 minutes. They stay quiet: the **Reconnect** button and the project row show progress only for a reconnect you start. Turn off **Automatically reconnect to remote machines** to stop them.
 
 The forward binds to a temporary port on the laptop's loopback interface. Quitting the desktop closes only that forward. It does not stop the host service or its agent sessions.
 

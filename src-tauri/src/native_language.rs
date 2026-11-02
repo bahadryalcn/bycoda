@@ -13,6 +13,14 @@ fn state() -> &'static Mutex<NativeLanguage> {
     static STATE: OnceLock<Mutex<NativeLanguage>> = OnceLock::new();
     STATE.get_or_init(|| Mutex::new(NativeLanguage::default()))
 }
+
+pub(crate) fn translated(source: &str) -> String {
+    state()
+        .lock()
+        .ok()
+        .and_then(|state| state.labels.get(source).cloned())
+        .unwrap_or_else(|| source.to_owned())
+}
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
 fn label(labels: &HashMap<String, String>, source: &str, name: &str) -> String {
     for prefix in ["Quit", "Show", "Hide", "About"] {

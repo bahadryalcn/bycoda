@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { RefreshCw } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useState } from "react";
@@ -32,7 +33,10 @@ export function RemoteLoadError({
     failure.kind === "unreachable"
       ? t("Can’t reach {p0}", { p0: name })
       : failure.kind === "outdated"
-        ? t("{p0} Host on {p1} needs an update", { p0: PRODUCT_IDENTITY.displayName, p1: name })
+        ? t("{p0} Host on {p1} needs an update", {
+            p0: PRODUCT_IDENTITY.displayName,
+            p1: name,
+          })
         : t("Couldn’t load from the machine");
   const needsAuth = needsSignIn(status);
   const startReconnect = () => {
@@ -42,56 +46,63 @@ export function RemoteLoadError({
     });
   };
   const openConnections = () => window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT));
+  const actions = (
+    <>
+      {failure.kind === "unreachable" && machine ? (
+        <Button
+          type="button"
+          variant="primary"
+          startIcon={<RefreshCw className="icon-sm" aria-hidden />}
+          loading={reconnecting}
+          reserveLabels={[t("Reconnecting…")]}
+          onClick={startReconnect}
+        >
+          {reconnecting
+            ? t("Reconnecting…")
+            : needsAuth
+              ? t("Sign in and reconnect")
+              : t("Reconnect")}
+        </Button>
+      ) : null}
+      {failure.kind === "unreachable" && machine?.ssh ? (
+        <Button type="button" variant="secondary" onClick={() => requestMachineEdit(machine.id)}>
+          {t("Edit address…")}
+        </Button>
+      ) : null}
+      {failure.kind === "unreachable" ||
+      failure.kind === "outdated" ||
+      failure.kind === "identity" ? (
+        <Button type="button" variant="secondary" onClick={openConnections}>
+          {t("Connection settings")}
+        </Button>
+      ) : null}
+      {failure.kind === "other" && onRetry ? (
+        <Button type="button" variant="secondary" onClick={onRetry}>
+          {t("Retry")}
+        </Button>
+      ) : null}
+    </>
+  );
+  const reconnectFailed = reconnectError && reconnectError !== failure.message;
   return (
-    <Alert role="alert" tone="warning">
-      <p className="font-medium text-content">{title}</p>
+    <Alert role="alert" tone="warning" title={title} action={actions}>
       {compact ? (
-        <details className="text-(--ui-text-muted)">
-          <summary className="cursor-pointer text-ui-micro hover:text-content">
+        <details>
+          <summary className="w-fit cursor-pointer select-none hover:text-content">
             {t("Details")}
           </summary>
           <p className="mt-1 break-words">{failure.message}</p>
         </details>
       ) : (
-        <p className="break-words text-(--ui-text-muted)">{failure.message}</p>
+        <p className="break-words">{failure.message}</p>
       )}
-      {reconnectError && reconnectError !== failure.message ? (
-        <p className="break-words text-(--ui-text-muted)">
+      {reconnectFailed ? (
+        <p className="mt-1 break-words">
           {t("Reconnecting failed: ")}
           {reconnectError}
         </p>
       ) : null}
-      {stale ? (
-        <p className="text-(--ui-text-muted)">{t("Showing what was last loaded.")}</p>
-      ) : null}
-      <div className="mt-0.5 flex flex-wrap gap-1.5">
-        {failure.kind === "unreachable" && machine ? (
-          <Button type="button" loading={reconnecting} onClick={startReconnect} variant="primary">
-            {reconnecting
-              ? t("Reconnecting…")
-              : needsAuth
-                ? t("Sign in and reconnect")
-                : t("Reconnect")}
-          </Button>
-        ) : null}
-        {failure.kind === "unreachable" && machine?.ssh ? (
-          <Button type="button" onClick={() => requestMachineEdit(machine.id)} variant="secondary">
-            {t("Edit address…")}
-          </Button>
-        ) : null}
-        {failure.kind === "unreachable" ||
-        failure.kind === "outdated" ||
-        failure.kind === "identity" ? (
-          <Button type="button" onClick={openConnections} variant="secondary">
-            {t("Connection settings")}
-          </Button>
-        ) : null}
-        {failure.kind === "other" && onRetry ? (
-          <Button type="button" onClick={onRetry} variant="secondary">
-            {t("Retry")}
-          </Button>
-        ) : null}
-      </div>
+      {stale ? <p className="mt-1">{t("Showing what was last loaded.")}</p> : null}
     </Alert>
   );
 }

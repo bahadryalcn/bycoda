@@ -253,6 +253,7 @@ export function applyHarnessEvent(
         ...session,
         pendingQuestion: {
           requestId: event.requestId,
+          ...(event.occurrenceId ? {occurrenceId:event.occurrenceId} : {}),
           questions: event.questions,
           ...(event.behavior ? { behavior: event.behavior } : {}),
           ...(event.dismissAction ? { dismissAction: event.dismissAction } : {}),
@@ -533,6 +534,10 @@ function mergeTurnMetrics(
     }
   }
   if (userIndex < 0) return session;
+  // Clarification replies and steers continue the same provider turn. Its
+  // cumulative metrics belong to the root, independently of reply authorship.
+  const continuation=session.blocks[userIndex].continuationOf;
+  if(continuation){const owner=session.blocks.findIndex(block=>block.id===continuation&&block.role==="user"&&!block.continuationOf);if(owner<0)return session;userIndex=owner;}
 
   const current = session.blocks[userIndex];
   const metrics = {

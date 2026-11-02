@@ -51,7 +51,7 @@ export function GitCommitBlameView({
             >
               <span
                 title={`${entry.sha}\n${entry.author} · ${entry.summary}`}
-                className="sticky left-0 w-44 shrink-0 truncate bg-[var(--ui-surface)] px-2 font-sans text-ui-micro text-(--ui-text-secondary)"
+                className="sticky left-0 w-44 shrink-0 truncate bg-(--color-background-base) px-2 font-sans text-ui-micro text-(--ui-text-secondary)"
               >
                 {first ? `${entry.shortSha} ${entry.author}` : ""}
               </span>

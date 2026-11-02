@@ -43,7 +43,7 @@
   padding: clamp(1rem, 0.75rem + 1cqi, 1.5rem);
   border: 1px solid var(--ui-editor-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
+  background: transparent;
 }
 .social-view .social-editor > .social-form {
   display: grid;
@@ -86,7 +86,7 @@
   flex-wrap: wrap;
   padding: 0.75rem 1rem;
   border-radius: var(--ui-radius-control);
-  background: var(--ui-surface);
+  border: 1px solid var(--ui-pane-border);
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
 }

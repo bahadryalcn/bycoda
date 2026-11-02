@@ -1,10 +1,17 @@
 import { forEachAsync, mapAsync, someAsync } from "./async-collections";
+import {deferredAssistantTurn,AssistantTurnPolicyDeferredError} from "./assistant-turn-policy";
+import {assistantRecoveryHoldsTask,assistantRecoveryIdentity,readAssistantRecovery,writeAssistantRecovery,type AssistantRecoverySource} from "./assistant-worker-recovery";
+import {assistantJobSessionBelongs} from "./assistant-job-scope";
+import {withAssistantTaskMetadata,assistantTaskMetadataSourceStamp} from "./assistant-task-metadata";
+import {hostQuestionToken} from "./question-source";
+import type {AssistantJob} from "../src/shared/model/host-contracts/assistant";
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import { assertExpectedConfiguration } from "./configurationConflict";
 import { createHash, randomUUID } from "node:crypto";
 import { constants, statSync } from "node:fs";
 import { access, lstat, readdir, readFile } from "node:fs/promises";
 import { setImmediate as yieldFingerprint } from "node:timers/promises";
+import { isDeepStrictEqual } from "node:util";
 import { join } from "node:path";
 import {
   autoMergeBlocker,
@@ -31,6 +38,8 @@ import {
 import { DEFAULT_MAX_RUNNING_TASKS } from "../src/features/tasks/model/hostSettings";
 import { hasPendingApproval } from "../src/features/sessions/model/session";
 import { blockedHandoff, taskContract } from "./task-handoff";
+import type { HostEngine } from "./engine";
+import { buildDeterministicHandoff } from "../src/features/sessions/model/handoff";
 import { readTaskInstructions } from "../src/features/tasks/model/taskInstructions";
 import {
   acceptanceReviewInstructions,
@@ -401,6 +410,250 @@ function questionContinuationCount(task: HostTask): number {
  * direct tasks share the selected checkout; other tasks require an isolated
  * Git worktree and wait for approval before delivery to the project checkout. */
 export class HostTasks {
+  /** Internal runtime composition, never accepted from an RPC request. */
+  assistantRecoveryAdmission?: (task:HostTask,stage?:{sessionId:string;runId?:string;phase:"command"|"provider"})=>Promise<void>;
+  assistantGoalAdmission?:(goalId:string)=>Promise<boolean>;
+  async goalExecutionAllowed(goalId?:string):Promise<boolean>{
+    await this.ready;
+    return !this.closing&&(!goalId||(!this.pausedGoals.has(goalId)&&(!this.assistantGoalAdmission||await this.assistantGoalAdmission(goalId))));
+  }
+  assistantRecoveryFailed?: (task:HostTask,message:string)=>Promise<void>;
+  private readonly assistantRecoveryQueue=new Set<string>();
+  async captureAssistantRecovery(input:{jobId:string;sessionId:string;source:{projectId:string;executionCwd:string;authorityGeneration?:number;runId?:string}}):Promise<AssistantRecoverySource>{
+    await this.ready;
+    const matches=(await this.list(input.source.projectId)).filter(task=>task.goalId===`assistant-${input.jobId}`&&task.sessionId===input.sessionId&&task.runId===input.source.runId&&task.status==="running");
+    if(matches.length!==1)throw new Error("Recovery supports only this assistant job's exact current worker.");
+    const task=matches[0],record=await this.store.session(input.sessionId),row=await this.store.db.prepare("SELECT value FROM assistant_jobs WHERE id=? AND deleted_at IS NULL").get(input.jobId);
+    if(task.maxRunMinutes>0&&this.now()-(task.startedAt??task.createdAt)>=task.maxRunMinutes*60000)throw new Error("The original worker reached its time limit; recovery cannot bypass it.");
+    if(!row||!await assistantJobSessionBelongs(this.store,JSON.parse(row.value) as AssistantJob,input.sessionId,record.projectId)||!input.source.runId||record.status!=="running"||record.runId!==input.source.runId||record.authorityGeneration!==input.source.authorityGeneration||(record.session.worktreeCwd??record.session.cwd)!==input.source.executionCwd)throw new Error("The original recovery worker source changed or already finished.");
+    if(task.crewRunId||task.crewDefinitionId||task.reviewer||task.needsInput||task.error||task.artifactDeliveryPending||record.session.pendingQuestion||record.session.pendingSwitch||record.session.queuedMessages?.length||record.session.blocks.some(block=>block.draft||!!block.approval&&!block.approval.decided))throw new Error("Preserve owner questions, approvals, drafts, reviewer and delivery ownership before worker recovery.");
+    const profile=await this.store.db.prepare("SELECT value FROM assistant_profile WHERE id='profile'").get(),stall=profile?Number(JSON.parse(profile.value).stallMinutes):15,activity=record.runActivity;
+    if(!activity||activity.runId!==record.runId||!Number.isSafeInteger(activity.lastActivityAt)||activity.lastActivityAt<0||activity.lastActivityAt>this.now()||this.now()-activity.lastActivityAt<Math.max(5,stall)*60000)throw new Error("The current worker has no confirmed stalled activity; let its canonical task settle first.");
+    return{taskId:task.id,jobId:input.jobId,goalId:task.goalId!,sessionId:input.sessionId,runId:input.source.runId,projectId:task.projectId,executionCwd:input.source.executionCwd,authorityGeneration:input.source.authorityGeneration,taskValue:(await this.taskValue(task.id))!,identity:assistantRecoveryIdentity(task)};
+  }
+  private async waitAssistantRetirement(sessionId:string,runId:string,signal:AbortSignal){
+    let timer:ReturnType<typeof setTimeout>|undefined;let abort!:()=>void;
+    try{await Promise.race([this.waitRecoveryRun!(sessionId,runId),new Promise<never>((_,reject)=>{abort=()=>reject(new Error("Worker retirement was interrupted; its outcome remains unknown."));signal.addEventListener("abort",abort,{once:true});if(signal.aborted)abort();timer=setTimeout(()=>reject(new Error("Original worker retirement remains unconfirmed.")),20000);})]);}
+    finally{clearTimeout(timer);signal.removeEventListener("abort",abort);}
+  }
+  async recoverAssistantWorker(input:{source:AssistantRecoverySource;operationId:string;signal:AbortSignal;recheck:()=>Promise<void>;phase:()=>Promise<void>}):Promise<HostTask>{
+    await this.ready;const source=input.source;
+    if(!this.admitCommand||!this.waitRecoveryRun||!this.retireRecoveryWriter||this.continuingSessions.has(source.taskId))throw new Error("Guarded recovery is unavailable or already pending.");
+    this.continuingSessions.add(source.taskId);
+    let expected=source.taskValue;
+    const check=async()=>{
+      input.signal.throwIfAborted();await input.recheck();const task=await this.unchangedTask(source.taskId,expected);
+      if(this.closing||!task||!['running','blocked'].includes(task.status)||task.goalId!==source.goalId||this.pausedGoals.has(source.goalId)||assistantRecoveryIdentity(task)!==source.identity)throw new Error("The canonical recovery task was stopped, paused or changed.");
+      if(task.maxRunMinutes>0&&this.now()-(task.startedAt??task.createdAt)>=task.maxRunMinutes*60000)throw new Error("The original worker reached its time limit; recovery cannot bypass it.");
+      const reason=await this.budgetReason(task,true);if(reason)throw new Error(reason);
+      const record=await this.store.session(source.sessionId),session=record.session;
+      if(record.runId!==source.runId||record.projectId!==source.projectId||record.authorityGeneration!==source.authorityGeneration||(session.worktreeCwd??session.cwd)!==source.executionCwd||session.harness!==task.harness||session.model!==task.model||session.runtimeMode!==task.runtimeMode||(session.providerAccountId??"default")!==(task.providerAccountId??"default")||JSON.stringify(session.modelSettings)!==JSON.stringify(task.modelSettings)||session.pendingQuestion||session.pendingSwitch||session.queuedMessages?.length||session.blocks.some(block=>block.draft||!!block.approval&&!block.approval.decided))throw new Error("The original worker source or pending owner input changed.");
+      input.signal.throwIfAborted();
+    };
+    try{
+      await check();await this.admitCommand({check:async stage=>{await check();if(stage.sessionId!==source.sessionId||(stage.phase==="provider"&&stage.runId!==source.runId))throw new Error("A replacement worker cannot be cancelled.");}},()=>this.engine.command({type:"cancel",commandId:`${input.operationId}-cancel`,sessionId:source.sessionId,runId:source.runId,authorityGeneration:source.authorityGeneration}));
+      await this.waitAssistantRetirement(source.sessionId,source.runId,input.signal);await check();
+      return await this.retireRecoveryWriter!(source.sessionId,async()=>{
+        await check();const task=(await this.find(source.taskId))!;await this.block(task,"The assistant retired a stalled worker for one bounded recovery.",this.now());expected=(await this.taskValue(task.id))!;
+        await input.phase();await check();this.assistantRecoveryQueue.add(task.id);
+        try{
+          const queued=await this.move(task.id,"queued");
+          return await this.write({...queued,ownerNotices:[...(task.ownerNotices??[]),ownerNotice("auto_continued","The assistant stopped this stalled worker and queued its retained task once. Earlier worker history remains available.",this.now(),input.operationId)].slice(-OWNER_NOTICE_LIMIT),retryFeedback:[queued.retryFeedback,"Continue the retained work from the previous stalled worker; inspect its transcript and existing checkout before changing anything."].filter(Boolean).join("\n\n").slice(-RETRY_FEEDBACK_LIMIT),updatedAt:this.now()});
+        }finally{this.assistantRecoveryQueue.delete(task.id);}
+      },check);
+    }finally{this.continuingSessions.delete(source.taskId);}
+  }
+  private async resolveAssistantRecoveryForOwner(task:HostTask){
+    if(this.assistantRecoveryQueue.has(task.id))return;
+    const record=await readAssistantRecovery(this.store,task.id);if(!record||["ownerResolved","completed"].includes(record.state))return;
+    const targetSession=record.launchedSessionId??record.source.sessionId,targetRun=record.launchedRunId??record.source.runId;
+    if(task.sessionId&&(task.sessionId!==targetSession||task.runId!==targetRun))return;
+    const source={...record!.source,...(record!.launchedSessionId?{sessionId:record!.launchedSessionId,runId:record!.launchedRunId!,authorityGeneration:record!.launchedAuthorityGeneration}:{})},expected=await this.taskValue(task.id);
+    const check=async()=>{
+      const current=await this.store.session(source.sessionId);
+      if(this.closing||!this.activeRecoveryRun||!this.retireRecoveryWriter||this.activeRecoveryRun(source.sessionId)||current.runId!==source.runId||current.projectId!==source.projectId||current.authorityGeneration!==source.authorityGeneration||(current.session.worktreeCwd??current.session.cwd)!==source.executionCwd||!await this.unchangedTask(task.id,expected))throw new Error("Inspect and stop the exact original recovery worker before using Retry. Its replacement cannot be retired through this receipt.");
+    };
+    await check();await this.retireRecoveryWriter!(source.sessionId,async()=>{await check();await this.store.transaction(()=>writeAssistantRecovery(this.store,{...record!,state:"ownerResolved",updatedAt:this.now(),ownerResolution:{at:this.now(),priorState:record!.state,priorMessage:record!.message},message:"The owner inspected the recovery and explicitly retried after original provider retirement."}),"critical");},check);
+  }
+  private taskMessage<T>(task: HostTask, reason: string, work: () => Promise<T>): Promise<T> {
+    return this.engine.withMessageAuthor
+      ? this.engine.withMessageAuthor({kind:"task",id:task.id,name:task.title,reason},work)
+      : work();
+  }
+  private readonly continuingSessions = new Set<string>();
+  private readonly continueHistory?: HostEngine["continueSessionHistory"];
+  private readonly admitCommand?: HostEngine["withCommandAdmission"];
+  private readonly waitRecoveryRun?:HostEngine["waitForRun"];
+  private readonly retireRecoveryWriter?:HostEngine["withRetiredProviderWriter"];
+  private readonly activeRecoveryRun?:HostEngine["hasActiveRun"];
+  private readonly retainedDeletionWriter?:HostEngine["hasRetainedProviderWriter"];
+  /** Only the canonical running worker may receive supervisor sends/compaction.
+   * Its accepted run and budget ledger move in the engine's same transaction. */
+  async managedSessionCommand(input:{jobId:string;sessionId:string;source:{projectId:string;executionCwd:string;authorityGeneration?:number;runId?:string};questionToken?:string;signal:AbortSignal;recheck:()=>Promise<void>},command:unknown) {
+    await this.ready;
+    if(!this.admitCommand||!input.source.runId)throw new Error("Guarded worker commands require the original engine run.");
+    const matches=(await this.list(input.source.projectId)).filter(task=>task.goalId===`assistant-${input.jobId}`&&task.sessionId===input.sessionId&&task.runId===input.source.runId);
+    if(matches.length!==1)throw new Error("Supervisor writes support only the job's current worker. Planner repair uses goal replanning; independent review remains with its review owner.");
+    let task=matches[0],expected=await this.taskValue(task.id);
+    const answering=!!input.questionToken&&!!command&&typeof command==="object"&&(command as {type?:string}).type==="answer";
+    if(input.questionToken&&!answering)throw new Error("A question scope only permits the canonical answer command.");
+    if(this.continuingSessions.has(task.id))throw new Error("Worker maintenance is already pending.");
+    this.continuingSessions.add(task.id);
+    const check=async(stage:{phase:"command"|"provider";sessionId:string;runId?:string})=>{
+      input.signal.throwIfAborted();await input.recheck();
+      if(stage.sessionId!==input.sessionId||this.closing||task.status!=="running"||this.pausedGoals.has(task.goalId!)||task.crewRunId||task.crewDefinitionId||task.error||(!answering&&task.needsInput)||JSON.stringify(await this.unchangedTask(task.id,expected))!==JSON.stringify(task))throw new Error("The managed worker was stopped, paused or changed before dispatch.");
+      if(task.maxRunMinutes>0&&this.now()-(task.startedAt??task.createdAt)>=task.maxRunMinutes*60000)throw new Error("The original managed worker reached its time limit.");
+      const budget=await this.budgetReason(task,stage.phase==="command");if(budget)throw new Error(budget);
+      const current=await this.store.session(input.sessionId),session=current.session;
+      const cwd=task.worktreeCwd??(await this.store.project(task.projectId)).cwd;
+      if(current.projectId!==input.source.projectId||(session.worktreeCwd??session.cwd)!==input.source.executionCwd||cwd!==input.source.executionCwd||current.authorityGeneration!==input.source.authorityGeneration||current.runId!==(stage.phase==="command"?input.source.runId:stage.runId)||current.runId!==task.runId||session.harness!==task.harness||session.model!==task.model||session.runtimeMode!==task.runtimeMode||(session.providerAccountId??"default")!==(task.providerAccountId??"default")||JSON.stringify(session.modelSettings)!==JSON.stringify(task.modelSettings)||(answering?hostQuestionToken(current)!==input.questionToken:!!session.pendingQuestion)||session.pendingSwitch||session.blocks.some(block=>!!block.approval&&!block.approval.decided)||!!session.queuedMessages?.length||session.blocks.some(block=>!!block.draft))throw new Error("The managed worker's original source or pending owner input changed.");
+      input.signal.throwIfAborted();
+    };
+    try {
+      return await this.admitCommand({check,onAccepted:async receipt=>{
+        if(!receipt.runId)return;
+        input.signal.throwIfAborted();await input.recheck();
+        await this.unchangedTask(task.id,expected);
+        task=await this.write({...task,runId:receipt.runId,updatedAt:this.now()});expected=await this.taskValue(task.id);
+      }},()=>this.engine.command(command));
+    }finally{this.continuingSessions.delete(task.id);}
+  }
+  /** A managed worker retains its task/workspace and model while the engine
+   * starts fresh provider history. Only its current, idle attempt may move. */
+  async continueManagedSession(input: Omit<Parameters<HostEngine["continueSessionHistory"]>[0],
+    "brief" | "requestId" | "admitted" | "onAccepted"> & {
+      jobId: string; requestId: string; guard: () => Promise<void>;
+    }) {
+    await this.ready;
+    input.signal.throwIfAborted();
+    if (!input.source.runId) throw new Error("The managed worker's original run identity is missing.");
+    if (!this.continueHistory) throw new Error("Worker history continuation is unavailable.");
+    const matches = (await this.list(input.source.projectId)).filter(task =>
+      task.goalId === `assistant-${input.jobId}` && task.sessionId === input.sessionId && task.runId === input.source.runId);
+    if (matches.length !== 1) throw new Error("The original managed worker attempt is no longer owned by this job.");
+    let task = matches[0];
+    if (this.continuingSessions.has(task.id)) throw new Error("Worker history continuation is already pending.");
+    this.continuingSessions.add(task.id);
+    try {
+      let expected = await this.taskValue(task.id);
+      let original = JSON.stringify(task);
+      const admitted = async () => {
+        input.signal.throwIfAborted();
+        await input.guard();
+        if (this.closing || task.status !== "running" || this.pausedGoals.has(task.goalId!) ||
+          task.crewRunId || task.crewDefinitionId || task.error || task.needsInput ||
+          JSON.stringify(await this.unchangedTask(task.id, expected)) !== original)
+          throw new Error("The managed worker was stopped, paused or changed before continuation.");
+        if (task.maxRunMinutes > 0 && this.now() - (task.startedAt ?? task.createdAt) >= task.maxRunMinutes * 60000)
+          throw new Error("The original managed worker reached its time limit.");
+        const budget = await this.budgetReason(task, true);
+        if (budget) throw new Error(budget);
+        const current = await this.store.session(input.sessionId);
+        const session = current.session;
+        const cwd = task.worktreeCwd ?? (await this.store.project(task.projectId)).cwd;
+        if (current.projectId !== task.projectId || (session.worktreeCwd ?? session.cwd) !== cwd ||
+          cwd !== input.source.executionCwd || session.harness !== task.harness || session.model !== task.model ||
+          (session.providerAccountId ?? "default") !== (task.providerAccountId ?? "default") ||
+          session.runtimeMode !== task.runtimeMode || JSON.stringify(session.modelSettings) !== JSON.stringify(task.modelSettings))
+          throw new Error("The managed worker's original model or execution folder changed.");
+      };
+      await admitted();
+      if (task.preflightRequirements?.length) {
+        const report = await this.preflightAt(task, input.source.executionCwd);
+        if (report.items.some(item => item.required && item.state !== "ready"))
+          throw new Error("The managed worker's required resources are no longer ready.");
+      }
+      await admitted();
+      const session = (await this.store.session(input.sessionId)).session;
+      const requestId = `assistant-history-${createHash("sha256").update(input.requestId).digest("hex")}`;
+      return await this.continueHistory({ ...input, requestId, admitted,
+        brief: [taskContract(task), buildDeterministicHandoff(session)].join("\n\n"),
+        onAccepted: async receipt => {
+          // This callback shares the engine's critical send transaction. A crash
+          // cannot commit a new run while the task still follows the old one.
+          await admitted();
+          if (!receipt.runId) throw new Error("Worker continuation returned no original run receipt.");
+          task=await this.write({ ...task, runId: receipt.runId, updatedAt: this.now(), needsInput: undefined });
+          expected=await this.taskValue(task.id);original=JSON.stringify(task);
+        },
+      });
+    } finally {
+      this.continuingSessions.delete(task.id);
+    }
+  }
+  private readonly pausedGoals = new Set<string>();
+  private readonly assistantDeletionGoals=new Set<string>();
+  private readonly invalidatedAssistantGenerations=new Map<string,Set<string|undefined>>();
+  private invalidateAssistantGeneration(task:HostTask):void{
+    if(!task.goalId?.startsWith("assistant-"))return;
+    const invalidated=this.invalidatedAssistantGenerations.get(task.id)??new Set<string|undefined>();invalidated.add(task.workspaceGenerationId);this.invalidatedAssistantGenerations.set(task.id,invalidated);
+  }
+  isAssistantDeletionHeld(goalId:string):boolean{return this.assistantDeletionGoals.has(goalId);}
+  async setAssistantDeletionHold(goalId:string,operationId:string,held:boolean):Promise<void>{
+    await this.ready;if(!goalId.startsWith("assistant-")||!operationId||operationId.length>200)throw new Error("Invalid assistant deletion hold.");
+    await this.store.transaction(async()=>{
+      const old=await this.store.db.prepare("SELECT operation_id FROM task_goal_deletion_holds WHERE goal_id=?").get(goalId);
+      if(old&&old.operation_id!==operationId)throw new Error("A different deletion intent owns this goal hold.");
+      if(held)await this.store.db.prepare("INSERT OR IGNORE INTO task_goal_deletion_holds(goal_id,operation_id) VALUES(?,?)").run(goalId,operationId);
+      else await this.store.db.prepare("DELETE FROM task_goal_deletion_holds WHERE goal_id=? AND operation_id=?").run(goalId,operationId);
+      this.store.afterCommit(()=>{if(held)this.assistantDeletionGoals.add(goalId);else this.assistantDeletionGoals.delete(goalId);});
+      await this.publishGoalPause(goalId);
+    },"critical");
+  }
+  async assertAssistantDeletionStopped(taskIds:readonly string[]):Promise<void>{
+    for(const id of taskIds){const task=await this.find(id);if(!task)throw new Error("A selected task disappeared before deletion.");if(task.status==="running"||task.status==="verifying"||this.jobs.has(id)||this.delivering.has(id)||this.continuingSessions.has(id)||task.artifactDeliveryPending||task.artifactDeliveryActivityId)throw new Error("A selected task still owns active work, verification, delivery or maintenance.");}
+  }
+  async markAssistantDeletionQuiescent(id:string,expectedValue:string):Promise<void>{
+    if(await this.taskValue(id)!==expectedValue)throw new Error("The selected task changed during Stop.");const task=JSON.parse(expectedValue) as HostTask;
+    if(this.jobs.has(id)||this.delivering.has(id)||this.continuingSessions.has(id)||task.artifactDeliveryPending||task.artifactDeliveryActivityId)throw new Error("The task's actual work is still retiring.");
+    await this.write({...task,status:task.status==="done"?"done":"blocked",...(task.status==="done"?{}:{error:"Held after owner-reviewed job deletion; original execution may still need inspection."}),workspaceGenerationId:randomUUID(),awaitingOwnerRestart:true,needsInput:undefined,reviewer:undefined,deliveryRequested:undefined,updatedAt:this.now()});
+    this.store.afterCommit(()=>this.invalidateAssistantGeneration(task));
+  }
+  async assistantDeletionRunRetired(source:{sessionId:string;runId:string;projectId:string;executionCwd:string;authorityGeneration?:number}):Promise<boolean>{
+    const current=await this.store.session(source.sessionId);
+    if(current.runId!==source.runId||current.projectId!==source.projectId||(current.session.worktreeCwd??current.session.cwd)!==source.executionCwd||current.authorityGeneration!==source.authorityGeneration)throw new Error("The original deletion source changed; a replacement turn will not be cancelled.");
+    if(!this.activeRecoveryRun)throw new Error("Actual engine retirement cannot be verified on this Host.");
+    if(current.status==="interrupted")throw new Error("An interrupted source is not proof of original provider retirement; inspect its recovery state before clearing deletion.");
+    const root=current.session.blocks.findLastIndex(block=>block.role==="user"&&!block.continuationOf);
+    if(current.session.blocks.slice(root+1).some(block=>block.role==="system"&&block.text.trim()==="Stopped by you.")&&this.retainedDeletionWriter?.(source.sessionId))return false;
+    return current.status!=="running"&&!this.activeRecoveryRun(source.sessionId);
+  }
+  async assertAssistantDeletionSourceStable(source:{sessionId:string;runId:string;projectId:string;executionCwd:string;authorityGeneration?:number}):Promise<void>{const current=await this.store.session(source.sessionId);if(current.runId!==source.runId||current.projectId!==source.projectId||(current.session.worktreeCwd??current.session.cwd)!==source.executionCwd||current.authorityGeneration!==source.authorityGeneration)throw new Error("The original unknown source changed. Its replacement will not be cancelled or adopted.");}
+  async restoreAssistantDeletedTask(snapshot:HostTask,goalId:string):Promise<HostTask>{
+    await this.ready;parseHostTask(snapshot);if(snapshot.goalId!==goalId||!goalId.startsWith("assistant-"))throw new Error("The deleted task is outside its original assistant goal.");
+    return this.store.transaction(async()=>{
+      if(await this.taskValue(snapshot.id)!==undefined)throw new Error("A task with this identity already exists. Nothing was restored.");await this.store.project(snapshot.projectId);
+      const done=snapshot.status==="done";
+      return this.write({...snapshot,status:done?"done":"blocked",...(done?{}:{error:"Restored from Recently deleted. Review this task before explicitly restarting it."}),workspaceGenerationId:randomUUID(),awaitingOwnerRestart:true,needsInput:undefined,reviewer:undefined,deliveryRequested:undefined,mergeRetry:undefined,blockedTakeover:undefined,runStall:undefined,updatedAt:this.now()});
+    },"critical");
+  }
+  /** Durable admission hold: running work finishes, queued goal work cannot start. */
+  async setGoalPaused(goalId: string, paused: boolean): Promise<void> {
+    await this.ready;
+    await this.store.transaction(async()=>{
+      if(paused)await this.store.db.prepare("INSERT OR IGNORE INTO task_goal_holds(goal_id) VALUES (?)").run(goalId);
+      else await this.store.db.prepare("DELETE FROM task_goal_holds WHERE goal_id=?").run(goalId);
+      await this.publishGoalPause(goalId);
+    },"critical");
+  }
+  /** Automatic admission holds remain independent of the owner's manual pause. */
+  async setGoalPauseReason(goalId:string,reason:"assistant-budget"|"assistant-hours",paused:boolean):Promise<void> {
+    if(reason!=="assistant-budget"&&reason!=="assistant-hours")throw new Error("Unsupported goal pause reason.");
+    await this.ready;
+    await this.store.transaction(async()=>{
+      if(paused)await this.store.db.prepare("INSERT OR IGNORE INTO task_goal_reason_holds(goal_id,reason) VALUES (?,?)").run(goalId,reason);
+      else await this.store.db.prepare("DELETE FROM task_goal_reason_holds WHERE goal_id=? AND reason=?").run(goalId,reason);
+      await this.publishGoalPause(goalId);
+    },"critical");
+  }
+  private async publishGoalPause(goalId:string) {
+    const held=!!await this.store.db.prepare("SELECT goal_id FROM task_goal_holds WHERE goal_id=? UNION SELECT goal_id FROM task_goal_reason_holds WHERE goal_id=? UNION SELECT goal_id FROM task_goal_deletion_holds WHERE goal_id=? LIMIT 1").get(goalId,goalId,goalId);
+    this.store.afterCommit(()=>{if(held)this.pausedGoals.add(goalId);else this.pausedGoals.delete(goalId);});
+  }
+  async hasRunningGoalWork(goalIds:readonly string[]):Promise<boolean> {
+    await this.ready;const selected=new Set(goalIds);
+    return (await this.list()).some(task=>task.goalId&&selected.has(task.goalId)&&this.jobs.has(task.id));
+  }
   private timer?: ReturnType<typeof setInterval>;
   private ticking?: Promise<void>;
   private closing = false;
@@ -579,8 +832,15 @@ export class HostTasks {
     private readonly verifyTimeoutMs = VERIFY_TIMEOUT_MS,
     private readonly managed?: TaskWorkspaceServices,
   ) {
+    this.continueHistory = (engine as SessionRunEngine & Partial<Pick<HostEngine, "continueSessionHistory">>)
+      .continueSessionHistory?.bind(engine);
+    this.admitCommand=(engine as SessionRunEngine & Partial<Pick<HostEngine,"withCommandAdmission">>).withCommandAdmission?.bind(engine);
+    const recoveryEngine=engine as SessionRunEngine & Partial<Pick<HostEngine,"waitForRun"|"withRetiredProviderWriter"|"hasActiveRun">>;
+    this.waitRecoveryRun=recoveryEngine.waitForRun?.bind(engine);this.retireRecoveryWriter=recoveryEngine.withRetiredProviderWriter?.bind(engine);this.activeRecoveryRun=recoveryEngine.hasActiveRun?.bind(engine);
+    this.retainedDeletionWriter=(engine as SessionRunEngine&Partial<Pick<HostEngine,"hasRetainedProviderWriter">>).hasRetainedProviderWriter?.bind(engine);
     // Request guards stay in the Store's AsyncLocal context; autonomous calls have none.
     this.engine = {
+      withMessageAuthor:engine.withMessageAuthor?.bind(engine),
       command: async (...args) => {
         await this.store.db.checkAuthorization();
         return engine.command(...args);
@@ -600,6 +860,16 @@ export class HostTasks {
         await store.db.exec(
           "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE INDEX IF NOT EXISTS tasks_project ON tasks(json_extract(value, '$.projectId'));",
         );
+        await store.db.exec("CREATE TABLE IF NOT EXISTS task_goal_holds(goal_id TEXT PRIMARY KEY);");
+        await store.db.exec("CREATE TABLE IF NOT EXISTS task_goal_reason_holds(goal_id TEXT NOT NULL,reason TEXT NOT NULL CHECK(reason IN ('assistant-budget','assistant-hours')),PRIMARY KEY(goal_id,reason));");
+        const reasonSchema=await store.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='task_goal_reason_holds'").get();
+        if(!String(reasonSchema?.sql??"").includes("'assistant-hours'"))await store.transaction(async()=>{
+          await store.db.exec("ALTER TABLE task_goal_reason_holds RENAME TO task_goal_reason_holds_legacy_v1; CREATE TABLE task_goal_reason_holds(goal_id TEXT NOT NULL,reason TEXT NOT NULL CHECK(reason IN ('assistant-budget','assistant-hours')),PRIMARY KEY(goal_id,reason)); INSERT INTO task_goal_reason_holds(goal_id,reason) SELECT goal_id,reason FROM task_goal_reason_holds_legacy_v1; DROP TABLE task_goal_reason_holds_legacy_v1;");
+        },"critical");
+        await store.db.exec("CREATE TABLE IF NOT EXISTS task_goal_deletion_holds(goal_id TEXT PRIMARY KEY,operation_id TEXT NOT NULL);");
+        for (const row of await store.db.prepare("SELECT goal_id FROM task_goal_holds").all()) this.pausedGoals.add(String(row.goal_id));
+        for (const row of await store.db.prepare("SELECT DISTINCT goal_id FROM task_goal_reason_holds").all()) this.pausedGoals.add(String(row.goal_id));
+        for(const row of await store.db.prepare("SELECT goal_id FROM task_goal_deletion_holds").all()){this.pausedGoals.add(String(row.goal_id));this.assistantDeletionGoals.add(String(row.goal_id));}
         // Database-owned revisions also see recovery edits and another board's
         // writes, without discarding every historical JSON object on every tick.
         await store.db.exec(`
@@ -770,6 +1040,7 @@ export class HostTasks {
   onDelete?: (task: { id: string; projectId: string }) => void;
   private etagCache?: {
     revision: number;
+    sourceStamp:string;
     etag: string;
   };
   private listCache?: {
@@ -784,6 +1055,7 @@ export class HostTasks {
       tasks: HostTask[];
     }
   >();
+  private assistantMetadataCache=new Map<string|undefined,{revision:number;sourceStamp:string;tasks:HostTask[]}>();
   /** Live task state for one scheduler pass, maintained by write/delete. */
   private schedulerTasks?: Map<string, HostTask>;
   private pointIndex?: {
@@ -804,6 +1076,14 @@ export class HostTasks {
       return await this.revisionCounter();
     });
   }
+  /** A supervisor receipt changes read-only board metadata, never task execution. */
+  async assistantFollowupsChanged():Promise<void>{
+    await this.ready;
+    await this.store.transaction(async()=>{
+      await this.store.db.prepare("UPDATE task_cache_revision SET version=version+1 WHERE id=1").run();
+      this.store.afterCommit(()=>this.onChange?.());
+    },"critical");
+  }
   /**
    * Digest of what a remote client shows for the board. Recomputed only after
    * a task changed, so polling it does not parse every stored task.
@@ -812,7 +1092,10 @@ export class HostTasks {
     await this.ready;
 
     return await this.store.db.scope(async () => {
-      if (this.etagCache?.revision === (await this.revisionCounter())) return this.etagCache.etag;
+      const revision=await this.revisionCounter();
+      if(this.etagCache?.revision===revision&&this.etagCache.sourceStamp==="none")return this.etagCache.etag;
+      const sourceStamp=await assistantTaskMetadataSourceStamp(this.store,await this.list(undefined,false));
+      if (this.etagCache?.revision === revision&&this.etagCache.sourceStamp===sourceStamp) return this.etagCache.etag;
       const summaries = (await this.list()).map((task) => ({
         id: task.id,
         status: task.status,
@@ -820,13 +1103,14 @@ export class HostTasks {
         sessionId: task.sessionId,
         runId: task.runId,
         usageStamp: task.budgetUsage?.measuredAt,
+        assistantFollowups:task.assistantFollowups,
         evaluation: task.evaluation,
         error: typeof task.error === "string" ? task.error.slice(0, 512) : undefined,
       }));
       const etag = createHash("sha256").update(JSON.stringify(summaries)).digest("base64url");
       // list() may itself backfill review notes, which bumps the revision.
       if (!this.store.transactionActive)
-        this.etagCache = { revision: await this.revisionCounter(), etag };
+        this.etagCache = { revision: await this.revisionCounter(), sourceStamp,etag };
       return etag;
     });
   }
@@ -907,10 +1191,11 @@ export class HostTasks {
       };
     });
   }
-  async list(projectId?: string): Promise<HostTask[]> {
+  async list(projectId?: string,includeAssistantMetadata=true): Promise<HostTask[]> {
     await this.ready;
 
-    return await this.store.db.scope(async () => {
+    const entryRevision=await this.store.db.scope(()=>this.revisionCounter());
+    const result=await this.store.db.scope(async () => {
       if (projectId !== undefined) {
         const cached = this.projectListCache.get(projectId);
         if (cached?.revision === (await this.revisionCounter())) return cached.tasks.slice();
@@ -943,6 +1228,17 @@ export class HostTasks {
         this.listCache = { revision: await this.revisionCounter(), byId, tasks };
       return tasks.slice();
     });
+    if(!includeAssistantMetadata||this.store.transactionActive)return result;
+    const revision=await this.store.db.scope(()=>this.revisionCounter());
+    const sourceStamp=await assistantTaskMetadataSourceStamp(this.store,result);
+    const metadata=this.assistantMetadataCache.get(projectId);
+    if(entryRevision===revision&&metadata?.revision===revision&&metadata.sourceStamp===sourceStamp)return metadata.tasks.slice();
+    const projected=await withAssistantTaskMetadata(this.store,result);
+    if(!this.store.transactionActive&&entryRevision===revision&&revision===await this.store.db.scope(()=>this.revisionCounter())&&sourceStamp===await assistantTaskMetadataSourceStamp(this.store,result)){
+      if(this.assistantMetadataCache.size>=32)this.assistantMetadataCache.clear();
+      this.assistantMetadataCache.set(projectId,{revision,sourceStamp,tasks:projected});
+    }
+    return projected.slice();
   }
   /** Shared read-only index; task writes invalidate the revision cache. */
   async taskIndex(ids?: readonly string[]): Promise<ReadonlyMap<string, HostTask>> {
@@ -1223,6 +1519,7 @@ export class HostTasks {
     if ((to === "queued" || to === "todo") && this.jobs.has(id))
       throw new Error("The previous verification is still stopping. Retry after it finishes.");
     if (to === "queued" && !task.prompt.trim()) throw new Error(EMPTY_PROMPT_ERROR);
+    if(to==="queued")await this.resolveAssistantRecoveryForOwner(task);
     if (to === "queued" && canTakeOverBlockedTask(task)) return await this.queueTakeover(task, now);
     if (to === "queued" && taskRequiresInstructions(task)) throw new Error(TASK_INPUT_REQUIRED);
     if (to === "todo" && task.status === "queued") {
@@ -1359,6 +1656,8 @@ export class HostTasks {
 
     let task = await this.get(id);
     if (!task) throw new Error("Task not found.");
+    if(task.status==="queued")await this.resolveAssistantRecoveryForOwner(task);
+    if (task.goalId && this.pausedGoals.has(task.goalId)) throw new Error("This goal is paused. Resume it before starting its tasks.");
     if (task.goalId) {
       if ((await this.owningGoal(task.goalId))?.status === "cancelled")
         throw new Error(
@@ -1573,6 +1872,7 @@ export class HostTasks {
         },
       );
     this.store.afterCommit(() => {
+      this.invalidateAssistantGeneration(task!);
       this.onDelete?.({ id, projectId: task!.projectId });
       this.onChange?.();
     });
@@ -1816,6 +2116,7 @@ export class HostTasks {
       initial.filter(canTakeOverBlockedTask).map((task) => task.id),
     );
     for (let task of initial) {
+      if(task.awaitingOwnerRestart&&task.status!=="running"&&task.status!=="verifying")continue;
       try {
         const activeStatus = task.status === "running" || task.status === "verifying";
         const parent = activeStatus ? await this.budgetParent(task) : undefined;
@@ -1854,6 +2155,7 @@ export class HostTasks {
           await this.budgetBlock(task, budgetReason, now);
           continue;
         }
+        if(assistantRecoveryHoldsTask(await readAssistantRecovery(this.store,task.id),task))continue;
         const cycle = task.status === "queued" ? this.dependencyCycle(task.id, byId) : undefined;
         if (cycle)
           await this.block(
@@ -1917,6 +2219,7 @@ export class HostTasks {
         // An awaited launch may have allowed edits/deletions to later tasks.
         let task = byId.get(candidate.id);
         if (!task || this.jobs.has(task.id)) continue;
+        if(assistantRecoveryHoldsTask(await readAssistantRecovery(this.store,task.id),task))continue;
         if (
           (task.crewDefinitionId ? teams : active).length +
             (task.crewDefinitionId
@@ -1937,6 +2240,7 @@ export class HostTasks {
           task = await this.queueTakeover(task, now);
         }
         if (task.status !== "queued") continue;
+        if (task.goalId && this.pausedGoals.has(task.goalId)) continue;
         if (this.crewCanStart && !(await this.crewCanStart(task))) continue;
         if (task.goalId) {
           const goal = await this.owningGoal(task.goalId);
@@ -2111,6 +2415,7 @@ export class HostTasks {
   }
   private async takeoverGoalActive(task: HostTask): Promise<boolean> {
     if (!task.goalId) return true;
+    if (this.pausedGoals.has(task.goalId)) return false;
     if (
       !(await this.store.db
         .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='goals'")
@@ -2198,10 +2503,14 @@ export class HostTasks {
     return await this.write({ ...task, reviewNotes: notes });
   }
   private async write(task: HostTask, persisted?: Map<string, string>): Promise<HostTask> {
+    const sourceGeneration=task.workspaceGenerationId;
     task = suspendedTaskDelivery(task);
+    // An old attempt's diagnostic must never label a new worker/reviewer.
+    if(task.runStall&&(task.status!=="running"||task.error||task.needsInput||task.sessionId!==task.runStall.sessionId||task.runId!==task.runStall.runId))task={...task,runStall:undefined};
     task = { ...task, workspaceGenerationId: task.workspaceGenerationId ?? randomUUID() };
     return await this.store.db.scope(async () => {
       await this.store.db.checkAuthorization();
+      if(this.invalidatedAssistantGenerations.get(task.id)?.has(sourceGeneration))throw new Error("The original assistant task execution was retired; stale callbacks cannot restore it.");
       if (task.evaluation && task.status !== "done" && task.status !== "review")
         task = { ...task, evaluation: undefined };
       const run =
@@ -2228,7 +2537,7 @@ export class HostTasks {
             runId: run.runId,
             startedAt: run.startedAt,
           });
-          this.registeredBudgetRuns.add(key);
+          this.store.afterCommit(()=>{this.registeredBudgetRuns.add(key);});
         }
       }
       task = { ...task, budgetUsage: await this.budgets.read({ taskId: task.id }) };
@@ -2623,7 +2932,8 @@ export class HostTasks {
     now: number,
     active: readonly HostTask[],
   ): Promise<HostTask> {
-    if (this.closing) return task;
+    if (!await this.goalExecutionAllowed(task.goalId)) return task;
+    if(assistantRecoveryHoldsTask(await readAssistantRecovery(this.store,task.id),task))return task;
     const budgetReason = await this.budgetReason(task, true);
     if (budgetReason) return await this.budgetBlock(task, budgetReason, now);
     if (task.crewDefinitionId) {
@@ -2650,7 +2960,7 @@ export class HostTasks {
             updatedAt: this.now(),
           });
       try {
-        if (this.closing) return pending;
+        if (this.closing || (task.goalId && this.pausedGoals.has(task.goalId))) return pending;
         const coordinator = await this.crewRunner.start(pending);
         const latest = await this.find(task.id);
         if (
@@ -2686,12 +2996,17 @@ export class HostTasks {
       if ((await this.find(task.id))?.updatedAt !== task.updatedAt) return task;
       return await this.block({ ...task, startedAt: now }, errorMessage(error), now);
     }
-    // The task may have been edited or deleted while its worktree was made.
-    if ((await this.find(task.id))?.updatedAt !== task.updatedAt) {
+    // workingCopy may persist its own managed identity. Capture that exact row,
+    // accepting only our original input or its prepared result, never a same-clock
+    // owner edit made while preparation awaited the filesystem.
+    let preparationExpected = await this.taskValue(task.id);
+    const preparedSource = preparationExpected === undefined ? undefined : JSON.parse(preparationExpected);
+    if (!isDeepStrictEqual(preparedSource, JSON.parse(JSON.stringify(task))) &&
+        !isDeepStrictEqual(preparedSource, JSON.parse(JSON.stringify(ready)))) {
       if (ready.branch && !task.branch) await this.discard(ready);
-      return task;
+      return (await this.find(task.id)) ?? task;
     }
-    if (this.closing) return await this.write({ ...ready, status: "queued" });
+    if (this.closing || (ready.goalId && this.pausedGoals.has(ready.goalId))) return (await this.find(task.id)) ?? task;
     if (ready.branch && !ready.dependencyArtifactsPrepared) {
       try {
         for (const id of ready.dependsOn ?? []) {
@@ -2759,6 +3074,7 @@ export class HostTasks {
                 updatedAt: now,
               });
               ready = task;
+              preparationExpected = await this.taskValue(task.id);
             }
             try {
               await git(
@@ -2830,7 +3146,17 @@ export class HostTasks {
     const finalLaunchBudget = await this.budgetReason(ready, true);
     if (finalLaunchBudget) return await this.budgetBlock(ready, finalLaunchBudget, this.now());
     const resumable = await this.canResumeAfterHostStop(ready);
-    if (this.closing) return await this.write({ ...ready, status: "queued" });
+    if (this.closing) return (await this.find(task.id)) ?? task;
+    // Persist normalization (including current-checkout defaults and execution
+    // cwd) before admission. Every later guard and receipt uses this same source.
+    const persistedReady = await this.store.transaction(async () => {
+      if (!await this.unchangedTask(ready.id, preparationExpected)) return undefined;
+      const task = await this.write(ready);
+      return { task, value: await this.taskValue(task.id) };
+    }, "critical");
+    if (!persistedReady) return (await this.find(task.id)) ?? task;
+    ready = persistedReady.task;
+    preparationExpected = persistedReady.value;
     if (ready.workspaceId && this.managed && !ready.workspaceActivityId) {
       const activity = await this.managed.activity.start({
         workspaceId: ready.workspaceId,
@@ -2838,37 +3164,88 @@ export class HostTasks {
         ownerId: ready.id,
       });
       try {
-        ready = await this.write({ ...ready, workspaceActivityId: activity.id });
+        const activeReady = await this.store.transaction(async () => {
+          const current = await this.unchangedTask(ready.id, preparationExpected);
+          if (!current) return undefined;
+          const task = await this.write({ ...current, workspaceActivityId: activity.id });
+          return { task, value: await this.taskValue(task.id) };
+        }, "critical");
+        if (!activeReady) {
+          await this.managed.activity.stop(activity.id);
+          return (await this.find(ready.id)) ?? ready;
+        }
+        ready = activeReady.task;
+        preparationExpected = activeReady.value;
       } catch (error) {
         await this.managed.activity.stop(activity.id);
         throw error;
       }
     }
-    const started = resumable
-      ? await this.resumeInterrupted(ready)
-      : await launchSessionRun(
-          this.store,
-          this.engine,
-          {
-            ...ready,
-            ...(ready.isolate === false ? { workspaceMode: "current" as const } : {}),
-            prompt: workerPrompt(ready, projectCwd, sharedEdits),
-          },
-          () => !this.closing,
-        );
+    const recovery=await readAssistantRecovery(this.store,ready.id);
+    const recovering=recovery?.state==="queued";
+    let launchExpected=preparationExpected;
+    let associated:HostTask|undefined;
+    const launchState=(task:HostTask)=>JSON.stringify(Object.fromEntries(Object.entries(task).filter(([key])=>!["updatedAt","budgetUsage","runStall"].includes(key)).sort(([left],[right])=>left.localeCompare(right))));
+    const launchCurrent=async()=>{
+      const candidate=associated?await this.find(ready.id):await this.unchangedTask(ready.id,launchExpected);
+      const current=candidate&&(!associated||launchState(candidate)===launchState(associated))?candidate:undefined;
+      if(!current||!(["queued","running"].includes(current.status))||(!recovering&&!associated&&current.status!=="queued")||current.awaitingOwnerRestart||this.closing||assistantRecoveryIdentity(current)!==assistantRecoveryIdentity(ready))throw new Error("The task was stopped or changed before worker dispatch.");
+      return current;
+    };
+    const ordinaryAdmission:Parameters<NonNullable<HostEngine["withCommandAdmission"]>>[0]={
+      check:async stage=>{
+        const current=await launchCurrent();
+        if(!await this.goalExecutionAllowed(current.goalId))throw new AssistantTurnPolicyDeferredError();
+        if(stage.sessionId){
+          const record=await this.store.session(stage.sessionId),session=record.session;
+          const expectedCwd=ready.worktreeCwd??(await this.store.project(ready.projectId)).cwd;
+          if(record.projectId!==ready.projectId||(session.worktreeCwd??session.cwd)!==expectedCwd||session.harness!==ready.harness||session.model!==ready.model||session.runtimeMode!==ready.runtimeMode||JSON.stringify(session.modelSettings)!==JSON.stringify(ready.modelSettings)||(session.providerAccountId??"default")!==(ready.providerAccountId??"default")||
+            (stage.runId&&record.runId!==stage.runId)||(associated&&(current.sessionId!==stage.sessionId||current.runId!==stage.runId&&stage.phase==="provider")))throw new Error("The worker launch no longer owns its exact task and session.");
+        }
+      },
+      onAccepted:async receipt=>{
+        if(!receipt.runId)return;
+        await this.store.transaction(async()=>{
+          const current=await launchCurrent();
+          associated=await this.write({...current,awaitingOwnerRestart:undefined,sessionId:receipt.sessionId,runId:receipt.runId,startedAt:now,status:"running",updatedAt:now});
+          launchExpected=await this.taskValue(ready.id);
+        },"critical");
+      },
+    };
+    if(recovering){if(!this.admitCommand||!this.assistantRecoveryAdmission)throw new Error("Guarded assistant recovery admission is unavailable.");await this.assistantRecoveryAdmission(ready);}
+    const launch=()=>launchSessionRun(this.store,this.engine,{
+      ...ready,...(recovering?{requestId:recovery!.launchRequestId}:{}),
+      ...(ready.isolate===false?{workspaceMode:"current" as const}:{}),
+      author:{kind:"task",id:ready.id,name:ready.title,reason:"kickoff",...(recovering?{operationId:recovery!.operationId}:{})},
+      prompt:workerPrompt(ready,projectCwd,sharedEdits),
+    },async()=>{await launchCurrent();return this.goalExecutionAllowed(ready.goalId);});
+    const ordinaryLaunch=()=>resumable?this.resumeInterrupted(ready):launch();
+    const started=!recovering?(this.admitCommand?await this.admitCommand(ordinaryAdmission,ordinaryLaunch):await ordinaryLaunch()):await this.admitCommand!({
+      check:async stage=>{
+        try{
+        const current=await this.find(ready.id);
+        if(!current||!["queued","running"].includes(current.status)||this.closing||(current.goalId&&this.pausedGoals.has(current.goalId))||assistantRecoveryIdentity(current)!==recovery!.source.identity)throw new Error("The queued recovery task changed before provider dispatch.");
+        const budget=await this.budgetReason(current,true);if(budget)throw new Error(budget);
+        if(stage.sessionId){const record=await this.store.session(stage.sessionId),session=record.session;if(record.projectId!==ready.projectId||(session.worktreeCwd??session.cwd)!==recovery!.source.executionCwd||session.harness!==ready.harness||session.model!==ready.model||session.runtimeMode!==ready.runtimeMode||JSON.stringify(session.modelSettings)!==JSON.stringify(ready.modelSettings)||(session.providerAccountId??"default")!==(ready.providerAccountId??"default")||(stage.runId&&record.runId!==stage.runId)||(current.status==="running"&&(current.sessionId!==stage.sessionId||current.runId!==stage.runId)))throw new Error("The recovery launch no longer owns its exact new worker source.");}
+        await this.assistantRecoveryAdmission!(current,stage);
+        }catch(error){await this.assistantRecoveryFailed?.(ready,`The automatic retry was fenced before provider dispatch: ${String(error).slice(0,500)}`);throw error;}
+      },
+      onAccepted:async receipt=>{if(!receipt.runId)return;const current=await readAssistantRecovery(this.store,ready.id);if(!current||current.operationId!==recovery!.operationId||current.state!=="queued")throw new Error("The recovery launch receipt changed before acceptance.");await writeAssistantRecovery(this.store,{...current,state:"running",launchedSessionId:receipt.sessionId,launchedRunId:receipt.runId,launchedAuthorityGeneration:receipt.authorityGeneration,updatedAt:this.now()});},
+    },launch);
     if (started.deferred) {
       await this.stopWorkspaceActivity(ready);
-      return await this.write({ ...ready, workspaceActivityId: undefined, status: "queued" });
+      return await this.store.transaction(async()=>{
+        const current=await this.unchangedTask(ready.id,launchExpected);
+        return current?await this.write({...current,workspaceActivityId:undefined,status:"queued"}):(await this.find(ready.id))??ready;
+      },"critical");
     }
-    const next = {
-      ...ready,
-      awaitingOwnerRestart: undefined,
-      sessionId: started.sessionId,
-      runId: started.runId,
-      startedAt: now,
-    };
-    if (started.error !== undefined) return await this.block(next, started.error, now);
-    return await this.write({ ...next, status: "running", updatedAt: now });
+    return await this.store.transaction(async()=>{
+      const current=await this.unchangedTask(ready.id,launchExpected);
+      if(!current)return(await this.find(ready.id))??ready;
+      const next={...current,awaitingOwnerRestart:undefined,sessionId:started.sessionId,runId:started.runId,startedAt:now};
+      if(started.error!==undefined)return this.block(next,started.error,now);
+      return associated?current:await this.write({...next,status:"running",updatedAt:now});
+    },"critical");
   }
   /** Tracked files other sessions have edited but not committed in the
    * project checkout, so an isolated worker knows what delivery will meet. */
@@ -2914,14 +3291,15 @@ export class HostTasks {
           {
             ...task,
             ...(task.isolate === false ? { workspaceMode: "current" as const } : {}),
+            author:{kind:"task",id:task.id,name:task.title,reason:"kickoff"},
             prompt: workerPrompt(task, (await this.store.project(task.projectId)).cwd),
           },
-          () => !this.closing,
+          () => this.goalExecutionAllowed(task.goalId),
         );
       }
       const project = await this.store.project(task.projectId);
-      if (this.closing) return { deferred: true };
-      await this.engine.command({
+      if (!await this.goalExecutionAllowed(task.goalId)) return { deferred: true };
+      const receipt=await this.taskMessage(task,"recovery",()=>this.engine.command({
         type: "send",
         commandId: randomUUID(),
         sessionId: task.sessionId!,
@@ -2930,10 +3308,10 @@ export class HostTasks {
           "",
           workerPrompt(task, project.cwd),
         ].join("\n"),
-      });
+      }));
       return {
         sessionId: task.sessionId,
-        runId: (await this.store.session(task.sessionId!)).runId,
+        runId: receipt.runId,
       };
     } catch (error) {
       return { sessionId: task.sessionId, error: errorMessage(error) };
@@ -2975,19 +3353,25 @@ export class HostTasks {
     }
   }
   private async settle(task: HostTask, now: number): Promise<void> {
+    if (this.continuingSessions.has(task.id)) return;
+    const expected=await this.taskValue(task.id);
+    const current=await this.unchangedTask(task.id,expected);
+    if(!current||current.status!=="running"||current.runId!==task.runId||current.sessionId!==task.sessionId)return;
     const outcome = await sessionRunState(
       this.store,
       { ...task, startedAt: task.startedAt ?? task.createdAt },
       task.maxRunMinutes,
       now,
     );
+    if (this.continuingSessions.has(task.id)) return;
     if (outcome.state === "running") {
       if (outcome.needsInput && (await this.continueUnansweredQuestion(task, now))) return;
-      if (outcome.needsInput !== Boolean(task.needsInput))
-        await this.write({
-          ...task,
-          needsInput: outcome.needsInput || undefined,
-          updatedAt: now,
+      const runStall=!outcome.needsInput&&task.sessionId&&task.runId&&outcome.lastActivityAt!==undefined&&now-outcome.lastActivityAt>=15*60_000
+        ?{sessionId:task.sessionId,runId:task.runId,lastActivityAt:outcome.lastActivityAt,detectedAt:task.runStall?.runId===task.runId&&task.runStall.lastActivityAt===outcome.lastActivityAt?task.runStall.detectedAt:now}:undefined;
+      if (outcome.needsInput !== Boolean(task.needsInput)||JSON.stringify(task.runStall)!==JSON.stringify(runStall))
+        await this.store.transaction(async()=>{
+          const fresh=await this.unchangedTask(task.id,expected);if(!fresh)return;
+          await this.write({...fresh,needsInput:outcome.needsInput||undefined,runStall,updatedAt:now});
         });
     } else if (outcome.state === "overLimit") {
       // The reason is saved first: the turn settles asynchronously, and a
@@ -2996,6 +3380,7 @@ export class HostTasks {
       await cancelSessionRun(this.engine, task);
     } else if (outcome.status === "succeeded") {
       await this.limits.record(task.startedAt ?? task.createdAt, now);
+      if (this.continuingSessions.has(task.id) || (await this.find(task.id))?.runId !== task.runId) return;
       await this.verify(
         await this.write({
           ...task,
@@ -3007,6 +3392,23 @@ export class HostTasks {
       );
     } else {
       await this.limits.record(task.startedAt ?? task.createdAt, now);
+      if(await deferredAssistantTurn(this.store,task.sessionId,task.runId,task.id)){
+        await this.store.transaction(async()=>{
+          const fresh=await this.unchangedTask(task.id,expected);if(!fresh||fresh.status!=="running")return;
+          const recovery=await readAssistantRecovery(this.store,task.id);
+          if(recovery&&recovery.state!=="running"){await this.block(fresh,"Inspect the automatic recovery before restarting its deferred worker.",now);return;}
+          if(recovery){
+            if(recovery.launchedSessionId!==fresh.sessionId||recovery.launchedRunId!==fresh.runId)return;
+            await writeAssistantRecovery(this.store,{...recovery,state:"queued",launchRequestId:`assistant-recovery-deferred-${randomUUID()}`,launchedSessionId:undefined,launchedRunId:undefined,launchedAuthorityGeneration:undefined,updatedAt:now});
+          }
+          await this.write({...fresh,status:"queued",sessionId:undefined,runId:undefined,startedAt:undefined,error:undefined,needsInput:undefined,updatedAt:now});
+        });return;
+      }
+      const recovery=await readAssistantRecovery(this.store,task.id);
+      if(recovery&&["running","unknown","escalated"].includes(recovery.state)&&recovery.launchedSessionId===task.sessionId&&recovery.launchedRunId===task.runId){
+        const message="The task's one automatic worker recovery did not finish successfully. Owner review is required.";
+        await this.assistantRecoveryFailed?.(task,message);await this.block(task,message,now);return;
+      }
       if (outcome.error === HOST_INTERRUPTED && (await this.canResumeAfterHostStop(task))) {
         await this.requeueInterrupted(task, now);
         return;
@@ -3066,6 +3468,12 @@ export class HostTasks {
     if (task.crewRunId || questionContinuationCount(task) >= MAX_QUESTION_CONTINUATIONS)
       return false;
     try {
+      // Delegated assistant questions retain the exact occurrence for Chief or
+      // owner review. Revoking delegation must never fall back to auto-skip.
+      if(task.goalId?.startsWith("assistant-")){
+        const table=await this.store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='assistant_jobs'").get();
+        if(table&&await this.store.db.prepare("SELECT id FROM assistant_jobs WHERE id=?").get(task.goalId.slice("assistant-".length)))return false;
+      }
       const session = await this.store.session(task.sessionId ?? "");
       const question = session.session.pendingQuestion;
       if (
@@ -3081,14 +3489,14 @@ export class HostTasks {
         .map((entry) => entry.prompt)
         .join(" ")
         .trim();
-      await this.engine.command({
+      await this.taskMessage(task,"question-continuation",()=>this.engine.command({
         type: "answer",
         commandId: randomUUID(),
         sessionId: task.sessionId!,
         runId: session.runId,
         requestId: question.requestId,
         reply: { kind: "skipped" },
-      });
+      }));
       await this.write({
         ...task,
         needsInput: undefined,
@@ -3112,6 +3520,7 @@ export class HostTasks {
    * runs the check command, then hands over to the reviewer or to review. */
   private async verify(task: HostTask): Promise<void> {
     if (this.closing) return;
+    if(!await this.goalExecutionAllowed(task.goalId))return;
     const { id } = task;
     if (this.jobs.has(id)) return;
     const controller = new AbortController();
@@ -3267,6 +3676,7 @@ export class HostTasks {
         {
           ...task,
           title: `Review: ${task.title}`.slice(0, 200),
+          author:{kind:"task",id:task.id,name:task.title,reason:"review"},
           ...(task.isolate === false ? { workspaceMode: "current" as const } : {}),
           ...(task.reviewerConfig
             ? {
@@ -3280,7 +3690,7 @@ export class HostTasks {
             : {}),
           prompt: `${task.reviewerConfig?.instructions ?? ""}\n${reviewPrompt(task)}`,
         },
-        () => !this.closing && !controller.signal.aborted,
+        async() => !controller.signal.aborted && await this.goalExecutionAllowed(task.goalId),
       );
       if (started.deferred) return;
       const reviewing = {
@@ -3374,6 +3784,13 @@ export class HostTasks {
       return;
     }
     await this.limits.record(task.reviewer.startedAt, now);
+    if(await deferredAssistantTurn(this.store,task.reviewer.sessionId,task.reviewer.runId,task.id)){
+      await this.store.transaction(async()=>{
+        const latest=await this.find(task.id);
+        if(latest?.status==="verifying"&&latest.reviewer?.sessionId===task.reviewer!.sessionId&&latest.reviewer?.runId===task.reviewer!.runId&&latest.updatedAt===task.updatedAt&&!latest.awaitingOwnerRestart&&!(latest.goalId&&this.isAssistantDeletionHeld(latest.goalId)))await this.write({...latest,reviewer:undefined,needsInput:undefined,error:undefined,updatedAt:now});
+      },"critical");
+      return;
+    }
     if (outcome.error === HOST_INTERRUPTED && (await this.canResumeAfterHostStop(task.reviewer))) {
       // Retain the read-only review and its inspected evidence. A host stop
       // is not a failed verdict and must not spend a correction attempt.
@@ -3656,7 +4073,7 @@ export class HostTasks {
         );
         return;
       }
-      await this.engine.command({
+      const receipt=await this.taskMessage(task,"review-recovery",()=>this.engine.command({
         type: "send",
         commandId: randomUUID(),
         sessionId,
@@ -3668,12 +4085,12 @@ export class HostTasks {
           (task.reviewer!.acceptanceRequired
             ? acceptanceReviewInstructions(readTaskInstructions(task.prompt)?.acceptance ?? [])
             : ""),
-      });
+      }));
       await this.write({
         ...task,
         reviewer: {
           ...task.reviewer!,
-          runId: (await this.store.session(sessionId)).runId,
+          runId: receipt.runId,
           startedAt: now,
           verdictRepairPending: undefined,
           recoveryPending: undefined,

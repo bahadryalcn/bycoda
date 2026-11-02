@@ -49,7 +49,6 @@
   padding: 8px;
   border: 1px solid var(--ui-editor-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
 }
 .jira-board-transition strong {
   flex-basis: 100%;

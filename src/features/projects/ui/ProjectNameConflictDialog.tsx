@@ -1,6 +1,6 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
@@ -33,6 +33,7 @@ export function ProjectNameConflictDialog({
   const [value, setValue] = useState(suggested);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const formId = useId();
 
   useEffect(() => {
     input.current?.focus();
@@ -45,8 +46,24 @@ export function ProjectNameConflictDialog({
       title={t("Rename project")}
       description={`${t('A project named "')}${name}${t('" already exists. Give this one a different name.')}`}
       onClose={onCancel}
+      footer={
+        <ModalActions>
+          <Button
+            type="button"
+            onClick={onCancel}
+            tooltip={t('Keep "{p0}"', { p0: suggested })}
+            variant="ghost"
+          >
+            {t("Cancel")}
+          </Button>
+          <Button type="submit" form={formId} variant="primary">
+            {t("Rename")}
+          </Button>
+        </ModalActions>
+      }
     >
       <form
+        id={formId}
         onSubmit={(event) => {
           event.preventDefault();
           const problem = validate(value);
@@ -75,19 +92,6 @@ export function ProjectNameConflictDialog({
           }}
         />
         {error ? <Alert tone="danger">{error}</Alert> : null}
-        <ModalActions inline>
-          <Button
-            type="button"
-            onClick={onCancel}
-            tooltip={t('Keep "{p0}"', { p0: suggested })}
-            variant="ghost"
-          >
-            {t("Cancel")}
-          </Button>
-          <Button type="submit" variant="primary">
-            {t("Rename")}
-          </Button>
-        </ModalActions>
       </form>
     </Modal>
   );

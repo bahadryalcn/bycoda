@@ -90,7 +90,9 @@ else if (tool === 'prettier') {
   if (info.ignored) process.stdout.write(JSON.stringify({ formatted: source, cursorOffset }));
   else {
     const result = await prettier.formatWithCursor(source, { ...options, plugins, filepath: path, cursorOffset });
-    process.stdout.write(JSON.stringify(result));
+    // Prettier also returns internal comment metadata. Keep the public native
+    // delivery result exact so a successful format can be recorded/consumed.
+    process.stdout.write(JSON.stringify({ formatted: result.formatted, cursorOffset: result.cursorOffset }));
   }
 } else {
   const pkg = JSON.parse(await readFile(tools[tool], 'utf8'));

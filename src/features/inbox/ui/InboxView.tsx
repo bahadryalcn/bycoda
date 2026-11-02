@@ -1,4 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { ActionHost } from "../../../shared/ui/ActionHost";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import "./InboxView.css";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
@@ -125,7 +127,7 @@ import {
   InboxProjectOption,
   inboxProjectOptions,
   inboxStatusMark,
-  InboxLabel,
+  inboxLabelItems,
   CiRepairProps,
 } from "./InboxPresentation";
 export { InboxDetail, inboxShowsFullFileDiff } from "./InboxDetail";
@@ -1304,7 +1306,31 @@ const InboxCard = memo(function InboxCard({
     updatedAt: item.updatedAt,
   });
 
+  // The label badges hold their own "+N" button, which cannot sit inside the row button: with
+  // labels the source line is a sibling laid over the row (clicks outside the badges fall through
+  // to the row) and the row keeps the line's height.
+  const sourceLine = (
+    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)">
+      {tracker || !item.projectPath ? null : logoPath ? (
+        <ProjectLogoIcon
+          path={logoPath}
+          className="icon-sm shrink-0 rounded-sm"
+          imageClassName="icon-sm"
+        />
+      ) : (
+        <ProjectMascot
+          project={name}
+          color={mascotColor}
+          name={mascotName}
+          className="icon-xs shrink-0"
+        />
+      )}
+      <span className="min-w-0 truncate">{source}</span>
+    </span>
+  );
+
   return (
+    <ActionHost selected={active} className="w-full min-w-0">
     <Button
       variant="item"
       layout="stacked"
@@ -1359,33 +1385,20 @@ const InboxCard = memo(function InboxCard({
           </span>
         ) : null}
       </span>
-      <span className="mt-1 flex min-w-0 items-center gap-2">
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)">
-          {tracker || !item.projectPath ? null : logoPath ? (
-            <ProjectLogoIcon
-              path={logoPath}
-              className="icon-sm shrink-0 rounded-sm"
-              imageClassName="icon-sm"
-            />
-          ) : (
-            <ProjectMascot
-              project={name}
-              color={mascotColor}
-              name={mascotName}
-              className="icon-xs shrink-0"
-            />
-          )}
-          <span className="min-w-0 truncate">{source}</span>
-        </span>
-        {item.labels.length > 0 ? (
-          <span className="flex min-w-0 max-w-[45%] items-center gap-1 overflow-hidden">
-            {item.labels.slice(0, 1).map((label) => (
-              <InboxLabel key={label.name} label={label} compact />
-            ))}
-            {item.labels.length > 1 ? <span className="shrink-0 text-ui-micro text-(--ui-text-secondary)">+{item.labels.length - 1}</span> : null}
-          </span>
-        ) : null}
-      </span>
+      {item.labels.length > 0 ? (
+        <span aria-hidden="true" className="mt-1 block h-4" />
+      ) : (
+        <span className="mt-1 flex min-w-0 items-center gap-2">{sourceLine}</span>
+      )}
     </Button>
+    {item.labels.length > 0 ? (
+      <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
+        {sourceLine}
+        <span className="pointer-events-auto min-w-0 max-w-[45%] shrink-0 [&>div>ul]:justify-end">
+          <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(item.labels)} />
+        </span>
+      </div>
+    ) : null}
+    </ActionHost>
   );
 });

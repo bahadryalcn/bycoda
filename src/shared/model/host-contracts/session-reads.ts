@@ -54,6 +54,7 @@ const metadata = {
   projectId: IdentifierSchema,
   revision: SafeCounterSchema,
   runId: IdentifierSchema.optional(),
+  runActivity:z.strictObject({runId:IdentifierSchema,lastActivityAt:SafeCounterSchema}).optional(),
   status: z.enum(["idle", "running", "interrupted"]),
   executionOwner: z.enum(["host", "desktop"]).optional(),
   createdAt: SafeCounterSchema.optional(),

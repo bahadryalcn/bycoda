@@ -346,7 +346,7 @@ export function GitChangesPanel({
   const branchControl =
     detailsOpen && index?.repository !== false && (index?.branch || repository) ? (
       <span
-        className={`flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary) ${repository ? "max-w-[min(12rem,35cqi)]" : "max-w-[65%] shrink-0"}`}
+        className={`flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary) ${repository ? "max-w-[min(12rem,35cqi)]" : "-ms-1.5 max-w-[65%] shrink-0"}`}
       >
         <BranchPicker
           key={cwd}
@@ -1368,6 +1368,7 @@ function ChangedFiles({
             amend={amend}
             commitIntent={commitIntent}
             canCommit={canCommit}
+            blockedReason={blockedMessage}
             canCommitPush={canCommitPush}
             canCommitPushPr={canCommitPushPr}
             canSync={canSync}
@@ -1386,13 +1387,6 @@ function ChangedFiles({
             }}
           />
         </div>
-        {blockedMessage ? (
-          <InlineMessage tone="warning" live="assertive" title={blockedMessage}>
-            {conflicts.length === 1
-              ? t("Resolve the conflict before committing")
-              : t("Resolve {p0} conflicts before committing", { p0: conflicts.length })}
-          </InlineMessage>
-        ) : null}
       </div>
       {notices}
       </div>
@@ -1695,6 +1689,7 @@ function GitCommitActions({
   amend,
   commitIntent,
   canCommit,
+  blockedReason,
   canCommitPush,
   canCommitPushPr,
   canSync,
@@ -1720,6 +1715,8 @@ function GitCommitActions({
   amend: boolean;
   commitIntent: boolean;
   canCommit: boolean;
+  /** Why commit is off (unresolved conflicts); the operation banner already shows the state. */
+  blockedReason?: string | null;
   canCommitPush: boolean;
   canCommitPushPr: boolean;
   canSync: boolean;
@@ -1943,6 +1940,7 @@ function GitCommitActions({
       menuOpen={menuOpen}
       onMenuOpenChange={onMenuOpenChange}
       disabled={lead.disabled}
+      disabledReason={primary === "commit" && !committing ? (blockedReason ?? undefined) : undefined}
       menuDisabled={!canOpenMenu}
       loading={lead.loading}
       loadingLabel={lead.loadingLabel}

@@ -1,8 +1,8 @@
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
-import { useState, type FormEvent } from "react";
-import { Modal } from "../../../shared/ui/Modal";
+import { useId, useState, type FormEvent } from "react";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import type { LinkedWorkItem } from "../model/session";
 import { parseGithubWorkItemUrl } from "../model/sessionWorkItem";
 
@@ -20,6 +20,7 @@ export function LinkSessionWorkItemDialog({
   const t = useT();
   const [url, setUrl] = useState(initial?.url ?? "");
   const [error, setError] = useState("");
+  const formId = useId();
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -37,8 +38,26 @@ export function LinkSessionWorkItemDialog({
       description={sessionTitle}
       size="sm"
       onClose={onClose}
+      footer={
+        <ModalActions
+          start={
+            initial ? (
+              <Button variant="ghost" tone="danger" type="button" onClick={() => onSave(undefined)}>
+                {t("Remove link")}
+              </Button>
+            ) : undefined
+          }
+        >
+          <Button variant="ghost" type="button" onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button variant="primary" type="submit" form={formId}>
+            {initial ? t("Update link") : t("Link")}
+          </Button>
+        </ModalActions>
+      }
     >
-      <form onSubmit={submit} className="flex flex-col gap-4 p-4 text-ui-caption">
+      <form id={formId} onSubmit={submit} className="flex flex-col gap-4 p-4 text-ui-caption">
         <TextField
           label={t("Issue or pull request URL")}
           autoFocus
@@ -57,25 +76,6 @@ export function LinkSessionWorkItemDialog({
             if (error) setError("");
           }}
         />
-        <div className="flex items-center justify-end gap-2">
-          {initial ? (
-            <Button
-              variant="ghost"
-              tone="danger"
-              type="button"
-              onClick={() => onSave(undefined)}
-              className="mr-auto"
-            >
-              {t("Remove link")}
-            </Button>
-          ) : null}
-          <Button variant="ghost" type="button" onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button variant="primary" type="submit">
-            {initial ? t("Update link") : t("Link")}
-          </Button>
-        </div>
       </form>
     </Modal>
   );

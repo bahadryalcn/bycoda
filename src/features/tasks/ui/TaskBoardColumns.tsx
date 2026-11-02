@@ -159,7 +159,7 @@ export function TaskBoardColumns({
                   );
                   if (dragged) dropTask(dragged, status);
                 }}
-                className="bycoda-task-column flex min-h-0 min-w-0 flex-col rounded-md bg-(--ui-surface-raised)"
+                className="bycoda-task-column flex min-h-0 min-w-0 flex-col rounded-md border border-(--ui-pane-border)"
               >
                 <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-ui-caption font-medium text-(--ui-text-secondary)">
                   <span className="min-w-0 flex-1 truncate">{t(COLUMN_LABELS[status])}</span>

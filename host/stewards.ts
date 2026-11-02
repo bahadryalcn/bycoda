@@ -125,6 +125,7 @@ export class HostStewards {
     // A manual request's grant follows preparation/effects, never the saved
     // steward or a future system-owned tick.
     this.engine = {
+      withMessageAuthor:engine.withMessageAuthor?.bind(engine),
       command: async (command) => {
         await store.db.checkAuthorization();
         return engine.command(command);
@@ -544,10 +545,12 @@ export class HostStewards {
             await this.assertOwnedRun(steward, owned!);
             return this.engine.updateSession(...args);
           },
+          withMessageAuthor:this.engine.withMessageAuthor?.bind(this.engine),
         },
         {
           projectId: steward.projectId,
           harness: steward.harness,
+          author:{kind:"steward",id:steward.id,name:project.name,reason:"kickoff"},
           model: steward.model,
           modelSettings: steward.modelSettings,
           runtimeMode: steward.runtimeMode,

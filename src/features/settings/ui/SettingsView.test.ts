@@ -1309,7 +1309,7 @@ describe("settings pages", () => {
       "/opt/codex/bin/codex",
     );
     await act(async () =>
-      Array.from(document.querySelectorAll<HTMLButtonElement>("#codex-binary-popover button"))
+      Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
         .find((button) => button.textContent === "Cancel")!
         .click(),
     );

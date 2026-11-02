@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
 import { t } from "../../../shared/i18n";
 import { previewSshConfiguration, type SshConfigurationPreview } from "../model/sshGroupDefaults";
@@ -55,7 +55,32 @@ export function SshConfigurationConnectReview({
   }, [server.id, target, revision]);
   const configuration = scope === target ? review?.configuration : undefined;
   return (
-    <Modal title={t("Review SSH configuration")} onClose={onClose} size="sm">
+    <Modal
+      title={t("Review SSH configuration")}
+      onClose={onClose}
+      size="sm"
+      footer={
+        <ModalActions>
+          <Button variant="ghost" onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          {error ? (
+            <Button onClick={() => setRevision((value) => value + 1)}>{t("Retry")}</Button>
+          ) : null}
+          <Button
+            variant="primary"
+            disabled={!configuration}
+            onClick={() => {
+              if (!configuration || used.current) return;
+              used.current = true;
+              onConnect(configuration.digest);
+            }}
+          >
+            {t("Connect")}
+          </Button>
+        </ModalActions>
+      }
+    >
       <div className="flex min-w-0 flex-col gap-3 p-4">
         {configuration ? (
           <>
@@ -123,25 +148,6 @@ export function SshConfigurationConnectReview({
         ) : (
           <LoadingText />
         )}
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          {error ? (
-            <Button onClick={() => setRevision((value) => value + 1)}>{t("Retry")}</Button>
-          ) : null}
-          <Button
-            variant="primary"
-            disabled={!configuration}
-            onClick={() => {
-              if (!configuration || used.current) return;
-              used.current = true;
-              onConnect(configuration.digest);
-            }}
-          >
-            {t("Connect")}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

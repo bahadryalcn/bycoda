@@ -315,6 +315,9 @@ export function remoteRequest<T>(
   expectedEnvironmentId?: string,
 ): Promise<T> {
   const machine = cachedMachines.find((entry) => entry.id === machineId);
+  // Keep every request bound to the Host selected before crossing native IPC.
+  // A saved machine can be replaced while an asynchronous workspace call waits.
+  const expectedEnvironment = expectedEnvironmentId ?? machine?.environmentId;
   if (machine) bindMachineEnvironment(machine.id, machine.environmentId);
   const generation = machine ? captureConnectionGeneration(machine.environmentId) : undefined;
   const sameMachine = () =>
@@ -365,7 +368,7 @@ export function remoteRequest<T>(
     machineId,
     method,
     params,
-    ...(expectedEnvironmentId ? { expectedEnvironmentId } : {}),
+    ...(expectedEnvironment ? { expectedEnvironmentId: expectedEnvironment } : {}),
     ...(fresh ? { fresh } : {}),
     ...(mayStartTunnel(machineId, fresh, userInitiated) ? {} : { allowConnect: false }),
   }).then(

@@ -528,7 +528,9 @@ export function createAsciiMaskScene(
       if (!layout) return;
       const presence = Math.max(0, Math.min(1, signal.presence));
       const steps = Math.round(presence * PRESENCE_STEPS);
-      const mouth = steps === 0 ? "closed" : asciiMouthAt(time, presence);
+      // A mask that stays after the reply pauses rests its pulse.
+      const speaking = Math.max(0, Math.min(1, signal.speaking ?? 1));
+      const mouth = steps === 0 ? "closed" : asciiMouthAt(time, presence * speaking);
       const key = steps * MOUTH_NAMES.length + MOUTH_NAMES.indexOf(mouth);
       if (key === painted && layers) return;
 

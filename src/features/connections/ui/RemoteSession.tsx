@@ -153,6 +153,7 @@ import {
 import { useRemoteRecovery } from "../model/useRemoteRecovery";
 import { reportRemoteConnection, subscribeRemoteRecovered } from "../model/remoteHealth";
 import { useRemoteConnection } from "../model/useRemoteConnection";
+import { classifyRemoteError, isConnectionFailure } from "../model/remoteFailure";
 import { RemoteConnectionBanner } from "./RemoteConnectionBanner";
 import {
   parseRemotePath,
@@ -436,6 +437,9 @@ function ConnectedRemoteSession({
       ).catch(console.warn);
   }, [ownership, online, machine.id, machine.environmentId]);
   const connection = useRemoteConnection(owner?.environmentId ?? project.key);
+  const connectionIssueHandled =
+    connection.status !== "connected" &&
+    (connection.status !== "connecting" || connection.reconnecting);
   const [error, setError] = useState("");
   const [sessionId, setSessionId] = useState(() =>
     owner?.created ? owner.sessionId : remoteSessionFor(shell.id),
@@ -1241,13 +1245,14 @@ function ConnectedRemoteSession({
   // waiting out its back-off, and re-attaches this session from its snapshot.
   useEffect(
     () =>
-      subscribeRemoteRecovered(() => {
+      subscribeRemoteRecovered((environmentId) => {
+        if (environmentId && environmentId !== machine.environmentId) return;
         if (bindingGen.currentDeleted()) return;
         beginOwnerVerification();
         setRefresh((value) => value + 1);
         refreshCatalog();
       }),
-    [],
+    [machine.environmentId],
   );
 
   const providers = useMemo(
@@ -2885,6 +2890,13 @@ function ConnectedRemoteSession({
               }
             : undefined;
 
+  // A transport failure has one recovery owner above the conversation. Keep
+  // independent queue/storage and command failures actionable in their own notice.
+  const noticeHandledByConnection =
+    connectionIssueHandled &&
+    !!notice &&
+    isConnectionFailure(classifyRemoteError(notice.detail || notice.text));
+
   const selectWorktree = async (tree: Worktree) => {
     const parsed = owner
       ? { environmentId: owner.environmentId, hostPath: tree.path }
@@ -3513,10 +3525,7 @@ function ConnectedRemoteSession({
         onRefresh={refreshOwnerContent}
         label={t("conversation")}
         disabled={remoteDeleted}
-        connectionIssueHandled={
-          connection.status !== "connected" &&
-          (connection.status !== "connecting" || connection.reconnecting)
-        }
+        connectionIssueHandled={connectionIssueHandled}
       />
     ),
     workingMachine: online && hostSession && snapshot?.status === "running" ? hostLabel : undefined,
@@ -3772,13 +3781,10 @@ function ConnectedRemoteSession({
           onRefresh={refreshOwnerContent}
           label={t("conversation")}
           disabled={remoteDeleted}
-          connectionIssueHandled={
-            connection.status !== "connected" &&
-            (connection.status !== "connecting" || connection.reconnecting)
-          }
+          connectionIssueHandled={connectionIssueHandled}
         />
         <RemoteOutboxNotice project={project.key} environment={machine.environmentId} />
-        {notice ? (
+        {notice && !noticeHandledByConnection ? (
           <div className="shrink-0 px-4 py-2">
             <Alert
               tone={error ? "danger" : "warning"}

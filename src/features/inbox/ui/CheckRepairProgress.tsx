@@ -316,7 +316,7 @@ function RepairCard({
       (check) => check.name === single.check.name && check.workflow === single.check.workflow,
     ).length === 1;
   return (
-    <Surface padding="none" className="overflow-hidden">
+    <Surface variant="outline" padding="none" className="overflow-hidden">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-2 py-2">
         <Button
           variant="ghost"

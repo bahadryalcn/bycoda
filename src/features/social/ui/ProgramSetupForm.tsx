@@ -2,6 +2,7 @@ import { useContext, useId, useState } from "react";
 import { dateTimeFormat } from "../../../shared/lib/intl";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { Progress } from "../../../shared/ui/Progress";
@@ -1018,9 +1019,18 @@ export function ProgramSetupForm({
             <div>
               <dt>{t("Target accounts")}</dt>
               <dd>
-                {config.accountIds
-                  .map((id) => snapshot.accounts.find((account) => account.id === id)?.name ?? id)
-                  .join(", ") || "—"}
+                {config.accountIds.length ? (
+                  <BadgeList
+                    label={t("Target accounts")}
+                    rows={2}
+                    items={config.accountIds.map((id, index) => ({
+                      id: `${index}:${id}`,
+                      label: snapshot.accounts.find((account) => account.id === id)?.name ?? id,
+                    }))}
+                  />
+                ) : (
+                  "—"
+                )}
               </dd>
             </div>
             <div>

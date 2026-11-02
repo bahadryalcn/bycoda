@@ -5,7 +5,7 @@ description: "Change recovered conversations, previous chat layout, verification
 
 # Session recovery
 
-Opening recovery entries is navigation, not a submitted turn. Conversation-journal maintenance is separate from native file-copy recovery and from history deletion. Host/native source owners retain durability and recovery authority.
+Only interrupted work enters recovery. Opening recovery entries is navigation, not a submitted turn. Conversation-journal maintenance is separate from native file-copy recovery and from history deletion. Host/native source owners retain durability and recovery authority.
 
 ## Source entry points
 
@@ -24,6 +24,9 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Scope: boot captures only sessions named by the in-flight list (`interrupted` in `src/app/model/appLifecycle.ts`), minus inbox asks, orchestration leads and unsent remote chats. Remote chats keep running on their Host and enter only when listed in flight. Never re-add "every open chat with a user message".
+- `useRecoveryAutoResolve` resolves entries confirmed Done/Idle (references only, never history or running work), skips loading/unreadable/unverified/unavailable ones, and opens the dialog after boot only when attention work remains. The rail count is then the attention count.
+- Dialog density: tabs exist only for non-empty content (no strip for conversations alone; reports ride with file copies because they can only be counted after a manual listing); the Needs attention/All filter shows only while it separates rows and defaults to All otherwise; search only above 8 rows; the list menu only above one row and lists only applicable actions; scope/consequence text lives in the `InfoPopover`, not a footer paragraph.
 - Recovered/dismissed/resolved IDs remain held from automatic continuation; list cleanup does not stop work or erase conversation history.
 - Attention includes non-Done/non-Idle states, including unknown/unavailable. A failed read is not a confirmed missing session.
 - Open all/Restore includes eligible filter-hidden rows; selected actions intersect selected IDs with shown rows while retaining hidden selections.
@@ -36,6 +39,7 @@ Code paths below are repository-root relative.
 - Select existing recovery model/action/panel/journal tests, plus editor draft-recovery hooks when file-copy behavior changes.
 - Use the affected recovery UI matrix including partial/read/save error states. Actual Native persistence/Host status and restore need isolated integration evidence beyond fixtures.
 - Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
+- Durable choice provenance: [owner decisions](references/decisions.md).
 - [Conversation recovery](../../../docs/guides/search-and-recovery.md)
 - [Editor draft recovery](../../../docs/guides/editor-draft-recovery.md)
 - [Source authority](../../../docs/reference/host-runtime.md)

@@ -245,7 +245,7 @@ export function SubagentSheet({
       )}
       {!command && relay ? (
         <form
-          className={`${styles.composer} flex shrink-0 flex-col gap-2 bg-(--ui-surface) px-4 py-3`}
+          className={`${styles.composer} flex shrink-0 flex-col gap-2 border-t border-(--ui-pane-border) px-4 py-3`}
           onSubmit={(event) => {
             event.preventDefault();
             if (!relay.blockedReason && relay.draft.trim()) relay.send();

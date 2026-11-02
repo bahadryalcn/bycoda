@@ -1635,6 +1635,60 @@ pub async fn claude_mcp_list(
     .map_err(|e| e.to_string())?
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpAuthStatus {
+    name: String,
+    /// Codex's `auth_status`: `o_auth`, `bearer_token`, `not_logged_in` or `unsupported`.
+    auth_status: String,
+}
+
+/// Codex reports per-server sign-in state; return only names and that state,
+/// never transport config (its env and headers can hold secrets).
+#[tauri::command]
+pub async fn codex_mcp_list(
+    host: State<'_, HarnessHost>,
+    cwd: String,
+) -> Result<Vec<McpAuthStatus>, String> {
+    let binary_path = host.runtime_binary_path("codex");
+    tauri::async_runtime::spawn_blocking(move || {
+        if !expand_home(&cwd).is_dir() {
+            return Err("Project directory does not exist".into());
+        }
+        let binary = resolve_mcp_binary("codex", binary_path.as_deref())?;
+        let output = exec_output_read(
+            &binary.to_string_lossy(),
+            &["mcp".into(), "list".into(), "--json".into()],
+            Some(&cwd),
+            Duration::from_secs(30),
+        )?;
+        if !output.status.success() {
+            return Err("Codex could not list MCP server status".into());
+        }
+        parse_codex_mcp_auth(&String::from_utf8_lossy(&output.stdout))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn parse_codex_mcp_auth(stdout: &str) -> Result<Vec<McpAuthStatus>, String> {
+    let servers: Vec<serde_json::Value> = serde_json::from_str(stdout.trim())
+        .map_err(|_| "Codex returned unreadable MCP status".to_string())?;
+    Ok(servers
+        .iter()
+        .filter_map(|server| {
+            Some(McpAuthStatus {
+                name: server.get("name")?.as_str()?.to_owned(),
+                auth_status: server
+                    .get("auth_status")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+            })
+        })
+        .collect())
+}
+
 fn configured_ws_mcp_servers(cwd: &Path) -> Vec<String> {
     let mut names = Vec::new();
     let read = |path: &Path| -> Option<serde_json::Value> {
@@ -4709,6 +4763,21 @@ mod shell_command_tests {
         assert!(error.contains("checking"), "{error}");
         assert!(error.contains("download-stalled"), "{error}");
         assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn codex_mcp_auth_keeps_only_names_and_status() {
+        let parsed = parse_codex_mcp_auth(
+            r#"[{"name":"cloudflare","transport":{"env":{"TOKEN":"secret"}},"auth_status":"o_auth"},
+                {"name":"arc","auth_status":"not_logged_in"},{"auth_status":"o_auth"}]"#,
+        )
+        .unwrap();
+        let json = serde_json::to_string(&parsed).unwrap();
+        assert_eq!(
+            json,
+            r#"[{"name":"cloudflare","authStatus":"o_auth"},{"name":"arc","authStatus":"not_logged_in"}]"#
+        );
+        assert!(parse_codex_mcp_auth("not json").is_err());
     }
 
     #[test]

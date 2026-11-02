@@ -1,18 +1,26 @@
 # MCP connections
 
 Open Settings > MCP for the selected local project. Each row belongs to a specific
-provider and scope. Credentials saved by one provider are not evidence that another
+provider and scope, shown as a tag next to its name: **Global** applies to every
+project for that provider, **Project** is saved in the selected project's provider
+configuration, and **Local project** applies only to the selected project in your
+personal Claude configuration. Filters can narrow the list by provider and scope.
+**Add MCP server** starts with the Global scope. Credentials saved by one provider are not evidence that another
 provider is signed in; complete that provider's authorization when needed.
 
 For enabled HTTP/SSE connections managed by Claude Code, Codex, Cursor or OpenCode, choose
 **Sign in** on the row and complete the authorization in your browser. bycoda runs
 the provider's own CLI and refreshes the list after it finishes. Keep the app open
-while authorization is pending. For a connection already reported as Connected,
-the row's action menu offers **Sign in again**.
+while authorization is pending. For a connection already reported as Connected or
+Signed in, the row's action menu offers **Sign in again**. If the provider's CLI is
+not installed, the page says so instead of starting a sign-in.
 
 **Configured** means the configuration was found. It does not confirm a connection
-or a successful login. Claude CLI health is matched by name and is not verified
-independently for duplicate names in different scopes. Other providers can remain
+or a successful login. Claude Code rows show **Checking…** until the Claude CLI
+reports health; that check can take more than 30 seconds, and servers it did not
+reach in time stay Configured. Claude CLI health is matched by name and is not verified
+independently for duplicate names in different scopes. Codex rows show **Signed in**
+or **Needs authentication** from Codex's own sign-in state. Cursor and OpenCode can remain
 Configured after a successful login because this list has no independent health
 probe for them.
 

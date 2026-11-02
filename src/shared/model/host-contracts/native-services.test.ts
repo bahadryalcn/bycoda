@@ -17,6 +17,17 @@ import {
   HOST_RPC_METHOD_ALIASES,
 } from "./index";
 
+it("accepts only known legacy Prettier metadata for formatter recovery", () => {
+  const schema = NATIVE_SERVICES_RPC_SCHEMAS["native.services.workspace.format"].result;
+  const result = { formatted: "const x = 1;\n", cursorOffset: 0 };
+  expect(schema.safeParse(result).success).toBe(true);
+  expect(
+    schema.safeParse({ ...result, comments: [{ type: "CommentLine", value: " keep" }] }).success,
+  ).toBe(true);
+  expect(schema.safeParse({ ...result, comments: false }).success).toBe(false);
+  expect(schema.safeParse({ ...result, other: [] }).success).toBe(false);
+});
+
 it("declares16 actual private services and5 uploads without exposing old HTTP helper aliases", () => {
   expect(NATIVE_SERVICE_METHODS).toHaveLength(16);
   expect(NATIVE_SERVICE_UPLOAD_METHODS).toHaveLength(5);

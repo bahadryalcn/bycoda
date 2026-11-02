@@ -40,6 +40,29 @@ describe("confirmCloseTerminal", () => {
     });
   });
 
+  it("asks before closing an idle last terminal, since the panel closes with it", async () => {
+    const file = newTerminalFile("/repo", "work");
+    getPtyStatus.mockResolvedValue({ foreground: null });
+    confirmInApp.mockResolvedValue(false);
+    await expect(confirmCloseTerminal(file, { last: true })).resolves.toBe(false);
+    expect(confirmInApp).toHaveBeenCalledWith({
+      title: "Close terminal?",
+      message:
+        "work is the last terminal. Closing it also closes the terminal panel. To keep it, hide the panel instead.",
+      confirmLabel: "Close terminal",
+      tone: "normal",
+    });
+  });
+
+  it("uses the running-process prompt for a busy last terminal", async () => {
+    const file = newTerminalFile("/repo", "work");
+    getPtyStatus.mockResolvedValue({ foreground: "node" });
+    confirmInApp.mockResolvedValue(true);
+    await expect(confirmCloseTerminal(file, { last: true })).resolves.toBe(true);
+    expect(confirmInApp).toHaveBeenCalledOnce();
+    expect(confirmInApp).toHaveBeenCalledWith(expect.objectContaining({ tone: "danger" }));
+  });
+
   it.each([false, true])(
     "asks conservatively for unsupported or failed status (failed=%s)",
     async (failed) => {

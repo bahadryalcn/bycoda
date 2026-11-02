@@ -10,6 +10,7 @@ All source paths are repository-relative.
 | Recorder | `src/shared/ui/ShortcutRecorder.tsx`; `src/shared/ui/arc/shortcut-recorder/` |
 | Native menus | `src-tauri/src/menu.rs`; `keybindings_set_overrides`, registered in `src-tauri/src/lib.rs` |
 | Global Quick composer | `src/features/quick-composer/model/quickComposer.ts`, `quickComposerShortcut.ts`; `src-tauri/src/quick_composer.rs` |
+| Global computer emergency Stop | `src/features/settings/model/desktopStopKeybinding.ts`, `src/features/host-tools/desktopStopShortcut.ts`; `src-tauri/src/desktop_shortcut.rs`; exact `native.services.desktop.stop` |
 
 ## Interaction and scope
 

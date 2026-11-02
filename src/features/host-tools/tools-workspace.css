@@ -36,8 +36,10 @@
   inline-size: 100%;
   max-inline-size: none;
 }
+/* Same pane role as the host tools row it sits on (canvas in pure mode), so the
+   dock actions never read as a separate, hovered-looking strip. */
 .tools-workspace-toolbar {
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-panel);
 }
 /* Keep dock controls in the shared context row, without a second title bar. */
 .tools-workspace-pane:has(.host-tools) {
@@ -52,7 +54,7 @@
   min-block-size: var(--ui-control-height-compact);
   padding: 2px 4px;
   border: 0;
-  background: var(--ui-surface);
+  background: var(--ui-surface-panel);
   gap: 0;
 }
 /* The shared context row already names the tool: hide the PaneHeader heading (icon, title, meta). */

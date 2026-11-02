@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useId, useState } from "react";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Switch } from "../../../shared/ui/Switch";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t } from "../../../shared/i18n";
@@ -27,7 +28,6 @@ function PendingServerTabs({
         </InlineError>
       ) : null}
       <ServerTerminalRestorePreview
-        defaultOpen={false}
         restore={{
           ...state.restore,
           tabs: state.restore.tabs.filter((tab) => state.pending.includes(tab.tabId)),
@@ -53,6 +53,7 @@ export function ServerTerminalRestoreControls({
   onConnect: (server: ServerRecord, replacingPendingId?: string) => void | Promise<void>;
 }) {
   const state = useServerTerminalRestoreState();
+  const regionId = useId();
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(!compact);
   const [seenCompact, setSeenCompact] = useState(compact);
@@ -76,25 +77,42 @@ export function ServerTerminalRestoreControls({
     }
   };
   if (!state.owner) return null;
+  const failed = state.loadFailed || state.saveStatus === "failed";
   return (
-    <details
+    <section
+      aria-label={t("Saved SSH tabs")}
       className="shrink-0 border-t border-stroke px-3 text-ui-caption"
-      open={expanded}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
-      <summary className="cursor-pointer py-1 text-(--ui-text-secondary)">
+      <SectionLabel
+        collapsible
+        expanded={expanded}
+        onExpandedChange={setExpanded}
+        controls={regionId}
+        count={state.pending.length || null}
+      >
         {t("Saved SSH tabs")}
-        {state.pending.length ? ` (${state.pending.length})` : ""}
-        {state.loadFailed || state.saveStatus === "failed" ? ` · ${t("Failed")}` : ""}
-      </summary>
-      <div className="flex flex-col gap-2 py-2">
-        <div className="flex items-center gap-2 text-(--ui-text-muted)">
+        {failed ? ` · ${t("Failed")}` : ""}
+      </SectionLabel>
+      {/* Kept mounted while collapsed so a selection in the saved-tab list survives. */}
+      <div
+        id={regionId}
+        hidden={!expanded}
+        className={expanded ? "flex flex-col gap-2 pbe-2 pbs-1" : "hidden"}
+      >
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <Switch
             label={t("Remember saved SSH tabs")}
             checked={state.restore?.enabled === true}
             disabled={!state.initialized}
             onCheckedChange={(checked) => serverTerminalRestoreState.setEnabled(checked, openTabs)}
           />
+          {!state.pending.length ? (
+            <p className="min-w-0 text-(--ui-text-secondary)">
+              {t(
+                "Restored tabs reconnect only when you choose Connect. This opens a new shell; previous commands are not replayed.",
+              )}
+            </p>
+          ) : null}
         </div>
         {state.saveStatus === "saving" ? (
           <p className="text-(--ui-text-muted)" role="status">
@@ -113,13 +131,6 @@ export function ServerTerminalRestoreControls({
             {state.saveError ? ` ${state.saveError}` : ""}
           </InlineError>
         ) : null}
-        {!state.pending.length ? (
-          <p className="text-(--ui-text-muted)">
-            {t(
-              "Restored tabs reconnect only when you choose Connect. This opens a new shell; previous commands are not replayed.",
-            )}
-          </p>
-        ) : null}
         {state.loadFailed ? (
           <InlineError retry={{ onRetry: () => void retryLoad(), pending: loading }}>
             {t("Couldn’t load saved SSH tabs.")}
@@ -127,6 +138,6 @@ export function ServerTerminalRestoreControls({
         ) : null}
         {state.pending.length ? <PendingServerTabs onConnect={onConnect} /> : null}
       </div>
-    </details>
+    </section>
   );
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -152,7 +152,54 @@ export function SshGroupSettings({
     if (draft) setDraft({ ...draft, value: { ...draft.value, ...patch } });
   };
   return (
-    <Modal title={t("SSH group settings")} onClose={onClose} size="md">
+    <Modal
+      title={t("SSH group settings")}
+      onClose={onClose}
+      size="md"
+      footer={
+        <ModalActions>
+          <Button
+            disabled={busy || loading || !initialized}
+            onClick={() =>
+              void operation(async () => {
+                const value = await previewSshConfiguration(server.id, inheritance, false);
+                if (!mounted.current) return;
+                if (
+                  value.connectionId !== server.id ||
+                  !value.configuration.digest ||
+                  JSON.stringify(value.inheritance) !== JSON.stringify(inheritance)
+                )
+                  throw new Error(t("SSH configuration changed. Refresh and preview again."));
+                setPreview({ value, scope, reviewed: true });
+              })
+            }
+          >
+            {t("Preview effective configuration")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={busy || !activePreview?.reviewed}
+            onClick={() =>
+              void operation(async () => {
+                if (!activePreview?.reviewed) return;
+                await setSshInheritance(
+                  server.id,
+                  inheritance,
+                  expected,
+                  activePreview.value.configuration.digest,
+                );
+                if (!mounted.current) return;
+                setExpected(inheritance);
+                setPreview(undefined);
+                setNotice(t("SSH inheritance updated."));
+              })
+            }
+          >
+            {t("Apply inheritance")}
+          </Button>
+        </ModalActions>
+      }
+    >
       <div className="flex min-w-0 flex-col gap-3 p-4">
         <p className="text-ui-caption text-(--ui-text-muted)">
           {t("Target")}: {server.name}
@@ -239,49 +286,11 @@ export function SshGroupSettings({
             {t("Remote environment")}
           </label>
         </fieldset>
-        <div className="flex justify-end gap-2">
-          <Button
-            disabled={busy || loading || !initialized}
-            onClick={() =>
-              void operation(async () => {
-                const value = await previewSshConfiguration(server.id, inheritance, false);
-                if (!mounted.current) return;
-                if (
-                  value.connectionId !== server.id ||
-                  !value.configuration.digest ||
-                  JSON.stringify(value.inheritance) !== JSON.stringify(inheritance)
-                )
-                  throw new Error(t("SSH configuration changed. Refresh and preview again."));
-                setPreview({ value, scope, reviewed: true });
-              })
-            }
-          >
-            {t("Preview effective configuration")}
-          </Button>
-          <Button
-            variant="primary"
-            disabled={busy || !activePreview?.reviewed}
-            onClick={() =>
-              void operation(async () => {
-                if (!activePreview?.reviewed) return;
-                await setSshInheritance(
-                  server.id,
-                  inheritance,
-                  expected,
-                  activePreview.value.configuration.digest,
-                );
-                if (!mounted.current) return;
-                setExpected(inheritance);
-                setPreview(undefined);
-                setNotice(t("SSH inheritance updated."));
-              })
-            }
-          >
-            {t("Apply inheritance")}
-          </Button>
-        </div>
         {activePreview ? (
-          <section aria-label={t("Effective SSH configuration")} className="min-w-0 text-ui-caption">
+          <section
+            aria-label={t("Effective SSH configuration")}
+            className="min-w-0 text-ui-caption"
+          >
             <p className="break-all font-medium">
               {sshEndpointPreview(activePreview.value.configuration.endpoint)}
             </p>

@@ -4,7 +4,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { t } from "../../../shared/i18n";
 import {
   validSshRuntimeConfiguration,
@@ -180,16 +180,31 @@ export function SshAgentForwarding({
     }
   };
   return (
-    <Modal title={t("Forward SSH agent")} onClose={onClose} size="sm">
+    <Modal
+      title={t("Forward SSH agent")}
+      onClose={onClose}
+      size="sm"
+      footer={
+        <ModalActions>
+          <Button variant="ghost" onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button disabled={active?.loading} onClick={() => void request()}>
+            {t("Request new review")}
+          </Button>
+          <Button variant="primary" disabled={!valid} onClick={approve}>
+            {t("Approve and connect")}
+          </Button>
+        </ModalActions>
+      }
+    >
       <div className="flex min-w-0 flex-col gap-3 p-4">
         <Alert tone="warning">
           {t(
             "The remote target can use identities from your SSH agent while this terminal is connected. Approve only a trusted target.",
           )}
         </Alert>
-        {active?.loading ? (
-          <LoadingText />
-        ) : null}
+        {active?.loading ? <LoadingText /> : null}
         {active?.error ? (
           <Alert tone="danger" role="alert">
             {active.error}
@@ -261,17 +276,6 @@ export function SshAgentForwarding({
             {t("Agent forwarding target changed. Request a new review.")}
           </InlineMessage>
         ) : null}
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button disabled={active?.loading} onClick={() => void request()}>
-            {t("Request new review")}
-          </Button>
-          <Button variant="primary" disabled={!valid} onClick={approve}>
-            {t("Approve and connect")}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

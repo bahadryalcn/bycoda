@@ -1,5 +1,5 @@
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { Badge } from "../../../shared/ui/Badge";
+import type { BadgeListItem } from "../../../shared/ui/BadgeList";
 import { labelColor } from "../../../shared/lib/colorUtils";
 import { t, useLocale } from "../../../shared/i18n";
 import type { CiRepairRequest } from "../model/ciRepair";
@@ -228,28 +228,22 @@ export function InboxProjectPicker({
   );
 }
 
-export function InboxLabel({ label, compact = false }: { label: GithubLabel; compact?: boolean }) {
-  useLocale();
-  const color = labelColor(label.color);
-  return (
-    <Badge
-      tone="neutral"
-      appearance="subtle"
-      size="sm"
-      className={compact ? "max-w-20" : undefined}
-      icon={
-        color ? (
-          <span
-            aria-hidden
-            className="size-1.5 shrink-0 rounded-full"
-            style={{ backgroundColor: color }}
-          />
-        ) : undefined
-      }
-    >
-      <span className="min-w-0 truncate">{label.name}</span>
-    </Badge>
-  );
+/** Service labels as BadgeList items; the label's own colour stays as the leading dot. */
+export function inboxLabelItems(labels: readonly GithubLabel[]): BadgeListItem[] {
+  return labels.map((label) => {
+    const color = labelColor(label.color);
+    return {
+      id: label.name,
+      label: label.name,
+      icon: color ? (
+        <span
+          aria-hidden
+          className="size-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: color }}
+        />
+      ) : undefined,
+    };
+  });
 }
 
 export { labelColor } from "../../../shared/lib/colorUtils";

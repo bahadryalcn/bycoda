@@ -160,6 +160,7 @@ export type HarnessEvent =
   | {
       type: "question.asked";
       requestId: number;
+      occurrenceId?: string;
       title?: string;
       questions: UserQuestion[];
       callId?: string;

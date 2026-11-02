@@ -260,7 +260,7 @@ export function CrewMemberForm({
             {agent.candidates.length ? (
               <ul
                 aria-label={t("Model ratings")}
-                className="flex flex-col gap-1 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-1"
+                className="flex flex-col gap-1 rounded-(--ui-radius-card) border border-(--ui-pane-border) p-1"
               >
                 {agent.candidates.map((c) => {
                   const model = catalogModels(catalog).find(

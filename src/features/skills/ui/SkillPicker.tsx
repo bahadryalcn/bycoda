@@ -69,7 +69,7 @@ export function SkillPicker({
       className={
         compact
           ? "overflow-hidden"
-          : "overflow-hidden rounded-lg border border-(--color-stroke) bg-(--ui-surface)"
+          : "overflow-hidden rounded-lg border border-(--color-stroke)"
       }
     >
       {creating ? (

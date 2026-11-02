@@ -144,6 +144,13 @@ describe("useHostAutomations confirmed-mutation ledger", () => {
     expect(latest.loaded).toBe(false);
     expect(latest.automations).toEqual([]);
     expect(client.list).not.toHaveBeenCalled();
+    expect(latest.error).toBeNull();expect(latest.fetching).toBe(false);
+  });
+
+  it("retains an initial probe error as unavailable rather than a loaded empty collection",async()=>{
+    client.probe.mockRejectedValueOnce(new Error("Original Host unavailable"));
+    await act(async()=>root.render(createElement(Harness,{enabled:true})));await settle();
+    expect(latest.loaded).toBe(false);expect(latest.error?.message).toBe("Original Host unavailable");expect(latest.fetching).toBe(false);expect(client.list).not.toHaveBeenCalled();
   });
 
   it("keeps a save confirmed while an older poll was in flight, then releases it", async () => {

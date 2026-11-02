@@ -13,7 +13,7 @@ Code paths are repository-relative.
 
 ## Operations and limits
 
-- Outgoing native identifiers: `mcp_discover`, `mcp_add`, `claude_mcp_list`, `claude_mcp_add`, `claude_mcp_remove`, `mcp_provider_login`. Verify exact provider/scopes and current supported transport before showing actions.
+- Outgoing native identifiers: `mcp_discover`, `mcp_add`, `claude_mcp_list` (returns `{ output, timedOut }`), `codex_mcp_list` (names and Codex `auth_status` only), `claude_mcp_add`, `claude_mcp_remove`, `mcp_provider_login`. Verify exact provider/scopes and current supported transport before showing actions.
 - Incoming owner RPCs: `mcp.tokens.create`, `mcp.tokens.list`, `mcp.tokens.revoke`. Keep owner-device credential, project/tool group/read-write bounds and expiry enforcement in the Host.
 - Preserve current grant defaults and validation in source, including memory-only one-shot secret display and no secret in history. Unknown create outcome is not proof that nothing was issued.
 - Follow current source for runtime-logs read-only scopes; do not silently widen an existing grant to resolve an empty tool group.

@@ -11,6 +11,22 @@ import { RequestAuthorizationError, StoreDatabase } from "./store-db";
 import type { HostSession } from "../src/features/connections/model/protocol";
 
 const cleanups: Array<() => void | Promise<void>> = [];
+it("captures request authority without restoring a closed SQL owner, and rechecks the original grant inside a different live transaction",async()=>{
+ const{store}=await fixture();let allowed=true,captured!:()=>Promise<void>,escaped!:()=>Promise<void>;
+ await store.db.withAuthorization(async()=>{await store.projects();return allowed;},()=>store.transaction(async()=>{captured=await store.db.captureAuthorization();escaped=AsyncResource.bind(()=>captured());},"critical"));
+ await expect(escaped()).rejects.toThrow("closed owner");
+ await store.db.withAuthorization(async()=>{await captured();return true;},()=>store.transaction(async()=>{expect(await store.projects()).toHaveLength(1);await store.db.checkAuthorization();},"critical"));
+ allowed=false;await expect(store.db.withAuthorization(async()=>{await captured();return true;},()=>store.transaction(async()=>{throw new Error("A revoked guard must not enter SQL work");},"critical"))).rejects.toThrow(RequestAuthorizationError);
+});
+
+it("prepares captured structured authority before SQL admission while retaining both original and prepared revocation checks",async()=>{
+ const{store}=await fixture(),other=new StoreDatabase(":memory:");await other.ready;cleanups.push(()=>other.close());let originalAllowed=true,preparedAllowed=true;
+ const prepare=vi.fn(async()=>{expect(store.db.ownsScope).toBe(false);expect((await other.prepare("SELECT 1 AS n").get())?.n).toBe(1);return async()=>preparedAllowed;});
+ const captured=await store.db.withAuthorization({prepare,check:async()=>originalAllowed},()=>store.db.captureAuthorization());expect(prepare).toHaveBeenCalledTimes(1);
+ await store.db.withAuthorization(async()=>{await captured();return true;},()=>store.transaction(async()=>{await store.db.checkAuthorization();},"critical"));
+ originalAllowed=false;await expect(captured()).rejects.toThrow(RequestAuthorizationError);originalAllowed=true;preparedAllowed=false;await expect(captured()).rejects.toThrow(RequestAuthorizationError);
+ await store.transaction(async()=>{await expect(store.db.withAuthorization({prepare,check:async()=>true},()=>store.db.captureAuthorization())).rejects.toThrow("before SQL admission");},"critical");expect(prepare).toHaveBeenCalledTimes(1);
+});
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });

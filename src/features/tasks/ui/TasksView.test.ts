@@ -1343,6 +1343,18 @@ it("disables goal settings on hosts without the update capability", async () => 
   expect(await tooltipText(edit)).toBe("Update the selected host to edit goal settings.");
 });
 
+it("reveals an explicitly requested goal without issuing an approval",async()=>{
+  const requests=host([], ["tasks","goals"],[goal({status:"awaiting-approval",plan:{tasks:[]}}),goal({id:"other",title:"Other goal"})]);
+  await act(async()=>root.render(createElement(TasksView,{cwd:"/work/project",recents:[],onClose:vi.fn(),onOpenBackgroundSession:vi.fn(),goalReveal:{machineId:"machine-local",goalId:"launch",token:1}})));
+  await vi.waitFor(()=>{
+    const details=container.querySelector<HTMLDetailsElement>(".task-goals-disclosure");
+    expect(details?.open).toBe(true);
+    const list=details!.querySelector('ul[aria-label="Goals"]')!;
+    expect(list.textContent).toContain("Launch the beta");expect(list.textContent).not.toContain("Other goal");
+  });
+  expect(requests.some(value=>value.method==="goals.approve")).toBe(false);
+});
+
 it("shows a plan waiting for approval and asks the goal's machine to approve it", async () => {
   const requests = host(
     [],
@@ -1379,7 +1391,12 @@ it("shows a plan waiting for approval and asks the goal's machine to approve it"
   expect(card.querySelector('[aria-label="Plan"]')!.textContent).toContain(
     "Call the endpointin project· after Add the endpoint",
   );
-  expect(Array.from(card.querySelectorAll("button"), buttonName)).toEqual([
+  // The project list keeps an inert measuring copy of its "+N" button.
+  expect(
+    Array.from(card.querySelectorAll("button"))
+      .filter((control) => !control.closest("[inert]"))
+      .map(buttonName),
+  ).toEqual([
     "Edit goal settings",
     "Approve",
     "Replan",

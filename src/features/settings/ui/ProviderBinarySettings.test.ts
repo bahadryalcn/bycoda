@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProviderBinaryControl } from "./ProviderBinarySettings";
+import { Modal } from "../../../shared/ui/Modal";
 import { loadProviderBinaryPath } from "../../providers/model/providerBinaryPaths";
 
 const mock = vi.hoisted(() => ({ inspect: vi.fn(), pick: vi.fn() }));
@@ -31,12 +32,16 @@ afterEach(async () => {
 async function render(inline = true) {
   await act(async () =>
     root.render(
-      createElement(ProviderBinaryControl, {
-        provider: "codex",
-        inline,
-        onPathSaved: saved,
-        onCancel: cancelled,
-      }),
+      createElement(
+        Modal,
+        { title: "Add provider", onClose: cancelled },
+        createElement(ProviderBinaryControl, {
+          provider: "codex",
+          inline,
+          onPathSaved: saved,
+          onCancel: cancelled,
+        }),
+      ),
     ),
   );
 }
@@ -57,7 +62,7 @@ async function click(label: string) {
 it("validates the chosen executable before adding it and keeps picker cancellation harmless", async () => {
   await render();
   expect(
-    [...container.querySelectorAll("button")].find((node) => node.textContent === "Add provider")!
+    [...document.querySelectorAll("button")].find((node) => node.textContent === "Add provider")!
       .disabled,
   ).toBe(true);
   mock.pick.mockResolvedValueOnce(null).mockResolvedValueOnce("D:/custom/codex.exe");

@@ -89,6 +89,7 @@ export class VoiceVad {
   /** Changes whenever speech starts or resumes, so a stale pause cannot end the turn. */
   private pauseId = 0;
   private paused = false;
+  private full=false;
   constructor(
     private rate: number,
     private start: () => void,
@@ -99,17 +100,25 @@ export class VoiceVad {
     private options: {
       pause?: (audio: Int16Array, pauseId: number) => void;
       endSilence?: number;
+      manualTurnEnd?:boolean;
+      limit?:()=>void;
     } = {},
   ) {}
   /** Stricter onset while the assistant is speaking (echo residue, breaths). */
   setStrict(strict: boolean) {
     this.strict = strict;
   }
+  setEndSilence(seconds?: number) {
+    this.options.endSilence = seconds;
+    if (seconds !== undefined) this.options.pause = undefined;
+  }
+  setManualTurnEnd(manual:boolean){if(this.options.manualTurnEnd!==manual)this.full=false;this.options.manualTurnEnd=manual;this.paused=false;this.pauseId++;}
   private threshold() {
     const base = Math.max(VAD_TUNING.minRms, VAD_TUNING.floorRatio * this.floor);
     return this.strict ? base * VAD_TUNING.strictFactor : base;
   }
   push(samples: Int16Array) {
+    if(this.full)return;
     const { rms, periodicity } = frameFeatures(samples, this.rate);
     const loud = rms > this.threshold();
     if (!this.talking) {
@@ -148,15 +157,19 @@ export class VoiceVad {
     this.sinceVoiced =
       loud && periodicity >= VAD_TUNING.minPeriodicity ? 0 : this.sinceVoiced + samples.length;
     const voice = loud && this.sinceVoiced <= this.rate * VAD_TUNING.unvoicedCarry;
-    this.chunks.push(samples);
-    this.count += samples.length;
     this.quiet = voice ? 0 : this.quiet + samples.length;
+    // Long thinking pauses do not grow a manual recording without bound.
+    if(!this.options.manualTurnEnd||voice||this.quiet<=this.rate*1.2){this.chunks.push(samples);this.count+=samples.length;}
     if (voice) {
       this.voiced += samples.length;
       if (this.paused) this.pauseId++;
       this.paused = false;
     }
     const end = this.options.endSilence ?? 0.6;
+    if(this.options.manualTurnEnd){
+      if(this.count>=this.rate*120){this.full=true;this.options.limit?.();}
+      return; // Only the owner's Finish turn control commits this audio.
+    }
     if (this.quiet >= this.rate * end || this.count >= this.rate * 20) return this.flush();
     if (
       this.options.pause &&
@@ -170,6 +183,7 @@ export class VoiceVad {
   }
   /** Ends the turn at the pause `pauseId` if the speaker has not continued since. */
   commit(pauseId: number): boolean {
+    if(this.options.manualTurnEnd)return false;
     if (!this.talking || !this.paused || pauseId !== this.pauseId) return false;
     this.reset();
     return true;
@@ -203,6 +217,7 @@ export class VoiceVad {
     this.sinceVoiced = 0;
     this.talking = false;
     this.paused = false;
+    this.full=false;
     this.pauseId++;
   }
 }

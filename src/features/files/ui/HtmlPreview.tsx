@@ -67,7 +67,7 @@ export function HtmlPreview({
 
   if (!active) return null;
   return (
-    <div className="flex h-full min-h-0 flex-col bg-surface">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-3 py-1">
         <Button
           variant="ghost"

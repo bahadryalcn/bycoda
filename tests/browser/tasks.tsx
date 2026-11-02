@@ -277,6 +277,12 @@ if (query.has("autonomy")) {
   ];
 }
 const limits = new Map<string, { maxRunningTasks: number; dailyAgentMinutes: number }>();
+if(query.has("stalled")){
+  const at=Date.now();tasks["machine-local"]=[{
+    id:"stalled-task",title:"Inspect delayed worker",prompt:"Fixture only, no live work",projectId:"local-project",harness:"claude",model:"claude:fixture",modelSettings:{},runtimeMode:"auto",maxRunMinutes:0,isolate:false,review:false,status:"running",sessionId:"worker-stalled",runId:"run-stalled",createdAt:at-3600_000,updatedAt:at,startedAt:at-3600_000,
+    ...(query.has("cleared")?{}:{runStall:{sessionId:"worker-stalled",runId:"run-stalled",lastActivityAt:at-16*60_000,detectedAt:at}}),
+  }];
+}
 if (query.has("boardControls")) {
   const defaults: HostTaskInput = {
     id: "first",

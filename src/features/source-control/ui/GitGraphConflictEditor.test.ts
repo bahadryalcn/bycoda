@@ -84,7 +84,9 @@ it("marker varken stage etmez, seçilen sonucu dosyaya yazıp stage eder", async
   expect(host.querySelector(".conflict-pane-ours")?.textContent).toContain("HEAD");
   expect(host.querySelector(".conflict-pane-theirs")?.textContent).toContain("topic");
   expect(
-    host.querySelector(".conflict-pane-ours .conflict-source-identity")?.getAttribute("title"),
+    host
+      .querySelector(".conflict-pane-ours .conflict-source-identity")
+      ?.getAttribute("data-origin"),
   ).toContain("Current side of conflict markers");
   expect(
     [...host.querySelectorAll<HTMLButtonElement>("button")].find(

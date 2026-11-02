@@ -1,4 +1,6 @@
 import { ChangeSignal } from "./changeSignal";
+import {assistantJobSessionBelongs} from "./assistant-job-scope";
+import type {AssistantJob} from "../src/shared/model/host-contracts/assistant";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   assertHostAuthority,
@@ -86,6 +88,7 @@ interface SummaryBlocks {
 }
 interface BlockIndex {
   positions: Map<string, number>;
+  authors:Map<string,NonNullable<Block["author"]>>;
   root: SummaryBlocks;
 }
 const blockIndexes = new WeakMap<Block[], BlockIndex>();
@@ -117,16 +120,18 @@ function indexBlocks(blocks: Block[]): BlockIndex {
   const cached = blockIndexes.get(blocks);
   if (cached) return cached;
   const positions = new Map<string, number>();
+  const authors=new Map<string,NonNullable<Block["author"]>>();
   const build = (start: number, end: number): SummaryBlocks => {
     if (end - start <= 1) {
       const block = blocks[start];
       if (block) positions.set(block.id, start);
+      if(block?.author)authors.set(block.id,block.author);
       return blockSummary(block);
     }
     const middle = (start + end) >>> 1;
     return aggregate(build(start, middle), build(middle, end));
   };
-  const result = { positions, root: build(0, blocks.length) };
+  const result = { positions, authors, root: build(0, blocks.length) };
   blockIndexes.set(blocks, result);
   return result;
 }
@@ -159,8 +164,13 @@ function patchBlockIndex(previous: Block[], blocks: Block[], changes?: BlockChan
       : aggregate(node.left!, patch(node.right!, middle, end, position));
   };
   let root = before.root;
+  let authors=before.authors;
+  for(const [id,block] of changes)if(block?.author!==before.authors.get(id)) {
+    if(authors===before.authors)authors=new Map(before.authors);
+    if(block?.author)authors.set(id,block.author);else authors.delete(id);
+  }
   for (const id of changes.keys()) root = patch(root, 0, blocks.length, before.positions.get(id)!);
-  blockIndexes.set(blocks, { positions: before.positions, root });
+  blockIndexes.set(blocks, { positions: before.positions, authors, root });
   return false;
 }
 /** Cache invalidation only; the permanent authority journal remains the proof. */
@@ -1678,16 +1688,39 @@ export class HostStore {
               this.bumpChangeVersion();
               this.touchProject(input.projectId);
               const previous = await this.find(input.session.id);
+              // Legacy mirrors may omit display provenance. They cannot erase
+              // or replace a Host-accepted author on the same block identity.
+              const previousIndex=previous?indexBlocks(previous.session.blocks):undefined;
+              let provenanceChanged=false;
+              let blocks=input.session.blocks;
+              const repaired=new Map<string,Block>();
+              let positions:Map<string,number>|undefined;
+              for(const [id,author] of previousIndex?.authors??[]) {
+                const oldPosition=previousIndex!.positions.get(id)!;
+                const position=blocks[oldPosition]?.id===id?oldPosition:(positions??=new Map(blocks.map((block,index)=>[block.id,index]))).get(id);
+                if(position===undefined)continue;
+                const block=blocks[position];
+                if(block.author&&JSON.stringify(block.author)!==JSON.stringify(author))throw new Error("Host message authorship cannot be replaced.");
+                if(block.author)continue;
+                if(!provenanceChanged)blocks=blocks.slice();
+                provenanceChanged=true;
+                blocks[position]={...block,author};repaired.set(id,blocks[position]);
+              }
+              let managedBy=input.session.managedBy??input.managedBy??previous?.session.managedBy??previous?.managedBy;
+              const previousManagement=previous?.session.managedBy??previous?.managedBy;
+              if(previousManagement?.detachedAt!==undefined&&managedBy&&((previousManagement.jobId&&previousManagement.jobId===managedBy.jobId)||(previousManagement.supervisionId&&previousManagement.supervisionId===managedBy.supervisionId)))managedBy={...managedBy,detachedAt:previousManagement.detachedAt};
+              const accepted=managedBy||provenanceChanged?{...input,...(managedBy?{managedBy}:{}),session:{...input.session,...(managedBy?{managedBy}:{}),blocks:provenanceChanged?blocks:input.session.blocks}}:input;
+              if(provenanceChanged&&options.blockChanges)options={...options,blockChanges:new Map([...options.blockChanges].map(([id,block])=>[id,repaired.get(id)??block]))};
               if (previous && previous.projectId !== input.projectId)
                 this.touchProject(previous.projectId);
               const value = {
-                ...input,
+                ...accepted,
                 ...(authorityGeneration === undefined ? {} : { authorityGeneration }),
                 // Older snapshots have no creation time. Preserve their last recorded
                 // timestamp when they are first written by this version of the host.
                 createdAt:
                   input.createdAt ?? previous?.createdAt ?? previous?.updatedAt ?? input.updatedAt,
-                blockRevisions: blockRevisions(previous, input, options.blockChanges),
+                blockRevisions: blockRevisions(previous, accepted, options.blockChanges),
               };
               const id = value.session.id;
               const row = { revision: value.revision, event };
@@ -1975,6 +2008,7 @@ export class HostStore {
     },
     authorityGeneration?: number,
   ): Promise<HostSessionSummary> {
+    if(Object.keys(patch).some(key=>!["title","archived","pinned","linkedWorkItem"].includes(key)))throw new Error("Unsupported client-editable session metadata.");
     return this.db.storeScope(async () => {
       return await this.withAuthorityGeneration(id, authorityGeneration, async () => {
         const current = await this.session(id);
@@ -1999,6 +2033,35 @@ export class HostStore {
         return summary(next);
       });
     });
+  }
+  /** Internal Host attribution only. Client-editable metadata never calls this. */
+  async markAssistantManagedSession(id:string,jobId:string):Promise<HostSessionSummary> {
+    return this.transaction(async()=>{
+      const row=await this.db.prepare("SELECT value FROM assistant_jobs WHERE id=? AND deleted_at IS NULL").get(jobId);
+      const job=row?JSON.parse(row.value) as AssistantJob:undefined;
+      const current=await this.session(id);
+      if(!job||!await assistantJobSessionBelongs(this,job,id,current.projectId))throw new Error("Session does not belong to the selected assistant job's canonical goal/task scope.");
+      const existing=current.session.managedBy??current.managedBy;
+      if(existing&&(!("jobId" in existing)||existing.jobId!==jobId))throw new Error("Session already belongs to another assistant scope.");
+      const detached=job.kind!=="quick"&&job.detachedSessionIds?.includes(id)===true;
+      const managedBy=detached?{...(existing??{assistant:true as const,jobId,managedAt:Date.now()}),detachedAt:existing?.detachedAt??Date.now()}:existing??{assistant:true as const,jobId,managedAt:Date.now()};
+      if(current.session.managedBy&&current.managedBy&&(!detached||current.session.managedBy.detachedAt&&current.managedBy.detachedAt))return summary(current);
+      const saved=await this.save({...current,managedBy,session:{...current.session,managedBy},revision:current.revision+1,updatedAt:Math.max(Date.now(),current.updatedAt+1)},{type:"session.managed",managedBy});
+      return summary(saved);
+    },"critical");
+  }
+  /** Internal enrollment attribution. A display stamp never substitutes for its live grant. */
+  async markAssistantManualSession(id:string,supervisionId:string):Promise<HostSessionSummary>{
+    return this.transaction(async()=>{
+      const row=await this.db.prepare("SELECT value FROM assistant_manual_supervision WHERE session_id=? AND id=?").get(id,supervisionId);
+      const grant=row?JSON.parse(row.value) as {active:boolean;sessionId:string;source:{projectId:string;executionCwd:string;authorityGeneration?:number;harness:string;model:string;modelSettings:Record<string,string>;runtimeMode:string;providerAccountId?:string}}:undefined;
+      const current=await this.session(id),session=current.session;
+      if(!grant?.active||grant.sessionId!==id||grant.source.projectId!==current.projectId||grant.source.executionCwd!==(session.worktreeCwd??session.cwd)||grant.source.authorityGeneration!==current.authorityGeneration||grant.source.harness!==session.harness||grant.source.model!==session.model||grant.source.runtimeMode!==session.runtimeMode||grant.source.providerAccountId!==session.providerAccountId||Object.keys(grant.source.modelSettings).length!==Object.keys(session.modelSettings).length||Object.entries(grant.source.modelSettings).some(([key,value])=>session.modelSettings[key]!==value))throw new Error("The manual supervision grant does not match this exact Host session source.");
+      const existing=session.managedBy??current.managedBy;if(existing&&"jobId" in existing)throw new Error("A job-owned session cannot receive a manual supervision stamp.");
+      if(existing?.supervisionId===supervisionId&&session.managedBy&&current.managedBy)return summary(current);
+      const managedBy={assistant:true as const,supervisionId,managedAt:Date.now()};
+      return summary(await this.save({...current,managedBy,session:{...session,managedBy},revision:current.revision+1,updatedAt:Math.max(Date.now(),current.updatedAt+1)},{type:"session.manualSupervision",managedBy}));
+    },"critical");
   }
   /** The committed fence generation when Host owns the session (to repair a stale caller value). */
   async currentAuthorityGeneration(id: string): Promise<number | undefined> {
@@ -2303,6 +2366,7 @@ function summaryFromBlocks(value: HostSession): HostSessionSummary {
   const issue = sessionIssue({ ...value.session, busy: value.status === "running" });
   const turn = value.session.blocks.findLast((block) => block.role === "user" && !block.draft);
   return {
+    ...((value.session.managedBy??value.managedBy)?{managedBy:value.session.managedBy??value.managedBy}:{}),
     ...(value.authorityGeneration === undefined
       ? {}
       : { authorityGeneration: value.authorityGeneration }),

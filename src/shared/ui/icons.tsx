@@ -99,9 +99,13 @@ import {
   Palette as LucidePalette,
   Pause as LucidePause,
   PanelBottom as LucidePanelBottom,
+  PanelBottomClose as LucidePanelBottomClose,
   PanelLeft as LucidePanelLeft,
+  PanelLeftClose as LucidePanelLeftClose,
   PanelRight as LucidePanelRight,
+  PanelRightClose as LucidePanelRightClose,
   PanelTop as LucidePanelTop,
+  PanelTopClose as LucidePanelTopClose,
   PenLine as LucidePenLine,
   Pencil as LucidePencil,
   Pin as LucidePin,
@@ -338,6 +342,10 @@ export const PanelBottom = wrap(LucidePanelBottom, "PanelBottom");
 export const PanelLeft = wrap(LucidePanelLeft, "PanelLeft");
 export const PanelRight = wrap(LucidePanelRight, "PanelRight");
 export const PanelTop = wrap(LucidePanelTop, "PanelTop");
+export const PanelBottomClose = wrap(LucidePanelBottomClose, "PanelBottomClose");
+export const PanelLeftClose = wrap(LucidePanelLeftClose, "PanelLeftClose");
+export const PanelRightClose = wrap(LucidePanelRightClose, "PanelRightClose");
+export const PanelTopClose = wrap(LucidePanelTopClose, "PanelTopClose");
 export const PenLine = wrap(LucidePenLine, "PenLine");
 export const Pencil = wrap(LucidePencil, "Pencil");
 export const Pin = wrap(LucidePin, "Pin");

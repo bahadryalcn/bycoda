@@ -417,7 +417,7 @@ export function TerminalView({
       reportPtyVisibility: pty.reportVisibility,
       applyThemeIfStale: theme.applyIfStale,
       loadWebgl: webgl.load,
-      dropWebgl: webgl.drop,
+      dropWebgl: webgl.dropSoon,
       onScreen: setOnScreen,
     });
     visibility.start();

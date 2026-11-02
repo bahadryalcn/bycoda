@@ -10,6 +10,7 @@ import type { Block } from "../model/session";
 import { toolResultTexts } from "../model/commandInspection";
 import { boundedToolPreview } from "../model/toolInspection";
 import { JsonViewer } from "../../../shared/ui/JsonViewer";
+import "./chat-controls.css";
 
 // Long commands and output wrap by default; aligned output (tables, diffs) can opt out, and the choice persists.
 const toolOutputWrap = storedFlag("bycoda.toolOutputWrap", true, "bycoda:tool-output-wrap", true);
@@ -156,7 +157,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
   // single icon group (Copy, Wrap) lives on the first heading instead of a bar of its own.
   return (
     <Surface
-      variant="outline"
+      variant="quiet"
       padding="none"
       data-tool-inspection
       className="flex min-w-0 flex-col gap-2 overflow-clip pb-2"
@@ -178,7 +179,9 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                   ) : null}
                   <FloatingButtonGroup
                     label={t("Output actions")}
+                    // Same bare icon row as the message actions: no tray padding.
                     variant="muted"
+                    style={{ padding: 0 }}
                     size="sm"
                     iconOnly
                     items={actions}

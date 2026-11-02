@@ -20,14 +20,12 @@ export function ServerTerminalRestorePreview({
   inventoryReady = true,
   onConnect,
   onRemove,
-  defaultOpen = true,
 }: {
   restore: ServerTerminalRestore;
   servers: readonly ServerRecord[];
   inventoryReady?: boolean;
   onConnect: (tab: ServerTerminalRestoreTab, server: ServerRecord) => void | Promise<void>;
   onRemove: (tabId: string) => void;
-  defaultOpen?: boolean;
 }) {
   const [pending, setPending] = useState<string>();
   const [error, setError] = useState("");
@@ -36,17 +34,14 @@ export function ServerTerminalRestorePreview({
   const selectedTabs = restore.tabs.filter((tab) => selected.has(tab.tabId));
   if (!restore.tabs.length) return null;
   return (
-    <details className="border-t border-stroke pbs-2 text-ui-caption" open={defaultOpen || undefined}>
-      <summary className="cursor-pointer py-1 font-medium text-(--ui-text-secondary)">
-        {t("Saved SSH tabs")} ({restore.tabs.length}) · {t("Not connected")}
-      </summary>
-      <p className="mbs-2 text-(--ui-text-muted)">
+    <div className="flex flex-col gap-2 text-ui-caption">
+      <p className="text-(--ui-text-secondary)">
         {t(
           "Restored tabs reconnect only when you choose Connect. This opens a new shell; previous commands are not replayed.",
         )}
       </p>
-      {error ? <InlineError className="mbs-2">{error}</InlineError> : null}
-      <div className="mbs-2 flex flex-wrap items-center gap-2">
+      {error ? <InlineError>{error}</InlineError> : null}
+      <div className="flex flex-wrap items-center gap-2">
         <Checkbox
           aria-label={t("Select saved SSH tabs")}
           checked={selectedTabs.length === restore.tabs.length}
@@ -71,7 +66,7 @@ export function ServerTerminalRestorePreview({
           </Button>
         ) : null}
       </div>
-      <ul className="mbs-2 flex max-h-64 flex-col gap-2 overflow-y-auto">
+      <ul className="flex max-h-64 flex-col divide-y divide-stroke overflow-y-auto">
         {restore.tabs.map((tab, index) => {
           const server = servers.find((record) => record.id === tab.serverId);
           const endpoint = server?.effectiveSshEndpoint ?? server?.sshEndpoint;
@@ -83,7 +78,7 @@ export function ServerTerminalRestorePreview({
           return (
             <li
               key={tab.tabId}
-              className="flex min-w-0 flex-wrap items-center gap-2 rounded-md bg-(--ui-surface) px-2 py-2"
+              className="flex min-w-0 flex-wrap items-center gap-2 py-2"
               aria-current={restore.activeTabId === tab.tabId ? "true" : undefined}
             >
               <Checkbox
@@ -171,6 +166,6 @@ export function ServerTerminalRestorePreview({
           </p>
         </Modal>
       ) : null}
-    </details>
+    </div>
   );
 }

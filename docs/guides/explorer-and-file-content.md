@@ -35,6 +35,22 @@ completed move, delete, paste or duplication. Clipboard failures remain local so
 you can retry deliberately. Empty, loading and failed folders have distinct states.
 
 Preview and Source keep their mounted document state when you switch modes.
+Right-click source code (or press Shift+F10) to open editor actions: Undo, Redo,
+Cut, Copy, Paste, Select All, Find, Format document and Save. Selected code also
+offers Add to chat. The original side of a split diff retains reading actions;
+editing actions are disabled for read-only documents. Format document uses the
+same project formatter as Alt+Shift+F and changes the editor buffer; Save retains
+the existing format-on-save preference. Clipboard errors appear in the editor,
+and a delayed Cut or Paste does not overwrite newer edits or selections.
+
+Editors open on the same file, such as its own tab and its Working Tree review tab,
+share one document, like a file and its diff view in VS Code. An edit appears in
+every one of them at once, and Undo/Redo (Ctrl/Cmd+Z, Ctrl+Y or Cmd+Shift+Z) in
+any of them steps through the same history. The editor you typed in saves the
+change; the others take that save as their own and do not report it as a change on
+disk. An editor still holding other text, such as a recovered draft, joins again
+once it is reloaded; typing into it starts a new shared history from its text.
+
 Draft text, undo history, selection and scroll position keep their existing owners.
 Closing Find returns keyboard focus to the preview's scroll region independently
 of interface language. Code blocks and wide tables retain their own necessary

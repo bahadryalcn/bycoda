@@ -22,12 +22,75 @@ import { HostEngine } from "./engine";
 import { HostGoals } from "./goals";
 import { HostStore } from "./store";
 import { HostTasks } from "./tasks";
+import {AssistantTurnPolicyDeferredError} from "./assistant-turn-policy";
+import * as assistantTurnPolicy from "./assistant-turn-policy";
 import type { HostTask } from "../src/features/tasks/model/hostTasks";
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 const MINUTE = 60000;
+/** Keep the real Engine receipt check, but let an owner decision land after it. */
+function pauseDeferredTurnProof() {
+  const entered = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  const original = assistantTurnPolicy.deferredAssistantTurn;
+  const spy = vi.spyOn(assistantTurnPolicy, "deferredAssistantTurn").mockImplementation(async (...args) => {
+    const proven = await original(...args);
+    if (proven) {
+      entered.resolve();
+      await released.promise;
+    }
+    return proven;
+  });
+  return { entered: entered.promise, release: () => released.resolve(), restore: () => spy.mockRestore() };
+}
+it("holds a provably unstarted planner until policy permits a fresh complete planning prompt",async()=>{
+ const f=await setup();let allowed=true;
+ f.tasks.assistantGoalAdmission=async()=>allowed;
+ f.engine.beforeProviderTurn=async()=>{allowed=false;throw new AssistantTurnPolicyDeferredError();};
+ const created=await f.goals.create(f.input());
+ expect(created.plannerSessionId).toBeTruthy();
+ await f.engine.waitForRun(created.plannerSessionId!,created.plannerRunId);
+ expect(f.turns).toHaveLength(0);await f.tasks.tick();
+ expect((await f.goal()).status).toBe("planning");expect((await f.goal()).plannerSessionId).toBeUndefined();
+ const count=(await f.store.sessions()).length;await f.tasks.tick();expect((await f.store.sessions()).length).toBe(count);
+ allowed=true;f.engine.beforeProviderTurn=undefined;await f.tasks.tick();
+ await vi.waitFor(()=>expect(f.turns).toHaveLength(1),{timeout:30000});
+ expect(f.turns[0].input.text).toContain(f.input().prompt);
+ expect((await f.goal()).plannerSessionId).not.toBe(created.plannerSessionId);
+});
+it("keeps owner cancellation after the exact deferred planner proof instead of requeueing planning", async () => {
+  const f = await setup();
+  let allowed = true;
+  f.tasks.assistantGoalAdmission = async () => allowed;
+  f.engine.beforeProviderTurn = async () => { allowed = false; throw new AssistantTurnPolicyDeferredError(); };
+  const created = await f.goals.create(f.input());
+  await f.engine.waitForRun(created.plannerSessionId!, created.plannerRunId);
+  expect(f.turns).toHaveLength(0);
+  const proof = pauseDeferredTurnProof();
+  const settling = f.tasks.tick();
+  try {
+    await proof.entered;
+    const cancelled = await f.goals.cancel(created.id);
+    allowed = true;
+    f.engine.beforeProviderTurn = undefined;
+    proof.release();
+    await settling;
+    expect((await f.store.db.prepare("SELECT value FROM goals WHERE id=?").get(created.id))?.value)
+      .toBe(JSON.stringify(cancelled));
+    const count = (await f.store.sessions()).length;
+    await f.tasks.tick();
+    expect((await f.store.db.prepare("SELECT value FROM goals WHERE id=?").get(created.id))?.value)
+      .toBe(JSON.stringify(cancelled));
+    expect((await f.store.sessions()).length).toBe(count);
+    expect(f.turns).toHaveLength(0);
+  } finally {
+    proof.release();
+    proof.restore();
+    await settling;
+  }
+});
 it("runs final-result snapshots four at a time without serializing independent reads", async () => {
   const f = await setup();
   const ids = Array.from({ length: 6 }, (_, index) => `result-${index}`);
@@ -342,7 +405,7 @@ async function setup() {
   };
 }
 describe("integrated final goal acceptance", () => {
-  async function ready(overrides: Record<string, unknown> = {}) {
+  async function ready(overrides: Record<string, unknown> = {},deferStart=false) {
     const env = await setup();
     await env.tasks.save({
       id: "delivered",
@@ -372,7 +435,7 @@ describe("integrated final goal acceptance", () => {
         ...overrides,
       }),
     );
-    await env.advance();
+    if(!deferStart)await env.advance();
     return env;
   }
   const report = (second = "verified") =>
@@ -390,6 +453,50 @@ describe("integrated final goal acceptance", () => {
       ],
     }) +
     "\n```\nVERDICT: PASS";
+  it("keeps a provably unstarted final reviewer pending without consuming an acceptance attempt",async()=>{
+    const f=await ready({},true);let allowed=true;f.tasks.assistantGoalAdmission=async()=>allowed;
+    f.engine.beforeProviderTurn=async()=>{allowed=false;throw new AssistantTurnPolicyDeferredError();};
+    await f.tasks.tick();await vi.waitFor(async()=>expect((await f.goal()).finalAcceptance?.sessionId).toBeTruthy(),{timeout:30000});
+    const before=(await f.goal()).finalAcceptance!;await f.engine.waitForRun(before.sessionId!,before.runId);expect(f.turns).toHaveLength(0);
+    await f.tasks.tick();expect((await f.goal()).status).toBe("running");expect((await f.goal()).finalAcceptance?.status).toBe("pending");
+    const count=(await f.store.sessions()).length;await f.tasks.tick();expect((await f.store.sessions()).length).toBe(count);
+    allowed=true;f.engine.beforeProviderTurn=undefined;await f.tasks.tick();await vi.waitFor(()=>expect(f.turns).toHaveLength(1),{timeout:30000});
+    expect((await f.goal()).finalAcceptance?.sessionId).not.toBe(before.sessionId);
+    expect(f.turns[0].input.text).toContain("Ship the beta across the app and the API");
+  });
+  it("keeps owner cancellation after the exact deferred final-review proof instead of scheduling another review", async () => {
+    const f = await ready({}, true);
+    let allowed = true;
+    f.tasks.assistantGoalAdmission = async () => allowed;
+    f.engine.beforeProviderTurn = async () => { allowed = false; throw new AssistantTurnPolicyDeferredError(); };
+    await f.tasks.tick();
+    const final = (await f.goal()).finalAcceptance!;
+    expect(final.sessionId).toBeTruthy();
+    await f.engine.waitForRun(final.sessionId!, final.runId);
+    expect(f.turns).toHaveLength(0);
+    const proof = pauseDeferredTurnProof();
+    const settling = f.tasks.tick();
+    try {
+      await proof.entered;
+      const cancelled = await f.goals.cancel("goal");
+      allowed = true;
+      f.engine.beforeProviderTurn = undefined;
+      proof.release();
+      await settling;
+      expect((await f.store.db.prepare("SELECT value FROM goals WHERE id=?").get("goal"))?.value)
+        .toBe(JSON.stringify(cancelled));
+      const count = (await f.store.sessions()).length;
+      await f.tasks.tick();
+      expect((await f.store.db.prepare("SELECT value FROM goals WHERE id=?").get("goal"))?.value)
+        .toBe(JSON.stringify(cancelled));
+      expect((await f.store.sessions()).length).toBe(count);
+      expect(f.turns).toHaveLength(0);
+    } finally {
+      proof.release();
+      proof.restore();
+      await settling;
+    }
+  });
   it("holds done children until independent original-objective and integration proof passes", async () => {
     const f = await ready();
     const before = await f.goal();
@@ -847,6 +954,20 @@ describe("integrated final goal acceptance", () => {
   });
 });
 describe("editing goal settings", () => {
+  it("uses saved planner execution for actual planning/repair while canonical child workers keep original account/model/permissions",async()=>{
+    const f=await setup();const plannerExecution={harness:"claude",model:"claude:planner-saved",modelSettings:{effort:"low"},providerAccountId:"planner-account"};
+    const created=await f.create({isolate:false,continueUntilDone:true,model:"claude:worker-saved",modelSettings:{effort:"high"},runtimeMode:"supervised",providerAccountId:"worker-account",plannerExecution});
+    const planner=(await f.store.session(created.plannerSessionId!)).session;
+    expect(planner).toMatchObject({model:"claude:planner-saved",modelSettings:{effort:"low"},providerAccountId:"planner-account",runtimeMode:"supervised"});
+    expect(f.turns[0].input).toMatchObject({model:"claude:planner-saved",providerAccountId:"planner-account"});
+    await f.finish(created.plannerSessionId!,"Missing plan format");
+    expect((await f.goal()).plannerSessionId).toBe(created.plannerSessionId);
+    expect((await f.store.session(created.plannerSessionId!)).session.model).toBe("claude:planner-saved");
+    await f.finish(created.plannerSessionId!,planReply([{key:"worker",project:f.lead.cwd}]));
+    const child=(await f.tasks.list())[0];expect(child).toMatchObject({harness:"claude",model:"claude:worker-saved",providerAccountId:"worker-account",modelSettings:{effort:"high"},runtimeMode:"supervised"});
+    expect((await f.store.session(child.sessionId!)).session).toMatchObject({model:"claude:worker-saved",providerAccountId:"worker-account",runtimeMode:"supervised"});
+    expect((await f.goal()).plannerExecution).toEqual(plannerExecution);
+  });
   it("keeps the chosen account through planning and scheduled worker creation", async () => {
     const f = await setup();
     const created = await f.create({ providerAccountId: "account-work", isolate: false });
@@ -1126,6 +1247,20 @@ describe("goal workspace and scheduling choices", () => {
   });
 });
 describe("goal planning", () => {
+  it.each([
+    {count:3,multipleProjects:false,expected:"running"},
+    {count:4,multipleProjects:false,expected:"awaiting-approval"},
+    {count:1,multipleProjects:true,expected:"awaiting-approval"},
+  ])("applies saved large-plan approval before creating tasks: $count tasks, multiple=$multipleProjects",async({count,multipleProjects,expected})=>{
+    const f=await setup();
+    const second=multipleProjects?await f.addProject("second"):undefined;
+    const result=await f.plan(planReply(Array.from({length:count},(_,index)=>({key:`part-${index}`,project:f.lead.cwd}))),{
+      approvePlan:true,planApprovalPolicy:"large",
+      ...(second?{projectIds:[f.lead.id,second.id]}:{}),
+    });
+    expect(result).toMatchObject({status:expected,planApprovalPolicy:"large"});
+    expect(await f.tasks.list()).toHaveLength(expected==="running"?count:0);
+  });
   it("rolls back every queued task when plan approval cannot save the complete batch", async () => {
     const { goals, lead, plan, tasks, goal } = await setup();
     await plan(

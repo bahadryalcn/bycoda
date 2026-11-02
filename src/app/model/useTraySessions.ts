@@ -82,6 +82,7 @@ export function useTraySessions(
         failed: t("Failed or usage limit"),
         retrying: t("Retrying"),
         notifications: t("Notifications"),
+        presence: {availability:t("Availability"),here:t("Here"),away:t("Away"),dnd:t("Do not disturb"),idle:t("Idle"),unknown:t("Unknown"),pending:t("Updating availability..."),failed:t("Availability change was not confirmed."),retry:t("Retry"),refresh:t("Refresh")},
       },
     };
     const signature = JSON.stringify(payload);

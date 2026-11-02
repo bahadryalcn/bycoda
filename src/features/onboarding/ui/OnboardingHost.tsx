@@ -26,7 +26,7 @@ import {
 } from "../model/tourState";
 import { firstRunTourSteps } from "../model/tourSteps";
 import { configureFileAccess } from "../../../platform/tauri/fileAccess";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import { t } from "../../../shared/i18n";
 import { FeatureHighlightMarkers } from "./FeatureHighlightMarkers";
@@ -156,13 +156,20 @@ export function OnboardingHost({
     : [];
 
   const content = accessError ? (
-    <Modal title={t("File access")} onClose={() => setAccessError("")}>
+    <Modal
+      title={t("File access")}
+      onClose={() => setAccessError("")}
+      footer={
+        <ModalActions>
+          <Button disabled={accessBusy} onClick={setupAccess} variant="secondary" type="button">
+            {t("Retry")}
+          </Button>
+        </ModalActions>
+      }
+    >
       <Alert role="alert" tone="danger">
         {accessError}
       </Alert>
-      <Button disabled={accessBusy} onClick={setupAccess} variant="secondary" type="button">
-        {t("Retry")}
-      </Button>
     </Modal>
   ) : guide?.view === "tour" ? (
     <Suspense fallback={null}>

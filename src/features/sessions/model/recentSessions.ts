@@ -2,10 +2,16 @@ import { sessionIssue } from "./sessionIssue";
 import { sessionActivityAt } from "./sessionActivity";
 import { pathKey } from "../../../shared/lib/paths";
 import { isRemoteProjectPath } from "../../projects/model/recents";
-import { sessionDisplayTitle, sessionNeedsInput, type HarnessId, type Session } from "./session";
+import {
+  sessionDisplayTitle,
+  sessionNeedsInput,
+  type HarnessId,
+  type Session,
+} from "./session";
 
 /** Minimal shape of a stored session row; `SessionSummary` satisfies it. */
 export type StoredSessionRow = {
+  managedBy?: Session["managedBy"];
   id: string;
   cwd: string;
   title: string;
@@ -15,10 +21,12 @@ export type StoredSessionRow = {
   pinned?: boolean;
 };
 
-export type RecentSessionStatus = "working" | "input" | "done" | "retrying" | "failed";
+export type RecentSessionStatus =
+  "working" | "input" | "done" | "retrying" | "failed";
 
 /** What the in-memory sessions add to the stored rows. */
 export type LiveSessionInfo = {
+  managedBy?: Session["managedBy"];
   id: string;
   cwd: string;
   title: string;
@@ -30,6 +38,7 @@ export type LiveSessionInfo = {
 };
 
 export type RecentSessionRow = {
+  managedBy?: Session["managedBy"];
   id: string;
   cwd: string;
   title: string;
@@ -72,7 +81,9 @@ export function loadRecentSessionsPrefs(): RecentSessionsPrefs {
     const { collapsed, count } = parsed as Record<string, unknown>;
     return {
       collapsed: collapsed === true,
-      count: RECENT_SESSION_COUNTS.find((option) => option === count) ?? fallback.count,
+      count:
+        RECENT_SESSION_COUNTS.find((option) => option === count) ??
+        fallback.count,
     };
   } catch {
     return fallback;
@@ -101,7 +112,9 @@ export function liveSessionInfos(
     if (session.inboxAsk || session.orchestrationLeadId) continue;
     if (!hasSentTurn(session)) continue;
     const needsInput = sessionNeedsInput(session);
-    const busy = !session.worktreeRemoved && (!!session.busy || !!session.continuingElsewhere);
+    const busy =
+      !session.worktreeRemoved &&
+      (!!session.busy || !!session.continuingElsewhere);
     infos.push({
       id: session.id,
       cwd: session.cwd,
@@ -118,6 +131,7 @@ export function liveSessionInfos(
               ? "done"
               : undefined),
       activityAt: sessionActivityAt(session),
+      managedBy: session.managedBy,
     });
   }
   return infos;
@@ -138,7 +152,9 @@ export function sameLiveSessionInfos(
         left.harness === right.harness &&
         left.model === right.model &&
         left.status === right.status &&
-        left.activityAt === right.activityAt
+        left.activityAt === right.activityAt &&
+        left.managedBy?.jobId === right.managedBy?.jobId &&
+        left.managedBy?.managedAt === right.managedBy?.managedAt
       );
     })
   );
@@ -146,7 +162,9 @@ export function sameLiveSessionInfos(
 
 function comparePinnedThenRecent(a: RecentSessionRow, b: RecentSessionRow) {
   return (
-    Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)
+    Number(b.pinned) - Number(a.pinned) ||
+    b.updatedAt - a.updatedAt ||
+    a.id.localeCompare(b.id)
   );
 }
 
@@ -180,11 +198,16 @@ export function buildRecentSessions({
       title: sessionDisplayTitle(info?.title ?? row.title, row.harness),
       harness: row.harness,
       model: info?.model || row.model,
-      updatedAt: Math.max(row.updatedAt, info?.activityAt ?? 0, active ? now : 0),
+      updatedAt: Math.max(
+        row.updatedAt,
+        info?.activityAt ?? 0,
+        active ? now : 0,
+      ),
       pinned: !!row.pinned,
       pinnable: true,
       remote: isRemoteProjectPath(row.cwd),
       status: info?.status,
+      managedBy: info?.managedBy ?? row.managedBy,
     });
   }
   // A session the store does not hold: a remote one, or a local one that has
@@ -200,11 +223,15 @@ export function buildRecentSessions({
       title: sessionDisplayTitle(info.title, info.harness),
       harness: info.harness,
       model: info.model,
-      updatedAt: info.status === "working" || info.status === "input" ? now : info.activityAt,
+      updatedAt:
+        info.status === "working" || info.status === "input"
+          ? now
+          : info.activityAt,
       pinned: false,
       pinnable: false,
       remote,
       status: info.status,
+      managedBy: info.managedBy,
     });
   }
   const sorted = [...rows.values()].sort(comparePinnedThenRecent);

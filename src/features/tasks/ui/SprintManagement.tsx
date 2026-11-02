@@ -1,12 +1,13 @@
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
@@ -148,7 +149,9 @@ export function SprintManagement({
                 ]
               : []),
             ...[
-              ...new Map(board.machines.map((machine) => [machine.environmentId, machine])).values(),
+              ...new Map(
+                board.machines.map((machine) => [machine.environmentId, machine]),
+              ).values(),
             ].map((machine) => ({ value: machine.environmentId, label: machine.name })),
           ]}
           onChange={board.setCoordinatorEnvironmentId}
@@ -284,9 +287,7 @@ export function SprintManagement({
           )}
         </p>
       ) : null}
-      {error || board.error ? (
-        <InlineError>{error || board.error}</InlineError>
-      ) : null}
+      {error || board.error ? <InlineError>{error || board.error}</InlineError> : null}
       {board.syncErrors.length ? (
         <details>
           <summary>{t("Some machines need synchronization")}</summary>
@@ -328,12 +329,17 @@ export function SprintManagement({
                     <Button variant="link" align="start" onClick={() => onSelect(sprint.id)}>
                       {sprint.name}
                     </Button>
-                    <p>
-                      {sprint.projects
+                    <BadgeList
+                      label={t("Projects")}
+                      size="xs"
+                      className="min-w-0 flex-[1_1_8rem]"
+                      items={sprint.projects
                         .filter((project) => accessible.has(sprintProjectKey(project)))
-                        .map((project) => project.name)
-                        .join(" · ")}
-                    </p>
+                        .map((project, index) => ({
+                          id: `${index}:${project.name}`,
+                          label: project.name,
+                        }))}
+                    />
                   </div>
                   <span>
                     {t(
@@ -431,6 +437,7 @@ function SprintEditor({
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const formId = useId();
   return (
     <Modal
       title={sprint ? t("Edit sprint") : t("New sprint")}
@@ -438,8 +445,25 @@ function SprintEditor({
         if (!busy) onClose();
       }}
       fitViewport
+      footer={
+        <ModalActions>
+          <Button variant="ghost" type="button" disabled={busy} onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            type="submit"
+            form={formId}
+            loading={busy}
+            disabled={!name.trim() || !selected.length}
+          >
+            {t("Save sprint")}
+          </Button>
+        </ModalActions>
+      }
     >
       <form
+        id={formId}
         className="sprint-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -555,22 +579,7 @@ function SprintEditor({
               })}
           </details>
         ) : null}
-        {error ? (
-          <InlineError>{error}</InlineError>
-        ) : null}
-        <footer>
-          <Button variant="ghost" type="button" disabled={busy} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="primary"
-            type="submit"
-            loading={busy}
-            disabled={!name.trim() || !selected.length}
-          >
-            {t("Save sprint")}
-          </Button>
-        </footer>
+        {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>
   );
@@ -596,6 +605,7 @@ function SprintCompletion({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
+  const formId = useId();
   const targets = board.sprints.filter(
     (sprint) =>
       sprint.id !== report.sprint.id &&
@@ -617,8 +627,19 @@ function SprintCompletion({
         if (!busy) onClose();
       }}
       fitViewport
+      footer={
+        <ModalActions>
+          <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          <Button type="submit" variant="primary" form={formId} loading={busy}>
+            {t("Complete sprint")}
+          </Button>
+        </ModalActions>
+      }
     >
       <form
+        id={formId}
         className="sprint-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -685,17 +706,7 @@ function SprintCompletion({
             disabled={busy}
           />
         ) : null}
-        {error ? (
-          <InlineError>{error}</InlineError>
-        ) : null}
-        <footer>
-          <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button type="submit" variant="primary" loading={busy}>
-            {t("Complete sprint")}
-          </Button>
-        </footer>
+        {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>
   );

@@ -7,10 +7,11 @@ export const TOOL_IDS = [
   "notes",
   "conversation-tools",
   "terminal",
+  "assistant",
 ] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 export type WorkspaceToolId = ToolId;
-export type AuxiliaryToolId = "conversation-tools" | "terminal";
+export type AuxiliaryToolId = "conversation-tools" | "terminal" | "assistant";
 export type ToolWindow = { active: ToolId; cwd: string; grouped: boolean };
 
 export function readToolWindow(

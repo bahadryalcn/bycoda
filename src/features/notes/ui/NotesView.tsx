@@ -1,3 +1,4 @@
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -1568,7 +1569,12 @@ function NoteCard({
   const hint = [note.title, note.sourceCwd || project, ...note.tags].filter(Boolean).join(" · ");
   return (
     <ActionHost selected={active} className="min-w-0 flex-1 items-start">
+    {/* The tag badges hold their own "+N" button, which cannot sit inside the row button: the tag
+        line is a sibling laid over the row (clicks outside the badges fall through to the row)
+        and the row keeps the line's height. It also holds the gutter the row actions cover. */}
+    <div className="relative min-w-0 flex-1">
     <Button
+      data-action-primary=""
       variant="item"
       layout="stacked"
       motion="none"
@@ -1589,7 +1595,7 @@ function NoteCard({
           onMenu({ anchor: event.currentTarget });
         } else onNavigate(event);
       }}
-      className="min-w-0 flex-1"
+      className="w-full min-w-0"
     >
       <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-secondary font-medium">
         {note.title || t("Untitled")}
@@ -1616,21 +1622,24 @@ function NoteCard({
             </time>
           </Tooltip>
         ) : null}
-        {note.tags.length ? (
-          <span className="flex min-w-0 items-center gap-1">
-            {note.tags.slice(0, 2).map((tag) => (
-              <span key={tag} className="max-w-32 truncate">
-                #{tag}
-              </span>
-            ))}
-            {note.tags.length > 2 ? <span>+{note.tags.length - 2}</span> : null}
-          </span>
-        ) : null}
         {!note.preview ? <span className="sr-only">{t("No preview")}</span> : null}
         {/* Empty trailing gutter: the row actions sit over it, so the title, preview and meta never move. */}
-        <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
+        {note.tags.length ? null : <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />}
       </span>
+      {note.tags.length ? <span aria-hidden="true" className="mt-1 block h-4" /> : null}
     </Button>
+    {note.tags.length ? (
+      <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
+        <BadgeList
+          label={t("Tags")}
+          size="xs"
+          items={note.tags.map((tag) => ({ id: tag, label: `#${tag}` }))}
+          className="pointer-events-auto"
+        />
+        <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
+      </div>
+    ) : null}
+    </div>
     <div data-action-slot="collapse" data-action-anchor="end" className="flex shrink-0 items-center">
       <InlineAction
         label={t("Actions for {p0}", { p0: note.title || t("Untitled") })}

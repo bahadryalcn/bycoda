@@ -12,6 +12,7 @@ export type SessionStatusFilter = {
 
 export type SessionSidebarFilters = {
   showArchived: boolean;
+  assistantManaged: boolean;
   hiddenHarnesses: HarnessId[];
   time: SessionTimeFilter;
   status: SessionStatusFilter;
@@ -25,6 +26,7 @@ export const DEFAULT_SESSION_STATUS_FILTER: SessionStatusFilter = {
 
 export const DEFAULT_SESSION_SIDEBAR_FILTERS: SessionSidebarFilters = {
   showArchived: false,
+  assistantManaged: false,
   hiddenHarnesses: [],
   time: "all",
   status: DEFAULT_SESSION_STATUS_FILTER,
@@ -50,6 +52,7 @@ export function loadSessionSidebarFilters(): SessionSidebarFilters {
     const parsed = JSON.parse(raw) as Partial<SessionSidebarFilters>;
     return {
       showArchived: parsed.showArchived === true,
+      assistantManaged: parsed.assistantManaged === true,
       hiddenHarnesses: Array.isArray(parsed.hiddenHarnesses)
         ? parsed.hiddenHarnesses.filter(isHarnessId)
         : [],
@@ -76,6 +79,7 @@ export function saveSessionSidebarFilters(filters: SessionSidebarFilters) {
 export function hasActiveSessionFilters(filters: SessionSidebarFilters): boolean {
   return (
     filters.showArchived ||
+    filters.assistantManaged ||
     filters.hiddenHarnesses.length > 0 ||
     filters.time !== "all" ||
     filters.status.working ||
@@ -91,6 +95,11 @@ export function filterSessionsByHarness(
   const hidden = new Set(hiddenHarnesses);
   if (hidden.size === 0) return rows;
   return rows.filter((row) => !hidden.has(row.harness));
+}
+
+/** Management is read from the Host stamp, never inferred from titles/authors. */
+export function filterAssistantManagedSessions(rows: SessionSummary[], managedOnly: boolean): SessionSummary[] {
+  return managedOnly ? rows.filter(row => row.managedBy?.assistant === true) : rows;
 }
 
 export function filterSessionsByTime(

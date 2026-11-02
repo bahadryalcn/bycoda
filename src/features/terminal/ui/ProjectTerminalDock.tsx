@@ -5,14 +5,15 @@ import { Sash, type SashEndInfo } from "../../../shared/ui/Sash";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
   MoreHorizontal,
   PanelBottom,
+  PanelBottomClose,
   PanelLeft,
+  PanelLeftClose,
   PanelRight,
+  PanelRightClose,
   PanelTop,
+  PanelTopClose,
   Plus,
   SplitSquare,
   Terminal,
@@ -102,11 +103,12 @@ function sideIcon(side: DockSide) {
   return PanelBottom;
 }
 
+/** Collapse-panel glyphs: distinct from X (close) and the profile menu's chevron. */
 function hideIcon(side: DockSide) {
-  if (side === "top") return ChevronUp;
-  if (side === "left") return ChevronLeft;
-  if (side === "right") return ChevronRight;
-  return ChevronDown;
+  if (side === "top") return PanelTopClose;
+  if (side === "left") return PanelLeftClose;
+  if (side === "right") return PanelRightClose;
+  return PanelBottomClose;
 }
 
 function ProjectTerminalDockComponent({
@@ -310,7 +312,15 @@ function ProjectTerminalDockComponent({
                 <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             </div>
+            {/* Hide keeps every shell running; X closes the active terminal and asks
+                first when work is running or it is the last one. */}
             <IconButton label={t("Hide Terminal ({p0}J)", { p0: MOD })} onClick={onHide}>
+              <HideIcon className="icon-sm" strokeWidth={1.75} />
+            </IconButton>
+            <IconButton
+              label={t("Close Active Terminal")}
+              onClick={() => onCloseTerminal(dock.pane.activeFileId)}
+            >
               <X className="icon-sm" strokeWidth={1.75} />
             </IconButton>
           </>

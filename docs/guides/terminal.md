@@ -12,6 +12,12 @@ controls at its upper right, visible on hover or keyboard focus (always availabl
 on touch). **Terminal pane actions** offers Scroll to bottom, Clear terminal and
 text size for that pane. The terminal list and split panes retain their layout.
 
+**Hide Terminal** (the collapse-panel icon, Ctrl/Cmd+J, or Ctrl+" on Turkish
+layouts) only hides the dock; every shell keeps running. The X beside it closes the
+active terminal. Closing asks first when a process is still running in that terminal,
+or when it is the last one, because closing the last terminal also closes the panel.
+Holding the toggle chord switches the dock once, not on every key repeat.
+
 Ctrl/Cmd+F opens a compact **Find** overlay that searches the terminal buffer.
 Escape closes Find and returns focus to the terminal. Next/previous actions and Enter/Shift+Enter
 move between matches. The result indicator shows the current match and count when

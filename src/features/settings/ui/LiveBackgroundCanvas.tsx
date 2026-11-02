@@ -35,7 +35,7 @@ function pixelRatio(width: number, height: number): number {
 }
 /** A still frame for reduced motion still shows a populated scene. */
 const STILL_TIME = 12;
-/** The calm activity envelope reaches rest before the loop stops. */
+/** Frames continue this long after the scene is hidden and no new work arrives. */
 const SETTLE_SECONDS = 2;
 /** A provider may remain busy while waiting for a tool or approval. */
 const ACTIVITY_GRACE_SECONDS = 1.5;
@@ -82,10 +82,11 @@ function demoSpeechLength(time: number): number {
  * when motion is off or the system asks for reduced motion it paints one
  * still frame instead of running a loop.
  *
- * `speech` is the length of the reply being streamed (-1 when idle). Its active
- * state drives presence; new text adds bounded, eased motion energy. `activity` is everything the
- * running turn has streamed, including reasoning and tools (-1 when idle). New
- * activity keeps the scene awake; an unchanged busy turn settles during waits.
+ * `speech` is the length of the reply being streamed (-1 when idle). `activity` is everything
+ * the running turn has streamed, including reasoning and tools (-1 when idle). New output brings
+ * the scene in and adds bounded, eased motion energy; the signal driver then holds it on screen
+ * for a while, so the loop keeps painting until it has faded even when output pauses. An
+ * unchanged busy turn settles once the scene is hidden.
  */
 export function LiveBackgroundCanvas({
   effect,
@@ -210,15 +211,20 @@ export function LiveBackgroundCanvas({
     // app: keep the last painted frame until the window has focus again.
     let focused = windowHasFocus();
     const signal = createLiveSignalDriver();
+    // A scene on screen holds through output pauses and after the turn ends.
+    const awake = () => busy() || (animate && signal.awake());
 
     const paint = (delta: number) => {
       if (width === 0 || height === 0) return;
-      const length = demoSpeech ? demoSpeechLength(time) : busy() ? speechRef.current : -1;
-      const work = demoSpeech ? length : busy() ? activityRef.current : -1;
+      // The driver sees the turn as it is; it tells new output from a waiting turn itself.
+      const length = demoSpeech ? demoSpeechLength(time) : speechRef.current;
+      const work = demoSpeech ? length : activityRef.current;
       renderer?.draw(
         time,
         delta,
-        animate ? signal.update(time, delta, length, work) : CLOSED_SIGNAL,
+        animate
+          ? signal.update(time, delta, length, work, performance.now() / 1000)
+          : CLOSED_SIGNAL,
       );
     };
 
@@ -235,7 +241,7 @@ export function LiveBackgroundCanvas({
       paint(animate ? 0 : STILL_TIME);
     };
 
-    const settled = () => !ambient() && !busy() && idleFor >= SETTLE_SECONDS;
+    const settled = () => !ambient() && !awake() && idleFor >= SETTLE_SECONDS;
     const running = () =>
       animate &&
       !contextLost &&
@@ -254,7 +260,7 @@ export function LiveBackgroundCanvas({
       last = now;
       time += delta;
       quietFor += delta;
-      idleFor = busy() ? 0 : idleFor + delta;
+      idleFor = awake() ? 0 : idleFor + delta;
       paint(delta);
       // The last frame stays on screen; no frame is requested until work resumes.
       if (settled()) {

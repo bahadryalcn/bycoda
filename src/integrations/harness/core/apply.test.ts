@@ -18,6 +18,11 @@ import { planComposerSwitch, withHarnessChoice } from "../../../features/session
 
 let now = 0;
 
+it("retains cumulative provider metrics on the root turn without changing a clarification reply's author",()=>{
+ const root={id:"metrics-root",role:"user" as const,text:"Assigned work",author:{kind:"task" as const,id:"task",name:"Worker",reason:"kickoff"}},reply={id:"metrics-answer",role:"user" as const,text:"By topic",continuationOf:"metrics-root",author:{kind:"assistant" as const,name:"Assistant",jobId:"job",reason:"answer" as const,operationId:"exact-answer"}};
+ const session={...newSession("claude","/repo"),busy:true,blocks:[root,reply]},next=applyHarnessEvent(session,{type:"turn.metrics",inputTokens:100,outputTokens:50});expect(next.blocks[0].turnMetrics).toEqual({inputTokens:100,outputTokens:50});expect(next.blocks[1].turnMetrics).toBeUndefined();expect(next.blocks[0].author).toEqual(root.author);expect(next.blocks[1].author).toEqual(reply.author);
+});
+
 it("keeps a late outgoing Codex thread identity out of the newly selected Gemini provider", () => {
   const source = {
     ...newSession("codex", "/repo"),

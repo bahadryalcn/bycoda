@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { InlineError } from "../../../shared/ui/InlineError";
 import type { SessionRewindPlan } from "../model/contracts";
 
@@ -132,7 +132,7 @@ export function WorkspaceRewindPreview({
       }}
       size="md"
       footer={
-        <>
+        <ModalActions>
           <Button variant="ghost" disabled={pending} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -145,7 +145,7 @@ export function WorkspaceRewindPreview({
           >
             {t(plan.direction === "undo" ? "Undo rewind" : "Rewind conversation and files")}
           </Button>
-        </>
+        </ModalActions>
       }
     >
       <div className="flex min-w-0 flex-col gap-3 px-4 py-3 text-ui-secondary text-(--ui-text-secondary)">
@@ -246,9 +246,7 @@ export function WorkspaceRewindPreviewHost({ sessionId }: { sessionId: string })
           >
             {t("Undo rewind")}
           </Button>
-          {error ? (
-            <InlineError>{error}</InlineError>
-          ) : null}
+          {error ? <InlineError>{error}</InlineError> : null}
         </div>
       ) : null}
       {current ? (

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { get } from "node:http";
 
-const captures = "temp/verification/2026-10-30-session-references";
+const captures = "temp/verification/2026-11-02-session-copy-menu";
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800]) {
@@ -182,6 +182,13 @@ for (const theme of ["light", "dark"])
       await page
         .getByText("Reference copy target", { exact: true })
         .click({ button: "right" });
+      await expect(
+        page.getByRole("menuitem", { name: "Copy session link", exact: true }),
+      ).toHaveCount(0);
+      await page.screenshot({
+        path: `${captures}/${theme}-${width}-session-menu.png`,
+      });
+      await page.getByRole("menuitem", { name: "Copy", exact: true }).click();
       const copyLink = page.getByRole("menuitem", {
         name: "Copy session link",
         exact: true,
@@ -198,9 +205,9 @@ for (const theme of ["light", "dark"])
         fullPage: true,
       });
       await copyLink.click();
-      await expect(page.getByRole("menu")).toContainText(
-        "Could not copy text. Please try again.",
-      );
+      await expect(
+        page.getByRole("menu", { name: "Copy", exact: true }),
+      ).toContainText("Could not copy text. Please try again.");
       await page.screenshot({
         path: `${captures}/${theme}-${width}-clipboard-error.png`,
         fullPage: true,
@@ -210,8 +217,11 @@ for (const theme of ["light", "dark"])
       await page
         .getByText("Reference copy target", { exact: true })
         .click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Copy", exact: true }).click();
       await copyLink.click();
-      await expect(page.getByRole("menu")).toContainText("Copied");
+      await expect(
+        page.getByRole("menu", { name: "Copy", exact: true }),
+      ).toContainText("Copied");
       await expect
         .poll(() =>
           page.evaluate(

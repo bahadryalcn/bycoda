@@ -62,6 +62,21 @@ const CONVERSATION_ACTIONS = new Set(
 );
 CONVERSATION_ACTIONS.add("browser.preview");
 CONVERSATION_ACTIONS.add("browser.resize");
+for (const action of [
+  "desktop.status",
+  "desktop.snapshot",
+  "desktop.windows.list",
+  "desktop.find",
+  "desktop.screenshot",
+  "desktop.wait",
+  "desktop.click",
+  "desktop.setValue",
+  "desktop.press",
+  "desktop.act",
+  "desktop.launch",
+  "desktop.clipboard",
+])
+  CONVERSATION_ACTIONS.add(action);
 const SOCIAL_READS = new Set(
   "policy.get accounts.list capabilities.get campaigns.preview campaigns.status inbox.list thread.read contacts.search jobs.status programs.list programs.status programs.preview-schedule".split(
     " ",
@@ -183,7 +198,23 @@ function effectFor(group: ManagedToolGroup, action: string, read: boolean): Tool
         : ["local-state"];
   }
   if (action === "visuals.render") return ["presentation"];
-  if (action === "visuals.preview" || action === "devices.capture" || action === "browser.frame")
+  if (
+    [
+      "desktop.act",
+      "desktop.click",
+      "desktop.setValue",
+      "desktop.press",
+      "desktop.launch",
+      "desktop.clipboard",
+    ].includes(action)
+  )
+    return ["presentation", "execution", "external-write"];
+  if (
+    action === "visuals.preview" ||
+    action === "devices.capture" ||
+    action === "browser.frame" ||
+    action === "desktop.screenshot"
+  )
     return ["read", "presentation"];
   if (
     (action.startsWith("ui.") && !read) ||
@@ -249,7 +280,15 @@ export function createManagedToolCatalog(
         (/^crews\.(start|assign|request|resolve|respond|answer)$/.test(action) ||
           /^inbox\./.test(action) ||
           action === "devices.preview" ||
-          action === "terminals.create")
+          action === "terminals.create" ||
+          [
+            "desktop.act",
+            "desktop.click",
+            "desktop.setValue",
+            "desktop.press",
+            "desktop.launch",
+            "desktop.clipboard",
+          ].includes(action))
       )
         mode = "same-request";
       if (group === "conversation" && action === "browser.preview" && requestFields.length)
@@ -275,6 +314,11 @@ export function createManagedToolCatalog(
       if (action === "devices.preview") readback = ["devices.preview.status"];
       if (action === "browser.preview") readback = ["browser.status", "ui.tools.status"];
       if (action === "browser.resize") readback = ["browser.frame"];
+      if (action.startsWith("desktop."))
+        readback =
+          action === "desktop.clipboard"
+            ? ["desktop.status"]
+            : ["desktop.snapshot", "desktop.status"];
       if (
         action === "servers.ssh.remove" ||
         action === "notes.delete" ||
@@ -303,7 +347,12 @@ export function createManagedToolCatalog(
           ? "system-browser"
           : action === "visuals.render"
             ? "inline"
-            : ["visuals.preview", "browser.frame", "devices.capture"].includes(action)
+            : [
+                  "visuals.preview",
+                  "browser.frame",
+                  "devices.capture",
+                  "desktop.screenshot",
+                ].includes(action)
               ? "image"
               : /^ui\./.test(action) || action === "browser.preview"
                 ? "native-panel"

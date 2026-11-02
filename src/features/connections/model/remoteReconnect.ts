@@ -50,9 +50,15 @@ const attempts = new Map<
   }
 >();
 const reconnecting = new Set<string>();
+/** Machines whose reconnect the user asked for; background retries are not in it. */
+const requested = new Set<string>();
 const reconnectListeners = new Set<() => void>();
 
+/** Any attempt is under way, including a quiet background retry. */
 export const isReconnecting = (environmentId: string) => reconnecting.has(environmentId);
+/** A reconnect the user asked for is under way. Only this shows progress in
+ * project rows and recovery cards; background retries stay quiet there. */
+export const isReconnectRequested = (environmentId: string) => requested.has(environmentId);
 
 export function subscribeReconnecting(listener: () => void): () => void {
   reconnectListeners.add(listener);
@@ -62,7 +68,17 @@ export function subscribeReconnecting(listener: () => void): () => void {
 function setReconnecting(environmentId: string, value: boolean) {
   if (value === reconnecting.has(environmentId)) return;
   if (value) reconnecting.add(environmentId);
-  else reconnecting.delete(environmentId);
+  else {
+    reconnecting.delete(environmentId);
+    requested.delete(environmentId);
+  }
+  reconnectListeners.forEach((listener) => listener());
+}
+
+function setRequested(environmentId: string, value: boolean) {
+  if (value === requested.has(environmentId)) return;
+  if (value) requested.add(environmentId);
+  else requested.delete(environmentId);
   reconnectListeners.forEach((listener) => listener());
 }
 
@@ -80,7 +96,10 @@ function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcom
     if (!machine) {
       recordRemoteConnection(environmentId, "Machine is no longer connected");
       setConnectionPhase(environmentId, "failed");
-      return { ok: false, error: "This machine is not connected on this computer." };
+      return {
+        ok: false,
+        error: "This machine is not connected on this computer.",
+      };
     }
     try {
       const host = await remoteRequest<{ capabilities?: unknown }>(
@@ -130,7 +149,12 @@ export async function reconnectRemoteMachine(
   options: { signIn?: boolean } = {},
 ): Promise<ReconnectOutcome> {
   paused.delete(environmentId);
-  const result = await attempt(environmentId, true);
+  setRequested(environmentId, true);
+  const pending = attempt(environmentId, true);
+  // An attempt that replaced this one keeps the mark until it ends too.
+  const result = await pending.finally(() => {
+    if (!attempts.has(environmentId)) setRequested(environmentId, false);
+  });
   if (
     !result.ok &&
     result.error !== SUPERSEDED_CONNECTION &&
@@ -261,6 +285,7 @@ export function startRemoteAutoRecovery(): () => void {
     for (const environmentId of attempts.keys()) invalidateConnection(environmentId);
     attempts.clear();
     reconnecting.clear();
+    requested.clear();
     reconnectListeners.forEach((listener) => listener());
     stopRecovery = undefined;
   };

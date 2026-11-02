@@ -15,6 +15,7 @@ export type TaskStatusKind =
   | "todo"
   | "queued"
   | "running"
+  | "stalled"
   | "verifying"
   | "correcting"
   | "takeover"
@@ -106,6 +107,8 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
       firstSentence(task.repairStop?.message ?? task.blockedTakeover?.blocker ?? task.error),
     );
 
+  if(task.status==="running"&&task.runStall&&task.runStall.runId===task.runId&&task.runStall.sessionId===task.sessionId&&task.runStall.detectedAt-task.runStall.lastActivityAt>=15*60_000)
+    return line("stalled","warning",t("Running · no recent output"),t("No output observed for at least 15 minutes. The task is still running."));
   switch (task.status) {
     case "todo":
       return line("todo", "neutral", t("To do"));

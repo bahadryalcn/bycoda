@@ -3,6 +3,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Inbox as InboxIcon, Plus, RefreshCw } from "../../../shared/ui/icons";
 import type { HostProject } from "../../connections/model/protocol";
 import type { SocialSnapshot } from "../model/social";
@@ -122,7 +123,20 @@ export function SocialToday({
               <ul className="social-today-failures">
                 {result.failures.map((failure) => (
                   <li key={failure.reason}>
-                    {failure.reason} ×{failure.count} · {failure.accounts.join(", ")}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span>
+                        {failure.reason} ×{failure.count}
+                      </span>
+                      <BadgeList
+                        label={t("Accounts")}
+                        size="xs"
+                        max={3}
+                        items={failure.accounts.map((name, index) => ({
+                          id: `${index}:${name}`,
+                          label: name,
+                        }))}
+                      />
+                    </div>
                   </li>
                 ))}
               </ul>

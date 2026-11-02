@@ -17,6 +17,7 @@ import {
 } from "../model/automations";
 import { previewHostAutomation, type HostSchedulePreview } from "../model/hostAutomationClient";
 import { findTriggerEvent } from "../model/automationTriggerCatalog";
+import type {AutomationSchedule} from "../model/automationSchedule";
 
 export function TriggerMark({
   kind,
@@ -135,16 +136,16 @@ export function TriggerRow({
   );
 }
 
-function TimeTriggerSentence({
+export function TimeTriggerSentence<T extends AutomationSchedule>({
   trigger,
   nextAt,
   executionTimeZone,
   onChange,
 }: {
-  trigger: AutomationTrigger;
+  trigger: T;
   nextAt: number;
   executionTimeZone?: string | null;
-  onChange: (trigger: AutomationTrigger) => void;
+  onChange: (trigger: T) => void;
 }) {
   useLocale();
   const dayOptions = AUTOMATION_WEEKDAYS.map((label, value) => ({

@@ -6,7 +6,7 @@ import {
   getHarnessAvailabilitySnapshot,
 } from "../../../integrations/harness/core/availability";
 import { useT } from "../../../shared/i18n";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import {
   translateSelection,
@@ -114,6 +114,15 @@ export function TranslationResultDialog({
       });
     return () => controller.abort();
   }, [text, target, attempt, translator, requested, reprompt, surroundingText, runnable]);
+  const hintText = pending
+    ? elapsed >= 12
+      ? t("Taking longer than usual. You can cancel or choose another model.")
+      : null
+    : result && !error && reprompt
+      ? t("After applying: ↑ original, ↓ rewritten prompt.")
+      : result && !error
+        ? t("After applying: ↑ original, ↓ translation.")
+        : null;
   return (
     <Modal
       title={
@@ -130,6 +139,67 @@ export function TranslationResultDialog({
       }
       size="lg"
       onClose={onClose}
+      footer={
+        <ModalActions start={hintText ? <p className={styles.hint}>{hintText}</p> : undefined}>
+          <Button variant="ghost" onClick={onClose}>
+            {t("Cancel")}
+          </Button>
+          {!requested && runnable && !!translator.model?.trim() ? (
+            <Button
+              variant="primary"
+              onClick={() => {
+                setRequested(true);
+                setAttempt(attempt + 1);
+              }}
+            >
+              {reprompt ? t("Reprompt") : t("Translate selected text")}
+            </Button>
+          ) : null}
+          {error ? (
+            <Button variant="primary" onClick={() => setAttempt(attempt + 1)}>
+              {t("Retry")}
+            </Button>
+          ) : null}
+          {result && !pending && !error ? (
+            <Button
+              variant="secondary"
+              disabled={copyState === "pending"}
+              loading={copyState === "pending"}
+              onClick={async () => {
+                if (copyState === "pending") return;
+                const run = ++copyRun.current;
+                setCopyState("pending");
+                try {
+                  await copyMessage(result);
+                  if (copyRun.current === run) setCopyState("copied");
+                } catch {
+                  if (copyRun.current === run) setCopyState("error");
+                }
+              }}
+            >
+              {copyState === "copied"
+                ? t("Copied")
+                : copyState === "error"
+                  ? t("Retry copy")
+                  : t("Copy")}
+            </Button>
+          ) : null}
+          <Button
+            variant={result && !pending && !error ? "primary" : "secondary"}
+            disabled={!result || pending || !!error}
+            onClick={() => {
+              try {
+                onApply(result);
+                onClose();
+              } catch {
+                setApplyError(true);
+              }
+            }}
+          >
+            {reprompt ? t("Apply prompt") : t("Apply translation")}
+          </Button>
+        </ModalActions>
+      }
     >
       <div className={`bycoda-arc ${styles.content}`}>
         <div className={styles.modelRow}>
@@ -272,82 +342,14 @@ export function TranslationResultDialog({
         {copyState === "error" && result && !error ? (
           <Alert tone="danger" role="alert">
             {reprompt
-              ? t("Could not copy the rewritten prompt to the clipboard. The result is still here; try Copy again or apply it.")
-              : t("Could not copy the translation to the clipboard. The result is still here; try Copy again or apply it.")}
+              ? t(
+                  "Could not copy the rewritten prompt to the clipboard. The result is still here; try Copy again or apply it.",
+                )
+              : t(
+                  "Could not copy the translation to the clipboard. The result is still here; try Copy again or apply it.",
+                )}
           </Alert>
         ) : null}
-        <footer className={styles.footer}>
-          <p className={styles.hint}>
-            {pending
-              ? elapsed >= 12
-                ? t("Taking longer than usual. You can cancel or choose another model.")
-                : null
-              : result && !error && reprompt
-                ? t("After applying: ↑ original, ↓ rewritten prompt.")
-                : result && !error
-                  ? t("After applying: ↑ original, ↓ translation.")
-                  : null}
-          </p>
-          <div className={styles.actions}>
-            <Button variant="ghost" onClick={onClose}>
-              {t("Cancel")}
-            </Button>
-            {!requested && runnable && !!translator.model?.trim() ? (
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setRequested(true);
-                  setAttempt(attempt + 1);
-                }}
-              >
-                {reprompt ? t("Reprompt") : t("Translate selected text")}
-              </Button>
-            ) : null}
-            {error ? (
-              <Button variant="primary" onClick={() => setAttempt(attempt + 1)}>
-                {t("Retry")}
-              </Button>
-            ) : null}
-            {result && !pending && !error ? (
-              <Button
-                variant="secondary"
-                disabled={copyState === "pending"}
-                loading={copyState === "pending"}
-                onClick={async () => {
-                  if (copyState === "pending") return;
-                  const run = ++copyRun.current;
-                  setCopyState("pending");
-                  try {
-                    await copyMessage(result);
-                    if (copyRun.current === run) setCopyState("copied");
-                  } catch {
-                    if (copyRun.current === run) setCopyState("error");
-                  }
-                }}
-              >
-                {copyState === "copied"
-                  ? t("Copied")
-                  : copyState === "error"
-                    ? t("Retry copy")
-                    : t("Copy")}
-              </Button>
-            ) : null}
-            <Button
-              variant={result && !pending && !error ? "primary" : "secondary"}
-              disabled={!result || pending || !!error}
-              onClick={() => {
-                try {
-                  onApply(result);
-                  onClose();
-                } catch {
-                  setApplyError(true);
-                }
-              }}
-            >
-              {reprompt ? t("Apply prompt") : t("Apply translation")}
-            </Button>
-          </div>
-        </footer>
       </div>
     </Modal>
   );

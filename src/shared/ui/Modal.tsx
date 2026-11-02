@@ -2,6 +2,7 @@ import { translateAt, useLocale, type LanguageDomain } from "../i18n";
 import { NativePopupHost } from "./NativePopupHost";
 import { PanelHeader } from "./PanelHeader";
 import {
+  createContext,
   useContext,
   useId,
   useLayoutEffect,
@@ -48,6 +49,15 @@ const TOP: Record<ModalSize, string> = {
   xl: "top-[6%]",
   full: "inset-bs-4",
 };
+
+/**
+ * The footer of the enclosing Modal. `slot` is the footer element once it is mounted; `claim`
+ * asks the Modal to render it and returns the release. Used by `ModalFooter`.
+ */
+const ModalFooterContext = createContext<{
+  slot: HTMLElement | null;
+  claim: () => () => void;
+} | null>(null);
 
 const PRIMARY_ACTION =
   '[data-button-hierarchy="primary"]:not([aria-disabled="true"]):not([aria-busy="true"])';
@@ -176,6 +186,12 @@ export function ModalPanel({
     }
   }, [overlayId]);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
+  const [footerSlot, setFooterSlot] = useState<HTMLElement | null>(null);
+  const [footerClaims, setFooterClaims] = useState(0);
+  const [claimFooter] = useState(() => () => {
+    setFooterClaims((count) => count + 1);
+    return () => setFooterClaims((count) => count - 1);
+  });
   const uid = useId();
   const titleId = `${uid}-title`;
   const descriptionId = description ? `${uid}-desc` : undefined;
@@ -211,88 +227,93 @@ export function ModalPanel({
   return (
     <OverlayMenuLayer.Provider value={LAYER.dialogPopover}>
       <OverlayParent.Provider value={overlayId}>
-        <div
-          className={
-            popupHost
-              ? "relative z-[1] w-full"
-              : expanded
-                ? "relative z-[1] h-full w-full"
-                : sheet
-                  ? "relative z-[1] ms-auto h-full w-[min(880px,100vw)]"
-                  : bottom
-                    ? "relative z-[1] mx-auto w-full max-w-4xl"
-                    : fitViewport
-                      ? `relative z-[1] ${WIDTH[size]}`
-                      : `absolute z-[1] left-1/2 ${TOP[size]} ${WIDTH[size]} -translate-x-1/2`
-          }
-          style={expanded || popupHost ? undefined : panelStyle}
-        >
+        <ModalFooterContext.Provider value={{ slot: footerSlot, claim: claimFooter }}>
           <div
-            ref={dialogRef}
-            tabIndex={-1}
-            role="dialog"
-            data-modal-placement={placement}
-            data-modal-expanded={expanded || undefined}
-            style={{
-              ...(motion === "none" ? { animation: "none" } : null),
-              // Expanded wins over a caller's fixed height class.
-              ...(expanded ? { blockSize: "100%", maxBlockSize: "none" } : null),
-            }}
-            aria-modal="true"
-            aria-labelledby={titleId}
-            aria-describedby={descriptionId}
-            onMouseDown={(event) => event.stopPropagation()}
-            className={`relative isolate flex flex-col overflow-hidden border-(color:--ui-pane-border) shadow-(--ui-elevation-floating) ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
+            className={
+              popupHost
+                ? "relative z-[1] w-full"
+                : expanded
+                  ? "relative z-[1] h-full w-full"
+                  : sheet
+                    ? "relative z-[1] ms-auto h-full w-[min(880px,100vw)]"
+                    : bottom
+                      ? "relative z-[1] mx-auto w-full max-w-4xl"
+                      : fitViewport
+                        ? `relative z-[1] ${WIDTH[size]}`
+                        : `absolute z-[1] left-1/2 ${TOP[size]} ${WIDTH[size]} -translate-x-1/2`
+            }
+            style={expanded || popupHost ? undefined : panelStyle}
           >
-            {/* The shared raised popup surface, so the dialog reads apart from the work beneath. */}
-            <GlassBackdrop />
-            <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
-              <PanelHeader
-                className={
-                  minimalHeader
-                    ? "absolute top-3 right-3 z-[2]"
-                    : sheet || bottom
-                      ? "border-b border-(--ui-tone-neutral-border) px-4 py-2.5"
-                      : "px-4 pt-3"
-                }
-                title={title}
-                titleId={titleId}
-                level={level}
-                context={minimalHeader ? undefined : context}
-                description={description}
-                descriptionId={descriptionId}
-                textOnlyForAssistiveTech={minimalHeader}
-                closeRef={closeRef}
-                closeLabel={t("Close")}
-                onClose={onClose}
-                actions={minimalHeader ? undefined : headerActions}
-              />
-              <div
-                ref={lockOverscroll}
-                data-modal-scroll={scroll}
-                className={`min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-hidden" : "overflow-y-auto"}`}
-              >
-                {children}
-              </div>
-              {footer || footerStart ? (
-                <footer
-                  className={`flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3 ${FOOTER_ALIGN[footerStart ? "between" : footerAlign]}`}
+            <div
+              ref={dialogRef}
+              tabIndex={-1}
+              role="dialog"
+              data-modal-placement={placement}
+              data-modal-expanded={expanded || undefined}
+              style={{
+                ...(motion === "none" ? { animation: "none" } : null),
+                // Expanded wins over a caller's fixed height class.
+                ...(expanded ? { blockSize: "100%", maxBlockSize: "none" } : null),
+              }}
+              aria-modal="true"
+              aria-labelledby={titleId}
+              aria-describedby={descriptionId}
+              onMouseDown={(event) => event.stopPropagation()}
+              className={`relative isolate flex flex-col overflow-hidden border-(color:--ui-pane-border) shadow-(--ui-elevation-floating) ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
+            >
+              {/* The shared raised popup surface, so the dialog reads apart from the work beneath. */}
+              <GlassBackdrop />
+              <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
+                <PanelHeader
+                  className={
+                    minimalHeader
+                      ? "absolute top-3 right-3 z-[2]"
+                      : sheet || bottom
+                        ? "border-b border-(--ui-tone-neutral-border) px-4 py-2.5"
+                        : "px-4 pt-3"
+                  }
+                  title={title}
+                  titleId={titleId}
+                  level={level}
+                  context={minimalHeader ? undefined : context}
+                  description={description}
+                  descriptionId={descriptionId}
+                  textOnlyForAssistiveTech={minimalHeader}
+                  closeRef={closeRef}
+                  closeLabel={t("Close")}
+                  onClose={onClose}
+                  actions={minimalHeader ? undefined : headerActions}
+                />
+                <div
+                  ref={lockOverscroll}
+                  data-modal-scroll={scroll}
+                  className={`min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-hidden" : "overflow-y-auto"}`}
                 >
-                  {footerStart ? (
-                    <>
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">{footerStart}</div>
-                      <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-                        {footer}
-                      </div>
-                    </>
-                  ) : (
-                    footer
-                  )}
-                </footer>
-              ) : null}
+                  {children}
+                </div>
+                {footer || footerStart || footerClaims > 0 ? (
+                  <footer
+                    ref={setFooterSlot}
+                    className={`flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3 ${FOOTER_ALIGN[footerStart ? "between" : footerAlign]}`}
+                  >
+                    {footerStart ? (
+                      <>
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          {footerStart}
+                        </div>
+                        <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+                          {footer}
+                        </div>
+                      </>
+                    ) : (
+                      footer
+                    )}
+                  </footer>
+                ) : null}
+              </div>
             </div>
           </div>
-        </div>
+        </ModalFooterContext.Provider>
       </OverlayParent.Provider>
     </OverlayMenuLayer.Provider>
   );
@@ -334,7 +355,23 @@ export function Modal(props: Props) {
 }
 
 /**
- * The standard dialog action row, for `footer` or the end of a form body (`inline`).
+ * Puts its children in the enclosing Modal's footer from a descendant that owns the state the
+ * actions need (a form component inside the dialog). Use it instead of `footer` only when the
+ * Modal's own component cannot see that state; otherwise pass `footer`. Closing actions always
+ * go in the footer, never at the end of the scrolling body. Outside a Modal it renders in place.
+ */
+export function ModalFooter({ children }: { children: ReactNode }) {
+  const context = useContext(ModalFooterContext);
+  const claim = context?.claim;
+  useLayoutEffect(() => claim?.(), [claim]);
+  // Outside a Modal (the same form on a settings page), the actions stay in place.
+  if (!context) return <>{children}</>;
+  return context.slot ? createPortal(children, context.slot) : null;
+}
+
+/**
+ * The standard dialog action row, for `footer`. Closing actions go in `footer`: the body scrolls,
+ * the footer stays. `inline` is only for a form on a page that is not a dialog.
  * `start` holds a leading secondary or destructive action ("Delete", "Reset") at the start
  * edge; children are the closing actions at the end edge, Cancel (ghost) before the primary.
  * The final irreversible confirm is filled danger: `variant="primary" tone="danger"`.
@@ -358,7 +395,7 @@ export function ModalActions({
   start?: ReactNode;
   /** Alignment of the closing actions when there is no `start` group. */
   align?: "start" | "end";
-  /** Inside a form body instead of the Modal footer: adds the spacing above the row. */
+  /** For a form on a page that is not in a Modal: adds the spacing above the row. In a Modal use `footer`. */
   inline?: boolean;
   className?: string;
   children?: ReactNode;

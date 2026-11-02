@@ -13,6 +13,9 @@ import { toolWorkflowGuidance } from "../src/integrations/harness/core/toolWorkf
 import { skillPolicyInstructions } from "../src/integrations/harness/core/skillPolicy";
 import { socialToolCatalog } from "../host/social-tools";
 import type { EvalCase } from "./types";
+import { voiceInstructions } from "../src/features/voice/model/realtimeVoice";
+import { voiceOwnerProfileInstructions } from "../src/features/voice/model/voiceOwner";
+import { captureVoiceOwnerRule } from "../src/features/voice/model/voiceOwnerRules";
 
 export {
   buildThreadTitlePrompt,
@@ -50,6 +53,15 @@ export function validToolInput(name: string, input: unknown): boolean {
 }
 
 export function buildCasePrompt(item: EvalCase): string {
+  if (item.suite === "assistant-rules") {
+    const saved = voiceOwnerProfileInstructions(
+      { name: "Demo", addressAs: "", language: "auto" },
+      [{ id: "rule-demo", kind: "rule", active: true, scope: "all", text: item.ownerRule }],
+      false,
+    );
+    const captured = captureVoiceOwnerRule(item.acceptedOwnerText);
+    return `Offline behavior evaluation: propose a JSON response only; do not run tools.\nProduction voice instructions:\n${voiceInstructions("en", saved)}\nProduction accepted-correction data: ${JSON.stringify(captured ? { quote: captured.quote, manualTurnEnd: captured.manualTurnEnd, forbiddenTerms: captured.forbiddenTerms } : null)}\nEvaluation output format: ${item.mode === "reply" ? '{"reply":"a short conversational reply"}' : JSON.stringify(Object.fromEntries(Object.keys(item.expected ?? {}).map((key) => [key, "boolean decision"])))}\nScenario:\n${item.message}`;
+  }
   if (item.suite === "titles") return buildThreadTitlePrompt(item.message);
   const workflow = toolWorkflowGuidance({ conversation: true, social: true, runtimeLogs: true });
   const contract =

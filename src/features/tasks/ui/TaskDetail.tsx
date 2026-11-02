@@ -1,4 +1,5 @@
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -318,7 +319,13 @@ export function TaskDetail({
               </DetailRow>
             ) : null}
             {waitingFor.length > 0 ? (
-              <DetailRow label={t("Waiting for")}>{waitingFor.join(", ")}</DetailRow>
+              <DetailRow label={t("Waiting for")}>
+                <BadgeList
+                  label={t("Waiting for")}
+                  max={5}
+                  items={waitingFor.map((title, index) => ({ id: `${index}:${title}`, label: title }))}
+                />
+              </DetailRow>
             ) : null}
             <DetailRow label={t("Created")}>{formatTime(task.createdAt)}</DetailRow>
             {task.startedAt ? (

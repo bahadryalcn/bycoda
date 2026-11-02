@@ -130,6 +130,30 @@ describe("explicit host tool targets", () => {
     });
     expect(invoke).not.toHaveBeenCalledWith("local_host_connect");
   });
+  it("routes only the exact assistant and desktop owner methods with their advertised capability",async()=>{
+    machineCapabilities.mockResolvedValue(["assistant.v1","desktop.control.v1"]);
+    for(const [capability,method,params] of [["assistant.v1","assistant.request",{op:"threads.open",projectId:"canonical-remote"}],["desktop.control.v1","desktop.request",{op:"status"}],["desktop.control.v1","desktop.helper.request",{op:"status"}]] as const){
+      await hostToolRequest("",capability,method,params,{kind:"local"});expect(remoteRequest).toHaveBeenLastCalledWith("local",method,params,false,false,"local-env");
+    }
+    expect(hostProjectFor).not.toHaveBeenCalled();
+    await expect(hostToolRequest("","browser.shared","assistant.request",{op:"snapshot"},{kind:"local"})).rejects.toThrow("explicit computer and capability");
+    await expect(hostToolRequest("","assistant.v1","assistant.request",{}, {kind:"project"})).rejects.toThrow("explicit computer and capability");
+    await expect(hostToolRequest("","assistant.v1","assistant.request.unsafe",{}, {kind:"local"})).rejects.toThrow("cannot use another computer");
+  });
+  it("pins remote assistant IDs to the captured environment and refuses changed routes before disclosure",async()=>{
+    machineCapabilities.mockResolvedValue(["assistant.v1"]);const request={op:"threads.append",threadId:"remote-thread",sessionId:"actual-remote",idempotencyKey:"original-id",text:"accepted speech"};
+    await hostToolRequest("","assistant.v1","assistant.request",request,{kind:"machine",machineId:"mac"},"mac-env");expect(remoteRequest).toHaveBeenCalledWith("mac","assistant.request",request,false,false,"mac-env");
+    await expect(hostToolRequest("","assistant.v1","assistant.request",request,{kind:"machine",machineId:"mac"},"other-env")).rejects.toThrow("captured Host");
+    remoteRequest.mockImplementationOnce(async()=>{invoke.mockResolvedValue([local,{...mac,environmentId:"replaced"}]);return {ok:true};});
+    await expect(hostToolRequest("","assistant.v1","assistant.request",request,{kind:"machine",machineId:"mac"},"mac-env")).rejects.toThrow("captured Host");expect(hostProjectFor).not.toHaveBeenCalled();
+  });
+  it("checks owner capability and captured machine again before any delayed dispatch",async()=>{
+    let release!:(value:string[])=>void;machineCapabilities.mockImplementationOnce(()=>new Promise(done=>release=done));
+    const pending=hostToolRequest("","assistant.v1","assistant.request",{op:"threads.open",projectId:"original"},{kind:"machine",machineId:"mac"},"mac-env");
+    await vi.waitFor(()=>expect(release).toBeTypeOf("function"));invoke.mockResolvedValue([local,{...mac,environmentId:"new-environment"}]);release(["assistant.v1"]);await expect(pending).rejects.toThrow("captured Host");expect(remoteRequest).not.toHaveBeenCalled();
+    invalidateFeatureHosts();invoke.mockResolvedValue([local,mac]);machineCapabilities.mockResolvedValue([]);
+    for(const [capability,method] of [["assistant.v1","assistant.request"],["desktop.control.v1","desktop.request"],["desktop.control.v1","desktop.helper.request"]])await expect(hostToolRequest("",capability,method,{}, {kind:"machine",machineId:"mac"})).rejects.toThrow("Update");expect(remoteRequest).not.toHaveBeenCalled();
+  });
 
   it("uses this computer for a remote conversation without registering its directory", async () => {
     await Promise.all([

@@ -795,10 +795,10 @@ describe("sidebar session IDs", () => {
     });
     const trigger = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === "Copy session ID")!;
+    ).find((item) => item.textContent === "Copy")!;
     expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
     act(() => trigger.click());
-    return document.querySelector<HTMLElement>('[role="menu"][aria-label="Copy session ID"]')!;
+    return document.querySelector<HTMLElement>('[role="menu"][aria-label="Copy"]')!;
   }
 
   it.each(["Harness session ID", "bycoda session ID"])(
@@ -1903,7 +1903,7 @@ describe("collapsed rail Inbox actions", () => {
       Array.from(rail.querySelectorAll("button"), (button) =>
         button.getAttribute("aria-label")?.replace(/ \(.+\)$/, ""),
       ),
-    ).toEqual(["Expand projects", "Projects and groups", "Search", "Inbox", "Tools", "Settings"]);
+    ).toEqual(["Expand projects", "Search", "Inbox", "Tools", "Projects and groups", "Settings"]);
     expect(rail.querySelectorAll('button[aria-label="Projects and groups"]')).toHaveLength(1);
     expect(rail.querySelector('button[aria-label^="Switch project"]')).toBeNull();
 

@@ -104,6 +104,8 @@ function ProjectBrowserPanel({
   const [controlsOpen, setControlsOpen] = useState(false);
   const [actualSize, setActualSize] = useState(false);
   const controlsTrigger = useRef<HTMLButtonElement>(null);
+  const statusTrigger = useRef<HTMLButtonElement>(null);
+  const [controlsFromStatus, setControlsFromStatus] = useState(false);
   const [error, setError] = useState("");
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState<BrowserAnnotationCapture>();
@@ -487,6 +489,25 @@ function ProjectBrowserPanel({
     : error.length <= 180 && !/[\r\n]/.test(error)
       ? error
       : t("Browser unavailable");
+  // One colored dot replaces the old status line: red for a failure or missing
+  // setup, green while a page is open, yellow while closed or working.
+  const statusTone =
+    error || setupRequired || (!state && !busy)
+      ? "danger"
+      : state?.open && !busy
+        ? "success"
+        : "warning";
+  const statusLabel = busy
+    ? t("Working on the host…")
+    : setupRequired
+      ? t("Browser setup required")
+      : browserStatus;
+  const statusDetails = [
+    error ? errorSummary : "",
+    notice,
+    controlStatus ?? "",
+    state?.open && state.url ? state.url : "",
+  ].filter(Boolean);
 
   return (
     <section
@@ -518,6 +539,26 @@ function ProjectBrowserPanel({
           void action(openWebsite);
         }}
       >
+        <Button
+          ref={statusTrigger}
+          motion="none"
+          type="button"
+          variant="ghost"
+          iconOnly
+          className="host-browser-status"
+          label={statusLabel}
+          tooltip={statusLabel}
+          tooltipDetails={statusDetails}
+          aria-haspopup="dialog"
+          aria-expanded={controlsOpen && controlsFromStatus}
+          onClick={() => {
+            setSelectionOpen(false);
+            setControlsOpen((open) => !open || !controlsFromStatus);
+            setControlsFromStatus(true);
+          }}
+        >
+          <span className="host-browser-status-dot" data-tone={statusTone} aria-hidden />
+        </Button>
         <TextField
           fieldClassName="host-browser-url"
           label={t("Website address")}
@@ -594,11 +635,12 @@ function ProjectBrowserPanel({
           label={t("Browser controls and setup")}
           tooltip={t("Browser controls and setup")}
           aria-haspopup="dialog"
-          aria-expanded={controlsOpen}
-          selected={controlsOpen}
+          aria-expanded={controlsOpen && !controlsFromStatus}
+          selected={controlsOpen && !controlsFromStatus}
           onClick={() => {
             setSelectionOpen(false);
-            setControlsOpen((open) => !open);
+            setControlsOpen((open) => !open || controlsFromStatus);
+            setControlsFromStatus(false);
           }}
         >
           <SlidersHorizontal className="icon-sm" aria-hidden />
@@ -703,49 +745,16 @@ function ProjectBrowserPanel({
         ) : null}
       </div>
       </div>
-      {/* Visible state: page the host is on, browser/control state, in-flight
-          work and why element selection may be unavailable. */}
-      <div
-        className="host-browser-statusline"
-        data-browser-state={
-        !state ? (error ? "unavailable" : "checking") : state.open ? "open" : "closed"
-        }
-      >
-        <span className="host-browser-state-chip" role="status">
-          <span className="host-browser-state-dot" aria-hidden />
-          {busy ? t("Working on the host…") : browserStatus}
-        </span>
-        {state?.open && state.url ? (
-          <OverflowTooltip label={state.url}>
-            <span className="host-browser-current-url">
-              <span className="host-browser-current-label">{t("Current page")}</span>
-              {state.url}
-            </span>
-          </OverflowTooltip>
-        ) : null}
-        {!annotationsAllowed ? (
-          <span className="host-browser-restriction">
-            {t("Browser selections can be attached only on this conversation's project host.")}
-          </span>
-        ) : null}
-      </div>
+      {/* State, failures and notices are shown by the status dot's tooltip and
+          the controls popover; screen readers still hear them here. */}
+      <span className="sr-only" role="status">
+        {statusLabel}
+        {notice ? ` · ${notice}` : ""}
+      </span>
       {error ? (
-        <div className="host-browser-error">
-          <details role="alert">
-            <summary>{errorSummary}</summary>
-            <pre>{error}</pre>
-          </details>
-          {!state ? (
-            <Button disabled={busy} onClick={() => void action(() => request("browser.status"))}>
-              {t("Retry")}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-      {notice ? (
-        <p className="host-browser-notice" role="status">
-          {notice}
-        </p>
+        <span className="sr-only" role="alert">
+          {errorSummary}
+        </span>
       ) : null}
       {setupRequired ? (
         <section className="host-browser-setup" aria-label={t("Browser setup required")}>
@@ -1002,9 +1011,9 @@ function ProjectBrowserPanel({
       ) : null}
       {controlsOpen ? (
         <Popover
-          anchor={controlsTrigger}
+          anchor={controlsFromStatus ? statusTrigger : controlsTrigger}
           side="bottom"
-          align="end"
+          align={controlsFromStatus ? "start" : "end"}
           width={360}
           role="dialog"
           aria-label={t("Browser controls and setup")}
@@ -1013,7 +1022,8 @@ function ProjectBrowserPanel({
           solid
           onDismiss={(reason) => {
             setControlsOpen(false);
-            if (reason === "escape") controlsTrigger.current?.focus();
+            if (reason === "escape")
+              (controlsFromStatus ? statusTrigger : controlsTrigger).current?.focus();
           }}
         >
           <section
@@ -1101,7 +1111,14 @@ function ProjectBrowserPanel({
                 {browserStatus}
               </span>
               {controlStatus ? <span className="host-tool-muted">{controlStatus}</span> : null}
+              {notice ? <span className="host-tool-muted">{notice}</span> : null}
             </div>
+            {error ? (
+              <details className="host-browser-error">
+                <summary>{errorSummary}</summary>
+                <pre>{error}</pre>
+              </details>
+            ) : null}
             {busy ? (
               <Alert tone="info" role="status">
                 {t("Working on the host…")}
@@ -1114,7 +1131,7 @@ function ProjectBrowserPanel({
                 disabled={busy}
                 onClick={() => void action(() => request("browser.status"))}
               >
-                {t("Status")}
+                {!state && error ? t("Retry") : t("Status")}
               </Button>
               {!(state?.open && !state.controlling) ? (
                 <Button

@@ -300,7 +300,11 @@ fn valid_result(target: &str, result: &Value) -> bool {
         "native.services.workspace.format" => {
             result.is_null()
                 || result.as_object().is_some_and(|value| {
-                    value.len() == 2
+                    // Older Hosts forwarded Prettier's internal comments array.
+                    // Accept that known metadata so their retained original result
+                    // can be reconciled without replaying the formatter effect.
+                    (value.len() == 2
+                        || (value.len() == 3 && value.get("comments").is_some_and(Value::is_array)))
                         && value.get("formatted").is_some_and(Value::is_string)
                         && value
                             .get("cursorOffset")
@@ -309,6 +313,41 @@ fn valid_result(target: &str, result: &Value) -> bool {
                 })
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod formatter_result_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_public_and_legacy_prettier_results_only() {
+        let target = "native.services.workspace.format";
+        assert!(valid_result(target, &Value::Null));
+        assert!(valid_result(
+            target,
+            &json!({"formatted":"const a = 1;\n","cursorOffset":0})
+        ));
+        assert!(valid_result(
+            target,
+            &json!({"formatted":"// comment\n","cursorOffset":0,"comments":[{"type":"CommentLine","value":" comment"}]})
+        ));
+        assert!(!valid_result(
+            target,
+            &json!({"formatted":"x","cursorOffset":0,"comments":false})
+        ));
+        assert!(!valid_result(
+            target,
+            &json!({"formatted":"x","cursorOffset":0,"other":[]})
+        ));
+        assert!(!valid_result(
+            target,
+            &json!({"formatted":"x","cursorOffset":-1,"comments":[]})
+        ));
+        assert!(!valid_result(
+            target,
+            &json!({"formatted":"x","cursorOffset":0,"comments":[],"other":true})
+        ));
     }
 }
 

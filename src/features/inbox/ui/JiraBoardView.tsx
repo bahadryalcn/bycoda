@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -705,7 +706,7 @@ export function JiraBoardView({
     return (
       <article
         key={issue.identifier}
-        className="jira-board-card rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-2"
+        className="jira-board-card rounded-(--ui-radius-card) border border-(--ui-editor-border) p-2"
         data-dragging={dragKey === issue.identifier || undefined}
         data-jira-drop={id}
         data-jira-group={group.id}
@@ -759,10 +760,24 @@ export function JiraBoardView({
             }}
           />
         </ActionHost>
-        <div className="flex min-w-0 items-center gap-2 px-3 pb-1 text-ui-caption text-(--ui-text-secondary)">
-          <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
-            {issue.state} · {issue.assignees[0]?.login ?? t("Unassigned")}
+        <div className="flex min-w-0 items-center gap-1.5 px-3 pb-1 text-ui-caption text-(--ui-text-secondary)">
+          <span
+            className={`min-w-0 break-words [overflow-wrap:anywhere] ${issue.assignees.length > 0 ? "" : "flex-1"}`}
+          >
+            {issue.state} ·{issue.assignees.length > 0 ? "" : ` ${t("Unassigned")}`}
           </span>
+          {issue.assignees.length > 0 ? (
+            <BadgeList
+              label={t("Assignees")}
+              size="xs"
+              max={1}
+              items={issue.assignees.map((assignee, index) => ({
+                id: `${index}:${assignee.login}`,
+                label: assignee.login,
+              }))}
+              className="min-w-0"
+            />
+          ) : null}
         </div>
         {moveKey === id && moveAnchor ? (
           <DropdownMenu

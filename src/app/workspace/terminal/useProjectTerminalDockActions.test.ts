@@ -49,6 +49,8 @@ it("closes the original project's terminal after switching projects during confi
   try {
     await act(async () => root.render(createElement(Consumer)));
     act(() => actions.onCloseProjectTerminal(a.id));
+    // /a has one terminal, so closing it also closes the panel and asks even when idle.
+    expect(confirmCloseTerminal).toHaveBeenCalledWith(a, { last: true });
     projectCwdRef.current = "/b";
     await act(async () => finish(true));
     expect(ref.current.map((dock) => dock.projectPath)).toEqual(["/b"]);

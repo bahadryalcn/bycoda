@@ -56,6 +56,10 @@ type Props = {
   draftScope?: string;
   /** Actual logical root; draftScope may instead be a remote cache namespace. */
   parentSessionId?: string;
+  /** Alternate wording for a non-destructive skip, such as a retained owner question. */
+  dismissLabel?: string;
+  /** A retained owner card can postpone the whole prompt without answering earlier fields. */
+  dismissEntirePrompt?: boolean;
   onReply: (requestId: number, reply: UserQuestionReply) => void;
   onInteraction?: (requestId: number) => void;
 };
@@ -68,6 +72,8 @@ function QuestionFormContent({
   prompt,
   draftScope,
   parentSessionId,
+  dismissLabel,
+  dismissEntirePrompt,
   onReply,
   onInteraction,
 }: Props) {
@@ -297,7 +303,7 @@ function QuestionFormContent({
 
   const skipCurrent = () => {
     if (held || submitted.current) return;
-    if (prompt.dismissAction === "cancel" || prompt.dismissAction === "decline") {
+    if (dismissEntirePrompt || prompt.dismissAction === "cancel" || prompt.dismissAction === "decline") {
       send({ kind: "skipped" }, "dismiss");
       return;
     }
@@ -550,7 +556,7 @@ function QuestionFormContent({
                   ? t("Cancel question")
                   : prompt.dismissAction === "decline"
                     ? t("Decline")
-                    : t("Skip")}
+                    : dismissLabel??t("Skip")}
             </Button>
             {index > 0 ? (
               <Button

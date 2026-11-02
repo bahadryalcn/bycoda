@@ -32,27 +32,31 @@
 
 /* The composer box surface, edge and shadow are owned by bycoda.css
    ([data-composer-box]); nothing here repaints it. */
+/* The turn activity band sits on the composer, so it shares the composer surface. */
 html [data-activity-dock] {
-  background: var(--ui-surface);
+  background: var(--ui-composer-surface);
 }
 
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   html [data-activity-dock] {
     background: var(--ui-activity-dock-glass);
-    -webkit-backdrop-filter: blur(var(--ui-activity-dock-blur));
-    backdrop-filter: blur(var(--ui-activity-dock-blur));
+    box-shadow: var(--ui-activity-dock-edge);
+    -webkit-backdrop-filter: var(--ui-activity-dock-filter);
+    backdrop-filter: var(--ui-activity-dock-filter);
   }
 }
 
 html[data-performance-no-blur] [data-activity-dock] {
-  background: var(--ui-surface);
+  background: var(--ui-composer-surface);
+  box-shadow: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
 @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
   html [data-activity-dock] {
-    background: var(--ui-surface);
+    background: var(--ui-composer-surface);
+    box-shadow: none;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -397,4 +401,25 @@ html[data-performance-no-blur] [data-activity-dock] {
 [data-activity-status-row] .activity-dock-label,
 [data-activity-dock] .activity-dock-clock {
   color: var(--ui-text-secondary);
+}
+
+/* Output toggles (Wrap lines) sit in the bare icon row beside Copy, like the message
+   actions: no filled box. "On" is a small dot on the icon (the same cue as an active
+   search filter), so it reads in every accent, including the neutral default. */
+[data-tool-inspection] .bycoda-arc[data-fbg-item][data-button-selected],
+[data-tool-inspection] .bycoda-arc[data-fbg-item][data-button-selected]:hover:not([aria-disabled="true"]) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-content);
+}
+[data-tool-inspection] .bycoda-arc[data-fbg-item][data-button-selected]::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 3px;
+  inset-inline-end: 3px;
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--ui-tone-accent-fg);
+  pointer-events: none;
 }

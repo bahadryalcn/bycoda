@@ -53,7 +53,6 @@
   padding: 0;
   list-style: none;
   border: 0;
-  background: var(--ui-surface);
 }
 .dev-server-row {
   min-inline-size: 0;
@@ -95,7 +94,6 @@
   padding: 12px;
   border: 1px solid var(--ui-pane-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
 }
 .dev-server-selection {
   border: 0;

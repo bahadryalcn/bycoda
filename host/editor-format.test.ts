@@ -43,6 +43,15 @@ it("formats the unsaved JSX buffer using project overrides and EditorConfig with
   );
   expect(result?.formatted).toBe('const Page = () => {\n    return <div title="hello" />\n}\n');
   expect(result?.cursorOffset).toBe(6);
+  // Native delivery validates an exact two-field result; Prettier's internal
+  // `comments` field must never escape the worker (including nonempty comments).
+  expect(Object.keys(result!).sort()).toEqual(["cursorOffset", "formatted"]);
+  expect(await readFile(path, "utf8")).toBe("disk content");
+});
+it("keeps Prettier comment metadata out of the native result", async () => {
+  const { root, path } = await project();
+  const result = await formatWorkspaceText(root, path, "// keep me\nconst a=1;", 0);
+  expect(result).toEqual({ formatted: "// keep me\nconst a = 1;\n", cursorOffset: 0 });
   expect(await readFile(path, "utf8")).toBe("disk content");
 });
 it("respects prettierignore and reports syntax/config errors", async () => {

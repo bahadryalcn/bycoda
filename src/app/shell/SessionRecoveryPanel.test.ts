@@ -59,6 +59,33 @@ const recovery = captureSessionRecovery(
   ),
   100,
 )!;
+/** More rows than a short list, so the search field is offered. */
+const crowdedSessions = Array.from({ length: 10 }, (_, index) => ({
+  ...newSession("codex", `/crowd-${index}`),
+  id: `crowd-${index}`,
+  title: `crowd-${index}`,
+  busy: true,
+}));
+const crowdedRecovery = captureSessionRecovery(
+  null,
+  collectWorkspaceSnapshot(
+    crowdedSessions.map((s) => newTab(s.id)),
+    crowdedSessions,
+    "tab",
+    "/crowd-0",
+    new Map(),
+  ),
+  100,
+)!;
+function searchFor(value: string) {
+  const input = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Search recovered sessions"]',
+  )!;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
 const onOpen = vi.fn<(_ids: string[], _layout: boolean) => Promise<void>>();
 const onClose = vi.fn();
 const onRemove = vi.fn<(_ids: string[]) => Promise<void>>();
@@ -248,22 +275,14 @@ describe("session recovery navigation", () => {
       ],
     };
     render([], recovery, [failed, sessions[1]]);
-    expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      "2 previous sessions · 2 need attention",
-    );
     expect(container.textContent).toContain("Failed");
-    const input = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Search recovered sessions"]',
-    )!;
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        input,
-        "alpha",
-      );
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    // A short list is scanned by eye: no search field until it grows.
+    expect(container.querySelector('input[aria-label="Search recovered sessions"]')).toBeNull();
+    render([], crowdedRecovery, [{ ...failed, id: "crowd-0" }, ...crowdedSessions.slice(1)]);
+    searchFor("crowd-0");
+    expect(container.querySelectorAll("ul > li")).toHaveLength(1);
     await click("Restore chat layout");
-    expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], true);
+    expect(onOpen).toHaveBeenLastCalledWith(crowdedSessions.map((item) => item.id), true);
   });
   it("reads closed local conversations without reopening them to hide completed entries", async () => {
     vi.mocked(getSession).mockResolvedValue({
@@ -342,9 +361,9 @@ describe("session recovery navigation", () => {
     localStorage.clear();
     rememberRemoteSession(shown.id, "host-open");
     render([], remoteRecovery, [shown]);
-    expect(container.textContent).toContain("1 previous sessions");
+    expect(container.querySelectorAll("ul > li")).toHaveLength(1);
     render([], remoteRecovery, []);
-    expect(container.textContent).toContain("2 previous sessions");
+    expect(container.querySelectorAll("ul > li")).toHaveLength(2);
     localStorage.clear();
   });
   it("names list maintenance truthfully with target counts and keeps it out of the main actions", async () => {
@@ -356,54 +375,52 @@ describe("session recovery navigation", () => {
         .click();
     });
     const rows = [...document.querySelectorAll('[role="menuitem"]')];
-    expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
-      "Remove 0 selected from list",
-      "Remove 0 completed from list",
-      "Clear recovery list (2)",
-    ]);
-    expect(rows[0].hasAttribute("disabled")).toBe(true);
-    expect(rows[2].getAttribute("aria-description")).toContain("history is kept");
+    // Nothing selected and nothing completed: only the applicable action is offered.
+    expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual(["Clear recovery list (2)"]);
+    expect(rows[0].getAttribute("aria-description")).toContain("history is kept");
   });
-  it("states the Open all scope in visible text, including entries hidden by search", () => {
-    expect(container.textContent).toContain("Open all opens all 2 recovered sessions.");
-    const input = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Search recovered sessions"]',
-    )!;
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        input,
-        "alpha",
-      );
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect(container.textContent).toContain(
+  it("states the Open all scope in the info popover, including entries hidden by the filter", async () => {
+    const info = async () => {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click();
+      });
+      return document.body.textContent ?? "";
+    };
+    expect(container.textContent).not.toContain("Open all opens all");
+    expect(await info()).toContain("Open all opens all 2 recovered sessions.");
+    expect(await info()).not.toContain("Open all opens all");
+    const finished = [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }];
+    render([], recovery, [{ ...sessions[0], busy: false, blocks: finished }, sessions[1]]);
+    expect(await info()).toContain(
       "Open all opens all 2 recovered sessions, including 1 not shown here.",
     );
-    expect(container.textContent).toContain("Showing 1 of 2");
   });
-  it("separates a search miss from an empty attention filter and offers a way out", async () => {
+  it("hides the filter when it would not separate anything and defaults to every entry", async () => {
     const finished = {
       ...sessions[1],
       busy: false,
       blocks: [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }],
     };
     render([], recovery, [{ ...sessions[0], busy: false, blocks: finished.blocks }, finished]);
-    expect(container.textContent).toContain("No sessions need attention");
-    await click("Show all sessions");
+    expect(container.textContent).not.toContain("No sessions need attention");
+    expect(container.textContent).not.toContain("Needs attention");
     expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
-    const input = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Search recovered sessions"]',
-    )!;
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        input,
-        "zzz",
-      );
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    render([], recovery, sessions);
+    expect(container.textContent).not.toContain("Needs attention");
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+  });
+  it("separates a search miss from an empty list and offers a way out", async () => {
+    const finished = [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }];
+    render(
+      [],
+      crowdedRecovery,
+      crowdedSessions.map((item) => ({ ...item, busy: false, blocks: finished })),
+    );
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(10);
+    searchFor("zzz");
     expect(container.textContent).toContain("No matching sessions");
     await click("Clear search");
-    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(10);
   });
   it("shows open failures next to the open actions and list failures with the list", async () => {
     onOpen.mockRejectedValueOnce(new Error("missing"));

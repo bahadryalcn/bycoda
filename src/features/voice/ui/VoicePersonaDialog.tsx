@@ -30,16 +30,19 @@ const choices = (table: Record<string, { label: string }>) =>
 export function VoicePersonaDialog({
   purpose,
   onClose,
+  styleOnly=false,
 }: {
   purpose: "welcome" | "edit";
   onClose: () => void;
+  styleOnly?: boolean;
 }) {
   useLocale();
   const [draft, setDraft] = useState<VoicePersona>(loadVoicePersona);
   const change = (patch: Partial<VoicePersona>) =>
     setDraft((current) => ({ ...current, ...patch }));
   const finish = (value: VoicePersona) => {
-    saveVoicePersona(value);
+    const previous=loadVoicePersona();
+    saveVoicePersona(styleOnly?{...value,name:previous.name,userName:previous.userName,rules:previous.rules}:value);
     onClose();
   };
   const toggleDuty = (duty: string, on: boolean) =>
@@ -49,7 +52,7 @@ export function VoicePersonaDialog({
   const welcome = purpose === "welcome";
   return (
     <Modal
-      title={welcome ? t("Make the voice companion yours") : t("Companion identity")}
+      title={styleOnly ? t("Voice style") : welcome ? t("Make the voice companion yours") : t("Companion identity")}
       description={
         welcome
           ? t("Pick a few options or write your own. You can change them later in Settings.")
@@ -81,7 +84,7 @@ export function VoicePersonaDialog({
       }
     >
       <div className={styles.form}>
-        <div className={styles.pair}>
+        {!styleOnly?<div className={styles.pair}>
           <Combobox
             label={t("Companion name")}
             allowCustomValue
@@ -102,7 +105,7 @@ export function VoicePersonaDialog({
             autoComplete="given-name"
             onChange={(event) => change({ userName: event.target.value })}
           />
-        </div>
+        </div>:null}
         <div className={styles.pair}>
           <Combobox
             label={t("How it addresses you")}
@@ -147,7 +150,7 @@ export function VoicePersonaDialog({
             onChange={(event) => change({ customDuties: event.target.value })}
           />
         </fieldset>
-        <TextareaField
+        {!styleOnly?<TextareaField
           label={t("Ground rules")}
           description={t(
             "For example: always answer in English, keep replies under two sentences.",
@@ -158,7 +161,7 @@ export function VoicePersonaDialog({
           autosize
           maxLength={PERSONA_LIMITS.rules}
           onChange={(event) => change({ rules: event.target.value })}
-        />
+        />:null}
       </div>
     </Modal>
   );

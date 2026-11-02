@@ -7,6 +7,7 @@ import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
 const state = vi.hoisted(() => ({
   enabled: true,
   focused: true,
+  awake: false,
   listeners: new Set<() => void>(),
   draw: vi.fn(),
   dispose: vi.fn(),
@@ -22,7 +23,7 @@ vi.mock("../model/decorativeMotion", () => ({
 }));
 vi.mock("./live-background", () => ({
   CLOSED_SIGNAL: { presence: 0 },
-  createLiveSignalDriver: () => ({ update: () => ({}) }),
+  createLiveSignalDriver: () => ({ update: () => ({}), awake: () => state.awake }),
   createLiveBackgroundScene: (...args: unknown[]) => {
     state.create(...args);
     return { resize: vi.fn(), draw: state.draw, dispose: state.dispose };

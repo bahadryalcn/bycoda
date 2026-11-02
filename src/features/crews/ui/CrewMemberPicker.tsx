@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
-import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -209,12 +209,11 @@ export function CrewMemberPicker({
                           <CrewMemberMeta agent={agent} catalog={data.catalog} shortScope />
                         </span>
                         {agent.groups?.length ? (
-                          <span className="flex max-w-48 flex-wrap justify-end gap-1">
-                            {agent.groups.slice(0, 3).map((name) => (
-                              <Badge key={name} size="sm">
-                                {name}
-                              </Badge>
-                            ))}
+                          <span className="min-w-0 max-w-48">
+                            <BadgeList
+                              label={t("Groups")}
+                              items={agent.groups.map((name) => ({ id: name, label: name }))}
+                            />
                           </span>
                         ) : null}
                       </label>
@@ -238,7 +237,7 @@ export function CrewMemberPicker({
             modelError={modelError}
             autoFocus
           />
-          <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-(--ui-radius-card) border border-(--ui-pane-border) p-2">
             <label className="flex items-center gap-2 text-ui-body">
               <Checkbox
                 checked={saveToLibrary}

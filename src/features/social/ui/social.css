@@ -412,7 +412,6 @@
   padding: 0.875rem 1rem;
   margin-block: 0.875rem;
   min-inline-size: 0;
-  background: var(--ui-surface);
 }
 .social-message {
   white-space: pre-wrap;

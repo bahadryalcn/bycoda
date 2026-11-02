@@ -1,7 +1,9 @@
 import type { EvalCase } from "./types";
+import {assistantRuleCases} from "./assistantRules";
 
 /** Hand-authored and sanitized; no transcripts, credentials or live project identifiers. */
 export const cases: EvalCase[] = [
+  ...assistantRuleCases,
   {
     id: "title-explicit-pr",
     suite: "titles",

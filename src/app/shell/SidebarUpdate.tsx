@@ -1,6 +1,6 @@
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
-import { Modal } from "../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../shared/ui/Modal";
 import { ArrowDownCircle, RefreshCw } from "../../shared/ui/icons";
 import { InlineError } from "../../shared/ui/InlineError";
 import { Spinner } from "../../shared/ui/Spinner";
@@ -108,14 +108,18 @@ export function SidebarUpdateFooter({
           title={snapshot.phase === "error" ? t("Retry") : t("Update available")}
           size="sm"
           onClose={dismissPrompt}
+          footer={
+            <ModalActions>
+              <Button onClick={dismissPrompt}>{`${t("Later")} (${t("24 hours")})`}</Button>
+              <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} compact />
+            </ModalActions>
+          }
         >
           <div className="flex flex-col gap-3 p-4">
             <p className="text-ui-body text-content">
               v{snapshot.currentVersion} → v{snapshot.availableVersion}
             </p>
-            {snapshot.error ? (
-              <InlineError>{snapshot.error}</InlineError>
-            ) : null}
+            {snapshot.error ? <InlineError>{snapshot.error}</InlineError> : null}
             {notes ? (
               <details className="text-ui-body text-content">
                 <summary className="cursor-pointer">{t("Release notes")}</summary>
@@ -124,10 +128,6 @@ export function SidebarUpdateFooter({
                 </pre>
               </details>
             ) : null}
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button onClick={dismissPrompt}>{`${t("Later")} (${t("24 hours")})`}</Button>
-              <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} compact />
-            </div>
           </div>
         </Modal>
       ) : null}

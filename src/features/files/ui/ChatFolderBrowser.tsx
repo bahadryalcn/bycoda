@@ -4,7 +4,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   browseDirectory,
   isLocalDirectory,
@@ -21,7 +21,7 @@ import {
   saveExplorerMapping,
 } from "../../../shared/lib/remoteExplorerPaths";
 import { displayPath, isEqualOrInside } from "../../../shared/lib/paths";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { ArrowUp, ExternalLink, FolderOpen } from "../../../shared/ui/icons";
 import { FileTypeIcon } from "./FileTypeIcon";
 import type { OpenFileFn } from "../../search/model/search";
@@ -170,6 +170,7 @@ export function ChatFolderBrowser({
     };
   }, [directory, reload]);
 
+  const mappingFormId = useId();
   return (
     <Modal
       languageDomain="technical"
@@ -177,6 +178,31 @@ export function ChatFolderBrowser({
       onClose={onClose}
       size="md"
       fitViewport
+      footer={
+        editingMapping ? (
+          <ModalActions>
+            <Button
+              variant="ghost"
+              motion="none"
+              type="button"
+              disabled={busy}
+              onClick={() => setEditingMapping(false)}
+            >
+              {t("Cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              motion="none"
+              type="submit"
+              form={mappingFormId}
+              disabled={busy}
+              loading={pendingAction === "mapping"}
+            >
+              {t("Save and open")}
+            </Button>
+          </ModalActions>
+        ) : undefined
+      }
     >
       <div className="min-w-0 px-4 pb-4">
         <div className="flex min-w-0 items-center gap-2 border-b border-stroke pb-2">
@@ -239,6 +265,7 @@ export function ChatFolderBrowser({
         </p>
         {editingMapping ? (
           <form
+            id={mappingFormId}
             className="grid gap-2 border-b border-stroke pb-3 text-ui-body"
             onSubmit={(event) => {
               event.preventDefault();
@@ -281,26 +308,6 @@ export function ChatFolderBrowser({
             >
               {t("Choose folder…")}
             </Button>
-            <div className="flex gap-2">
-              <Button
-                variant="primary"
-                motion="none"
-                type="submit"
-                disabled={busy}
-                loading={pendingAction === "mapping"}
-              >
-                {t("Save and open")}
-              </Button>
-              <Button
-                variant="ghost"
-                motion="none"
-                type="button"
-                disabled={busy}
-                onClick={() => setEditingMapping(false)}
-              >
-                {t("Cancel")}
-              </Button>
-            </div>
           </form>
         ) : null}
         {copyProgress ? (

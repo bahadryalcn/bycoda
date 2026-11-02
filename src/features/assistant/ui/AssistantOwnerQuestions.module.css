@@ -1,0 +1,28 @@
+.questions,
+.card {
+  display: grid;
+  gap: 10px;
+  min-inline-size: 0;
+}
+.questions {
+  margin-block-end: 18px;
+}
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+.status {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}

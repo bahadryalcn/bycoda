@@ -1,5 +1,6 @@
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   gitConflictStages,
@@ -199,46 +200,54 @@ export function GitGraphConflictEditor({
   const editable = loaded.disk !== null;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
-        <OverflowTooltip label={relative}>
-          <span
-            className="min-w-0 flex-1 truncate text-ui-caption font-medium text-(--ui-tone-warning-fg)"
-          >
-            {relative}
-          </span>
-        </OverflowTooltip>
-        <Button
-          variant="ghost"
-          motion="none"
-          type="button"
-          loading={operation === "ours"}
-          disabled={operation !== "ours" && (disabled || operation !== null)}
-          onClick={() => take("ours")}
-        >
-          {t("Use current")}
-        </Button>
-        <Button
-          variant="ghost"
-          motion="none"
-          type="button"
-          loading={operation === "theirs"}
-          disabled={operation !== "theirs" && (disabled || operation !== null)}
-          onClick={() => take("theirs")}
-        >
-          {t("Use incoming")}
-        </Button>
-        {editable && hasConflictMarkers(draft) ? (
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            disabled={disabled || operation !== null}
-            onClick={() => setDraft(resolveConflictMarkers(draft, "both"))}
-          >
-            {t("Use both")}
-          </Button>
-        ) : null}
-      </header>
+      <PaneHeader
+        as="header"
+        titleAs="div"
+        className="conflict-file-header"
+        title={
+          <OverflowTooltip label={relative}>
+            <span className="text-(--ui-tone-warning-fg)">{relative}</span>
+          </OverflowTooltip>
+        }
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              motion="none"
+              type="button"
+              loading={operation === "ours"}
+              disabled={operation !== "ours" && (disabled || operation !== null)}
+              onClick={() => take("ours")}
+            >
+              {t("Use current")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              motion="none"
+              type="button"
+              loading={operation === "theirs"}
+              disabled={operation !== "theirs" && (disabled || operation !== null)}
+              onClick={() => take("theirs")}
+            >
+              {t("Use incoming")}
+            </Button>
+            {editable && hasConflictMarkers(draft) ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                motion="none"
+                type="button"
+                disabled={disabled || operation !== null}
+                onClick={() => setDraft(resolveConflictMarkers(draft, "both"))}
+              >
+                {t("Use both")}
+              </Button>
+            ) : null}
+          </>
+        }
+      />
       {editable ? (
         <ConflictLayout
           cwd={cwd}
@@ -247,6 +256,7 @@ export function GitGraphConflictEditor({
           resultActions={
             <Button
               variant="primary"
+              size="sm"
               motion="none"
               type="button"
               loading={operation === "save"}
@@ -284,7 +294,7 @@ export function GitGraphConflictEditor({
               disabled={disabled || operation !== null}
               spellCheck={false}
               onChange={(e) => setDraft(e.target.value)}
-              className="min-h-0 flex-1 resize-none font-mono leading-5"
+              className="conflict-result-textarea min-h-0 flex-1 resize-none"
             />
           </div>
         </ConflictLayout>

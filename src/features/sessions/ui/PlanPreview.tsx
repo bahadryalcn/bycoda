@@ -48,7 +48,7 @@ export function PlanPreview({
         : t("Build");
 
   return (
-    <Surface variant="raised" padding="none" className="mb-2 overflow-hidden">
+    <Surface variant="quiet" padding="none" className="mb-2 overflow-hidden">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
         {streaming ? (
           <CircleDashed

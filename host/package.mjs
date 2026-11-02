@@ -11,9 +11,11 @@ import {
   lstat,
 } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-import { resolve, join } from "node:path";
+import { resolve, join, dirname } from "node:path";
 import { createTarArchive, extractTarMembers } from "./package-archive.mjs";
 import { readBuildIdentity } from "../scripts/build/build-info.mjs";
+import { readDesktopHelper, copyDesktopHelperBundle } from "../scripts/setup/agent-desktop.mjs";
+import { signDesktopHelperBundle } from "../scripts/release/sign-desktop-helper.mjs";
 import {
   admissionSourceFingerprint,
   assertAdmissionPackagingSeparation,
@@ -67,6 +69,26 @@ const target = args.includes("--target")
   ? args[args.indexOf("--target") + 1]
   : `${process.platform}-${process.arch}`;
 const targets = args.includes("--all") ? Object.keys(runtimes) : [target];
+const signDesktopHelper = args.includes("--sign-desktop-helper");
+if(signDesktopHelper && (process.platform!=="win32" || targets.length!==1 || target!==`win32-${process.arch}` || !args.includes("--desktop-helper")))
+  throw new Error("--sign-desktop-helper requires one local Windows target and --desktop-helper.");
+const desktopHelperCacheIndex = args.indexOf("--desktop-helper-cache");
+if (
+  desktopHelperCacheIndex >= 0 &&
+  (!args[desktopHelperCacheIndex + 1] || args[desktopHelperCacheIndex + 1].startsWith("--"))
+)
+  throw new Error("--desktop-helper-cache requires a directory");
+const desktopHelperCache =
+  desktopHelperCacheIndex >= 0 ? resolve(args[desktopHelperCacheIndex + 1]) : undefined;
+const desktopHelpers = new Map();
+for (const target of targets) {
+  if (!(target in runtimes)) throw new Error(`Unsupported host target: ${target}`);
+  const [platform, arch] = target.split("-");
+  const helper = await readDesktopHelper({ cacheRoot: desktopHelperCache, platform, arch });
+  if (!helper && (args.includes("--desktop-helper") || desktopHelperCacheIndex >= 0))
+    throw new Error(`Prepare the pinned desktop helper before packaging ${target}`);
+  if (helper) desktopHelpers.set(target, helper);
+}
 const nativeAdmission = args.includes("--native-admission");
 const admissionDirectoryIndex = args.indexOf("--native-admission-dir");
 if (
@@ -213,6 +235,22 @@ for (const target of targets) {
   await copyFile("build/host/store-worker.mjs", join(folder, "store-worker.mjs"));
   await copyFile("build/host/snapshot-worker.mjs", join(folder, "snapshot-worker.mjs"));
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
+  if (desktopHelpers.has(target)) {
+    const expected = desktopHelpers.get(target),
+      [platform, arch] = target.split("-");
+    const copied = await copyDesktopHelperBundle(
+      dirname(expected.manifestPath),
+      join(folder, "agent-desktop"),
+      { platform, arch },
+    );
+    if (JSON.stringify(copied.manifest) !== JSON.stringify(expected.manifest))
+      throw new Error(`Desktop helper changed before packaging ${target}`);
+    if(signDesktopHelper)await signDesktopHelperBundle(join(folder,"agent-desktop"),{
+      certificateThumbprint:process.env.BYCODA_WINDOWS_SIGNING_CERT_SHA1,
+      storeLocation:process.env.BYCODA_WINDOWS_SIGNING_STORE || "CurrentUser",
+      arch,
+    });
+  }
   if (nativeAdmission)
     await copyAdmissionBundle(
       join(admissionDirectory, target),

@@ -1,7 +1,7 @@
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import type { SessionFilesRevertPlan } from "../model/editFromHere";
 
 export type EditFromHereMode = "keep" | "files";
@@ -39,6 +39,34 @@ export function EditFromHereDialog({
       onClose={() => {
         if (!pending) onCancel();
       }}
+      footer={
+        <ModalActions>
+          <Button variant="secondary" disabled={!!pending} onClick={onCancel}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="danger"
+            disabled={!!pending || !!unavailable}
+            disabledReason={unavailable}
+            loading={pending === "files"}
+            loadingLabel={t("Reverting files…")}
+            onClick={() => {
+              if (!unavailable && !pending) onConfirm("files");
+            }}
+          >
+            {t("Revert files too")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!!pending}
+            loading={pending === "keep"}
+            loadingLabel={t("Rewinding…")}
+            onClick={() => onConfirm("keep")}
+          >
+            {t("Revert and keep changes")}
+          </Button>
+        </ModalActions>
+      }
     >
       <div className="flex min-w-0 flex-col gap-4 p-4">
         {planLoading ? (
@@ -69,32 +97,6 @@ export function EditFromHereDialog({
           <p className="text-ui-body text-content-secondary">{unavailable}</p>
         )}
         {error ? <InlineError>{error}</InlineError> : null}
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="secondary" disabled={!!pending} onClick={onCancel}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="danger"
-            disabled={!!pending || !!unavailable}
-            disabledReason={unavailable}
-            loading={pending === "files"}
-            loadingLabel={t("Reverting files…")}
-            onClick={() => {
-              if (!unavailable && !pending) onConfirm("files");
-            }}
-          >
-            {t("Revert files too")}
-          </Button>
-          <Button
-            variant="primary"
-            disabled={!!pending}
-            loading={pending === "keep"}
-            loadingLabel={t("Rewinding…")}
-            onClick={() => onConfirm("keep")}
-          >
-            {t("Revert and keep changes")}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

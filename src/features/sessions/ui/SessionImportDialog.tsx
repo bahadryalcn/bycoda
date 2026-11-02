@@ -22,7 +22,7 @@ import {
 } from "../../../platform/tauri/sessionImport";
 import { parentPath, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { ChevronDown, ChevronRight, CircleAlert, Clock, Folder } from "../../../shared/ui/icons";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { importedSessionKeys } from "../data/sessionStore";
 import {
   candidateKey,
@@ -340,6 +340,36 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
       fitViewport
       // Closing mid-import would only look like it stopped; Cancel says so.
       onClose={running ? () => undefined : onClose}
+      footer={
+        report && run.status === "idle" ? (
+          <ModalActions>
+            <Button variant="ghost" type="button" onClick={onClose}>
+              {t("Close")}
+            </Button>
+            <Button
+              variant="primary"
+              type="button"
+              stableWidth
+              disabled={counts.toImport === 0}
+              onClick={() => void start()}
+            >
+              {t("Import")} {counts.toImport > 0 ? counts.toImport.toLocaleString(getLocale()) : ""}
+            </Button>
+          </ModalActions>
+        ) : run.status === "running" ? (
+          <ModalActions>
+            <Button variant="ghost" type="button" onClick={() => abort.current?.abort()}>
+              {t("Cancel")}
+            </Button>
+          </ModalActions>
+        ) : run.status === "done" ? (
+          <ModalActions>
+            <Button variant="primary" type="button" onClick={onClose}>
+              {t("Done")}
+            </Button>
+          </ModalActions>
+        ) : undefined
+      }
     >
       <div className="flex min-h-0 flex-col gap-3 p-4 pt-3">
         {load.status === "loading" ? (
@@ -621,28 +651,13 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                   </p>
                   <p>{t("Conversations hidden by a filter are not imported.")}</p>
                 </InfoPopover>
-                <Button variant="ghost" type="button" onClick={onClose}>
-                  {t("Close")}
-                </Button>
-                <Button
-                  variant="primary"
-                  type="button"
-                  stableWidth
-                  disabled={counts.toImport === 0}
-                  onClick={() => void start()}
-                >
-                  {t("Import")}{" "}
-                  {counts.toImport > 0 ? counts.toImport.toLocaleString(getLocale()) : ""}
-                </Button>
               </div>
             </div>
           </>
         ) : null}
 
-        {run.status === "running" ? (
-          <RunningView progress={run.progress} onCancel={() => abort.current?.abort()} />
-        ) : null}
-        {run.status === "done" ? <DoneView summary={run.summary} onClose={onClose} /> : null}
+        {run.status === "running" ? <RunningView progress={run.progress} /> : null}
+        {run.status === "done" ? <DoneView summary={run.summary} /> : null}
       </div>
     </Modal>
   );
@@ -822,7 +837,7 @@ function FolderSection({
   );
 }
 
-function RunningView({ progress, onCancel }: { progress: ImportProgress; onCancel: () => void }) {
+function RunningView({ progress }: { progress: ImportProgress }) {
   const t = useT();
   const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   return (
@@ -842,16 +857,11 @@ function RunningView({ progress, onCancel }: { progress: ImportProgress; onCance
         {progress.skipped > 0 ? t(" · {p0} skipped", { p0: progress.skipped }) : ""}
         {progress.failed.length > 0 ? t(" · {p0} failed", { p0: progress.failed.length }) : ""}
       </p>
-      <div className="flex justify-end">
-        <Button variant="ghost" type="button" onClick={onCancel}>
-          {t("Cancel")}
-        </Button>
-      </div>
     </div>
   );
 }
 
-function DoneView({ summary, onClose }: { summary: ImportSummary; onClose: () => void }) {
+function DoneView({ summary }: { summary: ImportSummary }) {
   const t = useT();
   return (
     <div className="flex flex-col gap-3 py-4">
@@ -913,11 +923,6 @@ function DoneView({ summary, onClose }: { summary: ImportSummary; onClose: () =>
           </ul>
         </details>
       ) : null}
-      <div className="flex justify-end">
-        <Button variant="primary" type="button" onClick={onClose}>
-          {t("Done")}
-        </Button>
-      </div>
     </div>
   );
 }

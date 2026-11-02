@@ -7,6 +7,8 @@ import { ModelSourceContext } from "../../src/features/sessions/ui/modelSource";
 import "../../src/features/connections/model/remoteCommands";
 import { registerHarness } from "../../src/integrations/harness/core/registry";
 import { rememberRemoteSession } from "../../src/features/connections/model/connections";
+import { notifyRemoteRecovered } from "../../src/features/connections/model/remoteHealth";
+import { setSessions as setStoredSessions } from "../../src/features/sessions/model/sessionsStore";
 import { remoteSessionActions } from "../../src/features/connections/model/remoteSessionActions";
 import { Button } from "../../src/shared/ui/Button";
 import {
@@ -92,11 +94,25 @@ const remoteProject = rememberRemoteProject(machine.environmentId, {
   name: "Managed session fixture",
 });
 if (query.has("remoteRewind")) rememberRemoteSession("remote-shell", original.id);
+if (query.has("remoteRecovery"))
+  setStoredSessions([{ ...original, id: "remote-shell", cwd: remoteProject.key, worktreeCwd: remoteProject.key }]);
 if (query.has("remoteCreate"))
   authoritative = { ...original, id: "not-created", blocks: [], workspaceId: undefined };
 let failApply = query.has("failApply");
+let recoveryBlocked = query.has("remoteRecovery");
+let workspacePathError = false;
 Object.assign(window, {
   rewindFixtureCalls: calls,
+  // Synthetic transport fault; no live Host or repository is contacted.
+  breakRemoteRecovery: () => {
+    recoveryBlocked = true;
+    notifyRemoteRecovered(machine.environmentId);
+  },
+  breakWorkspacePath: () => {
+    workspacePathError = true;
+    notifyRemoteRecovered(machine.environmentId);
+  },
+  repairWorkspacePath: () => { workspacePathError = false; },
   tryRemoteSend: () => remoteSessionActions("remote-shell")?.submit("Must wait for rewind", []),
   __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   __TAURI_INTERNALS__: {
@@ -159,6 +175,11 @@ Object.assign(window, {
       }
       if (command !== "remote_request") return null;
       calls.push({ method: args.method, params: args.params });
+      if (query.has("remoteRecovery")) {
+        if (args.method === "environment.describe" && args.fresh) recoveryBlocked = false;
+        if (recoveryBlocked && args.method !== "environment.describe")
+          throw new Error("RPC_WS_BLOCKED: Native Host connection requires updated authentication, identity or protocol");
+      }
       switch (args.method) {
         case "environment.describe":
           return {
@@ -177,6 +198,7 @@ Object.assign(window, {
                   "sessions.git-rewind.v1",
                   "sessions.git-rewind-undo.v1",
                   "sessions.draft",
+                  ...(query.has("remoteRecovery") ? ["sessions.queue"] : []),
                   "sessions.rewind",
                   ...(query.has("olderEditHost") ? [] : ["sessions.edit-from-here.v1"]),
                 ],
@@ -305,7 +327,19 @@ Object.assign(window, {
         case "projects.list":
           return [{ id: "project", cwd: original.cwd, name: "Rewind fixture" }];
         case "workspaces.get":
+          if (query.has("remoteRecovery")) {
+            if (workspacePathError) throw new Error("Host rejected request: Path is outside this machine’s projects");
+            return {
+              id: "workspace", revision, projectId: "project", repositoryId: "repo",
+              environmentId: machine.environmentId, owner: { kind: "session", id: original.id },
+              path: original.cwd, branchRef: "refs/heads/main", baseRef: "refs/heads/main",
+              baseCommit: "a".repeat(40), targetBranchRef: "refs/heads/main",
+              state: "active", directoryState: "present", lastActivityAt: 1, pinned: false,
+            };
+          }
           return { id: "workspace", revision, owner: { kind: "session", id: original.id } };
+        case "sessions.queue.get":
+          return { revision: 0, messages: [], status: "idle" };
         case "sessions.get":
           return {
             revision,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
@@ -20,6 +20,7 @@ export function RenameProjectFolderDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const invalid = folderRenameError(name);
+  const formId = useId();
   return (
     <Modal
       title={t("Rename folder")}
@@ -28,8 +29,26 @@ export function RenameProjectFolderDialog({
       onClose={() => {
         if (!busy) onClose();
       }}
+      footer={
+        <ModalActions>
+          <Button type="button" disabled={busy} onClick={onClose} variant="ghost">
+            {t("Cancel")}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={busy || !!invalid || name === basename(path)}
+            variant="primary"
+            loading={busy}
+            loadingLabel={t("Renaming…")}
+          >
+            {busy ? t("Renaming…") : t("Rename folder")}
+          </Button>
+        </ModalActions>
+      }
     >
       <form
+        id={formId}
         className="space-y-3 p-4"
         onSubmit={(event) => {
           event.preventDefault();
@@ -54,20 +73,6 @@ export function RenameProjectFolderDialog({
             setError(null);
           }}
         />
-        <ModalActions inline>
-          <Button type="button" disabled={busy} onClick={onClose} variant="ghost">
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="submit"
-            disabled={busy || !!invalid || name === basename(path)}
-            variant="primary"
-            loading={busy}
-            loadingLabel={t("Renaming…")}
-          >
-            {busy ? t("Renaming…") : t("Rename folder")}
-          </Button>
-        </ModalActions>
       </form>
     </Modal>
   );

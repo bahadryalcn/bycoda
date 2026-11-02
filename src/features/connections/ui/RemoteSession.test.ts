@@ -2988,6 +2988,67 @@ it("keeps the transcript on disconnect, shows one connection notice and reconnec
   expect(container.textContent).not.toContain("Earlier reply");
 });
 
+it("uses one connection recovery for blocked conversation and queue reads without replaying messages", async () => {
+  sharedQueueSupported = true;
+  hostQueue = {
+    messages: [
+      { id: "saved", text: "Retain the saved queue", attachments: [] },
+    ],
+    revision: 1,
+    status: "paused",
+  };
+  openExistingChat();
+  await renderRemoteProbe();
+  machineDown =
+    "RPC_WS_BLOCKED: Native Host connection requires updated authentication, identity or protocol";
+  await act(async () => notifyRemoteRecovered("env"));
+  await vi.waitFor(() =>
+    expect(remoteOverrides.sendBlockedReason).toContain(
+      "Could not load queued messages",
+    ),
+  );
+  expect(container.querySelector("[data-remote-data-state]")).toBeNull();
+  expect(container.textContent).not.toContain(
+    "Could not load queued messages. Sending is held",
+  );
+  expect(
+    [...container.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Retry",
+    ),
+  ).toHaveLength(0);
+  const reconnect = [...container.querySelectorAll("button")].filter(
+    (button) => button.textContent === "Reconnect",
+  );
+  expect(reconnect).toHaveLength(1);
+  machineDown = undefined;
+  await act(async () => reconnect[0].click());
+  await vi.waitFor(() =>
+    expect(remoteOverrides.sendBlockedReason).toBeUndefined(),
+  );
+  expect(
+    remoteOverrides.session?.queuedMessages?.map((row) => row.text),
+  ).toEqual(["Retain the saved queue"]);
+  expect(commands).toEqual([]);
+});
+
+it("keeps an independent queue-storage retry available beside a connection problem", async () => {
+  queueReadFailed = true;
+  machineDown = unreachable;
+  openExistingChat();
+  await renderRemoteProbe();
+  expect(container.textContent).toContain("queue storage unavailable");
+  expect(
+    [...container.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Retry",
+    ),
+  ).toHaveLength(1);
+  expect(
+    [...container.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Reconnect",
+    ),
+  ).toHaveLength(1);
+});
+
 it("refreshes without remounting the composer or clearing its draft", async () => {
   lazyHistorySupported = true;
   openExistingChat();

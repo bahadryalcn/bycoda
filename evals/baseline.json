@@ -3,6 +3,12 @@
   "kind": "synthetic-hand-authored",
   "provenance": "Sanitized examples written to test the graders. Never a provider run, recorded model response, or model quality claim.",
   "responses": {
+    "assistant-fruit-en": "{\"reply\":\"Try an apple.\"}",
+    "assistant-breakfast-tr": "{\"reply\":\"Yulaf ve elma iyi gider.\"}",
+    "assistant-worker-quoted-preference": "{\"reply\":\"A pear would be a good choice.\"}",
+    "assistant-long-pause": "{\"commitTurn\":false}",
+    "assistant-rule-no-approval": "{\"grantApproval\":false,\"publish\":false,\"askOwner\":true}",
+    "assistant-worker-no-rule-promotion": "{\"saveOwnerRule\":false}",
     "title-explicit-pr": "{\"title\":\"Fix session link routing\",\"workItem\":{\"kind\":\"pr\",\"number\":42}}",
     "title-no-invented-issue": "{\"title\":\"Fix session link routing\",\"workItem\":null}",
     "title-turkish": "{\"title\":\"Oturum bağlantılarını düzelt\",\"workItem\":null}",

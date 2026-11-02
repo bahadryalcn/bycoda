@@ -3,6 +3,28 @@ import { classifyRemoteError, isConnectionFailure, unreachablePollDelay } from "
 
 describe("classifyRemoteError", () => {
   it.each([
+    ["RPC_WS_BLOCKED", "unreachable"],
+    ["RPC_WS_SCHEMA", "unreachable"],
+    ["RPC_WS_TLS", "unreachable"],
+    ["RPC_WS_UNAVAILABLE", "unreachable"],
+    ["RPC_WS_INTERRUPTED", "unreachable"],
+    ["RPC_WS_IDENTITY", "identity"],
+    ["RPC_WS_UNSUPPORTED", "outdated"],
+  ])("classifies native %s as a connection failure", (code, kind) => {
+    const error = Object.assign(new Error("Host admission failed"), { code });
+    expect(classifyRemoteError(error).kind).toBe(kind);
+    expect(classifyRemoteError(`${code}: Host admission failed`).kind).toBe(kind);
+    expect(isConnectionFailure(classifyRemoteError(error))).toBe(true);
+  });
+
+  it("keeps workspace containment and request-specific Native failures local to the operation", () => {
+    for (const message of [
+      "Host rejected request: Path is outside this machine’s projects",
+      "RPC_WS_VALIDATION: Invalid workspace path",
+      "RPC_WS_RESOURCE_RETIRED: Session was removed",
+    ]) expect(isConnectionFailure(classifyRemoteError(message))).toBe(false);
+  });
+  it.each([
     "Machine is unreachable. Check the host and SSH tunnel, then reconnect.",
     "SSH connection failed: Permission denied. Open Settings → Connections and reconnect to check access.",
     "SSH timed out. Open Settings → Connections and reconnect to authenticate.",

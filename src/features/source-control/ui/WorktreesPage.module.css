@@ -166,7 +166,7 @@
   position: sticky;
   inset-block-start: 0;
   z-index: 1;
-  background: var(--ui-surface);
+  background: var(--color-background-base);
   padding-block: 8px;
 }
 .toolbar {

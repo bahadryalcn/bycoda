@@ -45,67 +45,24 @@
   min-inline-size: 0;
 }
 
-/* Visible state line: browser state, current page, in-flight work, limits. */
-.host-browser-panel > .host-browser-statusline {
-  order: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+/* Status dot left of the address field; its tooltip names the state. */
+.host-browser-toolbar > .host-browser-status {
   flex: none;
-  gap: 2px 12px;
-  min-block-size: 1.75rem;
-  padding: 2px 8px;
-  border-block-end: 1px solid var(--color-stroke);
-  background: var(--ui-surface-panel);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: var(--ui-leading-caption);
 }
 
-.host-browser-state-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  color: var(--color-content);
-  font-weight: 500;
-}
-
-.host-browser-state-dot {
-  inline-size: 6px;
-  block-size: 6px;
+.host-browser-status-dot {
+  inline-size: 8px;
+  block-size: 8px;
   border-radius: 50%;
-  background: var(--ui-text-muted);
+  background: var(--ui-tone-warning-solid);
 }
 
-.host-browser-statusline[data-browser-state="open"] .host-browser-state-dot {
+.host-browser-status-dot[data-tone="success"] {
   background: var(--ui-tone-success-solid);
 }
 
-.host-browser-statusline[data-browser-state="unavailable"] .host-browser-state-dot {
+.host-browser-status-dot[data-tone="danger"] {
   background: var(--ui-tone-danger-solid);
-}
-
-.host-browser-current-url {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  flex: 1 1 12rem;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-}
-
-.host-browser-current-label {
-  flex: none;
-  font-family: var(--font-sans, inherit);
-}
-
-.host-browser-restriction {
-  flex: 1 1 100%;
-  min-inline-size: 0;
 }
 
 .host-browser-control-status {
@@ -137,7 +94,6 @@
   padding: 0;
   gap: 0;
   border-radius: 0;
-  background: var(--ui-surface);
   overflow: hidden;
 }
 
@@ -212,7 +168,35 @@
   overflow-wrap: anywhere;
 }
 
-.host-browser-panel > :is(.host-browser-notice, .host-browser-error, .host-browser-setup) {
+.host-browser-panel > .host-browser-setup {
+  order: 2;
+  flex: none;
+  padding: 6px 10px;
+  margin: 0;
+  font-size: var(--ui-font-caption);
+}
+
+.host-browser-controls .host-browser-error {
+  max-block-size: 140px;
+  overflow: auto;
+  color: var(--ui-tone-danger-fg);
+  font-size: var(--ui-font-caption);
+}
+
+.host-browser-error summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.host-browser-error pre {
+  margin-block: 6px 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--color-content);
+  font: inherit;
+}
+
+.host-browser-setup {
   order: 2;
   flex: none;
   padding: 6px 10px;

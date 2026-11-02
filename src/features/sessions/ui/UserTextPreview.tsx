@@ -88,7 +88,7 @@ function TextCard({
       ))}
       {open ? (
         <Modal title={label} size="lg" onClose={dismiss}>
-          <div className="sticky top-0 z-1 flex flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-4 py-3">
+          <div className="sticky top-0 z-1 flex flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-4 py-3">
             {renderActions(dismiss, true)}
           </div>
           <pre

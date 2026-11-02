@@ -501,6 +501,11 @@ const CONNECTION_REFUSED: &str =
 fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
     const GIT_MUTATION: std::time::Duration = std::time::Duration::from_secs(450);
     match method {
+        // The isolated assistant reply adapter permits a 90 s model turn.
+        // Keep its durable request identity through that bounded operation.
+        "assistant.request" if params.get("op").and_then(Value::as_str) == Some("threads.send") => {
+            std::time::Duration::from_secs(120)
+        }
         // Interactive HTTP-only methods that a send, the composer or an open
         // pane awaits. A hung Host must not hold a native worker (and the user's
         // send) for the 30 s default; these reply in milliseconds when healthy.
@@ -1536,6 +1541,19 @@ fn remote_request_blocking(
         {
             check_remote_reply(guard, &method)?;
         }
+        // A reconnect probes over HTTP. Without retiring the blocked lane, a
+        // successful probe leaves every subsequent WebSocket read blocked.
+        // Only the explicit, successful probe for this saved identity can do
+        // this; ordinary polling, failed auth and another Host cannot reopen it.
+        if fresh == Some(true)
+            && method == "environment.describe"
+            && response.as_ref().is_ok_and(|descriptor| {
+                descriptor.get("environmentId").and_then(Value::as_str)
+                    == Some(machine.environment_id.as_str())
+            })
+        {
+            state.ws.retry_blocked_machine(&machine.id);
+        }
     }
     let result = response?;
     if method == "environment.describe"
@@ -2521,6 +2539,9 @@ fn supported_remote_method(method: &str) -> bool {
     matches!(
         method,
         "social.request"
+            | "assistant.request"
+            | "desktop.request"
+            | "desktop.helper.request"
             | "workspaces.prepare"
             | "workspaces.get"
             | "workspaces.list"
@@ -4130,6 +4151,35 @@ mod tests {
         for method in ["tasks.events.delete", "sprints.delete", "sprints.execute"] {
             assert!(!supported_remote_method(method), "{method}");
         }
+    }
+
+    #[test]
+    fn assistant_and_desktop_owner_routes_are_finite_and_not_shared_reads() {
+        for method in [
+            "assistant.request",
+            "desktop.request",
+            "desktop.helper.request",
+        ] {
+            assert!(supported_remote_method(method), "{method}");
+            assert!(!shareable_remote_read(method, &json!({})), "{method}");
+        }
+        for method in [
+            "assistant.exec",
+            "assistant.request.any",
+            "desktop.control.request",
+            "desktop.exec",
+            "desktop.helper.install",
+        ] {
+            assert!(!supported_remote_method(method), "{method}");
+        }
+        assert_eq!(
+            rpc_timeout("assistant.request", &json!({"op":"threads.send"})),
+            std::time::Duration::from_secs(120)
+        );
+        assert_eq!(
+            rpc_timeout("assistant.request", &json!({"op":"snapshot"})),
+            DEFAULT_RPC_TIMEOUT
+        );
     }
 
     #[test]

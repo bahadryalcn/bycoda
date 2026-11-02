@@ -330,7 +330,14 @@ it("shows an unavailable state and recovers through retry when the initial host 
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
   expect(container.textContent).toContain("Browser unavailable");
   expect(container.textContent).not.toContain("Checking browser…");
+  const status = container.querySelector(".host-browser-status-dot")!;
+  expect(status.getAttribute("data-tone")).toBe("danger");
+  // The status dot opens the controls, where the failed read can be retried.
+  await act(async () => button("Browser unavailable").click());
   await act(async () => button("Retry").click());
+  expect(container.querySelector(".host-browser-status-dot")!.getAttribute("data-tone")).toBe(
+    "warning",
+  );
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain("Browser closed");
 });

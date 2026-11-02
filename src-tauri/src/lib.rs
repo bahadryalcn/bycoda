@@ -13,7 +13,10 @@ pub mod control_cli;
 mod conversation_tools_bridge;
 mod cursor_store;
 mod debug_profile;
+mod desktop_control_window;
+mod assistant_presence;
 mod desktop_inbox_review;
+mod desktop_shortcut;
 mod external_editor;
 mod file_access;
 mod fs;
@@ -64,6 +67,7 @@ mod owned_process_job;
 mod package_smoke;
 mod pasteboard;
 mod pi_usage;
+mod presence;
 mod project_logo;
 mod provider_terminal_profiles;
 mod provider_usage;
@@ -393,7 +397,10 @@ pub fn run() {
                     window::QUICK_COMPOSER_GIT_LABEL,
                 ])
                 // The voice window keeps its own place; never restore it as a workspace.
-                .with_filter(|label| !voice_overlay::is_voice_overlay(label))
+                .with_filter(|label| {
+                    !voice_overlay::is_voice_overlay(label)
+                        && !desktop_control_window::is_indicator(label)
+                })
                 .build(),
         )
         .manage(harness::HarnessHost::new())
@@ -437,6 +444,11 @@ pub fn run() {
             checkpoint::init(app.handle())?;
             menu::install(app.handle())?;
             tray::install(app.handle())?;
+            desktop_shortcut::init(app.handle())?;
+            if !package_smoke::active() {
+                desktop_control_window::init(app.handle()).map_err(std::io::Error::other)?;
+                assistant_presence::init(app.handle()).map_err(std::io::Error::other)?;
+            }
             #[cfg(target_os = "macos")]
             {
                 quick_composer::init(app.handle())?;
@@ -601,6 +613,7 @@ pub fn run() {
             home_dir,
             path_environment,
             keep_awake::set_keep_awake,
+            presence::get_user_presence,
             notifications::notification_permission,
             notifications::request_notification_permission,
             notifications::show_notification,
@@ -828,6 +841,7 @@ pub fn run() {
             harness::harness_runtime_binary_paths,
             harness::harness_resolve_claude,
             harness::claude_mcp_list,
+            harness::codex_mcp_list,
             mcp::mcp_discover,
             mcp::mcp_add,
             harness::claude_mcp_add,
@@ -950,6 +964,14 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             menu::keybindings_set_overrides,
             native_language::native_language_set,
+            desktop_shortcut::desktop_shortcut_configure,
+            desktop_control_window::desktop_control_indicator_state,
+            assistant_presence::assistant_presence_state,
+            assistant_presence::assistant_presence_refresh,
+            assistant_presence::assistant_presence_set,
+            desktop_control_window::desktop_control_indicator_stop,
+            desktop_control_window::desktop_control_indicator_dismiss,
+            desktop_control_window::desktop_control_indicator_fit,
             #[cfg(target_os = "macos")]
             menu::autosave_set_enabled,
             open_new_window,
@@ -1127,6 +1149,10 @@ pub fn run() {
             window::request_quit(handle);
         }
         tauri::RunEvent::Exit => {
+            assistant_presence::shutdown(handle);
+            if handle.try_state::<desktop_control_window::State>().is_some() {
+                desktop_control_window::shutdown(handle);
+            }
             if let Some(host) = handle.try_state::<harness::HarnessHost>() {
                 host.shutdown_provider_output();
             }

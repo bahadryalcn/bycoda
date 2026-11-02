@@ -244,6 +244,18 @@ test("native CDP admission rejects a concrete stale stamp without accepting its 
   );
 });
 
+test("native admission skips same-origin utility windows even with matching build identity", async () => {
+  const utility = {url:()=>"http://127.0.0.1:19001/desktop-control.html",evaluate:async()=>assert.fail("A utility window cannot certify main readiness")};
+  const main = {url:()=>"http://127.0.0.1:19001/",evaluate:async()=>nativeIdentity};
+  assert.equal(await waitForNativePage({contexts:()=>[{pages:()=>[utility,main]}]},"http://127.0.0.1:19001",nativeIdentity),main);
+});
+
+test("one unresponsive main candidate cannot consume the whole discovery deadline", async () => {
+  const pending = {url:()=>"http://127.0.0.1:19001/",evaluate:()=>new Promise(()=>{})};
+  const main = {url:()=>"http://127.0.0.1:19001/index.html",evaluate:async()=>nativeIdentity};
+  assert.equal(await waitForNativePage({contexts:()=>[{pages:()=>[pending,main]}]},"http://127.0.0.1:19001",nativeIdentity,{timeoutMs:500,candidateTimeoutMs:10,pollMs:1}),main);
+});
+
 test("native CDP discovery and an unresponsive IPC both have bounded unavailable outcomes", async () => {
   await assert.rejects(
     waitForNativePage({ contexts: () => [] }, "http://127.0.0.1:19001", nativeIdentity, {

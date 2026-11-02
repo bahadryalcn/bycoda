@@ -1,6 +1,7 @@
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Surface } from "../../shared/ui/Surface";
 import { Badge } from "../../shared/ui/Badge";
+import { BadgeList } from "../../shared/ui/BadgeList";
 import { Alert } from "../../shared/ui/Alert";
 import { NumberField } from "../../shared/ui/NumberField";
 import { TextField } from "../../shared/ui/TextField";
@@ -480,12 +481,20 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
       </dl>
       {current.descendants.length ? (
         <>
-          <p className="host-tool-muted">
-            {t("Child processes")}:{" "}
-            {current.descendants
-              .map((process) => `${process.name} (PID ${process.pid})`)
-              .join(", ")}
-          </p>
+          <div className="host-tool-muted flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0">{t("Child processes")}:</span>
+            <BadgeList
+              label={t("Child processes")}
+              size="xs"
+              max={4}
+              className="min-w-0"
+              items={current.descendants.map((process) => ({
+                id: `${process.pid}`,
+                label: process.name,
+                title: `${process.name} (PID ${process.pid})`,
+              }))}
+            />
+          </div>
           <label className="host-tool-check">
             <Checkbox
               disabled={disabled || intent === "restart"}
@@ -497,7 +506,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         </>
       ) : null}
       {intent === "restart" && !current.server.managed ? (
-        <Surface variant="plain" className="dev-server-form">
+        <Surface variant="outline" className="dev-server-form">
           <p className="host-tool-muted">
             {t("Define the exact command and working directory to restart this external server.")}
           </p>
@@ -895,7 +904,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         </Alert>
       ) : null}
       {showStart ? (
-        <Surface as="section" variant="plain">
+        <Surface as="section" variant="outline">
         <form
           ref={startForm}
           tabIndex={-1}
@@ -972,7 +981,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         </Surface>
       ) : null}
       {startResult?.conflict ? (
-        <Surface as="section" variant="plain" className="dev-server-conflict" aria-label={t("Port conflict")}>
+        <Surface as="section" variant="outline" className="dev-server-conflict" aria-label={t("Port conflict")}>
           <Alert tone="danger" role="alert">
             {t("Port {p0} is already in use.", { p0: startResult.conflict.port })}
           </Alert>

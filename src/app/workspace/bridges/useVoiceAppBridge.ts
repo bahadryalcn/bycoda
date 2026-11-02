@@ -1,4 +1,6 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useSyncExternalStore } from "react";
+import { loadTabGroupLabels, subscribeTabGroupLabels } from "../../../features/workspace/model/tabGroups";
+import { voiceProjectNames } from "../../../features/voice/model/voiceProjectNames";
 import { useVoiceWorkspaceActions } from "./useVoiceWorkspaceActions";
 import type {
   VoiceSessionCreate,
@@ -14,7 +16,6 @@ import {
 import {
   getSession,
   listSessionsByProject,
-  upsertSession,
 } from "../../../features/sessions/data/sessionStore";
 import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
@@ -22,16 +23,13 @@ import type { QuickLaunch } from "../../../features/quick-composer/model/quickCo
 import { featureHost } from "../../../features/connections/model/hostFeatureClient";
 import {
   remoteShellBoundTo,
-  rememberRemoteSession,
   sessionAccessForMachine,
 } from "../../../features/connections/model/connections";
 import {
   sessionsRef as currentSessions,
   setSessions,
 } from "../../../features/sessions/model/sessionsStore";
-import { isRemoteProvider } from "../../../features/connections/model/protocol";
 import type { VoiceWorkspaceSession } from "../../../features/voice/model/voiceWorkspaceActions";
-import { t } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
 
 type Deps = {
@@ -67,11 +65,6 @@ export function registerVoiceToolSessionSource(source: Session): void {
   });
 }
 
-function withSources(sessions: readonly Session[], sources: readonly Session[]): Session[] {
-  const ids = new Set(sessions.map((session) => session.id));
-  return [...sessions, ...sources.filter((session) => !ids.has(session.id))];
-}
-
 /** These sources are ordinary unsent records, never running coding turns. */
 export function createVoiceToolSessionOwner(ports: {
   visible(path: string): boolean;
@@ -104,70 +97,23 @@ export function createVoiceToolSessionOwner(ports: {
     }
     return entry.result!;
   };
+
 }
 
+const projectLabelSnapshot = () => JSON.stringify(loadTabGroupLabels());
+
 export function useVoiceAppBridge(deps: Deps) {
+  const labelSnapshot = useSyncExternalStore(subscribeTabGroupLabels, projectLabelSnapshot, projectLabelSnapshot);
+  const projects = useMemo(() => voiceProjectNames(deps.projects), [deps.projects, labelSnapshot]);
   const latest = useRef(deps);
   latest.current = deps;
-  const [sources, setSources] = useState<Session[]>([]);
-  const sourceRefs = useRef<Session[]>(sources);
   const listedSessions = useRef(new Map<string, VoiceWorkspaceSession>());
-  sourceRefs.current = sources;
   const assistantSession = useMemo(() => newDefaultSession(deps.projectPath), [deps.projectPath]);
   const visible = (path: string) =>
     latest.current.projects.some((entry) => sameProjectPath(entry.path, path));
   const assertVisible = (path: string) => {
     if (!visible(path)) throw new Error("Voice project is locked or unavailable.");
   };
-  const owner = useRef<ReturnType<typeof createVoiceToolSessionOwner> | null>(null);
-  if (!owner.current)
-    owner.current = createVoiceToolSessionOwner({
-      visible,
-      create: async (path, id) => {
-        assertVisible(path);
-        const session = newDefaultSession(path);
-        session.id = id;
-        session.title = t("Voice companion");
-        if (isRemoteProjectPath(path)) {
-          const { machine, projectId } = await featureHost(path, "voice.tools.v1");
-          assertVisible(path);
-          if (!isRemoteProvider(session.harness))
-            throw new Error("Voice provider is unavailable on this Host.");
-          const access = sessionAccessForMachine(machine.id);
-          const receipt = await access.dispatch({
-            type: "create",
-            commandId: id,
-            sessionId: id,
-            projectId,
-            workspaceMode: "current",
-            harness: session.harness,
-            model: session.model,
-            modelSettings: session.modelSettings,
-            runtimeMode: session.runtimeMode,
-          });
-          const sync = await access.sync(receipt.sessionId);
-          assertVisible(path);
-          if (!("kind" in sync) || sync.kind !== "snapshot")
-            throw new Error("Voice management session could not be verified.");
-          // This is the normal remote shell binding, not a writable Native copy.
-          rememberRemoteSession(receipt.sessionId, receipt.sessionId);
-          return { ...sync.value.session, cwd: path };
-        }
-        // A draft user record makes the source durable without submitting any message.
-        session.blocks = [{ id: crypto.randomUUID(), role: "user", text: "", draft: true }];
-        const saved = await upsertSession(session);
-        if (!saved) throw new Error("Voice management session could not be saved.");
-        return session;
-      },
-      created: (session) => {
-        registerVoiceToolSessionSource(session);
-        sourceRefs.current = [
-          ...sourceRefs.current.filter((entry) => entry.id !== session.id),
-          session,
-        ];
-        setSources(sourceRefs.current);
-      },
-    });
   const onCreate = async (request: VoiceSessionCreate) => {
     assertVisible(request.projectPath);
     const choice = newDefaultSession(request.projectPath);
@@ -233,8 +179,8 @@ export function useVoiceAppBridge(deps: Deps) {
     return id;
   };
   const workspace = useVoiceWorkspaceActions({
-    getProjects: () => latest.current.projects,
-    getSessions: () => withSources(currentSessions.current, sourceRefs.current),
+    getProjects: () => voiceProjectNames(latest.current.projects),
+    getSessions: () => currentSessions.current,
     getActiveSessionId: () => latest.current.activeId,
     getProjectPath: () => latest.current.projectPath,
     resolveSession: async (id) => {
@@ -267,13 +213,9 @@ export function useVoiceAppBridge(deps: Deps) {
   });
   return {
     workspace,
-    projects: deps.projects,
+    projects,
     projectPath: deps.projectPath,
-    sessions: withSources(
-      deps.sessions,
-      sources.filter((entry) => visible(entry.cwd)),
-    ),
-    ensureToolSession: owner.current,
+    sessions: deps.sessions,
     assistantSession,
   };
 }

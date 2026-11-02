@@ -1,4 +1,6 @@
 import type { VoiceVisualState } from "./voiceVisualState";
+import type { VoiceChoice } from "./voiceChoices";
+import type {VoiceJobReviewState} from "./voiceJobs";
 
 /**
  * Floating voice window protocol.
@@ -9,7 +11,7 @@ import type { VoiceVisualState } from "./voiceVisualState";
  * ownership between webviews.
  */
 export type VoiceOverlayState = {
-  status: "idle" | "connecting" | "live";
+  status: "idle" | "connecting" | "live" | "reconnecting" | "sleeping" | "ready";
   visualState: VoiceVisualState;
   statusText: string;
   title: string;
@@ -19,14 +21,21 @@ export type VoiceOverlayState = {
   transcript: string;
   message: string;
   error: string;
+  notice?:string;
+  manualTurnEnd?:boolean;
   /** Text describing local or cloud audio handling, shown before starting. */
   privacy: string;
+  choice?: VoiceChoice | null;
+  jobReview?:VoiceJobReviewState|null;
 };
 
 export const VOICE_OVERLAY_COMMANDS = [
   "sync",
   "start",
   "toggleMute",
+  "finishTurn",
+  "manualTurnEnd",
+  "automaticTurnEnd",
   "silence",
   "disconnect",
   "dock",
@@ -37,6 +46,8 @@ export type VoiceOverlayCommand = (typeof VOICE_OVERLAY_COMMANDS)[number];
 export const VOICE_OVERLAY_STATE_EVENT = "voice_overlay_state";
 export const VOICE_OVERLAY_LEVEL_EVENT = "voice_overlay_level";
 export const VOICE_OVERLAY_COMMAND_EVENT = "voice_overlay_command";
+export const VOICE_OVERLAY_CHOICE_EVENT = "voice_overlay_choice";
+export const VOICE_OVERLAY_JOB_EVENT = "voice_overlay_job_review";
 /** Emitted by the native side when the overlay window is gone for any reason. */
 export const VOICE_OVERLAY_CLOSED_EVENT = "voice_overlay_closed";
 export const VOICE_OVERLAY_PREFIX = "voice-overlay-";
@@ -67,9 +78,9 @@ export function pointerOutsideWindow(x: number, y: number, width: number, height
 
 /** Latest spoken line for one-line summaries: reply first, then the user's words. */
 export function voiceSummaryLine(
-  state: Pick<VoiceOverlayState, "message" | "transcript" | "error" | "statusText">,
+  state: Pick<VoiceOverlayState, "message" | "transcript" | "error" | "statusText" | "notice">,
 ) {
-  return (state.error || state.message || state.transcript || state.statusText)
+  return (state.error || state.notice || state.message || state.transcript || state.statusText)
     .replace(/\s+/g, " ")
     .trim();
 }

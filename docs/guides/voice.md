@@ -5,38 +5,124 @@ this device. When disabled, no voice launcher or companion is shown in chat.
 Disabling it unmounts the companion, cancels pending speech and side replies,
 and releases the microphone and local engines without stopping coding work.
 
-Open the speech bubble at the bottom right, select a session, then choose
-**Start voice**. The default path requires no voice API key. Microphone access is
-requested only after start. Closing the companion releases the microphone and
-its local recognizer without stopping coding work.
+Open the speech bubble at the bottom right. Before the first conversation,
+complete the assistant setup: choose its name, spoken language, provider and
+voice, verify playback and a microphone sentence, and review the autonomy budget.
+Existing device settings prefill setup; the assistant has no default name.
+The microphone opens only after you choose **Test microphone**, **Start voice**
+or **Talk**. Closing voice never stops coding work.
 
-## Companion identity
+## Connection recovery and idle sleep
 
-The first time you open the companion, it offers to make it yours: its name,
-your name, how it addresses you (by name, casual or formal), its tone, the tasks
-it focuses on and your own ground rules. Every choice has ready options and also
-accepts your own words. **Skip customization** keeps the default companion and
-the question is not asked again; closing the window without a choice asks again
-next time. Change or reset it later in **Settings → Chat → Voice companion →
-Companion identity**.
+Cloud voice retries temporary connection failures with fresh credentials, at most
+five consecutive times (1, 2, 5, 10 and 30 seconds). A stable minute restores
+the retry budget. Sign-in, billing and microphone permission failures require
+your action. **Disconnect voice** cancels any scheduled reconnect. Escape closes
+menus without disconnecting voice.
 
-The identity is stored on this device and applies to local, Grok Voice and
-OpenAI Realtime conversations. Cloud conversations pick up a change at the next
-**Start voice**. It shapes how the companion talks, never what it may do:
-approvals, work submission, targets and safety rules stay unchanged.
+Voice sleeps after ten minutes without input by default. Change **Sleep voice
+when I'm idle** in Voice settings; **Never** disables idle sleep. On Windows,
+screen lock also puts voice to sleep. Returning shows **Ready. Microphone is
+off.** Press **Talk** to reopen it. Sleep and disconnect do not stop coding work.
+Native idle and lock detection currently supports Windows. Browser sessions can
+observe activity within their page only; unsupported native platforms cannot
+establish computer-wide presence for automatic reconnection.
 
-## Memory
+Recovery restores up to six recent text turns. It does not replay tool calls or
+generate a new response automatically. A temporary drop can resume a microphone
+you already opened; returning after idle sleep always requires **Talk**.
 
-The companion keeps up to 40 short notes about you on this device between
-conversations. Say "remember that I prefer short answers" or "forget that" in
-any conversation mode; it confirms only after the note was actually saved or
-removed. It may also save a clearly stated lasting preference. It never saves
-content read from sessions, drafts or tool results, or secrets.
+## Identity, language and memory
 
-See, add and delete notes in **Settings → Chat → Voice companion → Memory →
-Manage**, or turn memory off there. Notes are sent to the conversation's provider
-with each turn as background facts, never as instructions or permission. Cloud
-conversations see notes added in Settings at the next **Start voice**.
+Identity and communication rules belong to the Host assistant profile. **Customize**
+opens its Room settings; **Memory → Manage** opens the shared Memory tab. **Voice
+style** keeps the device's tone and task-style choices. Names and rules grant no
+operation authority and cannot approve external sends or bypass permission gates.
+
+Spoken language defaults to **Auto**, independently of the interface language.
+A chosen language overrides detection; OpenAI transcription receives its language
+code and local playback keeps that language. Voice previews let you hear the
+configured provider without opening the microphone. Auto remembers the last supported
+language from accepted owner speech, using actual recognition metadata or a confident
+text match. Ambiguous words preserve the previous language. Room briefings use that
+saved language; if none is known, speak once or choose a language before listening.
+Voice quality and accent
+still require listening on the intended provider and device.
+
+Say “remember that I prefer short answers” or ask to forget a saved note. Explicit
+corrections such as “never mention bananas to me” save an owner rule with the exact
+accepted quote. Session, worker and tool text cannot create owner rules. Saves
+and removals are acknowledged only after the Host confirms them; forgetting requires
+the exact saved entry and your confirmation. Disabled memory
+rejects new saves. Existing local notes and persona rules migrate once, retaining
+the original keys as backup. Rules can apply everywhere, only to voice or only
+to coding sessions. A pending rule save keeps its original request and offers Retry;
+an uncertain save does not change speech settings before acknowledgement.
+
+A “don't interrupt me” rule acknowledged through voice enables **I decide when my
+turn ends** and holds spoken progress updates. Long pauses then keep listening;
+choose **Finish turn** to transcribe and send the captured turn. Silence and Smart
+Turn cannot finish it automatically. Long silent intervals are omitted from the
+capture buffer. At its two-minute audio limit, capture waits for Finish turn and
+shows a notice rather than answering automatically. While voice is connected,
+the full companion and floating window expose **Wait until I finish** in automatic
+mode; the compact companion labels it **Wait for me**. Choose it to keep listening
+until you decide to respond. It then becomes **Finish turn**, which submits the
+captured speech.
+The adjacent **Turn ending** menu offers **Wait until I finish** and **Automatic
+replies**. The same choice remains available as **I decide when my turn ends**
+in Voice settings, independently of the saved rule.
+Pause length, barge-in and progress announcements remain separate settings.
+
+If the provider cannot confirm cleanup of an unrecognized audio fragment, Voice
+stops capture and asks you to start it again with **Talk**. It does not resend that
+fragment automatically. A brief background sound can produce a recognition candidate
+even before you have spoken; rejected candidates must never start a reply.
+
+## Conversation history and choices
+
+Project scope is the default; **Global** switches to the cross-project thread.
+A selected session remains the captured focus for each accepted spoken turn.
+Transcript text is stored in Host threads; microphone recordings are not stored.
+Recovery uses the thread summary and six recent text turns without replaying tools.
+A failed save retains its request identity and offers **Save conversation**.
+Canonical project identity is checked before a project thread opens. A remote project
+uses its selected Host's assistant history when that Host supports it. Machine,
+environment, project and thread identity remain fixed through delayed writes and
+retries; remote history never passes through the local Room cache. An unavailable
+or older Host leaves the original transcript pending with **Save conversation**;
+voice and tools remain available. Global history stays on the local Host and never
+attaches a remote session ID. Session links require an actual Host session binding;
+a legacy native-only conversation can still save text without a guessed link.
+Later navigation cannot retarget a pending save or tool call.
+
+Global recovery includes only history with verified project contributors that
+remain visible from the captured turn. Older entries without that information and
+unscoped Global summaries are omitted from model context. Fresh speech still works
+when history is unavailable. Locking or hiding a captured project closes the
+microphone and clears the active voice context; use **Talk** to start again after
+changing scope. Pending transcript saves and job-review drafts remain retained.
+
+Ask for assistant job status or to pause, resume or stop a specific job. Voice
+controls keep the captured project scope and current visible-project restrictions.
+Deleting a job or assistant notebook entry requires an exact target/version and a
+confirmation card; a changed target must be reviewed again. Owner conversation
+history is not deletable through these tools. An explicit “stop all assistant work”
+pauses assistant work immediately without closing voice or stopping unrelated manual
+conversations. Unknown operation outcomes remain visible instead of being replayed.
+
+Clickable choice cards accept option labels, spoken numbers/ordinals and keyboard
+selection. Escape dismisses the card without disconnecting voice. Choices never
+replace application approval dialogs. Multi-job requests can show an editable
+review with a project per job; nothing is created until **Start jobs**. Accepted
+jobs keep running independently. After an uncertain result, retry checks existing
+Host jobs and retains the original request keys.
+
+When returning after sleep, the assistant may read the Host's welcome-back
+briefing through speakers only, according to its conversation-start preference.
+Quiet hours, Away/Do not disturb and held announcements prevent this. **Talk**
+still opens the microphone; otherwise the output-only session sleeps after a
+minute. Explicit Disconnect stays off.
 
 ## Visual style and compact mode
 
@@ -78,7 +164,7 @@ compact/expand actions. Its close button (**Return voice companion to the app**)
 puts the companion back in bycoda and brings the app forward; voice keeps running.
 Use **Disconnect voice** to end the conversation. Drag its visual or empty surface to move it;
 focus the visual and use arrow keys for keyboard movement. It stays inside the
-screen's work area. Choosing a session, voice options and Global/Session scope
+screen's work area. Choosing a session, voice options and Global/Project scope
 remain in the app panel.
 
 The microphone, recognition, speech playback and session tools stay in the bycoda
@@ -322,11 +408,19 @@ bycoda (see [Floating outside the app](#floating-outside-the-app)).
 
 ## Global voice management
 
+Project discovery uses the name shown in the project rail and keeps the original
+folder name as an alias. Renaming a project changes its display metadata, never
+its registered ID or execution directory. Voice can look up either name; when
+names repeat, it must ask which full project path you mean. Actions still target
+the exact visible, unlocked project path, including its original remote computer.
+Host project lists reuse names from the latest privacy-checked desktop heartbeat;
+when that metadata is unavailable they retain the registered project names.
+
 Choose **Global** in the floating companion to manage visible, unlocked projects
 and their sessions. The companion can start without an active coding session.
 The existing session picker still supplies the default target for phrases such
-as "this session". Choose **Session** to keep tool targets within the captured
-session and project. Changing tabs does not retarget a spoken turn already being processed.
+as "this session". Choose **Project** to keep tool targets within the captured
+project. Changing tabs does not retarget a spoken turn already being processed.
 
 The assistant discovers the existing Conversation Tools, social tools and runtime
 log tools. You can ask it to take a note, create or start a task, inspect a goal
@@ -337,9 +431,10 @@ accounts, permissions and existing operation support. A newer Host with
 `voice.tools.v1` is required. The assistant explains unavailable capabilities;
 it does not claim an unconnected service is ready.
 
-Project tools use a separate, ordinary management session created on demand with
-the owner's default provider settings. It is saved without starting a coding
-turn. Opening, creating, renaming, closing, archiving or deleting a coding session
+Supported project tools use the verified assistant thread without creating a coding
+session. Working-copy and focused desktop operations still require an actual selected
+session. Remote Host tools use an actual session on that Host until environment-bound
+assistant threads are available. Opening, creating, renaming, closing, archiving or deleting a coding session
 uses the normal workspace lifecycle. A background pane close preserves sibling
 panes. Historical remote sessions may need opening before a lifecycle change.
 
@@ -350,7 +445,36 @@ is uncertain, the assistant must inspect its state rather than blindly retry.
 Owner-only settings, sign-in, permissions and operations without an exposed API
 remain in the existing UI; voice can open supported panels/settings sections.
 
+Optional native computer use exposes `desktop.status`, `desktop.snapshot` and
+`desktop.act`. The owner configures the verified helper and app allowlist in
+**Computer use** settings. Observations and element refs belong to the captured
+conversation and expire after five minutes. App content remains untrusted data.
+When the owner is present, every input requires the native approval dialog for the
+exact app, window, element, action and text. This needs a real focused session.
+Headless actions can run while the owner is away; locked or unknown desktop state
+blocks input. Physical pointer/keyboard input additionally needs the owner's presence,
+the physical-input setting and exact operation approval. **Stop computer use** stays
+an owner control; the assistant cannot enable, resume or stop control itself.
+Input attempts and outcomes go to History and the daily note using a stable operation
+identity. These records contain app/action and delivery metadata, never snapshot trees
+or typed text. Notebook delivery retries cannot repeat the computer action.
+
 ## Reading unsent messages and attachments
+
+To give the voice assistant a file:
+
+1. Open the coding conversation that should hold the file.
+2. In its message composer, choose **+ → Upload file** and select the file.
+   Leave it attached without sending the message.
+3. Expand the voice companion, choose **Project**, and select that conversation
+   in the session picker.
+4. Ask, for example, “Read the PDF attached to this conversation and summarize it.”
+
+The **Global** voice panel currently has no file picker or standalone attachment
+inbox. Global voice can read attachments from its captured active conversation,
+or another explicitly identified, visible conversation. Selecting the intended
+conversation before speaking avoids an ambiguous target. A conversation whose
+provider does not accept attachments disables **Upload file**.
 
 You can ask about text, images or files still in a session's composer. Reading
 does not send or clear the draft, change focus, finish IME composition or start

@@ -1,6 +1,6 @@
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Modal } from "../../../shared/ui/Modal";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { formatCooldown, WRONG_PASSWORD_DELAY_MS } from "../model/attemptThrottle";
 import { lockCooldownMs, type VerifyResult } from "../model/groupLock";
 import { PasswordField } from "./PasswordField";
@@ -76,6 +76,7 @@ export function PasswordPromptDialog({
 }: Props) {
   useLocale();
   const input = useRef<HTMLInputElement>(null);
+  const formId = useId();
   const alive = useRef(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,13 +124,37 @@ export function PasswordPromptDialog({
 
   const message =
     cooldown.remainingMs > 0
-      ? t("Too many wrong passwords. Try again in {p0}.", { p0: formatCooldown(cooldown.remainingMs) })
+      ? t("Too many wrong passwords. Try again in {p0}.", {
+          p0: formatCooldown(cooldown.remainingMs),
+        })
       : error;
 
   return (
     // The running check cannot be cancelled, so the dialog stays until it finishes.
-    <Modal title={title} description={description} size="sm" onClose={busy ? () => {} : onClose}>
-      <form onSubmit={submit} className="flex flex-col gap-3 p-4">
+    <Modal
+      title={title}
+      description={description}
+      size="sm"
+      onClose={busy ? () => {} : onClose}
+      footer={
+        <ModalActions>
+          <Button type="button" onClick={onClose} variant="ghost" disabled={busy}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={busy || cooldown.remainingMs > 0}
+            variant="primary"
+            tone={danger ? "danger" : "neutral"}
+            loading={busy}
+          >
+            {submitLabel}
+          </Button>
+        </ModalActions>
+      }
+    >
+      <form id={formId} onSubmit={submit} className="flex flex-col gap-3 p-4">
         <PasswordField
           label={t("Lock password")}
           ref={input}
@@ -142,20 +167,6 @@ export function PasswordPromptDialog({
             {message}
           </Alert>
         ) : null}
-        <div className="flex justify-end gap-2">
-          <Button type="button" onClick={onClose} variant="ghost" disabled={busy}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="submit"
-            disabled={busy || cooldown.remainingMs > 0}
-            variant="primary"
-            tone={danger ? "danger" : "neutral"}
-            loading={busy}
-          >
-            {submitLabel}
-          </Button>
-        </div>
       </form>
     </Modal>
   );

@@ -50,6 +50,8 @@ beforeEach(async () => {
   await act(async () => root.render(createElement(Sidebar, props)));
   const card = container.querySelector<HTMLElement>('[data-session-card="target"]')!;
   await act(async () => card.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })));
+  expect(document.querySelector('[role="menuitem"][aria-haspopup="menu"]')?.textContent).toBe("Copy");
+  await act(async () => action("Copy").click());
 });
 
 afterEach(() => {
@@ -67,7 +69,8 @@ function action(label: string) {
 
 describe("Sidebar session references", () => {
   it.each(["Copy session link", "Copy Markdown reference"])("copies %s through the proven owner and retains existing ID copy", async (label) => {
-    expect(action("Copy session ID")).toBeTruthy();
+    expect(action("Harness session ID").disabled).toBe(true);
+    expect(action("bycoda session ID").disabled).toBe(false);
     await act(async () => action(label).click());
     const expected = localSessionLinkFields(locator, props.sessions[0].title);
     expect(copyText).toHaveBeenCalledExactlyOnceWith(label === "Copy session link" ? expected.link : expected.markdownReference);

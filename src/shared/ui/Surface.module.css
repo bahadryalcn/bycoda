@@ -29,6 +29,10 @@
   background: transparent;
   border-color: var(--ui-pane-border);
 }
+.surface[data-variant="quiet"] {
+  background: var(--ui-surface-quiet);
+  border-color: var(--ui-pane-border);
+}
 .surface[data-variant="inset"] {
   /* --ui-surface-inset is a requested theme role (a well below the canvas in light themes);
      until it exists the muted field tone is used. */

@@ -269,7 +269,6 @@
   min-block-size: 0;
   min-inline-size: 0;
   overflow: hidden;
-  background: var(--ui-surface);
 }
 
 /* The document canvas is the reading ground. */

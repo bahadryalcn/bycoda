@@ -29,6 +29,22 @@ const machine = {
   ssh: { target: "me@mini", remotePort: 3774 },
 };
 
+it("pins workspace dispatch to the selected environment before the saved machine can change", async () => {
+  adoptRemoteMachineInventory([machine]);
+  let finish!: (value: unknown) => void;
+  invoke.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const request = remoteRequest("m1", "workspace.run", {
+    command: "write_text_file", args: { path: "C:/project/draft.txt", content: "draft" },
+  }).catch((error: unknown) => error);
+  expect(invoke).toHaveBeenCalledWith("remote_request", expect.objectContaining({
+    machineId: "m1", expectedEnvironmentId: "env", method: "workspace.run",
+  }));
+  adoptRemoteMachineInventory([{ ...machine, environmentId: "replacement" }]);
+  finish("old-host-result");
+  expect(String(await request)).toContain("Connection changed");
+  expect(invoke.mock.calls.filter(([command]) => command === "remote_request")).toHaveLength(1);
+});
+
 it.each([
   [
     "devices.preview",

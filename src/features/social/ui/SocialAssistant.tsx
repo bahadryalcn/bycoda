@@ -2,6 +2,7 @@ import { useContext, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
@@ -239,23 +240,33 @@ export function SocialAssistant({
           }
           onChange={(event) => setRequest(event.target.value)}
         />
-        <p className="social-assistant-context" aria-label={t("What the AI will use")}>
+        <div className="social-assistant-context" role="group" aria-label={t("What the AI will use")}>
           <span>
             {t("Computer")}: <strong>{machineLabel}</strong>
           </span>
           <span>
             {t("Project")}: <strong>{projectName}</strong>
           </span>
-          <span>
-            {t("Accounts")}:{" "}
-            <strong>
-              {accountIds.length ? accountIds.map(accountName).join(", ") : t("None selected")}
-            </strong>
+          <span className="flex min-w-0 flex-[1_1_16rem] items-center gap-1">
+            <span className="shrink-0">{t("Accounts")}:</span>
+            {accountIds.length ? (
+              <BadgeList
+                label={t("Accounts")}
+                size="xs"
+                className="min-w-0 flex-1"
+                items={accountIds.map((id, index) => ({
+                  id: `${index}:${id}`,
+                  label: accountName(id),
+                }))}
+              />
+            ) : (
+              <strong>{t("None selected")}</strong>
+            )}
           </span>
           <span>
             {t("Text model")}: <strong>{agentLabel}</strong>
           </span>
-        </p>
+        </div>
         {!program ? (
           <details className="social-assistant-scope">
             <summary>{t("Change project or accounts")}</summary>

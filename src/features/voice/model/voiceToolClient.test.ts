@@ -20,6 +20,46 @@ describe("voice tool client", () => {
     request.mockReset();
     remoteId.mockReset();
   });
+  it("unwraps data only after the exact captured causal disclosure guard accepts every contributor", async () => {
+    const receive = vi.fn(),
+      captured = {
+        cwd: "C:/project",
+        threadId: "canonical-thread",
+        causalContext: { id: "captured-context", receive },
+      },
+      call = {
+        family: "conversation" as const,
+        action: "notes.list",
+        input: {},
+        requestId: "exact-tool-request",
+      };
+    request.mockResolvedValue({
+      value: { notes: ["canonical-data"] },
+      voiceContext: { id: "captured-context" },
+      voiceDisclosure: { projectIds: ["visible"] },
+    });
+    expect(await callVoiceTool(captured, call)).toEqual({ notes: ["canonical-data"] });
+    expect(receive).toHaveBeenCalledWith(
+      { id: "captured-context" },
+      { projectIds: ["visible"] },
+      "exact-tool-request",
+    );
+    expect(request.mock.calls[0][3]).toMatchObject({
+      causalContextId: "captured-context",
+      threadId: "canonical-thread",
+      requestId: "exact-tool-request",
+    });
+    receive.mockImplementation(() => {
+      throw new Error("private contributor");
+    });
+    await expect(callVoiceTool(captured, call)).rejects.toThrow("private contributor");
+    request.mockResolvedValue({ notes: ["unwrapped legacy data"] });
+    await expect(callVoiceTool(captured, call)).rejects.toThrow("could not be verified");
+    request.mockClear();
+    await expect(callVoiceTool({ ...captured, cwd: target.cwd }, call)).rejects.toThrow();
+    await expect(callVoiceTool(captured, { ...call, requestId: undefined })).rejects.toThrow();
+    expect(request).not.toHaveBeenCalled();
+  });
 
   it("resolves an adopted remote shell to its owning Host session", async () => {
     remoteId.mockReturnValue("actual-host-id");
@@ -29,6 +69,22 @@ describe("voice tool client", () => {
       { family: "conversation", action: "files.list", input: {} },
     );
     expect(request.mock.calls[0][3].sessionId).toBe("actual-host-id");
+  });
+  it("never forwards a local assistant thread to the remote Host", async () => {
+    request.mockResolvedValue({ state: "completed" });
+    remoteId.mockReturnValue("actual-host-id");
+    await callVoiceTool(
+      { cwd: target.cwd, sessionId: "adopted", threadId: "local-only" },
+      { family: "conversation", action: "notes.read", input: { id: "n" } },
+    );
+    expect(request.mock.calls[0][3]).toMatchObject({ sessionId: "actual-host-id" });
+    expect(request.mock.calls[0][3]).not.toHaveProperty("threadId");
+    await expect(
+      callVoiceTool(
+        { cwd: target.cwd, threadId: "local-only" },
+        { family: "conversation", action: "notes.read", input: { id: "n" } },
+      ),
+    ).rejects.toThrow("Open a session");
   });
 
   it("binds discovery to the captured project/session and does not reuse another authority's catalog", async () => {
@@ -82,6 +138,29 @@ describe("voice tool client", () => {
     expect(request).toHaveBeenCalledTimes(1);
     await expect(discoverVoiceTools({ cwd: "" })).rejects.toThrow("Choose a project");
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps remote history reads on the captured project and preserves a failed remote result", async () => {
+    remoteId.mockReturnValue("captured-host-session");
+    request.mockRejectedValue(new Error("Captured remote Host is unavailable."));
+    await expect(
+      callVoiceTool(target, {
+        family: "conversation",
+        action: "sessions.read",
+        input: { id: "history-target" },
+      }),
+    ).rejects.toThrow("Captured remote Host is unavailable");
+    expect(request).toHaveBeenCalledExactlyOnceWith(
+      target.cwd,
+      "voice.tools.v1",
+      "voice.tools.call",
+      {
+        sessionId: "captured-host-session",
+        family: "conversation",
+        action: "sessions.read",
+        input: { id: "history-target" },
+      },
+    );
   });
 
   it("rejects invalid envelopes before issuing a request", async () => {

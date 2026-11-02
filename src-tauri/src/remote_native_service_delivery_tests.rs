@@ -917,7 +917,7 @@ fn saved_issuer_change_blocks_consumption_and_changed_finish_bytes_conflict() {
 }
 
 #[test]
-fn restored_format_reconciliation_records_result_without_recreating_consumer() {
+fn restored_prettier_format_reconciliation_records_result_without_recreating_consumer() {
     let params = json!({"command":"format_text_file","args":{"path":"file.ts","source":"const x=1","cursorOffset":3}});
     let (done, finished) = mpsc::channel();
     let server = serve(move |listener| async move {
@@ -938,7 +938,7 @@ fn restored_format_reconciliation_records_result_without_recreating_consumer() {
             &apply,
             recorded(
                 &identity,
-                json!({"formatted":"const x = 1;","cursorOffset":4}),
+                json!({"formatted":"const x = 1;","cursorOffset":4,"comments":[]}),
             ),
         )
         .await;
@@ -960,7 +960,7 @@ fn restored_format_reconciliation_records_result_without_recreating_consumer() {
             &status,
             recorded(
                 &status["params"],
-                json!({"formatted":"const x = 1;","cursorOffset":4}),
+                json!({"formatted":"const x = 1;","cursorOffset":4,"comments":[]}),
             ),
         )
         .await;

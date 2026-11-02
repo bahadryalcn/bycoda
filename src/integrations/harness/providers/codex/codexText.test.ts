@@ -1,8 +1,12 @@
 import { processConstructions } from "../processConstruction.testSupport";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { runCodexTextPrompt } from "./codexText";
+import { CODEX_UTILITY_DISABLED_FEATURES } from "./codexUtilityIsolation";
 
-const state = vi.hoisted(() => ({ streamed: false, starts: [] as Record<string, unknown>[] }));
+const state = vi.hoisted(() => ({
+  streamed: false,
+  starts: [] as Record<string, unknown>[],
+}));
 vi.mock("../../../../features/sessions/model/models", () => ({
   modelsFor: () => [{ nativeId: "available-model" }],
 }));
@@ -20,7 +24,9 @@ vi.mock("../../core/jsonRpc", () => ({
   JsonRpcClient: class {
     constructor(
       private readonly handle: import("../../core/child").ChildProcessHandle,
-      private handlers: { onNotification: (method: string, params: unknown) => void },
+      private handlers: {
+        onNotification: (method: string, params: unknown) => void;
+      },
     ) {
       processConstructions.client(handle);
     }
@@ -39,16 +45,32 @@ vi.mock("../../core/jsonRpc", () => ({
     close() {}
     async notify() {}
     async request(method: string, params: Record<string, unknown>) {
+      if (method === "config/read")
+        return {
+          config: {
+            mcp_servers: {},
+            web_search: "disabled",
+            features: Object.fromEntries(
+              CODEX_UTILITY_DISABLED_FEATURES.map((name) => [name, false]),
+            ),
+          },
+        };
+      if (method === "mcpServerStatus/list")
+        return { data: [], nextCursor: null };
       if (method === "thread/start") return { thread: { id: "text-thread" } };
       if (method === "turn/start") {
         state.starts.push(params);
         const text = '{"subject":"Fix commit generation","body":""}';
         if (state.streamed)
-          this.handlers.onNotification("item/agentMessage/delta", { delta: text });
+          this.handlers.onNotification("item/agentMessage/delta", {
+            delta: text,
+          });
         this.handlers.onNotification("item/completed", {
           item: { id: "message", type: "agentMessage", text },
         });
-        this.handlers.onNotification("turn/completed", { turn: { status: "completed" } });
+        this.handlers.onNotification("turn/completed", {
+          turn: { status: "completed" },
+        });
       }
       return {};
     }

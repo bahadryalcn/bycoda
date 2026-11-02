@@ -5,6 +5,7 @@ import { NativeSelect } from "../../../shared/ui/Select";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { MoreHorizontal, Pause, Pencil, Play } from "../../../shared/ui/icons";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -297,11 +298,14 @@ export function CampaignDetail({
       <header className="social-record-heading social-content-record">
         <div>
           <h2>{selected.name}</h2>
-          <span className="social-muted">
-            {selected.projectIds
-              .map((id) => projects.find((project) => project.id === id)?.name || t("Project"))
-              .join(", ")}
-          </span>
+          <BadgeList
+            label={t("Projects")}
+            size="xs"
+            items={selected.projectIds.map((id, index) => ({
+              id: `${index}:${id}`,
+              label: projects.find((project) => project.id === id)?.name || t("Project"),
+            }))}
+          />
         </div>
         <StatusBadge status={state} label={stateLabel(selected)} />
         <div className="social-content-record-actions">
@@ -539,13 +543,16 @@ export function CampaignDetail({
             )}
           </label>
         ) : null}
-        <div className="social-inline-meta">
+        <div className="social-inline-meta min-w-0">
           <small>{t("Publishes to")}</small>
-          {targetAccounts.map((target) => (
-            <Badge key={target.id} appearance="subtle">
-              {target.label}
-            </Badge>
-          ))}
+          <BadgeList
+            label={t("Publishes to")}
+            className="min-w-0 flex-1 basis-0"
+            items={targetAccounts.map((target, index) => ({
+              id: `${index}:${target.id}`,
+              label: target.label,
+            }))}
+          />
         </div>
       </section>
       <section

@@ -190,7 +190,7 @@
   max-block-size: 120px;
   overflow-y: auto;
   font-size: var(--ui-font-caption);
-  background: var(--ui-surface);
+  border-block-end: 1px solid var(--ui-pane-border);
   color: var(--ui-tone-danger-fg);
   padding: 6px 10px;
 }

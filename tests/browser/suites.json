@@ -14,6 +14,23 @@
   },
   "suites": [
     {
+      "id": "assistant-room",
+      "config": "tests/browser/playwright.assistant-room.config.ts",
+      "files": ["assistant-room.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.assistant-room.config.ts",
+        "mode": "dev",
+        "path": "/tests/browser/assistant-room.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["assistant-room.e2e.ts"]
+        }
+      ]
+    },
+    {
       "id": "tooltip-policy",
       "config": "tests/browser/tooltip-policy.playwright.config.ts",
       "files": ["tooltip-policy.spec.ts"],

@@ -1,3 +1,4 @@
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { providerLabel } from "../../../shared/lib/providerLabel";
@@ -6,7 +7,7 @@ import { CircleDot, GitPullRequest, X } from "../../../shared/ui/icons";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { InboxComposerCard } from "../model/githubTasks";
 import { InboxProviderMark } from "./InboxProviderMark";
-import { InboxLabel } from "./InboxPresentation";
+import { inboxLabelItems } from "./InboxPresentation";
 
 type Props = {
   card: InboxComposerCard;
@@ -19,11 +20,17 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
   const kindLabel =
     card.kind === "pr" ? (card.provider === "gitlab" ? "Merge request" : "Pull request") : "Issue";
   const serviceLabel = providerLabel(card.provider);
+  const hasLabels = card.labels.length > 0;
 
   return (
     <div className="px-3 pt-2">
       <ActionHost className="flex min-w-0 items-start gap-1">
+        {/* The label badges hold their own "+N" button, which cannot sit inside the open button:
+            with labels the source line is a sibling laid over it (clicks outside the badges fall
+            through to the button) and the button keeps the line's height. */}
+        <div className="relative min-w-0 flex-1">
         <Button
+          data-action-primary=""
           variant="item"
           layout="stacked"
           align="start"
@@ -38,7 +45,7 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
           onClick={() => {
             if (card.url) void openUrl(card.url);
           }}
-          className="min-w-0 flex-1"
+          className="w-full min-w-0"
         >
           <span className="line-clamp-2 wrap-anywhere text-ui-secondary font-medium leading-snug text-(--ui-tone-neutral-fg)">
             {card.title}
@@ -50,23 +57,25 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
               {kindLabel} · {card.identifier}
             </span>
           </span>
-          <span className="mt-1 flex min-w-0 items-center gap-2">
-            {card.source ? (
-              <span className="min-w-0 flex-1 truncate text-ui-micro text-(--ui-text-secondary)">
-                {card.source}
-              </span>
-            ) : (
-              <span className="min-w-0 flex-1" />
-            )}
-            {card.labels.length > 0 ? (
-              <span className="flex min-w-0 shrink-0 items-center gap-1">
-                {card.labels.map((label) => (
-                  <InboxLabel key={label.name} label={label} compact />
-                ))}
-              </span>
-            ) : null}
-          </span>
+          {hasLabels ? (
+            <span aria-hidden="true" className="mt-1 block h-4" />
+          ) : card.source ? (
+            <span className="mt-1 min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
+              {card.source}
+            </span>
+          ) : null}
         </Button>
+        {hasLabels ? (
+          <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-ui-micro text-(--ui-text-secondary)">
+              {card.source}
+            </span>
+            <span className="pointer-events-auto min-w-0 max-w-[60%] shrink-0 [&>div>ul]:justify-end">
+              <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(card.labels)} />
+            </span>
+          </div>
+        ) : null}
+        </div>
         {onDismiss ? (
           <InlineAction
             label={t("Remove {p0} {p1}", { p0: kindLabel, p1: card.identifier })}

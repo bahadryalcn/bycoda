@@ -11,6 +11,9 @@ import {
   type NativeDeviceMethod,
 } from "./native-devices";
 import { z } from "zod";
+import { AssistantRequestSchema, AssistantResponseSchema } from "./assistant";
+import { DesktopControlRequestSchema, DesktopControlResponseSchema } from "./desktop-control";
+import { DesktopHelperRequestSchema, DesktopHelperResponseSchema } from "./desktop-helper";
 import { hostRpcWireMethod } from "./aliases";
 import { ModelsListParamsSchema, ModelsListResultSchema } from "./models";
 import {
@@ -398,6 +401,9 @@ const nativeDeliveryOperation = (method: NativeDeliveryMethod): HostRpcMethodDef
   responseTimeoutMs: 30_000,
 });
 export const HOST_RPC_METHODS = Object.freeze({
+  "assistant.request": workflowOperation("assistant.v1", AssistantRequestSchema, AssistantResponseSchema),
+  "desktop.request": workflowOperation("desktop.control.v1", DesktopControlRequestSchema, DesktopControlResponseSchema),
+  "desktop.helper.request":workflowOperation("desktop.control.v1",DesktopHelperRequestSchema,DesktopHelperResponseSchema),
   "native.delivery.epochs.open": nativeDeliveryOperation("native.delivery.epochs.open"),
   "native.delivery.epochs.status": nativeDeliveryOperation("native.delivery.epochs.status"),
   "native.delivery.epochs.compact": nativeDeliveryOperation("native.delivery.epochs.compact"),
@@ -450,6 +456,10 @@ export const HOST_RPC_METHODS = Object.freeze({
   "native.services.conversation.desktop.take": nativeServiceOperation(
     "native.services.conversation.desktop.take",
   ),
+  "native.services.desktop.stop":nativeServiceOperation("native.services.desktop.stop"),
+  "native.services.assistant.presence.get":nativeServiceOperation("native.services.assistant.presence.get"),
+  "native.services.assistant.presence.set":nativeServiceOperation("native.services.assistant.presence.set"),
+  "native.services.desktop.status":nativeServiceOperation("native.services.desktop.status"),
   "native.services.conversation.desktop.finish": nativeServiceOperation(
     "native.services.conversation.desktop.finish",
   ),

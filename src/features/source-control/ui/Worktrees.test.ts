@@ -560,7 +560,7 @@ it.each([
       ),
     );
     const trigger = container.querySelector<HTMLButtonElement>("button")!;
-    expect(trigger.classList.contains("-ml-1.5")).toBe(true);
+    expect(trigger.classList.contains("-ml-1.5")).toBe(false);
     expect(trigger.getAttribute("data-button-variant")).toBe("ghost");
     expect(trigger.getAttribute("data-button-hierarchy")).toBe("ghost");
     expect(trigger.textContent?.includes("Worktree")).toBe(executionCwd !== "/repo");

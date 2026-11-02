@@ -90,6 +90,7 @@ import type {
 } from "../model/session";
 
 import { HARNESSES, RUNTIME_MODES } from "../model/session";
+import { assistantSessionManagement,sessionMessageAuthor } from "../model/sessionProvenance";
 
 import {
   recoverTaggedOrchestrationProposals,
@@ -99,6 +100,7 @@ import {
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
 
 export type SessionSummary = {
+  managedBy?:Session["managedBy"];
   /** Optional actual Native write locator, never a FULL/application receipt. */
   nativeWriteId?: string;
   issue?: "retrying" | "failed";
@@ -131,6 +133,7 @@ export type SessionSummary = {
 };
 
 type SessionRecord = {
+  managedBy?:Session["managedBy"];
   transcriptRevision?: number;
   orchestrationLeadId?: string;
   id: string;
@@ -162,6 +165,7 @@ type SessionRecord = {
 };
 
 type SessionUpsertPayload = {
+  managedBy?:Session["managedBy"];
   id: string;
   cwd: string;
   harness: string;
@@ -217,6 +221,7 @@ function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks">
   const linkedWorkItem = sanitizeLinkedWorkItem(session.linkedWorkItem);
   const rewindHistory = sanitizeRewindHistory(session.rewindHistory);
   return {
+    ...(assistantSessionManagement(session.managedBy)?{managedBy:assistantSessionManagement(session.managedBy)}:{}),
     id: session.id,
     cwd: normalizeProjectPath(session.cwd),
     harness: session.harness,
@@ -1762,6 +1767,8 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
     role: block.role,
     text: block.text,
   };
+  const author=block.role==="user"?sessionMessageAuthor(block.author):undefined;
+  if(author)next.author=author;
   if (block.attachments?.length) {
     next.attachments = block.attachments.map(persistableAttachment);
   }
@@ -2233,8 +2240,10 @@ function sanitizeTaskList(value: unknown): TaskListMeta | null {
 
 function normalizeSummary(summary: SessionSummary): SessionSummary {
   const linkedWorkItem = sanitizeLinkedWorkItem(summary.linkedWorkItem);
+  const {managedBy:rawManagement,...rest}=summary;
+  const managedBy=assistantSessionManagement(rawManagement);
   return {
-    ...summary,
+    ...rest,...(managedBy?{managedBy}:{}),
     harness: asHarness(summary.harness),
     runtimeMode: asRuntimeMode(summary.runtimeMode),
     ...(summary.providerSessionId ? { providerSessionId: summary.providerSessionId } : {}),
@@ -2265,6 +2274,7 @@ function recordToSession(record: SessionRecord): Session {
   // Removed Gemini CLI sessions continue in a fresh Antigravity conversation.
   const legacyGemini = record.harness === LEGACY_GEMINI;
   return {
+    ...(assistantSessionManagement(record.managedBy)?{managedBy:assistantSessionManagement(record.managedBy)}:{}),
     id: record.id,
     cwd: record.cwd,
     harness: asHarness(record.harness),

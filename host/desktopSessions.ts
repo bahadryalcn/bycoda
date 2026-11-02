@@ -9,6 +9,7 @@ import type {
   RemoteProvider,
 } from "../src/features/connections/model/protocol";
 import type { Block, Session } from "../src/features/sessions/model/session";
+import { assistantSessionManagement } from "../src/features/sessions/model/sessionProvenance";
 import { DesktopLive } from "./desktopLive";
 import { AsyncHostNotes } from "./host-notes-async";
 import { isHostNotesAdmissionFault, type HostNotesDatabaseFactory } from "./host-notes-admission";
@@ -463,13 +464,13 @@ export class DesktopSessions {
       ${optional("has_user_message", "1")}, ${optional("pinned", "0")},
       ${optional("linked_work_item_json")}, ${optional("provider_account_id")},
       ${optional("is_draft", "0")}, ${optional("inbox_ask")}, ${optional("adopted_base")},
-      ${optional("pending_context_replay")}
+      ${optional("pending_context_replay")}, ${optional("assistant_management_json")}
       FROM ${transcriptView && !meta ? "session_transcripts" : "sessions"} WHERE ${where}`
       : `SELECT id, cwd, harness, model, runtime_mode, title,
       provider_session_id, created_at, updated_at,
       ${optional("archived", "0")}, ${optional("worktree_cwd")},
       ${optional("has_user_message", "1")}, ${optional("pinned", "0")},
-      ${optional("linked_work_item_json")}, ${optional("is_draft", "0")}
+      ${optional("linked_work_item_json")}, ${optional("is_draft", "0")}, ${optional("assistant_management_json")}
       FROM sessions${coverIndex(db)} WHERE ${where}`;
     // The partial index on `inbox_ask IS NOT NULL` is tiny; only those rows read
     // the table.
@@ -555,6 +556,7 @@ export class DesktopSessions {
   private summaryOf({ row, inFlight }: Found, projectId: string): HostSessionSummary {
     const updatedAt = Number(row.updated_at);
     return {
+      ...(assistantSessionManagement(parse(row.assistant_management_json))?{managedBy:assistantSessionManagement(parse(row.assistant_management_json))}:{}),
       projectId,
       revision: updatedAt,
       status: inFlight ? "running" : "idle",
@@ -1310,6 +1312,7 @@ export class DesktopSessions {
     // The transcript this desktop last agreed on with the host; an older app has no column.
     const adoptedBase = parseHead(parse(row.adopted_base));
     const session: Omit<Session, "blocks"> = {
+      ...(assistantSessionManagement(parse(row.assistant_management_json))?{managedBy:assistantSessionManagement(parse(row.assistant_management_json))}:{}),
       id: String(row.id),
       harness: String(row.harness) as Session["harness"],
       model: String(row.model ?? ""),
@@ -1331,6 +1334,7 @@ export class DesktopSessions {
     };
     return {
       session,
+      ...(session.managedBy?{managedBy:session.managedBy}:{}),
       ...(row.block_revisions
         ? { blockRevisions: row.block_revisions as Record<string, number> }
         : {}),

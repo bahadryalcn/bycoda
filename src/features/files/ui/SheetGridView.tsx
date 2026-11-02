@@ -73,7 +73,7 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
       style={fitContent ? { height: headerHeight + grid.rowCount * rowHeight, maxHeight: "min(560px,60dvh)" } : undefined}
     >
       {grid.truncated ? (
-        <div className="shrink-0 border-b border-stroke bg-(--ui-surface-muted) px-3 py-1 text-ui-micro text-[var(--ui-text-secondary)]">
+        <div className="shrink-0 border-b border-stroke px-3 py-1 text-ui-micro text-[var(--ui-text-secondary)]">
           {t("Showing the first ")}
           {formatInteger(grid.rowCount)}
           {t(" of")} {formatInteger(grid.totalRows)}
@@ -141,7 +141,7 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
           <div
             role="row"
             aria-rowindex={1}
-            className="sticky top-0 z-2 flex border-b border-stroke bg-(--ui-surface) text-(--ui-text-secondary)"
+            className="sticky top-0 z-2 flex border-b border-stroke bg-(--color-background-base) text-(--ui-text-secondary)"
             style={{
               height: headerHeight,
               width,
@@ -152,7 +152,7 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
               role="columnheader"
               aria-colindex={1}
               aria-label={t("Row")}
-              className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--ui-surface)"
+              className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--color-background-base)"
               style={{ width: rowHeaderWidth }}
             />
             {grid.columns.map((label, column) => (
@@ -190,7 +190,7 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
                   <div
                     role="rowheader"
                     aria-colindex={1}
-                    className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--ui-surface) text-right text-(--ui-text-secondary) tabular-nums"
+                    className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--color-background-base) text-right text-(--ui-text-secondary) tabular-nums"
                     style={{
                       width: rowHeaderWidth,
                       lineHeight: `${rowHeight}px`,

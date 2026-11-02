@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -56,7 +57,7 @@ import {
   inboxStatusMark,
   InboxPerson,
   InboxProjectPicker,
-  InboxLabel,
+  inboxLabelItems,
   CiRepairProps,
 } from "./InboxPresentation";
 import { InboxDescriptionSummary, InboxPrChangesGlance } from "./InboxPrOverview";
@@ -416,13 +417,11 @@ export function InboxDetail({
                     </Badge>
                   ) : null}
                 </div>
-                {item.labels.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {item.labels.map((label) => (
-                      <InboxLabel key={label.name} label={label} />
-                    ))}
-                  </div>
-                ) : null}
+                <BadgeList
+                  label={t("Labels")}
+                  rows={2}
+                  items={inboxLabelItems(item.labels)}
+                />
                 {!panel && relatedSessions.length > 0 ? (
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
                     <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)">

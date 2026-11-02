@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Terminal } from "@xterm/xterm";
 
 type FakeAddon = {
@@ -33,7 +33,7 @@ vi.mock("@xterm/addon-webgl", () => ({
   },
 }));
 
-import { createTerminalWebgl } from "./terminalWebgl";
+import { createTerminalWebgl, WEBGL_IDLE_DROP_MS } from "./terminalWebgl";
 
 // Everything a PTY bridge hangs off the terminal. The renderer adapter must
 // never touch any of it: it only loads/drops render resources.
@@ -252,5 +252,88 @@ describe("terminal WebGL renderer adapter", () => {
       await adapter.load();
       expect(loadAddon).toHaveBeenCalledOnce();
     });
+  });
+  describe("delayed drop", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("keeps the renderer through a quick hide/show and drops it after the grace period", async () => {
+      vi.useFakeTimers();
+      const { term, loadAddon, pty } = fakeTerminal();
+      let visible = true;
+      const adapter = createTerminalWebgl(term, () => visible);
+      await adapter.load();
+      const [addon] = webgl.addons;
+
+      // Quick toggles reuse the same context.
+      for (let i = 0; i < 5; i++) {
+        visible = false;
+        adapter.dropSoon();
+        vi.advanceTimersByTime(WEBGL_IDLE_DROP_MS / 2);
+        visible = true;
+        await adapter.load();
+      }
+      vi.advanceTimersByTime(WEBGL_IDLE_DROP_MS * 2);
+      expect(addon.dispose).not.toHaveBeenCalled();
+      expect(loadAddon).toHaveBeenCalledOnce();
+
+      visible = false;
+      adapter.dropSoon();
+      vi.advanceTimersByTime(WEBGL_IDLE_DROP_MS);
+      expect(addon.dispose).toHaveBeenCalledOnce();
+      expectNoPtyTraffic(pty);
+    });
+
+    it("does not drop a terminal that is visible again when the timer fires", async () => {
+      vi.useFakeTimers();
+      const { term } = fakeTerminal();
+      let visible = true;
+      const adapter = createTerminalWebgl(term, () => visible);
+      await adapter.load();
+
+      visible = false;
+      adapter.dropSoon();
+      visible = true;
+      vi.advanceTimersByTime(WEBGL_IDLE_DROP_MS);
+      expect(webgl.addons[0].dispose).not.toHaveBeenCalled();
+    });
+
+    it("dispose cancels a pending drop and releases once", async () => {
+      vi.useFakeTimers();
+      const { term } = fakeTerminal();
+      let visible = true;
+      const adapter = createTerminalWebgl(term, () => visible);
+      await adapter.load();
+
+      visible = false;
+      adapter.dropSoon();
+      adapter.dispose();
+      vi.advanceTimersByTime(WEBGL_IDLE_DROP_MS);
+      expect(webgl.addons[0].dispose).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("frees the attached WebGL context when the renderer is dropped", async () => {
+    const { term } = fakeTerminal();
+    const loseContext = vi.fn();
+    const gl = { getExtension: vi.fn(() => ({ loseContext })) };
+    const existing = { getContext: vi.fn(() => null) };
+    const glCanvas = { getContext: vi.fn(() => gl) };
+    let canvases: unknown[] = [existing];
+    Object.assign(term, { element: { querySelectorAll: () => canvases } });
+    (term.loadAddon as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      canvases = [existing, glCanvas];
+    });
+    const adapter = createTerminalWebgl(term, () => true);
+    await adapter.load();
+
+    expect(existing.getContext).not.toHaveBeenCalled();
+    adapter.drop();
+    expect(webgl.addons[0].dispose).toHaveBeenCalledOnce();
+    expect(gl.getExtension).toHaveBeenCalledWith("WEBGL_lose_context");
+    expect(loseContext).toHaveBeenCalledOnce();
+    adapter.drop();
+    expect(loseContext).toHaveBeenCalledOnce();
   });
 });

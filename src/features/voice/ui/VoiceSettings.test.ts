@@ -44,6 +44,15 @@ async function setup(enabled = true) {
   root = createRoot(container);
   await act(async () => root!.render(createElement(VoiceSettings)));
 }
+it("retains the saved automatic pause while disabling its control in manual mode",async()=>{
+  saveVoiceSettings({...loadVoiceSettings(),manualTurnEnd:false,manualTurnEndRevision:9,turnEndSilence:4});
+  await setup();
+  const manual=container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="I decide when my turn ends"]')!;
+  expect(manual).not.toBeNull();await act(async()=>manual.click());
+  expect(loadVoiceSettings()).toMatchObject({manualTurnEnd:true,manualTurnEndRevision:10,turnEndSilence:4});
+  expect(container.querySelector('[data-setting-id="voice-turn-silence"] [disabled]')).not.toBeNull();
+  await act(async()=>manual.click());expect(loadVoiceSettings()).toMatchObject({manualTurnEnd:false,manualTurnEndRevision:11,turnEndSilence:4});
+});
 async function advance(ms = 501) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);

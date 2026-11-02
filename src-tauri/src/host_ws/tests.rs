@@ -1376,6 +1376,99 @@ fn hello_identity_mismatch_blocks_reconnect_and_dispatch() {
 }
 
 #[test]
+fn explicit_retry_reopens_only_the_blocked_machine_without_replaying_requests() {
+    let server = Server::spawn(|listener| async move {
+        let mut stale = accept(&listener).await;
+        hello(&mut stale, &["projects.list"], "different.host").await;
+        drop(stale);
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &["projects.list"], "host.1").await;
+        for expected_id in ["recovered.read", "healthy.read"] {
+            let request = next(&mut socket).await;
+            // The broker deliberately uses private wire IDs. Distinct results
+            // prove that only these new callers, in order, reached the Host.
+            assert_eq!(request["method"], "projects.list");
+            result(&mut socket, &request, project_list(expected_id)).await;
+        }
+    });
+    let broker = HostWsBroker::default();
+    let route = server.route();
+    let (tx, rx) = mpsc::channel();
+    broker
+        .attach(
+            &route,
+            "window.a",
+            Arc::new(move |event| {
+                let _ = tx.send(event);
+            }),
+        )
+        .unwrap();
+    let first = broker
+        .request(
+            &route,
+            "window.a",
+            "projects.list",
+            json!({}),
+            RequestOptions {
+                request_id: Some("blocked.read".into()),
+                ..RequestOptions::default()
+            },
+        )
+        .unwrap_err();
+    assert_eq!(first.code, "RPC_WS_BLOCKED");
+    loop {
+        if matches!(rx.recv_timeout(Duration::from_secs(2)).unwrap(),
+            NativeEvent::State { phase, .. } if phase == "blocked")
+        {
+            break;
+        }
+    }
+    broker.retry_blocked_machine("another.machine");
+    let still_blocked = broker
+        .request(
+            &route,
+            "window.b",
+            "projects.list",
+            json!({}),
+            RequestOptions::default(),
+        )
+        .unwrap_err();
+    assert_eq!(still_blocked.code, "RPC_WS_BLOCKED");
+    assert_eq!(still_blocked.generation, first.generation);
+    broker.retry_blocked_machine("machine.1");
+    let recovered = broker
+        .request(
+            &route,
+            "window.b",
+            "projects.list",
+            json!({}),
+            RequestOptions {
+                request_id: Some("recovered.read".into()),
+                ..RequestOptions::default()
+            },
+        )
+        .unwrap();
+    assert_ne!(Some(recovered.generation), first.generation);
+    assert_eq!(recovered.result, project_list("recovered.read"));
+    broker.retry_blocked_machine("machine.1");
+    let healthy = broker
+        .request(
+            &route,
+            "window.a",
+            "projects.list",
+            json!({}),
+            RequestOptions {
+                request_id: Some("healthy.read".into()),
+                ..RequestOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(healthy.generation, recovered.generation);
+    assert_eq!(healthy.result, project_list("healthy.read"));
+    broker.shutdown();
+}
+
+#[test]
 fn missing_hello_capability_allows_only_predispatch_negotiation() {
     let server = Server::spawn(|listener| async move {
         let mut socket = accept(&listener).await;

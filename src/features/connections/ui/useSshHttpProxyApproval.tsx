@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -61,7 +61,58 @@ function ProxyApprovalDialog({
     onResult(value);
   };
   return (
-    <Modal title={t("HTTP proxy authentication")} onClose={() => finish(null)} size="sm">
+    <Modal
+      title={t("HTTP proxy authentication")}
+      onClose={() => finish(null)}
+      size="sm"
+      footer={
+        <ModalActions>
+          <Button disabled={busy} onClick={() => finish(null)}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            label={
+              mode === "basic" ? t("Approve this operation") : t("Continue without authentication")
+            }
+            disabled={busy || (mode === "basic" && (!consent || !valid))}
+            onClick={() => {
+              if (locked.current) return;
+              if (mode === "anonymous") {
+                finish(undefined);
+                return;
+              }
+              if (!consent || !valid || !username.current || !password.current) return;
+              locked.current = true;
+              setBusy(true);
+              setError("");
+              void approveSshHttpProxy(
+                request,
+                username.current.value,
+                password.current.value,
+                !secure,
+              )
+                .then((approval) => {
+                  if (mounted.current && !settled.current) finish(approval.ticketId);
+                  else void revokeSshHttpProxyApproval(approval.ticketId).catch(() => {});
+                })
+                .catch((reason) => {
+                  if (mounted.current) setError(String(reason));
+                })
+                .finally(() => {
+                  locked.current = false;
+                  if (mounted.current) {
+                    clear();
+                    setBusy(false);
+                  }
+                });
+            }}
+          >
+            {mode === "basic" ? t("Approve this operation") : t("Continue without authentication")}
+          </Button>
+        </ModalActions>
+      }
+    >
       <div className="flex min-w-0 flex-col gap-3 p-4">
         <div className="text-ui-caption">
           <p className="break-all font-medium">
@@ -172,51 +223,6 @@ function ProxyApprovalDialog({
             )}
           </p>
         )}
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button disabled={busy} onClick={() => finish(null)}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="primary"
-            label={
-              mode === "basic" ? t("Approve this operation") : t("Continue without authentication")
-            }
-            disabled={busy || (mode === "basic" && (!consent || !valid))}
-            onClick={() => {
-              if (locked.current) return;
-              if (mode === "anonymous") {
-                finish(undefined);
-                return;
-              }
-              if (!consent || !valid || !username.current || !password.current) return;
-              locked.current = true;
-              setBusy(true);
-              setError("");
-              void approveSshHttpProxy(
-                request,
-                username.current.value,
-                password.current.value,
-                !secure,
-              )
-                .then((approval) => {
-                  if (mounted.current && !settled.current) finish(approval.ticketId);
-                  else void revokeSshHttpProxyApproval(approval.ticketId).catch(() => {});
-                })
-                .catch((reason) => {
-                  if (mounted.current) setError(String(reason));
-                })
-                .finally(() => {
-                  locked.current = false;
-                  if (mounted.current) {
-                    clear();
-                    setBusy(false);
-                  }
-                });
-            }}
-          >
-            {mode === "basic" ? t("Approve this operation") : t("Continue without authentication")}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

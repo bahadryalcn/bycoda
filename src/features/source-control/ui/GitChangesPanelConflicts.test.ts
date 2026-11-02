@@ -341,7 +341,7 @@ describe("operation banner", () => {
 });
 
 describe("committing with conflicts", () => {
-  it("is blocked with compact feedback and file details in the tooltip", async () => {
+  it("is blocked without repeating the banner; the reason stays on the Commit button", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({
         files: [file("staged.ts", { staged: true, unstaged: false })],
@@ -356,13 +356,8 @@ describe("committing with conflicts", () => {
       setter.call(textarea, "message");
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-      "Resolve 2 conflicts before committing",
-    );
-    expect(container.querySelector('[role="alert"]')?.getAttribute("title")).toContain(
-      "a.ts, b.ts",
-    );
-    expect(button("Commit")!.disabled).toBe(true);
+    expect(container.textContent).not.toContain("conflicts before committing");
+    expect(button("Commit")!.getAttribute("aria-disabled")).toBe("true");
   });
 });
 

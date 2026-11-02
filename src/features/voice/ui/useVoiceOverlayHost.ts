@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import {
   VOICE_OVERLAY_CLOSED_EVENT,
   VOICE_OVERLAY_COMMAND_EVENT,
+  VOICE_OVERLAY_CHOICE_EVENT,
+  VOICE_OVERLAY_JOB_EVENT,
   VOICE_OVERLAY_LEVEL_EVENT,
   VOICE_OVERLAY_STATE_EVENT,
   closeVoiceOverlay,
@@ -10,6 +12,8 @@ import {
   type VoiceOverlayCommand,
   type VoiceOverlayState,
 } from "../model/voiceOverlay";
+import type { UserQuestionReply } from "../../sessions/model/userQuestion";
+import type {VoiceJobDraft} from "../model/voiceJobs";
 
 /** About 12 frames a second is enough for the small orb and keeps IPC light. */
 const LEVEL_INTERVAL_MS = 80;
@@ -23,6 +27,9 @@ export function useVoiceOverlayHost(options: {
   state: VoiceOverlayState;
   level: { readonly current: number };
   onCommand: (command: VoiceOverlayCommand) => void;
+  onChoice?: (id: string, reply: UserQuestionReply) => void;
+  onChoiceRetry?:(id:string)=>void;
+  onJobReview?:(id:string,action:"change"|"start"|"cancel",rows?:VoiceJobDraft[])=>void;
   onClosed: () => void;
 }) {
   const { detached, state, level } = options;
@@ -56,6 +63,15 @@ export function useVoiceOverlayHost(options: {
       // Scoped to this window: a global listener would also receive other
       // workspace windows' overlay traffic.
       const subscriptions = await Promise.all([
+        current.listen<{id:string;action:"change"|"start"|"cancel";rows?:VoiceJobDraft[]}>(VOICE_OVERLAY_JOB_EVENT,({payload})=>{
+          if(payload&&typeof payload.id==="string"&&["change","start","cancel"].includes(payload.action)&&(payload.rows===undefined||Array.isArray(payload.rows)))handlers.current.onJobReview?.(payload.id,payload.action,payload.rows);
+        }),
+        current.listen<{id:string;reply?:UserQuestionReply;action?:"retry"}>(VOICE_OVERLAY_CHOICE_EVENT, ({payload}) => {
+          if(payload&&typeof payload.id==="string"){
+            if(payload.action==="retry"&&payload.reply===undefined)handlers.current.onChoiceRetry?.(payload.id);
+            else if(payload.action===undefined&&payload.reply)handlers.current.onChoice?.(payload.id,payload.reply);
+          }
+        }),
         current.listen<unknown>(VOICE_OVERLAY_COMMAND_EVENT, ({ payload }) => {
           if (!isVoiceOverlayCommand(payload)) return;
           if (payload === "sync") send();

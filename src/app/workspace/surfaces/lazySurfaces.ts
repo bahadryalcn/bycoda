@@ -59,6 +59,10 @@ export const TasksView = lazySurface(
   },
   { suspense: false },
 );
+export const AssistantView = lazySurface(async () => {
+  const module = await import("../../../features/assistant/ui/AssistantView");
+  return { default: module.AssistantView };
+}, { suspense: false });
 
 /** Warm a destination on pointer or keyboard intent; failures retry on open. */
 export function preloadToolSurface(tool: WorkspaceToolId): void {
@@ -70,6 +74,7 @@ export function preloadToolSurface(tool: WorkspaceToolId): void {
     inbox: InboxView,
     notes: NotesView,
     terminal: null,
+    assistant: AssistantView,
     "conversation-tools": null,
   }[tool];
   void surface?.preload().catch(() => undefined);

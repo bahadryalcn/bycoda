@@ -15,4 +15,14 @@ export type DecisionCase = {
   message: string;
   expected: Record<string, unknown>;
 };
-export type EvalCase = TitleCase | DecisionCase;
+export type AssistantRuleCase = {
+  id: string;
+  suite: "assistant-rules";
+  mode: "reply" | "decision";
+  message: string;
+  ownerRule: string;
+  acceptedOwnerText: string;
+  forbidden?: string[];
+  expected?: Record<string, unknown>;
+};
+export type EvalCase = TitleCase | DecisionCase | AssistantRuleCase;

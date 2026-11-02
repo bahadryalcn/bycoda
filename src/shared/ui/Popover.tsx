@@ -118,6 +118,11 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
    * samples a moving canvas makes Chromium recomposite, and flash, the canvas.
    */
   solid?: boolean;
+  /**
+   * Frosted glass: a thin tint over a strong blur, for non-interactive hover cards that should
+   * let the pane beneath show through. Falls back to the opaque surface without blur support.
+   */
+  frosted?: boolean;
   style?: CSSProperties;
   autoFocus?: boolean;
   /** See {@link PopoverKind}. `"dialog"` sets the role and the focus contract. */
@@ -279,6 +284,7 @@ function NativePopover({
     layer: _layer,
     bare: _bare,
     solid: _solid,
+    frosted: _frosted,
     motion: _motion,
     ...rest
   } = props;
@@ -319,6 +325,7 @@ function WebPopover({
   layer = LAYER.popover,
   bare = false,
   solid = false,
+  frosted = false,
   className,
   style,
   autoFocus,
@@ -503,7 +510,7 @@ function WebPopover({
           className="popover-solid pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
         />
       ) : (
-        <GlassBackdrop />
+        <GlassBackdrop className={frosted ? "popover-backdrop popover-frosted" : undefined} />
       )}
       <div
         {...(dialog ? { role: "dialog", tabIndex: -1 } : null)}

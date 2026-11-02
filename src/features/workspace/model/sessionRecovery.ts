@@ -4,6 +4,7 @@ import { sessionIssue } from "../../sessions/model/sessionIssue";
 import { closeLeaf, leafIds, type WorkspaceTab } from "./layout";
 import { parseWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspaceSnapshot";
 import { isRemoteProjectPath, sameProjectPath } from "../../projects/model/recents";
+import type { HostSessionSummary } from "../../connections/model/protocol";
 import type { WorkspaceSessionStub } from "./workspaceSnapshot";
 
 /** One population for the panel and rail; never acknowledges or removes history. */
@@ -251,6 +252,33 @@ export function recoveryStatus(
 
 export function recoveryNeedsAttention(status: RecoveryStatus): boolean {
   return status !== "done" && status !== "idle";
+}
+
+/**
+ * Status of one journal entry from the best evidence at hand: a fresh Host
+ * summary for remote chats, otherwise the loaded or stored session. A stored
+ * read that returned nothing is "unavailable"; a failed read stays unverified.
+ */
+export function recoveryEntryStatus(input: {
+  remote: boolean;
+  host?: { fresh?: boolean; session: Pick<HostSessionSummary, "issue" | "needsInput" | "status"> };
+  local: Session | undefined;
+  storedMissing: boolean;
+}): RecoveryStatus {
+  const { remote, host, local, storedMissing } = input;
+  if (remote && host?.fresh)
+    return (
+      host.session.issue ??
+      (host.session.needsInput
+        ? "input"
+        : host.session.status === "running"
+          ? "working"
+          : host.session.status === "interrupted"
+            ? "interrupted"
+            : "idle")
+    );
+  if (!remote && storedMissing && !local) return "unavailable";
+  return recoveryStatus(local, remote, false);
 }
 
 const recoveryOrder: RecoveryStatus[] = [

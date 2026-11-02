@@ -12,7 +12,7 @@ import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { TabStrip } from "../../../shared/ui/Tabs";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { WorkspaceReview } from "../../workspaces/ui/WorkspaceReview";
 import { workspaceOperationKey, workspaceRequest } from "../../workspaces/model/workspaceClient";
@@ -139,6 +139,7 @@ import { StewardsSection, useTaskStewards } from "./TaskStewards";
 import { SummaryPanel, useDailySummaryPanel } from "./TaskSummaryPanel";
 
 type Props = {
+  goalReveal?:{machineId:string;goalId:string;token:number};
   besideRail?: boolean;
   compactRail?: boolean;
   cwd?: string;
@@ -157,6 +158,7 @@ export function TasksView({
   onClose,
   onToggleSidebar,
   onOpenBackgroundSession,
+  goalReveal,
 }: Props) {
   "use memo";
   const t = useT();
@@ -180,7 +182,7 @@ export function TasksView({
       >
         {navigating ? <ToolNavigation /> : null}
       </PaneHeader>
-      <TasksContent cwd={cwd} recents={recents} onOpenBackgroundSession={onOpenBackgroundSession} />
+      <TasksContent cwd={cwd} recents={recents} onOpenBackgroundSession={onOpenBackgroundSession} goalReveal={goalReveal} />
     </div>
   );
 }
@@ -189,7 +191,8 @@ function TasksContent({
   cwd,
   recents,
   onOpenBackgroundSession,
-}: Pick<Props, "cwd" | "recents" | "onOpenBackgroundSession">) {
+  goalReveal,
+}: Pick<Props, "cwd" | "recents" | "onOpenBackgroundSession"|"goalReveal">) {
   useLocale();
   // Tasks for a project in a locked group are not shown.
   const viewStateKey = `tasks:${cwd ? projectKey(cwd) : "global"}`;
@@ -404,6 +407,12 @@ function TasksContent({
     openSession: setSessionPreview,
   });
   const goalList = goals.goals;
+  useEffect(()=>{
+    if(!goalReveal)return;
+    setProjectFilter("all");
+    setGoalFilter(goalKey(goalReveal.machineId,goalReveal.goalId));
+    setSection("backlog");
+  },[goalReveal]);
   const stewards = useTaskStewards({
     ops,
     scope: { cwd, recents, projectFilter, lock, machines, selectedProject },
@@ -1487,7 +1496,7 @@ function TasksContent({
             if (!acting) setDeliveryTask(null);
           }}
           footer={
-            <>
+            <ModalActions>
               <Button
                 variant="ghost"
                 type="button"
@@ -1514,7 +1523,7 @@ function TasksContent({
               >
                 {t("Save delivery target")}
               </Button>
-            </>
+            </ModalActions>
           }
         >
           <div className="p-4">
@@ -1551,7 +1560,7 @@ function TasksContent({
         />
       ) : null}
       {section !== "reports" && goalList.length > 0 ? (
-        <GoalList goals={goals} filter={goalFilter} tasks={storedTasks} acting={acting} />
+        <GoalList goals={goals} filter={goalFilter} tasks={storedTasks} acting={acting} revealKey={goalReveal?`${goalReveal.machineId}:${goalReveal.goalId}:${goalReveal.token}`:undefined} />
       ) : null}
       {section !== "reports" && hasTasks && !loading ? (
         <p className="task-board-summary">

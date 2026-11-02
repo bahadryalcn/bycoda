@@ -9,6 +9,10 @@ import contextBaseline from "./context-baseline.json";
 import { comparePayloadReports } from "../scripts/checks/context-metrics.mjs";
 
 const sources = [
+  "src/features/voice/model/realtimeVoice.ts",
+  "src/features/voice/model/voiceOwner.ts",
+  "src/features/voice/model/voiceOwnerRules.ts",
+  "evals/assistantRules.ts",
   "src/features/sessions/model/sessionTitle.ts",
   "src/integrations/harness/core/skillGuidance.ts",
   "host/conversation-runtime-read-tools.ts",

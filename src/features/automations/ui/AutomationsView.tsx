@@ -17,6 +17,7 @@ import "./automations.css";
 import { AutomationAssistant } from "./AutomationAssistant";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Switch } from "../../../shared/ui/Switch";
@@ -136,7 +137,9 @@ import {
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
 
+import {assistantAutomationSelection} from "../model/assistantAutomationSelection";
 type Props = {
+  revealAutomation?:import("../../assistant/model/assistantAutomationReveal").AssistantAutomationReveal;
   besideRail?: boolean;
   compactRail?: boolean;
   cwd?: string;
@@ -151,6 +154,7 @@ type Props = {
 };
 
 export function AutomationsView({
+  revealAutomation,
   besideRail = false,
   compactRail = false,
   cwd,
@@ -185,6 +189,7 @@ export function AutomationsView({
         {toolNavigation ? <ToolNavigation /> : null}
       </PaneHeader>
       <AutomationsContent
+        revealAutomation={revealAutomation}
         cwd={cwd}
         recents={recents}
         onLaunch={onLaunch}
@@ -197,6 +202,7 @@ export function AutomationsView({
 }
 
 function AutomationsContent({
+  revealAutomation,
   cwd,
   recents,
   onLaunch,
@@ -205,7 +211,7 @@ function AutomationsContent({
   onLaunchAssistant,
 }: Pick<
   Props,
-  "cwd" | "recents" | "onLaunch" | "onOpenSession" | "onOpenBackgroundSession" | "onLaunchAssistant"
+  "revealAutomation" | "cwd" | "recents" | "onLaunch" | "onOpenSession" | "onOpenBackgroundSession" | "onLaunchAssistant"
 >) {
   useLocale();
   const { confirm, dialog: confirmDialog } = useConfirm();
@@ -221,7 +227,6 @@ function AutomationsContent({
     retry: false,
   });
   const storedAutomations = localQuery.data ?? [];
-  const loading = localQuery.isPending;
   // Automations aimed at a project in a locked group are not listed.
   const lock = useLockSnapshot();
   // Automations that machines' hosts run on their own, this computer's included.
@@ -239,6 +244,9 @@ function AutomationsContent({
       ),
     [hostAutomations, lock, storedAutomations],
   );
+  const collectionPending = localQuery.isPending || !host.loaded;
+  const loading = !automations.length && collectionPending && !localQuery.isError && !host.error && !unreachableNames.length;
+  const paused = loading && !queryVisible && !localQuery.isFetching && !host.fetching;
   const viewStateKey = `automations:${cwd ? projectKey(cwd) : "global"}`;
   const [storedSelectedId, setSelectedId] = useRetainedState<string | null>(
     `${viewStateKey}:selected`,
@@ -353,7 +361,7 @@ function AutomationsContent({
     setDraft,
   });
   // A failed read is not "no automations": say so, with a retry, instead of offering first use.
-  const readFailed = localQuery.isError && storedAutomations.length === 0;
+  const readFailed = (localQuery.isError && storedAutomations.length === 0) || !!host.error || unreachableNames.length > 0;
   const error = actionError ?? (readFailed ? null : (localQuery.error?.message ?? null));
 
   const editorDraft = pickerOpen
@@ -362,13 +370,31 @@ function AutomationsContent({
   const listLock = useLockOverscroll<HTMLDivElement>();
 
   const hasAutomations = automations.length > 0;
-  const showList = !focusMode && (loading || hasAutomations);
+  const showList = !focusMode && ((!paused && loading) || hasAutomations);
   const filtered = !!query.trim() || statusFilter !== "all";
+  const [revealStatus,setRevealStatus]=useState<""|"draft"|"filter"|"unavailable">("");
+  const revealAttempt=useRef<number|undefined>(undefined);
+  const revealDone=useRef<number|undefined>(undefined);
+  function applyReveal(resetFilters=false,refreshMissing=true){
+    if(!revealAutomation||revealDone.current===revealAutomation.token)return;
+    if(draft||savingRef.current){setRevealStatus("draft");return;}
+    const target=assistantAutomationSelection(revealAutomation,automations,path=>recents.some(project=>projectKey(project.path)===projectKey(path))&&!isProjectLockedIn(lock,path));
+    if(!target){setRevealStatus("unavailable");if(refreshMissing&&queryVisible)void refreshHost();return;}
+    if(!resetFilters&&!visible.some(row=>automationKey(row)===automationKey(target))){setRevealStatus("filter");return;}
+    if(resetFilters){setQuery("");setStatusFilter("all");}
+    setSelectedId(automationKey(target));setPickerOpen(false);setCompactListOpen(false);
+    revealDone.current=revealAutomation.token;setRevealStatus("");
+  }
+  useEffect(()=>{
+    if(!revealAutomation||!host.loaded||revealDone.current===revealAutomation.token)return;
+    const refreshMissing=revealAttempt.current!==revealAutomation.token;
+    revealAttempt.current=revealAutomation.token;applyReveal(false,refreshMissing);
+  },[revealAutomation?.token,host.loaded,automations,lock,recents]);
   const showFilter = hasAutomations || loading;
   const showAssistant = Boolean(onLaunchAssistant) && !pickerOpen;
   const showCreate = !pickerOpen;
   const showHeader = showFilter || showAssistant || showCreate;
-  const firstUse = !loading && !hasAutomations;
+  const firstUse = !revealAutomation && !collectionPending && !readFailed && !hasAutomations;
 
   return (
     <div
@@ -376,6 +402,11 @@ function AutomationsContent({
       data-list-open={compactListOpen || undefined}
     >
       {confirmDialog}
+      {revealStatus&&revealAutomation&&<div role="status" className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm">
+        <span>{t(revealStatus==="draft"?"Keep or close your current automation draft before opening the requested automation.":revealStatus==="filter"?"The requested automation is hidden by your filters.":"The linked automation is unavailable on its original computer.")}</span>
+        <Button disabled={saving||!!draft} onClick={()=>applyReveal(revealStatus==="filter")}>{t(revealStatus==="filter"?"Reset filters":"Retry")}</Button>
+        <Button onClick={()=>{revealDone.current=revealAutomation.token;setRevealStatus("");}}>{t("Dismiss")}</Button>
+      </div>}
       {assistantOpen && onLaunchAssistant ? (
         <AutomationAssistant
           cwd={cwd}
@@ -573,7 +604,9 @@ function AutomationsContent({
               {error}
             </Alert>
           ) : null}
-          {loading && !editorDraft ? (
+          {paused && !editorDraft ? (
+            <EmptyState title={t("Automations")} description={t("Focus this window to load automations.")} />
+          ) : loading && !editorDraft ? (
             <div className="min-h-0 flex-1">
               <SurfaceLoading />
             </div>
@@ -648,9 +681,9 @@ function AutomationsContent({
             <EmptyState
               kind="unavailable"
               title={t("Automations unavailable")}
-              description={localQuery.error?.message ?? t("Automations could not be read.")}
-              onRetry={() => void localQuery.refetch()}
-              retrying={localQuery.isFetching}
+              description={host.error?.message ?? localQuery.error?.message ?? t("Automations could not be read.")}
+              onRetry={queryVisible ? () => { void localQuery.refetch(); void refreshHost(); } : undefined}
+              retrying={localQuery.isFetching || host.fetching}
             />
           ) : (
             <AutomationPicker
@@ -711,6 +744,9 @@ function AutomationCard({
     ? formatRelativeTime(new Date(automation.lastRunAt).toISOString())
     : null;
   const model = resolveModel(automation.harness, automation.model);
+  // The first trigger names the card; the others open from a "+N" beside the switch, which cannot
+  // sit inside the card button.
+  const otherTriggers = automationTriggers(automation).slice(1);
   return (
     <div className="group relative" data-paused={automation.enabled ? undefined : ""}>
       <Button
@@ -722,7 +758,9 @@ function AutomationCard({
         selected={active}
         layout="stacked"
       >
-        <span className="flex min-w-0 items-center gap-1.5 pr-14 text-ui-caption text-(--ui-text-muted)">
+        <span
+          className={`flex min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-muted) ${otherTriggers.length > 0 ? "pr-24" : "pr-14"}`}
+        >
           <TriggerMark
             kind={automationTriggers(automation)[0]?.kind ?? automation.triggerKind}
             className="icon-xs"
@@ -782,6 +820,16 @@ function AutomationCard({
         </span>
       </Button>
       <span className="absolute right-2.5 top-2 flex items-center gap-1">
+        <BadgeList
+          label={t("Triggers")}
+          size="xs"
+          max={0}
+          items={otherTriggers.map((trigger) => ({
+            id: trigger.id,
+            label: triggerText(trigger),
+            icon: <TriggerMark kind={trigger.kind} className="icon-xs" />,
+          }))}
+        />
         {pending ? <Spinner size="xs" /> : null}
         <ToggleSwitch
           label={`${automation.enabled ? "Pause" : "Enable"} ${automation.name}`}
@@ -1861,13 +1909,14 @@ function optionLabel(options: readonly { value: string; label: string }[], value
   return options.find((option) => option.value === String(value))?.label ?? String(value);
 }
 
+function triggerText(trigger: AutomationTrigger): string {
+  return trigger.kind === "time"
+    ? automationScheduleLabel(trigger)
+    : (findTriggerEvent(trigger.kind, trigger.event)?.label ?? triggerName(trigger.kind));
+}
+
+/** The first trigger; the card lists the others behind a "+N". */
 function triggerLabel(automation: Automation): string {
-  const triggers = automationTriggers(automation);
-  if (triggers.length === 0) return "No trigger";
-  const first = triggers[0]!;
-  const label =
-    first.kind === "time"
-      ? automationScheduleLabel(first)
-      : (findTriggerEvent(first.kind, first.event)?.label ?? triggerName(first.kind));
-  return triggers.length > 1 ? `${label} +${triggers.length - 1}` : label;
+  const first = automationTriggers(automation)[0];
+  return first ? triggerText(first) : "No trigger";
 }

@@ -6,6 +6,7 @@ import {
   notifySession,
   notifyBackground,
   notifyDailySummary,
+  notifyAssistant,
   unseenAttentionSessions,
   saveNotificationsEnabled,
   setNotificationBatchDelay,
@@ -31,6 +32,58 @@ beforeEach(() => {
   saveNotificationsEnabled(true);
   setWindowFocused(false);
   setNotificationBatchDelay(0);
+});
+
+it("routes assistant delivery through native outcome and current project mute", async () => {
+  const message = {
+    title: "Assistant update",
+    body: "A job needs attention",
+    kind: "input" as const,
+    projectPath: "/work/app",
+    occurredAt: Date.now(),
+  };
+  updateNotificationPreferences(["local:/work/app"], { mutedUntil: null });
+  expect(await notifyAssistant(message)).toBe(false);
+  expect(invoke).not.toHaveBeenCalled();
+  localStorage.clear();
+  saveNotificationsEnabled(true);
+  invoke.mockResolvedValueOnce(false);
+  expect(await notifyAssistant(message)).toBe(false);
+  invoke.mockResolvedValueOnce(true);
+  expect(await notifyAssistant(message)).toBe(true);
+  expect(invoke).toHaveBeenLastCalledWith(
+    "show_notification",
+    expect.objectContaining({ sessionId: "background:assistant", body: message.body }),
+  );
+});
+it("suppresses a multi-project assistant banner when any participating project is muted", async () => {
+  updateNotificationPreferences(["local:/private"], { mutedUntil: null });
+  expect(
+    await notifyAssistant({
+      title: "Shared job",
+      body: "Changed both projects",
+      kind: "finished",
+      projectPath: "/work/app",
+      projectPaths: ["/work/app", "/private"],
+      occurredAt: Date.now(),
+    }),
+  ).toBe(false);
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+it("suppresses assistant banners for foreground and disabled event preferences", async () => {
+  const message = {
+    title: "Assistant",
+    body: "Update",
+    kind: "finished" as const,
+    occurredAt: Date.now(),
+  };
+  setWindowFocused(true);
+  expect(await notifyAssistant(message)).toBe(false);
+  setWindowFocused(false);
+  saveNotificationEvent("finished", false);
+  expect(await notifyAssistant(message)).toBe(false);
+  expect(invoke).not.toHaveBeenCalled();
 });
 
 it("returns false without a banner or sound for a non-project path", async () => {

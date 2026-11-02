@@ -4,8 +4,8 @@
   flex-direction: column;
   min-block-size: 0;
   min-inline-size: 0;
-  background: var(--ui-surface);
-  --terminal-canvas: var(--ui-surface);
+  background: var(--color-background-base);
+  --terminal-canvas: var(--color-background-base);
   --terminal-text: var(--color-content);
 }
 .toolbar {

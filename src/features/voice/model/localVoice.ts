@@ -58,6 +58,7 @@ export class LocalVoice {
     private config?: VoiceRuntimeConfig,
     /** Shared with the decorative visualizer; capture never causes React renders. */
     readonly level = { current: 0 },
+    private conversation: {turnEndSilence?:number;allowBargeIn?:boolean;manualTurnEnd?:boolean;languageLock?:string;deviceId?:string} = {},
   ) {
     this.hint = language;
   }
@@ -72,7 +73,7 @@ export class LocalVoice {
         return;
       }
       this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...(this.conversation.deviceId ? {deviceId:{exact:this.conversation.deviceId}} : {}) },
         video: false,
       });
       if (this.closed) {
@@ -100,7 +101,7 @@ export class LocalVoice {
         },
         // With Smart Turn, a finished sentence ends after ~0.2 s instead of 0.6 s,
         // and a mid-sentence pause keeps listening up to 1.3 s.
-        this.info.turn
+        this.info.turn && !this.conversation.turnEndSilence && !this.conversation.manualTurnEnd
           ? {
               endSilence: 1.3,
               pause: (audio, pauseId) => {
@@ -108,12 +109,12 @@ export class LocalVoice {
                   void this.endpoint(audio, pauseId, this.binding, this.speechEpoch);
               },
             }
-          : {},
+          : {endSilence:this.conversation.turnEndSilence,manualTurnEnd:this.conversation.manualTurnEnd,limit:()=>this.callbacks.error("Voice capture reached its limit. Finish this turn before continuing.")},
       );
       this.source = this.audio.createMediaStreamSource(this.stream);
       this.capture = new AudioWorkletNode(this.audio, "bycoda-voice-capture");
       this.capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-        if (this.closed || this.muted) {
+        if (this.closed || this.muted || (this.playbackActive && this.conversation.allowBargeIn === false)) {
           this.level.current = 0;
           return;
         }
@@ -142,6 +143,12 @@ export class LocalVoice {
       throw error;
     }
   }
+  configureConversation(options: {turnEndSilence?:number;allowBargeIn?:boolean;manualTurnEnd?:boolean}) {
+    this.conversation = {...this.conversation,...options};
+    this.vad?.setEndSilence(options.turnEndSilence);
+    this.vad?.setManualTurnEnd(options.manualTurnEnd===true);
+  }
+  finishTurn(){if(!this.closed&&!this.muted)this.vad?.flush();}
 
   private async transcribe(audio: Int16Array, binding: SpeechBinding, epoch: number) {
     if (!this.info || this.closed) return;
@@ -213,7 +220,7 @@ export class LocalVoice {
       if (pending !== binding && pending.sequence === binding.sequence)
         pending.sequence = accepted.sequence;
     this.silence();
-    if (/^[a-z]{2}$/.test(result.language)) this.language = result.language;
+    if (!this.conversation.languageLock && /^[a-z]{2}$/.test(result.language)) this.language = result.language;
     this.callbacks.transcript({ ...result, text }, accepted);
   }
 

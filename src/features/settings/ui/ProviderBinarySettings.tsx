@@ -5,10 +5,10 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ExternalLink, FolderOpen, Pencil, RefreshCw } from "../../../shared/ui/icons";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { Badge } from "../../../shared/ui/Badge";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 
 import {
   inspectHarnessBinary,
@@ -70,6 +70,7 @@ export function ProviderBinaryControl({
 }) {
   useLocale();
   const root = useRef<HTMLSpanElement>(null);
+  const formId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const editInput = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -226,8 +227,46 @@ export function ProviderBinaryControl({
       {t("Choose executable")}
     </Button>
   );
+  const pathActions = (
+    <ModalActions start={!inline ? chooseExecutable : undefined}>
+      <Button
+        className="shrink-0"
+        disabled={working}
+        onClick={() => {
+          if (inline) {
+            onCancel?.();
+            return;
+          }
+          setDraft(loadProviderBinaryPath(provider) ?? "");
+          setEditing(false);
+          queueMicrotask(() => trigger.current?.focus());
+        }}
+      >
+        {t("Cancel")}
+      </Button>
+      {overridden ? (
+        <Button
+          className="shrink-0"
+          loading={operation === "auto"}
+          disabled={working}
+          onClick={() => void useAuto()}
+        >
+          {t("Use auto-detected path")}
+        </Button>
+      ) : null}
+      <Button
+        variant={inline ? "primary" : "secondary"}
+        type="submit"
+        form={formId}
+        loading={operation === "save"}
+        disabled={working || (inline && !draft.trim())}
+      >
+        {working ? t("Checking path…") : inline ? t("Add provider") : t("Save path")}
+      </Button>
+    </ModalActions>
+  );
   const pathForm = (
-    <form className="mt-2" onSubmit={submit}>
+    <form id={formId} className="mt-2" onSubmit={submit}>
       <label
         htmlFor={`${provider}-binary-path`}
         className="text-ui-caption text-(--ui-text-secondary)"
@@ -255,42 +294,7 @@ export function ProviderBinaryControl({
         {PRODUCT_IDENTITY.displayName}.
       </p>
       {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
-      <div className="mt-3 flex flex-wrap justify-end gap-2">
-        {!inline ? chooseExecutable : null}
-        <Button
-          className="shrink-0"
-          disabled={working}
-          onClick={() => {
-            if (inline) {
-              onCancel?.();
-              return;
-            }
-            setDraft(loadProviderBinaryPath(provider) ?? "");
-            setEditing(false);
-            queueMicrotask(() => trigger.current?.focus());
-          }}
-        >
-          {t("Cancel")}
-        </Button>
-        {overridden ? (
-          <Button
-            className="shrink-0"
-            loading={operation === "auto"}
-            disabled={working}
-            onClick={() => void useAuto()}
-          >
-            {t("Use auto-detected path")}
-          </Button>
-        ) : null}
-        <Button
-          variant={inline ? "primary" : "secondary"}
-          type="submit"
-          loading={operation === "save"}
-          disabled={working || (inline && !draft.trim())}
-        >
-          {working ? t("Checking path…") : inline ? t("Add provider") : t("Save path")}
-        </Button>
-      </div>
+      {inline ? <ModalFooter>{pathActions}</ModalFooter> : null}
     </form>
   );
   if (inline) return pathForm;
@@ -342,6 +346,7 @@ export function ProviderBinaryControl({
             "The CLI path selects an executable on this machine. Account sign-in and model defaults are managed separately.",
           )}
           onClose={() => dismiss(true)}
+          footer={editing ? pathActions : undefined}
         >
           <div aria-busy={working} id={`${provider}-binary-popover`} className="p-1">
             <div className="flex flex-wrap items-center gap-1.5">

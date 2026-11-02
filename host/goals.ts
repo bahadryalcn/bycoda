@@ -1,4 +1,5 @@
 import { flatMapAsync, mapAsync, someAsync } from "./async-collections";
+import {deferredAssistantTurn} from "./assistant-turn-policy";
 import { createHash, randomUUID } from "node:crypto";
 import { resolveHostWorktreeAsync } from "./git-worktrees";
 import {
@@ -6,6 +7,7 @@ import {
   GOAL_FINAL_ACCEPTANCE_CRITERIA,
   MAX_PLAN_TASKS,
   goalStateFromTasks,
+  goalPlanNeedsApproval,
   parseGoalPlan,
   parseHostGoal,
   type GoalPlan,
@@ -173,6 +175,8 @@ export class HostGoals {
   onDelete?: (goal: { id: string }) => void;
   readonly ready: Promise<void>;
   private readonly engine: SessionRunEngine;
+  private readonly assistantPlanning = new Set<string>();
+  private readonly retiredAssistantGoals = new Set<string>();
   constructor(
     private readonly store: HostStore,
     engine: SessionRunEngine,
@@ -182,6 +186,13 @@ export class HostGoals {
     // The Store's AsyncLocal authorization follows an admitted owner request
     // across preparation and SQL waits. Scheduler calls have no request grant.
     this.engine = {
+      withMessageAuthor:(author,work)=>{
+        const perform=()=>engine.withMessageAuthor?engine.withMessageAuthor(author,work):work();
+        if(author.kind!=="task")return perform();
+        const check=async()=>{if(this.tasks.isAssistantDeletionHeld(author.id))throw new Error("This goal is held for owner-reviewed deletion.");if(author.id.startsWith("assistant-")){const current=await this.find(author.id);if(!current||current.status==="cancelled"||current.awaitingOwnerRestart)throw new Error("The original assistant goal was deleted or awaits an explicit owner restart.");}};
+        if(engine.withCommandAdmission)return engine.withCommandAdmission({check},perform);
+        return check().then(perform);
+      },
       command: async (command) => {
         await store.db.checkAuthorization();
         return engine.command(command);
@@ -462,11 +473,33 @@ export class HostGoals {
     const deleted = await this.store.db.prepare("DELETE FROM goals WHERE id=?").run(id);
     if (Number(deleted.changes) > 0) this.store.afterCommit(() => this.onDelete?.({ id }));
   }
+  /** No cleanup or cancellation here: the exact chain was already retired. */
+  async deleteStoppedAssistantGoal(id:string,expectedValue:string):Promise<void>{
+    await this.ready;
+    const row=await this.store.db.prepare("SELECT value FROM goals WHERE id=?").get(id);
+    if(!id.startsWith("assistant-")||row?.value!==expectedValue||!this.tasks.isAssistantDeletionHeld(id))throw new Error("The selected goal changed or lost its deletion hold.");
+    const goal=JSON.parse(expectedValue) as HostGoal;
+    if(!["done","cancelled"].includes(goal.status)||await this.store.db.prepare("SELECT 1 FROM tasks WHERE json_extract(value,'$.goalId')=? LIMIT 1").get(id))throw new Error("The goal still has live task metadata or has not stopped.");
+    const deleted=await this.store.db.prepare("DELETE FROM goals WHERE id=? AND value=?").run(id,expectedValue);if(Number(deleted.changes)!==1)throw new Error("The exact stopped goal changed before deletion.");this.store.afterCommit(()=>{this.retiredAssistantGoals.add(id);this.onDelete?.({id});});
+  }
+  async markAssistantDeletionQuiescent(id:string,expectedValue:string):Promise<void>{
+    const row=await this.store.db.prepare("SELECT value FROM goals WHERE id=?").get(id);if(row?.value!==expectedValue||!this.tasks.isAssistantDeletionHeld(id))throw new Error("The selected goal changed during Stop.");
+    const goal=JSON.parse(expectedValue) as HostGoal;await this.write({...goal,status:goal.status==="done"?"done":"cancelled",awaitingOwnerRestart:true,plannerRecoveryPending:undefined,...(goal.finalAcceptance?.status==="running"?{finalAcceptance:{...goal.finalAcceptance,status:"failed",recoveryPending:undefined,error:"Stopped for owner-reviewed job deletion."}}:{}),updatedAt:this.now()});
+  }
+  async restoreAssistantDeletedGoal(snapshot:HostGoal):Promise<HostGoal>{
+    await this.ready;parseHostGoal(snapshot);if(!snapshot.id.startsWith("assistant-"))throw new Error("Only the original assistant goal may be restored.");
+    return this.store.transaction(async()=>{
+      if(await this.find(snapshot.id))throw new Error("A goal with this identity already exists. Nothing was restored.");for(const id of snapshot.projectIds)await this.store.project(id);
+      const value:HostGoal={...snapshot,status:snapshot.status==="done"?"done":"cancelled",awaitingOwnerRestart:true,plannerRecoveryPending:undefined,deliveryApprovalRequired:true,...(snapshot.finalAcceptance?.status==="running"?{finalAcceptance:{...snapshot.finalAcceptance,status:"failed",recoveryPending:undefined,requestId:undefined,error:"Restored quiescent; independent review needs an explicit owner decision."}}:{}),updatedAt:this.now()};
+      await this.store.db.checkAuthorization();await this.store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run(value.id,JSON.stringify(value));return value;
+    },"critical");
+  }
   /** Settles planners and brings every goal's progress up to date. Called by
    * the task board's tick, before queued tasks start. */
   private async work(): Promise<void> {
     const now = this.now();
     for (const goal of await this.all(false, true)) {
+        if(this.tasks.isAssistantDeletionHeld(goal.id)||goal.awaitingOwnerRestart)continue;
       try {
         const budgetRun =
           goal.status === "planning" && goal.plannerSessionId
@@ -566,6 +599,10 @@ export class HostGoals {
       // Nested scope reuse does not repeat FIFO admission. Recheck after any
       // awaited reconciliation/preparation before this concrete write as well.
       await this.store.db.checkAuthorization();
+      if(goal.id.startsWith("assistant-")){
+        const current=await this.find(goal.id);
+        if((!current&&this.retiredAssistantGoals.has(goal.id))||(current?.awaitingOwnerRestart&&!goal.awaitingOwnerRestart))throw new Error("The original assistant goal was deleted or awaits an explicit owner restart.");
+      }
       await this.store.db
         .prepare(
           "INSERT INTO goals VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value",
@@ -573,6 +610,22 @@ export class HostGoals {
         .run(goal.id, JSON.stringify(goal));
       return goal;
     });
+  }
+  /** A zero-provider proof does not authorize replacing a later owner decision. */
+  private async resetDeferredTurn(goal: HostGoal, next: HostGoal): Promise<void> {
+    const expected = JSON.stringify(goal);
+    await this.store.transaction(async () => {
+      const row = await this.store.db.prepare("SELECT value FROM goals WHERE id=?").get(goal.id);
+      if (!row || String(row.value) !== expected || goal.status === "cancelled" ||
+          goal.awaitingOwnerRestart || this.tasks.isAssistantDeletionHeld(goal.id)) return;
+      // The hours fence can remain while its unstarted turn is parked. Owner,
+      // budget and deletion holds must not be consumed or rewritten by recovery.
+      const held = await this.store.db.prepare(
+        "SELECT goal_id FROM task_goal_holds WHERE goal_id=? UNION SELECT goal_id FROM task_goal_reason_holds WHERE goal_id=? AND reason<>'assistant-hours' UNION SELECT goal_id FROM task_goal_deletion_holds WHERE goal_id=? LIMIT 1",
+      ).get(goal.id, goal.id, goal.id);
+      if (held) return;
+      await this.write(next);
+    }, "critical");
   }
   private async blockPlanning(goal: HostGoal, planError: string, now: number) {
     return await this.write({
@@ -585,6 +638,12 @@ export class HostGoals {
   }
   /** Starts the planner in the lead project's folder. */
   private async plan(goal: HostGoal): Promise<HostGoal> {
+    if(!await this.tasks.goalExecutionAllowed(goal.id))return goal;
+    const tracked=goal.id.startsWith("assistant-");
+    if(tracked&&this.assistantPlanning.has(goal.id))return await this.find(goal.id)??goal;
+    if(tracked)this.assistantPlanning.add(goal.id);
+    try{
+    if(goal.id.startsWith("assistant-"))await this.store.transaction(async()=>{const current=await this.find(goal.id);if(this.tasks.isAssistantDeletionHeld(goal.id)||current?.awaitingOwnerRestart||current?.status==="cancelled")throw new Error("The original assistant goal is held or awaits an owner restart.");await this.write({...goal,status:"planning"});},"critical");
     const now = this.now();
     const budget = await this.tasks.budgets.evaluate({ goalId: goal.id }, goal.budget, {
       starting: true,
@@ -630,15 +689,16 @@ export class HostGoals {
         ...(projects.find((project) => project.lead)?.workingCwd
           ? { worktreeCwd: projects.find((project) => project.lead)!.workingCwd }
           : {}),
-        harness: goal.harness,
-        providerAccountId: goal.providerAccountId,
-        model: goal.model,
-        modelSettings: goal.modelSettings,
+        harness: (goal.plannerExecution??goal).harness,
+        providerAccountId: (goal.plannerExecution??goal).providerAccountId,
+        model: (goal.plannerExecution??goal).model,
+        modelSettings: (goal.plannerExecution??goal).modelSettings,
         runtimeMode: goal.runtimeMode,
         title: `Plan: ${goal.title}`.slice(0, 200),
+        author:{kind:"task",id:goal.id,name:goal.title,reason:"planning"},
         prompt: plannerPrompt(goal, projects),
       },
-      () => !this.tasks.admissionClosed,
+      () => this.tasks.goalExecutionAllowed(goal.id),
     );
     if (started.deferred) return goal;
     const planning: HostGoal = {
@@ -666,6 +726,7 @@ export class HostGoals {
         now,
       );
     return await this.write(planning);
+    }finally{if(tracked)this.assistantPlanning.delete(goal.id);}
   }
   private async stopPlanner(goal: HostGoal): Promise<void> {
     const run = {
@@ -745,8 +806,8 @@ export class HostGoals {
         );
         return;
       }
-      if (this.tasks.admissionClosed) return;
-      await this.engine.command({
+      if (this.tasks.admissionClosed||this.tasks.isAssistantDeletionHeld(goal.id)||goal.awaitingOwnerRestart) return;
+      const resume=()=>this.engine.command({
         type: "send",
         commandId: randomUUID(),
         sessionId,
@@ -756,6 +817,7 @@ export class HostGoals {
           "Return a corrected, self-contained plan in the required fenced json shape, using only the project's allowed paths and valid acyclic dependencies. Preserve the original objective and constraints. If the host interrupted the turn, continue the unfinished plan from the existing evidence.",
         ].join("\n\n"),
       });
+      await (this.engine.withMessageAuthor?this.engine.withMessageAuthor({kind:"task",id:goal.id,name:goal.title,reason:"planner recovery"},resume):resume());
       await this.write({
         ...goal,
         status: "planning",
@@ -796,6 +858,9 @@ export class HostGoals {
     }
     await this.tasks.limits.record(run.startedAt, now);
     if (outcome.status !== "succeeded") {
+      if(await deferredAssistantTurn(this.store,goal.plannerSessionId,goal.plannerRunId,goal.id)){
+        await this.resetDeferredTurn(goal,{...goal,status:"planning",plannerSessionId:undefined,plannerRunId:undefined,plannerStartedAt:undefined,plannerRecoveryPending:undefined,planError:undefined,updatedAt:now});return;
+      }
       if (
         outcome.error === HOST_INTERRUPTED &&
         !goal.planError &&
@@ -853,7 +918,7 @@ export class HostGoals {
       planError: undefined,
       updatedAt: now,
     };
-    if (goal.approvePlan) await this.write({ ...planned, status: "awaiting-approval" });
+    if (goalPlanNeedsApproval(planned)) await this.write({ ...planned, status: "awaiting-approval" });
     else await this.start(planned, now);
   }
   /** Creates a task on the board for every task of the plan. */
@@ -1117,6 +1182,7 @@ export class HostGoals {
   }
   private async startFinalReview(goal: HostGoal, now: number): Promise<void> {
     if (goal.status !== "running") return;
+    if(!await this.tasks.goalExecutionAllowed(goal.id))return;
     if (await this.attachFinalReceipt(goal, now)) return;
     if (await this.tasks.limits.reached()) return;
     const budget = await this.tasks.budgets.evaluate({ goalId: goal.id }, goal.budget, {
@@ -1245,9 +1311,10 @@ export class HostGoals {
           modelSettings: goal.modelSettings,
           runtimeMode: goal.runtimeMode,
           title: `Final review: ${goal.title}`.slice(0, 200),
+          author:{kind:"task",id:goal.id,name:goal.title,reason:"final review"},
           prompt: finalReviewPrompt(goal, tasks, projects),
         },
-        () => !this.tasks.admissionClosed,
+        () => this.tasks.goalExecutionAllowed(goal.id),
       );
       if (started.deferred) return;
       const executionWorkspace = started.sessionId
@@ -1428,8 +1495,8 @@ export class HostGoals {
         );
         return;
       }
-      if (this.tasks.admissionClosed) return;
-      await this.engine.command({
+      if (this.tasks.admissionClosed||this.tasks.isAssistantDeletionHeld(goal.id)||goal.awaitingOwnerRestart) return;
+      const resume=()=>this.engine.command({
         type: "send",
         commandId: randomUUID(),
         sessionId: final.sessionId!,
@@ -1439,6 +1506,7 @@ export class HostGoals {
           "End with VERDICT: PASS only if both conditions are verified, otherwise VERDICT: FAIL - <concrete missing proof and next action>.",
         ].join("\n\n"),
       });
+      await (this.engine.withMessageAuthor?this.engine.withMessageAuthor({kind:"task",id:goal.id,name:goal.title,reason:"final review recovery"},resume):resume());
       await this.write({
         ...goal,
         finalAcceptance: {
@@ -1516,6 +1584,9 @@ export class HostGoals {
       final = goal.finalAcceptance!;
     }
     if (outcome.status !== "succeeded") {
+      if(await deferredAssistantTurn(this.store,final.sessionId,final.runId,goal.id)){
+        await this.resetDeferredTurn(goal,{...goal,finalAcceptance:{...final,status:"pending",sessionId:undefined,runId:undefined,requestId:undefined,startedAt:undefined,accountedRunId:undefined,recoveryPending:undefined,error:undefined},updatedAt:now});return;
+      }
       if (
         outcome.error === HOST_INTERRUPTED &&
         !final.error &&

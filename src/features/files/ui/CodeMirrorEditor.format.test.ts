@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { undo } from "@codemirror/commands";
+import { StateEffect } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { Storage } from "happy-dom";
 import { act, createElement } from "react";
@@ -68,6 +69,66 @@ async function shortcut() {
   });
   expect(event.defaultPrevented).toBe(true);
 }
+
+async function openMenu(keyboard = false) {
+  vi.spyOn(view, "posAtCoords").mockReturnValue(null);
+  vi.spyOn(view, "coordsAtPos").mockReturnValue(null);
+  const event = keyboard
+    ? new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true })
+    : new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 20 });
+  await act(async () => {
+    view.contentDOM.dispatchEvent(event);
+  });
+  expect(event.defaultPrevented).toBe(true);
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+}
+
+it("opens editor actions instead of the native menu and formats the unsaved buffer", async () => {
+  format.mockResolvedValue({ formatted: "const Page = () => <div />;", cursorOffset: 0 });
+  const items = await openMenu();
+  const formatItem = items.find((item) => item.textContent?.includes("Format document"));
+  expect(formatItem).toBeDefined();
+  await act(async () => formatItem!.click());
+  expect(format).toHaveBeenCalledWith("/repo/Page.tsx", "const Page=()=> <div/>;", 0);
+  expect(view.state.doc.toString()).toBe("const Page = () => <div />;");
+  expect(onSave).not.toHaveBeenCalled();
+  act(() => undo(view));
+  expect(view.state.doc.toString()).toBe("const Page=()=> <div/>;");
+});
+
+it("opens the same menu with Shift+F10 and disables edits for read-only documents", async () => {
+  const { EditorState } = await import("@codemirror/state");
+  act(() => view.dispatch({ effects: StateEffect.appendConfig.of(EditorState.readOnly.of(true)) }));
+  const items = await openMenu(true);
+  for (const name of ["Format document", "Save", "Paste", "Undo", "Cut"]) {
+    expect(items.find((item) => item.textContent?.startsWith(name))?.disabled).toBe(true);
+  }
+  expect(items.find((item) => item.textContent?.startsWith("Find"))?.disabled).toBe(false);
+  expect(format).not.toHaveBeenCalled();
+});
+
+it("does not delete selected code when copying to the clipboard fails", async () => {
+  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("Clipboard denied"));
+  act(() => view.dispatch({ selection: { anchor: 0, head: 5 } }));
+  const items = await openMenu();
+  await act(async () => items.find((item) => item.textContent?.startsWith("Cut"))!.click());
+  expect(view.state.doc.toString()).toBe("const Page=()=> <div/>;");
+  expect(host.textContent).toContain("Clipboard denied");
+});
+
+it("does not paste over edits made while clipboard access was pending", async () => {
+  let resolve!: (text: string) => void;
+  vi.spyOn(navigator.clipboard, "readText").mockReturnValue(
+    new Promise<string>((done) => {
+      resolve = done;
+    }),
+  );
+  const items = await openMenu();
+  await act(async () => items.find((item) => item.textContent?.startsWith("Paste"))!.click());
+  act(() => view.dispatch({ changes: { from: 0, insert: "// new\n" } }));
+  await act(async () => resolve("late clipboard"));
+  expect(view.state.doc.toString()).toBe("// new\nconst Page=()=> <div/>;");
+});
 
 it.each(["unsupported", "invalid", "exception"])(
   "reports format-on-save %s while preserving a successful source save",

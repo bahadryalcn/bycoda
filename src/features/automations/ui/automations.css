@@ -76,9 +76,12 @@
 }
 .automation-start > .automation-start-option.automation-start-option[data-button-hierarchy] {
   padding: 12px;
-  background: var(--ui-surface);
+  background: transparent;
   border: 1px solid var(--ui-tone-neutral-border);
   border-radius: var(--ui-radius-card);
+}
+.automation-start > .automation-start-option.automation-start-option[data-button-hierarchy]:hover {
+  background: var(--ui-surface-hover);
 }
 .automation-template-search {
   inline-size: min(100%, 16rem);

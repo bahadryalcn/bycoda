@@ -35,6 +35,11 @@ import {
 } from "./conversation-server-tools";
 import { TASK_CONFIGURATION_FIELDS, TASK_READ_TOOLS } from "./conversation-task-tools";
 import { GOAL_WRITE_TOOLS, describeGoalWriteTool } from "./conversation-goal-tools";
+import {
+  DESKTOP_CONTROL_CONVERSATION_TOOLS,
+  DESKTOP_CONTROL_READ_ACTIONS,
+  describeDesktopControlConversationTool,
+} from "./conversation-desktop-control-tools";
 import { TASK_QUEUE_TOOLS, describeTaskQueueTool } from "./conversation-task-queue-tools";
 import {
   BROWSER_ANNOTATION_TOOLS,
@@ -111,6 +116,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
   additionalProperties: false,
 });
 export const CONVERSATION_TOOLS = {
+  ...DESKTOP_CONTROL_CONVERSATION_TOOLS,
   ...CONVERSATION_VISUAL_TOOLS,
   ...CONVERSATION_CREW_READ_TOOLS,
   ...CONVERSATION_FILE_TOOLS,
@@ -615,6 +621,7 @@ export const CONVERSATION_TOOLS = {
 } as const;
 export type ConversationTool = keyof typeof CONVERSATION_TOOLS;
 const reads = new Set([
+  ...DESKTOP_CONTROL_READ_ACTIONS,
   "visuals.preview",
   "visuals.render",
   ...Object.keys(CONVERSATION_CREW_READ_TOOLS),
@@ -676,6 +683,7 @@ export const conversationToolName = (action: string) =>
   `conversation_${action.replaceAll(".", "_")}`;
 function conversationToolDescription(action: string) {
   const extension =
+    describeDesktopControlConversationTool(action) ??
     describeVisualConversationTool(action) ??
     describeRuntimeReadConversationTool(action) ??
     describeStewardConversationTool(action) ??
@@ -1104,7 +1112,8 @@ export async function runConversationMcp(
         const result: any = await call(tool.action, args);
         const annotationImage = result?.selection?.screenshot;
         const previewFrame = result?.evidence?.frame;
-        const frame = annotationImage ?? previewFrame ?? result?.frame ?? result;
+        const desktopImage = tool.action === "desktop.screenshot" ? result?.screenshot : undefined;
+        const frame = annotationImage ?? previewFrame ?? desktopImage ?? result?.frame ?? result;
         const data = frame?.base64 ?? frame?.data;
         const mime = frame?.mime ?? frame?.mimeType;
         const { base64: _base64, data: _data, ...imageMetadata } = frame ?? {};
@@ -1112,9 +1121,11 @@ export async function runConversationMcp(
           ? { ...result, selection: { ...result.selection, screenshot: imageMetadata } }
           : previewFrame
             ? { ...result, evidence: { ...result.evidence, frame: imageMetadata } }
-            : result?.frame
-              ? { ...result, frame: imageMetadata }
-              : undefined;
+            : desktopImage
+              ? { ...result, screenshot: imageMetadata }
+              : result?.frame
+                ? { ...result, frame: imageMetadata }
+                : undefined;
         respond({
           content:
             data && ["image/png", "image/jpeg"].includes(mime)

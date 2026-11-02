@@ -179,7 +179,7 @@ function StewardsPanel({
                 aria-label={t("Steward for {p0}", { p0: stewardProjectName(steward) })}
                 data-steward-status={steward.lastRunStatus}
                 aria-busy={pending || undefined}
-                className="rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2"
+                className="rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) px-3 py-2"
               >
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Bot className="icon-sm shrink-0 text-(--ui-text-secondary)" />
@@ -374,7 +374,7 @@ function StewardForm({
       aria-label={draft.id ? t("Edit steward") : t("New steward")}
       aria-busy={saving}
       onSubmit={onSubmit}
-      className="task-form rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface)"
+      className="task-form rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border)"
     >
       <div className="task-form-body">
         <fieldset disabled={saving} inert={saving} className="task-form-fields">

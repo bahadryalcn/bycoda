@@ -4,7 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import {
   loadBackgroundSessionSummary,
   type BackgroundSessionSummary,
@@ -71,7 +71,18 @@ export function BackgroundSessionDialog({
   }, [target.machineId, target.sessionId, revision]);
 
   return (
-    <Modal title={summary?.title ?? t("Background session")} onClose={onClose} size="md">
+    <Modal
+      title={summary?.title ?? t("Background session")}
+      onClose={onClose}
+      size="md"
+      footer={
+        <ModalActions>
+          <Button variant="ghost" type="button" onClick={onClose}>
+            {t("Close")}
+          </Button>
+        </ModalActions>
+      }
+    >
       <div className="flex min-h-0 flex-col gap-3 p-4">
         {error ? (
           <Alert tone="danger" role="alert" className="flex-wrap">
@@ -99,7 +110,7 @@ export function BackgroundSessionDialog({
                 {t(" · on this computer’s host")}
               </p>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3 text-ui-caption leading-relaxed text-(--ui-text-secondary)">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md border border-(--ui-tone-neutral-border) p-3 text-ui-caption leading-relaxed text-(--ui-text-secondary)">
               {summary.reply || <EmptyState size="inline" description={t("No reply yet.")} />}
             </div>
             {summary.note ? (
@@ -109,11 +120,6 @@ export function BackgroundSessionDialog({
             ) : null}
           </>
         )}
-        <div className="flex justify-end">
-          <Button variant="ghost" type="button" onClick={onClose}>
-            {t("Close")}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

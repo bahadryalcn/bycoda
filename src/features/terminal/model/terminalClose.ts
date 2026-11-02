@@ -32,11 +32,28 @@ async function runningTerminals(files: FilePaneTab[]): Promise<RunningTerminal[]
   return running;
 }
 
-/** Confirm closing one terminal when its foreground process is not the shell. */
-export async function confirmCloseTerminal(file: FilePaneTab): Promise<boolean> {
+/**
+ * Confirm closing one terminal when its foreground process is not the shell, or
+ * when it is the dock's last terminal, since closing that also closes the panel.
+ */
+export async function confirmCloseTerminal(
+  file: FilePaneTab,
+  options: { last?: boolean } = {},
+  confirm: Confirm = confirmInApp,
+): Promise<boolean> {
   const running = await runningTerminals([file]);
-  if (running.length === 0) return true;
-  return confirmSingle(running[0]);
+  if (running.length > 0) return confirmSingle(running[0], confirm);
+  if (!options.last) return true;
+  return confirm({
+    title: t("Close terminal?"),
+    message: t(
+      "{p0} is the last terminal. Closing it also closes the terminal panel. To keep it, hide the panel instead.",
+      { p0: terminalTabLabel(file) },
+    ),
+    confirmLabel: t("Close terminal"),
+    // Nothing is running; only the idle shell and its scrollback go away.
+    tone: "normal",
+  });
 }
 
 /** Confirm closing terminals that still have a foreground process. */

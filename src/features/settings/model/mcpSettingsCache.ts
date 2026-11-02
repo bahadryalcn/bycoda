@@ -1,7 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { parseClaudeMcpList, type McpConnection } from "./mcp";
 
-export type McpServerRow = McpConnection & { status: string };
+export type McpServerRow = McpConnection & {
+  status: string;
+  /** Provider-reported sign-in state; absent when the provider does not report one. */
+  auth?: "signed_in" | "signed_out" | "none";
+};
 
 export type McpSettingsSnapshot = {
   servers: McpServerRow[];
@@ -14,12 +18,21 @@ export type McpSettingsSnapshot = {
 };
 
 type ClaudeMcpListResult = string | { output: string; timedOut: boolean };
+type CodexAuthStatus = { name: string; authStatus: string };
+
+const CODEX_AUTH: Record<string, { status: string; auth: NonNullable<McpServerRow["auth"]> }> = {
+  o_auth: { status: "Signed in", auth: "signed_in" },
+  bearer_token: { status: "Signed in", auth: "signed_in" },
+  not_logged_in: { status: "Needs authentication", auth: "signed_out" },
+  unsupported: { status: "Configured", auth: "none" },
+};
 
 const snapshots = new Map<string, McpSettingsSnapshot>();
 export const MCP_LOCAL_ONLY_ERROR =
   "MCP server configuration is only available for projects on this computer.";
 const requests = new Map<string, Promise<McpSettingsSnapshot>>();
 const healthRequests = new Map<string, Promise<void>>();
+const codexRequests = new Map<string, Promise<void>>();
 const listeners = new Map<string, Set<(snapshot: McpSettingsSnapshot) => void>>();
 
 export function getCachedMcpSettings(cwd: string) {
@@ -58,6 +71,7 @@ export function loadMcpSettings(
     const discovery = fetchMcpSettings(cwd).then((snapshot) => {
       if (requests.get(cwd) === discovery) {
         healthRequests.delete(cwd);
+        codexRequests.delete(cwd);
         publish(cwd, snapshot);
       }
       return snapshot;
@@ -69,6 +83,7 @@ export function loadMcpSettings(
   return discovery.then((snapshot) => {
     if (options.claudeHealth !== false && !snapshot.error && requests.get(cwd) === discovery) {
       loadClaudeHealth(cwd, discovery);
+      if (snapshot.servers.some((server) => server.provider === "codex")) loadCodexAuth(cwd, discovery);
     }
     return snapshots.get(cwd) ?? snapshot;
   });
@@ -143,8 +158,30 @@ function loadClaudeHealth(cwd: string, discovery: Promise<McpSettingsSnapshot>) 
   healthRequests.set(cwd, request);
 }
 
+/** Codex knows which of its servers hold OAuth credentials; other rows stay as configured. */
+function loadCodexAuth(cwd: string, discovery: Promise<McpSettingsSnapshot>) {
+  if (codexRequests.has(cwd)) return;
+  const request = invoke<CodexAuthStatus[]>("codex_mcp_list", { cwd })
+    .then((list) => {
+      if (requests.get(cwd) !== discovery || !Array.isArray(list)) return;
+      const auth = new Map(list.map((entry) => [entry.name, CODEX_AUTH[entry.authStatus]]));
+      const snapshot = snapshots.get(cwd)!;
+      publish(cwd, {
+        ...snapshot,
+        servers: snapshot.servers.map((server) => {
+          const known = server.provider === "codex" && server.enabled !== false ? auth.get(server.name) : undefined;
+          return known ? { ...server, ...known } : server;
+        }),
+      });
+    })
+    // Without Codex status the rows keep their configured state and Sign in stays available.
+    .catch(() => undefined);
+  codexRequests.set(cwd, request);
+}
+
 export function clearMcpSettingsCache() {
   snapshots.clear();
   requests.clear();
   healthRequests.clear();
+  codexRequests.clear();
 }

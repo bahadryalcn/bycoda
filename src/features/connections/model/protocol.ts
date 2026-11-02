@@ -150,6 +150,10 @@ export type HostWorktree = {
   missing: boolean;
 };
 export type HostSession = {
+  /** Host observed provider work for this exact run; metadata saves do not refresh it. */
+  runActivity?:{runId:string;lastActivityAt:number};
+  /** Host-stamped projection for summary rows; client commands cannot set this. */
+  managedBy?:import("../../sessions/model/session").AssistantSessionManagement;
   /** Durable execution/history floor for migrated sessions, independent of stream revision. */
   authorityGeneration?: number;
   /** Client view is incomplete; never save this as an authoritative transcript. */

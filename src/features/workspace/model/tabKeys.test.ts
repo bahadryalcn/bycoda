@@ -48,7 +48,8 @@ describe("tabCommand", () => {
       "toggle-terminal",
     );
     expect(tabCommand(key({ key: '"', ctrlKey: true, altKey: true }))).toBeNull();
-    expect(tabCommand(key({ key: '"', ctrlKey: true, repeat: true }))).toBeNull();
+    // Repeat still resolves so the dispatcher can consume it instead of typing into a terminal.
+    expect(tabCommand(key({ key: '"', ctrlKey: true, repeat: true }))).toBe("toggle-terminal");
     expect(tabCommand(key({ key: '"' }))).toBeNull();
     expect(tabCommand(key({ key: "`", code: "Backquote", ctrlKey: true }))).toBe("new-terminal");
   });

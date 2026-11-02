@@ -6,6 +6,9 @@ import {
   runtimeLogToolName,
 } from "./runtime-log-tools";
 import type { SessionGrantScope } from "./session-authority";
+import {assertAssistantThreadScope,type AssistantThreadAuthorityResolver,type AssistantThreadGrantScope} from "./session-authority";
+import {voiceThreadToolAllowed} from "../src/shared/model/voiceToolScope";
+export {voiceThreadToolAllowed} from "../src/shared/model/voiceToolScope";
 import { createHash } from "node:crypto";
 
 export type VoiceToolFamily = "conversation" | "social" | "runtime-logs";
@@ -15,8 +18,10 @@ type GrantIssuer = {
     sessionId: string,
     deviceHash?: string,
     expectedScope?: unknown,
+    assistantThreadId?:string,
   ): Promise<{ token: string; scope: SessionGrantScope }>;
   revokeSessionGrant(token: string): void;
+  issueThreadGrant?(threadId:string,projectId:string,deviceHash?:string,expectedScope?:unknown):Promise<{token:string;scope:AssistantThreadGrantScope}>;
 };
 
 /** Metadata is not permission. Calls always re-enter the existing scoped dispatcher. */
@@ -43,9 +48,10 @@ const identity = (value: unknown): value is string =>
 
 export function validateVoiceToolList(params: Input) {
   if (
-    Object.keys(params).some((key) => !["projectId", "sessionId"].includes(key)) ||
+    Object.keys(params).some((key) => !["projectId", "sessionId", "threadId"].includes(key)) ||
     !identity(params.projectId) ||
-    (params.sessionId !== undefined && !identity(params.sessionId))
+    (params.sessionId !== undefined && !identity(params.sessionId)) ||
+    (params.threadId !== undefined && !identity(params.threadId))
   )
     throw new Error("Choose a verified project before discovering voice tools.");
 }
@@ -54,12 +60,13 @@ export function validateVoiceToolList(params: Input) {
 export function parseVoiceToolCall(params: Input) {
   if (
     Object.keys(params).some(
-      (key) => !["projectId", "sessionId", "family", "action", "input", "requestId"].includes(key),
+      (key) => !["projectId", "sessionId", "threadId", "family", "action", "input", "requestId", "causalContextId"].includes(key),
     ) ||
     !identity(params.projectId) ||
-    !identity(params.sessionId) ||
+    ((!identity(params.sessionId) && !identity(params.threadId)) || (params.sessionId!==undefined&&!identity(params.sessionId)) || (params.threadId!==undefined&&!identity(params.threadId))) ||
     !object(params.input) ||
-    (params.requestId !== undefined && !identity(params.requestId))
+    (params.requestId !== undefined && !identity(params.requestId)) ||
+    (params.causalContextId !== undefined && (!identity(params.causalContextId)||!identity(params.requestId)||!identity(params.threadId)))
   )
     throw new Error("Voice tools require an explicit verified project and session.");
   const input = params.input;
@@ -85,7 +92,9 @@ export function parseVoiceToolCall(params: Input) {
     input: normalized.input,
     projectId: params.projectId,
     sessionId: params.sessionId,
+    threadId: params.threadId as string|undefined,
     requestId: normalized.requestId,
+    causalContextId: params.causalContextId as string|undefined,
   };
 }
 
@@ -95,21 +104,28 @@ export type VoiceToolDispatchPorts = {
   deviceHash: string;
   sessionIdentity(sessionId: string): Promise<{ projectId: string; provider: string }>;
   issuers: Record<VoiceToolFamily, GrantIssuer>;
+  threadIdentity?:AssistantThreadAuthorityResolver;
 };
+
 
 /** Request-bound sibling grants never reach the renderer and never revoke a coding child's grant. */
 export async function prepareVoiceToolDispatch(params: Input, ports: VoiceToolDispatchPorts) {
   const call = parseVoiceToolCall(params);
   if (!(await ports.authorized())) throw new Error("Native owner device required.");
-  const current = await ports.sessionIdentity(call.sessionId);
-  if (current.projectId !== call.projectId)
-    throw new Error("Voice tool session belongs to another project.");
   const issuer = ports.issuers[call.family];
-  const grant = await issuer.issueSessionGrant(call.sessionId, ports.deviceHash, {
+  const threadOnly=call.threadId!==undefined&&call.sessionId===undefined;
+  if(call.threadId)await assertAssistantThreadScope(ports.threadIdentity,call.threadId,call.projectId);
+  if(threadOnly&&!voiceThreadToolAllowed(call.family,call.action))throw new Error("This voice tool requires a real focused session.");
+  const current = threadOnly?undefined:await ports.sessionIdentity(String(call.sessionId));
+  if (current&&current.projectId !== call.projectId)
+    throw new Error("Voice tool session belongs to another project.");
+  if(threadOnly&&!issuer.issueThreadGrant)throw new Error("This Host does not support assistant thread grants.");
+  const expectedSession={
     ...current,
     environmentId: ports.environmentId,
     sessionId: call.sessionId,
-  });
+  };
+  const grant=threadOnly?await issuer.issueThreadGrant!(call.threadId!,call.projectId,ports.deviceHash,{kind:"assistant-thread",threadId:call.threadId!,projectId:call.projectId,environmentId:ports.environmentId}):call.threadId?await issuer.issueSessionGrant(String(call.sessionId),ports.deviceHash,expectedSession,call.threadId):await issuer.issueSessionGrant(String(call.sessionId),ports.deviceHash,expectedSession);
   let released = false;
   const release = () => {
     if (released) return;
@@ -118,6 +134,10 @@ export async function prepareVoiceToolDispatch(params: Input, ports: VoiceToolDi
   };
   try {
     if (!(await ports.authorized())) throw new Error("Native owner authority revoked.");
+    if(grant.scope.projectId!==call.projectId||grant.scope.environmentId!==ports.environmentId||
+      (threadOnly?!("kind"in grant.scope)||grant.scope.kind!=="assistant-thread"||grant.scope.threadId!==call.threadId:
+       !("sessionId"in grant.scope)||grant.scope.sessionId!==call.sessionId||grant.scope.provider!==current?.provider))throw new Error("Voice tool grant scope changed.");
+    if(call.threadId)await assertAssistantThreadScope(ports.threadIdentity,call.threadId,grant.scope.projectId);
     return {
       family: call.family,
       method:
@@ -127,11 +147,13 @@ export async function prepareVoiceToolDispatch(params: Input, ports: VoiceToolDi
             ? "social.tools.call"
             : "runtimeLogs.tools.call",
       token: grant.token,
+      causalContextId:call.causalContextId,
+      source:{projectId:grant.scope.projectId,...(call.threadId?{threadId:call.threadId}:{}),...("sessionId"in grant.scope?{sessionId:grant.scope.sessionId}:{}),family:call.family,action:call.action},
       // Browser leases span calls, while the transport grant is request-bound.
       // This is an identity only; every dispatch still authenticates the fresh grant.
       browserOwner: `voice:${createHash("sha256")
         .update(
-          JSON.stringify([ports.environmentId, ports.deviceHash, call.projectId, call.sessionId]),
+          JSON.stringify([ports.environmentId, ports.deviceHash, call.projectId, call.threadId??null, call.sessionId??null]),
         )
         .digest("hex")}`,
       params: {

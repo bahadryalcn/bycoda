@@ -5,6 +5,7 @@ import { NumberField } from "../../../shared/ui/NumberField";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Progress } from "../../../shared/ui/Progress";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -27,7 +28,7 @@ import { TaskAccountPicker } from "./TaskAccountPicker";
 import { HostModelSource } from "../../connections/ui/HostModelSource";
 import { type BoardTask, TASK_MACHINE_ERROR } from "../model/taskClient";
 import { t, useLocale } from "../../../shared/i18n";
-import { type FormEvent, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
 import {
   Check,
@@ -162,7 +163,7 @@ function GoalCard({
       aria-label={goal.title}
       data-goal-status={goal.status}
       aria-busy={pending || undefined}
-      className="task-goal-card rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 py-2"
+      className="task-goal-card rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) px-3 py-2"
     >
       <div className="task-goal-heading flex min-w-0 flex-wrap items-center gap-2">
         <Sparkles className="icon-sm shrink-0 text-(--ui-text-secondary)" />
@@ -195,11 +196,21 @@ function GoalCard({
             </span>
           </span>
         ) : null}
-        <span className="task-goal-context min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
-          {goal.projects.map((project) => project.name).join(", ")}
-          {t(" · on")} {goal.machineName}
-          {goal.stale ? t(" (offline, last known)") : ""}
-        </span>
+        <div className="task-goal-context flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)">
+          <BadgeList
+            label={t("Projects")}
+            size="xs"
+            className="min-w-0 shrink"
+            items={goal.projects.map((project, index) => ({
+              id: `${index}:${project.name}`,
+              label: project.name,
+            }))}
+          />
+          <span className="min-w-0 truncate">
+            {t(" · on")} {goal.machineName}
+            {goal.stale ? t(" (offline, last known)") : ""}
+          </span>
+        </div>
         <div className="task-goal-actions ml-auto flex flex-wrap items-center gap-0.5">
           {pending ? (
             <Spinner size="xs" className="mx-1.5 text-(--ui-text-secondary)" />
@@ -371,10 +382,19 @@ function GoalCard({
                 {projectOf(task.projectId, task.project)}
               </span>
               {task.dependsOn.length ? (
-                <span className="text-ui-micro text-(--ui-text-secondary)">
-                  {t("· after ")}
-                  {task.dependsOn.map(titleOf).join(", ")}
-                </span>
+                <div className="flex min-w-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)">
+                  <span className="shrink-0">{t("· after ")}</span>
+                  <BadgeList
+                    label={t("After")}
+                    size="xs"
+                    max={2}
+                    className="min-w-0"
+                    items={task.dependsOn.map((key, index) => {
+                      const title = titleOf(key);
+                      return { id: `${index}:${title}`, label: title };
+                    })}
+                  />
+                </div>
               ) : null}
             </li>
           ))}
@@ -1214,14 +1234,18 @@ export function GoalList({
   filter,
   tasks,
   acting,
+  revealKey,
 }: {
   goals: TaskGoalsController;
   filter: string;
   tasks: BoardTask[];
   acting: string | null;
+  revealKey?:string;
 }) {
+  const disclosure=useRef<HTMLDetailsElement>(null);
+  useEffect(()=>{if(revealKey&&disclosure.current){disclosure.current.open=true;disclosure.current.scrollIntoView?.({block:"nearest"});}},[revealKey]);
   return (
-    <details className="task-goals-disclosure">
+    <details ref={disclosure} className="task-goals-disclosure">
       <summary>
         {t("Goals")} · {goals.goals.length}
       </summary>

@@ -176,7 +176,7 @@ export function ModelExtrasPanel({
           <p
             id={descriptionId}
             hidden={!showHelp}
-            className="mb-1 rounded-md bg-(--ui-surface-raised) px-2 py-1.5 text-ui-caption leading-4 text-(--ui-text-secondary)"
+            className="mb-1 rounded-md border border-(--ui-pane-border) px-2 py-1.5 text-ui-caption leading-4 text-(--ui-text-secondary)"
           >
             {t(setting.description)}
           </p>
@@ -188,7 +188,7 @@ export function ModelExtrasPanel({
     <>
       {/* z-10: in-popover sticky header over the scrolling list; no in-pane layer scale exists, so the literal stays. */}
       {!compact && (
-        <div className="sticky top-0 z-10 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 pt-2.5 pb-2">
+        <div className="sticky top-0 z-10 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-3 pt-2.5 pb-2">
           <div className="flex items-center justify-between gap-2">
             {leading}
             <span className="min-w-0 flex-1 truncate text-ui-caption font-medium">

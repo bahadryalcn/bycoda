@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
@@ -241,11 +241,15 @@ export function ProgramDetailPanel({
         </small>
       ) : null}
       <div className="social-actions">
-        {detail.program.accountIds.map((accountId) => (
-          <Badge key={accountId} variant="label" appearance="outline">
-            {snapshot.accounts.find((account) => account.id === accountId)?.name ?? accountId}
-          </Badge>
-        ))}
+        <BadgeList
+          label={t("Accounts")}
+          appearance="outline"
+          className="min-w-0 flex-[1_1_12rem] self-center"
+          items={detail.program.accountIds.map((accountId, index) => ({
+            id: `${index}:${accountId}`,
+            label: snapshot.accounts.find((account) => account.id === accountId)?.name ?? accountId,
+          }))}
+        />
         <Button
           type="button"
           variant="secondary"

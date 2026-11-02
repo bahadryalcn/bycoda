@@ -13,10 +13,36 @@ import {
 } from "./production";
 import { normalizeSocialToolRequest, socialToolCatalog } from "../host/social-tools";
 import { createOfflineReport } from "./report";
+import { voiceInstructions } from "../src/features/voice/model/realtimeVoice";
+import { voiceOwnerProfileInstructions } from "../src/features/voice/model/voiceOwner";
+import { assistantRuleCases } from "./assistantRules";
 
 const responses: Record<string, string> = baseline.responses;
 
 describe("offline model behavior standard", () => {
+  it("uses actual production owner/voice instructions and accepted correction data for assistant behavior cases", () => {
+    for (const item of assistantRuleCases) {
+      const saved = voiceOwnerProfileInstructions(
+        { name: "Demo", addressAs: "", language: "auto" },
+        [{ id: "rule-demo", kind: "rule", active: true, scope: "all", text: item.ownerRule }],
+        false,
+      );
+      expect(buildCasePrompt(item)).toContain(voiceInstructions("en", saved));
+    }
+    expect(
+      buildCasePrompt(assistantRuleCases.find((item) => item.id === "assistant-long-pause")!),
+    ).toContain('"manualTurnEnd":true');
+    expect(
+      buildCasePrompt(
+        assistantRuleCases.find((item) => item.id === "assistant-worker-no-rule-promotion")!,
+      ),
+    ).toContain("Production accepted-correction data: null");
+    const fruit = assistantRuleCases.find((item) => item.id === "assistant-fruit-en")!;
+    expect(gradeResponse(fruit, '{"reply":"A fresh pear is another option."}').pass).toBe(true);
+    expect(gradeResponse(fruit, '{"reply":"BANANAS are an option."}').pass).toBe(false);
+    const breakfast = assistantRuleCases.find((item) => item.id === "assistant-breakfast-tr")!;
+    expect(gradeResponse(breakfast, '{"reply":"Muzlu yulaf deneyin."}').pass).toBe(false);
+  });
   it.each(cases)("accepts the hand-authored positive fixture $id", (item) => {
     expect(gradeResponse(item, responses[item.id]).pass).toBe(true);
   });

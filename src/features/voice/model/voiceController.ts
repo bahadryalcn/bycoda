@@ -2,16 +2,21 @@ import type { Session } from "../../sessions/model/session";
 import { sameProjectPath } from "../../projects/model/recents";
 import { voiceContext } from "./voiceSession";
 import { readVoiceDraftAttachment, readVoiceDraftContext } from "./voiceDraftContext";
-import { callVoiceTool, discoverVoiceTools } from "./voiceToolClient";
+import { callVoiceTool, discoverVoiceTools,type VoiceToolTarget } from "./voiceToolClient";
 import { isVoiceToolFamily, type VoiceToolSelection } from "./voiceToolCatalog";
 import type { VoiceWorkspaceProject } from "./voiceWorkspaceActions";
+import { resolveVoiceProjects } from "./voiceProjectNames";
+import {voiceThreadToolAllowed} from "../../../shared/model/voiceToolScope";
 
 export type VoiceControllerPorts = {
-  getScope?(): "global" | "session";
+  getScope?(): "global" | "project" | "session";
   getProjects(): readonly VoiceWorkspaceProject[];
   getSessions(): readonly Session[];
   getProjectPath(): string;
   getTargetId(): string | undefined;
+  getThreadId?(): string|undefined|Promise<string|undefined>;
+  causalContext?():Promise<VoiceToolTarget["causalContext"]>;
+  invalidateCausalContext?():Promise<void>;
   workspace: {
     tools: readonly { name: string; description: string; parameters: Record<string, unknown> }[];
     execute(action: string, input: Record<string, unknown>): Promise<unknown>;
@@ -30,8 +35,8 @@ function text(value: unknown, name: string, optional = false): string | undefine
 
 /** Tools are executed against captured identities, never a later selected tab. */
 export function createVoiceController(read: () => VoiceControllerPorts) {
-  let bound: { sessionId?: string; projectPath: string } | undefined;
-  const requests = new Map<string, { signature: string; result: Promise<unknown> }>();
+  let bound: { sessionId?: string; projectPath: string;threadId?:string|Promise<string|undefined>;scope?:"global"|"project"|"session" } | undefined;
+  const requests = new Map<string, { signature: string; result: Promise<unknown>; settled?: boolean }>();
   const contexts = new Map<string, Promise<string>>();
   function project(path: string) {
     if (
@@ -51,10 +56,10 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
     project(value.cwd);
     return value;
   }
-  function captureTurn() {
+  function captureTurn(scope=read().getScope?.()) {
     const id = read().getTargetId();
     const value = id ? session(id) : undefined;
-    bound = { sessionId: value?.id, projectPath: value?.cwd ?? read().getProjectPath() };
+    bound = { sessionId: value?.id, projectPath: value?.cwd ?? read().getProjectPath(),scope,...(read().getThreadId?{threadId:read().getThreadId?.()}: {}) };
   }
   function target(args: Record<string, unknown>) {
     const explicitPath = text(args.projectPath, "projectPath", true);
@@ -68,17 +73,33 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       (id ? session(id).cwd : (bound?.projectPath ?? read().getProjectPath()));
     project(path);
     if (
-      read().getScope?.() === "session" &&
+      (bound?.scope==="session"||read().getScope?.()==="session") &&
       bound &&
       (!sameProjectPath(path, bound.projectPath) || (id && id !== bound.sessionId))
     )
       throw new Error("Choose Global voice scope to manage another session or project.");
+    if((bound?.scope==="project"||read().getScope?.()==="project")&&bound&&!sameProjectPath(path,bound.projectPath))throw new Error("Choose Global voice scope to manage another project.");
     if (id && !sameProjectPath(session(id).cwd, path))
       throw new Error("Session and project targets do not match.");
     return { cwd: path, sessionId: id };
   }
   async function source(args: Record<string, unknown>, useTarget = false) {
     const selected = target(args);
+    if(read().getThreadId) {
+      if(selected.cwd.startsWith("remote://")){
+        if(!selected.sessionId)throw new Error("Open a session on this Host before using project tools.");
+        return selected; // A local thread cannot mint authority on another Host.
+      }
+      const threadId=await (bound ? bound.threadId : read().getThreadId?.());
+      if(!threadId)throw new Error("Open a verified assistant conversation before using tools.");
+      project(selected.cwd);
+      if(selected.sessionId)session(selected.sessionId);
+      if(useTarget){
+        if(!selected.sessionId)throw new Error("This voice tool requires a real focused session.");
+        return {...selected,threadId};
+      }
+      return {cwd:selected.cwd,threadId};
+    }
     // Working-copy and focused desktop tools retain their original session,
     // worktree, lease and active-conversation gates. Scheduling uses its own source.
     if (useTarget && selected.sessionId) return selected;
@@ -118,6 +139,8 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
     const assertActive = () => {
       if (!authorized()) throw new Error("The spoken request is no longer active.");
     };
+    assertActive();
+    if(["app_context","composer_context","composer_attachment"].includes(name))await read().invalidateCausalContext?.();
     assertActive();
     if (name === "app_context") return context();
     if (name === "composer_context") {
@@ -169,7 +192,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       // Host tools need a verified project; desktop workspace actions do not.
       // A Host failure must not hide the workspace actions as well.
       try {
-        const selected = target(args);
+        const selected = read().getThreadId ? await source(args) : target(args);
         const page = await discoverVoiceTools(selected, options);
         assertActive();
         project(selected.cwd);
@@ -206,16 +229,22 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
         throw new Error("Request ID was already used for another operation.");
       return old.result;
     }
-    if (requests.size >= 256)
-      throw new Error(
-        "Voice operation history is full. Disable and enable the companion to start a new voice session.",
-      );
+    if (requests.size >= 256) {
+      // Only acknowledged operations may leave the sliding window. Pending and
+      // rejected calls may still have effects, so retaining them prevents replay.
+      const oldest = [...requests].find(([, request]) => request.settled);
+      if (oldest) requests.delete(oldest[0]);
+      else throw new Error("Voice operations are awaiting confirmation. Check their status before continuing.");
+    }
     const result = (async () => {
       if (args.family === "workspace") {
-        if (read().getScope?.() === "session") {
+        await read().invalidateCausalContext?.();assertActive();
+        if (read().getScope?.() === "session" || read().getScope?.() === "project") {
           if (action === "workspace.projects.list")
-            return { projects: read().getProjects(), scope: "session" };
-          if (action === "workspace.sessions.create")
+            return { projects: read().getProjects(), scope: read().getScope?.() };
+          if (action === "workspace.projects.resolve")
+            return resolveVoiceProjects(read().getProjects(), text(input.query, "query")!);
+          if (action === "workspace.sessions.create" && read().getScope?.() === "session")
             throw new Error("Choose Global voice scope to create a session.");
           target({ projectPath: input.projectPath, sessionId: input.sessionId });
         }
@@ -224,11 +253,13 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       if (!isVoiceToolFamily(args.family)) throw new Error("Unknown tool family.");
       const selected = await source(
         args,
-        args.family === "conversation" &&
-          /^(files|git|checkpoints|terminals|attachments)\./.test(action),
+        !voiceThreadToolAllowed(args.family,action),
       );
       assertActive();
-      const result = await callVoiceTool(selected, {
+      const causalContext=selected.cwd.startsWith("remote://")?undefined:await read().causalContext?.();
+      assertActive();
+      if(read().causalContext&&!selected.cwd.startsWith("remote://")&&!causalContext)throw new Error("The voice tool result could not be verified. Check its original operation.");
+      const result = await callVoiceTool({...selected,...(causalContext?{causalContext}:{})}, {
         family: args.family,
         action,
         input,
@@ -237,7 +268,11 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       project(selected.cwd);
       return result;
     })();
-    requests.set(requestId, { signature, result });
+    const request = { signature, result, settled: false };
+    requests.set(requestId, request);
+    void result.then(() => { request.settled = true; }, () => {
+      // A rejected transport promise does not prove the operation had no effect.
+    });
     return result;
   }
   return { captureTurn, context, execute };

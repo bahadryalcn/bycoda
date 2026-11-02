@@ -60,6 +60,7 @@ mod tests {
 
     fn session(id: &str, image_paths: &[&str]) -> SessionUpsert {
         SessionUpsert {
+            managed_by: None,
             id: id.into(),
             cwd: "/isolated/delete-regression".into(),
             harness: "codex".into(),

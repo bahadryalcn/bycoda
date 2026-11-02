@@ -28,6 +28,7 @@ import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { useSshRunbookQueue } from "../../features/connections/model/sshRunbookQueue";
 import "./toolNavigation.css";
 import { preloadToolSurface } from "../workspace/surfaces/lazySurfaces";
+import { useAssistantIdentity } from "../../features/assistant/model/assistantClient";
 
 // Retained panels own separate headers. Carry keyboard focus into the header
 // revealed by switching tools, after the previous tablist becomes hidden.
@@ -71,6 +72,7 @@ const labels = {
   notes: "Notes",
   "conversation-tools": "Conversation tools",
   terminal: "Terminal",
+  assistant: "Set up",
 };
 const icons = {
   servers: Server,
@@ -81,6 +83,7 @@ const icons = {
   notes: StickyNote,
   "conversation-tools": Wrench,
   terminal: Terminal,
+  assistant: Zap,
 };
 
 /** Mount on first visit, retain edits and selection, suspend effects while hidden. */
@@ -119,6 +122,8 @@ export function ToolPanel({
 
 export function ToolNavigation() {
   const t = useT();
+  const assistant = useAssistantIdentity();
+  const label = (tool: WorkspaceToolId) => tool === "assistant" ? assistant.room : t(labels[tool]);
   const sshReviews = useSshRunbookQueue();
   const navigation = useContext(ToolNavigationContext);
   const [opening, setOpening] = useState<"single" | "grouped" | null>(null);
@@ -141,7 +146,7 @@ export function ToolNavigation() {
             ? navigation.notesEnabled
             : id === "servers"
               ? navigation.includeServers || navigation.active === "servers"
-              : id === "terminal" || id === "conversation-tools"
+              : id === "terminal" || id === "conversation-tools" || id === "assistant"
                 ? navigation.includeAuxiliaryTools
                 : true,
         );
@@ -182,7 +187,7 @@ export function ToolNavigation() {
             value={navigation.active}
             options={tools.map((tool) => ({
               value: tool,
-              label: t(labels[tool]),
+              label: label(tool),
               description:
                 tool === "servers" && sshReviews.intents.length
                   ? t("Pending SSH reviews")
@@ -243,7 +248,7 @@ export function ToolNavigation() {
               onClick={() => navigation.onSelect(tool)}
             >
               <Icon className="icon-sm shrink-0" aria-hidden />
-              <span>{t(labels[tool])}</span>
+              <span>{label(tool)}</span>
               {tool === "servers" && sshReviews.intents.length ? (
                 <span aria-label={t("Pending SSH reviews")}>{sshReviews.intents.length}</span>
               ) : null}

@@ -1,8 +1,8 @@
 # Links to local conversations
 
-In a saved conversation's session menu, choose **Copy session link** for a plain
-link or **Copy Markdown reference** for a readable linked title. **Copy session ID**
-remains available. Copy progress, confirmation and failures appear on the menu
+In a saved conversation's session menu, open **Copy**, then choose **Copy session
+link** for a plain link or **Copy Markdown reference** for a readable linked title.
+**Harness session ID** and **bycoda session ID** are available in the same submenu. Copy progress, confirmation and failures appear on the menu
 action; select it again to retry a failure. A new, unsaved conversation has no
 persistent reference yet.
 

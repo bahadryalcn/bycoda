@@ -39,8 +39,10 @@
 }
 
 .surface {
-  background: var(--ui-surface);
   color: var(--color-content);
+}
+.surface[data-fullscreen] {
+  background: var(--color-background-base);
 }
 
 .title {

@@ -91,8 +91,17 @@
   grid-column: 2;
   grid-row: 1;
 }
+.nameLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.scopeTag {
+  flex: none;
+}
 .name {
-  grid-column: 1 / -1;
+  min-inline-size: 0;
   font-size: var(--ui-font-secondary);
   font-weight: 500;
   overflow: clip;

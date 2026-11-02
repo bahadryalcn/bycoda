@@ -339,7 +339,16 @@ export type TurnMetrics = {
   cacheHitPercent?: number;
 };
 
+/** Stamped by the Host at the accepted effect boundary, never supplied by a
+ * client send/create/steer command. Missing author retains legacy owner input. */
+export type SessionMessageAuthor =
+  | {kind:"assistant-manual";name:string;supervisionId:string;reason:"nudge"|"answer"|"steer"|"kickoff";operationId:string;activityId?:string}
+  | {kind:"assistant";name:string;jobId:string;reason:"nudge"|"answer"|"steer"|"kickoff";operationId:string;activityId?:string}
+  | {kind:"task"|"automation"|"steward";id:string;name:string;reason:string;operationId?:string};
+export type AssistantSessionManagement = {assistant:true;managedAt:number;detachedAt?:number}&({jobId:string;supervisionId?:never}|{supervisionId:string;jobId?:never});
+
 export type Block = {
+  author?:SessionMessageAuthor;
   /** Immutable self-contained visual published by a completed Conversation Tool. */
   inlineVisual?: InlineVisualSnapshot;
   /** Bounded remote preview; full content is requested explicitly, never persisted. */
@@ -490,6 +499,8 @@ export const RUNTIME_MODE_HINT: Record<RuntimeMode, string> = {
 export type WorkspaceMode = "current" | "worktree";
 
 export type Session = {
+  /** Host-owned relationship to a durable assistant job; never inferred from a title. */
+  managedBy?:AssistantSessionManagement;
   /** Explicit execution owner, independent of cwd, worktree and legacy mirrors. */
   hostBinding?: import("../../connections/model/sessionExecutionBinding").HostSessionBinding;
   /** Incomplete remote view. Sending may proceed; authoritative persistence may not. */

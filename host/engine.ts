@@ -1,4 +1,8 @@
 import { EngineOperations } from "./engine-operations";
+import {AssistantTurnPolicyDeferredError,recordDeferredAssistantTurn} from "./assistant-turn-policy";
+import {hostQuestionToken} from "./question-source";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { SessionMessageAuthor } from "../src/features/sessions/model/session";
 import { HostRunWriters } from "./run-writers";
 import type { HostRunHandle } from "../src/integrations/harness/core/hostRun";
 import { HostAuthorityFenceError } from "./storage/authority-fence";
@@ -90,6 +94,7 @@ import {
   type ProviderActivityRetirement,
 } from "./provider-activity-retirement";
 import { HostStore } from "./store";
+import { isSessionRunActivity } from "./session-run-activity";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import { runHostShell } from "./shell";
 import { isTaskWorktreeRemoving } from "./task-worktree-cleanup";
@@ -561,6 +566,7 @@ type ActiveHostTurn = {
   runId: string;
   priorBlockIds: Set<string>;
   ready: Promise<void>;
+  accepted?:boolean;
   steers: Promise<void>;
   controls: Promise<void>;
   done: Promise<void>;
@@ -584,10 +590,36 @@ type ActiveHostTurn = {
   operationContext?: HarnessOperationContext;
 };
 
+export type EngineCommandAdmission={
+    check:(stage:{phase:"command"|"provider";sessionId:string;runId?:string})=>Promise<void>;
+    onAccepted?:(receipt:CommandReceipt)=>Promise<void>;
+};
 export class HostEngine {
+  private readonly commandAdmissions = new AsyncLocalStorage<EngineCommandAdmission|undefined>();
+  /** Internal captured execution authority; this is never part of a client command. */
+  withCommandAdmission<T>(admission:EngineCommandAdmission,work:()=>Promise<T>):Promise<T> {
+    return this.commandAdmissions.run(admission,work);
+  }
+  private readonly messageAuthors = new AsyncLocalStorage<SessionMessageAuthor>();
+  withMessageAuthor<T>(author: SessionMessageAuthor, work: () => Promise<T>): Promise<T> {
+    return this.messageAuthors.run(structuredClone(author), work);
+  }
+  /** Host-composed owner preferences; this never changes execution authority. */
+  ownerInstructions?: () => Promise<string>;
+  /** Host-owned scheduling fence. Never supplied by a provider or client command. */
+  beforeProviderTurn?:(input:{sessionId:string;runId?:string;author?:SessionMessageAuthor})=>Promise<void>;
+  private async checkProviderSchedule(sessionId:string,runId?:string){
+    const author=this.messageAuthors.getStore();
+    try{await this.beforeProviderTurn?.({sessionId,runId,...(author?{author:structuredClone(author)}:{})});}
+    catch(error){
+      if(error instanceof AssistantTurnPolicyDeferredError&&runId&&author?.kind==="task")await recordDeferredAssistantTurn(this.store,sessionId,runId,author.id,()=>!this.running.get(sessionId)?.providerEntered).catch(()=>undefined);
+      throw error;
+    }
+  }
   private readonly operations = new EngineOperations();
   private switchingProjects = new Set<string>();
   private running = new Map<string, ActiveHostTurn>();
+  private readonly questionReplyAuthors=new Map<string,{runId:string;token:string;reply:unknown;author:SessionMessageAuthor}>();
   /** Accepted turns whose provider dispatch has not yet installed their active run. */
   private dispatching = new Map<string, { runId: string | undefined; settled: Promise<void> }>();
   private readonly providerActivities = new ProviderActivityRetirements();
@@ -618,9 +650,10 @@ export class HostEngine {
 
   /** Idle is not physical retirement. Keep the session operation locked until
    * the original provider has acknowledged cleanup and the caller grants its lease. */
-  async withRetiredProviderWriter<T>(id: string, grant: () => Promise<T>): Promise<T> {
+  async withRetiredProviderWriter<T>(id: string, grant: () => Promise<T>, admitted?:()=>Promise<void>): Promise<T> {
     await this.ready;
     return this.operations.run(id, async () => {
+      await admitted?.();
       if (this.closing || this.hasActiveRun(id)) throw new LeaseHeldError("host");
       const original = this.retainedWriterTurns.get(id);
       if (original) {
@@ -661,6 +694,7 @@ export class HostEngine {
           original.provider.bind(id, current.providerSessionId, current.cwd, current.providerAccountId);
       }
       if (this.closing) throw new LeaseHeldError("host");
+      await admitted?.();
       return grant();
     });
   }
@@ -1654,6 +1688,90 @@ export class HostEngine {
     );
   }
 
+  /** Internal task continuation. Transcript identity and execution ownership stay
+   * fixed; the ordinary handoff dispatcher retires and resets provider history. */
+  async continueSessionHistory(input: {
+    sessionId: string;
+    requestId: string;
+    source: { projectId: string; executionCwd: string; authorityGeneration?: number; runId?: string };
+    text: string;
+    brief: string;
+    author: SessionMessageAuthor;
+    signal: AbortSignal;
+    admitted: () => Promise<void>;
+    /** Canonical task owner rebinds its exact run in this acceptance transaction. */
+    onAccepted: (receipt: CommandReceipt) => Promise<void>;
+  }): Promise<CommandReceipt> {
+    await this.ready;
+    const { sessionId, requestId } = input;
+    text(requestId, "continuation request ID", 100);
+    text(input.text, "continuation request", 32000);
+    text(input.brief, "continuation packet", 32000);
+    const signature = createHash("sha256").update(JSON.stringify({
+      type: "task.history.continue", sessionId, requestId, source: input.source,
+      text: input.text, brief: input.brief, author: input.author,
+    })).digest("hex");
+    return this.operations.run(sessionId, async () => {
+      const previous = await this.store.receipt(requestId, signature);
+      if (previous) return previous;
+      const check = async () => {
+        input.signal.throwIfAborted();
+        if (this.closing || this.rewinding.has(sessionId) || this.hasActiveRun(sessionId))
+          throw new Error("Wait for the original worker turn to finish before continuation.");
+        await this.store.db.checkAuthorization();
+        await input.admitted();
+        input.signal.throwIfAborted();
+        await this.store.assertAuthority(sessionId, input.source.authorityGeneration);
+        const current = await this.store.session(sessionId);
+        const session = current.session;
+        if (current.status !== "idle" || current.projectId !== input.source.projectId ||
+          (session.worktreeCwd ?? session.cwd) !== input.source.executionCwd ||
+          current.authorityGeneration !== input.source.authorityGeneration || current.runId !== input.source.runId)
+          throw new Error("The original worker execution identity changed before continuation.");
+        if (session.pendingQuestion || session.pendingSwitch || pendingHandoff(session) ||
+          session.queuedMessages?.length || session.blocks.some(block => block.draft ||
+            (!!block.approval && !block.approval.decided) || block.followUpDelivery === "uncertain" ||
+            block.followUpDelivery === "pending" ||
+            (block.tool?.status !== undefined && ["running", "in_progress", "pending"].includes(block.tool.status)) ||
+            (block.agentRun !== undefined && block.agentRun.endedAt === undefined) || block.shell?.running))
+          throw new Error("Resolve the worker's pending input before continuing its history.");
+        return current;
+      };
+      await check();
+      return this.withRetiredProviderWriter(sessionId, async () => {
+        // Retirement may wait for an exact physical writer. Recheck owner Stop,
+        // current attempt and captured authority after that asynchronous boundary.
+        await this.flush(sessionId);
+        await check();
+        return this.store.transaction(async () => {
+          const current = await check();
+          await this.managedWorkspace(current);
+          await check();
+          await this.save({ ...current, session: appendReadyHandoff({
+            ...current.session, providerSessionId: undefined, context: undefined,
+          }, current.session.harness, current.session.harness, input.brief) }, {
+            type: "session.taskContinuation", operationId: requestId,
+            sourceRunId: input.source.runId,
+          });
+          input.signal.throwIfAborted();
+          const sent = await this.withCommandAdmission({check:async stage=>{
+            input.signal.throwIfAborted();await input.admitted();
+            const latest=await this.store.session(sessionId);
+            if(stage.sessionId!==sessionId||latest.projectId!==input.source.projectId||(latest.session.worktreeCwd??latest.session.cwd)!==input.source.executionCwd||latest.authorityGeneration!==input.source.authorityGeneration||latest.runId!==(stage.phase==="command"?input.source.runId:stage.runId))throw new Error("The continued worker's captured source changed before dispatch.");
+            input.signal.throwIfAborted();
+          }},()=>this.withMessageAuthor(input.author, () => this.command({
+            type: "send", commandId: `${requestId}-send`, sessionId,
+            text: input.text, authorityGeneration: input.source.authorityGeneration,
+          })));
+          const receipt = { ...sent, commandId: requestId };
+          await input.onAccepted(receipt);
+          await this.store.recordReceipt(signature, receipt);
+          return receipt;
+        }, "critical");
+      });
+    });
+  }
+
   private async flush(id: string): Promise<void> {
     return this.store.db.scope(() =>
       this.operations.run(id, async () => {
@@ -1865,6 +1983,7 @@ export class HostEngine {
   }
 
   async command(raw: unknown): Promise<CommandReceipt> {
+    const admission=this.commandAdmissions.getStore();
     await this.ready;
     // Admission precedes workspace preparation and all provider side effects.
     // Stop requests keep their existing control path; SQL still enforces its own gate.
@@ -1875,12 +1994,16 @@ export class HostEngine {
       (raw.type === "cancel" || raw.type === "stopItem");
     if (!stopping) this.store.db.assertWriteAdmission();
     const early = await this.prepareCreationEarly(raw);
-    return this.store.db.scope(() =>
+    const operationKey=typeof raw==="object"&&raw!==null&&"sessionId" in raw?String(raw.sessionId):`create:${typeof raw==="object"&&raw!==null&&"commandId" in raw?raw.commandId:randomUUID()}`;
+    // Internal guarded work waits outside SQLite admission so an owner can
+    // revoke its durable grant while an earlier session operation is pending.
+    // Nested same-session calls remain reentrant inside their existing owner.
+    const admittedScope=(work:()=>Promise<CommandReceipt>)=>admission?this.operations.run(operationKey,()=>this.store.db.scope(work)):this.store.db.scope(work);
+    return admittedScope(() =>
       this.operations.run(
-        typeof raw === "object" && raw !== null && "sessionId" in raw
-          ? String(raw.sessionId)
-          : `create:${typeof raw === "object" && raw !== null && "commandId" in raw ? raw.commandId : randomUUID()}`,
+        operationKey,
         async () => {
+          if(admission)await admission.check({phase:"command",sessionId:typeof raw==="object"&&raw!==null&&"sessionId" in raw?String(raw.sessionId):""});
           if (
             raw &&
             typeof raw === "object" &&
@@ -2126,6 +2249,7 @@ export class HostEngine {
                       {
                         id: command.commandId,
                         role: "user",
+                        ...(this.messageAuthors.getStore() ? {author:this.messageAuthors.getStore()} : {}),
                         text: command.text,
                         ...(attachments.length ? { attachments } : {}),
                         draft: true,
@@ -2317,7 +2441,7 @@ export class HostEngine {
                         : request;
                     handoffPromptPrepared = true;
                     // A handoff starts a new provider thread, so its hint is sent again.
-                    const hint = await harnessRuntimeHints(value.session.id);
+                    const hint = [await harnessRuntimeHints(value.session.id), await this.ownerInstructions?.()].filter(Boolean).join("\n");
                     const body = [rewindReplay, turnText].filter(Boolean).join("\n\n");
                     const codex = value.session.harness === "codex";
                     const handoffEnvelope =
@@ -2399,6 +2523,7 @@ export class HostEngine {
                   ...value,
                   status: "running",
                   runId,
+                  runActivity:{runId,lastActivityAt:Date.now()},
                   session: {
                     ...current,
                     busy: true,
@@ -2436,6 +2561,7 @@ export class HostEngine {
                       {
                         id: command.commandId,
                         role: "user",
+                        ...(this.messageAuthors.getStore() ? {author:this.messageAuthors.getStore()} : {}),
                         text: command.type === "compact" ? "/compact" : command.text,
                         ...(command.type === "send" && command.secondOpinion
                           ? { secondOpinion: command.secondOpinion }
@@ -2641,6 +2767,7 @@ export class HostEngine {
                         {
                           id: command.commandId,
                           role: "user",
+                          ...(this.messageAuthors.getStore() ? {author:this.messageAuthors.getStore()} : {}),
                           text: command.text,
                           attachments,
                           draft: true,
@@ -2697,6 +2824,8 @@ export class HostEngine {
                           command.sessionId,
                           command.authorityGeneration,
                         );
+                        if(admission)await admission.check({phase:"provider",sessionId:command.sessionId,runId:command.runId});
+                        await this.checkProviderSchedule(command.sessionId,command.runId);
                         await provider.steer!({
                           sessionId: command.sessionId,
                           cwd: value.session.cwd,
@@ -2808,6 +2937,8 @@ export class HostEngine {
                     )
                   )
                     throw new Error("Question answer is already pending delivery");
+                  const questionToken=hostQuestionToken(value),liveOwner=this.live.get(command.sessionId),active=this.running.get(command.sessionId),author=this.messageAuthors.getStore();
+                  if(!active||active.runId!==command.runId||active.cancelled||active.ending||!liveOwner)throw new Error("This question belongs to a finished or replaced turn");
                   value = {
                     ...value,
                     session: applyHarnessEvent(value.session, {
@@ -2817,6 +2948,9 @@ export class HostEngine {
                     }),
                   };
                   effect = () => {
+                    const current=this.live.get(command.sessionId);
+                    if(this.running.get(command.sessionId)!==active||active.cancelled||active.ending||current!==liveOwner||current.value.runId!==command.runId||current.value.authorityGeneration!==value.authorityGeneration||this.provider(current.value.session.harness)!==provider||current.value.session.pendingQuestion?.requestId!==command.requestId||(questionToken!==undefined&&hostQuestionToken(current.value)!==questionToken))throw new Error("The original question source changed before provider dispatch");
+                    if(author&&questionToken&&command.reply.kind==="answered")this.questionReplyAuthors.set(command.sessionId,{runId:command.runId,token:questionToken,reply:structuredClone(command.reply),author:structuredClone(author)});
                     try {
                       provider.answer(command.sessionId, command.requestId, command.reply);
                     } catch {
@@ -2852,6 +2986,7 @@ export class HostEngine {
                 ? { runId: saved.runId }
                 : {}),
             };
+            if(admission?.onAccepted)await admission.onAccepted(result);
             await this.store.recordReceipt(signature, result);
             return { receipt: result, saved };
           }, "critical");
@@ -2866,14 +3001,16 @@ export class HostEngine {
             const dispatch = async () => {
               try {
                 await this.store.assertAuthority(saved.session.id, saved.authorityGeneration);
-                await effect!(saved);
+                if(admission)await admission.check({phase:"provider",sessionId:saved.session.id,runId:saved.runId});
+                await this.checkProviderSchedule(saved.session.id,saved.runId);
+                await this.commandAdmissions.run(admission,()=>effect!(saved));
               } catch (error) {
                 await this.settleUnstarted(saved.session.id, saved.runId);
                 throw error;
               }
             };
             this.store.afterCommit(() =>
-              command.type === "send" || command.type === "compact"
+              command.type === "send" || command.type === "compact" || command.type === "steer"
                 ? this.trackDispatch(saved.session.id, saved.runId, dispatch)
                 : dispatch(),
             );
@@ -3548,6 +3685,8 @@ export class HostEngine {
     let replayConsumed = false;
     const acceptReplay = async () => {
       await this.store.assertAuthority(session.id, value.authorityGeneration);
+      active.accepted=true;
+      this.store.changes.notify();
       ready();
       if (!rewindReplay || replayConsumed) return;
       replayConsumed = true;
@@ -3689,6 +3828,10 @@ export class HostEngine {
                 await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
               await this.store.assertAuthority(session.id, active.authorityGeneration);
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
+              const admission=this.commandAdmissions.getStore();
+              if(admission)await admission.check({phase:"provider",sessionId:session.id,runId});
+              await this.checkProviderSchedule(session.id,runId);
+              if(this.closing||active.cancelled)throw new Error("Turn cancelled");
               active.providerEntered = true;
               await provider.compact!(input);
               forgetRuntimeHint(session.id);
@@ -3707,7 +3850,7 @@ export class HostEngine {
               const hint = pendingRuntimeHint(
                 session.id,
                 thread,
-                await harnessRuntimeHints(session.id),
+                [await harnessRuntimeHints(session.id), await this.ownerInstructions?.()].filter(Boolean).join("\n"),
               );
               const codex = session.harness === "codex";
               // Codex parses /goal only as the first token; carry replayed
@@ -3755,6 +3898,10 @@ export class HostEngine {
                 await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
               await this.store.assertAuthority(session.id, active.authorityGeneration);
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
+              const admission=this.commandAdmissions.getStore();
+              if(admission)await admission.check({phase:"provider",sessionId:session.id,runId});
+              await this.checkProviderSchedule(session.id,runId);
+              if(this.closing||active.cancelled)throw new Error("Turn cancelled");
               active.providerEntered = true;
               await provider.send(prepareSendPolicy?.(providerInput) ?? providerInput);
               markHint();
@@ -3987,6 +4134,7 @@ export class HostEngine {
   ): void {
     const original = this.running.get(id);
     if (!original || original.runId !== runId) return;
+    const observedAt=Date.now();
     this.queueEvent(
       id,
       async () => {
@@ -3994,13 +4142,13 @@ export class HostEngine {
         if (!live || live.value.runId !== runId) return;
         await this.store.assertAuthority(id, live.value.authorityGeneration);
         if (before) await before();
-        await this.applyEvent(id, runId, event);
+        await this.applyEvent(id, runId, event,observedAt);
       },
       original,
     );
   }
 
-  private async applyEvent(id: string, runId: string, event: HarnessEvent): Promise<void> {
+  private async applyEvent(id: string, runId: string, event: HarnessEvent,observedAt:number): Promise<void> {
     const live = this.live.get(id);
     if (!live || live.value.runId !== runId || live.value.status !== "running") return;
     await this.store.assertAuthority(id, live.value.authorityGeneration);
@@ -4036,16 +4184,22 @@ export class HostEngine {
       }
     }
     // The host cannot read the desktop's settings; the turn carried them.
-    const session = applyHarnessEvent(live.value.session, event, {
+    if(event.type==="question.asked"){event={...event,occurrenceId:randomUUID()};this.questionReplyAuthors.delete(id);}
+    const questionAuthor=event.type==="question.resolved"&&event.decision==="answered"?this.questionReplyAuthors.get(id):undefined;
+    const acceptedAuthor=questionAuthor&&questionAuthor.runId===runId&&questionAuthor.token===hostQuestionToken(live.value)&&JSON.stringify(questionAuthor.reply)===JSON.stringify(event.type==="question.resolved"?event.reply:undefined)?questionAuthor.author:undefined;
+    let session = applyHarnessEvent(live.value.session, event, {
       resumeAtReset: this.running.get(id)?.resumeAtReset ?? false,
     });
-    if (session === live.value.session) return;
+    if(acceptedAuthor&&session.blocks.length>live.value.session.blocks.length){const blocks=[...session.blocks],last=blocks.length-1;blocks[last]={...blocks[last],author:acceptedAuthor};session={...session,blocks};}
+    if(event.type==="question.resolved")this.questionReplyAuthors.delete(id);
+    const activity=isSessionRunActivity(event,session!==live.value.session);
+    if (session === live.value.session&&!activity) return;
     if (live.blockChanges) {
       const changed = changedBlocks(live.value.session.blocks, session.blocks);
       if (changed === undefined) live.blockChanges = undefined;
       else for (const [blockId, block] of changed) live.blockChanges.set(blockId, block);
     }
-    live.value = { ...live.value, session };
+    live.value = { ...live.value, session,...(activity?{runActivity:{runId,lastActivityAt:Math.max(observedAt,live.value.runActivity?.runId===runId?live.value.runActivity.lastActivityAt:observedAt)}}:{}) };
     live.events.push(event);
     if (!BATCHED.has(event.type)) await this.flush(id);
     else {
@@ -4095,6 +4249,44 @@ export class HostEngine {
   }
 
   /** Wait only for the owned turn, including provider and checkpoint cleanup. */
+  async commandDelivery(sessionId:string,runId:string|undefined,commandId:string,steer:boolean,signal:AbortSignal):Promise<"delivered"|"not_delivered"|"unknown"> {
+    const pending=this.dispatching.get(sessionId);
+    if(pending&&pending.runId===runId)await pending.settled;
+    const active=this.running.get(sessionId);
+    const original=active?.runId===runId?active:undefined;
+    let steersSettled=!original;
+    if(steer&&original) {
+      const settled=()=>{steersSettled=true;this.store.changes.notify();};
+      void original.steers.then(settled,settled);
+    }
+    const deadline=Date.now()+10_000;
+    while(!signal.aborted&&Date.now()<deadline) {
+      const version=this.store.changes.version;
+      const current=await this.store.session(sessionId);
+      const block=current.session.blocks.find(item=>item.id===commandId);
+      if(!block)return "unknown";
+      if(steer) {
+        if(block.followUpDelivery==="undelivered")return "not_delivered";
+        if(!block.followUpDelivery&&!block.draft)return "delivered";
+        if(block.followUpDelivery==="uncertain"&&steersSettled)return "unknown";
+      } else if(original?.accepted)return "delivered";
+      if(current.runId!==runId||current.status!=="running")return "unknown";
+      await this.store.changes.wait(deadline,()=>signal.aborted,version,signal);
+    }
+    return "unknown";
+  }
+  /** A provider question-resolved event proves submission, not model consumption. */
+  async questionAnswerDelivery(sessionId:string,runId:string,operationId:string,signal:AbortSignal):Promise<{delivery:"submitted"|"unknown";answeredBlockId?:string;turnBlockId?:string}>{
+    const deadline=Date.now()+10000;
+    while(!signal.aborted&&Date.now()<deadline){
+      const version=this.store.changes.version,current=await this.store.session(sessionId);
+      const block=current.session.blocks.find(item=>item.author?.kind==="assistant"&&item.author.reason==="answer"&&item.author.operationId===operationId&&!!item.questionAnswers?.length);
+      if(block&&current.runId===runId)return{delivery:"submitted",answeredBlockId:block.id,...(block.continuationOf?{turnBlockId:block.continuationOf}:{})};
+      if(current.runId!==runId||current.status!=="running"||current.session.pendingQuestion?.delivery==="unknown"||current.session.pendingQuestion?.delivery==="failed")return{delivery:"unknown"};
+      await this.store.changes.wait(deadline,()=>signal.aborted,version,signal);
+    }
+    return{delivery:"unknown"};
+  }
   async waitForRun(sessionId: string, runId: string | undefined): Promise<void> {
     await this.ready;
     // An accepted turn may not have installed its active run yet; its receipt names it.

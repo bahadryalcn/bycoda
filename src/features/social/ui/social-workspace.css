@@ -233,7 +233,7 @@
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.75rem;
-  background: var(--ui-surface);
+  border: 1px solid var(--ui-pane-border);
   border-radius: var(--ui-radius-card);
 }
 .social-view .social-settings-page {
@@ -532,7 +532,7 @@
 }
 .social-batch-results > :is(article, div) {
   padding: 0.75rem;
-  background: var(--ui-surface);
+  border: 1px solid var(--ui-pane-border);
   border-radius: var(--ui-radius-card);
 }
 .social-batch-results > article {
@@ -595,7 +595,7 @@
   display: grid;
   gap: 1rem;
   padding: 1rem;
-  background: var(--ui-surface);
+  background: transparent;
   border: 1px solid var(--ui-editor-border);
   border-radius: var(--ui-radius-card);
 }
@@ -717,6 +717,7 @@
 }
 .social-account-grants {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.25rem;
   margin: 0;
   padding: 0;

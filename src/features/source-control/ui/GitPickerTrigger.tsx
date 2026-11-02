@@ -34,7 +34,7 @@ export function GitPickerTrigger({
       motion="none"
       type="button"
       {...props}
-      className={"-ml-1.5 flex min-w-0 max-w-64 items-center gap-1.5"}
+      className="flex min-w-0 max-w-64 items-center gap-1.5"
     >
       <Icon className="icon-sm shrink-0" />
       <span className="relative flex min-w-0 flex-1">

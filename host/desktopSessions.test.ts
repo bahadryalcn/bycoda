@@ -129,6 +129,20 @@ async function setup() {
 }
 
 describe("desktop sessions on the host", () => {
+  it.each(["job","manual"])("projects optional native %s assistant provenance into summaries and full snapshots",async scope=>{
+    const s=await setup();s.seed({id:"managed",cwd:s.projectDir});
+    const source=scope==="job"?{jobId:"job"}:{supervisionId:"manual-grant"};
+    const management={assistant:true,...source,managedAt:123};
+    const author={kind:scope==="job"?"assistant":"assistant-manual",name:"Owner Name",...source,reason:"nudge",operationId:"operation"};
+    s.desktopDb.exec("ALTER TABLE sessions ADD COLUMN assistant_management_json TEXT");
+    s.desktopDb.prepare("UPDATE sessions SET assistant_management_json=?,blocks_json=? WHERE id='managed'").run(JSON.stringify(management),JSON.stringify([{id:"user",role:"user",text:"Continue",author}]));
+    const desktop=new DesktopSessions(()=>[s.dbPath]);
+    try {
+      expect(desktop.list(s.projectDir,s.project.id,["codex"])[0].managedBy).toEqual(management);
+      const snapshot=desktop.snapshot("managed",s.project.id)!;
+      expect(snapshot.managedBy).toEqual(management);expect(snapshot.session.managedBy).toEqual(management);expect(snapshot.session.blocks[0].author).toEqual(author);
+    }finally{desktop.close();}
+  });
   it("waits for desktop writer retirement before direct continuation and fences new local turns", async () => {
     const s = await setup();
     s.seed({ id: "warm", cwd: s.projectDir });

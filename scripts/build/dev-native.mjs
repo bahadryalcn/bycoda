@@ -80,6 +80,11 @@ export function reuseNativeDevProfile(environment, previous) {
   };
 }
 
+export function assertReusableNativeDevSource(current, previous) {
+  if (!current?.repositoryId || current.repositoryId !== previous?.repositoryId)
+    throw new Error("The previous development profile belongs to a different source repository");
+}
+
 export function supervisedChild(command, args, { cwd, env, children }) {
   const child = spawn(command, args, {
     cwd,
@@ -220,16 +225,21 @@ export async function waitForNativePage(
   browser,
   origin,
   identity,
-  { signal, timeoutMs = 10_000, pollMs = 100 } = {},
+  { signal, timeoutMs = 10_000, pollMs = 100, candidateTimeoutMs = 1_000 } = {},
 ) {
   const deadline = Date.now() + timeoutMs;
+  const expected = new URL(origin);
   let identityUnavailable = false;
   while (Date.now() < deadline) {
     signal?.throwIfAborted();
     const pages = browser.contexts().flatMap((context) => context.pages());
     for (const page of pages) {
       try {
-        if (new URL(page.url()).origin !== origin) continue;
+        const url = new URL(page.url());
+        // Native utility webviews share the app's origin and build identity.
+        // Admit the main document, never the hidden desktop controller.
+        const mainPaths = new Set([expected.pathname, expected.pathname === "/" ? "/index.html" : expected.pathname]);
+        if (url.origin !== expected.origin || !mainPaths.has(url.pathname)) continue;
       } catch {
         continue;
       }
@@ -241,7 +251,7 @@ export async function waitForNativePage(
           new Promise((_, reject) => {
             timeout = setTimeout(
               () => reject(new Error("Native identity lookup timed out")),
-              Math.max(1, deadline - Date.now()),
+              Math.max(1, Math.min(candidateTimeoutMs, deadline - Date.now())),
             );
             if (signal) {
               aborted = () => reject(signal.reason);
@@ -316,11 +326,15 @@ export async function runNativeDev(args = process.argv.slice(2)) {
   const workspaceId = option(args, "--workspace-id", hash(root));
   const runId = option(args, "--run-id", randomUUID());
   const previousRecord = option(args, "--reuse-profile-run");
+  const previousRootOption = option(args, "--reuse-profile-root");
+  if(previousRootOption&&!previousRecord)throw new Error("--reuse-profile-root requires --reuse-profile-run");
+  const previousRoot=previousRootOption?await realpath(resolve(previousRootOption)):root;
+  if(previousRootOption)assertReusableNativeDevSource(await readSource(),await frozenSourceIdentity(previousRoot));
   const previousRun = previousRecord
     ? (
         await (
           await import("./acceptance-native.mjs")
-        ).validateAcceptanceRun(root, resolve(previousRecord))
+        ).validateAcceptanceRun(previousRoot, resolve(previousRecord))
       ).run
     : undefined;
   const abort = new AbortController();
@@ -623,7 +637,7 @@ export async function runNativeDev(args = process.argv.slice(2)) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv.includes("--help"))
     console.log(
-      "pnpm dev:native [--bootstrap] [--frozen-source ROOT] [--workspace-id ID] [--run-id ID] [--shared-target ABSOLUTE_CACHE_ROOT] [--cargo-target ABSOLUTE_TARGET] [--acceptance-controls] [--reuse-profile-run OWN_STOPPED_DEV_RECORD]\nBuild and supervise an isolated debug app, Host and Vite run. Frozen roots require frozen-source.json with original identity and per-file SHA-256 inventory. Ctrl+C cancels this run.",
+      "pnpm dev:native [--bootstrap] [--frozen-source ROOT] [--workspace-id ID] [--run-id ID] [--shared-target ABSOLUTE_CACHE_ROOT] [--cargo-target ABSOLUTE_TARGET] [--acceptance-controls] [--reuse-profile-run OWN_STOPPED_DEV_RECORD] [--reuse-profile-root PREVIOUS_FROZEN_ROOT]\nBuild and supervise an isolated debug app, Host and Vite run. Frozen roots require frozen-source.json with original identity and per-file SHA-256 inventory. Cross-capture profile reuse validates the previous frozen root in the same repository and requires its processes to be stopped. Ctrl+C cancels this run.",
     );
   else
     runNativeDev().catch((error) => {

@@ -40,6 +40,16 @@ choose a conversation, and the top tabs to switch open work. These keep their
 existing saved widths, layout and density settings. Detailed session rows show
 the conversation title before model and status information.
 
+The sessions filter menu can show only conversations managed by your named
+assistant. It uses the Host's management record and combines with provider,
+time, archive and status filters. Clear filters restores the full list.
+
+Settings → Keybindings includes **Stop computer use**, with the default global
+shortcut **Ctrl+Alt+Esc** (Control+Option+Esc on macOS). It stops computer control
+on this computer even while another app has focus. You can change or disable
+the binding; a rejected replacement retains the previous native binding.
+This action does not resume control or stop coding jobs.
+
 Project options, pinning and session row actions appear when you hover or focus
 their row, while the row is selected, and on touch devices. Project change counts
 and connection warnings remain visible. A wide project row shows added and removed

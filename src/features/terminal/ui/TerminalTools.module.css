@@ -6,7 +6,6 @@
   padding: 2px 4px;
   min-block-size: 2rem;
   min-inline-size: 0;
-  background: var(--ui-surface);
 }
 /* Controls hosted in the "More actions" popover sit on the raised sheet. */
 .popoverBody .tools {
@@ -24,7 +23,6 @@
 .command {
   min-inline-size: 0;
   padding: 4px;
-  background: var(--ui-surface);
 }
 .row {
   display: flex;

@@ -15,6 +15,7 @@
 }
 .social-assistant-context {
   display: flex;
+  min-inline-size: 0;
   flex-wrap: wrap;
   gap: 0.25rem 0.875rem;
   margin: 0;

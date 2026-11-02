@@ -87,21 +87,21 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(git_popup::PopupState::default());
     app.manage(screenshots::Captures::default());
     std::thread::spawn(screenshots::cleanup_abandoned);
-    app.plugin(
-        tauri_plugin_global_shortcut::Builder::new()
-            .with_handler(|app, _shortcut, event: ShortcutEvent| {
-                if event.state == ShortcutState::Pressed {
-                    // The handler runs inside a Carbon event callback, where
-                    // `run_on_main_thread` would run inline and any panic
-                    // aborts on the C frame. Hop off the thread so the work is
-                    // queued onto the event loop like any other task.
-                    let app = app.clone();
-                    std::thread::spawn(move || toggle(&app));
-                }
-            })
-            .build(),
-    )?;
     Ok(())
+}
+
+pub(crate) fn handle_global_shortcut(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
+    let matches = app
+        .state::<QuickComposerState>()
+        .shortcut
+        .lock()
+        .map(|current| current.as_ref() == Some(shortcut))
+        .unwrap_or(false);
+    if matches && event.state == ShortcutState::Pressed {
+        // Carbon callbacks cannot safely run webview work inline.
+        let app = app.clone();
+        std::thread::spawn(move || toggle(&app));
+    }
 }
 
 /// The workspace calls this after painting, during idle time. Wry activates

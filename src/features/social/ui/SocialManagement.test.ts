@@ -633,9 +633,14 @@ describe("Reply rule steps", () => {
       "1 answer",
       "price?",
       "up to 7 a day",
-      "a, b",
     ])
       expect(summary).toContain(part);
+    expect(
+      Array.from(
+        container.querySelectorAll('dl[aria-label="Rule summary"] ul[aria-label="Stop phrases"] li'),
+        (item) => item.textContent,
+      ),
+    ).toEqual(["a", "b"]);
     expect(request.mock.calls.some((call) => call[0] === "automations.create")).toBe(false);
     // The step indicator returns to earlier steps without losing anything.
     await act(async () => stepButton("1 Account and content").click());

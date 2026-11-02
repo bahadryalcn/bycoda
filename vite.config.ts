@@ -66,6 +66,7 @@ export default defineConfig(async ({ mode }) => {
           main: "index.html",
           quickComposer: "quick-composer.html",
           voiceOverlay: "voice-overlay.html",
+          desktopControl: "desktop-control.html",
         },
       },
     },

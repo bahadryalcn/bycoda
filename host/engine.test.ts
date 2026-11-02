@@ -26,6 +26,23 @@ import * as skillPrompts from "./prompt-skills";
 import { execFileAsync } from "../src/shared/lib/processExecution.node";
 
 const cleanups: Array<() => Promise<void> | void> = [];
+it("stamps internal message authors without accepting a client author or leaking to the owner turn",async()=>{
+  const {engine,store,id,turns,waitForTurnStart}=await setup();
+  const author={kind:"assistant" as const,name:"Arif",jobId:"job-1",reason:"nudge" as const,operationId:"op-1"};
+  const input={type:"send" as const,commandId:"stamped-message",sessionId:id,text:"Continue the assigned task."};
+  const receipt=await engine.withMessageAuthor(author,()=>engine.command(input));
+  await waitForTurnStart();
+  expect((await store.session(id)).session.blocks.find(block=>block.id===input.commandId)?.author).toEqual(author);
+  turns[0].finish();await engine.waitForRun(id,receipt.runId);
+  const forged=await engine.command({...input,commandId:"forged",author} as Parameters<HostEngine["command"]>[0]);
+  await waitForTurnStart(2);
+  expect((await store.session(id)).session.blocks.find(block=>block.id==="forged")?.author).toBeUndefined();
+  turns[1].finish();await engine.waitForRun(id,forged.runId);
+  const owner=await engine.command({...input,commandId:"owner-message",text:"Owner follow-up"});
+  await waitForTurnStart(3);
+  expect((await store.session(id)).session.blocks.find(block=>block.id==="owner-message")?.author).toBeUndefined();
+  turns[2].finish();await engine.waitForRun(id,owner.runId);
+});
 
 it("validates and persists the explicitly selected profile before sending a new host session", async () => {
   const { engine, store, project, turns, waitForTurnStart } = await setup();
@@ -425,6 +442,99 @@ it("steers the active host turn without replacing it, and deduplicates retries",
     (await store.session(id)).session.blocks.filter((block) => block.id === "redirect"),
   ).toHaveLength(1);
   await expect(engine.command({ ...command, commandId: "stale", runId: "old" })).rejects.toThrow();
+});
+
+describe("assistant command delivery evidence", () => {
+  it("keeps a persisted command receipt unknown until provider acceptance", async () => {
+    const { engine, store, id, turns, provider, waitForTurnStart } = await setup();
+    const command = { type: "send", commandId: "delivery-persisted", sessionId: id, text: "Work" };
+    const receipt = await engine.command(command);
+    await waitForTurnStart();
+    expect(await store.receiptStatus(command.commandId)).toMatchObject({ runId: receipt.runId });
+    const controller = new AbortController();
+    const waiting = vi.spyOn(store.changes, "wait");
+    let outcome: string | undefined;
+    const delivery = engine.commandDelivery(id, receipt.runId, command.commandId, false, controller.signal).then(value => { outcome = value; return value; });
+    try {
+      await vi.waitFor(() => expect(waiting).toHaveBeenCalled());
+      expect(outcome).toBeUndefined();
+      controller.abort();
+      expect(await delivery).toBe("unknown");
+      expect(await engine.command(command)).toEqual(receipt);
+      expect(provider.send).toHaveBeenCalledOnce();
+    } finally {
+      controller.abort();
+      waiting.mockRestore();
+      turns[0].finish();
+      await engine.waitForRun(id, receipt.runId);
+    }
+  });
+
+  it("wakes a pending delivery wait on provider acceptance without waiting for output", async () => {
+    const { engine, store, id, turns, waitForTurnStart } = await setup();
+    const receipt = await engine.command({ type: "send", commandId: "delivery-accepted", sessionId: id, text: "Work" });
+    await waitForTurnStart();
+    const controller = new AbortController();
+    const waiting = vi.spyOn(store.changes, "wait");
+    let outcome: string | undefined;
+    const delivery = engine.commandDelivery(id, receipt.runId, "delivery-accepted", false, controller.signal).then(value => { outcome = value; return value; });
+    try {
+      await vi.waitFor(() => expect(waiting).toHaveBeenCalled());
+      turns[0].input.onAccepted?.();
+      await vi.waitFor(() => expect(outcome).toBe("delivered"), { timeout: 1000 });
+      expect(await delivery).toBe("delivered");
+      expect((await store.session(id)).status).toBe("running");
+    } finally {
+      controller.abort();
+      await delivery;
+      waiting.mockRestore();
+      turns[0].finish();
+      await engine.waitForRun(id, receipt.runId);
+    }
+  });
+
+  it("does not call a provider startup failure delivered merely because its receipt exists", async () => {
+    const { engine, store, id, provider } = await setup();
+    provider.send = vi.fn(async () => { throw new Error("Startup rejected before acceptance"); });
+    const command = { type: "send", commandId: "delivery-startup-error", sessionId: id, text: "Work" };
+    const receipt = await engine.command(command);
+    await engine.waitForRun(id, receipt.runId);
+    expect(await store.receiptStatus(command.commandId)).toMatchObject({ runId: receipt.runId });
+    expect(await engine.commandDelivery(id, receipt.runId, command.commandId, false, new AbortController().signal)).toBe("unknown");
+    expect(await engine.command(command)).toEqual(receipt);
+    expect(provider.send).toHaveBeenCalledOnce();
+  });
+
+  it("waits for delayed steer acknowledgement rather than treating in-flight delivery as settled uncertainty", async () => {
+    const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+    let acceptSteer!: () => void;
+    provider.steer = vi.fn(() => new Promise<void>(resolve => { acceptSteer = resolve; }));
+    const receipt = await engine.command({ type: "send", commandId: "delivery-steer-primary", sessionId: id, text: "Work" });
+    await waitForTurnStart();
+    turns[0].input.onAccepted?.();
+    const command = { type: "steer", commandId: "delivery-delayed-steer", sessionId: id, runId: receipt.runId, text: "Refine the work" };
+    await engine.command(command);
+    await vi.waitFor(() => expect(provider.steer).toHaveBeenCalledOnce());
+    const controller = new AbortController();
+    let outcome: string | undefined;
+    const delivery = engine.commandDelivery(id, receipt.runId, command.commandId, true, controller.signal).then(value => { outcome = value; return value; });
+    try {
+      // Drain currently queued reads without resolving the fake provider acknowledgement.
+      await store.session(id);
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(outcome).toBeUndefined();
+      acceptSteer();
+      await vi.waitFor(() => expect(outcome).toBe("delivered"), { timeout: 1000 });
+      expect(await delivery).toBe("delivered");
+      expect((await store.session(id)).session.blocks.find(block => block.id === command.commandId)?.followUpDelivery).toBeUndefined();
+    } finally {
+      controller.abort();
+      acceptSteer();
+      await delivery;
+      turns[0].finish();
+      await engine.waitForRun(id, receipt.runId);
+    }
+  });
 });
 
 it("stops only the exact delegated task of the active host run and deduplicates receipt replay", async () => {

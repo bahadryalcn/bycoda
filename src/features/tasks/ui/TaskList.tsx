@@ -6,6 +6,7 @@ import { bulkTaskKey } from "../model/taskBulkActions";
 import type { BoardTask } from "../model/taskClient";
 import { taskStatusLine } from "../model/taskStatusLine";
 import { useId, useState } from "react";
+import {AssistantTaskBadge} from "./AssistantTaskBadge";
 
 const TASK_PAGE_SIZE = 50;
 
@@ -77,6 +78,7 @@ export function TaskList({
               {planningLabel?.(task) ? (
                 <span className="task-planning-caption">{planningLabel(task)}</span>
               ) : null}
+              <AssistantTaskBadge task={task}/>
               {status.detail ? (
                 <p
                   data-task-status-detail

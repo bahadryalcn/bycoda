@@ -2484,6 +2484,24 @@ describe("scoped Conversation Tools RPC", () => {
       leaseId: owner.leaseId,
     });
   });
+  it("serves the owner browser for a conversation this host cannot read, without its label", async () => {
+    const s = await sessionTools();
+    const unknown = await s.call("browser.status", {
+      projectId: s.project.id,
+      sessionId: crypto.randomUUID(),
+    });
+    expect(unknown.value.error).toBeUndefined();
+    expect(unknown.value.result).toMatchObject({ open: false });
+    const known = await s.call("browser.status", {
+      projectId: s.project.id,
+      sessionId: s.created.sessionId,
+    });
+    expect(known.value.error).toBeUndefined();
+    expect(
+      (await s.call("browser.status", { projectId: "missing-project", sessionId: s.created.sessionId }))
+        .value.error,
+    ).toBeTruthy();
+  });
 
   it("discovers and reads project skills through the scoped RPC without accepting another root", async () => {
     const s = await sessionTools();

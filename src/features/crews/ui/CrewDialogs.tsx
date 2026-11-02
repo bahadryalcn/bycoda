@@ -3,6 +3,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { MessageSquare, Pencil, Play, Trash2 } from "../../../shared/ui/icons";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -226,19 +227,23 @@ function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
     return [{ role, label, names }];
   });
   return (
-    <dl className="flex flex-wrap gap-x-4 gap-y-1 text-ui-caption">
+    <dl className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 text-ui-caption">
       {groups.map((group) => (
-        <div key={group.role} className="flex min-w-0 gap-1">
+        <div key={group.role} className="col-span-2 grid min-w-0 grid-cols-subgrid items-center">
           <dt className="flex items-center gap-1 text-(--ui-text-secondary)">
             <CrewRoleIcon role={group.role} />
             {group.label}
             {group.names.length ? ":" : ""}
           </dt>
-          {group.names.length ? (
-            <dd className="min-w-0 break-words font-medium text-content [overflow-wrap:anywhere]">
-              {group.names.join(", ")}
-            </dd>
-          ) : null}
+          <dd className="min-w-0">
+            {group.names.length ? (
+              <BadgeList
+                label={group.label}
+                size="xs"
+                items={group.names.map((name, index) => ({ id: `${index}:${name}`, label: name }))}
+              />
+            ) : null}
+          </dd>
         </div>
       ))}
     </dl>

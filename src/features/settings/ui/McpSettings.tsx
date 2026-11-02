@@ -12,6 +12,7 @@ import { confirmInApp } from "../../../shared/model/appConfirm";
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -30,10 +31,10 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import styles from "./McpSettings.module.css";
 import { ExternalMcpAccess } from "./ExternalMcpAccess";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
 import { Globe, Plus, RefreshCw, ListFilter, MoreHorizontal } from "../../../shared/ui/icons";
-import { canSignInMcp, isMcpConnected, MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
+import { canSignInMcp, isMcpConnected, MCP_PROVIDER_LABELS, needsMcpSignIn, type McpConnection } from "../model/mcp";
 import { AdvancedSettings, Row } from "./settingsControls";
 import {
   getCachedMcpSettings,
@@ -49,11 +50,23 @@ type ServerRow = McpServerRow;
 const serverRowKey = (server: ServerRow) =>
   `${server.provider}:${server.scope}:${server.configPath}:${server.name}`;
 type Filter = "all" | McpConnection["provider"];
+type ScopeFilter = "all" | Scope;
+
+/** A missing provider CLI is an install step, not a failed sign-in. */
+function actionErrorText(cause: unknown, provider?: Provider): string {
+  const text = String(cause);
+  if (provider && /CLI not found/i.test(text)) {
+    return provider === "cursor"
+      ? t("Cursor CLI (cursor-agent) is not installed. Install it to sign in from here, or sign in to this server inside Cursor.")
+      : t("{p0} CLI is not installed. Install it to sign in from here.", { p0: MCP_PROVIDER_LABELS[provider] });
+  }
+  return text;
+}
 type Provider = McpConnection["provider"];
 const PROVIDERS: Provider[] = ["claude", "claude_desktop", "codex", "cursor", "opencode"];
 const BATCH_SIZE = 16;
 const SCOPES: Record<Provider, Scope[]> = {
-  claude: ["local", "project", "user"],
+  claude: ["user", "project", "local"],
   claude_desktop: ["user"],
   codex: ["user"],
   cursor: ["project", "user"],
@@ -61,12 +74,12 @@ const SCOPES: Record<Provider, Scope[]> = {
 };
 
 function scopeLabel(scope: Scope): string {
-  return scope === "user" ? t("Personal") : scope === "project" ? t("Project") : t("Local project");
+  return scope === "user" ? t("Global") : scope === "project" ? t("Project") : t("Local project");
 }
 
 function scopeDescription(scope: Scope): string {
   return scope === "user"
-    ? t("Personal: applies across projects for this provider on this machine.")
+    ? t("Global: applies to every project for this provider on this machine.")
     : scope === "project"
       ? t(
           "Project: saved in the selected project's provider configuration; it may be shared with the project.",
@@ -130,6 +143,7 @@ function AddServerModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const adding = useRef(false);
+  const formId = useId();
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -167,8 +181,25 @@ function AddServerModal({
         if (!adding.current) onClose();
       }}
       fitViewport
+      footer={
+        <ModalActions>
+          <Button variant="ghost" size="sm" type="button" onClick={onClose} disabled={busy}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            type="submit"
+            form={formId}
+            loading={busy}
+            disabled={busy}
+          >
+            {t("Add server")}
+          </Button>
+        </ModalActions>
+      }
     >
-      <form onSubmit={(event) => void add(event)} className="space-y-4 p-4">
+      <form id={formId} onSubmit={(event) => void add(event)} className="space-y-4 p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <McpPicker
             disabled={busy}
@@ -246,14 +277,6 @@ function AddServerModal({
           />
         </AdvancedSettings>
         {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" size="sm" type="button" onClick={onClose} disabled={busy}>
-            {t("Cancel")}
-          </Button>
-          <Button variant="primary" size="sm" type="submit" loading={busy} disabled={busy}>
-            {t("Add server")}
-          </Button>
-        </div>
       </form>
     </Modal>
   );
@@ -332,6 +355,8 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
   const stateKey = `mcp-connections:${pathKey(cwd)}`;
   const [filter, setFilter] = useRetainedState<Filter>(`${stateKey}:filter`, "all");
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
+  const [scopeFilter, setScopeFilter] = useRetainedState<ScopeFilter>(`${stateKey}:scope`, "all");
+  const [actionError, setActionError] = useState("");
   const [reveal, setReveal] = useState({ key: "", count: BATCH_SIZE });
   const listRoot = useRef<HTMLDivElement>(null);
   const continuation = useRef<HTMLDivElement>(null);
@@ -410,6 +435,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
     return servers.filter(
       (server) =>
         (effectiveFilter === "all" || server.provider === effectiveFilter) &&
+        (scopeFilter === "all" || server.scope === scopeFilter) &&
         (!search ||
           [
             server.name,
@@ -423,9 +449,10 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             .toLocaleLowerCase()
             .includes(search)),
     );
-  }, [effectiveFilter, servers, query]);
+  }, [effectiveFilter, scopeFilter, servers, query]);
   // The revealed page size belongs to the current filter and query and starts over when either changes.
   const revealKey = `${effectiveFilter}
+${scopeFilter}
 ${query}`;
   const visibleCount = reveal.key === revealKey ? reveal.count : BATCH_SIZE;
   const revealMore = useCallback(
@@ -451,7 +478,7 @@ ${query}`;
     if (busyRef.current || !canSignInMcp(server)) return;
     busyRef.current = true;
     setBusy({ server: serverRowKey(server), action: "login" });
-    setError("");
+    setActionError("");
     try {
       await invoke("mcp_provider_login", {
         cwd,
@@ -460,7 +487,7 @@ ${query}`;
       });
       await refresh();
     } catch (cause) {
-      setError(String(cause));
+      setActionError(actionErrorText(cause, server.provider));
     } finally {
       busyRef.current = false;
       setBusy(null);
@@ -472,7 +499,7 @@ ${query}`;
     busyRef.current = true;
     setBusy({ server: serverRowKey(server), action: "remove" });
     const selectedScope = confirmedScope ?? server.scope;
-    setError("");
+    setActionError("");
     try {
       if (
         confirmedScope === undefined && !(await confirmInApp({
@@ -494,7 +521,7 @@ ${query}`;
       setRemoveTarget(null);
       await refresh();
     } catch (cause) {
-      setError(String(cause));
+      setActionError(String(cause));
     } finally {
       busyRef.current = false;
       setBusy(null);
@@ -539,7 +566,7 @@ ${query}`;
           </Button>
         </div>
       </div>
-      {servers.length > 0 || loading || query || effectiveFilter !== "all" || showAllProviders ? (
+      {servers.length > 0 || loading || query || effectiveFilter !== "all" || scopeFilter !== "all" || showAllProviders ? (
       <div className={styles.toolbar}>
         <div className={styles.search}>
           <SearchInput
@@ -555,15 +582,20 @@ ${query}`;
           ref={filterAnchor}
           iconOnly
           label={t("Filters")}
-          selected={effectiveFilter !== "all" || showAllProviders}
+          selected={effectiveFilter !== "all" || scopeFilter !== "all" || showAllProviders}
           aria-expanded={filtersOpen}
           aria-haspopup="dialog"
           onClick={() => setFiltersOpen(!filtersOpen)}
         >
           <ListFilter className="icon-sm" />
         </Button>
-        {effectiveFilter !== "all" ? (
-          <span className={styles.filterLabel}>{MCP_PROVIDER_LABELS[effectiveFilter]}</span>
+        {effectiveFilter !== "all" || scopeFilter !== "all" ? (
+          <span className={styles.filterLabel}>
+            {[
+              effectiveFilter !== "all" ? MCP_PROVIDER_LABELS[effectiveFilter] : "",
+              scopeFilter !== "all" ? scopeLabel(scopeFilter) : "",
+            ].filter(Boolean).join(" · ")}
+          </span>
         ) : null}
       </div>
       ) : null}
@@ -600,6 +632,22 @@ ${query}`;
                 ),
               }))}
             />
+            <h3>{t("Scope")}</h3>
+            <SegmentedControl
+              label={t("Filter MCP servers by scope")}
+              selectionRole="pressed"
+              value={scopeFilter}
+              onValueChange={(scope) => setScopeFilter(scope as ScopeFilter)}
+              options={(["all", "user", "project", "local"] as const).map((scope) => ({
+                value: scope,
+                label: scope === "all" ? t("All") : scopeLabel(scope),
+                accessory: (
+                  <Badge variant="count" size="xs" tone="neutral">
+                    {scope === "all" ? servers.length : servers.filter((server) => server.scope === scope).length}
+                  </Badge>
+                ),
+              }))}
+            />
             <Button
               variant="ghost"
               aria-label={
@@ -612,9 +660,10 @@ ${query}`;
             </Button>
             <Button
               variant="secondary"
-              disabled={effectiveFilter === "all" && !showAllProviders && !query}
+              disabled={effectiveFilter === "all" && scopeFilter === "all" && !showAllProviders && !query}
               onClick={() => {
                 setFilter("all");
+                setScopeFilter("all");
                 setQuery("");
                 setShowAllProviders(false);
               }}
@@ -623,6 +672,14 @@ ${query}`;
             </Button>
           </div>
         </Popover>
+      ) : null}
+      {actionError ? (
+        <SettingsFeedback
+          state="error"
+          action={<Button variant="ghost" onClick={() => setActionError("")}>{t("Dismiss")}</Button>}
+        >
+          {actionError}
+        </SettingsFeedback>
       ) : null}
       {error ? <SettingsFeedback state="error" action={<Button loading={loading} onClick={() => void refresh()}>{t("Retry")}</Button>}>{servers.length ? `${t("Showing the last successful result.")} ` : ""}{error}</SettingsFeedback> : null}
       {claudeError && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
@@ -640,10 +697,11 @@ ${query}`;
         <SettingsFeedback
           state="empty"
           action={
-            servers.length > 0 && (query.trim() || effectiveFilter !== "all") ? (
+            servers.length > 0 && (query.trim() || effectiveFilter !== "all" || scopeFilter !== "all") ? (
               <Button
                 onClick={() => {
                   setFilter("all");
+                  setScopeFilter("all");
                   setQuery("");
                   setShowAllProviders(false);
                 }}
@@ -670,11 +728,16 @@ ${query}`;
                 <ProviderIcon provider={server.provider} />
               </span>
               <div className={styles.identity}>
-                <OverflowTooltip label={server.name}>
-                  <div className={styles.name}>
-                    {server.name}
-                  </div>
-                </OverflowTooltip>
+                <div className={styles.nameLine}>
+                  <OverflowTooltip label={server.name}>
+                    <div className={styles.name}>
+                      {server.name}
+                    </div>
+                  </OverflowTooltip>
+                  <Badge size="xs" appearance="subtle" tone={server.scope === "user" ? "info" : "neutral"} className={styles.scopeTag}>
+                    {scopeLabel(server.scope)}
+                  </Badge>
+                </div>
               </div>
               <span className={styles.status}>
               <Badge
@@ -688,7 +751,7 @@ ${query}`;
                     ? "warning"
                     : /failed|error|disconnected/i.test(server.status)
                       ? "danger"
-                      : isMcpConnected(server.status)
+                      : isMcpConnected(server.status) || server.auth === "signed_in"
                         ? "success"
                         : "neutral"
                 }
@@ -698,7 +761,7 @@ ${query}`;
               </span>
               <div className={styles.details}>
                 <p className={styles.metadata} title={server.configPath || undefined}>
-                  {MCP_PROVIDER_LABELS[server.provider]} &#183; {scopeLabel(server.scope)} &#183; {server.transport || "MCP"}
+                  {MCP_PROVIDER_LABELS[server.provider]} &#183; {server.transport || "MCP"}
                 </p>
                 {server.configPath ? (
                   <details className={styles.disclosure}>
@@ -711,7 +774,7 @@ ${query}`;
                 ) : null}
               </div>
               <div className={styles.rowActions}>
-                {canSignInMcp(server) && !checking && !isMcpConnected(server.status) ? (
+                {!checking && needsMcpSignIn(server) ? (
                     <Button stableWidth type="button"
                       loading={busy?.server === serverRowKey(server) && busy.action === "login"}
                       disabled={loading || busy !== null}
@@ -760,7 +823,7 @@ ${query}`;
       {menu ? <DropdownMenu anchor={menu.anchor} label={t("Actions for {p0}", { p0: menu.server.name })}
         onClose={() => setMenu(null)}
         items={[
-          ...(canSignInMcp(menu.server) && isMcpConnected(menu.server.status)
+          ...(canSignInMcp(menu.server) && menu.server.auth !== "none" && !needsMcpSignIn(menu.server)
             ? [{ kind: "item" as const, id: "login", label: t("Sign in again"), disabled: loading || busy !== null }] : []),
           { kind: "item", id: "reveal", label: t("Show config"), disabled: !menu.server.configPath },
           { kind: "item", id: "copy", label: t("Copy config path"), disabled: !menu.server.configPath },
@@ -772,8 +835,8 @@ ${query}`;
           const server = menu.server;
           setMenu(null);
           if (action === "login") void login(server);
-          if (action === "reveal") void revealPath(server.configPath).catch((cause) => setError(String(cause)));
-          if (action === "copy") void copyText(server.configPath).catch((cause) => setError(String(cause)));
+          if (action === "reveal") void revealPath(server.configPath).catch((cause) => setActionError(String(cause)));
+          if (action === "copy") void copyText(server.configPath).catch((cause) => setActionError(String(cause)));
           if (action === "remove") {
             if (server.configPath) void remove(server);
             else { setRemoveTarget(server); }
@@ -789,7 +852,7 @@ ${query}`;
         <SharedSelect label={t("Scope to remove {p0} from", { p0: removeTarget.name })}
           disabled={busy !== null} value={removeScope} onValueChange={(value) => setRemoveScopes((current) => ({ ...current, [removeTarget.name]: value as Scope }))}
           options={[{ value: "local", label: t("Local project") }, { value: "project", label: t("Project") }, { value: "user", label: t("Personal") }]} />
-        {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+        {actionError ? <SettingsFeedback state="error">{actionError}</SettingsFeedback> : null}
       </Modal> : null}
       {addOpen ? (
         <AddServerModal

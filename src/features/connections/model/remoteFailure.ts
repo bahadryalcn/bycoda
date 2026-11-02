@@ -25,11 +25,23 @@ export function remoteErrorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Native failures retain a code; persisted view errors may retain only its prefix. */
+export function nativeConnectionFailureCode(error: unknown): string | undefined {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  if (typeof code === "string" && /^RPC_WS_[A-Z_]+$/.test(code)) return code;
+  return remoteErrorText(error).match(/^(?:Error: )?(RPC_WS_[A-Z_]+):/)?.[1];
+}
+
 /** Sorts a rejected remote request into what the user can do about it. The
  * original text is kept as the message, minus the host's own prefix. */
 export function classifyRemoteError(error: unknown): RemoteFailure {
   const text = remoteErrorText(error);
   const message = text.replace(/^Host rejected request:\s*/i, "").trim() || text;
+  const code = nativeConnectionFailureCode(error);
+  if (code === "RPC_WS_IDENTITY") return { kind: "identity", message };
+  if (code === "RPC_WS_UNSUPPORTED") return { kind: "outdated", message };
+  if (code && ["RPC_WS_BLOCKED", "RPC_WS_SCHEMA", "RPC_WS_TLS", "RPC_WS_UNAVAILABLE", "RPC_WS_INTERRUPTED"].includes(code))
+    return { kind: "unreachable", message };
   if (/Host identity changed\. Add this machine again before continuing\./i.test(text))
     return { kind: "identity", message };
   if (UNREACHABLE.test(text)) return { kind: "unreachable", message };

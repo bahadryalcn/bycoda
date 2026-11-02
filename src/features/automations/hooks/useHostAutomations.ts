@@ -109,6 +109,8 @@ export function useHostAutomations(enabled: boolean) {
     automations: data?.automations ?? NO_AUTOMATIONS,
     /** False until the first host read lands (or while hidden/failed with no data). */
     loaded: data !== undefined,
+    error: query.error,
+    fetching: query.isFetching,
     confirmSaved,
     confirmDeleted,
     refresh,

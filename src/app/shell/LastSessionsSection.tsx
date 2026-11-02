@@ -1,3 +1,4 @@
+import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManagedBadge";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Button } from "../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
@@ -428,6 +429,7 @@ function SessionRow({
           )}
         </span>
         <span className="min-w-0 flex-1 truncate text-ui-secondary leading-tight">{row.title}</span>
+        <AssistantManagedBadge management={row.managedBy} compact local={!row.remote} />
         {draft ? (
           <PenLine
             aria-hidden="true"

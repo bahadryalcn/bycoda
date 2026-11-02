@@ -49,6 +49,10 @@ fn wire_method(method: &str) -> Option<String> {
     matches!(
         method,
         "runtimeLogs.bridge.describe"
+            | "desktop.stop"
+            | "desktop.status"
+            | "assistant.presence.get"
+            | "assistant.presence.set"
             | "runtimeLogs.access.issue"
             | "runtimeLogs.terminals.append"
             | "conversation.bridge.describe"
@@ -573,7 +577,7 @@ impl NativeServiceChannel {
             &selection.endpoint,
             &selection.machine.token,
             Some(&selection.machine.environment_id),
-            method,
+            if method.starts_with("assistant.presence.") { wire } else { method },
             params,
             deadline,
         )?;
@@ -1036,6 +1040,14 @@ mod tests {
     #[test]
     fn helper_mapping_is_finite_and_private() {
         assert_eq!(
+            wire_method("desktop.stop").as_deref(),
+            Some("native.services.desktop.stop")
+        );
+        assert_eq!(wire_method("desktop.status").as_deref(),Some("native.services.desktop.status"));
+        assert_eq!(wire_method("assistant.presence.get").as_deref(),Some("native.services.assistant.presence.get"));
+        assert_eq!(wire_method("assistant.presence.set").as_deref(),Some("native.services.assistant.presence.set"));
+        assert!(wire_method("assistant.request").is_none());
+        assert_eq!(
             wire_method("conversation.desktop.finish").as_deref(),
             Some("native.services.conversation.desktop.finish")
         );
@@ -1045,6 +1057,9 @@ mod tests {
             "models.list",
             "workspace.delete",
             "devices.action",
+            "desktop.request",
+            "desktop.act",
+            "desktop.resume",
         ] {
             assert!(wire_method(method).is_none());
         }

@@ -1,7 +1,7 @@
 import type { ComponentPropsWithoutRef, Ref } from "react";
 import styles from "./Surface.module.css";
 
-export type SurfaceVariant = "plain" | "raised" | "outline" | "inset";
+export type SurfaceVariant = "plain" | "raised" | "outline" | "inset" | "quiet";
 export type SurfacePadding = "none" | "sm" | "md" | "lg";
 
 export type SurfaceProps = ComponentPropsWithoutRef<"div"> & {
@@ -11,6 +11,8 @@ export type SurfaceProps = ComponentPropsWithoutRef<"div"> & {
    * - `raised`: `--ui-surface-raised` with a `--ui-pane-border` frame (paper white in light themes).
    * - `outline`: no fill, a `--ui-pane-border` frame.
    * - `inset`: `--ui-surface-muted`, a recessed well.
+   * - `quiet`: `--ui-surface-quiet` (one near-canvas step, the composer's tone) with a frame;
+   *   cards inside the chat transcript, so they don't glare on a pure black/white canvas.
    */
   variant?: SurfaceVariant;
   /** Inner spacing: none, sm 8px, md 12px (default), lg 16px. */

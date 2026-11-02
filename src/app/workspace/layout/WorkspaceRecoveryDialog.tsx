@@ -8,7 +8,12 @@ import {
 } from "./EditorDraftRecoverySection";
 import type { SessionRecovery } from "../../../features/workspace/model/sessionRecovery";
 import { BufferRecoveryReports } from "./BufferRecoveryReports";
-import { RecoveryTabs, recoveryPanelId, recoveryTabId } from "./RecoveryLayout";
+import {
+  RecoveryTabs,
+  recoveryPanelId,
+  recoveryTabId,
+  type RecoveryTab,
+} from "./RecoveryLayout";
 
 const PREFIX = "workspace-recovery";
 
@@ -53,80 +58,94 @@ export function WorkspaceRecoveryDialog({
   if (!editorDraftRecovery?.available)
     return recovery ? <SessionRecoveryPanel {...props} recovery={recovery} /> : null;
   const draftPending = editorDraftRecovery.pendingKeys.size > 0;
+  // A tab exists only when it has something to show. File drafts and reports are the
+  // dialog's home when there are no conversations; reports can only be counted after an
+  // explicit listing, so they ride along with the file copies instead of standing alone.
+  const hasSessions = !!recovery?.workspace.sessions.length;
+  const fileSide = editorDraftRecords.length > 0 || !hasSessions;
+  const reportsInspectable = !!getLegacyReportPrivacySnapshot && canInspectLegacyReports();
   return (
     <SessionRecoveryPanel
       {...props}
       recovery={recovery ?? emptyRecovery}
-      renderContainer={(sessions, chatPending) => (
-        <Modal
-          title={t("Recovered work")}
-          onClose={chatPending || draftPending ? () => {} : props.onClose}
-          size="md"
-          className="session-recovery-dialog"
-          fitViewport
-        >
-          <div className="flex w-full min-h-0 flex-col">
-            <RecoveryTabs
-              label={t("Recovery type")}
-              idPrefix={PREFIX}
-              value={mode}
-              onChange={setMode}
-              tabs={[
-                {
-                  value: "sessions",
-                  label: t("Conversations"),
-                  disabled: chatPending || draftPending,
-                },
+      renderContainer={(sessions, chatPending) => {
+        const busy = chatPending || draftPending;
+        const tabs: RecoveryTab[] = [
+          ...(hasSessions
+            ? [{ value: "sessions", label: t("Conversations"), disabled: busy }]
+            : []),
+          ...(fileSide
+            ? [
                 {
                   value: "files",
                   label: t("File drafts"),
                   count: editorDraftRecords.length,
-                  disabled: chatPending || draftPending,
+                  disabled: busy,
                 },
+              ]
+            : []),
+          ...(fileSide && reportsInspectable
+            ? [
                 {
                   value: "reports",
                   label: t("Earlier file reports"),
-                  disabled:
-                    chatPending ||
-                    draftPending ||
-                    !getLegacyReportPrivacySnapshot ||
-                    !canInspectLegacyReports(),
-                  disabledReason:
-                    chatPending || draftPending
-                      ? t("Available when the current recovery action finishes.")
-                      : t("Earlier file reports are not available for inspection right now."),
+                  disabled: busy,
+                  disabledReason: t("Available when the current recovery action finishes."),
                 },
-              ]}
-            />
-            <div
-              role="tabpanel"
-              id={recoveryPanelId(PREFIX, mode)}
-              aria-labelledby={recoveryTabId(PREFIX, mode)}
-              className="flex min-h-0 flex-col"
-            >
-              {mode === "files" ? (
-                <EditorDraftRecoverySection
-                  recovery={editorDraftRecovery}
-                  records={editorDraftRecords}
-                  reportPaths={reportPaths}
-                  onClearReportPaths={() => setReportSelection(null)}
+              ]
+            : []),
+        ];
+        const activeMode = tabs.some((tab) => tab.value === mode)
+          ? mode
+          : (tabs[0]?.value ?? "sessions");
+        return (
+          <Modal
+            title={t("Recovered work")}
+            onClose={busy ? () => {} : props.onClose}
+            size="md"
+            className="session-recovery-dialog"
+            fitViewport
+          >
+            <div className="flex w-full min-h-0 flex-col">
+              {tabs.length > 1 ? (
+                <RecoveryTabs
+                  label={t("Recovery type")}
+                  idPrefix={PREFIX}
+                  value={activeMode}
+                  onChange={setMode}
+                  tabs={tabs}
                 />
-              ) : mode === "reports" && getLegacyReportPrivacySnapshot ? (
-                <BufferRecoveryReports
-                  canInspect={canInspectLegacyReports}
-                  getPrivacySnapshot={getLegacyReportPrivacySnapshot}
-                  onShowCopies={(paths) => {
-                    setReportSelection({ paths, privacy: getLegacyReportPrivacySnapshot() });
-                    setMode("files");
-                  }}
-                />
-              ) : (
-                sessions
-              )}
+              ) : null}
+              <div
+                role="tabpanel"
+                id={recoveryPanelId(PREFIX, activeMode)}
+                aria-labelledby={recoveryTabId(PREFIX, activeMode)}
+                className="flex min-h-0 flex-col"
+              >
+                {activeMode === "files" ? (
+                  <EditorDraftRecoverySection
+                    recovery={editorDraftRecovery}
+                    records={editorDraftRecords}
+                    reportPaths={reportPaths}
+                    onClearReportPaths={() => setReportSelection(null)}
+                  />
+                ) : activeMode === "reports" && getLegacyReportPrivacySnapshot ? (
+                  <BufferRecoveryReports
+                    canInspect={canInspectLegacyReports}
+                    getPrivacySnapshot={getLegacyReportPrivacySnapshot}
+                    onShowCopies={(paths) => {
+                      setReportSelection({ paths, privacy: getLegacyReportPrivacySnapshot() });
+                      setMode("files");
+                    }}
+                  />
+                ) : (
+                  sessions
+                )}
+              </div>
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        );
+      }}
     />
   );
 }

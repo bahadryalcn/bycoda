@@ -87,9 +87,8 @@ export function tabCommand(e: KeyboardEvent): TabCommand | null {
 
   // Turkish keyboards put double quote on the physical Backquote key.
   // Resolve the character before the existing new-terminal binding.
-  if (e.ctrlKey && !e.metaKey && e.key === '"') {
-    return e.repeat ? null : "toggle-terminal";
-  }
+  // Key repeat is consumed by the dispatcher, which toggles once per press.
+  if (e.ctrlKey && !e.metaKey && e.key === '"') return "toggle-terminal";
 
   if (e.key === "`" || e.code === "Backquote") {
     return e.shiftKey ? "new-terminal-tab" : "new-terminal";

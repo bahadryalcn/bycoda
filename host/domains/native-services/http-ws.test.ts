@@ -283,6 +283,80 @@ it("preserves full owner catalog/settings over HTTP+WS and denies account invent
   expect((await ws.request("models.list", {})).error.code).toBe(RPC_ERROR_CODES.unauthorized);
 });
 
+it("binds native emergency Stop to the authenticated owner over WS and strict HTTP fallback",async()=>{
+  const f=await fixture(),ws=await f.connect();
+  expect(await ws.call("native.services.desktop.stop")).toEqual({stopped:true});
+  expect(await f.callHttp("desktop.stop")).toEqual({stopped:true});
+  expect((await f.callHttp("desktop.request",{op:"status"})).status.stopped).toBe(true);
+  expect((await f.callHttp("assistant.request",{op:"snapshot"})).snapshot.profile.setupComplete).toBe(false);
+  expect((await ws.call("assistant.request",{op:"snapshot"})).snapshot.profile.setupComplete).toBe(false);
+  expect((await ws.request("native.services.desktop.stop",{principal:"owner"})).error).toBeDefined();
+  expect((await f.http("desktop.stop",{op:"resume"})).error).toBeDefined();
+  const scoped=await ws.call("native.services.conversation.access.issue",{sessionId:f.session.sessionId});
+  expect((await f.http("desktop.stop",{},scoped.token)).error).toBeDefined();
+});
+it("exposes only sanitized native desktop status to a current authenticated owner",async()=>{
+  const f=await fixture(),ws=await f.connect();
+  const expected={enabled:false,active:false,stopped:false};
+  expect(await ws.call("native.services.desktop.status")).toEqual(expected);
+  expect(await f.callHttp("desktop.status")).toEqual(expected);
+  expect((await ws.request("native.services.desktop.status",{op:"resume"})).error).toBeDefined();
+  expect((await f.http("desktop.status",{principal:"owner"})).error).toBeDefined();
+  const scoped=await ws.call("native.services.conversation.access.issue",{sessionId:f.session.sessionId});
+  expect((await f.http("desktop.status",{},scoped.token)).error).toBeDefined();
+  await f.store.revokeDevice(f.device.id);
+  expect((await ws.request("native.services.desktop.status")).error).toBeDefined();
+  expect((await f.http("desktop.status")).error).toBeDefined();
+});
+it("changes only canonical owner presence through finite authenticated native routes",async()=>{
+  const f=await fixture(),ws=await f.connect();
+  const get="native.services.assistant.presence.get",set="native.services.assistant.presence.set";
+  const initial=await ws.call(get);
+  expect(initial).toMatchObject({setupComplete:false});
+  expect(Object.keys(initial).every(key=>["state","setupComplete","assistantName"].includes(key))).toBe(true);
+  expect(await ws.call(set,{state:"away"})).toMatchObject({state:"away",setupComplete:false});
+  expect((await f.callHttp("assistant.request",{op:"snapshot"})).snapshot.presence.state).toBe("away");
+  expect(await f.callHttp(set,{state:"dnd"})).toMatchObject({state:"dnd",setupComplete:false});
+  for(const params of [{state:"idle"},{state:"present",principal:"owner"},{state:"present",projectId:f.project.id}])expect((await ws.request(set,params)).error).toBeDefined();
+  expect((await ws.request(get,{state:"away"})).error).toBeDefined();
+  const scoped=await ws.call("native.services.conversation.access.issue",{sessionId:f.session.sessionId});
+  expect((await f.http(set,{state:"present"},scoped.token)).error).toBeDefined();
+  await f.store.revokeDevice(f.device.id);
+  expect((await ws.request(set,{state:"present"})).error).toBeDefined();
+  expect((await f.http(get)).error).toBeDefined();
+});
+it("finishes causal Voice tool proof over actual scoped HTTP before returning a conditional result envelope",async()=>{
+  const f=await fixture();
+  const {thread}=await f.callHttp("assistant.request",{op:"threads.open"});
+  const {message}=await f.callHttp("assistant.request",{op:"threads.append",threadId:thread.id,role:"user",via:"voice",text:"Synthetic owner turn for the isolated HTTP provenance test.",idempotencyKey:"causal-http-owner"});
+  const {voiceContext}=await f.callHttp("assistant.request",{op:"voice.context.open",threadId:thread.id,ownerMessageId:message.id,generationKey:"http-generation",requestId:"http-context-open",seedMessageIds:[],contextProjectIds:[f.project.id],summaryUsed:false});
+  expect(voiceContext.status).toBe("known");
+  const request={projectId:f.project.id,threadId:thread.id,family:"conversation",action:"host.limits.status",input:{},requestId:"http-read",causalContextId:voiceContext.id};
+  const result=await f.callHttp("voice.tools.call",request);
+  expect(result.voiceContext).toMatchObject({id:voiceContext.id,status:"known",projectIds:[f.project.id]});
+  expect(result.voiceDisclosure).toMatchObject({contextId:voiceContext.id,requestId:"http-read",verified:true,projectIds:[f.project.id]});
+  expect(result.value).toBeDefined();expect(Object.keys(result).sort()).toEqual(["value","voiceContext","voiceDisclosure"]);
+  const transcript=await f.callHttp("assistant.request",{op:"threads.messages",threadId:thread.id});
+  const annotated=transcript.messages.find((item:any)=>item.id===message.id);
+  expect(annotated.projectIds).toEqual([f.project.id]);
+  expect(annotated.toolActions).toEqual([{id:result.voiceDisclosure.id,family:"conversation",action:"host.limits.status",status:"completed",createdAt:expect.any(Number)}]);
+  expect(Object.keys(annotated.toolActions[0]).sort()).toEqual(["action","createdAt","family","id","status"]);
+  const legacy=await f.callHttp("voice.tools.call",{projectId:f.project.id,threadId:thread.id,family:"conversation",action:"host.limits.status",input:{}});
+  expect(legacy).not.toHaveProperty("voiceContext");expect(legacy).not.toHaveProperty("voiceDisclosure");
+  const repeated=await f.http("voice.tools.call",request);expect(repeated.error).toBeDefined();
+});
+it("returns a verified current Voice disclosure without promoting an already unknown generation",async()=>{
+  const f=await fixture();const {thread}=await f.callHttp("assistant.request",{op:"threads.open",projectId:f.project.id});
+  const {message}=await f.callHttp("assistant.request",{op:"threads.append",threadId:thread.id,role:"user",via:"voice",text:"Synthetic unknown-generation owner turn.",idempotencyKey:"unknown-http-owner"});
+  const {voiceContext}=await f.callHttp("assistant.request",{op:"voice.context.open",threadId:thread.id,ownerMessageId:message.id,generationKey:"unknown-http-generation",requestId:"unknown-http-open",seedMessageIds:[],contextProjectIds:[f.project.id],summaryUsed:false});
+  await f.callHttp("assistant.request",{op:"voice.context.invalidate",id:voiceContext.id,requestId:"renderer-disclosure",reason:"unverified-tool"});
+  const result=await f.callHttp("voice.tools.call",{projectId:f.project.id,threadId:thread.id,family:"conversation",action:"host.limits.status",input:{},requestId:"unknown-http-read",causalContextId:voiceContext.id});
+  expect(result.voiceContext.status).toBe("unknown");expect(result.voiceDisclosure).toMatchObject({verified:true,requestId:"unknown-http-read",projectIds:[f.project.id]});
+  const {voiceContext:current}=await f.callHttp("assistant.request",{op:"voice.context.get",id:voiceContext.id});expect(current.status).toBe("unknown");
+  const transcript=await f.callHttp("assistant.request",{op:"threads.messages",threadId:thread.id});
+  expect(transcript.messages.find((item:any)=>item.id===message.id)).not.toHaveProperty("toolActions");
+});
+
 it("routes descriptions, real bound grants and terminal append through both transports without token-scope substitution", async () => {
   const f = await fixture(),
     ws = await f.connect();

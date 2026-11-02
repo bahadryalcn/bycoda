@@ -3,6 +3,9 @@ import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ stop: vi.fn() }));
+const host=vi.hoisted(()=>({profile:{name:"Arif",setupComplete:true,voiceSetupComplete:true},request:vi.fn(async()=>({ok:true}))}));
+vi.mock("../../assistant/model/assistantClient",()=>({useAssistantSnapshot:()=>({snapshot:{profile:host.profile,memory:[]},error:"",loading:false,refresh:vi.fn()}),assistantRequest:host.request}));
+vi.mock("../../assistant/ui/AssistantSetup",()=>({AssistantSetup:()=>createElement("div",{"data-setup":true},"Setup")}));
 vi.mock("./VoiceCompanion", () => ({
   VoiceCompanion: () => {
     useEffect(() => () => state.stop(), []);
@@ -18,6 +21,18 @@ afterEach(async () => {
   element?.remove();
   localStorage.clear();
   vi.clearAllMocks();
+  host.profile.setupComplete=true;host.profile.voiceSetupComplete=true;
+});
+it("keeps capture unmounted until mandatory voice setup is complete",async()=>{
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
+  host.profile.voiceSetupComplete=false;
+  saveVoiceSettings({...loadVoiceSettings(),enabled:true});
+  element=document.createElement("div");document.body.append(element);root=createRoot(element);
+  await act(async()=>root!.render(createElement(VoiceCompanionGate,{sessions:[],onSubmit:()=>true,onStop:vi.fn()})));
+  expect(element.querySelector("[data-voice]")).toBeNull();
+  await act(async()=>element.querySelector<HTMLButtonElement>("button")!.click());
+  expect(element.querySelector("[data-setup]")).not.toBeNull();
+  expect(state.stop).not.toHaveBeenCalled();
 });
 it("is entirely absent by default and unmounts voice immediately when disabled", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

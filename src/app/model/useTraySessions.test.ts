@@ -82,6 +82,7 @@ it("publishes status and canonical ownership and routes only visible selections"
   expect(api.invoke).toHaveBeenCalledWith(
     "tray_sessions_update",
     expect.objectContaining({
+      labels:expect.objectContaining({presence:expect.objectContaining({availability:"Availability",here:"Here",away:"Away",dnd:"Do not disturb"})}),
       rows: [
         expect.objectContaining({
           id: "local",

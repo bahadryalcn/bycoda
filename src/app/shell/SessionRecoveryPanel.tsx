@@ -10,6 +10,7 @@ import { useLocale, useT } from "../../shared/i18n";
 import { Modal } from "../../shared/ui/Modal";
 import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../shared/ui/EmptyState";
+import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { InlineError } from "../../shared/ui/InlineError";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
@@ -21,7 +22,7 @@ import { parseRemotePath } from "../../features/connections/model/remoteProjects
 import { knownRemoteMachine, remoteSessionFor } from "../../features/connections/model/connections";
 import type { RemoteRailSession } from "../../features/connections/model/remoteRailSessions";
 import {
-  recoveryStatus,
+  recoveryEntryStatus,
   recoveryNeedsAttention,
   recoveryStatusOrder,
   eligibleRecoverySessions,
@@ -38,6 +39,8 @@ import { MoreHorizontal, Search, X } from "../../shared/ui/icons";
 import "./session-recovery.css";
 
 const stubPath = (stub: WorkspaceSessionStub) => stub.cwd;
+/** A short list is scanned by eye; search appears only when it stops fitting. */
+const SEARCH_MIN_ROWS = 8;
 
 const labels: Record<RecoveryStatus, string> = {
   working: "Working",
@@ -82,7 +85,7 @@ export function SessionRecoveryPanel({
   const [errorArea, setErrorArea] = useState<"open" | "list">("open");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchor = useRef<HTMLButtonElement>(null);
-  const [filter, setFilter] = useState<"attention" | "all">("attention");
+  const [filterChoice, setFilterChoice] = useState<"attention" | "all">("attention");
   const [stored, setStored] = useState<Map<string, Session | null | "error">>(() => new Map());
   const [readErrors, setReadErrors] = useState<Map<string, string>>(() => new Map());
   const [readAttempt, setReadAttempt] = useState(0);
@@ -150,19 +153,12 @@ export function SessionRecoveryPanel({
         const host = remoteSessions.find(
           (entry) => entry.project === stub.cwd && entry.session.id === stub.remoteSessionId,
         );
-        const status: RecoveryStatus =
-          remote && host?.fresh
-            ? (host.session.issue ??
-              (host.session.needsInput
-                ? "input"
-                : host.session.status === "running"
-                  ? "working"
-                  : host.session.status === "interrupted"
-                    ? "interrupted"
-                    : "idle"))
-            : !remote && saved === null && !local
-              ? "unavailable"
-              : recoveryStatus(local, remote, false);
+        const status: RecoveryStatus = recoveryEntryStatus({
+          remote,
+          host,
+          local,
+          storedMissing: saved === null,
+        });
         const environmentId = parseRemotePath(stub.cwd)?.environmentId;
         const machine = environmentId
           ? (knownRemoteMachine(environmentId)?.name ?? environmentId)
@@ -202,6 +198,11 @@ export function SessionRecoveryPanel({
     [recovery, visible, sessions, remoteSessions, stored, readErrors, locale],
   );
   const attentionCount = rows.filter((row) => recoveryNeedsAttention(row.status)).length;
+  // The filter only exists while it separates something: with nothing (or everything)
+  // needing attention both views are the same list.
+  const canFilter = attentionCount > 0 && attentionCount < rows.length;
+  const filter = canFilter ? filterChoice : "all";
+  const showSearch = rows.length > SEARCH_MIN_ROWS || query !== "";
   const shown = rows
     .filter(
       (row) =>
@@ -278,27 +279,34 @@ export function SessionRecoveryPanel({
     pendingAction === "remove-selected" ||
     pendingAction === "clear-completed" ||
     pendingAction === "clear-all";
+  // Only offer what applies now; the per-row remove button covers a short list.
   const menuItems: DropdownMenuItem[] = [
-    {
-      kind: "item",
-      id: "remove-selected",
-      label: t("Remove {p0} selected from list", { p0: selectedIds.length }),
-      description:
-        hiddenSelectedCount > 0
-          ? t("Conversation history is kept. {p0} selected outside this view stay listed.", {
-              p0: hiddenSelectedCount,
-            })
-          : t("Conversation history is kept."),
-      disabled: selectedIds.length === 0,
-    },
-    {
-      kind: "item",
-      id: "clear-completed",
-      label: t("Remove {p0} completed from list", { p0: completedIds.length }),
-      description: t("Done and idle entries only. Conversation history is kept."),
-      disabled: completedIds.length === 0,
-    },
-    { kind: "sep" },
+    ...(selectedIds.length > 0
+      ? ([
+          {
+            kind: "item",
+            id: "remove-selected",
+            label: t("Remove {p0} selected from list", { p0: selectedIds.length }),
+            description:
+              hiddenSelectedCount > 0
+                ? t("Conversation history is kept. {p0} selected outside this view stay listed.", {
+                    p0: hiddenSelectedCount,
+                  })
+                : t("Conversation history is kept."),
+          },
+        ] satisfies DropdownMenuItem[])
+      : []),
+    ...(completedIds.length > 0
+      ? ([
+          {
+            kind: "item",
+            id: "clear-completed",
+            label: t("Remove {p0} completed from list", { p0: completedIds.length }),
+            description: t("Done and idle entries only. Conversation history is kept."),
+          },
+        ] satisfies DropdownMenuItem[])
+      : []),
+    ...(selectedIds.length > 0 || completedIds.length > 0 ? [{ kind: "sep" } as const] : []),
     {
       kind: "item",
       id: "clear-all",
@@ -319,84 +327,91 @@ export function SessionRecoveryPanel({
         "clear-all",
       );
   };
+  // One entry is cleared by its own remove button; list-wide maintenance needs a list.
+  const showMaintenance = rows.length > 1 || listMaintenancePending;
+  // The menu sits with the filter and search; a short list has neither, so it joins the
+  // footer actions instead of costing a toolbar row of its own.
+  const showToolbar = canFilter || showSearch;
+  const maintenanceControl = showMaintenance ? (
+    <>
+      <Button
+        ref={menuAnchor}
+        variant="ghost"
+        size={showToolbar ? undefined : "sm"}
+        iconOnly
+        label={t("Recovery list maintenance")}
+        tooltip={t("Recovery list maintenance")}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        className={showToolbar ? "ms-auto" : undefined}
+        disabled={pending && !listMaintenancePending}
+        loading={listMaintenancePending}
+        onClick={() => setMenuOpen((value) => !value)}
+      >
+        <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+      </Button>
+      {menuOpen ? (
+        <DropdownMenu
+          anchor={menuAnchor}
+          label={t("Recovery list maintenance")}
+          returnFocusRef={menuAnchor}
+          width={280}
+          items={menuItems}
+          onPick={pickMaintenance}
+          onClose={() => setMenuOpen(false)}
+        />
+      ) : null}
+    </>
+  ) : null;
   const primaryOpensSelected = selectedIds.length > 0;
   const listError = error && errorArea === "list" ? error : "";
   const openError = error && errorArea === "open" ? error : "";
   const content = (
     <div className="session-recovery recovery-pane" aria-busy={pending}>
-      <div className="recovery-toolbar">
-        <SegmentedControl
-          label={t("Session filters")}
-          value={filter}
-          onValueChange={(value) => setFilter(value as "attention" | "all")}
-          options={[
-            { value: "attention", label: t("Needs attention"), accessory: attentionCount },
-            { value: "all", label: t("All sessions"), accessory: rows.length },
-          ]}
-        />
-        <SearchInputGroup appearance="field" className="recovery-toolbar-search">
-          <Search className="icon-sm shrink-0" aria-hidden="true" />
-          <SearchInput
-            focusOwner="group"
-            aria-label={t("Search recovered sessions")}
-            placeholder={t("Search recovered sessions")}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </SearchInputGroup>
-        <Button
-          ref={menuAnchor}
-          variant="ghost"
-          iconOnly
-          label={t("Recovery list maintenance")}
-          tooltip={t("Recovery list maintenance")}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          disabled={pending && !listMaintenancePending}
-          loading={listMaintenancePending}
-          onClick={() => setMenuOpen((value) => !value)}
-        >
-          <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
-        </Button>
-        {menuOpen ? (
-          <DropdownMenu
-            anchor={menuAnchor}
-            label={t("Recovery list maintenance")}
-            returnFocusRef={menuAnchor}
-            width={280}
-            items={menuItems}
-            onPick={pickMaintenance}
-            onClose={() => setMenuOpen(false)}
-          />
-        ) : null}
-      </div>
-      <div role="status" className="recovery-status text-ui-caption text-(--ui-text-secondary)">
-        <span>
-          {t("{p0} previous sessions · {p1} need attention", {
-            p0: rows.length,
-            p1: attentionCount,
-          })}
-        </span>
-        {hiddenCount > 0 ? (
-          <span>{t("Showing {p0} of {p1}", { p0: shown.length, p1: rows.length })}</span>
-        ) : null}
-        {selected.size > 0 ? (
-          <>
-            <span>{t("{p0} selected in this view", { p0: selectedIds.length })}</span>
-            {hiddenSelectedCount > 0 ? (
-              <span>{t("{p0} selected outside this view", { p0: hiddenSelectedCount })}</span>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={pending}
-              onClick={() => setSelected(new Set())}
-            >
-              {t("Clear selection")}
-            </Button>
-          </>
-        ) : null}
-      </div>
+      {showToolbar ? (
+        <div className="recovery-toolbar">
+          {canFilter ? (
+            <SegmentedControl
+              label={t("Session filters")}
+              value={filter}
+              onValueChange={(value) => setFilterChoice(value as "attention" | "all")}
+              options={[
+                { value: "attention", label: t("Needs attention"), accessory: attentionCount },
+                { value: "all", label: t("All sessions"), accessory: rows.length },
+              ]}
+            />
+          ) : null}
+          {showSearch ? (
+            <SearchInputGroup appearance="field" className="recovery-toolbar-search">
+              <Search className="icon-sm shrink-0" aria-hidden="true" />
+              <SearchInput
+                focusOwner="group"
+                aria-label={t("Search recovered sessions")}
+                placeholder={t("Search recovered sessions")}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </SearchInputGroup>
+          ) : null}
+          {maintenanceControl}
+        </div>
+      ) : null}
+      {selected.size > 0 ? (
+        <div role="status" className="recovery-status text-ui-caption text-(--ui-text-secondary)">
+          <span>{t("{p0} selected in this view", { p0: selectedIds.length })}</span>
+          {hiddenSelectedCount > 0 ? (
+            <span>{t("{p0} selected outside this view", { p0: hiddenSelectedCount })}</span>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={pending}
+            onClick={() => setSelected(new Set())}
+          >
+            {t("Clear selection")}
+          </Button>
+        </div>
+      ) : null}
       {listError ? (
         <Alert tone="danger" role="alert">
           {listError}
@@ -424,7 +439,6 @@ export function SessionRecoveryPanel({
                     </div>
                     <details
                       className="break-words text-ui-caption text-(--ui-text-secondary)"
-                      title={`${stub.cwd} · ${HARNESS_TITLE[stub.harness]} ${stub.model}`}
                     >
                       <summary className="cursor-pointer">
                         {projectDisplayName(stub.cwd)} · {machine}
@@ -528,7 +542,7 @@ export function SessionRecoveryPanel({
                   {t("Clear search")}
                 </Button>
                 {filter === "attention" && attentionCount < rows.length ? (
-                  <Button variant="ghost" size="sm" onClick={() => setFilter("all")}>
+                  <Button variant="ghost" size="sm" onClick={() => setFilterChoice("all")}>
                     {t("Search all sessions")}
                   </Button>
                 ) : null}
@@ -538,29 +552,13 @@ export function SessionRecoveryPanel({
         ) : (
           <EmptyState
             context="panel"
-            kind="filtered"
-            title={t("No sessions need attention")}
-            description={t("{p0} other recovered sessions are available.", { p0: rows.length })}
-            action={
-              <Button variant="secondary" size="sm" onClick={() => setFilter("all")}>
-                {t("Show all sessions")}
-              </Button>
-            }
+            kind="empty"
+            title={t("No recovered sessions")}
+            description={t("Nothing is waiting to be reopened.")}
           />
         )}
       </div>
       <div className="recovery-footer border-t border-stroke">
-        <p className="text-ui-caption text-(--ui-text-secondary)">
-          {hiddenCount > 0
-            ? t("Open all opens all {p0} recovered sessions, including {p1} not shown here.", {
-                p0: rows.length,
-                p1: hiddenCount,
-              })
-            : t("Open all opens all {p0} recovered sessions.", { p0: rows.length })}{" "}
-          {t(
-            "Opening tabs does not restart work. Restore chat layout also brings back your earlier chat splits.",
-          )}
-        </p>
         {openError ? (
           <Alert tone="danger" role="alert">
             {openError}
@@ -611,6 +609,22 @@ export function SessionRecoveryPanel({
           >
             {t("Restore chat layout")}
           </Button>
+          <InfoPopover className="shrink-0">
+            <p>
+              {hiddenCount > 0
+                ? t("Open all opens all {p0} recovered sessions, including {p1} not shown here.", {
+                    p0: rows.length,
+                    p1: hiddenCount,
+                  })
+                : t("Open all opens all {p0} recovered sessions.", { p0: rows.length })}
+            </p>
+            <p>
+              {t(
+                "Opening tabs does not restart work. Restore chat layout also brings back your earlier chat splits.",
+              )}
+            </p>
+          </InfoPopover>
+          {showToolbar ? null : maintenanceControl}
           <span className="recovery-actions-end flex flex-wrap items-center gap-2">
             {primaryOpensSelected ? (
               <Button

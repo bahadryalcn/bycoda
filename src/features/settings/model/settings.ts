@@ -24,6 +24,7 @@ import {
   shortcutTokens,
 } from "../../quick-composer/model/quickComposerShortcut";
 import { readFlag, writeFlag } from "./storageFlags";
+import { DESKTOP_STOP_COMMAND } from "./desktopStopKeybinding";
 
 const SECTION_KEY = "bycoda.settingsSection";
 
@@ -2371,6 +2372,7 @@ export type KeybindingRow = {
  * focused surface handlers such as the draft composer workspace toggle.
  */
 export const KEYBINDINGS: KeybindingRow[] = [
+  { command: DESKTOP_STOP_COMMAND, keys: `${CTRL}${IS_MAC ? "⌥" : "Alt+"}Esc`, when: "Anywhere" },
   { command: "App: Settings", keys: `${MOD},`, when: "Always" },
   { command: "App: Search", keys: `${MOD}K`, when: "Always" },
   { command: "App: Go to File", keys: `${MOD}P`, when: "Always" },
@@ -2523,6 +2525,7 @@ export type KeybindingOverrides = Record<string, KeybindingOverride>;
 const VALID_COMMANDS = new Set(KEYBINDINGS.map((row) => row.command));
 
 const KEY_CODES: Record<string, string> = {
+  Esc: "Escape",
   " ": "Space",
   Enter: "Enter",
   Space: "Space",
@@ -2606,6 +2609,8 @@ function shortcutOwners(): Map<string, string> {
 function validateShortcut(command: string, shortcut: string): string {
   const canonical = canonicalShortcut(shortcut);
   if (!canonical) throw new Error("That combination is not a valid shortcut");
+  if (command === DESKTOP_STOP_COMMAND && !isGlobalShortcut(canonical))
+    throw new Error("Emergency stop needs Command or Control as a global hotkey");
   if (command === ACTIVATE_RANGE_COMMAND && !/Digit[1-8]$/.test(canonical)) {
     throw new Error("Tab: Activate 1–8 needs a number key from 1 to 8");
   }

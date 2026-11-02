@@ -137,7 +137,9 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
         mapProjectTerminal(prev, projectPath, (entry) => closeTerminalInDock(entry, fileId)),
       );
     };
-    void confirmCloseTerminal(file).then((ok) => ok && finishClose());
+    // The last terminal takes the panel with it, so it asks even when idle.
+    const last = dock?.pane.files.length === 1;
+    void confirmCloseTerminal(file, { last }).then((ok) => ok && finishClose());
   }, []);
 
   const onCloseOtherProjectTerminals = useCallback((fileId: string) => {

@@ -104,6 +104,8 @@ export type Automation = {
 
 export type AutomationHost = {
   machineId: string;
+  /** Captured with the guarded Host list response; absent on legacy cache rows. */
+  environmentId?:string;
   machineName: string;
   /** The host's ID for the project folder. */
   projectId: string;

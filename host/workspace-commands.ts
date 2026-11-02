@@ -607,16 +607,24 @@ export class WorkspaceCommands {
     // A project nested in another belongs to the innermost one, so its root
     // keeps the root protections instead of passing as the outer's subfolder.
     let found: Located | undefined;
-    const find = (roots: string[]) => {
-      for (const root of roots) {
-        const rel = relative(root, actual);
+    const find = async (roots: string[]) => {
+      // Compare physical paths on both sides. Registered folders and worktrees
+      // may be junctions/symlinks, while `actual` above is already canonical.
+      // Resolve on every admission, so cached worktree names cannot retain a
+      // previous link target. Missing/unreadable roots grant no access.
+      const physicalRoots = await Promise.all(roots.map((root) => realpath(root).catch(() => undefined)));
+      for (const [index, physicalRoot] of physicalRoots.entries()) {
+        if (!physicalRoot) continue;
+        const rel = relative(physicalRoot, actual);
         if (rel === ".." || /^\.\.[\\/]/.test(rel) || isAbsolute(rel)) continue;
-        if (!found || rel.length < found.relative.length) found = { root, relative: rel };
+        // Preserve the registered spelling for project ownership and idle gates;
+        // existingPath/workspacePath enforce physical containment at I/O.
+        if (!found || rel.length < found.relative.length) found = { root: roots[index], relative: rel };
       }
     };
-    find((await this.store.projects()).map((project) => project.cwd));
+    await find((await this.store.projects()).map((project) => project.cwd));
     if (found) return found;
-    find(await this.allowedRoots());
+    await find(await this.allowedRoots());
     if (found) return found;
     throw new Error("Path is outside this machine’s projects");
   }

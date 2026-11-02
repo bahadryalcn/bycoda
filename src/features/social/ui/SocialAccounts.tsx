@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { TextField } from "../../../shared/ui/TextField";
@@ -1197,11 +1198,19 @@ function AccountDetail({
                     {Object.entries(account.grants).map(([id, allowed]) => (
                       <li key={id}>
                         <strong>{projects.find((item) => item.id === id)?.name ?? id}</strong>
-                        <span className="social-muted">
-                          {allowed
-                            .map((permission) => permissionLabels()[permission] ?? permission)
-                            .join(", ") || t("none")}
-                        </span>
+                        {allowed.length ? (
+                          <BadgeList
+                            label={t("Permissions")}
+                            size="xs"
+                            className="min-w-0 flex-[1_1_8rem]"
+                            items={allowed.map((permission) => ({
+                              id: permission,
+                              label: permissionLabels()[permission] ?? permission,
+                            }))}
+                          />
+                        ) : (
+                          <span className="social-muted">{t("none")}</span>
+                        )}
                       </li>
                     ))}
                     {!Object.keys(account.grants).length ? (

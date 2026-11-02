@@ -5,8 +5,9 @@ import type { SocialPeers } from "../social-peers";
 import type { RuntimeLogAccess } from "../runtime-log-tools";
 import type { RuntimeTerminalLogs } from "../runtime-terminal-logs";
 import type { ConversationDesktopRelay } from "../conversation-tools";
+import type { HostDesktopControl } from "../desktop-control-host";
 import type { WorkspaceCommands } from "../workspace-commands";
-import type { NativeServiceKind, NativeServiceOwnerPorts } from "../domains/native-services/ports";
+import type { NativeServiceKind, NativeServiceOwnerPorts,NativeAssistantPresence } from "../domains/native-services/ports";
 import { HostDomainAuthorizationError } from "../domains/context";
 import { assertNativeDeliveryEffect } from "../native-delivery-epochs";
 
@@ -18,6 +19,10 @@ export interface NativeServicesAdapters {
   runtimeLogs: RuntimeLogAccess;
   terminalLogs: RuntimeTerminalLogs;
   desktop: ConversationDesktopRelay;
+  desktopControl?:Pick<HostDesktopControl,"request"|"indicatorStatus">;
+  assistantName?():Promise<string>;
+  assistantPresence?():Promise<NativeAssistantPresence>;
+  setAssistantPresence?(state:"present"|"away"|"dnd"):Promise<void>;
   workspace: WorkspaceCommands;
   inHost(sessionId: string): Promise<boolean>;
   desktopProjectCwd(sessionId: string): Promise<string | null | undefined>;
@@ -44,7 +49,18 @@ export function bindNativeServicesOwner(
       if (cwd) await adapters.store.addProject(cwd, basename(cwd));
     }
   };
+  const presence=async()=>{
+    if(!adapters.assistantPresence)throw new Error("Native assistant presence is unavailable.");
+    const {state,setupComplete,assistantName}=await adapters.assistantPresence();
+    return {state,setupComplete,...(assistantName?{assistantName:assistantName.slice(0,80)}:{})};
+  };
   return {
+    assistantPresence:()=>guarded(presence),
+    setAssistantPresence:state=>guarded(async()=>{
+      if(!adapters.setAssistantPresence)throw new Error("Native assistant presence is unavailable.");
+      await adapters.setAssistantPresence(state);
+      return presence();
+    }),
     describe: (kind) => guarded(() => adapters.describe(kind)),
     issue: (kind, sessionId, expectedScope) =>
       guarded(async () => {
@@ -78,6 +94,17 @@ export function bindNativeServicesOwner(
           (await adapters.store.addProject(cwd, basename(cwd)));
         return adapters.terminalLogs.append(project.id, params);
       }),
+    desktopStatus:()=>guarded(async()=>{
+      if(!adapters.desktopControl)throw new Error("Native desktop status is unavailable.");
+      const {enabled,active,stopped,currentAction}=await adapters.desktopControl.indicatorStatus({kind:"owner",id:deviceHash},authorized);
+      const assistantName=(await adapters.assistantName?.())?.slice(0,80);
+      return {enabled,active,stopped,...(currentAction?{currentAction:{app:currentAction.app.slice(0,200),action:currentAction.action.slice(0,80)}}:{}),...(assistantName?{assistantName}:{})};
+    }),
+    stopDesktop:()=>guarded(async()=>{
+      if(!adapters.desktopControl)throw new Error("Native desktop Stop is unavailable.");
+      await adapters.desktopControl.request({op:"stop"},{kind:"owner",id:deviceHash},authorized);
+      return {stopped:true as const};
+    }),
     desktop: {
       take: () => guarded(() => adapters.desktop.take(deviceHash)),
       finish: (id, result, error) =>

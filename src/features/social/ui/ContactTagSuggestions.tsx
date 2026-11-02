@@ -2,6 +2,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { useContext, useRef, useState } from "react";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -315,11 +316,19 @@ function ContactTagReview({
                 <li key={proposal.ref} className="social-tag-contact" data-state={done ? "done" : undefined}>
                   <div className="social-tag-contact-head">
                     <strong>{proposal.name}</strong>
-                    <span className="social-muted">
-                      {proposal.currentTags.length
-                        ? proposal.currentTags.join(", ")
-                        : t("No tags yet")}
-                    </span>
+                    {proposal.currentTags.length ? (
+                      <BadgeList
+                        label={t("Tags")}
+                        size="xs"
+                        className="min-w-0 flex-[1_1_8rem]"
+                        items={proposal.currentTags.map((tag, index) => ({
+                          id: `${index}:${tag}`,
+                          label: tag,
+                        }))}
+                      />
+                    ) : (
+                      <span className="social-muted">{t("No tags yet")}</span>
+                    )}
                     {done ? <StatusBadge status="succeeded" label={t("Saved")} /> : null}
                   </div>
                   <ul className="social-tag-suggestions">

@@ -1,3 +1,4 @@
+import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManagedBadge";
 import { Badge, type BadgeTone } from "../../shared/ui/Badge";
 import { localReferenceForSession } from "../../features/sessions/model/localSessionNavigation";
 import { localSessionLinkFields } from "../../features/sessions/model/localSessionReference";
@@ -5,6 +6,7 @@ import { Alert } from "../../shared/ui/Alert";
 import { TextField } from "../../shared/ui/TextField";
 import { Modal } from "../../shared/ui/Modal";
 import { Button } from "../../shared/ui/Button";
+import { Divider } from "../../shared/ui/Divider";
 import styles from "./Sidebar.module.css";
 import {
   SourceControl,
@@ -140,6 +142,7 @@ import "./sessionList.css";
 import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
 import { MiddleTruncate } from "../../shared/ui/MiddleTruncate";
+import { folderName as pathFolderName } from "../../features/sync/model/syncProjectId";
 import { ParticleText } from "../../shared/ui/ParticleText";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
 import { orchestrationTaskLabel } from "../../features/orchestration/model/orchestrationSummary";
@@ -206,6 +209,7 @@ import { LIST_PAGE_SIZE, listWindowSize } from "../../shared/lib/listWindow";
 import { folderSessionWindow } from "../../features/sessions/model/folderWindow";
 import {
   filterSessionsByHarness,
+  filterAssistantManagedSessions,
   filterSessionsByStatus,
   filterSessionsByTime,
   harnessesInSessions,
@@ -737,21 +741,22 @@ function SidebarComponent({
   ).size;
   const workingSessionsBadge =
     workingSessionCount > 0 ? (
+      // Same working pill as a running session row (info tone, live wave mark), so the
+      // count reads as "working now" rather than as a plain total.
       <Badge
-        variant="count"
         size="sm"
-        tone="accent"
+        tone="info"
         appearance="subtle"
-        max={99}
         data-workspace-working-count
         aria-live="polite"
         aria-label={t(
           workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions",
           { p0: workingSessionCount },
         )}
-        className="shrink-0"
+        className="ms-1 shrink-0 gap-1 tabular-nums"
       >
-        {workingSessionCount}
+        <TerminalSpinner />
+        {workingSessionCount > 99 ? "99+" : workingSessionCount}
       </Badge>
     ) : null;
   const remoteExecutionCwd =
@@ -892,7 +897,7 @@ function SidebarComponent({
     const filteredSessions = filterSessionsByStatus(
       filterSessionsByTime(
         filterSessionsByHarness(
-          filterSessionsByArchive(listedSessions, sessionFilters.showArchived),
+          filterAssistantManagedSessions(filterSessionsByArchive(listedSessions, sessionFilters.showArchived), sessionFilters.assistantManaged),
           sessionFilters.hiddenHarnesses,
         ),
         sessionFilters.time,
@@ -945,7 +950,7 @@ function SidebarComponent({
     return () => window.clearTimeout(timer);
   }, [activeListedSessionId, openingSessionId]);
   const searchNarrowed = Boolean(deferredSearchQuery.trim());
-  const sessionListKey = `${cwd}\0${sessionFilters.showArchived}\0${sessionFilters.time}\0${sessionFilters.hiddenHarnesses.join(",")}\0${sessionFilters.status.working}\0${sessionFilters.status.needsApproval}\0${sessionFilters.status.done}\0${searchQuery}`;
+  const sessionListKey = `${cwd}\0${sessionFilters.showArchived}\0${sessionFilters.assistantManaged}\0${sessionFilters.time}\0${sessionFilters.hiddenHarnesses.join(",")}\0${sessionFilters.status.working}\0${sessionFilters.status.needsApproval}\0${sessionFilters.status.done}\0${searchQuery}`;
   const { sessionListLimit, folderListLimits, showMoreSessions, showMoreInFolder } =
     useSessionListLimits(sessionListKey, sessionsScrollRef);
   // Summaries for the whole project stay in `sessions` so filters still work.
@@ -1420,9 +1425,9 @@ function SidebarComponent({
           ? [
               {
                 kind: "item" as const,
-                id: "copy-session-id",
+                id: "copy",
                 get label() {
-                  return t("Copy session ID");
+                  return t("Copy");
                 },
                 submenu: [
                   {
@@ -1440,20 +1445,20 @@ function SidebarComponent({
                       return t("{p0} session ID", { p0: PRODUCT_IDENTITY.displayName });
                     },
                   },
+                  ...(!remoteProject
+                    ? [
+                        { kind: "item" as const, id: "copy-session-link", label: t("Copy session link"),
+                          disabled: !!referenceCopy?.pending,
+                          description: referenceCopy?.id === "copy-session-link"
+                            ? referenceCopy.pending ? t("Loading…") : referenceCopy.error ?? (referenceCopy.copied ? t("Copied") : undefined) : undefined },
+                        { kind: "item" as const, id: "copy-session-markdown", label: t("Copy Markdown reference"),
+                          disabled: !!referenceCopy?.pending,
+                          description: referenceCopy?.id === "copy-session-markdown"
+                            ? referenceCopy.pending ? t("Loading…") : referenceCopy.error ?? (referenceCopy.copied ? t("Copied") : undefined) : undefined },
+                      ]
+                    : []),
                 ],
               },
-            ]
-          : []),
-        ...(!multipleMenuSessions && !remoteProject
-          ? [
-              { kind: "item" as const, id: "copy-session-link", label: t("Copy session link"),
-                disabled: !!referenceCopy?.pending,
-                description: referenceCopy?.id === "copy-session-link"
-                  ? referenceCopy.pending ? t("Loading…") : referenceCopy.error ?? (referenceCopy.copied ? t("Copied") : undefined) : undefined },
-              { kind: "item" as const, id: "copy-session-markdown", label: t("Copy Markdown reference"),
-                disabled: !!referenceCopy?.pending,
-                description: referenceCopy?.id === "copy-session-markdown"
-                  ? referenceCopy.pending ? t("Loading…") : referenceCopy.error ?? (referenceCopy.copied ? t("Copied") : undefined) : undefined },
             ]
           : []),
         ...(!multipleMenuSessions && onSetSessionLinkedWorkItem
@@ -3214,6 +3219,7 @@ function SidebarComponent({
           x={filterMenu.x}
           y={filterMenu.y}
           harnesses={sessionHarnesses}
+          local={!remoteProject}
           filters={sessionFilters}
           onChange={onSessionFiltersChange}
           onClose={() => setFilterMenu(null)}
@@ -3865,7 +3871,6 @@ function CompactProjectRail({
         className="flex min-h-0 w-full flex-col items-center gap-1.5 overflow-y-auto px-1 py-1.5"
       >
         {titleBarAbove ? <CompactRailLogo /> : null}
-        {recoveryControl}
         <Button
           variant="ghost"
           motion="none"
@@ -3877,40 +3882,6 @@ function CompactProjectRail({
         >
           <PanelLeft className="icon-md" aria-hidden />
         </Button>
-        {onOpenProjectNavigation ? (
-          <Button
-            variant="ghost"
-            motion="none"
-            iconOnly
-            label={t("Projects and groups")}
-            tooltipSide="right"
-            aria-haspopup="dialog"
-            aria-expanded={projectNavigationOpen}
-            selected={projectNavigationOpen}
-            onClick={(event) => onOpenProjectNavigation(event.currentTarget)}
-          >
-            <FolderTree className="icon-md" aria-hidden />
-          </Button>
-        ) : null}
-        {recentSessions && onSelectProject ? (
-          <CompactLastSessionsAction
-            cwd={cwd}
-            recents={recents}
-            source={recentSessions}
-            activeSessionId={activeSessionId}
-            searchActive={searchActive}
-            onOpenSession={onPreviewSession ?? onSelectAgent}
-            onOpenProject={onSelectProject}
-          />
-        ) : null}
-        {!tabShown || !workspaceActive ? (
-          <CompactRailAction
-            label={t("Workspace")}
-            icon={FolderTree}
-            badge={workingSessionsBadge}
-            onClick={onOpenWorkspace}
-          />
-        ) : null}
         <CompactRailAction
           label={t("Search")}
           command="App: Search"
@@ -3977,6 +3948,44 @@ function CompactProjectRail({
             />
           </WorkspaceFeatureGate>
         </CompactRailTools>
+        {/* Same order as the full sidebar: panel, search and tools first, then the
+            work sections (recovered work, projects, last sessions, workspace). */}
+        <Divider decorative className="my-0.5 w-6 shrink-0" />
+        {recoveryControl}
+        {onOpenProjectNavigation ? (
+          <Button
+            variant="ghost"
+            motion="none"
+            iconOnly
+            label={t("Projects and groups")}
+            tooltipSide="right"
+            aria-haspopup="dialog"
+            aria-expanded={projectNavigationOpen}
+            selected={projectNavigationOpen}
+            onClick={(event) => onOpenProjectNavigation(event.currentTarget)}
+          >
+            <FolderTree className="icon-md" aria-hidden />
+          </Button>
+        ) : null}
+        {recentSessions && onSelectProject ? (
+          <CompactLastSessionsAction
+            cwd={cwd}
+            recents={recents}
+            source={recentSessions}
+            activeSessionId={activeSessionId}
+            searchActive={searchActive}
+            onOpenSession={onPreviewSession ?? onSelectAgent}
+            onOpenProject={onSelectProject}
+          />
+        ) : null}
+        {!tabShown || !workspaceActive ? (
+          <CompactRailAction
+            label={t("Workspace")}
+            icon={FolderTree}
+            badge={workingSessionsBadge}
+            onClick={onOpenWorkspace}
+          />
+        ) : null}
       </div>
       <div className="min-h-2 flex-1" />
       <div className="flex w-full flex-col items-center gap-1 py-1.5">
@@ -5052,8 +5061,10 @@ const SessionCard = memo(function SessionCard({
               ? "warning"
               : "neutral";
   const working = !issue && !needsApproval && busy;
+  const idle = !issue && !needsApproval && !busy && !opening && !done && !draft;
+  const detailPath = session.worktreeCwd && worktree ? session.worktreeCwd : session.cwd;
   const status =
-    !issue && !needsApproval && !busy && !opening && !done && !draft ? (
+    idle ? (
       <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
         <RelativeSessionTime at={session.updatedAt} />
       </span>
@@ -5801,6 +5812,7 @@ const SessionCard = memo(function SessionCard({
                 className="line-clamp-1 min-w-0 flex-1 text-ui-secondary font-medium leading-snug text-content"
               />
             )}
+            <AssistantManagedBadge management={session.managedBy} compact local={!isRemoteProjectPath(session.cwd)} />
             {compact ? modelLabel : null}
             {density === "detailed" ? null : (
               <span className="flex shrink-0 items-center gap-1.5">
@@ -5895,43 +5907,63 @@ const SessionCard = memo(function SessionCard({
           role="tooltip"
           id={detailId}
           passive
+          frosted
           restoreFocus={false}
           className="pointer-events-none overflow-hidden p-2.5"
         >
           <p className="line-clamp-2 break-words text-ui-secondary font-medium leading-snug text-content">
             {title}
           </p>
-          <dl className="mt-1.5 flex flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <dt className="sr-only">{t("Model")}</dt>
-              <dd className="flex min-w-0 items-center gap-1.5">
-                <HarnessIcon harness={session.harness} className="icon-xs shrink-0" />
-                <span className="min-w-0 truncate">{model}</span>
-              </dd>
-            </div>
+          {/* Every row shares one icon column, so labels line up like the list rows. */}
+          <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 text-ui-caption text-(--ui-text-secondary)">
+            <dt className="sr-only">{t("Project")}</dt>
+            <dd className="contents">
+              <Folder className="icon-xs shrink-0" strokeWidth={1.75} />
+              <span className="min-w-0 truncate text-content">{pathFolderName(detailPath)}</span>
+              {/* The full location sits under the name; a long path keeps its last folder. */}
+              <span
+                className="col-start-2 -mt-1 min-w-0 overflow-hidden text-ui-micro text-(--ui-text-muted)"
+                dir="auto"
+              >
+                <MiddleTruncate mode="path" title={false}>
+                  {detailPath}
+                </MiddleTruncate>
+              </span>
+            </dd>
             {branchText ? (
-              <div className="flex min-w-0 items-center gap-1.5">
+              <>
                 <dt className="sr-only">{t(worktree ? "Worktree" : "Branch")}</dt>
-                <dd className="flex min-w-0 items-center gap-1.5">
+                <dd className="contents">
                   <BranchIcon className="icon-xs shrink-0" strokeWidth={1.75} />
                   <span className="min-w-0 truncate">{gitLabel}</span>
                 </dd>
-              </div>
+              </>
             ) : null}
-            <div className="flex min-w-0 items-center gap-1.5">
-              <dt className="sr-only">{t("Project")}</dt>
-              {/* A long path keeps its last folder; the middle collapses. */}
-              <dd className="min-w-0 flex-1 overflow-hidden" dir="auto">
-                <MiddleTruncate mode="path">
-                  {session.worktreeCwd && worktree ? session.worktreeCwd : session.cwd}
-                </MiddleTruncate>
-              </dd>
-            </div>
-            <div className="flex min-w-0 items-center justify-between gap-2">
-              <dt className="sr-only">{t("Status")}</dt>
-              <dd className="flex min-w-0 items-center gap-1.5">{status}</dd>
-            </div>
+            <dt className="sr-only">{t("Model")}</dt>
+            <dd className="contents">
+              <HarnessIcon harness={session.harness} className="icon-xs shrink-0" />
+              <span className="min-w-0 truncate">{model}</span>
+            </dd>
           </dl>
+          <div className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-(--ui-frosted-divider) pt-2 text-ui-caption text-(--ui-text-secondary)">
+            <span className="sr-only">{t("Status")}</span>
+            {idle ? (
+              <span className="flex min-w-0 items-center gap-1.5 tabular-nums">
+                <Clock className="icon-xs shrink-0" strokeWidth={1.75} />
+                <RelativeSessionTime at={session.updatedAt} />
+              </span>
+            ) : (
+              <>
+                {status}
+                {working ? null : (
+                  <span className="ml-auto flex shrink-0 items-center gap-1 tabular-nums text-(--ui-text-muted)">
+                    <Clock className="icon-xs shrink-0" strokeWidth={1.75} />
+                    <RelativeSessionTime at={session.updatedAt} />
+                  </span>
+                )}
+              </>
+            )}
+          </div>
         </Popover>
       ) : null}
       {orchestration && orchestrationTooltipOpen ? (

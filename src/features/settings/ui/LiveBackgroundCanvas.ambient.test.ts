@@ -173,17 +173,26 @@ it("passes new streamed text as motion energy without recreating the renderer", 
   expect(speaking.energy).toBeGreaterThan((waiting.energy ?? 0) + 0.1);
   expect(state.create).toHaveBeenCalledOnce();
   render(-1);
+  // The scene holds for its show window after the reply ends, then fades to rest.
   run(2200);
+  expect(state.draw.mock.calls.at(-1)![2].presence).toBe(1);
+  run(15000);
   expect(state.draw.mock.calls.at(-1)![2]).toEqual({ presence: 0 });
 });
 
-it("eases unchanged busy work to rest and wakes for speech even when activity is unchanged", () => {
+it("holds through unchanged busy work, rests, and wakes for later speech", () => {
   render(20, 100);
   run(1000);
   const speaking = state.draw.mock.calls.at(-1)![2];
   expect(speaking.presence).toBe(1);
-  run(4000);
+  // No new output: the scene still stays for its show window instead of vanishing.
+  run(8000);
+  expect(state.draw.mock.calls.at(-1)![2].presence).toBe(1);
+  expect(state.draw.mock.calls.at(-1)![2].speaking).toBeLessThan(0.05);
+  run(9000);
   expect(state.draw.mock.calls.at(-1)![2]).toEqual({ presence: 0 });
+  // After its rest, new speech brings it back.
+  run(16000);
   render(30, 100);
   run(500);
   expect(state.draw.mock.calls.at(-1)![2].presence).toBeGreaterThan(0.8);

@@ -68,7 +68,7 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-1 border-b border-stroke bg-(--ui-surface) px-3 py-1.5">
+    <div className="flex shrink-0 items-center gap-1 border-b border-stroke px-3 py-1.5">
       {confirmElement}
       <InlineMessage tone="warning" className="flex-1">
         {operationSummary(label, conflictCount)}
