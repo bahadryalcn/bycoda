@@ -275,14 +275,21 @@ export function evaluateResults({
       continue;
     }
     const key = `${report.job}/${report.variant}`;
-    if (reports.has(key)) errors.push(`Duplicate evidence: ${key}`);
+    const earlier = reports.get(key);
+    if (earlier && earlier.runAttempt === report.runAttempt)
+      errors.push(`Duplicate evidence: ${key}`);
+    // "Re-run failed jobs" keeps the passing jobs of an earlier attempt of this
+    // same run and source; evidence from another run, source or a later attempt
+    // is still rejected.
     if (
       report.sourceSha !== sourceSha ||
       report.runId !== String(runId) ||
-      report.runAttempt !== String(runAttempt)
+      Number(report.runAttempt) > Number(runAttempt)
     )
       errors.push(`Stale or foreign evidence: ${key}`);
-    reports.set(key, report);
+    // A re-run job's newer attempt supersedes its earlier report.
+    if (!earlier || Number(report.runAttempt) > Number(earlier.runAttempt))
+      reports.set(key, report);
   }
   for (const [name, contract] of Object.entries(jobs)) {
     const result = needs?.[name]?.result;
