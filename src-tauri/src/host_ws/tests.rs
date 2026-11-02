@@ -557,6 +557,27 @@ pub(crate) async fn try_next(socket: &mut ServerSocket) -> Option<Value> {
         }
     }
 }
+/// After the fixture drops a socket, the pre-restart broker's reconnect
+/// scheduler may reach the listener before the fixture's restart/reopen shuts
+/// it down.
+/// That superseded connection never issues a request and closes on shutdown,
+/// so the restored connection is the first one that sends a request.
+pub(crate) async fn restored_connection(
+    listener: &TcpListener,
+    methods: &[&str],
+) -> (ServerSocket, Value) {
+    loop {
+        let Some(mut socket) = try_accept(listener).await else {
+            continue;
+        };
+        if !try_hello(&mut socket, methods, "host.1").await {
+            continue;
+        }
+        if let Some(request) = try_next(&mut socket).await {
+            return (socket, request);
+        }
+    }
+}
 pub(crate) async fn result(socket: &mut ServerSocket, request: &Value, result: Value) {
     socket
         .send(Message::Text(

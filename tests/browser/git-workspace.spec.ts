@@ -552,9 +552,13 @@ test("conflict sonucu panel içinde düzenlenip stage edilir ve merge sürdürü
   await page.getByRole("radio", { name: "Sources above", exact: true }).click();
   await expect(output.locator(".cm-line").first()).toHaveText("const theme = 'merged';");
   await page.setViewportSize({ width: 700, height: 900 });
-  [left, middle, right] = await boxes();
-  expect(left.y).toBeLessThan(right.y);
-  expect(right.y).toBeLessThan(middle.y);
+  // The panes restack after the resize settles; measure once they have.
+  await expect
+    .poll(async () => {
+      const [ours, result, theirs] = await boxes();
+      return ours.y < theirs.y && theirs.y < result.y;
+    })
+    .toBe(true);
   await page.screenshot({ path: testInfo.outputPath("conflict-narrow.png") });
   await page.getByRole("button", { name: "Save and stage", exact: true }).click();
   await expect(output).toHaveCount(0);

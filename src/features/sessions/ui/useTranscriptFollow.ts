@@ -4,6 +4,7 @@ import {
   isNearBottom,
   NEAR_BOTTOM_PX,
   pinToBottom,
+  READER_INPUT_MS,
   scrollClampedToBottom,
   syncTranscriptViewport,
   WHEEL_HOLD_MS,
@@ -62,6 +63,11 @@ export function useTranscriptFollow({
   const readingRef = useRef(false);
   const distanceFromBottom = useRef(0);
   const wheelHold = useRef(0);
+  // Reader input that can scroll the transcript: a held pointer or touch
+  // (scrollbar drag, swipe), or a recent key, wheel or released gesture.
+  const readerInput = useRef({ held: false, until: 0 });
+  // Recent offsets the transcript was pinned to while following the end.
+  const followedTops = useRef<{ top: number; at: number }[]>([]);
   const scrollGeometry = useRef<{
     el: HTMLElement;
     top: number;
@@ -108,6 +114,13 @@ export function useTranscriptFollow({
   const rememberScroll = useCallback(
     (el: HTMLElement) => {
       publishReading(el);
+      if (stickToBottom.current) {
+        const tops = followedTops.current;
+        if (tops[tops.length - 1]?.top !== el.scrollTop) {
+          tops.push({ top: el.scrollTop, at: performance.now() });
+          if (tops.length > 8) tops.shift();
+        }
+      }
       scrollGeometry.current = {
         el,
         top: el.scrollTop,
@@ -155,19 +168,49 @@ export function useTranscriptFollow({
         !!previous &&
         previous.el === el &&
         (previous.height !== el.scrollHeight || previous.viewport !== el.clientHeight);
+      const now = performance.now();
+      // WebKit can replay an older offset from the range the transcript just
+      // followed through, after newer pins and with no reader input behind it.
+      // That is not the reader leaving; a jump further up still is.
+      const staleFollowOffset =
+        stickToBottom.current &&
+        scrolledUp &&
+        !readerInput.current.held &&
+        now > readerInput.current.until &&
+        followedTops.current.some(
+          (entry) => now - entry.at < READER_INPUT_MS && entry.top <= el.scrollTop + 1,
+        );
+      if (staleFollowOffset) {
+        pinToBottom(el);
+        distanceFromBottom.current = 0;
+        rememberScroll(el);
+        return;
+      }
+      // Scrolling down onto the end while a row below the transcript appears
+      // arrives at the end, whether the scroll used the layout before or after.
+      const reachedEnd =
+        !stickToBottom.current &&
+        !!previous &&
+        previous.el === el &&
+        layoutChanged &&
+        el.scrollTop > previous.top &&
+        distance < distanceFromBottom.current &&
+        (distance < 1 || Math.abs(previous.height - previous.viewport - el.scrollTop) < 1);
       const clamped = !!previous && scrollClampedToBottom(el, previous.top);
       const leaving =
         scrolledUp || (!stickToBottom.current && distance > distanceFromBottom.current);
       const near = stickToBottom.current
         ? !scrolledUp
-        : !layoutChanged &&
-          !clamped &&
-          isNearBottom(el) &&
-          !leaving &&
-          !!previous &&
-          el.scrollTop > previous.top;
+        : reachedEnd ||
+          (!layoutChanged &&
+            !clamped &&
+            isNearBottom(el) &&
+            !leaving &&
+            !!previous &&
+            el.scrollTop > previous.top);
       stickToBottom.current = near;
-      distanceFromBottom.current = distance;
+      if (reachedEnd) pinToBottom(el);
+      distanceFromBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight;
       rememberScroll(el);
       setShowJump(!near);
     },
@@ -218,8 +261,21 @@ export function useTranscriptFollow({
     const onScroll = () => {
       if (scrollerEl.isConnected && scrollerEl.clientHeight > 0) syncPinned(scrollerEl);
     };
+    const input = readerInput.current;
+    const recentInput = () => {
+      input.until = performance.now() + READER_INPUT_MS;
+    };
+    const holdInput = () => {
+      input.held = true;
+    };
+    const releaseInput = () => {
+      input.held = false;
+      recentInput();
+    };
     let release: ReturnType<typeof setTimeout> | undefined;
     const onWheel = (e: WheelEvent) => {
+      // A wheel down never asks to move up; a wheel up stops following itself.
+      if (e.deltaY <= 0) recentInput();
       if (innerScrollerTakes(scrollerEl, e)) return;
       if (e.deltaY < 0) {
         stickToBottom.current = false;
@@ -254,10 +310,24 @@ export function useTranscriptFollow({
     };
     scrollerEl.addEventListener("scroll", onScroll, { passive: true });
     scrollerEl.addEventListener("wheel", onWheel, { passive: true });
+    scrollerEl.addEventListener("pointerdown", holdInput);
+    scrollerEl.addEventListener("touchstart", holdInput, { passive: true });
+    window.addEventListener("pointerup", releaseInput, true);
+    window.addEventListener("pointercancel", releaseInput, true);
+    window.addEventListener("touchend", releaseInput, true);
+    window.addEventListener("touchcancel", releaseInput, true);
+    window.addEventListener("keydown", recentInput, true);
     return () => {
       clearTimeout(release);
       scrollerEl.removeEventListener("scroll", onScroll);
       scrollerEl.removeEventListener("wheel", onWheel);
+      scrollerEl.removeEventListener("pointerdown", holdInput);
+      scrollerEl.removeEventListener("touchstart", holdInput);
+      window.removeEventListener("pointerup", releaseInput, true);
+      window.removeEventListener("pointercancel", releaseInput, true);
+      window.removeEventListener("touchend", releaseInput, true);
+      window.removeEventListener("touchcancel", releaseInput, true);
+      window.removeEventListener("keydown", recentInput, true);
     };
   }, [publishReading, rememberScroll, scrollerEl, setShowJump, syncPinned, visible]);
 

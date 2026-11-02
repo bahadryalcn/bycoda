@@ -1,7 +1,9 @@
 use super::native_workspace_transport::NativeWorkspaceChannel;
 use super::*;
 use crate::host_ws::native_profile::NativeProfileBroker;
-use crate::host_ws::tests::{accept, hello, next, result, try_accept, try_hello, try_next, Server};
+use crate::host_ws::tests::{
+    accept, hello, next, restored_connection, result, try_accept, try_hello, Server,
+};
 use crate::session_store::{authority, native_delivery as journal, SessionStore};
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
@@ -230,27 +232,6 @@ async fn await_done(socket: &mut WebSocketStream<tokio::net::TcpStream>, done: m
                 Some(Ok(Message::Close(_)))|Some(Err(_))|None => { wait.await.unwrap();return; },
                 other => panic!("unexpected fixture frame: {other:?}"),
             }
-        }
-    }
-}
-
-/// After the fixture drops a socket, the pre-restart broker's reconnect
-/// scheduler may reach the listener before `fixture.restart()` shuts it down.
-/// That superseded connection never issues a request and closes on shutdown,
-/// so the restored connection is the first one that sends a request.
-async fn restored_connection(
-    listener: &tokio::net::TcpListener,
-    methods: &[&str],
-) -> (WebSocketStream<tokio::net::TcpStream>, Value) {
-    loop {
-        let Some(mut socket) = try_accept(listener).await else {
-            continue;
-        };
-        if !try_hello(&mut socket, methods, "host.1").await {
-            continue;
-        }
-        if let Some(request) = try_next(&mut socket).await {
-            return (socket, request);
         }
     }
 }

@@ -1,6 +1,6 @@
 use super::*;
 use crate::host_ws::native_profile::NativeProfileBroker;
-use crate::host_ws::tests::{accept, hello, next, result, Server};
+use crate::host_ws::tests::{accept, hello, next, restored_connection, result, Server};
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::mpsc;
@@ -181,12 +181,55 @@ fn retained_count(store: &SessionStore, table: &str) -> i64 {
         .unwrap()
 }
 
+/// Every fixture here is a handful of round trips, but a busy shared CI runner
+/// can stall the whole test process (store migrations, journal writes and the
+/// broker handshake) for several seconds. The watchdog, the fixture rendezvous
+/// waits and the reconciliation deadlines that must cover a whole exchange only
+/// turn a hung exchange into a failure, so they use the product's RPC budget
+/// instead of a fixed few seconds. Deadlines a test expects to expire stay short.
+const FIXTURE_WAIT: Duration = DEFAULT_RPC_TIMEOUT;
+
+/// Mid-page deadline for the two fairness tests: long enough to connect and
+/// attempt the first row on a busy runner, short enough to keep them quick.
+const MIDPAGE_DEADLINE: Duration = Duration::from_secs(3);
+
+/// Unfinished originals charge the process-wide helper result budget (at most
+/// four deliveries), so fixtures running on every test thread at once starve
+/// each other with "capacity is held by unfinished original deliveries". Each
+/// fixture server holds this lock until it is dropped after its `Fixture`.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+struct Served {
+    server: Server,
+    _serial: std::sync::MutexGuard<'static, ()>,
+}
+impl std::ops::Deref for Served {
+    type Target = Server;
+    fn deref(&self) -> &Server {
+        &self.server
+    }
+}
+
+fn serve<F, Fut>(run: F) -> Served
+where
+    F: FnOnce(tokio::net::TcpListener) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + 'static,
+{
+    let serial = SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    Served {
+        server: Server::spawn_with_watchdog(FIXTURE_WAIT, run),
+        _serial: serial,
+    }
+}
+
 #[test]
 fn v2_staged_finish_compacts_only_after_guarded_local_and_remote_ack() {
     let params = json!({"id":"v2-staged-relay","result":{"text":"ç😀".repeat(300_000)}});
     let expected = serde_json::to_vec(&params).unwrap();
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -303,7 +346,7 @@ fn v2_http_finish_commits_semantic_retirement_without_inventing_ws_guards() {
         stream.write_all(&body).await.unwrap();
     }
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let open = read_http_rpc(&mut stream).await;
         assert_eq!(open["method"], EPOCH_OPEN);
@@ -375,7 +418,7 @@ fn v2_open_reply_cannot_bind_epoch_after_actual_saved_route_replacement() {
     let (observed, open_seen) = mpsc::channel();
     let (release, released) = mpsc::channel();
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -386,7 +429,7 @@ fn v2_open_reply_cannot_bind_epoch_after_actual_saved_route_replacement() {
         let open = next(&mut socket).await;
         assert_eq!(open["method"], EPOCH_OPEN);
         observed.send(()).unwrap();
-        tokio::task::spawn_blocking(move || released.recv_timeout(Duration::from_secs(5)).unwrap())
+        tokio::task::spawn_blocking(move || released.recv_timeout(FIXTURE_WAIT).unwrap())
             .await
             .unwrap();
         result(
@@ -409,7 +452,7 @@ fn v2_open_reply_cannot_bind_epoch_after_actual_saved_route_replacement() {
             .err()
             .unwrap()
     });
-    open_seen.recv_timeout(Duration::from_secs(5)).unwrap();
+    open_seen.recv_timeout(FIXTURE_WAIT).unwrap();
     let mut changed = fixture.machine.clone();
     changed.token = "replacement-token".into();
     write(&fixture.root.join("connections.json"), &[changed]).unwrap();
@@ -431,7 +474,7 @@ fn v2_open_reply_cannot_bind_epoch_after_actual_saved_route_replacement() {
 fn v2_restored_finish_fenced_status_retains_original_without_consume_or_resend() {
     let (done, finished) = mpsc::channel();
     let (fenced_sent, fenced_seen) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let methods = [
             "native.services.delivery.apply",
             "native.services.delivery.status",
@@ -494,12 +537,12 @@ fn v2_restored_finish_fenced_status_retains_original_without_consume_or_resend()
     let original_id = fixture.pending()[0].id().to_owned();
     fixture.reopen();
     assert_eq!(
-        reconcile_pending(fixture.channel(), Instant::now() + Duration::from_secs(3)).unwrap(),
+        reconcile_pending(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
         0
     );
     // A zero reconciliation count alone could also mean transport failure.
     // Require the exact restored status/fence exchange before its assertions.
-    fenced_seen.recv_timeout(Duration::from_secs(3)).unwrap();
+    fenced_seen.recv_timeout(FIXTURE_WAIT).unwrap();
     let retained = fixture.pending();
     assert_eq!(retained.len(), 1);
     assert_eq!(retained[0].id(), original_id);
@@ -513,7 +556,7 @@ fn v2_restored_finish_fenced_status_retains_original_without_consume_or_resend()
 }
 
 async fn finish_after(done: mpsc::Receiver<()>) {
-    tokio::task::spawn_blocking(move || done.recv_timeout(Duration::from_secs(5)).unwrap())
+    tokio::task::spawn_blocking(move || done.recv_timeout(FIXTURE_WAIT).unwrap())
         .await
         .unwrap();
 }
@@ -547,7 +590,7 @@ fn lost_finish_reply_reopens_same_original_status_only_and_acknowledges_after_co
     let params = json!({"id":"original-relay","result":{"value":"original result"}});
     let exact = bounded_params(&params).unwrap();
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut first = accept(&listener).await;
         hello(
             &mut first,
@@ -567,17 +610,14 @@ fn lost_finish_reply_reopens_same_original_status_only_and_acknowledges_after_co
         let identity = apply["params"].clone();
         first.close(None).await.unwrap();
         drop(first);
-        let mut second = accept(&listener).await;
-        hello(
-            &mut second,
+        let (mut second, status) = restored_connection(
+            &listener,
             &[
                 "native.services.delivery.apply",
                 "native.services.delivery.status",
             ],
-            "host.1",
         )
         .await;
-        let status = next(&mut second).await;
         assert_eq!(status["method"], "native.services.delivery.status");
         for field in ["originalId", "sha256", "byteLength", "target"] {
             assert_eq!(status["params"][field], identity[field]);
@@ -630,7 +670,7 @@ fn lost_finish_reply_reopens_same_original_status_only_and_acknowledges_after_co
 fn restored_prepared_and_possible_absence_never_redispatch_finish() {
     for possible in [false, true] {
         let (done, finished) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut socket = accept(&listener).await;
             hello(
                 &mut socket,
@@ -698,7 +738,7 @@ fn large_finish_preserves_original_bytes_binding_and_known_staging_offset() {
     let exact = bounded_params(&params).unwrap();
     assert!(exact.len() > 1024 * 1024);
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -772,7 +812,7 @@ fn large_finish_preserves_original_bytes_binding_and_known_staging_offset() {
 #[test]
 fn legacy_unknown_finish_is_not_sent_again_across_invocation_or_reopen() {
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -822,7 +862,7 @@ fn legacy_unknown_finish_is_not_sent_again_across_invocation_or_reopen() {
 #[test]
 fn saved_issuer_change_blocks_consumption_and_changed_finish_bytes_conflict() {
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -880,7 +920,7 @@ fn saved_issuer_change_blocks_consumption_and_changed_finish_bytes_conflict() {
 fn restored_format_reconciliation_records_result_without_recreating_consumer() {
     let params = json!({"command":"format_text_file","args":{"path":"file.ts","source":"const x=1","cursorOffset":3}});
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut first = accept(&listener).await;
         hello(
             &mut first,
@@ -934,7 +974,7 @@ fn restored_format_reconciliation_records_result_without_recreating_consumer() {
     drop(reply);
     fixture.reopen();
     assert_eq!(
-        reconcile_pending(fixture.channel(), Instant::now() + Duration::from_secs(3)).unwrap(),
+        reconcile_pending(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
         1
     );
     let original = fixture.pending().remove(0);
@@ -949,7 +989,7 @@ fn restored_format_reconciliation_records_result_without_recreating_consumer() {
 #[test]
 fn http_lost_finish_reply_reconciles_without_second_effect() {
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let (mut first, _) = listener.accept().await.unwrap();
         let apply = read_http_rpc(&mut first).await;
         assert_eq!(apply["method"], "native.services.delivery.apply");
@@ -1003,7 +1043,7 @@ fn http_lost_finish_reply_reconciles_without_second_effect() {
 #[test]
 fn consumer_success_with_failed_local_ack_retains_original_and_reports_uncertainty() {
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -1064,7 +1104,7 @@ fn exact_32mib_format_result_uses_chunks_and_retains_all_guards_and_reservation(
     let (done, finished) = mpsc::channel();
     // 512 chunk round trips carry 32 MiB in a debug build; `workspace.run`
     // keeps the default RPC budget, so the fixture watchdog matches it.
-    let server = Server::spawn_with_watchdog(DEFAULT_RPC_TIMEOUT, move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -1146,7 +1186,7 @@ fn source_hash_or_chunk_echo_mismatch_retains_uncertain_original_without_output(
         };
         let source = json!({"sha256":hash,"byteLength":bytes.len()});
         let (done, finished) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut socket = accept(&listener).await;
             hello(
                 &mut socket,
@@ -1247,7 +1287,7 @@ fn large_original_http_staging_avoids_inflated_params_json_envelope() {
     let exact = bounded_params(&params).unwrap();
     assert!(exact.len() > 1024 * 1024);
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let begin = read_http_rpc(&mut stream).await;
         assert_eq!(begin["method"], "native.services.upload.begin");
@@ -1306,7 +1346,7 @@ fn large_original_http_staging_avoids_inflated_params_json_envelope() {
 #[test]
 fn related_actual_reply_guard_is_required_in_both_projection_branches() {
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut first = accept(&listener).await;
         hello(
             &mut first,
@@ -1349,7 +1389,7 @@ fn related_actual_reply_guard_is_required_in_both_projection_branches() {
         .wire(
             "native.services.conversation.desktop.authorize",
             json!({"id":"foreign","action":"ptyMobile.attach"}),
-            Instant::now() + Duration::from_secs(3),
+            Instant::now() + FIXTURE_WAIT,
         )
         .unwrap();
     reply.related_guards.push(foreign.guard.take().unwrap());
@@ -1380,22 +1420,18 @@ fn deadline_midpage_recovery_continues_with_unattempted_originals() {
     let (hold, held) = mpsc::channel();
     let (locked, wait_locked) = mpsc::channel();
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
-        let ids = tokio::task::spawn_blocking(move || {
-            ids_rx.recv_timeout(Duration::from_secs(3)).unwrap()
-        })
-        .await
-        .unwrap();
+    let server = serve(move |listener| async move {
+        let ids = tokio::task::spawn_blocking(move || ids_rx.recv_timeout(FIXTURE_WAIT).unwrap())
+            .await
+            .unwrap();
         let mut socket = accept(&listener).await;
         hello(&mut socket, &["native.services.delivery.status"], "host.1").await;
         let first = next(&mut socket).await;
         assert_eq!(first["params"]["originalId"], ids[0]);
         hold.send(()).unwrap();
-        tokio::task::spawn_blocking(move || {
-            wait_locked.recv_timeout(Duration::from_secs(3)).unwrap()
-        })
-        .await
-        .unwrap();
+        tokio::task::spawn_blocking(move || wait_locked.recv_timeout(FIXTURE_WAIT).unwrap())
+            .await
+            .unwrap();
         result(
             &mut socket,
             &first,
@@ -1440,27 +1476,27 @@ fn deadline_midpage_recovery_continues_with_unattempted_originals() {
         .collect::<Vec<_>>();
     ids_tx.send(ids.clone()).unwrap();
     let store = fixture.store.as_ref().unwrap().clone();
+    // The first row must be attempted before the deadline and the deadline
+    // must pass while its journal write waits on the store lock. A fixed 300 ms
+    // budget could expire during the first connection on a loaded runner, so
+    // the lock is held until the (roomier) deadline has actually passed.
+    let deadline = Instant::now() + MIDPAGE_DEADLINE;
     let blocker = std::thread::spawn(move || {
-        held.recv_timeout(Duration::from_secs(3)).unwrap();
+        held.recv_timeout(FIXTURE_WAIT).unwrap();
         let _guard = store.lock_conn().unwrap();
         locked.send(()).unwrap();
-        std::thread::sleep(Duration::from_millis(700));
+        std::thread::sleep(
+            deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(200),
+        );
     });
-    assert_eq!(
-        reconcile_pending(
-            fixture.channel(),
-            Instant::now() + Duration::from_millis(300)
-        )
-        .unwrap(),
-        1
-    );
+    assert_eq!(reconcile_pending(fixture.channel(), deadline).unwrap(), 1);
     blocker.join().unwrap();
     assert_eq!(
         fixture.channel().delivery_cursor.lock().unwrap().as_deref(),
         Some(ids[0].as_str())
     );
     assert_eq!(
-        reconcile_pending(fixture.channel(), Instant::now() + Duration::from_secs(3)).unwrap(),
+        reconcile_pending(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
         3
     );
     assert!(fixture
@@ -1473,7 +1509,7 @@ fn deadline_midpage_recovery_continues_with_unattempted_originals() {
 #[test]
 fn equal_format_inputs_are_distinct_actual_invocations() {
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -1520,7 +1556,7 @@ fn equal_format_inputs_are_distinct_actual_invocations() {
 #[test]
 fn consumed_finish_lost_remote_ack_reopens_ack_only_and_retired_is_terminal() {
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let methods = [
             "native.services.delivery.apply",
             "native.services.delivery.status",
@@ -1551,9 +1587,7 @@ fn consumed_finish_lost_remote_ack_reopens_ack_only_and_retired_is_terminal() {
         first.close(None).await.unwrap();
         drop(first);
 
-        let mut second = accept(&listener).await;
-        hello(&mut second, &methods, "host.1").await;
-        let retry = next(&mut second).await;
+        let (mut second, retry) = restored_connection(&listener, &methods).await;
         assert_eq!(retry["method"], "native.services.delivery.ack");
         assert_eq!(retry["params"], ack["params"]);
         result(&mut second, &retry, retired_receipt(&retry["params"])).await;
@@ -1599,7 +1633,7 @@ fn consumed_finish_lost_remote_ack_reopens_ack_only_and_retired_is_terminal() {
     drop(reply);
     fixture.reopen();
     assert_eq!(
-        reconcile_remote_acks(fixture.channel(), Instant::now() + Duration::from_secs(3)).unwrap(),
+        reconcile_remote_acks(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
         1
     );
     assert!(fixture.remote_acks().is_empty());
@@ -1617,7 +1651,7 @@ fn consumed_finish_lost_remote_ack_reopens_ack_only_and_retired_is_terminal() {
 fn remote_ack_mismatched_echo_stays_pending_without_failing_success() {
     for mismatch in ["consumedResult", "originalId"] {
         let (done, finished) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut socket = accept(&listener).await;
             hello(
                 &mut socket,
@@ -1660,8 +1694,7 @@ fn remote_ack_mismatched_echo_stays_pending_without_failing_success() {
             "mismatched echo cannot retire the local outbox"
         );
         assert_eq!(
-            reconcile_remote_acks(fixture.channel(), Instant::now() + Duration::from_secs(3))
-                .unwrap(),
+            reconcile_remote_acks(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
             1
         );
         assert!(fixture.remote_acks().is_empty());
@@ -1675,7 +1708,7 @@ fn failed_consumer_or_local_ack_never_sends_remote_ack() {
         let (inspect, inspecting) = mpsc::channel();
         let (verified, verification) = mpsc::channel();
         let (done, finished) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut socket = accept(&listener).await;
             hello(
                 &mut socket,
@@ -1729,7 +1762,7 @@ fn failed_consumer_or_local_ack_never_sends_remote_ack() {
         assert_eq!(fixture.pending()[0].phase(), Phase::Recorded);
         assert!(fixture.remote_acks().is_empty());
         inspect.send(()).unwrap();
-        verification.recv_timeout(Duration::from_secs(3)).unwrap();
+        verification.recv_timeout(FIXTURE_WAIT).unwrap();
         done.send(()).unwrap();
     }
 }
@@ -1755,7 +1788,7 @@ fn ack_capability_requires_explicit_method_and_preserves_old_host_outbox() {
     assert!(!supports_ack_host(&missing_method));
     assert!(supports_host(&missing_method));
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -1820,7 +1853,7 @@ fn chunked_result_ack_uses_consumed_canonical_json_not_raw_source_digest() {
     let consumed =
         json!({"sha256":format!("{:x}",Sha256::digest(&canonical)),"byteLength":canonical.len()});
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let mut socket = accept(&listener).await;
         hello(
             &mut socket,
@@ -1900,23 +1933,19 @@ fn ack_deadline_midpage_advances_only_attempted_rows_and_skips_buffer_kind() {
     let (hold, held) = mpsc::channel();
     let (locked, wait_locked) = mpsc::channel();
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
-        let ids = tokio::task::spawn_blocking(move || {
-            ids_rx.recv_timeout(Duration::from_secs(3)).unwrap()
-        })
-        .await
-        .unwrap();
+    let server = serve(move |listener| async move {
+        let ids = tokio::task::spawn_blocking(move || ids_rx.recv_timeout(FIXTURE_WAIT).unwrap())
+            .await
+            .unwrap();
         let mut socket = accept(&listener).await;
         hello(&mut socket, &["native.services.delivery.ack"], "host.1").await;
         let first = next(&mut socket).await;
         assert_eq!(first["method"], "native.services.delivery.ack");
         assert_eq!(first["params"]["originalId"], ids[0]);
         hold.send(()).unwrap();
-        tokio::task::spawn_blocking(move || {
-            wait_locked.recv_timeout(Duration::from_secs(3)).unwrap()
-        })
-        .await
-        .unwrap();
+        tokio::task::spawn_blocking(move || wait_locked.recv_timeout(FIXTURE_WAIT).unwrap())
+            .await
+            .unwrap();
         result(&mut socket, &first, retired_receipt(&first["params"])).await;
         for id in ids.into_iter().skip(1) {
             let ack = next(&mut socket).await;
@@ -1952,18 +1981,21 @@ fn ack_deadline_midpage_advances_only_attempted_rows_and_skips_buffer_kind() {
     let first_cursor = all[second_service - 1].ack_cursor();
     ids_tx.send(ids.clone()).unwrap();
     let store = fixture.store.as_ref().unwrap().clone();
+    // The first row must be attempted before the deadline and the deadline
+    // must pass while its journal write waits on the store lock. A fixed 300 ms
+    // budget could expire during the first connection on a loaded runner, so
+    // the lock is held until the (roomier) deadline has actually passed.
+    let deadline = Instant::now() + MIDPAGE_DEADLINE;
     let blocker = std::thread::spawn(move || {
-        held.recv_timeout(Duration::from_secs(3)).unwrap();
+        held.recv_timeout(FIXTURE_WAIT).unwrap();
         let _guard = store.lock_conn().unwrap();
         locked.send(()).unwrap();
-        std::thread::sleep(Duration::from_millis(700));
+        std::thread::sleep(
+            deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(200),
+        );
     });
     assert_eq!(
-        reconcile_remote_acks(
-            fixture.channel(),
-            Instant::now() + Duration::from_millis(300)
-        )
-        .unwrap(),
+        reconcile_remote_acks(fixture.channel(), deadline).unwrap(),
         1
     );
     blocker.join().unwrap();
@@ -1977,7 +2009,7 @@ fn ack_deadline_midpage_advances_only_attempted_rows_and_skips_buffer_kind() {
         Some(first_cursor.as_str())
     );
     assert_eq!(
-        reconcile_remote_acks(fixture.channel(), Instant::now() + Duration::from_secs(3)).unwrap(),
+        reconcile_remote_acks(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
         3
     );
     let remaining = fixture.remote_acks();
@@ -1992,7 +2024,7 @@ fn remote_ack_rejects_retired_caller_and_replaced_saved_issuer_before_dispatch()
         let (inspect, inspecting) = mpsc::channel();
         let (verified, verification) = mpsc::channel();
         let (done, finished) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut socket = accept(&listener).await;
             hello(
                 &mut socket,
@@ -2031,7 +2063,7 @@ fn remote_ack_rejects_retired_caller_and_replaced_saved_issuer_before_dispatch()
             .wire(
                 "native.services.delivery.status",
                 status_params(&original),
-                Instant::now() + Duration::from_secs(3),
+                Instant::now() + FIXTURE_WAIT,
             )
             .unwrap();
         reply.check().unwrap();
@@ -2051,7 +2083,7 @@ fn remote_ack_rejects_retired_caller_and_replaced_saved_issuer_before_dispatch()
         .is_err());
         assert_eq!(fixture.remote_acks().len(), 1);
         inspect.send(()).unwrap();
-        verification.recv_timeout(Duration::from_secs(3)).unwrap();
+        verification.recv_timeout(FIXTURE_WAIT).unwrap();
         done.send(()).unwrap();
     }
 }
@@ -2065,7 +2097,7 @@ fn http_ack_loss_preserves_success_and_reopens_cleanup_only() {
         stream.write_all(&body).await.unwrap();
     }
     let (done, finished) = mpsc::channel();
-    let server = Server::spawn(move |listener| async move {
+    let server = serve(move |listener| async move {
         let (mut apply_socket, _) = listener.accept().await.unwrap();
         let apply = read_http_rpc(&mut apply_socket).await;
         assert_eq!(apply["method"], "native.services.delivery.apply");
@@ -2101,7 +2133,7 @@ fn http_ack_loss_preserves_success_and_reopens_cleanup_only() {
         .unwrap()
         .websocket = false;
     assert_eq!(
-        reconcile_remote_acks(fixture.channel(), Instant::now() + Duration::from_secs(3)).unwrap(),
+        reconcile_remote_acks(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
         1
     );
     assert!(fixture.remote_acks().is_empty());
@@ -2112,7 +2144,7 @@ fn http_ack_loss_preserves_success_and_reopens_cleanup_only() {
 fn restored_original_retired_status_is_terminal_without_recording_or_consuming() {
     for mismatch in [false, true] {
         let (done, finished) = mpsc::channel();
-        let server = Server::spawn(move |listener| async move {
+        let server = serve(move |listener| async move {
             let mut socket = accept(&listener).await;
             hello(
                 &mut socket,

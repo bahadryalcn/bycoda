@@ -185,7 +185,10 @@ describe("transcript scrolling", () => {
     });
     const observer = observers.find((item) => item.targets.includes(scroller))!;
     act(() => observer.resize());
-    top -= 4; // No wheel event: scrollbar, touch or keyboard navigation.
+    // No wheel event: scrollbar, touch or keyboard navigation, which a browser
+    // always precedes with its pointer, touch or key input.
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" })));
+    top -= 4;
     act(() => scroller.dispatchEvent(new Event("scroll")));
     const readingTop = top;
     height += 800;
@@ -413,6 +416,7 @@ it("does not snap back when a directionless gesture becomes an upward scroll", (
 
 it("pauses following for a scrollbar move inside the bottom margin", () => {
   const { scroller, geometry, observer } = mountScroller();
+  act(() => scroller.dispatchEvent(new Event("pointerdown")));
   geometry.top = 596;
   act(() => scroller.dispatchEvent(new Event("scroll")));
   geometry.height = 1100;

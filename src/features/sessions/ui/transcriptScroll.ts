@@ -1,5 +1,7 @@
 export const NEAR_BOTTOM_PX = 16;
 export const WHEEL_HOLD_MS = 150;
+/** How long after a key, wheel, pointer or touch a scroll still counts as the reader's. */
+export const READER_INPUT_MS = 1000;
 
 export function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
