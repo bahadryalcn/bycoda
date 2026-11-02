@@ -17,11 +17,32 @@ const PRESENCE_PREFIX: &str = "tray_presence_choice_";
 #[derive(Clone, Deserialize, Debug)]
 #[serde(default)]
 pub struct PresenceLabels {
-    availability: String, here: String, away: String, dnd: String,
-    idle: String, unknown: String, pending: String, failed: String, retry: String, refresh: String,
+    availability: String,
+    here: String,
+    away: String,
+    dnd: String,
+    idle: String,
+    unknown: String,
+    pending: String,
+    failed: String,
+    retry: String,
+    refresh: String,
 }
 impl Default for PresenceLabels {
-    fn default()->Self {Self{availability:"Availability".into(),here:"Here".into(),away:"Away".into(),dnd:"Do not disturb".into(),idle:"Idle".into(),unknown:"Unknown".into(),pending:"Updating availability...".into(),failed:"Availability change was not confirmed.".into(),retry:"Retry".into(),refresh:"Refresh".into()}}
+    fn default() -> Self {
+        Self {
+            availability: "Availability".into(),
+            here: "Here".into(),
+            away: "Away".into(),
+            dnd: "Do not disturb".into(),
+            idle: "Idle".into(),
+            unknown: "Unknown".into(),
+            pending: "Updating availability...".into(),
+            failed: "Availability change was not confirmed.".into(),
+            retry: "Retry".into(),
+            refresh: "Refresh".into(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -98,7 +119,7 @@ struct TrayState {
     /// timestamps, say) skips rebuilding the native menu.
     rendered: Option<String>,
     presence: crate::assistant_presence::View,
-    presence_targets: BTreeMap<String,(String,crate::assistant_presence::Choice)>,
+    presence_targets: BTreeMap<String, (String, crate::assistant_presence::Choice)>,
 }
 
 fn merged_rows(windows: &BTreeMap<String, Vec<SessionRow>>) -> Vec<(String, SessionRow)> {
@@ -203,7 +224,19 @@ fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
     );
     let name = &app.package_info().name;
     let rows = visible_rows(rows);
-    let rendered = format!("{}{:?}{:?}",menu_signature(&rows, &state.labels, &summary),(&state.presence.source_token,&state.presence.status,state.presence.pending,state.presence.status_error,state.presence.write_error,state.presence.retry),state.labels.presence);
+    let rendered = format!(
+        "{}{:?}{:?}",
+        menu_signature(&rows, &state.labels, &summary),
+        (
+            &state.presence.source_token,
+            &state.presence.status,
+            state.presence.pending,
+            state.presence.status_error,
+            state.presence.write_error,
+            state.presence.retry
+        ),
+        state.labels.presence
+    );
     if state.rendered.as_deref() == Some(rendered.as_str()) {
         return Ok(());
     }
@@ -257,32 +290,96 @@ fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
             }
         }
     }
-    let labels=&state.labels.presence;
-    let effective=if state.presence.status_error {crate::assistant_presence::Presence::Unknown}else{state.presence.status.as_ref().map(|status|status.state.clone()).unwrap_or(crate::assistant_presence::Presence::Unknown)};
-    let caption=match effective {crate::assistant_presence::Presence::Present=>&labels.here,crate::assistant_presence::Presence::Away=>&labels.away,crate::assistant_presence::Presence::Dnd=>&labels.dnd,crate::assistant_presence::Presence::Idle=>&labels.idle,_=>&labels.unknown};
-    let mut presence=SubmenuBuilder::new(app,format!("{}: {}",labels.availability,caption));
+    let labels = &state.labels.presence;
+    let effective = if state.presence.status_error {
+        crate::assistant_presence::Presence::Unknown
+    } else {
+        state
+            .presence
+            .status
+            .as_ref()
+            .map(|status| status.state.clone())
+            .unwrap_or(crate::assistant_presence::Presence::Unknown)
+    };
+    let caption = match effective {
+        crate::assistant_presence::Presence::Present => &labels.here,
+        crate::assistant_presence::Presence::Away => &labels.away,
+        crate::assistant_presence::Presence::Dnd => &labels.dnd,
+        crate::assistant_presence::Presence::Idle => &labels.idle,
+        _ => &labels.unknown,
+    };
+    let mut presence = SubmenuBuilder::new(app, format!("{}: {}", labels.availability, caption));
     state.presence_targets.clear();
-    let available=state.presence.source_token.is_some()&&state.presence.status.as_ref().is_some_and(|status|status.setup_complete)&&!state.presence.pending&&!state.presence.status_error&&!state.presence.write_error;
-    for (index,(choice,label,checked)) in [
-        (crate::assistant_presence::Choice::Present,&labels.here,effective==crate::assistant_presence::Presence::Present),
-        (crate::assistant_presence::Choice::Away,&labels.away,effective==crate::assistant_presence::Presence::Away),
-        (crate::assistant_presence::Choice::Dnd,&labels.dnd,effective==crate::assistant_presence::Presence::Dnd),
-    ].into_iter().enumerate(){
-        let id=format!("{PRESENCE_PREFIX}{}_{index}",state.generation);
-        presence=presence.item(&CheckMenuItemBuilder::with_id(&id,label).checked(checked).enabled(available).build(app)?);
-        if let Some(token)=&state.presence.source_token{state.presence_targets.insert(id,(token.clone(),choice));}
-    }
-    if state.presence.pending {presence=presence.item(&MenuItemBuilder::new(&labels.pending).enabled(false).build(app)?);}
-    if state.presence.write_error {
-        presence=presence.item(&MenuItemBuilder::new(&labels.failed).enabled(false).build(app)?);
-        if let (Some(choice),Some(token))=(state.presence.retry,&state.presence.source_token){
-            let id=format!("{PRESENCE_PREFIX}{}_retry",state.generation);
-            presence=presence.item(&MenuItemBuilder::with_id(&id,&labels.retry).enabled(!state.presence.pending).build(app)?);
-            state.presence_targets.insert(id,(token.clone(),choice));
+    let available = state.presence.source_token.is_some()
+        && state
+            .presence
+            .status
+            .as_ref()
+            .is_some_and(|status| status.setup_complete)
+        && !state.presence.pending
+        && !state.presence.status_error
+        && !state.presence.write_error;
+    for (index, (choice, label, checked)) in [
+        (
+            crate::assistant_presence::Choice::Present,
+            &labels.here,
+            effective == crate::assistant_presence::Presence::Present,
+        ),
+        (
+            crate::assistant_presence::Choice::Away,
+            &labels.away,
+            effective == crate::assistant_presence::Presence::Away,
+        ),
+        (
+            crate::assistant_presence::Choice::Dnd,
+            &labels.dnd,
+            effective == crate::assistant_presence::Presence::Dnd,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = format!("{PRESENCE_PREFIX}{}_{index}", state.generation);
+        presence = presence.item(
+            &CheckMenuItemBuilder::with_id(&id, label)
+                .checked(checked)
+                .enabled(available)
+                .build(app)?,
+        );
+        if let Some(token) = &state.presence.source_token {
+            state.presence_targets.insert(id, (token.clone(), choice));
         }
     }
-    presence=presence.separator().item(&MenuItemBuilder::with_id(PRESENCE_REFRESH,&labels.refresh).enabled(!state.presence.pending&&!state.presence.write_error).build(app)?);
-    let menu = menu.item(&presence.build()?)
+    if state.presence.pending {
+        presence = presence.item(
+            &MenuItemBuilder::new(&labels.pending)
+                .enabled(false)
+                .build(app)?,
+        );
+    }
+    if state.presence.write_error {
+        presence = presence.item(
+            &MenuItemBuilder::new(&labels.failed)
+                .enabled(false)
+                .build(app)?,
+        );
+        if let (Some(choice), Some(token)) = (state.presence.retry, &state.presence.source_token) {
+            let id = format!("{PRESENCE_PREFIX}{}_retry", state.generation);
+            presence = presence.item(
+                &MenuItemBuilder::with_id(&id, &labels.retry)
+                    .enabled(!state.presence.pending)
+                    .build(app)?,
+            );
+            state.presence_targets.insert(id, (token.clone(), choice));
+        }
+    }
+    presence = presence.separator().item(
+        &MenuItemBuilder::with_id(PRESENCE_REFRESH, &labels.refresh)
+            .enabled(!state.presence.pending && !state.presence.write_error)
+            .build(app)?,
+    );
+    let menu = menu
+        .item(&presence.build()?)
         .separator()
         .item(&MenuItemBuilder::with_id(NOTIFICATIONS, &state.labels.notifications).build(app)?)
         .item(&MenuItemBuilder::with_id(QUIT, format!("Quit {name}")).build(app)?)
@@ -296,11 +393,18 @@ fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
     Ok(())
 }
 
-pub(crate) fn presence_update(app:&AppHandle,view:crate::assistant_presence::View){
-    let Some(state)=app.try_state::<Mutex<TrayState>>() else{return};
-    let mut state=state.lock().unwrap_or_else(|error|error.into_inner());
-    if view.revision<state.presence.revision{return;}state.presence=view;
-    if let Err(error)=refresh(app,&mut state){eprintln!("Availability menu refresh failed: {error}");}
+pub(crate) fn presence_update(app: &AppHandle, view: crate::assistant_presence::View) {
+    let Some(state) = app.try_state::<Mutex<TrayState>>() else {
+        return;
+    };
+    let mut state = state.lock().unwrap_or_else(|error| error.into_inner());
+    if view.revision < state.presence.revision {
+        return;
+    }
+    state.presence = view;
+    if let Err(error) = refresh(app, &mut state) {
+        eprintln!("Availability menu refresh failed: {error}");
+    }
 }
 
 /// Async: runs off the main thread; the menu is only rebuilt when what it shows changed.
@@ -346,11 +450,25 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             }
             QUIT => crate::window::request_quit(app),
             PRESENCE_REFRESH => {
-                let app=app.clone();tauri::async_runtime::spawn(async move{let _=crate::assistant_presence::refresh_captured(app).await;});
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::assistant_presence::refresh_captured(app).await;
+                });
             }
             id if id.starts_with(PRESENCE_PREFIX) => {
-                let target=app.state::<Mutex<TrayState>>().lock().unwrap_or_else(|error|error.into_inner()).presence_targets.get(id).cloned();
-                if let Some((token,choice))=target {let app=app.clone();tauri::async_runtime::spawn(async move{let _=crate::assistant_presence::set_captured(app,token,choice).await;});}
+                let target = app
+                    .state::<Mutex<TrayState>>()
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .presence_targets
+                    .get(id)
+                    .cloned();
+                if let Some((token, choice)) = target {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = crate::assistant_presence::set_captured(app, token, choice).await;
+                    });
+                }
             }
             NOTIFICATIONS => {
                 let windows = crate::window::workspace_windows(app);

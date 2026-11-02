@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 mod account_identity;
+mod assistant_presence;
 mod automations;
 mod azure_devops;
 pub mod build_info;
@@ -14,7 +15,6 @@ mod conversation_tools_bridge;
 mod cursor_store;
 mod debug_profile;
 mod desktop_control_window;
-mod assistant_presence;
 mod desktop_inbox_review;
 mod desktop_shortcut;
 mod external_editor;
@@ -1150,7 +1150,10 @@ pub fn run() {
         }
         tauri::RunEvent::Exit => {
             assistant_presence::shutdown(handle);
-            if handle.try_state::<desktop_control_window::State>().is_some() {
+            if handle
+                .try_state::<desktop_control_window::State>()
+                .is_some()
+            {
                 desktop_control_window::shutdown(handle);
             }
             if let Some(host) = handle.try_state::<harness::HarnessHost>() {

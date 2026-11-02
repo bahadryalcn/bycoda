@@ -52,7 +52,8 @@ pub(crate) fn init(app: &AppHandle) -> tauri::Result<()> {
                     // Do not perform Host/network work inside the platform hotkey callback.
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        let result = crate::desktop_control_window::stop_captured(app.clone()).await;
+                        let result =
+                            crate::desktop_control_window::stop_captured(app.clone()).await;
                         let _ = app.emit(
                             "desktop_control_shortcut_result",
                             json!({"ok":result.is_ok()}),

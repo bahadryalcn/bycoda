@@ -577,7 +577,11 @@ impl NativeServiceChannel {
             &selection.endpoint,
             &selection.machine.token,
             Some(&selection.machine.environment_id),
-            if method.starts_with("assistant.presence.") { wire } else { method },
+            if method.starts_with("assistant.presence.") {
+                wire
+            } else {
+                method
+            },
             params,
             deadline,
         )?;
@@ -1043,9 +1047,18 @@ mod tests {
             wire_method("desktop.stop").as_deref(),
             Some("native.services.desktop.stop")
         );
-        assert_eq!(wire_method("desktop.status").as_deref(),Some("native.services.desktop.status"));
-        assert_eq!(wire_method("assistant.presence.get").as_deref(),Some("native.services.assistant.presence.get"));
-        assert_eq!(wire_method("assistant.presence.set").as_deref(),Some("native.services.assistant.presence.set"));
+        assert_eq!(
+            wire_method("desktop.status").as_deref(),
+            Some("native.services.desktop.status")
+        );
+        assert_eq!(
+            wire_method("assistant.presence.get").as_deref(),
+            Some("native.services.assistant.presence.get")
+        );
+        assert_eq!(
+            wire_method("assistant.presence.set").as_deref(),
+            Some("native.services.assistant.presence.set")
+        );
         assert!(wire_method("assistant.request").is_none());
         assert_eq!(
             wire_method("conversation.desktop.finish").as_deref(),

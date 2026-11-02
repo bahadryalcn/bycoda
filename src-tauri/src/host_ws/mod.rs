@@ -134,8 +134,12 @@ mod desktop_stop_scope_tests {
         assert!(!native_service_method("native.services.desktop.act"));
         assert!(!native_service_method("native.services.desktop.resume"));
         assert!(!native_service_method("desktop.request"));
-        for method in ["native.services.assistant.presence.get","native.services.assistant.presence.set"] {
-            assert!(native_service_method(method));assert!(!native_peer_service_method(method));
+        for method in [
+            "native.services.assistant.presence.get",
+            "native.services.assistant.presence.set",
+        ] {
+            assert!(native_service_method(method));
+            assert!(!native_peer_service_method(method));
         }
         assert!(!native_service_method("native.services.assistant.request"));
     }
