@@ -254,7 +254,7 @@ export function createPackageManifest({
     launcher,
     installer,
     hostArchive,
-    hostNode: `${hostFolder}/${windows ? "node.exe" : "node"}`,
+    hostNode: `${hostFolder}/${windows ? "node.exe" : "bin/node"}`,
     hostEntry: `${hostFolder}/host.mjs`,
     versionJson: `${hostFolder}/version.json`,
     ...(windows ? { buildNative: rawLauncher } : {}),
