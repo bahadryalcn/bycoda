@@ -456,6 +456,8 @@ html.theme-light {
   --ui-surface-pressed: color-mix(in oklab, var(--color-content) 17%, var(--ui-tint-base));
   --ui-surface-selected: color-mix(in oklab, var(--color-content) 15%, var(--ui-surface-muted));
   --ui-border-accent: var(--ui-interaction-ink);
+  /* Resize edges brighten quietly on hover/drag: a neutral step, never the accent ink. */
+  --ui-sash-active: color-mix(in oklab, var(--color-content) 24%, transparent);
   /* One writing surface owner: identical at rest and while typing. */
   /* The writing box is the reading surface one tier above the chat canvas, not the popup step:
      distinct from the canvas (and from a background image behind it) without a hard jump.

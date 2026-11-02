@@ -88,10 +88,15 @@ export function DropdownMenu({
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     rows()[0]?.focus({ preventScroll: true });
     // Popover measures its first pass with visibility:hidden. Browsers cannot
-    // focus that pass; retry after placement without stealing an existing row focus.
+    // focus that pass, so Popover's autoFocus takes the menu surface as soon as it
+    // is placed: a key pressed before the next frame reaches the menu instead of
+    // the trigger. The frame then moves to the first row without stealing a row
+    // that a key or the pointer already focused.
     const frame = requestAnimationFrame(() => {
-      if (!closed.current && surface.current && !surface.current.contains(document.activeElement)) {
-        (rows()[0] ?? surface.current).focus({ preventScroll: true });
+      const menu = surface.current;
+      const active = document.activeElement;
+      if (!closed.current && menu && (active === menu || !menu.contains(active))) {
+        (rows()[0] ?? menu).focus({ preventScroll: true });
       }
     });
     return () => cancelAnimationFrame(frame);
@@ -203,6 +208,7 @@ export function DropdownMenu({
       role="menu"
       aria-label={label}
       tabIndex={-1}
+      autoFocus
       side={side}
       align={align}
       width={width}

@@ -1,10 +1,10 @@
 /* Shared field/focus contract: the only definition of the --ui-field-* and --ui-focus-* tokens.
    Density preferences remain authoritative.
    - Outline focus (buttons, rows, tabs, menu items, sliders): --ui-focus-width solid
-     --ui-focus-ring-color at --ui-focus-offset.
+     --ui-focus-ring-color at --ui-focus-offset. A quiet neutral tone, never the accent ink.
    - Field focus (TextField, TextareaField, Select, SearchInput, pickers, inline edit, composites):
-     the frame's border turns --ui-field-border-focus and the frame gains --ui-focus-ring, a soft
-     2px ring in the user's accent (--ui-focus-ring-invalid while aria-invalid). No inset outline.
+     the frame's border steps up to --ui-field-border-focus, a neutral tone one level above hover.
+     --ui-focus-ring adds no halo; --ui-focus-ring-invalid keeps a soft danger ring. No inset outline.
    - Composites: put data-ui-focus-group on the bordered frame and data-ui-focus="group" on the
      inner editor/trigger; the frame shows the ring, the member draws nothing. Inputs inside a
      FieldControl ([data-field-control]) are members automatically.
@@ -18,13 +18,12 @@ html:root {
   --ui-field-radius: 0.5rem;
   --ui-field-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface-muted));
   --ui-field-border-hover: color-mix(in oklab, var(--color-content) 22%, var(--ui-surface-muted));
-  /* Readability-adjusted accent ink: keeps 3:1 for white/black custom accents. */
-  --ui-field-border-focus: var(--ui-interaction-ink);
+  /* Minimal focus: a neutral border step, no accent-colored frame or halo. Bright custom accents
+     (white) otherwise paint a glaring frame on every click. */
+  --ui-field-border-focus: color-mix(in oklab, var(--color-content) 32%, var(--ui-surface-muted));
   --ui-field-border-invalid: var(--ui-tone-danger-fg);
-  --ui-focus-ring-color: var(--ui-interaction-ink);
-  /* The ring is decoration around an already visible border, so it uses the plain accent at a
-     low alpha (never the gray ink mix) and stays subtle. */
-  --ui-focus-ring: 0 0 0 2px color-mix(in oklab, var(--ui-interaction-accent) 30%, transparent);
+  --ui-focus-ring-color: color-mix(in oklab, var(--color-content) 34%, transparent);
+  --ui-focus-ring: 0 0 0 0 transparent;
   --ui-focus-ring-invalid: 0 0 0 2px color-mix(in oklab, var(--ui-tone-danger-fg) 26%, transparent);
   --ui-focus-width: 1px;
   --ui-focus-offset: 2px;
@@ -106,8 +105,8 @@ html[data-control-density="touch"] {
 /* The camera island stays black in both themes to join the physical cutout. */
 .bycoda-arc[data-ui-appearance="island"],
 .bycoda-arc[data-ui-appearance="island"] .bycoda-arc {
-  --ui-focus-ring-color: var(--ui-interaction-ink);
-  --ui-field-border-focus: var(--ui-interaction-ink);
+  --ui-focus-ring-color: color-mix(in oklab, var(--ui-island-text) 34%, transparent);
+  --ui-field-border-focus: color-mix(in oklab, var(--ui-island-text) 32%, var(--ui-island-surface));
   --ui-tone-neutral-fg: var(--ui-island-text);
   --ui-tone-neutral-solid: var(--ui-island-text);
   --ui-tone-neutral-on-solid: var(--ui-island-surface);

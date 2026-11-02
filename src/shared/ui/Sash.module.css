@@ -11,7 +11,7 @@
   }
 }
 
-/* One resize-edge look: the pane hairline at rest, a 2px interaction line on hover, drag
+/* One resize-edge look: the pane hairline at rest, a quiet 1px neutral line on hover, drag
    and keyboard focus. The hit area is wider than the line (pseudo-element, ±3px). */
 .sash {
   z-index: 1;
@@ -50,16 +50,16 @@
 .sash::after {
   pointer-events: none;
   opacity: 0;
-  background: var(--ui-border-accent);
+  background: var(--ui-sash-active);
   transition: opacity var(--motion-feedback-duration, 120ms) var(--motion-ease-out, ease-out);
 }
 .sash[data-orientation="vertical"]::after {
   inset-block: 0;
-  inset-inline: calc(50% - 1px);
+  inset-inline: 0;
 }
 .sash[data-orientation="horizontal"]::after {
   inset-inline: 0;
-  inset-block: calc(50% - 1px);
+  inset-block: 0;
 }
 .sash[data-dragging]::after,
 .sash:focus-visible::after {

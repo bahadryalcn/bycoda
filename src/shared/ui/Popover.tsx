@@ -436,7 +436,9 @@ function WebPopover({
     // The measuring frame is hidden and cannot receive browser focus.
     if (!positioned) return;
     if (dialog && autoFocus !== false) focusDialog(surface.current);
-    else if (autoFocus) surface.current?.focus({ preventScroll: true });
+    // Content that already took focus (a menu row) keeps it.
+    else if (autoFocus && !surface.current?.contains(document.activeElement))
+      surface.current?.focus({ preventScroll: true });
   }, [autoFocus, positioned, dialog]);
 
   useEffect(() => {
