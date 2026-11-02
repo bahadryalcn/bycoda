@@ -277,9 +277,8 @@ for (const theme of ["light", "dark"]) {
         .getByRole("button", { name: /^Existing SSH target/ })
         .click();
       const details = page.getByRole("region", { name: "Server details" });
-      const navigation = details.getByRole("group", { name: "Server tools" });
-      const choose = (name: string) =>
-        navigation.getByRole("button", { name, exact: true }).click();
+      const navigation = details.getByRole("tablist", { name: "Server tools" });
+      const choose = (name: string) => navigation.getByRole("tab", { name, exact: true }).click();
       await expect(
         details.getByRole("button", { name: "Connect via SSH", exact: true }),
       ).toBeVisible();
@@ -574,8 +573,8 @@ test("saved SSH command previews its target and copies without terminal input or
   await page.goto("/tests/browser/servers.html");
   await page.getByRole("list", { name: "Servers" }).getByRole("button").first().click();
   await page
-    .getByRole("group", { name: "Server tools" })
-    .getByRole("button", { name: "Automation", exact: true })
+    .getByRole("tablist", { name: "Server tools" })
+    .getByRole("tab", { name: "Automation", exact: true })
     .click();
   const dialog = page.getByRole("region", { name: "Saved SSH commands", exact: true });
   await expect(dialog).toContainText("Target: Server 00");
@@ -654,15 +653,15 @@ test("SSH config duplicate choices use or edit the existing record without impor
     .getByRole("button", { name: /^Existing SSH target/ })
     .click();
   await page
-    .getByRole("group", { name: "Server tools" })
-    .getByRole("button", { name: "Organization", exact: true })
+    .getByRole("tablist", { name: "Server tools" })
+    .getByRole("tab", { name: "Organization", exact: true })
     .click();
   await page
     .getByRole("region", { name: "Server details" })
     .getByRole("button", { name: "SSH settings", exact: true })
     .click();
   const dialog = page.getByRole("dialog", { name: "SSH settings", exact: true });
-  await dialog.getByRole("button", { name: "Import SSH config", exact: true }).click();
+  await dialog.getByRole("tab", { name: "Import SSH config", exact: true }).click();
   await dialog
     .getByRole("textbox", { name: "SSH config", exact: true })
     .fill("Host imported\n HostName duplicate.example.invalid\n User fixture");
@@ -737,15 +736,15 @@ for (const theme of ["light", "dark"])
       .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     await page
-      .getByRole("group", { name: "Server tools" })
-      .getByRole("button", { name: "Organization", exact: true })
+      .getByRole("tablist", { name: "Server tools" })
+      .getByRole("tab", { name: "Organization", exact: true })
       .click();
     await page
       .getByRole("region", { name: "Server details" })
       .getByRole("button", { name: "SSH settings", exact: true })
       .click();
     const config = page.getByRole("dialog", { name: "SSH settings", exact: true });
-    await config.getByRole("button", { name: "Import SSH config", exact: true }).click();
+    await config.getByRole("tab", { name: "Import SSH config", exact: true }).click();
     await config
       .getByRole("textbox", { name: "SSH config", exact: true })
       .fill("Host imported\n HostName duplicate.example.invalid\n User fixture");
@@ -821,15 +820,15 @@ test("certificate and ordered jump chain edit retains canonical ID and previews 
   });
   expect((saved.endpoint as Record<string, unknown>).jumpHost).toBeUndefined();
   await page
-    .getByRole("group", { name: "Server tools" })
-    .getByRole("button", { name: "Organization", exact: true })
+    .getByRole("tablist", { name: "Server tools" })
+    .getByRole("tab", { name: "Organization", exact: true })
     .click();
   await page
     .getByRole("region", { name: "Server details" })
     .getByRole("button", { name: "SSH settings", exact: true })
     .click();
   const settings = page.getByRole("dialog", { name: "SSH settings", exact: true });
-  await settings.getByRole("button", { name: "Import SSH config", exact: true }).click();
+  await settings.getByRole("tab", { name: "Import SSH config", exact: true }).click();
   await settings
     .getByRole("textbox", { name: "SSH config", exact: true })
     .fill(
@@ -1289,8 +1288,8 @@ for (const theme of ["light", "dark"]) {
       false,
     );
     await page
-      .getByRole("group", { name: "Server tools" })
-      .getByRole("button", { name: "Organization", exact: true })
+      .getByRole("tablist", { name: "Server tools" })
+      .getByRole("tab", { name: "Organization", exact: true })
       .click();
     await page.getByRole("button", { name: "Forward SSH agent", exact: true }).click();
     const modal = page.getByRole("dialog", { name: "Forward SSH agent", exact: true });
@@ -1470,8 +1469,8 @@ for (const theme of ["light", "dark"]) {
         (r) => r.command === "ssh_terminal_spawn" || r.command === "ssh_terminal_quick_spawn",
       );
     await page
-      .getByRole("group", { name: "Server tools" })
-      .getByRole("button", { name: "Organization", exact: true })
+      .getByRole("tablist", { name: "Server tools" })
+      .getByRole("tab", { name: "Organization", exact: true })
       .click();
     await page.getByRole("button", { name: "SSH group settings", exact: true }).click();
     const modal = page.getByRole("dialog", { name: "SSH group settings", exact: true });
@@ -1579,8 +1578,8 @@ for (const theme of ["light", "dark"]) {
     const starts = async () =>
       (await requests()).filter((item) => item.command === "ssh_runbook_start");
     await page
-      .getByRole("group", { name: "Server tools" })
-      .getByRole("button", { name: "Automation", exact: true })
+      .getByRole("tablist", { name: "Server tools" })
+      .getByRole("tab", { name: "Automation", exact: true })
       .click();
     await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
     const modal = page.getByRole("dialog", { name: "SSH runbooks", exact: true });
@@ -1624,8 +1623,8 @@ for (const theme of ["light", "dark"]) {
     await expect(modal.getByRole("textbox", { name: "SSH script", exact: true })).toBeDisabled();
     await modal.getByRole("button", { name: "Close", exact: true }).click();
     await page
-      .getByRole("group", { name: "Server tools" })
-      .getByRole("button", { name: "Automation", exact: true })
+      .getByRole("tablist", { name: "Server tools" })
+      .getByRole("tab", { name: "Automation", exact: true })
       .click();
     await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
     await expect(status).toContainText(String(runId));
@@ -1731,8 +1730,8 @@ for (const theme of ["light", "dark"]) {
     });
     await files.getByRole("button", { name: "Close", exact: true }).click();
     await page
-      .getByRole("group", { name: "Server tools" })
-      .getByRole("button", { name: "Port forwarding", exact: true })
+      .getByRole("tablist", { name: "Server tools" })
+      .getByRole("tab", { name: "Port forwarding", exact: true })
       .click();
     await page.getByRole("button", { name: "Start", exact: true }).click();
     await auth
@@ -1798,8 +1797,8 @@ for (const theme of ["light", "dark"]) {
       .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     await page
-      .getByRole("group", { name: "Server tools" })
-      .getByRole("button", { name: "Automation", exact: true })
+      .getByRole("tablist", { name: "Server tools" })
+      .getByRole("tab", { name: "Automation", exact: true })
       .click();
     await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
     const modal = page.getByRole("dialog", { name: "SSH runbooks", exact: true });
@@ -1971,8 +1970,8 @@ for (const theme of ["light", "dark"]) {
       .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     await page
-      .getByRole("group", { name: "Server tools" })
-      .getByRole("button", { name: "Automation", exact: true })
+      .getByRole("tablist", { name: "Server tools" })
+      .getByRole("tab", { name: "Automation", exact: true })
       .click();
     await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
     const modal = page.getByRole("dialog", { name: "SSH runbooks", exact: true });

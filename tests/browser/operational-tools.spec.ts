@@ -24,8 +24,12 @@ test("device controls show pending only at the initiating action and recover fro
   await expect(page.getByRole("img", { name: "Current device screen" })).toBeVisible();
   await page.getByRole("switch", { name: "Live view", exact: true }).click();
   await fixture(page, "hold", "add");
+  // Adding the device is a secondary action in the device options menu.
+  await page.getByRole("button", { name: "Device options", exact: true }).click();
   const add = page.getByRole("button", { name: "Add device to conversation", exact: true });
-  await add.click();
+  // Keyboard activation: WebKit does not focus buttons on pointer clicks.
+  await add.focus();
+  await page.keyboard.press("Enter");
   await expect(add).toHaveAttribute("aria-busy", "true");
   await expect(add).toBeFocused();
   await expect(page.locator("button[aria-busy=true]")).toHaveCount(1);
@@ -33,6 +37,8 @@ test("device controls show pending only at the initiating action and recover fro
   await fixture(page, "finish", "add");
   await expect(add).not.toHaveAttribute("aria-busy", "true");
   await expect(page.getByRole("status")).toContainText("Device added to draft.");
+  await page.keyboard.press("Escape");
+  await expect(add).toHaveCount(0);
   await fixture(page, "hold", "capture");
   const capture = page.getByRole("button", { name: "Capture", exact: true });
   await capture.click();
@@ -82,17 +88,28 @@ test("server details, logs and startup retain local pending feedback and clear f
 test("device help remains keyboard accessible and preserves input drafts", async ({ page }) => {
   await page.goto("/tests/browser/operational-tools.html");
   await page.getByRole("switch", { name: "Allow device control" }).click();
+  // The app field lives in its own popover; its draft survives closing and reopening it.
+  const chooseApp = page.getByRole("button", { name: "Choose app to open", exact: true });
+  await chooseApp.click();
   await page.getByLabel("App name or bundle ID", { exact: true }).fill("com.example.app");
+  await page.keyboard.press("Escape");
+  await expect(page.getByLabel("App name or bundle ID", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Device options", exact: true }).click();
   const help = page.getByRole("button", { name: "Help", exact: true });
   await help.focus();
   await page.keyboard.press("Enter");
   await expect(help).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText(/Android text input supports printable ASCII/)).toBeVisible();
+  // Escape closes one layer: the help first, then the options menu.
   await page.keyboard.press("Escape");
   await expect(help).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(help).toHaveCount(0);
+  await chooseApp.click();
   await expect(page.getByLabel("App name or bundle ID", { exact: true })).toHaveValue(
     "com.example.app",
   );
+  await page.keyboard.press("Escape");
   await fixture(page, "hold", "press");
   await page.getByRole("img", { name: "Current device screen" }).click();
   await expect(page.getByRole("progressbar", { name: "Working on the host…" })).toBeVisible();
@@ -107,7 +124,7 @@ test("long translated controls fit a narrow panel at increased text scale", asyn
   await page.evaluate(() => {
     document.documentElement.style.fontSize = "125%";
   });
-  await expect(page.locator(".device-panel-manual")).toBeVisible();
+  await page.getByRole("button", { name: "Geräteoptionen", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Schnappschuss der Barrierefreiheit" }),
   ).toBeVisible();
@@ -131,6 +148,7 @@ for (const theme of ["light", "dark"]) {
         if (tool === "devices") {
           await expect(page.getByRole("img")).toBeVisible();
           await page.getByRole("switch", { name: "Allow device control" }).click();
+          await page.getByRole("button", { name: "Choose app to open", exact: true }).click();
           await expect(page.getByRole("button", { name: "Open app", exact: true })).toBeVisible();
         } else {
           await expect(

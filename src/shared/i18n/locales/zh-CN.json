@@ -2714,6 +2714,7 @@
   "Showing available providers": "显示可用的提供商",
   "Filter MCP servers by provider": "按提供商过滤 MCP 服务器",
   "Claude connection status unavailable: ": "克劳德连接状态不可用： ",
+  "Claude did not finish checking every server in time. Servers it did not reach show Configured.": "Claude 未能及时检查所有服务器。未检查到的服务器显示为“Configured”。",
   "Checking servers…": "检查服务器...",
   "No MCP servers configured for this provider.": "没有为此提供商配置 MCP 服务器。",
   "Scope to remove {p0} from": "要从中删除 {p0} 的范围",

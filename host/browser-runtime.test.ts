@@ -59,6 +59,20 @@ describe("optional shared browser runtime", () => {
     await expect(updatedHost.load()).resolves.toHaveProperty("chromium");
   });
 
+  it("adds the setup hint to browser state only while the runtime is missing", async () => {
+    const { runtime } = await fixture();
+    const missing = await runtime.describe({ open: false });
+    expect(missing).toMatchObject({
+      open: false,
+      runtime: { installed: false },
+      setup: expect.stringContaining("Set up host browser"),
+    });
+    await runtime.setup();
+    const ready = await runtime.describe({ open: false });
+    expect(ready).toMatchObject({ open: false, runtime: { installed: true } });
+    expect(ready).not.toHaveProperty("setup");
+  });
+
   it("retains failed staging directories and reports a retryable error", async () => {
     const { directory, command, runtime } = await fixture();
     command.mockRejectedValueOnce(new Error("download failed"));

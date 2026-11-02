@@ -342,7 +342,6 @@ export class SharedBrowser {
       controlling: this.lease?.owner === owner,
       leaseId: this.lease?.owner === owner ? this.lease.id : undefined,
       leaseExpiresAt: this.lease?.expiresAt,
-      setup: "Install playwright in the host runtime and run playwright install chromium",
       viewport: { ...this.viewport },
       navigationId: this.navigationId,
       annotationId: this.annotation?.owner === owner ? this.annotation.id : undefined,

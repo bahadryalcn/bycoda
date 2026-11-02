@@ -1578,16 +1578,47 @@ fn mcp_command(
     Err(format!("{} {}", stderr.trim(), stdout).trim().to_string())
 }
 
+/// `claude mcp list` health-checks every server, including plugin and claude.ai
+/// connectors, so it can take well over 30 seconds on a busy profile.
+const CLAUDE_MCP_LIST_TIMEOUT: Duration = Duration::from_secs(90);
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeMcpList {
+    output: String,
+    /// The CLI was stopped before it exited; `output` holds the lines it printed.
+    timed_out: bool,
+}
+
 #[tauri::command]
-pub async fn claude_mcp_list(host: State<'_, HarnessHost>, cwd: String) -> Result<String, String> {
+pub async fn claude_mcp_list(
+    host: State<'_, HarnessHost>,
+    cwd: String,
+) -> Result<ClaudeMcpList, String> {
     let binary_path = host.runtime_binary_path("claude");
     tauri::async_runtime::spawn_blocking(move || {
-        let mut output = claude_mcp_command(
-            vec!["mcp".into(), "list".into()],
-            cwd.clone(),
-            Duration::from_secs(30),
-            binary_path.as_deref(),
+        if !expand_home(&cwd).is_dir() {
+            return Err("Project directory does not exist".into());
+        }
+        let binary = resolve_mcp_binary("claude", binary_path.as_deref())?;
+        let (result, timed_out) = exec_output_read_partial(
+            &binary.to_string_lossy(),
+            &["mcp".into(), "list".into()],
+            Some(&cwd),
+            CLAUDE_MCP_LIST_TIMEOUT,
         )?;
+        let mut output = String::from_utf8_lossy(&result.stdout).trim().to_string();
+        if timed_out {
+            if !output.lines().any(|line| line.contains(": ")) {
+                return Err(format!(
+                    "Claude did not report MCP server status within {} seconds.",
+                    CLAUDE_MCP_LIST_TIMEOUT.as_secs()
+                ));
+            }
+        } else if !result.status.success() {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            return Err(format!("{} {}", stderr.trim(), output).trim().to_string());
+        }
         for name in configured_ws_mcp_servers(&expand_home(&cwd)) {
             if !output
                 .lines()
@@ -1598,7 +1629,7 @@ pub async fn claude_mcp_list(host: State<'_, HarnessHost>, cwd: String) -> Resul
                 ));
             }
         }
-        Ok(output)
+        Ok(ClaudeMcpList { output, timed_out })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -4340,6 +4371,32 @@ fn exec_output_read(
     .map(|capture| capture.output)
 }
 
+/// A read whose printed lines stay useful when the command outlives `timeout`:
+/// the process tree is stopped and its output so far is returned with `true`.
+fn exec_output_read_partial(
+    command: &str,
+    args: &[String],
+    cwd: Option<&str>,
+    timeout: Duration,
+) -> Result<(std::process::Output, bool), String> {
+    let mut cmd = configured_exec_command(command, args, cwd, &[]);
+    let rx = spawn_output_wait(&mut cmd).map_err(|e| format!("Failed to run {command}: {e}"))?;
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(output)) => Ok((output, false)),
+        Ok(Err(e)) => Err(format!("Failed to run {command}: {e}")),
+        Err(_) => {
+            rx.stop_and_drain();
+            match rx.recv_timeout(KILL_ESCALATE * 2) {
+                Ok(Ok(output)) => Ok((output, true)),
+                _ => Err(format!(
+                    "{command} timed out after {} seconds",
+                    timeout.as_secs()
+                )),
+            }
+        }
+    }
+}
+
 fn configured_exec_command(
     command: &str,
     args: &[String],
@@ -4651,6 +4708,38 @@ mod shell_command_tests {
         assert!(error.contains("timed out after 1 seconds"), "{error}");
         assert!(error.contains("checking"), "{error}");
         assert!(error.contains("download-stalled"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn partial_read_keeps_lines_printed_before_timeout() {
+        let (command, args): (&str, Vec<String>) = if cfg!(windows) {
+            (
+                "cmd.exe",
+                [
+                    "/D",
+                    "/C",
+                    "echo arc: https://x - ! Needs authentication & ping -n 30 127.0.0.1 >nul",
+                ]
+                .map(String::from)
+                .to_vec(),
+            )
+        } else {
+            (
+                "sh",
+                [
+                    "-c",
+                    "echo 'arc: https://x - ! Needs authentication'; sleep 30",
+                ]
+                .map(String::from)
+                .to_vec(),
+            )
+        };
+        let started = Instant::now();
+        let (output, timed_out) =
+            exec_output_read_partial(command, &args, None, Duration::from_secs(1)).unwrap();
+        assert!(timed_out);
+        assert!(String::from_utf8_lossy(&output.stdout).contains("arc: https://x"));
         assert!(started.elapsed() < Duration::from_secs(10));
     }
 

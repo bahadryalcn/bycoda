@@ -702,7 +702,10 @@ it("drops a committed candidate the provider never transcribes and keeps voice r
     await vi.advanceTimersByTimeAsync(15_000);
     expect(events.error).not.toHaveBeenCalled();
     expect(sockets[0].close).not.toHaveBeenCalled();
-    expect(sockets[0].sent()).toContainEqual({ type: "conversation.item.delete", item_id: "noise" });
+    expect(sockets[0].sent()).toContainEqual({
+      type: "conversation.item.delete",
+      item_id: "noise",
+    });
     // A late transcript of the dropped item is ignored; the next turn still works.
     sockets[0].emit({
       type: "conversation.item.input_audio_transcription.completed",
@@ -732,6 +735,48 @@ it("ends voice when the provider never acknowledges a commit", async () => {
     expect(track.stop).toHaveBeenCalled();
     expect(sockets[0].close).toHaveBeenCalled();
     expect(sockets[0].sent().filter((event) => event.type === "response.create")).toHaveLength(0);
+    voice.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps waiting for a commit while a long utterance is still uploading", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = callbacks();
+    const voice = await connectedWithFakeTimers(events);
+    sockets[0].bufferedAmount = 900_000;
+    candidateAudio();
+    for (const left of [600_000, 300_000]) {
+      sockets[0].bufferedAmount = left;
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(events.error).not.toHaveBeenCalled();
+    }
+    // The upload stopped moving: now the connection counts as unresponsive.
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(events.error).toHaveBeenCalledWith(
+      "Voice connection is too slow. Start voice again.",
+      true,
+    );
+    voice.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does not end voice while a slow upload keeps draining", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = callbacks();
+    const voice = await connectedWithFakeTimers(events);
+    for (let left = 1_000_000; left > 200_000; left -= 50_000) {
+      sockets[0].bufferedAmount = left;
+      pushFrame(new Int16Array(1024));
+      await vi.advanceTimersByTimeAsync(2_000);
+    }
+    pushFrame(new Int16Array(1024));
+    expect(events.error).not.toHaveBeenCalled();
     voice.close();
   } finally {
     vi.useRealTimers();

@@ -208,7 +208,7 @@ test("server detail drafts survive opening and returning from a terminal", async
   await page.goto("/tests/browser/servers.html?terminalWorkspace&sshFixture");
   await page.locator('[data-server-row="ssh-duplicate"]').click();
   const details = page.getByRole("region", { name: "Server details", exact: true });
-  await details.getByRole("button", { name: "Organization", exact: true }).click();
+  await details.getByRole("tab", { name: "Organization", exact: true }).click();
   await details.getByRole("combobox", { name: "Group", exact: true }).fill("Unfinished group");
   await details.getByRole("button", { name: "Connect via SSH", exact: true }).click();
   await expect(page.getByRole("region", { name: "SSH terminal", exact: true })).toBeVisible();

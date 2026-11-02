@@ -741,7 +741,7 @@ function conversationToolDescription(action: string) {
   if (action === "logs.monitors.stop")
     return "Stop a browser log monitor by an id read from logs.monitors.list in this project. Closes that monitor; does not stop dev servers or other sessions' browsers. Retained logs may remain readable.";
   if (action === "browser.status")
-    return "Read the shared browser's availability and current ownership before interacting. Does not open, claim or navigate a browser. A missing browser requires owner setup; never claim a frame or navigation succeeded from status alone.";
+    return "Read the shared browser's availability and current ownership before interacting. Does not open, claim or navigate a browser. open:false only means no page is open; runtime.installed reports whether Playwright/Chromium are ready. Only runtime.installed:false requires owner setup; never claim a frame or navigation succeeded from status alone.";
   if (action === "browser.claim")
     return "Claim the shared browser for this conversation and retain the returned leaseId for open/input/frame/close/release. Does not take over another conversation's lease. Inspect browser.status on ownership errors; do not use another session's lease.";
   if (action === "browser.release")

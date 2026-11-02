@@ -344,6 +344,8 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
   const busyRef = useRef(false);
   const [error, setError] = useState(cached?.error ?? "");
   const [claudeError, setClaudeError] = useState(cached?.claudeError ?? "");
+  const [claudeChecking, setClaudeChecking] = useState(cached?.claudeChecking ?? false);
+  const [claudePartial, setClaudePartial] = useState(cached?.claudePartial ?? false);
   const [addOpen, setAddOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterAnchor = useRef<HTMLButtonElement>(null);
@@ -357,6 +359,8 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
     setServers(snapshot.servers);
     setError(snapshot.error);
     setClaudeError(snapshot.claudeError);
+    setClaudeChecking(snapshot.claudeChecking ?? false);
+    setClaudePartial(snapshot.claudePartial ?? false);
     setLoading(false);
   }, []);
 
@@ -370,6 +374,8 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         setServers(previous?.servers ?? []);
         setError(previous?.error ?? "");
         setClaudeError(previous?.claudeError ?? "");
+        setClaudeChecking(previous?.claudeChecking ?? false);
+        setClaudePartial(previous?.claudePartial ?? false);
       }
       setLoading(force || !previous);
       const snapshot = await loadMcpSettings(cwd, force);
@@ -537,7 +543,7 @@ ${query}`;
       <div className={styles.toolbar}>
         <div className={styles.search}>
           <SearchInput
-            appearance="quiet"
+            appearance="field"
             aria-label={t("Search MCP servers")}
             type="search"
             placeholder={t("Search MCP servers")}
@@ -623,6 +629,10 @@ ${query}`;
         <ExpandableWarning>
           {t("Claude connection status unavailable: ")} {claudeError}
         </ExpandableWarning>
+      ) : claudePartial && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
+        <SettingsFeedback state="warning">
+          {t("Claude did not finish checking every server in time. Servers it did not reach show Configured.")}
+        </SettingsFeedback>
       ) : null}
       {loading && servers.length === 0 ? (
         <SettingsFeedback state="loading">{t("Checking servers…")}</SettingsFeedback>
@@ -651,7 +661,10 @@ ${query}`;
         </SettingsFeedback>
       ) : (
         <div ref={listRoot} className={styles.list} role="region" aria-label={t("MCP connections")} tabIndex={0}>
-          {pageServers.map((server) => (
+          {pageServers.map((server) => {
+            // Until Claude reports health, a configured Claude row is unknown, not signed out.
+            const checking = claudeChecking && server.provider === "claude" && server.status === "Configured";
+            return (
             <div key={serverRowKey(server)} className={styles.row}>
               <span className={styles.providerIcon}>
                 <ProviderIcon provider={server.provider} />
@@ -663,12 +676,15 @@ ${query}`;
                   </div>
                 </OverflowTooltip>
               </div>
+              <span className={styles.status}>
               <Badge
-                className={styles.status}
+                className={styles.statusBadge}
                 size="sm"
                 appearance="subtle"
                 tone={
-                  /needs authentication/i.test(server.status)
+                  checking
+                    ? "neutral"
+                    : /needs authentication/i.test(server.status)
                     ? "warning"
                     : /failed|error|disconnected/i.test(server.status)
                       ? "danger"
@@ -677,8 +693,9 @@ ${query}`;
                         : "neutral"
                 }
               >
-                {server.status}
+                {checking ? t("Checking…") : server.status}
               </Badge>
+              </span>
               <div className={styles.details}>
                 <p className={styles.metadata} title={server.configPath || undefined}>
                   {MCP_PROVIDER_LABELS[server.provider]} &#183; {scopeLabel(server.scope)} &#183; {server.transport || "MCP"}
@@ -694,7 +711,7 @@ ${query}`;
                 ) : null}
               </div>
               <div className={styles.rowActions}>
-                {canSignInMcp(server) && !isMcpConnected(server.status) ? (
+                {canSignInMcp(server) && !checking && !isMcpConnected(server.status) ? (
                     <Button stableWidth type="button"
                       loading={busy?.server === serverRowKey(server) && busy.action === "login"}
                       disabled={loading || busy !== null}
@@ -711,7 +728,8 @@ ${query}`;
                 <MoreHorizontal className="icon-sm" />
               </Button>
             </div>
-          ))}
+            );
+          })}
           {visibleCount < visible.length ? <div ref={continuation} className={styles.continuation}>
             <Button variant="ghost" onClick={() => revealMore(visible.length)}>{t("Show more connections")}</Button>
           </div> : null}

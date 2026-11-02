@@ -3,6 +3,7 @@ import { remoteSessionFor } from "../../connections/model/connections";
 import {
   isVoiceToolFamily,
   readVoiceToolCatalog,
+  VOICE_TOOL_ACTION,
   selectVoiceTools,
   type VoiceToolFamily,
   type VoiceToolSelection,
@@ -54,7 +55,7 @@ export async function callVoiceTool(
   const context = source(target);
   if (
     !isVoiceToolFamily(call.family) ||
-    !/^[A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)*$/.test(call.action) ||
+    !VOICE_TOOL_ACTION.test(call.action) ||
     call.action.length > 200 ||
     !call.input ||
     typeof call.input !== "object" ||

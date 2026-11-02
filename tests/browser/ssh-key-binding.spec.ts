@@ -15,8 +15,8 @@ for (const theme of ["light", "dark"]) {
         .click();
       const details = page.getByRole("region", { name: "Server details" });
       await details
-        .getByRole("group", { name: "Server tools" })
-        .getByRole("button", { name: "Organization", exact: true })
+        .getByRole("tablist", { name: "Server tools" })
+        .getByRole("tab", { name: "Organization", exact: true })
         .click();
       await details.getByRole("button", { name: "SSH settings", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "SSH settings", exact: true });

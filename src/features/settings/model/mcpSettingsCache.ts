@@ -7,7 +7,13 @@ export type McpSettingsSnapshot = {
   servers: McpServerRow[];
   error: string;
   claudeError: string;
+  /** Claude's health check is still running; Claude rows show their configured state. */
+  claudeChecking?: boolean;
+  /** Claude stopped before checking every server; unreached rows show their configured state. */
+  claudePartial?: boolean;
 };
+
+type ClaudeMcpListResult = string | { output: string; timedOut: boolean };
 
 const snapshots = new Map<string, McpSettingsSnapshot>();
 export const MCP_LOCAL_ONLY_ERROR =
@@ -84,9 +90,13 @@ async function fetchMcpSettings(cwd: string): Promise<McpSettingsSnapshot> {
 
 function loadClaudeHealth(cwd: string, discovery: Promise<McpSettingsSnapshot>) {
   if (healthRequests.has(cwd)) return;
-  const request = invoke<string>("claude_mcp_list", { cwd })
-    .then((output) => {
+  const current = snapshots.get(cwd);
+  if (current) publish(cwd, { ...current, claudeChecking: true });
+  const request = invoke<ClaudeMcpListResult>("claude_mcp_list", { cwd })
+    .then((result) => {
       if (requests.get(cwd) !== discovery) return;
+      const { output, timedOut } =
+        typeof result === "string" ? { output: result, timedOut: false } : result;
       const snapshot = snapshots.get(cwd)!;
       const health = new Map(
         parseClaudeMcpList(output).map((server) => [server.name, server.status]),
@@ -113,11 +123,22 @@ function loadClaudeHealth(cwd: string, discovery: Promise<McpSettingsSnapshot>) 
           status,
         });
       }
-      publish(cwd, { ...snapshot, servers, claudeError: "" });
+      publish(cwd, {
+        ...snapshot,
+        servers,
+        claudeError: "",
+        claudeChecking: false,
+        claudePartial: timedOut,
+      });
     })
     .catch((cause) => {
       if (requests.get(cwd) !== discovery) return;
-      publish(cwd, { ...snapshots.get(cwd)!, claudeError: String(cause) });
+      publish(cwd, {
+        ...snapshots.get(cwd)!,
+        claudeError: String(cause),
+        claudeChecking: false,
+        claudePartial: false,
+      });
     });
   healthRequests.set(cwd, request);
 }

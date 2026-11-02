@@ -482,10 +482,13 @@ test.describe("filters", () => {
     const panel = page.getByRole("dialog", { name: "Filter Author" });
     await expect(panel).toBeVisible();
     await panel.getByLabel("Author").fill("ada");
-    await expect(trigger).toHaveAttribute("aria-pressed", "true");
+    // The shared FilterTrigger marks an active column with its count and selected host.
+    const host = page.locator("[data-filter-trigger]").filter({ has: trigger });
+    await expect(host).toHaveAttribute("data-filter-active", "");
+    await expect(trigger).toHaveText("1");
     await shot(page, "filters-git-active", "light", "1280");
     await panel.getByRole("button", { name: "Reset filter", exact: true }).click();
-    await expect(trigger).toHaveAttribute("aria-pressed", "false");
+    await expect(host).not.toHaveAttribute("data-filter-active");
     await page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
     await expect(trigger).toBeFocused();

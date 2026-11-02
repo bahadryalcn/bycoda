@@ -13,6 +13,10 @@
 *.jks
 id_rsa*
 id_ed25519*
+# Extensionless SSH keys dropped into the repo root
+/hostinger
+/hostinger.pub
+*.pub
 .tauri/
 node_modules/
 dist/

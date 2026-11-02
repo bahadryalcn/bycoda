@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { voiceToolCatalog } from "../../../../host/voice-tools";
 import {
   readVoiceToolCatalog,
   selectVoiceTools,
@@ -14,6 +15,15 @@ const tool = (action: string, family: VoiceToolDescriptor["family"] = "conversat
 });
 
 describe("voice tool discovery", () => {
+  it("accepts every tool the Host advertises, including hyphenated actions", () => {
+    // One rejected entry discards the whole catalog, leaving voice without tools.
+    const catalog = voiceToolCatalog();
+    expect(readVoiceToolCatalog({ tools: catalog })).toHaveLength(catalog.length);
+    expect(catalog.some((entry) => entry.action === "programs.preview-schedule")).toBe(true);
+    for (const bad of ["-lead", "a..b", "a.-b", "a b", "a/b"])
+      expect(() => readVoiceToolCatalog({ tools: [tool(bad)] })).toThrow();
+  });
+
   it("keeps similarly named tools in different authorization families separate", () => {
     const catalog = readVoiceToolCatalog({
       tools: [tool("inbox.list"), tool("inbox.list", "social"), tool("read", "runtime-logs")],

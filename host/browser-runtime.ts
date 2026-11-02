@@ -7,6 +7,8 @@ import { deviceCommand } from "./device-process";
 import type { BrowserLoader } from "./shared-browser";
 
 export const BROWSER_RUNTIME_VERSION = "1.64.0";
+export const BROWSER_SETUP_HINT =
+  "Host browser runtime is not installed. Ask the owner to choose Set up host browser in the Browser panel; agents must not install it.";
 type RuntimeModule = Awaited<ReturnType<BrowserLoader>> & {
   chromium: { executablePath(): string };
 };
@@ -64,6 +66,12 @@ export class BrowserRuntime {
       version: BROWSER_RUNTIME_VERSION,
       lastError: this.lastError,
     };
+  }
+
+  /** Attach real runtime readiness; the setup hint appears only when setup is missing. */
+  async describe<T extends object>(state: T) {
+    const runtime = await this.status();
+    return runtime.installed ? { ...state, runtime } : { ...state, runtime, setup: BROWSER_SETUP_HINT };
   }
 
   readonly load: BrowserLoader = async () => {

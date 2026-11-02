@@ -434,15 +434,16 @@ test("rail appearance keeps two icon rows and applies independent translucent co
   for (let index = 0; index < 3; index++) await visibility.press("PageUp");
   for (let index = 0; index < 5; index++) await visibility.press("ArrowRight");
   await menu.getByRole("checkbox", { name: "Expanded contents", exact: true }).check();
-  await menu
-    .getByLabel("Expanded contents: Color", { exact: true })
-    .evaluate((node: HTMLInputElement) => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        node,
-        "#22c55e",
-      );
-      node.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+  await menu.getByRole("button", { name: "Expanded contents: Color", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Expanded contents: Color", exact: true });
+  // Using the nested colour picker keeps the group menu open.
+  await picker.getByRole("slider", { name: "Hue", exact: true }).click();
+  await picker.getByRole("textbox", { name: "Hex color", exact: true }).fill("#22c55e");
+  await expect(page.getByRole("menu", { name: "Project group actions", exact: true })).toBeVisible();
+  // Clicking elsewhere in the appearance popover closes only the colour picker.
+  await menu.getByText("Project icon", { exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(menu).toBeVisible();
   const group = page.locator('[data-project-group="wallet"]');
   await expect(group.locator(":scope > .project-reorder-item")).toHaveAttribute("style", /35%/);
   await expect(group.locator(":scope > .project-reorder-item")).toHaveCSS("opacity", "1");

@@ -14,8 +14,33 @@ async function choose(page: Page, label: string, option: string | RegExp, scope?
 async function open(page: Page) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(fixture);
-  await expect(page.getByRole("radio", { name: "Backlog", exact: true })).toBeChecked();
+  await expect(page.getByRole("tab", { name: "Backlog", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(page.getByRole("button", { name: "MacBook checkout", exact: true })).toBeVisible();
+}
+// Sprint dates use the shared calendar picker: step to the month, then pick the day.
+async function pickDate(page: Page, scope: Locator, label: string, date: string) {
+  await scope.getByRole("button", { name: new RegExp(`^${label}:`) }).click();
+  const calendar = page.getByRole("dialog", { name: label, exact: true });
+  const day = calendar.locator(`[data-date="${date}"]`);
+  for (let step = 0; step < 24 && !(await day.count()); step++) {
+    const first = await calendar.locator("[data-date]").first().getAttribute("data-date");
+    const previous = first! > date;
+    await calendar
+      .getByRole("button", { name: previous ? "Previous month" : "Next month", exact: true })
+      .click();
+  }
+  await day.click();
+  await expect(calendar).toHaveCount(0);
+}
+// The board's sprint filter lives in the Filters popover with the other collection filters.
+async function filterSprint(page: Page, sprint: string) {
+  await page.getByRole("button", { name: /^Filters/ }).click();
+  await choose(page, "Sprint", sprint);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: /^Sprint:/ })).toHaveCount(0);
 }
 async function allProjects(page: Page) {
   await choose(page, "Project", "All projects");
@@ -25,7 +50,7 @@ async function createSprint(
   name = "Release confidence",
   goal = "Keep the PC and MacBook rollout separate and visible.",
 ) {
-  await page.getByRole("radio", { name: "Sprints", exact: true }).click();
+  await page.getByRole("tab", { name: "Sprints", exact: true }).click();
   await page.getByRole("button", { name: "New sprint", exact: true }).click();
   const form = page.getByRole("dialog", { name: "New sprint", exact: true });
   await form.getByLabel("Sprint name", { exact: true }).fill(name);
@@ -35,14 +60,14 @@ async function createSprint(
   await page.getByRole("option", { name: /^remote-project / }).click();
   await page.keyboard.press("Escape");
   await form.getByLabel("Sprint capacity (points)", { exact: true }).fill("13");
-  await form.getByLabel("Start date", { exact: true }).fill("2026-10-26");
-  await form.getByLabel("End date", { exact: true }).fill("2026-11-09");
+  await pickDate(page, form, "Start date", "2026-10-26");
+  await pickDate(page, form, "End date", "2026-11-09");
   await form.getByRole("button", { name: "Save sprint", exact: true }).click();
   await expect(form).not.toBeVisible();
   await expect(page.getByRole("button", { name: "Start sprint", exact: true })).toBeVisible();
 }
 async function assignTasks(page: Page) {
-  await page.getByRole("radio", { name: "Backlog", exact: true }).click();
+  await page.getByRole("tab", { name: "Backlog", exact: true }).click();
   await page.getByRole("button", { name: "Select tasks", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select task: PC onboarding", exact: true }).check();
   await page.getByRole("checkbox", { name: "Select task: MacBook checkout", exact: true }).check();
@@ -145,8 +170,8 @@ test("cross-machine sprint supports planning, inheritance, completion and frozen
   await allProjects(page);
   await createSprint(page);
   await assignTasks(page);
-  await page.getByRole("radio", { name: "Sprints", exact: true }).click();
-  await choose(page, "Sprint", "Release confidence");
+  await page.getByRole("tab", { name: "Sprints", exact: true }).click();
+  await filterSprint(page, "Release confidence");
   await page.getByRole("button", { name: /^Project:/ }).click();
   await expect(page.getByRole("option", { name: /^remote-api / })).toHaveCount(0);
   await expect(page.getByRole("option", { name: /^local-docs / })).toHaveCount(0);
@@ -156,7 +181,7 @@ test("cross-machine sprint supports planning, inheritance, completion and frozen
   await expect(page.getByRole("article", { name: "PC onboarding", exact: true })).toBeVisible();
   await expect(page.getByRole("article", { name: "MacBook checkout", exact: true })).toBeVisible();
   await choose(page, "Project", /^remote-project · Demo MacBook/);
-  await choose(page, "Sprint", "Release confidence");
+  await filterSprint(page, "Release confidence");
   await page.getByRole("button", { name: "New task", exact: true }).click();
   const newTask = page.getByRole("dialog", { name: "New task", exact: true });
   await newTask
@@ -176,10 +201,10 @@ test("cross-machine sprint supports planning, inheritance, completion and frozen
     )
     .toBe(3);
   await allProjects(page);
-  await choose(page, "Sprint", "Release confidence");
+  await filterSprint(page, "Release confidence");
   await page.getByRole("button", { name: "Start sprint", exact: true }).click();
   await expect(page.getByRole("button", { name: "Complete sprint", exact: true })).toBeVisible();
-  await page.getByRole("radio", { name: "Reports", exact: true }).click();
+  await page.getByRole("tab", { name: "Reports", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Burndown", exact: true })).toBeVisible();
   await expect(
     page.getByRole("table").first().getByRole("cell", { name: "3", exact: true }),
@@ -189,13 +214,13 @@ test("cross-machine sprint supports planning, inheritance, completion and frozen
     path: `${captures}/${test.info().project.name === "webkit" ? "webkit-" : ""}report-1440-dark.png`,
     fullPage: true,
   });
-  await page.getByRole("radio", { name: "Sprints", exact: true }).click();
+  await page.getByRole("tab", { name: "Sprints", exact: true }).click();
   await page.getByRole("button", { name: "Complete sprint", exact: true }).click();
   const completion = page.getByRole("dialog", { name: "Complete sprint", exact: true });
   await completion.getByRole("checkbox", { name: "PC onboarding", exact: true }).check();
   await completion.getByRole("button", { name: "Complete sprint", exact: true }).click();
   await expect(completion).not.toBeVisible();
-  await page.getByRole("radio", { name: "Reports", exact: true }).click();
+  await page.getByRole("tab", { name: "Reports", exact: true }).click();
   await expect(
     page.getByText("This report was frozen when the sprint completed.", { exact: true }),
   ).toBeVisible();

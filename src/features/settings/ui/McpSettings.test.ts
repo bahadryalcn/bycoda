@@ -435,6 +435,28 @@ it("keeps repeat sign-in in the connected row menu", async () => {
   expect(invoke).toHaveBeenCalledWith("mcp_provider_login", { cwd: "/repo", provider: "claude", name: "connected" });
 });
 
+it("shows checking instead of sign-in until Claude health arrives, then keeps a timed-out partial result", async () => {
+  let finish!: (result: { output: string; timedOut: boolean }) => void;
+  invoke.mockImplementation((command: string) => command === "mcp_discover"
+    ? Promise.resolve([
+        { provider: "claude", name: "hostinger", scope: "user", configPath: "/config/claude", transport: "http" },
+        { provider: "claude", name: "arc", scope: "user", configPath: "/config/claude", transport: "http" },
+      ])
+    : command === "claude_mcp_list" ? new Promise((resolve) => { finish = resolve; }) : Promise.resolve(undefined));
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  const signInButtons = () => [...container.querySelectorAll("button")].filter((button) => button.textContent === "Sign in");
+  expect(container.textContent).toContain("Checking…");
+  expect(signInButtons()).toHaveLength(0);
+  // Windows consoles print √; arc was never reached before the CLI was stopped.
+  await act(async () => finish({ output: "hostinger: https://mcp.hostinger.com (HTTP) - √ Connected", timedOut: true }));
+  const row = (name: string) => container.querySelector(`[aria-label="Actions for ${name}"]`)!.parentElement!;
+  expect(row("hostinger").textContent).toContain("√ Connected");
+  expect(row("hostinger").textContent).not.toContain("Sign in");
+  expect(container.textContent).toContain("Claude did not finish checking every server in time.");
+  expect(signInButtons()).toHaveLength(1);
+  expect(row("arc").textContent).toContain("Sign in");
+});
+
 it("shows only configured provider chips until the filter button reveals all", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   await openFilters();

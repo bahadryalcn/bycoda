@@ -37,6 +37,8 @@ function snapshot(page: Page) {
     (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.snapshot(),
   );
 }
+// The fixture module installs its controls after top-level awaits; goto can resolve first.
+const fixtureReady = (page: Page) => page.waitForFunction(() => "editorRecoveryFixture" in window);
 const recoveredEditor = (page: Page) => page.locator('[data-workspace="recovered"] .cm-content');
 async function openHostReports(page: Page) {
   await page.getByRole("button", { name: /^Recovered work(?: \(\d+\))?$/ }).click();
@@ -52,6 +54,7 @@ for (const light of [true, false]) {
     }, info) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/tests/browser/editor-recovery.html?host-empty&host-error");
+      await fixtureReady(page);
       await page.evaluate(
         (value) =>
           (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setTheme(
@@ -137,6 +140,7 @@ for (const light of [true, false]) {
     }, info) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/tests/browser/editor-recovery.html?host-scale");
+      await fixtureReady(page);
       await page.evaluate(
         (value) =>
           (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setTheme(
@@ -221,8 +225,25 @@ const sourceRow = (page: Page) =>
     .locator("li")
     .filter({ hasText: "Earlier desktop window" });
 async function openCatalog(page: Page) {
+  // The active file editor takes keyboard focus once its document loads. Let that
+  // settle first (or the open error show) so the Enter below reaches the recovery
+  // control, not the editor.
+  const existing = page.locator('[data-workspace="existing"]');
+  await expect(
+    existing.locator(".cm-content").or(existing.getByRole("alert")).first(),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          !document.querySelector('[data-workspace="existing"] .cm-editor') ||
+          !!document.activeElement?.closest(".cm-editor"),
+      ),
+    )
+    .toBe(true);
   const open = page.getByRole("button", { name: /^Recovered work(?: \(\d+\))?$/ });
   await open.focus();
+  await expect(open).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog", { name: "Recovered work", exact: true })).toBeVisible();
   await expect(sourceRow(page)).toBeVisible();

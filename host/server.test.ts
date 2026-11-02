@@ -2454,6 +2454,14 @@ describe("scoped Conversation Tools RPC", () => {
       relay.mockRestore();
     }
   });
+  it("reports real browser runtime readiness to conversation tools", async () => {
+    const s = await sessionTools();
+    expect((await s.tool("browser.status")).value.result).toMatchObject({
+      open: false,
+      runtime: { installed: false, installing: false },
+      setup: expect.stringContaining("Set up host browser"),
+    });
+  });
   it("allows paired owner browser takeover while denying takeover by conversation tools", async () => {
     const s = await sessionTools();
     const agent = (await s.tool("browser.claim")).value.result;

@@ -2951,6 +2951,7 @@
   "Showing available providers": "Mevcut sağlayıcılar gösteriliyor",
   "Filter MCP servers by provider": "MCP sunucularını sağlayıcıya göre filtreleyin",
   "Claude connection status unavailable: ": "Claude bağlantı durumu mevcut değil: ",
+  "Claude did not finish checking every server in time. Servers it did not reach show Configured.": "Claude her sunucuyu zamanında kontrol edemedi. Ulaşamadığı sunucular “Configured” olarak görünür.",
   "Checking servers…": "Sunucular kontrol ediliyor…",
   "No MCP servers configured for this provider.": "Bu sağlayıcı için yapılandırılmış MCP sunucusu yok.",
   "Scope to remove {p0} from": "{p0}'ın kaldırılacağı kapsam",

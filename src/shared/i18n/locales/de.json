@@ -2714,6 +2714,7 @@
   "Showing available providers": "Verfügbare Anbieter anzeigen",
   "Filter MCP servers by provider": "MCP-Server nach Anbieter filtern",
   "Claude connection status unavailable: ": "Claude Verbindungsstatus nicht verfügbar: ",
+  "Claude did not finish checking every server in time. Servers it did not reach show Configured.": "Claude hat nicht alle Server rechtzeitig geprüft. Nicht erreichte Server werden als „Configured“ angezeigt.",
   "Checking servers…": "Server werden überprüft…",
   "No MCP servers configured for this provider.": "Für diesen Anbieter sind keine MCP-Server konfiguriert.",
   "Scope to remove {p0} from": "Bereich, aus dem {p0} entfernt werden soll",

@@ -159,7 +159,6 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       }));
       if (family === "workspace")
         return { tools: workspace, total: workspace.length, nextOffset: null };
-      const selected = target(args);
       const options: VoiceToolSelection = {
         ...(typeof args.query === "string" ? { query: args.query } : {}),
         ...(typeof args.category === "string" ? { category: args.category } : {}),
@@ -167,10 +166,25 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
         ...(typeof args.offset === "number" ? { offset: args.offset } : {}),
         ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
       };
-      const page = await discoverVoiceTools(selected, options);
-      assertActive();
-      project(selected.cwd);
-      return { ...page, workspaceTools: workspace };
+      // Host tools need a verified project; desktop workspace actions do not.
+      // A Host failure must not hide the workspace actions as well.
+      try {
+        const selected = target(args);
+        const page = await discoverVoiceTools(selected, options);
+        assertActive();
+        project(selected.cwd);
+        return { ...page, workspaceTools: workspace };
+      } catch (error) {
+        assertActive();
+        return {
+          tools: [],
+          total: 0,
+          nextOffset: null,
+          hostToolsError:
+            error instanceof Error ? error.message : "Project tools could not be listed.",
+          workspaceTools: workspace,
+        };
+      }
     }
     if (name !== "app_tool_call") throw new Error("Unknown voice tool.");
     const action = text(args.action, "action")!;

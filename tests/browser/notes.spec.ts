@@ -479,7 +479,7 @@ test("bounds a thousand large notes while fetching selected details and moving k
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/tests/browser/notes.html?count=1000");
   await expect(page.getByLabel("Note title", { exact: true })).toHaveValue("Release planning");
-  const cards = page.locator("[data-note-library] li button");
+  const cards = page.locator("[data-note-library] li button[data-note-id]");
   await expect.poll(() => cards.count()).toBeLessThanOrEqual(32);
   const initialCalls = await page.evaluate(
     () =>

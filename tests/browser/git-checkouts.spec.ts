@@ -394,15 +394,19 @@ test("grouped commit forms retain their height and drafts after disclosure and r
         light,
       );
       await expect.poll(async () => (await frame.boundingBox())!.height).toBeGreaterThan(32);
-      const input = (await frame.boundingBox())!;
-      // One contextual primary (Commit or sync) sits in a single row with its menu.
+      // One contextual primary (Commit or sync) sits below the message in a single row with
+      // its menu. The autosized message can still be settling after a width or theme change,
+      // so measure all three boxes together until the layout is stable.
       const primary = panel.locator('[data-split-part="primary"]').first();
-      const commit = (await primary.boundingBox())!;
-      const options = (await panel
-        .getByRole("button", { name: "Commit options", exact: true })
-        .boundingBox())!;
-      expect(commit.y).toBeGreaterThanOrEqual(input.y + input.height);
-      expect(Math.abs(options.y - commit.y)).toBeLessThan(2);
+      const optionsButton = panel.getByRole("button", { name: "Commit options", exact: true });
+      await expect
+        .poll(async () => {
+          const input = (await frame.boundingBox())!;
+          const commit = (await primary.boundingBox())!;
+          const options = (await optionsButton.boundingBox())!;
+          return commit.y >= input.y + input.height - 0.5 && Math.abs(options.y - commit.y) < 2;
+        })
+        .toBe(true);
       expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );

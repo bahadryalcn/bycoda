@@ -40,6 +40,15 @@ async function roleColor(page: Page, role: string) {
     return color;
   }, role);
 }
+// The inset ring uses the shared focus width token.
+const focusRing = (el: Element) => {
+  const style = getComputedStyle(el);
+  return (
+    style.outlineStyle === "solid" &&
+    parseFloat(style.outlineWidth) > 0 &&
+    style.outlineWidth === style.getPropertyValue("--ui-focus-width").trim()
+  );
+};
 const background = (row: Locator) => row.evaluate((el) => getComputedStyle(el).backgroundColor);
 // Layout height: a popover that is still scaling in has a smaller bounding box.
 const height = (row: Locator) => row.evaluate((el) => (el as HTMLElement).offsetHeight);
@@ -174,9 +183,10 @@ test("measures the hover, pressed, highlight and danger roles on the raised menu
     await page.mouse.move(600, 500);
     await page.mouse.up();
 
-    // Keyboard highlight and an expanded branch use the hover role; they never invent a tint.
-    expect(await background(rows.getByTestId("row-highlight"))).toBe(hover);
-    expect(await background(rows.getByTestId("row-expanded"))).toBe(hover);
+    // Keyboard highlight and an expanded branch use the shared selected role; they never invent a tint.
+    const selected = await roleColor(page, "--ui-surface-selected");
+    expect(await background(rows.getByTestId("row-highlight"))).toBe(selected);
+    expect(await background(rows.getByTestId("row-expanded"))).toBe(selected);
 
     await danger.hover();
     await settle(page);
@@ -238,7 +248,7 @@ test("dropdown keyboard: roving focus, disabled rows skipped, Escape returns foc
   // Keyboard focus is visible: the shared ring is inset and the row takes the hover fill.
   const focused = menu.getByRole("menuitem", { name: "Copy path" });
   await settle(page);
-  expect(await focused.evaluate((el) => getComputedStyle(el).outlineWidth)).toBe("2px");
+  expect(await focused.evaluate(focusRing)).toBe(true);
   expect(await background(focused)).toBe(await roleColor(page, "--ui-surface-hover"));
   await page.keyboard.press("ArrowDown"); // Archive is disabled and skipped.
   await expect(menu.getByRole("menuitem", { name: /Rename the current checkout/ })).toBeFocused();
@@ -368,10 +378,10 @@ test("context menu: point placement, edge flip, keyboard submenu and Escape", as
   await page.keyboard.press("ArrowDown");
   const more = menu.getByRole("menuitem", { name: "Open with" });
   await expect(more).toHaveAttribute("data-highlighted", "true");
-  // The keyboard highlight is visible without hover: fill plus the inset focus ring.
+  // The keyboard highlight is visible without hover: the selected fill plus the inset focus ring.
   await settle(page);
-  expect(await more.evaluate((el) => getComputedStyle(el).outlineWidth)).toBe("2px");
-  expect(await background(more)).toBe(await roleColor(page, "--ui-surface-hover"));
+  expect(await more.evaluate(focusRing)).toBe(true);
+  expect(await background(more)).toBe(await roleColor(page, "--ui-surface-selected"));
   await page.keyboard.press("ArrowRight");
   const sub = page.getByRole("menu", { name: "Open with" });
   await expect(sub).toBeVisible();

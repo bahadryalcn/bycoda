@@ -9,11 +9,15 @@
   min-inline-size: 0;
   max-inline-size: 32rem;
 }
+/* The filter stays beside the search field at every width. */
 .toolbar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  min-inline-size: 0;
+}
+.toolbar > :not(.search) {
+  flex: none;
 }
 .filterLabel {
   color: var(--ui-text-secondary);
@@ -73,12 +77,16 @@
   }
 }
 .providerIcon {
+  display: flex;
+  align-items: center;
   align-self: start;
-  padding-block-start: 4px;
+  min-block-size: var(--ui-control-height-compact);
 }
 .identity {
   min-inline-size: 0;
+  min-block-size: var(--ui-control-height-compact);
   display: grid;
+  align-content: center;
   gap: 2px;
   grid-column: 2;
   grid-row: 1;
@@ -108,10 +116,17 @@
 }
 .status {
   grid-column: 4;
-  grid-row: 1 / 3;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
   align-self: start;
   justify-self: start;
+  min-block-size: var(--ui-control-height-compact);
   max-inline-size: 14rem;
+  min-inline-size: 0;
+}
+.statusBadge {
+  max-inline-size: 100%;
   overflow-wrap: anywhere;
 }
 .details {
@@ -120,15 +135,16 @@
 }
 .rowActions {
   grid-column: 3;
-  grid-row: 1 / 3;
+  grid-row: 1;
   display: flex;
+  align-items: center;
   justify-content: end;
   align-self: start;
   min-inline-size: 0;
 }
 .rowMenu {
   grid-column: 5;
-  grid-row: 1 / 3;
+  grid-row: 1;
   align-self: start;
 }
 .scopeHelp {

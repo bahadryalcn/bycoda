@@ -27,6 +27,7 @@ import { clearProjectLogo, pickAndSetProjectLogo } from "../../projects/model/pr
 import { TAB_GROUP_COLORS } from "../model/tabGroups";
 import { ColorPickerPopover, ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../shared/ui/Popover";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { MenuRow as SharedMenuRow } from "../../../shared/ui/MenuRow";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectIconPicker } from "../../projects/ui/ProjectIconPicker";
@@ -95,6 +96,7 @@ type Props = {
 };
 
 const MENU_WIDTH = 260;
+const APPEARANCE_WIDTH = 296;
 
 type MenuItem = {
   id: string;
@@ -226,6 +228,9 @@ export function TabGroupMenu({
   };
 
   const onMenuKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    // Keys from the nested appearance popover bubble here through the React tree; they belong
+    // to that popover's own controls (swatches, icon grid, colour sliders).
+    if (!(e.target instanceof Node) || !e.currentTarget.contains(e.target)) return;
     if (e.key === "Enter" && e.target === input.current) {
       e.preventDefault();
       if (commitName()) onClose();
@@ -322,7 +327,10 @@ export function TabGroupMenu({
       ) : null}
       {logoError ? <Alert tone="danger" role="alert">{logoError}</Alert> : null}
 
-      <div className="mb-2">
+      <SectionLabel as="div" className="mb-1.5">
+        {t("Color")}
+      </SectionLabel>
+      <div className="mb-3">
         <ColorSwatchRow
           colors={TAB_GROUP_COLORS}
           colorIndex={colorIndex}
@@ -337,10 +345,12 @@ export function TabGroupMenu({
       </div>
 
       {customPickerOpen ? (
-        <ColorPickerPopover
-          value={customColor ?? normalizeHex(currentColor)}
-          onChange={(color) => onCustomColorChange(groupId, color)}
-        />
+        <div className="mb-3">
+          <ColorPickerPopover
+            value={customColor ?? normalizeHex(currentColor)}
+            onChange={(color) => onCustomColorChange(groupId, color)}
+          />
+        </div>
       ) : null}
 
       <ProjectIconPicker
@@ -508,33 +518,35 @@ export function TabGroupMenu({
           </>
         ) : null}
         {footer}
+        {/* Rendered inside the menu so the overlay stack sees it (and the colour pickers it
+            opens) as part of the menu: using them must not dismiss the menu. */}
+        {compactAppearance && appearanceAnchor ? (
+          <Popover
+            anchor={appearanceAnchor}
+            side="right"
+            align="start"
+            gap={4}
+            width={APPEARANCE_WIDTH}
+            constrainHeight
+            role="dialog"
+            tabIndex={-1}
+            autoFocus
+            aria-label={t("Appearance")}
+            data-menu-owner={menuId}
+            ignore={`[data-menu-owner="${menuId}"]`}
+            onDismiss={(reason) => {
+              if (reason === "outside") onClose();
+              else {
+                appearanceAnchor.focus();
+                setAppearanceAnchor(null);
+              }
+            }}
+            className="bycoda-arc overflow-y-auto overscroll-contain p-3"
+          >
+            {appearance}
+          </Popover>
+        ) : null}
       </Popover>
-      {compactAppearance && appearanceAnchor ? (
-        <Popover
-          anchor={appearanceAnchor}
-          side="right"
-          align="start"
-          gap={4}
-          width={MENU_WIDTH}
-          constrainHeight
-          role="dialog"
-          tabIndex={-1}
-          autoFocus
-          aria-label={t("Appearance")}
-          data-menu-owner={menuId}
-          ignore={`[data-menu-owner="${menuId}"]`}
-          onDismiss={(reason) => {
-            if (reason === "outside") onClose();
-            else {
-              appearanceAnchor.focus();
-              setAppearanceAnchor(null);
-            }
-          }}
-          className="bycoda-arc overflow-y-auto overscroll-contain p-2"
-        >
-          {appearance}
-        </Popover>
-      ) : null}
       {submenu?.item.submenu ? (
         <ContextMenu
           className="bycoda-arc"
@@ -569,7 +581,7 @@ function MenuRow({
   return (
     <SharedMenuRow
       destructive={item.danger}
-      branchWidth={item.id === "appearance" ? MENU_WIDTH : 228}
+      branchWidth={item.id === "appearance" ? APPEARANCE_WIDTH : 228}
       type="button"
       role="menuitem"
       disabled={item.disabled}

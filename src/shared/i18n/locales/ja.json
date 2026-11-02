@@ -2714,6 +2714,7 @@
   "Showing available providers": "利用可能なプロバイダーを表示する",
   "Filter MCP servers by provider": "プロバイダーごとに MCP サーバーをフィルタリングする",
   "Claude connection status unavailable: ": "クロードの接続ステータスが利用できません: ",
+  "Claude did not finish checking every server in time. Servers it did not reach show Configured.": "Claude は時間内にすべてのサーバーを確認できませんでした。確認できなかったサーバーは「Configured」と表示されます。",
   "Checking servers…": "サーバーをチェック中…",
   "No MCP servers configured for this provider.": "このプロバイダー用に構成された MCP サーバーはありません。",
   "Scope to remove {p0} from": "{p0} を削除するスコープ",

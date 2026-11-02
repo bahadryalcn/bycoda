@@ -26,7 +26,7 @@ export function ProjectIconPicker({
   const selected = projectMascot(project, name);
   const icons = filterProjectMascots(query, category);
   return (
-    <div className="mb-2 px-0.5" data-project-icon-picker>
+    <div className="mb-3 px-0.5" data-project-icon-picker>
       <div className="mb-2 flex items-center gap-2">
         <ProjectMascot
           project={project}
@@ -92,7 +92,7 @@ export function ProjectIconPicker({
               aria-label={t("Project icon: {p0}", { p0: icon.label })}
               aria-pressed={selected.name === icon.name}
               onClick={() => onPick(icon.name)}
-              className={` flex min-h-16 min-w-0 flex-col items-center justify-center gap-1    `}
+              className="flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 px-0.5"
             >
               <ProjectMascot project={project} name={icon.name} className="size-7 shrink-0" />
               <span className="max-w-full truncate text-ui-caption text-(--ui-text-secondary)">

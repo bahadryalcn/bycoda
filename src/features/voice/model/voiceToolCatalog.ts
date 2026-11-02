@@ -31,6 +31,11 @@ export type VoiceToolPage = {
   categories: string[];
 };
 
+/** Host action ids: dot or underscore separated words; words may contain hyphens
+ * (for example "programs.preview-schedule"). */
+export const VOICE_TOOL_ACTION =
+  /^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*(?:[._][A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)*$/;
+
 export function isVoiceToolFamily(value: unknown): value is VoiceToolFamily {
   return value === "conversation" || value === "social" || value === "runtime-logs";
 }
@@ -49,7 +54,7 @@ export function readVoiceToolCatalog(value: unknown): VoiceToolDescriptor[] {
       !record(entry) ||
       !isVoiceToolFamily(entry.family) ||
       typeof entry.action !== "string" ||
-      !/^[A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)*$/.test(entry.action) ||
+      !VOICE_TOOL_ACTION.test(entry.action) ||
       entry.action.length > 200 ||
       typeof entry.name !== "string" ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(entry.name) ||

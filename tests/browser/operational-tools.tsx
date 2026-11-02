@@ -147,7 +147,11 @@ if (params.get("lang") === "de") {
   await setDomainLanguagePreference("technical", "app");
 }
 createRoot(document.getElementById("root")!).render(
-  <main className="host-tools host-tools-section" style={{ minHeight: "100vh" }}>
+  <main
+    className="host-tools host-tools-section"
+    // The device stage sizes its screen from a definite pane height, as in the docked tool.
+    style={params.get("tool") === "servers" ? { minHeight: "100vh" } : { height: "100vh" }}
+  >
     {params.get("tool") === "servers" ? (
       <DevServersPanel cwd="/fixture/project" />
     ) : (

@@ -178,8 +178,18 @@ it("permits an explicit different visible project without inheriting the old ses
 
 it("refuses hidden projects and cross-session access in session scope", async () => {
   const { controller, state } = setup();
-  await expect(controller.execute("app_tools_list", { projectPath: "/hidden" })).rejects.toThrow(
-    "hidden, locked",
+  // Hidden projects get no Host tools, but desktop workspace actions stay listed.
+  const hidden = (await controller.execute("app_tools_list", { projectPath: "/hidden" })) as {
+    tools: unknown[];
+    hostToolsError: string;
+    workspaceTools: unknown[];
+  };
+  expect(hidden.tools).toEqual([]);
+  expect(hidden.hostToolsError).toMatch("hidden, locked");
+  expect(hidden.workspaceTools.length).toBeGreaterThan(0);
+  expect(mock.discover).not.toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: "/hidden" }),
+    expect.anything(),
   );
   state.scope = "session";
   await expect(controller.execute("composer_context", { sessionId: "b" })).rejects.toThrow(

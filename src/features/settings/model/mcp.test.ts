@@ -18,7 +18,7 @@ it("offers OAuth only for enabled remote connections with a supported CLI", () =
 });
 
 it("recognizes only confirmed connected health as a repeat sign-in", () => {
-  for (const status of ["Connected", "✔ Connected", "✓ Connected"]) expect(isMcpConnected(status)).toBe(true);
+  for (const status of ["Connected", "✔ Connected", "✓ Connected", "√ Connected"]) expect(isMcpConnected(status)).toBe(true);
   for (const status of ["Configured", "Disabled", "Disconnected", "Needs authentication", "Unknown", "Error"]) expect(isMcpConnected(status)).toBe(false);
 });
 
@@ -26,11 +26,12 @@ describe("Claude MCP list", () => {
   it("keeps server names and health while omitting launch details", () => {
     expect(
       parseClaudeMcpList(
-        "Checking MCP server health...\nnotion: https://example.com/mcp - ! Needs authentication\nlocal_tools: npx tools - --token secret - ✔ Connected\n",
+        "Checking MCP server health...\nnotion: https://example.com/mcp - ! Needs authentication\nlocal_tools: npx tools - --token secret - ✔ Connected\nhostinger: https://mcp.hostinger.com (HTTP) - √ Connected\nplugin:legal:gmail: (HTTP) - - Not configured\n",
       ),
     ).toEqual([
       { name: "notion", status: "! Needs authentication" },
       { name: "local_tools", status: "✔ Connected" },
+      { name: "hostinger", status: "√ Connected" },
     ]);
   });
 });

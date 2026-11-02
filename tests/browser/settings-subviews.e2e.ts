@@ -11,8 +11,11 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "About this page", exact: true }).click();
       await expect(page.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
       await page.keyboard.press("Escape");
-      // Templates are an open group now; with nothing edited their explicit Save stays disabled.
-      await expect(chat.getByRole("button", { name: "Save templates", exact: true })).toBeDisabled();
+      // With no templates the group shows only its empty row; Save appears once there is an edit.
+      await expect(chat.getByText("No templates yet", { exact: true })).toBeVisible();
+      await expect(chat.getByRole("button", { name: "Save templates", exact: true })).toHaveCount(
+        0,
+      );
       const anchor = chat.getByRole("switch", { name: "Anchor prompts to top", exact: true });
       const wasChecked = await anchor.isChecked();
       await anchor.focus();
@@ -77,8 +80,12 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
           theme === "light" ? /theme-light/ : /^(?!.*theme-light)/,
         );
         // The scheme is a segmented radio group (System / Light / Dark), not three buttons.
-        await expect(page.getByRole("radio", { name: themeLabels.theme, exact: true })).toBeChecked();
+        await expect(
+          page.getByRole("radio", { name: themeLabels.theme, exact: true }),
+        ).toBeChecked();
         await expect(page.locator("details.settings-advanced")).toHaveCount(0);
+        // Dark lightness lives in the closed "Custom surface colors" toggle row.
+        await page.getByRole("button", { name: themeLabels.surfaceColors, exact: true }).click();
         const brightness = page.locator('[data-setting-id="dark-lightness"]').getByRole("slider");
         if (theme === "light") await expect(brightness).toHaveAttribute("aria-disabled", "true");
         else await expect(brightness).not.toHaveAttribute("aria-disabled", "true");
@@ -180,7 +187,9 @@ for (const theme of ["light", "dark"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/settings.html?section=mcp&mcp=1&theme=${theme}`);
       const connections = page.locator("#setting-mcp-servers");
-      const details = connections.locator("section:has(> h3[aria-label])");
+      const list = connections.getByRole("region", { name: "MCP connections", exact: true });
+      // One row per connection; each row owns exactly one actions menu button.
+      const details = list.locator(":scope > div:has(button[aria-haspopup='menu'])");
       // Connections load in batches of 16 and extend with "Show more connections".
       await expect(details).toHaveCount(16);
       await expect(connections.getByRole("status")).toHaveText("1–16 of 25 connections");
@@ -190,10 +199,10 @@ for (const theme of ["light", "dark"])
       const scroller = page.locator("[data-settings-scroller]");
       await connections.getByRole("button", { name: "Show more connections", exact: true }).click();
       await expect(details).toHaveCount(25);
-      await expect(connections.getByRole("status")).toHaveText("1–25 of 25 connections");
+      // The range status only shows while more connections remain to reveal.
+      await expect(connections.getByRole("status")).toHaveCount(0);
       await connections.getByRole("searchbox", { name: "Search MCP servers" }).fill("server-24");
       await expect(details).toHaveCount(1);
-      await expect(connections.getByRole("status")).toHaveText("1–1 of 1 connections");
       await details.locator("summary").click();
       await expect(details.getByText(/config-24.json/)).toBeVisible();
       expect(await scroller.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(
@@ -208,7 +217,8 @@ for (const theme of ["light", "dark"])
       await filterDialog.getByRole("button", { name: /^Codex/ }).click();
       await page.keyboard.press("Escape");
       await expect(filters).toBeFocused();
-      await expect(connections.getByRole("status")).toHaveText("1–12 of 12 connections");
+      await expect(details).toHaveCount(12);
+      await expect(connections.getByRole("status")).toHaveCount(0);
       mkdirSync("temp/verification/2026-10-15-mcp", { recursive: true });
       await page.screenshot({ path: `temp/verification/2026-10-15-mcp/${theme}-${width}.png` });
     });

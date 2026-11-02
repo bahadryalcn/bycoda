@@ -24,8 +24,9 @@ export function canSignInMcp(connection: McpConnection): boolean {
     ["http", "sse", "streamable-http", "remote"].includes(connection.transport.toLowerCase());
 }
 
+/** Claude prints `✓ Connected` on most terminals and `√ Connected` on Windows consoles. */
 export function isMcpConnected(status: string): boolean {
-  return /^(?:[✔✓]\s*)?connected$/i.test(status.trim());
+  return /^(?:[✔✓√]\s*)?connected$/i.test(status.trim());
 }
 
 /** Claude's list output is for humans; keep only names and health text. */

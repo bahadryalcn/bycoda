@@ -1433,22 +1433,36 @@ fn legacy_accepted_lost_reply_restored_without_status_capability_does_not_replay
         drop(socket);
         let mut complete =
             tokio::task::spawn_blocking(move || wait.recv_timeout(Duration::from_secs(5)).unwrap());
-        let mut fresh = tokio::select! {
-            result=&mut complete=>{result.unwrap();return;},
-            socket=accept(&listener)=>socket,
-        };
-        // Constructing a real process-owned caller may open its idle transport.
-        // The forbidden action is replaying the original update, not hello.
-        hello(&mut fresh, &["native.buffers.update"], "host.1").await;
+        // The pre-restart broker may reconnect before `fixture.restart()` and
+        // then close, so every connection until completion is served alike:
+        // a closed one is skipped and the next accepted one is watched.
         loop {
-            tokio::select! {
+            let mut fresh = tokio::select! {
                 result=&mut complete=>{result.unwrap();return;},
-                frame=fresh.next()=>match frame {
-                    Some(Ok(Message::Text(text)))=>panic!("legacy original was replayed: {}",serde_json::from_str::<Value>(&text).unwrap()["method"]),
-                    Some(Ok(Message::Ping(data)))=>fresh.send(Message::Pong(data)).await.unwrap(),
-                    Some(Ok(Message::Pong(_)))=>{},
-                    Some(Ok(Message::Close(_)))|Some(Err(_))|None=>{complete.await.unwrap();return;},
-                    other=>panic!("unexpected legacy fixture frame: {other:?}"),
+                socket=try_accept(&listener)=>match socket {
+                    Some(socket)=>socket,
+                    None=>continue,
+                },
+            };
+            // Constructing a real process-owned caller may open its idle transport.
+            // The forbidden action is replaying the original update, not hello.
+            let greeted = tokio::select! {
+                result=&mut complete=>{result.unwrap();return;},
+                greeted=try_hello(&mut fresh, &["native.buffers.update"], "host.1")=>greeted,
+            };
+            if !greeted {
+                continue;
+            }
+            loop {
+                tokio::select! {
+                    result=&mut complete=>{result.unwrap();return;},
+                    frame=fresh.next()=>match frame {
+                        Some(Ok(Message::Text(text)))=>panic!("legacy original was replayed: {}",serde_json::from_str::<Value>(&text).unwrap()["method"]),
+                        Some(Ok(Message::Ping(data)))=>fresh.send(Message::Pong(data)).await.unwrap(),
+                        Some(Ok(Message::Pong(_)))=>{},
+                        Some(Ok(Message::Close(_)))|Some(Err(_))|None=>break,
+                        other=>panic!("unexpected legacy fixture frame: {other:?}"),
+                    }
                 }
             }
         }

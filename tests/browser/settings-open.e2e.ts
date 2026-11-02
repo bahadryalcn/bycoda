@@ -9,6 +9,14 @@ for (const theme of ["light", "dark"]) {
       const appearance = page.locator(".appearance-settings");
       await expect(appearance.locator("details, summary")).toHaveCount(0);
       await expect(appearance.locator(".appearance-section")).toHaveCount(6);
+      // Custom surface colors (hue, saturation, dark lightness) sit behind a closed toggle row.
+      const surfaceColors = appearance.getByRole("button", {
+        name: "Özel yüzey renkleri",
+        exact: true,
+      });
+      await expect(surfaceColors).toHaveAttribute("aria-expanded", "false");
+      await surfaceColors.click();
+      await expect(surfaceColors).toHaveAttribute("aria-expanded", "true");
       for (const id of ["dark-lightness", "code-font-size", "sidebar-opacity", "tab-animations"]) {
         await expect(appearance.locator(`[data-setting-id="${id}"]`)).toBeVisible();
       }
@@ -82,10 +90,20 @@ test("settings expose advanced controls without opening a menu", async ({ page }
       )
       .toEqual((optionalDisclosures[section] ?? []).slice().sort());
     if (section === "connections") {
-      const recovery = form.getByRole("region", { name: "Connection recovery", exact: true });
-      await expect(recovery).toContainText("Retrying uses the saved address and account", {
-        useInnerText: false,
-      });
+      const recovery = form.locator('[data-setting-id="remote-auto-reconnect"]');
+      await expect(
+        recovery.getByRole("switch", {
+          name: "Automatically reconnect to remote machines",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await recovery.getByRole("button", { name: "Help", exact: true }).click();
+      await expect(
+        page.getByText("You can still reconnect manually when this is off.", {
+          exact: false,
+        }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
     }
     if (section === "general") {
       const buildDetails = form.getByTestId("build-identity-details");

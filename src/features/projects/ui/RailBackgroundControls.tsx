@@ -1,11 +1,12 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { ColorPickerPopover } from "../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../shared/ui/Popover";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Slider } from "../../../shared/ui/Slider";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t } from "../../../shared/i18n";
-import { type RailBackgrounds, railBackgroundColor } from "../../workspace/model/tabGroups";
+import type { RailBackgrounds } from "../../workspace/model/tabGroups";
 
 function ColorSwatchButton({
   label,
@@ -39,9 +40,13 @@ function ColorSwatchButton({
         />
       </Button>
       {open ? (
+        // Rendered inside the appearance popover, so the overlay stack treats it as a child:
+        // picking a colour does not dismiss the menu it belongs to.
         <Popover
           anchor={trigger}
           kind="dialog"
+          side="right"
+          align="start"
           aria-label={label}
           width={232}
           onDismiss={() => setOpen(false)}
@@ -66,66 +71,79 @@ export function RailBackgroundControls({
   group: boolean;
   onChange: (value: RailBackgrounds) => void;
 }) {
+  const regionId = useId();
+  const parts = group ? (["header", "body"] as const) : (["header"] as const);
+  const [expanded, setExpanded] = useState(() => parts.some((part) => !!value[part]));
   return (
-    <details className="rounded-md border border-(--ui-pane-border) text-ui-caption">
-      <summary className="cursor-pointer px-2 py-1.5 text-content">
+    <div>
+      <SectionLabel
+        as="div"
+        collapsible
+        expanded={expanded}
+        onExpandedChange={setExpanded}
+        controls={regionId}
+        count={parts.filter((part) => !!value[part]).length || null}
+      >
         {t("Background colors")}
-      </summary>
-      <div className="space-y-2 p-2">
-        {(group ? (["header", "body"] as const) : (["header"] as const)).map((part) => {
-          const current = value[part];
-          const label = t(
-            part === "body" ? "Expanded contents" : group ? "Group header" : "Project row",
-          );
-          const update = (patch: Partial<NonNullable<typeof current>>) =>
-            onChange({
-              ...value,
-              [part]: { color: current?.color ?? color, opacity: current?.opacity ?? 15, ...patch },
-            });
-          return (
-            <div
-              key={part}
-              className="space-y-1 rounded p-1"
-              style={{ background: railBackgroundColor(current) }}
-            >
-              <div className="flex items-center gap-2">
-                <label className="flex flex-1 items-center gap-2">
-                  <Checkbox
-                    checked={!!current}
-                    onChange={(event) =>
-                      onChange({
-                        ...value,
-                        [part]: event.target.checked ? { color, opacity: 15 } : undefined,
-                      })
-                    }
+      </SectionLabel>
+      {expanded ? (
+        <div id={regionId} className="mt-1 space-y-1">
+          {parts.map((part) => {
+            const current = value[part];
+            const label = t(
+              part === "body" ? "Expanded contents" : group ? "Group header" : "Project row",
+            );
+            const opacity = current?.opacity ?? 15;
+            const update = (patch: Partial<NonNullable<typeof current>>) =>
+              onChange({
+                ...value,
+                [part]: { color: current?.color ?? color, opacity, ...patch },
+              });
+            return (
+              <div
+                key={part}
+                className="rounded-(--ui-radius-control) bg-(--ui-surface-raised) px-2 py-1.5"
+              >
+                <div className="flex min-h-7 items-center gap-2">
+                  <label className="flex min-w-0 flex-1 items-center gap-2 text-ui-secondary">
+                    <Checkbox
+                      checked={!!current}
+                      onChange={(event) =>
+                        onChange({
+                          ...value,
+                          [part]: event.target.checked ? { color, opacity: 15 } : undefined,
+                        })
+                      }
+                    />
+                    <span className="truncate">{label}</span>
+                  </label>
+                  <ColorSwatchButton
+                    label={`${label}: ${t("Color")}`}
+                    value={current?.color ?? color}
+                    disabled={!current}
+                    onChange={(hex) => update({ color: hex })}
                   />
-                  <span>{label}</span>
-                </label>
-                <ColorSwatchButton
-                  label={`${label}: ${t("Color")}`}
-                  value={current?.color ?? color}
-                  disabled={!current}
-                  onChange={(hex) => update({ color: hex })}
-                />
+                </div>
+                {current ? (
+                  <div className="flex items-center gap-2 text-ui-caption text-(--ui-text-muted)">
+                    <span className="shrink-0">{t("Opacity")}</span>
+                    <Slider
+                      hideLabel
+                      label={`${label}: ${t("Opacity")}`}
+                      min={0}
+                      max={100}
+                      value={opacity}
+                      onValueChange={(next) => update({ opacity: next })}
+                      className="min-w-0 flex-1"
+                    />
+                    <span className="w-9 shrink-0 text-end tabular-nums">{opacity}%</span>
+                  </div>
+                ) : null}
               </div>
-              <label className="flex items-center gap-2 text-(--ui-text-muted)">
-                <span>{t("Opacity")}</span>
-                <Slider
-                  hideLabel
-                  label={`${label}: ${t("Opacity")}`}
-                  min={0}
-                  max={100}
-                  value={current?.opacity ?? 15}
-                  disabled={!current}
-                  onValueChange={(next) => update({ opacity: next })}
-                  className="min-w-0 flex-1"
-                />
-                <span className="w-8 text-end">{current?.opacity ?? 15}%</span>
-              </label>
-            </div>
-          );
-        })}
-      </div>
-    </details>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }

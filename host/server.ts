@@ -3051,12 +3051,16 @@ export async function createHostServer(
                         )) as PreviewPresentation,
                     },
                   );
-                else if (action.startsWith("browser."))
+                else if (action.startsWith("browser.")) {
                   result = await sharedBrowser.dispatchForSession(
                     action,
                     { ...args, projectId, sessionId: boundPrincipal.sessionId },
                     voiceBrowserOwner ?? token,
                   );
+                  // Agents decide setup from real readiness, not from open:false.
+                  if (["browser.status", "browser.claim", "browser.release"].includes(action))
+                    result = await browserRuntime.describe(result as object);
+                }
                 else if (action.startsWith("tasks.")) {
                   const list = (await tasks.list()).filter((task) => task.projectId === projectId);
                   if (action === "tasks.create") {
@@ -3986,10 +3990,9 @@ export async function createHostServer(
                   if (params.projectId !== undefined)
                     await engine.store.project(String(params.projectId ?? ""));
                   await browserRuntime.setup();
-                  result = {
-                    ...(await sharedBrowser.dispatch("browser.status", params, token)),
-                    runtime: await browserRuntime.status(),
-                  };
+                  result = await browserRuntime.describe(
+                    await sharedBrowser.dispatch("browser.status", params, token),
+                  );
                   break;
                 case "browser.status":
                 case "browser.claim":
@@ -4006,14 +4009,13 @@ export async function createHostServer(
                     if (params.projectId !== undefined && session.projectId !== params.projectId)
                       throw new Error("Browser belongs to another project");
                   }
-                  result = {
-                    // Only paired owner RPCs may explicitly take control. Conversation
-                    // tools use dispatchForSession and cannot enable this option.
-                    ...(await sharedBrowser.dispatch(input.method, params, token, {
+                  // Only paired owner RPCs may explicitly take control. Conversation
+                  // tools use dispatchForSession and cannot enable this option.
+                  result = await browserRuntime.describe(
+                    await sharedBrowser.dispatch(input.method, params, token, {
                       takeover: input.method === "browser.claim" && params.takeover === true,
-                    })),
-                    runtime: await browserRuntime.status(),
-                  };
+                    }),
+                  );
                   break;
                 case "browser.annotation.start":
                 case "browser.annotation.hover":

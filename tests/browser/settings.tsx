@@ -325,6 +325,7 @@ function Fixture() {
         cancel: t("Cancel"),
         delete: t("Delete"),
         theme: t(theme === "light" ? "Light" : "Dark"),
+        surfaceColors: t("Custom surface colors"),
       })}
     >
       {open ? (
