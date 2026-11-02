@@ -48,8 +48,8 @@ for (const theme of ["light", "dark"]) {
       // Conversation provider and speaker are now independent controls. On a
       // phone, labels and controls stack. The nine-row group (with companion
       // identity and memory) stays compact without the former technical setup
-      // instructions.
-      expect(bounds!.height).toBeLessThan(width < 600 ? 1000 : 680);
+      // instructions. The phone budget leaves room for Linux font metrics.
+      expect(bounds!.height).toBeLessThan(width < 600 ? 1040 : 680);
     });
   }
 }

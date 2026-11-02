@@ -197,6 +197,10 @@ fn load(shell: &str) -> Catalog {
 /// PowerShell enumerates imported commands only, avoiding installed-module discovery
 /// that can exceed the bounded startup window on CI and heavily configured machines.
 fn shell_commands(shell: &str) -> Vec<String> {
+    shell_commands_within(shell, Duration::from_secs(3))
+}
+
+fn shell_commands_within(shell: &str, wait: Duration) -> Vec<String> {
     use std::process::{Command, Stdio};
     let args: &[&str] = match kind(shell) {
         "bash" => &["--noprofile", "--norc", "-c", "compgen -b"],
@@ -229,9 +233,7 @@ fn shell_commands(shell: &str) -> Vec<String> {
         let _ = stdout.take(MAX_BYTES).read_to_end(&mut bytes);
         let _ = send.send(bytes);
     });
-    let bytes = receive
-        .recv_timeout(Duration::from_secs(3))
-        .unwrap_or_default();
+    let bytes = receive.recv_timeout(wait).unwrap_or_default();
     let _ = child.kill();
     let _ = child.wait();
     String::from_utf8_lossy(&bytes)
@@ -366,7 +368,8 @@ mod tests {
             return;
         };
         if ["bash", "zsh", "powershell", "pwsh"].contains(&kind(&profile.path)) {
-            let names = shell_commands(&profile.path);
+            // A cold shell on a busy CI runner can outlast the 3 s product window.
+            let names = shell_commands_within(&profile.path, Duration::from_secs(30));
             assert!(
                 !names.is_empty(),
                 "installed shell command catalog should be readable"

@@ -5904,10 +5904,14 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
       expect(waiting.holdReason).toBeUndefined();
       expect(waiting.messages).toHaveLength(1);
       s.finish();
-      await vi.waitFor(async () => {
-        await vi.advanceTimersByTimeAsync(100);
-        expect(s.send).toHaveBeenCalledTimes(2);
-      });
+      // Dispatch also waits on real store I/O, which is slow on busy Windows runners.
+      await vi.waitFor(
+        async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          expect(s.send).toHaveBeenCalledTimes(2);
+        },
+        { timeout: 10_000 },
+      );
     } finally {
       vi.useRealTimers();
     }
