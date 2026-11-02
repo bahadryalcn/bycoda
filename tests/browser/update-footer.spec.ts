@@ -58,7 +58,7 @@ async function paint(locator: Locator) {
   });
 }
 
-test("joined actions share hover paint and retain separate hit targets, focus and update access", async ({
+test("joined actions paint hover per segment and retain separate hit targets, focus and update access", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -75,26 +75,30 @@ test("joined actions share hover paint and retain separate hit targets, focus an
   expect(boxes.every(Boolean)).toBe(true);
   expect(boxes[0]!.x + boxes[0]!.width).toBeLessThanOrEqual(boxes[1]!.x + 0.5);
   expect(boxes[1]!.x + boxes[1]!.width).toBeLessThanOrEqual(boxes[2]!.x + 0.5);
+  // The group owns only the outer boundary; each segment paints its own hover and press,
+  // so the state always names the action under the pointer.
+  const segments = [github, close, update];
+  const rest = (await paint(group)).background;
   const hovers = [];
-  for (const button of [github, close, update]) {
+  for (const button of segments) {
     await button.hover();
-    hovers.push((await paint(group)).background);
-    for (const child of [github, close, update])
-      expect((await paint(child)).background).toBe("rgba(0, 0, 0, 0)");
+    hovers.push((await paint(button)).background);
+    expect(hovers.at(-1)).not.toBe("rgba(0, 0, 0, 0)");
+    for (const child of segments)
+      if (child !== button) expect((await paint(child)).background).toBe("rgba(0, 0, 0, 0)");
+    expect((await paint(group)).background).toBe(rest);
   }
-  expect(new Set(hovers).size).toBe(1);
   const presses = [];
-  for (const button of [github, close, update]) {
+  for (const [index, button] of segments.entries()) {
     await button.hover();
     await page.mouse.down();
-    presses.push((await paint(group)).background);
-    for (const child of [github, close, update])
-      expect((await paint(child)).background).toBe("rgba(0, 0, 0, 0)");
+    presses.push((await paint(button)).background);
+    expect(presses.at(-1)).not.toBe(hovers[index]);
+    for (const child of segments)
+      if (child !== button) expect((await paint(child)).background).toBe("rgba(0, 0, 0, 0)");
     await page.mouse.move(700, 10);
     await page.mouse.up();
   }
-  expect(new Set(presses).size).toBe(1);
-  expect(presses[0]).not.toBe(hovers[0]);
   await github.focus();
   await expect(github).toBeFocused();
   await page.keyboard.press("Tab");

@@ -223,7 +223,7 @@ export function TaskForm({
             label={t("Description")}
             placeholder={t("Details, acceptance criteria, links…")}
             surface="raised"
-            maxHeight={320}
+            frameProps={{ "data-task-prompt": "" }}
           />
           <CrewTaskPicker
             cwd={draft.cwd}

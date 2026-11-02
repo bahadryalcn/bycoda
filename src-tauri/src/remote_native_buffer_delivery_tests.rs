@@ -1694,8 +1694,12 @@ fn http_staging_keeps_original_capacity_when_escaped_wrapper_exceeds_body_limit(
                 break;
             }
         }
+        // After the commit reply the client still verifies, records and
+        // acknowledges the 12 MB original (about 1 s in an idle debug build);
+        // a fixed 5 s window tripped on loaded shared CI runners. The wait only
+        // keeps the listener open to catch a resend, so give it the RPC budget.
         let mut complete =
-            tokio::task::spawn_blocking(move || wait.recv_timeout(Duration::from_secs(5)).unwrap());
+            tokio::task::spawn_blocking(move || wait.recv_timeout(DEFAULT_RPC_TIMEOUT).unwrap());
         tokio::select! {
             result=&mut complete=>result.unwrap(),
             _connection=listener.accept()=>panic!("completed HTTP original was sent or committed again"),

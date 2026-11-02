@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 
 for (const theme of ["dark", "light"]) {
   for (const width of [390, 768, 1024, 1440]) {
-    test(`notification collection stays bounded and searchable: ${theme} ${width}`, async ({
+    test(`notification collection flows with the page and stays searchable: ${theme} ${width}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 1000 });
@@ -34,19 +34,14 @@ for (const theme of ["dark", "light"]) {
       });
       const list = page.locator(".project-notification-list");
       await expect(list.locator("fieldset")).toHaveCount(41);
-      await list.scrollIntoViewIfNeeded();
+      // The project list flows with the settings page instead of nesting a second scroller.
       const geometry = await list.evaluate((element) => ({
         height: element.clientHeight,
         content: element.scrollHeight,
+        overflow: getComputedStyle(element).overflowY,
       }));
-      expect(geometry.height).toBeLessThanOrEqual(480);
-      expect(geometry.content).toBeGreaterThan(geometry.height * 2);
-      const toolbar = page.locator(".project-notification-toolbar");
-      const toolbarTop = (await toolbar.boundingBox())!.y;
-      await list.focus();
-      await page.keyboard.press("End");
-      await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-      expect((await toolbar.boundingBox())!.y).toBeCloseTo(toolbarTop, 0);
+      expect(geometry.overflow).toBe("visible");
+      expect(geometry.content).toBeLessThanOrEqual(geometry.height + 1);
       const search = page.getByRole("textbox", { name: "Search projects", exact: true });
       await search.fill("project-39");
       await expect(list.locator("fieldset")).toHaveCount(1);

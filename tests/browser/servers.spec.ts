@@ -411,7 +411,9 @@ for (const theme of ["dark", "light"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/servers.html?theme=${theme}`);
       const search = page.getByRole("textbox", { name: "Search servers" });
-      await expect(page.getByRole("list", { name: "Servers" }).locator("[data-server-row]")).toHaveCount(35);
+      await expect(
+        page.getByRole("list", { name: "Servers" }).locator("[data-server-row]"),
+      ).toHaveCount(35);
       await expect(page.getByRole("list", { name: "Servers" })).toContainText("Not connected");
       await mkdir(evidence, { recursive: true });
       await page.screenshot({ path: `${evidence}/servers-${theme}-${width}-inventory.png` });
@@ -625,9 +627,7 @@ test("quick connect is explicit, leaves inventory unsaved and keeps the raw tab 
   );
   expect((await calls()).some((item) => item.command.startsWith("ssh_terminal"))).toBe(false);
   await dialog.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(
-    page.getByRole("tab", { name: /^alice@quick\.example\.invalid:22/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("tab", { name: /^alice@quick\.example\.invalid:22/ })).toBeVisible();
   await expect
     .poll(
       async () => (await calls()).filter((item) => item.command.startsWith("ssh_terminal")).length,
@@ -635,7 +635,9 @@ test("quick connect is explicit, leaves inventory unsaved and keeps the raw tab 
     .toBe(1);
   expect((await calls()).some((item) => item.command === "server_ssh_save")).toBe(false);
   await page.getByRole("button", { name: "Servers", exact: true }).click();
-  await expect(page.getByRole("list", { name: "Servers" }).locator("[data-server-row]")).toHaveCount(35);
+  await expect(
+    page.getByRole("list", { name: "Servers" }).locator("[data-server-row]"),
+  ).toHaveCount(35);
   expect((await calls()).some((item) => item.command === "pty_kill")).toBe(false);
   // Raw-tab survival on Bash integration is asserted in the provider lifecycle test;
   // this real xterm fixture has no remote integration capability response.
@@ -973,7 +975,9 @@ for (const theme of ["light", "dark"]) {
       .locator("details:not(:has(details))")
       .filter({ hasText: "Restored tabs reconnect only when you choose Connect." });
     // At 390px the saved-tabs section and its pending list start collapsed.
-    const savedSection = page.locator('details:has(> summary:has-text("Saved SSH tabs")):has(details)');
+    const savedSection = page.locator(
+      'details:has(> summary:has-text("Saved SSH tabs")):has(details)',
+    );
     if (!(await savedSection.evaluate((node) => (node as HTMLDetailsElement).open)))
       await savedSection.locator(":scope > summary").click();
     await preview.locator(":scope > summary").click();
@@ -1202,13 +1206,13 @@ for (const theme of ["light", "dark"]) {
       .click();
     await editor
       .getByRole("textbox", { name: "Jump host 1: Identity file", exact: true })
-      .fill("C:/keys/first hop key");
+      .fill("~/keys/first hop key");
     await editor
       .getByRole("textbox", { name: "Jump host 1: Certificate file", exact: true })
-      .fill("C:/keys/first hop certificate.pub");
+      .fill("~/keys/first hop certificate.pub");
     await editor
       .getByRole("textbox", { name: "Jump host 1: Known hosts file", exact: true })
-      .fill("C:/trust/first hop known hosts");
+      .fill("~/trust/first hop known hosts");
     await toggle.click();
     await expect(editor.getByRole("textbox", { name: "Jump host", exact: true })).toHaveValue(
       "legacy@first.example.invalid:22",
@@ -1229,7 +1233,7 @@ for (const theme of ["light", "dark"]) {
       .click();
     await expect(
       editor.getByRole("textbox", { name: "Jump host 1: Identity file", exact: true }),
-    ).toHaveValue("C:/keys/first hop key");
+    ).toHaveValue("~/keys/first hop key");
     const folder = "temp/verification/2026-10-18-termius-goal-review-fixes/jump-policy-browser";
     await mkdir(folder, { recursive: true });
     await page.screenshot({ path: `${folder}/${theme}-390-editor.png` });
@@ -1247,9 +1251,9 @@ for (const theme of ["light", "dark"]) {
         host: "first.example.invalid",
         user: "operator",
         port: 2222,
-        identityFile: "C:/keys/first hop key",
-        certificateFile: "C:/keys/first hop certificate.pub",
-        knownHostsFile: "C:/trust/first hop known hosts",
+        identityFile: "~/keys/first hop key",
+        certificateFile: "~/keys/first hop certificate.pub",
+        knownHostsFile: "~/trust/first hop known hosts",
       },
     ]);
     expect(saved.endpoint.jumpHost).toBeUndefined();

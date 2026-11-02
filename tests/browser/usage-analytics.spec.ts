@@ -155,10 +155,10 @@ test("uses the full settings width, distinguishes views and follows configured a
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/usage-budgets.html?page=1&analytics=1");
   await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
-  // Usage is a wide Settings page: the 64rem column (960px of content), not the 52rem reading column.
+  // Usage uses the shared 80rem Settings column (1280px including its inline padding).
   const analyticsWidth = (await page.locator(".usage-analytics").boundingBox())!.width;
   expect(analyticsWidth).toBeGreaterThan(900);
-  expect(analyticsWidth).toBeLessThanOrEqual(1024);
+  expect(analyticsWidth).toBeLessThanOrEqual(1280);
   const colors = () =>
     page
       .locator('[data-usage-chart="trend"]')

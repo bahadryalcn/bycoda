@@ -20,11 +20,11 @@
   font-weight: 500;
 }
 
-
 .usage-accounts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
-  align-items: start;
+  /* Account cards in one row share a height; content stays top-aligned inside each card. */
+  align-items: stretch;
   gap: 12px;
 }
 

@@ -150,7 +150,7 @@ for (const width of [1280, 800])
 /** Legacy workflow checks explicitly choose the global board; the product now opens a project backlog. */
 async function openTasks(page: Page, url: string) {
   await page.goto(url);
-  await page.getByRole("radio", { name: "Sprints", exact: true }).click();
+  await page.getByRole("tab", { name: "Sprints", exact: true }).click();
   const projectScope = page
     .locator("header.task-board-toolbar")
     .getByRole("button", { name: /^Project:/ });
@@ -317,7 +317,10 @@ for (const { width, theme } of [
     await form.getByRole("button", { name: "Check preparation", exact: true }).click();
     await expect(form).toContainText("Checked by the in-memory fixture");
     expect(await mutations(page)).toHaveLength(0);
-    await form.locator("summary").filter({ hasText: /^Save or refresh workflows$/ }).click();
+    await form
+      .locator("summary")
+      .filter({ hasText: /^Save or refresh workflows$/ })
+      .click();
     await form.getByRole("textbox", { name: "Workflow name", exact: true }).fill("My checked flow");
     await form.getByRole("button", { name: "Save workflow", exact: true }).click();
     await expect(form).toContainText("Workflow saved for this project.");

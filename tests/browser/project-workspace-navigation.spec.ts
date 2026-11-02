@@ -108,6 +108,8 @@ test("working sessions and usage meters stay contained in narrow and short works
         const contained = await chip.evaluate((node) => {
           const outer = node.getBoundingClientRect();
           return [...node.querySelectorAll("span")].every((child) => {
+            // `display: contents` wrappers have no box of their own.
+            if (getComputedStyle(child).display === "contents") return true;
             const rect = child.getBoundingClientRect();
             return rect.left >= outer.left - 1 && rect.right <= outer.right + 1;
           });
@@ -173,8 +175,9 @@ test("working sessions and usage meters stay contained in narrow and short works
   await firstCard.focus();
   await firstCard.press("Enter");
   await expect(page.getByLabel("Selected live session")).toHaveText("live-0");
+  // The headline counts only working agents; attention follows as separate text.
   const workingToggle = rail.getByRole("button", {
-    name: "Working 8",
+    name: "Working 5 · 1 needs attention",
     exact: true,
   });
   await workingToggle.click();
@@ -270,8 +273,8 @@ test("Inbox review separates unread, draft, review and pending checks and restor
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/project-workspace-navigation.html?inbox-review=1");
-  const first = page.locator('button[title$="checks 1"]');
-  const draft = page.locator('button[title$="checks 2"]');
+  const first = page.getByRole("button", { name: /checks 1, / });
+  const draft = page.getByRole("button", { name: /checks 2, / });
   await expect(first.locator("[data-inbox-unread]")).toHaveCount(1);
   await first.click();
   await expect(first.locator("[data-inbox-unread]")).toHaveCount(0);
@@ -319,7 +322,7 @@ test("Inbox review separates unread, draft, review and pending checks and restor
     exact: true,
   });
   await search.fill("checks 1");
-  const selected = page.locator('button[title$="checks 12"]');
+  const selected = page.getByRole("button", { name: /checks 12, / });
   await selected.click();
   const scroller = selected.locator("xpath=ancestor::ul/parent::div");
   await scroller.evaluate((node) => {
@@ -439,7 +442,9 @@ test("rail appearance keeps two icon rows and applies independent translucent co
   // Using the nested colour picker keeps the group menu open.
   await picker.getByRole("slider", { name: "Hue", exact: true }).click();
   await picker.getByRole("textbox", { name: "Hex color", exact: true }).fill("#22c55e");
-  await expect(page.getByRole("menu", { name: "Project group actions", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("menu", { name: "Project group actions", exact: true }),
+  ).toBeVisible();
   // Clicking elsewhere in the appearance popover closes only the colour picker.
   await menu.getByText("Project icon", { exact: true }).click();
   await expect(picker).toHaveCount(0);
@@ -757,7 +762,10 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
       .poll(() => panel.evaluate((node) => node.scrollWidth <= node.clientWidth))
       .toBe(true);
   }
-  await panel.locator('[data-checkout-list] button[title="G:/wallet-worktrees/task"]').click();
+  await panel
+    .locator("[data-checkout-list]")
+    .getByRole("button", { name: /^mc\/task/ })
+    .click();
   await panel.getByText("same.ts", { exact: true }).click();
   await expect(page.getByRole("status", { name: "Selected review" })).toHaveText(
     "diff:G:/wallet-worktrees/task:G:/wallet-worktrees/task/same.ts",
@@ -803,7 +811,7 @@ test("workspace Git stays in the main panel with compact repo rows and an expand
   await panel.evaluate((element) => {
     element.parentElement!.style.width = "520px";
   });
-  await api.getByTitle("same.ts", { exact: true }).first().click();
+  await api.getByRole("button", { name: "same.ts", exact: true }).first().click();
   await expect(page.getByRole("status", { name: "Selected review" })).toHaveText(
     "diff:G:/wallet/api:G:/wallet/api/same.ts",
   );

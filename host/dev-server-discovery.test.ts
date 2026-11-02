@@ -455,7 +455,9 @@ it("discovers the owned real test listener and refuses its stale identity", asyn
         resolve(JSON.parse(data.toString()));
       });
     });
-    const discovery = new DevServerDiscovery({ cacheMs: 0 });
+    // Real PowerShell/CIM scans can exceed the 8 s product budget on a loaded
+    // shared Windows runner; this test checks identity, not scan latency.
+    const discovery = new DevServerDiscovery({ cacheMs: 0, commandTimeoutMs: 30_000 });
     const found = (await discovery.listeners()).find((item) => item.process.pid === child.pid);
     expect(found).toBeDefined();
     expect(found!.endpoints.map((item) => item.port)).toEqual(expect.arrayContaining(ports));
@@ -473,4 +475,4 @@ it("discovers the owned real test listener and refuses its stale identity", asyn
       await exited;
     }
   }
-}, 30_000);
+}, 120_000);

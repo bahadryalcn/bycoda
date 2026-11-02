@@ -668,6 +668,11 @@
   margin-inline-end: auto;
 }
 
+/* Long descriptions scroll inside a viewport-relative cap so the form actions stay in reach. */
+[data-task-prompt] textarea {
+  max-block-size: clamp(10rem, 28dvh, 20rem);
+}
+
 /* Agent-written summaries stay short until the owner expands them. */
 .task-clamped-markdown {
   max-block-size: 7.5lh;

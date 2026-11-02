@@ -379,6 +379,10 @@ test("commit sağ tık menüsünün Git aksiyonları seçilen SHA ile çalışı
   ).toEqual(["soft", "mixed", "hard"]);
 });
 async function open(page: import("@playwright/test").Page, conflict = false, large = false) {
+  // Menus scale in from 94%. On a slow CI compositor that animation can sit at its first
+  // frame while Playwright clicks, then finish under the still pointer: the row below the
+  // click receives mouseenter and closes the open submenu. Settled geometry keeps clicks exact.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(
     `/tests/browser/git-workspace.html${conflict ? "?conflict" : large ? "?large" : ""}`,
     {

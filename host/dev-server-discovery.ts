@@ -315,6 +315,7 @@ export class DevServerDiscovery implements ProcessDiscovery {
   private readonly command: DiscoveryCommand;
   private readonly files: DiscoveryFileSystem;
   private readonly cacheMs: number;
+  private readonly commandTimeoutMs: number;
   private listenerCache?: { time: number; value: DiscoveredDevProcess[] };
   private listenerFlight?: Promise<DiscoveredDevProcess[]>;
   private processCache?: { time: number; value: DevProcess[] };
@@ -328,12 +329,15 @@ export class DevServerDiscovery implements ProcessDiscovery {
       command?: DiscoveryCommand;
       files?: DiscoveryFileSystem;
       cacheMs?: number;
+      /** Per-command budget; tests driving real system commands on loaded runners raise it. */
+      commandTimeoutMs?: number;
     } = {},
   ) {
     this.platform = options.platform ?? process.platform;
     this.command = options.command ?? runCommand;
     this.files = options.files ?? procFiles;
     this.cacheMs = options.cacheMs ?? 1_000;
+    this.commandTimeoutMs = options.commandTimeoutMs ?? COMMAND_TIMEOUT;
   }
   private run(executable: string, args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -344,7 +348,7 @@ export class DevServerDiscovery implements ProcessDiscovery {
           .then(() =>
             this.command(executable, args, {
               windowsHide: true,
-              timeout: COMMAND_TIMEOUT,
+              timeout: this.commandTimeoutMs,
               maxBuffer: OUTPUT_LIMIT,
               env: { ...process.env, LC_ALL: "C", LANG: "C" },
             }),
@@ -359,7 +363,7 @@ export class DevServerDiscovery implements ProcessDiscovery {
         const index = this.commandQueue.indexOf(start);
         if (index >= 0) this.commandQueue.splice(index, 1);
         reject(new Error("Process discovery command queue timed out"));
-      }, COMMAND_TIMEOUT);
+      }, this.commandTimeoutMs);
       if (this.activeCommands < 4) start();
       else if (this.commandQueue.length >= 64) {
         clearTimeout(timer);
