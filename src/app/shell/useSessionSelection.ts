@@ -130,9 +130,7 @@ export function useSessionSelection({
     });
   const endContextMenu = () =>
     setState((current) =>
-      current.contextual
-        ? { ...current, contextual: false, anchor: null, ids: NO_IDS }
-        : current,
+      current.contextual ? { ...current, contextual: false, anchor: null, ids: NO_IDS } : current,
     );
   /** Holding a card starts selecting from it, like the menu's Select item. */
   const longPress = (sessionId: string) =>

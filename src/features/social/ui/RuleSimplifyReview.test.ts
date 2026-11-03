@@ -5,10 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
 import type { SocialAccount, SocialProjectProfile, SocialRule } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
-import type {
-  RuleSimplifyProposal,
-  RuleSimplifySuggestion,
-} from "../model/socialSuggestions";
+import type { RuleSimplifyProposal, RuleSimplifySuggestion } from "../model/socialSuggestions";
 import {
   RuleSimplifyReview,
   ruleDraftFromReview,
@@ -104,7 +101,8 @@ function fakeHost(extra: Record<string, (input: any, id: string) => unknown> = {
     if (action === "rules.simplify") return suggestion();
     if (action === "automations.create") {
       // Idempotent by request id, like the Host: a repeat returns the first receipt.
-      if (!created.has(id)) created.set(id, { id: `new-${++createCount}`, ...input, enabled: false });
+      if (!created.has(id))
+        created.set(id, { id: `new-${++createCount}`, ...input, enabled: false });
       return created.get(id);
     }
     return {};
@@ -163,7 +161,9 @@ const press = async (text: string, scope: ParentNode = container) => {
 };
 async function type(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const prototype =
-    element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
   await act(async () => {
     Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(element, value);
     element.dispatchEvent(new Event("input", { bubbles: true }));
@@ -174,9 +174,9 @@ const field = (scope: ParentNode, label: string) => {
     item.textContent?.trim().startsWith(label),
   )!;
   expect(owner, `Missing field: ${label}`).toBeTruthy();
-  return (owner.htmlFor
-    ? document.getElementById(owner.htmlFor)
-    : owner.querySelector("input,textarea")) as HTMLInputElement;
+  return (
+    owner.htmlFor ? document.getElementById(owner.htmlFor) : owner.querySelector("input,textarea")
+  ) as HTMLInputElement;
 };
 const card = (name: string) =>
   container.querySelector<HTMLElement>(`article[aria-label="Proposal for ${name}"]`)!;
@@ -199,10 +199,7 @@ describe("Rule simplify review", () => {
     expect(container.textContent).toContain("Test account");
     expect(container.textContent).toContain("Alpha project");
     await check(container, "Rule three");
-    await type(
-      container.querySelector<HTMLTextAreaElement>("textarea")!,
-      "  keep only pricing  ",
-    );
+    await type(container.querySelector<HTMLTextAreaElement>("textarea")!, "  keep only pricing  ");
     await press("Suggest simpler rules");
     await act(async () => undefined);
     const ask = calls("rules.simplify");

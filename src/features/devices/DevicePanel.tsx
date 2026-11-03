@@ -581,8 +581,8 @@ function DevicePanelSurface({
               : actionCompleted
                 ? t("Action completed; screen unavailable")
                 : captureFailed
-                ? t("Device screen unavailable")
-                : t("Device action failed")}
+                  ? t("Device screen unavailable")
+                  : t("Device action failed")}
           </summary>
           <pre>{error}</pre>
         </details>
@@ -626,7 +626,14 @@ function DevicePanelSurface({
           >
             {status.installed ? t("Connect devices") : t("Set up and connect")}
           </Button>
-          <Button variant="ghost" aria-haspopup="dialog" aria-expanded={surface === "setup"} onClick={(event) => openSurface("setup", event.currentTarget)}>{t("Setup and access")}</Button>
+          <Button
+            variant="ghost"
+            aria-haspopup="dialog"
+            aria-expanded={surface === "setup"}
+            onClick={(event) => openSurface("setup", event.currentTarget)}
+          >
+            {t("Setup and access")}
+          </Button>
         </div>
       )}
       {status?.running && (
@@ -1221,9 +1228,15 @@ function DevicePanelSurface({
                 onChange={(event) => setApp(event.target.value)}
               />
               {device?.platform === "ios" ? (
-                <p className="host-tool-muted">{t("iOS: enter the app name or bundle ID. Open the app before interacting with it.")}</p>
+                <p className="host-tool-muted">
+                  {t(
+                    "iOS: enter the app name or bundle ID. Open the app before interacting with it.",
+                  )}
+                </p>
               ) : device?.platform === "android" ? (
-                <p className="host-tool-muted">{t("Android: enter Settings or an app package ID.")}</p>
+                <p className="host-tool-muted">
+                  {t("Android: enter Settings or an app package ID.")}
+                </p>
               ) : null}
               <Button
                 disabled={unavailable("openApp", canControlDevice && !annotating && !!app.trim())}
@@ -1244,7 +1257,9 @@ function DevicePanelSurface({
                 onChange={(event) => setText(event.target.value)}
               />
               {windowsAndroid ? (
-                <p className="host-tool-muted">{t("Android text input from Windows supports printable ASCII characters only.")}</p>
+                <p className="host-tool-muted">
+                  {t("Android text input from Windows supports printable ASCII characters only.")}
+                </p>
               ) : null}
               <Button
                 disabled={unavailable("type", canControlDevice && !annotating && !!text)}

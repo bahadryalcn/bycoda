@@ -18,9 +18,7 @@ function Row({ onOpenChanges }: { onOpenChanges: () => void }) {
     path: "/repo/src/a.ts",
     relative: "src/a.ts",
     onOpenChanges,
-    actions: [
-      { id: "discard", label: "Discard Changes", danger: true, run: vi.fn() },
-    ],
+    actions: [{ id: "discard", label: "Discard Changes", danger: true, run: vi.fn() }],
   });
   return createElement(
     "div",
@@ -29,8 +27,7 @@ function Row({ onOpenChanges }: { onOpenChanges: () => void }) {
       type: "button",
       "aria-haspopup": "menu",
       "aria-expanded": isOpen,
-      onClick: (event: { currentTarget: HTMLElement }) =>
-        openFrom(event.currentTarget),
+      onClick: (event: { currentTarget: HTMLElement }) => openFrom(event.currentTarget),
     }),
     menu,
   );
@@ -50,9 +47,7 @@ it("opens the same row menu from a visible control and returns focus to it on cl
   document.body.append(host);
   const root = createRoot(host);
   try {
-    await act(async () =>
-      root.render(createElement(Row, { onOpenChanges: vi.fn() })),
-    );
+    await act(async () => root.render(createElement(Row, { onOpenChanges: vi.fn() })));
     const button = host.querySelector("button")!;
     expect(button.getAttribute("aria-expanded")).toBe("false");
     await act(async () => button.click());

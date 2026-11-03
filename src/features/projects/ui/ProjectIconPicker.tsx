@@ -37,9 +37,7 @@ export function ProjectIconPicker({
         <div className="min-w-0 flex-1">
           <p className="text-ui-micro text-(--ui-text-secondary)">{t("Project icon")}</p>
           <OverflowTooltip label={selected.label}>
-            <p className="truncate text-ui-caption text-[var(--color-content)]">
-              {selected.label}
-            </p>
+            <p className="truncate text-ui-caption text-[var(--color-content)]">{selected.label}</p>
           </OverflowTooltip>
         </div>
         <Button
@@ -102,13 +100,15 @@ export function ProjectIconPicker({
           ))}
         </div>
         {icons.length === 0 ? (
-          <EmptyState size="inline" kind="filtered" className="justify-center py-5" description={t("No matching icons")} />
+          <EmptyState
+            size="inline"
+            kind="filtered"
+            className="justify-center py-5"
+            description={t("No matching icons")}
+          />
         ) : null}
       </div>
-      <p
-        className="mt-1 text-ui-caption text-(--ui-text-secondary)"
-        aria-live="polite"
-      >
+      <p className="mt-1 text-ui-caption text-(--ui-text-secondary)" aria-live="polite">
         {icons.length}
         {t(" icons · ")}
         {category === "All" ? t("All types") : category}

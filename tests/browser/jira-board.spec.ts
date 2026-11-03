@@ -77,7 +77,10 @@ test("failed moves preserve the original card and remain visible", async ({ page
   );
   const source = page.locator(".jira-board-card").filter({ hasText: "ENG-1" });
   await source.getByRole("button", { name: "Move ENG-1" }).click();
-  await page.getByRole("menu", { name: "Move ENG-1" }).getByRole("menuitem", { name: "In Progress", exact: true }).click();
+  await page
+    .getByRole("menu", { name: "Move ENG-1" })
+    .getByRole("menuitem", { name: "In Progress", exact: true })
+    .click();
   await expect(page.getByRole("alert")).toContainText("Jira permission denied");
   await expect(
     page
@@ -185,7 +188,10 @@ for (const light of [false, true]) {
   test(`drag shows one badge with the issue, a column mark, a rank line, and cancels cleanly (${theme})`, async ({
     page,
   }) => {
-    test.skip(test.info().project.name !== "chromium", "Screenshots are Chromium fixture evidence.");
+    test.skip(
+      test.info().project.name !== "chromium",
+      "Screenshots are Chromium fixture evidence.",
+    );
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -201,7 +207,9 @@ for (const light of [false, true]) {
     await page.mouse.down();
     await page.mouse.move(from.x + 45, from.y + 25, { steps: 3 });
     // Empty space in another column: the whole column receives the issue.
-    await page.mouse.move(column.x + column.width / 2, column.y + column.height - 40, { steps: 12 });
+    await page.mouse.move(column.x + column.width / 2, column.y + column.height - 40, {
+      steps: 12,
+    });
     await expect(badge).toHaveCount(1);
     await expect(badge).toContainText("ENG-1");
     await expect(badge).toContainText("Move to In Progress");
@@ -219,15 +227,14 @@ for (const light of [false, true]) {
     await page.keyboard.press("Escape");
     await expect(badge).toHaveCount(0);
     await expect(marks).toHaveCount(0);
-    expect(await page.evaluate(() => document.documentElement.classList.contains("is-grabbing"))).toBe(
-      false,
-    );
+    expect(
+      await page.evaluate(() => document.documentElement.classList.contains("is-grabbing")),
+    ).toBe(false);
     await page.mouse.up();
-    const calls = await page.evaluate(
-      () =>
-        (window as unknown as { jiraFixtureCalls: { command: string }[] }).jiraFixtureCalls.map(
-          (call) => call.command,
-        ),
+    const calls = await page.evaluate(() =>
+      (window as unknown as { jiraFixtureCalls: { command: string }[] }).jiraFixtureCalls.map(
+        (call) => call.command,
+      ),
     );
     expect(calls).not.toContain("jira_issue_transition");
     expect(calls).not.toContain("jira_board_move");
@@ -235,7 +242,10 @@ for (const light of [false, true]) {
   });
 
   test(`backlog and sprint drag marks the receiving group (${theme})`, async ({ page }) => {
-    test.skip(test.info().project.name !== "chromium", "Screenshots are Chromium fixture evidence.");
+    test.skip(
+      test.info().project.name !== "chromium",
+      "Screenshots are Chromium fixture evidence.",
+    );
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),

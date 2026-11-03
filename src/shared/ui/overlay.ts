@@ -62,7 +62,9 @@ function scopeOf(opener: HTMLElement | null): HTMLElement[] {
   for (
     let parent = opener?.parentElement;
     // A direct child of the body is an app or portal root, not a context: never a fallback.
-    parent && parent !== document.body && parent.parentElement !== document.body &&
+    parent &&
+    parent !== document.body &&
+    parent.parentElement !== document.body &&
     scope.length < SCOPE_DEPTH;
     parent = parent.parentElement
   ) {

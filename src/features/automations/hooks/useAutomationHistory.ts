@@ -1,10 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
-import {
-  listAutomationRuns,
-  type Automation,
-  type AutomationRun,
-} from "../model/automations";
+import { listAutomationRuns, type Automation, type AutomationRun } from "../model/automations";
 import { listHostAutomationRuns } from "../model/hostAutomationClient";
 
 const NO_RUNS: AutomationRun[] = [];

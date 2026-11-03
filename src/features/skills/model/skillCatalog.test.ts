@@ -122,7 +122,10 @@ describe("provider-aware skill catalog", () => {
     saveDisabledSkillPaths([]);
     expect((await loadSkills(context))[0].path).toBe(projectPath);
     saveDisabledSkillPaths([projectPath]);
-    mocks.getSkillPolicy.mockResolvedValue({ disabledNames: ["review"], disabledPaths: [projectPath] });
+    mocks.getSkillPolicy.mockResolvedValue({
+      disabledNames: ["review"],
+      disabledPaths: [projectPath],
+    });
     expect(await loadSkills(context)).toEqual([]);
     expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [projectPath]);
     mocks.getSkillPolicy.mockResolvedValue({ disabledNames: [], disabledPaths: [] });
@@ -144,7 +147,9 @@ describe("provider-aware skill catalog", () => {
     expect(await loadSkills(context, { refresh: true })).toEqual([]);
     expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [path]);
     mocks.getSkillPolicy.mockRejectedValueOnce(new Error("remote unavailable"));
-    await expect(loadSkills(context, { refresh: true })).rejects.toThrow("Could not load skill restrictions");
+    await expect(loadSkills(context, { refresh: true })).rejects.toThrow(
+      "Could not load skill restrictions",
+    );
   });
 
   it("does not let a late remote policy read replace an explicit refresh", async () => {

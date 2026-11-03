@@ -1,6 +1,6 @@
 import type { VoiceVisualState } from "./voiceVisualState";
 import type { VoiceChoice } from "./voiceChoices";
-import type {VoiceJobReviewState} from "./voiceJobs";
+import type { VoiceJobReviewState } from "./voiceJobs";
 
 /**
  * Floating voice window protocol.
@@ -21,12 +21,12 @@ export type VoiceOverlayState = {
   transcript: string;
   message: string;
   error: string;
-  notice?:string;
-  manualTurnEnd?:boolean;
+  notice?: string;
+  manualTurnEnd?: boolean;
   /** Text describing local or cloud audio handling, shown before starting. */
   privacy: string;
   choice?: VoiceChoice | null;
-  jobReview?:VoiceJobReviewState|null;
+  jobReview?: VoiceJobReviewState | null;
 };
 
 export const VOICE_OVERLAY_COMMANDS = [

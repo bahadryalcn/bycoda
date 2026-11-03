@@ -905,83 +905,88 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
       ) : null}
       {showStart ? (
         <Surface as="section" variant="outline">
-        <form
-          ref={startForm}
-          tabIndex={-1}
-          className="dev-server-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const expectedPort = port ? Number(port) : undefined;
-            if (
-              !name.trim() ||
-              !command.trim() ||
-              (expectedPort !== undefined &&
-                (!Number.isInteger(expectedPort) || expectedPort < 1 || expectedPort > 65535))
-            )
-              return;
-            void action("start", async () => {
-              setStartResult(undefined);
-              const result = await request<DevServerStartResult>("start", {
-                name: name.trim(),
-                command: command.trim(),
-                ...(workingDirectory.trim() ? { cwd: workingDirectory.trim() } : {}),
-                expectedPort,
+          <form
+            ref={startForm}
+            tabIndex={-1}
+            className="dev-server-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const expectedPort = port ? Number(port) : undefined;
+              if (
+                !name.trim() ||
+                !command.trim() ||
+                (expectedPort !== undefined &&
+                  (!Number.isInteger(expectedPort) || expectedPort < 1 || expectedPort > 65535))
+              )
+                return;
+              void action("start", async () => {
+                setStartResult(undefined);
+                const result = await request<DevServerStartResult>("start", {
+                  name: name.trim(),
+                  command: command.trim(),
+                  ...(workingDirectory.trim() ? { cwd: workingDirectory.trim() } : {}),
+                  expectedPort,
+                });
+                if (!alive.current) return;
+                setStartResult(result);
+                await refresh(true);
               });
-              if (!alive.current) return;
-              setStartResult(result);
-              await refresh(true);
-            });
-          }}
-        >
-          <TextField
-            label={t("Server name")}
-            value={name}
-            required
-            maxLength={80}
-            disabled={disabled}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <TextField
-            label={t("Server command")}
-            value={command}
-            required
-            maxLength={32768}
-            disabled={disabled}
-            onChange={(event) => setCommand(event.target.value)}
-          />
-          <TextField
-            label={t("Working directory")}
-            value={workingDirectory}
-            disabled={disabled}
-            onChange={(event) => setWorkingDirectory(event.target.value)}
-          />
-          <NumberField
-            label={t("Expected port (optional)")}
-
-            min={1}
-            max={65535}
-            value={port}
-            disabled={disabled}
-            onChange={(event) => setPort(event.target.value)}
-          />
-          <p className="host-tool-muted">
-            {t(
-              "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.",
-            )}
-          </p>
-          <Button
-            type="submit"
-            variant="primary"
-            loading={operation === "start" || !!launch?.pending}
-            disabled={unavailable("start") || !name.trim() || !command.trim()}
+            }}
           >
-            {t("Start command")}
-          </Button>
-        </form>
+            <TextField
+              label={t("Server name")}
+              value={name}
+              required
+              maxLength={80}
+              disabled={disabled}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <TextField
+              label={t("Server command")}
+              value={command}
+              required
+              maxLength={32768}
+              disabled={disabled}
+              onChange={(event) => setCommand(event.target.value)}
+            />
+            <TextField
+              label={t("Working directory")}
+              value={workingDirectory}
+              disabled={disabled}
+              onChange={(event) => setWorkingDirectory(event.target.value)}
+            />
+            <NumberField
+              label={t("Expected port (optional)")}
+
+              min={1}
+              max={65535}
+              value={port}
+              disabled={disabled}
+              onChange={(event) => setPort(event.target.value)}
+            />
+            <p className="host-tool-muted">
+              {t(
+                "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.",
+              )}
+            </p>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={operation === "start" || !!launch?.pending}
+              disabled={unavailable("start") || !name.trim() || !command.trim()}
+            >
+              {t("Start command")}
+            </Button>
+          </form>
         </Surface>
       ) : null}
       {startResult?.conflict ? (
-        <Surface as="section" variant="outline" className="dev-server-conflict" aria-label={t("Port conflict")}>
+        <Surface
+          as="section"
+          variant="outline"
+          className="dev-server-conflict"
+          aria-label={t("Port conflict")}
+        >
           <Alert tone="danger" role="alert">
             {t("Port {p0} is already in use.", { p0: startResult.conflict.port })}
           </Alert>

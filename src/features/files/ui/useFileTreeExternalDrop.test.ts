@@ -21,7 +21,11 @@ vi.mock("@tauri-apps/api/webview", () => ({
 // Directory knowledge normally comes from the loaded tree; here only "src" is a folder.
 vi.mock("../model/fileTree", () => ({
   createParentOf: (cwd: string, path: string | null) =>
-    !path || path === cwd ? cwd : path.endsWith("/src") ? path : path.slice(0, path.lastIndexOf("/")),
+    !path || path === cwd
+      ? cwd
+      : path.endsWith("/src")
+        ? path
+        : path.slice(0, path.lastIndexOf("/")),
 }));
 
 let root: Root;

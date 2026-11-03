@@ -93,8 +93,20 @@ it("routes metadata and deletion to the exact unfenced Host owner without invent
 
 it("retains all pinned Native rows when combining recent Host shells with a bounded recent window", async () => {
   bound();
-  const base = { cwd: "G:/repo", title: "Pinned", harness: "codex", model: "model", runtimeMode: "supervised", createdAt: 1, updatedAt: 1, pinned: true };
-  vi.mocked(invoke).mockResolvedValueOnce([{ ...base, id: "native-one" }, { ...base, id: "native-two" }]);
+  const base = {
+    cwd: "G:/repo",
+    title: "Pinned",
+    harness: "codex",
+    model: "model",
+    runtimeMode: "supervised",
+    createdAt: 1,
+    updatedAt: 1,
+    pinned: true,
+  };
+  vi.mocked(invoke).mockResolvedValueOnce([
+    { ...base, id: "native-one" },
+    { ...base, id: "native-two" },
+  ]);
   const rows = await listRecentSessions(1);
   expect(rows.map((row) => row.id)).toEqual(["native-one", "native-two", expect.any(String)]);
 });

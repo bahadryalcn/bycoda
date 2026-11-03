@@ -71,12 +71,18 @@ it("distinguishes rendered tag rows from unique notes and names bounded pages", 
     hasPrevious: false,
     hasNext: false,
   });
-  expect(windowNoteLibrary(groups, new Set(groups.map((group) => group.key)), 0, true)).toMatchObject({
+  expect(
+    windowNoteLibrary(groups, new Set(groups.map((group) => group.key)), 0, true),
+  ).toMatchObject({
     total: 2,
     uniqueTotal: 2,
     visibleUniqueCount: 0,
   });
   expect(windowNoteLibrary([], new Set(), 0, true)).toMatchObject({
-    rangeStart: 0, rangeEnd: 0, pageNumber: 0, pageCount: 0, uniqueTotal: 0,
+    rangeStart: 0,
+    rangeEnd: 0,
+    pageNumber: 0,
+    pageCount: 0,
+    uniqueTotal: 0,
   });
 });

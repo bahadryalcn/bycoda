@@ -449,7 +449,20 @@ export function useFileTreeOperations({
   };
 
   const runAction = async (id: string, target: MenuTarget) => {
-    if (operationRunning.current && ["new-file", "new-folder", "cut", "paste", "duplicate", "rename", "delete", "reveal"].includes(id)) return;
+    if (
+      operationRunning.current &&
+      [
+        "new-file",
+        "new-folder",
+        "cut",
+        "paste",
+        "duplicate",
+        "rename",
+        "delete",
+        "reveal",
+      ].includes(id)
+    )
+      return;
     switch (id) {
       case "open":
         for (const path of actionPaths(target.path)) {

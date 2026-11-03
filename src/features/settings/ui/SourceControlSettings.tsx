@@ -27,9 +27,9 @@ export function SourceControlSettings() {
     setDiffViewer(saved);
     setDiffError(saved !== next);
   };
-  const [generationError, setGenerationError] = useState<
-    { choice: Parameters<typeof saveDefaultGitGenerationChoice>[0] } | null
-  >(null);
+  const [generationError, setGenerationError] = useState<{
+    choice: Parameters<typeof saveDefaultGitGenerationChoice>[0];
+  } | null>(null);
   const onGenerationChoice = (choice: Parameters<typeof saveDefaultGitGenerationChoice>[0]) => {
     try {
       saveDefaultGitGenerationChoice(choice);
@@ -65,13 +65,15 @@ export function SourceControlSettings() {
           }
         >
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            <GitGenerationModelControl
-              choice={gitGenerationChoice}
-              onChange={onGenerationChoice}
-            />
-            <Button size="sm" variant="ghost" iconOnly
+            <GitGenerationModelControl choice={gitGenerationChoice} onChange={onGenerationChoice} />
+            <Button
+              size="sm"
+              variant="ghost"
+              iconOnly
               label={t("Use automatic selection")}
-              disabled={!gitGenerationChoice} onClick={() => onGenerationChoice(undefined)}>
+              disabled={!gitGenerationChoice}
+              onClick={() => onGenerationChoice(undefined)}
+            >
               <RotateCcw className="icon-sm" />
             </Button>
           </div>
@@ -81,7 +83,11 @@ export function SourceControlSettings() {
           id="diff-view"
           label={t("Diff view")}
           description={t("Review changes in the editor or together in one unified view.")}
-          feedback={diffError ? <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback> : undefined}
+          feedback={
+            diffError ? (
+              <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
+            ) : undefined
+          }
         >
           <Segmented
             label={t("Diff view")}

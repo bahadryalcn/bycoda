@@ -1,5 +1,11 @@
 import { useSocialPending } from "./useSocialPending";
-import { useContext as useSocialContext, useId, useState, type FormEvent, type MouseEvent } from "react";
+import {
+  useContext as useSocialContext,
+  useId,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+} from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { TextField } from "../../../shared/ui/TextField";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
@@ -645,7 +651,11 @@ export function PublishingPlans({
                       </div>
                       <div>
                         <dt>{t("Sharing schedule")}</dt>
-                        <dd>{validation.schedule ? publishingScheduleSummary(validation.schedule) : ""}</dd>
+                        <dd>
+                          {validation.schedule
+                            ? publishingScheduleSummary(validation.schedule)
+                            : ""}
+                        </dd>
                       </div>
                       <div>
                         <dt>{t("After saving")}</dt>

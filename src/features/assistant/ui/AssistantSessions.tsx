@@ -4,7 +4,10 @@ import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { Progress } from "../../../shared/ui/Progress";
 import { ExternalLink } from "../../../shared/ui/icons";
-import { workerContextAction,type WorkerContextSettings } from "../../../shared/model/assistantContext";
+import {
+  workerContextAction,
+  type WorkerContextSettings,
+} from "../../../shared/model/assistantContext";
 import { contextRatio, formatTokens } from "../../sessions/model/contextUsage";
 import { useAssistantSession } from "../model/assistantSessions";
 import { AssistantManagedBadge } from "../../sessions/ui/AssistantManagedBadge";
@@ -21,7 +24,7 @@ export function AssistantSessions({
   onOpenSession,
 }: {
   jobs: readonly AssistantJob[];
-  contextSettings?:WorkerContextSettings;
+  contextSettings?: WorkerContextSettings;
   query: string;
   filter: string;
   environmentId?: string;
@@ -34,9 +37,7 @@ export function AssistantSessions({
       ({ id, job }) =>
         (!filter || job.status === filter) &&
         (!query.trim() ||
-          `${id}\n${job.title}`
-            .toLocaleLowerCase()
-            .includes(query.trim().toLocaleLowerCase())),
+          `${id}\n${job.title}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())),
     );
   return (
     <section className={styles.section}>
@@ -68,7 +69,7 @@ function ManagedSessionRow({
 }: {
   id: string;
   job: AssistantJob;
-  contextSettings?:WorkerContextSettings;
+  contextSettings?: WorkerContextSettings;
   projectName: (id: string) => string;
   environmentId?: string;
   onOpenSession?: (id: string, environmentId?: string) => void | Promise<void>;
@@ -79,18 +80,15 @@ function ManagedSessionRow({
     environmentId,
   );
   const current = error ? null : record;
-  const project = current ? projectName(current.projectId) : assistantJobProjectIds(job).map(projectName).join(" · ");
+  const project = current
+    ? projectName(current.projectId)
+    : assistantJobProjectIds(job).map(projectName).join(" · ");
   const usage = current?.session.context;
-  const used =
-    usage && Number.isFinite(usage.used) && usage.used >= 0
-      ? usage.used
-      : undefined;
+  const used = usage && Number.isFinite(usage.used) && usage.used >= 0 ? usage.used : undefined;
   const window =
-    usage?.window && Number.isFinite(usage.window) && usage.window > 0
-      ? usage.window
-      : undefined;
+    usage?.window && Number.isFinite(usage.window) && usage.window > 0 ? usage.window : undefined;
   const ratio = used === undefined ? null : contextRatio({ used, window });
-  const action = workerContextAction(used, window,contextSettings);
+  const action = workerContextAction(used, window, contextSettings);
   const status = current?.status;
   return (
     <div className={styles.row} data-assistant-session={id}>
@@ -108,13 +106,7 @@ function ManagedSessionRow({
               compact
               showValue
               valueLabel={`${formatTokens(used)} / ${formatTokens(window)}`}
-              tone={
-                action === "handoff"
-                  ? "danger"
-                  : action === "compact"
-                    ? "warning"
-                    : "neutral"
-              }
+              tone={action === "handoff" ? "danger" : action === "compact" ? "warning" : "neutral"}
             />
           ) : (
             <span className={styles.muted}>
@@ -155,13 +147,7 @@ function ManagedSessionRow({
       </div>
       <AssistantManagedBadge management={current?.session.managedBy} compact />
       <Badge
-        tone={
-          status === "interrupted"
-            ? "warning"
-            : status === "running"
-              ? "info"
-              : "neutral"
-        }
+        tone={status === "interrupted" ? "warning" : status === "running" ? "info" : "neutral"}
       >
         {t(
           status === "running"
@@ -179,7 +165,10 @@ function ManagedSessionRow({
         <Button
           iconOnly
           label={t("Open session")}
-          onClick={() => { const expected = record?.environmentId ?? environmentId; return expected ? onOpenSession(id, expected) : onOpenSession(id); }}
+          onClick={() => {
+            const expected = record?.environmentId ?? environmentId;
+            return expected ? onOpenSession(id, expected) : onOpenSession(id);
+          }}
         >
           <ExternalLink size={14} />
         </Button>

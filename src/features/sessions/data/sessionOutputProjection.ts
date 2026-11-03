@@ -333,9 +333,10 @@ export function prepareSessionOutputWritePayload<T extends object>(
       }),
     );
     // The validated snapshot is a plain JSON object with no receipt field.
-    const bytes = snapshot.bytes + (snapshot.bytes > 2 ? 1 : 0) +
-      '"captureOutputReceipt":true'.length;
-    if (Object.prototype.hasOwnProperty.call(snapshot.payload, "captureOutputReceipt")) throw new Error("unsupported");
+    const bytes =
+      snapshot.bytes + (snapshot.bytes > 2 ? 1 : 0) + '"captureOutputReceipt":true'.length;
+    if (Object.prototype.hasOwnProperty.call(snapshot.payload, "captureOutputReceipt"))
+      throw new Error("unsupported");
     if (bytes > SESSION_OUTPUT_FULL_LIMITS.payloadBytesPerCandidate) throw new Error("capacity");
     const args = payload as { session?: { id?: unknown }; delta?: { session?: { id?: unknown } } };
     if ((kind === "replace" ? args.session?.id : args.delta?.session?.id) !== node.lineage.id)

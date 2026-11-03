@@ -68,8 +68,7 @@ export function SocialToday({
   const loading = result.unavailable.filter((item) => item.state === "loading");
   const failed = result.unavailable.filter((item) => item.state === "error");
   const readAll = !result.unavailable.length;
-  const contextProject =
-    projectFilter || (projects.length === 1 ? projects[0].id : "");
+  const contextProject = projectFilter || (projects.length === 1 ? projects[0].id : "");
   return (
     <div className="social-today">
       <SocialAssistant
@@ -119,7 +118,9 @@ export function SocialToday({
           )}
           {result.failures.length ? (
             <>
-              <p className="social-today-quiet">{t("Most common failure reasons (from loaded activity, no AI used)")}</p>
+              <p className="social-today-quiet">
+                {t("Most common failure reasons (from loaded activity, no AI used)")}
+              </p>
               <ul className="social-today-failures">
                 {result.failures.map((failure) => (
                   <li key={failure.reason}>
@@ -167,7 +168,9 @@ export function SocialToday({
           ) : null}
           {loading.length && result.items.length ? (
             <p className="social-today-quiet" role="status">
-              {t("Still reading: {p0}", { p0: loading.map((item) => labels[item.source]).join(", ") })}
+              {t("Still reading: {p0}", {
+                p0: loading.map((item) => labels[item.source]).join(", "),
+              })}
             </p>
           ) : null}
         </section>
@@ -195,11 +198,23 @@ export function SocialToday({
         </section>
       </div>
       <p className="social-today-start">
-        <Button variant="secondary" size="sm" type="button" disabled={locked} onClick={() => onNavigate("Campaigns")}>
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          disabled={locked}
+          onClick={() => onNavigate("Campaigns")}
+        >
           <Plus aria-hidden="true" />
           {t("Prepare content")}
         </Button>
-        <Button variant="secondary" size="sm" type="button" disabled={locked} onClick={() => onNavigate("Inbox")}>
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          disabled={locked}
+          onClick={() => onNavigate("Inbox")}
+        >
           <InboxIcon aria-hidden="true" />
           {t("Open Inbox")}
         </Button>

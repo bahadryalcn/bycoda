@@ -4,7 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SocialSnapshot } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
-import { JobHistory, SocialHistory, socialJobExplanation, socialJobCancellation } from "./SocialHistory";
+import {
+  JobHistory,
+  SocialHistory,
+  socialJobExplanation,
+  socialJobCancellation,
+} from "./SocialHistory";
 import type { SocialJob } from "../model/social";
 
 let container: HTMLDivElement, root: Root;
@@ -109,7 +114,9 @@ it("filters visible results and offers retries only for confirmed failures", asy
   const uncertain = container.querySelector('[data-status="review"].social-history-record')!;
   expect(uncertain.textContent).toContain("do not resend the same content");
   await act(async () => uncertain.querySelector<HTMLButtonElement>("button")!.click());
-  expect(container.querySelector('[data-social-job-detail]')?.textContent).not.toContain("Retry this target");
+  expect(container.querySelector("[data-social-job-detail]")?.textContent).not.toContain(
+    "Retry this target",
+  );
   await openFilters();
   const status = Array.from(document.querySelectorAll(".social-filter-panel label"))
     .find((label) => label.firstChild?.textContent === "Send status")!
@@ -119,10 +126,13 @@ it("filters visible results and offers retries only for confirmed failures", asy
     status.dispatchEvent(new Event("change", { bubbles: true }));
   });
   expect(container.querySelectorAll(".social-history-record")).toHaveLength(1);
-  await act(async () => container.querySelector<HTMLButtonElement>(".social-history-record button")!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>(".social-history-record button")!.click(),
+  );
   await act(async () =>
     Array.from(container.querySelectorAll<HTMLButtonElement>("[data-social-job-detail] button"))
-      .find((button) => button.textContent === "Retry this target")!.click(),
+      .find((button) => button.textContent === "Retry this target")!
+      .click(),
   );
   expect(request).toHaveBeenCalledExactlyOnceWith("jobs.retry", { id: "1" });
   expect(

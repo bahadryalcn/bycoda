@@ -212,7 +212,8 @@ export function useAppearanceSettings(
   );
   const [chatBackgroundBlur, setChatBackgroundBlur] = useThemeStorageState(loadChatBackgroundBlur);
   const [diffPalette, setDiffPalette] = useThemeStorageState(loadDiffPalette);
-  const [chatBackgroundScope, setChatBackgroundScope] = useThemeStorageState(loadChatBackgroundScope);
+  const [chatBackgroundScope, setChatBackgroundScope] =
+    useThemeStorageState(loadChatBackgroundScope);
   const [newThreadBackgroundEffect, setBackgroundEffect] = useThemeStorageState(
     loadNewThreadBackgroundEffect,
   );

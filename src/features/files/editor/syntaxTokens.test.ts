@@ -95,7 +95,9 @@ describe("highlightDiffFile", () => {
     try {
       const tokens = await highlightDiffFile({ path: "de.json", blocks: diff.blocks }, "dark");
       const added = diff.lines.find((line) => line.kind === "add");
-      expect(added && token(tokens.get(added), '"Updated key 4599"')?.color).toBe("var(--syntax-property)");
+      expect(added && token(tokens.get(added), '"Updated key 4599"')?.color).toBe(
+        "var(--syntax-property)",
+      );
     } finally {
       clock.mockRestore();
     }

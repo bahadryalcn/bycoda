@@ -115,16 +115,18 @@ export function supervisedChild(command, args, { cwd, env, children }) {
 }
 
 function childFailureDetail(child) {
-  return String(child.failure ?? "")
-    // oxlint-disable-next-line no-control-regex -- strip ANSI escape sequences
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[redacted]")
-    .replace(
-      /((?:token|api[-_]?key|password|secret)["']?\s*[:=]\s*["']?)[^\s"',;]+/gi,
-      "$1[redacted]",
-    )
-    .trim()
-    .slice(-4000);
+  return (
+    String(child.failure ?? "")
+      // oxlint-disable-next-line no-control-regex -- strip ANSI escape sequences
+      .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+      .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[redacted]")
+      .replace(
+        /((?:token|api[-_]?key|password|secret)["']?\s*[:=]\s*["']?)[^\s"',;]+/gi,
+        "$1[redacted]",
+      )
+      .trim()
+      .slice(-4000)
+  );
 }
 
 function childFailureMessage(child, summary) {
@@ -239,7 +241,10 @@ export async function waitForNativePage(
         const url = new URL(page.url());
         // Native utility webviews share the app's origin and build identity.
         // Admit the main document, never the hidden desktop controller.
-        const mainPaths = new Set([expected.pathname, expected.pathname === "/" ? "/index.html" : expected.pathname]);
+        const mainPaths = new Set([
+          expected.pathname,
+          expected.pathname === "/" ? "/index.html" : expected.pathname,
+        ]);
         if (url.origin !== expected.origin || !mainPaths.has(url.pathname)) continue;
       } catch {
         continue;
@@ -293,17 +298,36 @@ export async function frozenSourceIdentity(root) {
   const canonicalRoot = await realpath(root);
   const record = JSON.parse(await readFile(join(root, "frozen-source.json"), "utf8"));
   const identity = parseBuildIdentity(record.identity);
-  if (record.schemaVersion !== 1 || !identity || identity.channel !== "dev" || !Array.isArray(record.files) || !record.files.length)
+  if (
+    record.schemaVersion !== 1 ||
+    !identity ||
+    identity.channel !== "dev" ||
+    !Array.isArray(record.files) ||
+    !record.files.length
+  )
     throw new Error("Invalid frozen source manifest");
   const files = new Map();
   for (const entry of record.files) {
     const name = entry?.path;
-    if (typeof name !== "string" || !name || name.includes("\\") || isAbsolute(name) || name.split("/").some((part) => !part || part === "." || part === "..") || files.has(name))
+    if (
+      typeof name !== "string" ||
+      !name ||
+      name.includes("\\") ||
+      isAbsolute(name) ||
+      name.split("/").some((part) => !part || part === "." || part === "..") ||
+      files.has(name)
+    )
       throw new Error("Invalid frozen source path");
     const path = join(root, name);
     const actual = await realpath(path);
     const rel = relative(canonicalRoot, actual);
-    if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !(await lstat(path)).isFile())
+    if (
+      !rel ||
+      rel === ".." ||
+      rel.startsWith(`..${sep}`) ||
+      isAbsolute(rel) ||
+      !(await lstat(path)).isFile()
+    )
       throw new Error("Frozen source escapes its root or is not a regular file");
     const bytes = await readFile(path);
     if (hash(bytes) !== entry.sha256) throw new Error(`Frozen source changed: ${name}`);
@@ -317,8 +341,10 @@ export async function frozenSourceIdentity(root) {
 
 export async function runNativeDev(args = process.argv.slice(2)) {
   const frozenRoot = option(args, "--frozen-source");
-  const root = await realpath(frozenRoot ? resolve(frozenRoot) : resolve(dirname(fileURLToPath(import.meta.url)), "../.."));
-  const readSource = () => frozenRoot ? frozenSourceIdentity(root) : sourceIdentity(root);
+  const root = await realpath(
+    frozenRoot ? resolve(frozenRoot) : resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+  );
+  const readSource = () => (frozenRoot ? frozenSourceIdentity(root) : sourceIdentity(root));
   // Validate the frozen receipt before installing dependencies or starting children.
   if (frozenRoot) await readSource();
   const explicitCargoTarget = option(args, "--cargo-target", process.env.CARGO_TARGET_DIR);
@@ -328,9 +354,11 @@ export async function runNativeDev(args = process.argv.slice(2)) {
   const runId = option(args, "--run-id", randomUUID());
   const previousRecord = option(args, "--reuse-profile-run");
   const previousRootOption = option(args, "--reuse-profile-root");
-  if(previousRootOption&&!previousRecord)throw new Error("--reuse-profile-root requires --reuse-profile-run");
-  const previousRoot=previousRootOption?await realpath(resolve(previousRootOption)):root;
-  if(previousRootOption)assertReusableNativeDevSource(await readSource(),await frozenSourceIdentity(previousRoot));
+  if (previousRootOption && !previousRecord)
+    throw new Error("--reuse-profile-root requires --reuse-profile-run");
+  const previousRoot = previousRootOption ? await realpath(resolve(previousRootOption)) : root;
+  if (previousRootOption)
+    assertReusableNativeDevSource(await readSource(), await frozenSourceIdentity(previousRoot));
   const previousRun = previousRecord
     ? (
         await (
@@ -415,7 +443,9 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         ...source,
         capturedAt: Date.now(),
         components: { web: buildId, native: buildId, host: buildId },
-        includedSources: source.dirtyPaths.length ? [] : [{ repositoryId: source.repositoryId, sourceHead: source.head }],
+        includedSources: source.dirtyPaths.length
+          ? []
+          : [{ repositoryId: source.repositoryId, sourceHead: source.head }],
       };
       env.BYCODA_BUILD_MANIFEST = join(dirname(environment.executableRunDir), "build-info.json");
       await writeFile(env.BYCODA_BUILD_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`, {
@@ -554,7 +584,9 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         }
         const record = {
           schemaVersion: 1,
-          ...(frozenRoot ? { frozenSourceRoot: root, frozenSourceManifest: join(root, "frozen-source.json") } : {}),
+          ...(frozenRoot
+            ? { frozenSourceRoot: root, frozenSourceManifest: join(root, "frozen-source.json") }
+            : {}),
           ...environment,
           cargoTargetDir: explicitCargoTarget ?? environment.cargoTargetDir,
           pid: native.pid,

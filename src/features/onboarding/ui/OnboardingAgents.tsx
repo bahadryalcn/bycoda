@@ -189,7 +189,9 @@ export function OnboardingAgents({
         {!checking && listed.length === 0 ? (
           <div className="onboarding-provider-empty" role="status">
             <strong>{t("No providers found")}</strong>
-            <p>{t("Already installed one? Choose its executable, or install it and scan again.")}</p>
+            <p>
+              {t("Already installed one? Choose its executable, or install it and scan again.")}
+            </p>
           </div>
         ) : null}
         <div className="onboarding-agent-list">

@@ -65,9 +65,14 @@ export function useDesktopLive(
     let directoryPaths: string[] = [];
     const projectDirectory = () => {
       const sessions = sessionsRef.current;
-      if (!directoryInputs.length || sessions.length !== directoryInputs.length || sessions.some(
-        (session, i) => session.id !== directoryInputs[i]?.id || session.cwd !== directoryInputs[i]?.cwd,
-      )) {
+      if (
+        !directoryInputs.length ||
+        sessions.length !== directoryInputs.length ||
+        sessions.some(
+          (session, i) =>
+            session.id !== directoryInputs[i]?.id || session.cwd !== directoryInputs[i]?.cwd,
+        )
+      ) {
         directoryInputs = sessions.map(({ id, cwd }) => ({ id, cwd }));
         directoryPaths = sessions.map((session) => session.cwd);
       }

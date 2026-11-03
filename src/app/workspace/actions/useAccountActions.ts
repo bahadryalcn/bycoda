@@ -93,7 +93,9 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
       if (owned && hostSessionBinding(owned)) {
         const selectAccount = remoteSessionActions(sessionId)?.selectAccount;
         if (!selectAccount) {
-          say("This conversation runs on the bycoda Host, which cannot switch its account from here.");
+          say(
+            "This conversation runs on the bycoda Host, which cannot switch its account from here.",
+          );
           return false;
         }
         if (selectAccount(provider, accountId)) return true;
@@ -120,7 +122,9 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
         });
         showSubmitNotice(
           sessionId,
-          t("The provider handoff is still being prepared. Your pick applies as soon as it finishes."),
+          t(
+            "The provider handoff is still being prepared. Your pick applies as soon as it finishes.",
+          ),
         );
         return true;
       }

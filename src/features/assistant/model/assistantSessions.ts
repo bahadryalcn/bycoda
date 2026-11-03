@@ -8,7 +8,7 @@ export async function readAssistantSession(
   projectId: string | readonly string[],
   owner?: AssistantHostRead,
 ): Promise<AssistantSessionRecord> {
-  const reader = owner ?? await captureAssistantHostRead();
+  const reader = owner ?? (await captureAssistantHostRead());
   const result = await reader.session(sessionId);
   if (!result?.session || result.session.id !== sessionId)
     throw new Error("The Host returned no matching session state.");
@@ -25,7 +25,11 @@ export async function readAssistantSession(
 
 /** Each stable row owns a read, never a supervisor mutation. Failed refreshes
  * retain the old record for identity but the UI marks its measurement unavailable. */
-export function useAssistantSession(sessionId: string, projectId: string | readonly string[], environmentId?: string) {
+export function useAssistantSession(
+  sessionId: string,
+  projectId: string | readonly string[],
+  environmentId?: string,
+) {
   const scopeKey = JSON.stringify(typeof projectId === "string" ? [projectId] : projectId);
   const bindingKey = JSON.stringify([sessionId, scopeKey, environmentId]);
   const [state, setState] = useState<{
@@ -43,7 +47,10 @@ export function useAssistantSession(sessionId: string, projectId: string | reado
     inFlight.current = true;
     setState((current) => ({ ...current, loading: true }));
     try {
-      const owner = binding.current?.key === bindingKey ? binding.current.owner : await captureAssistantHostRead(environmentId);
+      const owner =
+        binding.current?.key === bindingKey
+          ? binding.current.owner
+          : await captureAssistantHostRead(environmentId);
       if (epoch.current !== request) return;
       binding.current = { key: bindingKey, owner };
       const record = await readAssistantSession(sessionId, JSON.parse(scopeKey) as string[], owner);
@@ -73,5 +80,7 @@ export function useAssistantSession(sessionId: string, projectId: string | reado
       clearInterval(timer);
     };
   }, [refresh]);
-  return state.key === bindingKey ? { ...state, refresh } : { key: bindingKey, record: null, loading: true, error: "", refresh };
+  return state.key === bindingKey
+    ? { ...state, refresh }
+    : { key: bindingKey, record: null, loading: true, error: "", refresh };
 }

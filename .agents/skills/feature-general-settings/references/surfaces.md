@@ -2,14 +2,14 @@
 
 All source paths are repository-relative.
 
-| Area | Starting points |
-| --- | --- |
-| General layout/search | `src/features/settings/ui/GeneralSettings.tsx`, `GeneralSettings.css`, `SettingsView.tsx`; model `settings.ts` |
-| Language | `src/features/settings/ui/LanguageSettings.tsx`; `src/shared/i18n/index.ts`, `languages.ts`, `git.ts`, `technical.ts` |
-| Power/tray/lifecycle | `src/features/settings/model/keepAwake.ts`; `src/app/model/appLifecycle.ts`, `traySessions.ts`, `useTraySessions.ts`; `src/app/workspace/sessions/useSessionPersistenceFlush.ts` |
-| Diagnostics | `src/features/settings/ui/DiagnosticsSettings.tsx`; `src/shared/lib/performanceTrace.ts`, `performanceTraceSettings.ts`; `src/platform/tauri/clipboard.ts` |
-| Version/update | `src/features/settings/ui/BuildIdentityDetails.tsx`; `src/shared/model/build-info.ts`; `src/app/model/updater.ts`; `src/shared/lib/productIdentity.ts` |
-| Support entry points | `src/features/sessions/ui/SessionImportHost.tsx`; `src/features/onboarding/ui/OnboardingHost.tsx`, `GuideHub.tsx`; `src/app/workspace/surfaces/useSurfaceOpeners.ts` |
+| Area                  | Starting points                                                                                                                                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| General layout/search | `src/features/settings/ui/GeneralSettings.tsx`, `GeneralSettings.css`, `SettingsView.tsx`; model `settings.ts`                                                                   |
+| Language              | `src/features/settings/ui/LanguageSettings.tsx`; `src/shared/i18n/index.ts`, `languages.ts`, `git.ts`, `technical.ts`                                                            |
+| Power/tray/lifecycle  | `src/features/settings/model/keepAwake.ts`; `src/app/model/appLifecycle.ts`, `traySessions.ts`, `useTraySessions.ts`; `src/app/workspace/sessions/useSessionPersistenceFlush.ts` |
+| Diagnostics           | `src/features/settings/ui/DiagnosticsSettings.tsx`; `src/shared/lib/performanceTrace.ts`, `performanceTraceSettings.ts`; `src/platform/tauri/clipboard.ts`                       |
+| Version/update        | `src/features/settings/ui/BuildIdentityDetails.tsx`; `src/shared/model/build-info.ts`; `src/app/model/updater.ts`; `src/shared/lib/productIdentity.ts`                           |
+| Support entry points  | `src/features/sessions/ui/SessionImportHost.tsx`; `src/features/onboarding/ui/OnboardingHost.tsx`, `GuideHub.tsx`; `src/app/workspace/surfaces/useSurfaceOpeners.ts`             |
 
 ## Native and scope
 

@@ -83,9 +83,7 @@ export function SubagentStateLine({
           label={model ? `${quietMeta} (${t("Model: {p0}", { p0: model })})` : quietMeta}
           when={model ? "always" : "overflow"}
         >
-          <span className="min-w-0 flex-1 truncate">
-            {quietMeta}
-          </span>
+          <span className="min-w-0 flex-1 truncate">{quietMeta}</span>
         </Tooltip>
       ) : null}
     </div>

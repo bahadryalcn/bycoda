@@ -2,15 +2,15 @@
 
 Paths are repository-relative.
 
-| Area | Owner |
-| --- | --- |
-| Channels/events/permission/schedule | `src/features/settings/ui/NotificationsSettings.tsx`, `NotificationsSettings.css`; Settings model/reveal metadata |
-| Project collection/mute | `src/features/notifications/ui/ProjectNotificationSettings.tsx`, `NotificationMuteControl.tsx`, `NotificationMuteDatePicker.tsx`, `notificationMuteActions.ts` |
-| Entry reuse | `src/features/inbox/ui/InboxNotificationMenu.tsx`; `src/app/shell/ProjectRail.tsx` |
-| Preferences/history/delivery | `src/features/notifications/model/notifications.ts`, `notificationEvents.ts`, `notificationPreferences.ts`, `notificationProjects.ts`, `notificationHistory.ts`, `dailySummarySettings.ts`, `attention.ts`, `approvalToast.ts`, `dockBadge.ts`; `src/features/settings/model/sounds.ts` |
-| Hooks | `src/features/notifications/hooks/` for project state, input/attention/background delivery, daily summary, reminders and Dock badge |
-| Request UI/routing | `src/features/sessions/ui/ApprovalToasts.tsx`, `notification-sheet.css`; `src/app/workspace/derived/useWorkspaceNotifications.ts`; `src/app/workspace/sessions/useApprovalActions.ts` |
-| Task summaries | `src/features/tasks/model/dailySummary.ts`, `dailySummaryClient.ts`; `src/features/tasks/ui/TasksView.tsx`; follow current cached-summary access identity |
+| Area                                | Owner                                                                                                                                                                                                                                                                                   |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Channels/events/permission/schedule | `src/features/settings/ui/NotificationsSettings.tsx`, `NotificationsSettings.css`; Settings model/reveal metadata                                                                                                                                                                       |
+| Project collection/mute             | `src/features/notifications/ui/ProjectNotificationSettings.tsx`, `NotificationMuteControl.tsx`, `NotificationMuteDatePicker.tsx`, `notificationMuteActions.ts`                                                                                                                          |
+| Entry reuse                         | `src/features/inbox/ui/InboxNotificationMenu.tsx`; `src/app/shell/ProjectRail.tsx`                                                                                                                                                                                                      |
+| Preferences/history/delivery        | `src/features/notifications/model/notifications.ts`, `notificationEvents.ts`, `notificationPreferences.ts`, `notificationProjects.ts`, `notificationHistory.ts`, `dailySummarySettings.ts`, `attention.ts`, `approvalToast.ts`, `dockBadge.ts`; `src/features/settings/model/sounds.ts` |
+| Hooks                               | `src/features/notifications/hooks/` for project state, input/attention/background delivery, daily summary, reminders and Dock badge                                                                                                                                                     |
+| Request UI/routing                  | `src/features/sessions/ui/ApprovalToasts.tsx`, `notification-sheet.css`; `src/app/workspace/derived/useWorkspaceNotifications.ts`; `src/app/workspace/sessions/useApprovalActions.ts`                                                                                                   |
+| Task summaries                      | `src/features/tasks/model/dailySummary.ts`, `dailySummaryClient.ts`; `src/features/tasks/ui/TasksView.tsx`; follow current cached-summary access identity                                                                                                                               |
 
 ## Approval and platform boundaries
 

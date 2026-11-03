@@ -13,24 +13,23 @@ import {
 } from "../../../shared/model/assistantRoles";
 import type { AssistantExecution } from "../../../shared/model/host-contracts/assistant";
 import { ModelPicker } from "../../sessions/ui/ModelPicker";
-import {
-  defaultModelSettings,
-  resolveModel,
-} from "../../sessions/model/models";
-import {
-  isRemoteProvider,
-  REMOTE_PROVIDERS,
-} from "../../connections/model/protocol";
+import { defaultModelSettings, resolveModel } from "../../sessions/model/models";
+import { isRemoteProvider, REMOTE_PROVIDERS } from "../../connections/model/protocol";
 import styles from "./AssistantView.module.css";
 import roleStyles from "./AssistantProfileFields.module.css";
-import {assistantPolicy,validAssistantPolicy} from "../../../shared/model/assistantPolicy";
+import { assistantPolicy, validAssistantPolicy } from "../../../shared/model/assistantPolicy";
 import {
   workerContextSettings,
   validWorkerContextSettings,
 } from "../../../shared/model/assistantContext";
 
 export type ProfileSection =
-  "identity" | "language" | "behavior" | "autonomy" | "presence" | "cost";
+  | "identity"
+  | "language"
+  | "behavior"
+  | "autonomy"
+  | "presence"
+  | "cost";
 export function AssistantProfileFields({
   section,
   value,
@@ -45,7 +44,7 @@ export function AssistantProfileFields({
   const rolesId = useId();
   const workerContextId = useId();
   const workerContext = workerContextSettings(value);
-  const policy=assistantPolicy(value);
+  const policy = assistantPolicy(value);
   function changeModel(
     existing: AssistantExecution | null | undefined,
     harness: AssistantExecution["harness"],
@@ -58,10 +57,8 @@ export function AssistantProfileFields({
         existing?.harness === harness && existing.model === model
           ? { ...existing.modelSettings }
           : defaultModelSettings(resolveModel(harness, model)),
-      runtimeMode:
-        existing?.runtimeMode ?? value.execution?.runtimeMode ?? "supervised",
-      maxRunMinutes:
-        existing?.maxRunMinutes ?? value.execution?.maxRunMinutes ?? 60,
+      runtimeMode: existing?.runtimeMode ?? value.execution?.runtimeMode ?? "supervised",
+      maxRunMinutes: existing?.maxRunMinutes ?? value.execution?.maxRunMinutes ?? 60,
     };
   }
   function rolePicker(role: AssistantExecutionRole, label: string) {
@@ -88,8 +85,7 @@ export function AssistantProfileFields({
               onChange({ [field]: changeModel(effective, harness, model) });
           }}
           onSettingsChange={(modelSettings) => {
-            if (effective)
-              onChange({ [field]: { ...effective, modelSettings } });
+            if (effective) onChange({ [field]: { ...effective, modelSettings } });
           }}
         />
       </fieldset>
@@ -99,7 +95,7 @@ export function AssistantProfileFields({
     key: keyof AssistantProfilePatch,
     label: string,
     options: readonly (readonly [string, string])[],
-    fallback="",
+    fallback = "",
   ) => (
     <Select
       visibleLabel
@@ -140,18 +136,14 @@ export function AssistantProfileFields({
             label={t("How should I address you?")}
             value={value.addressAs ?? ""}
             maxLength={100}
-            onChange={(event) =>
-              onChange({ addressAs: event.currentTarget.value })
-            }
+            onChange={(event) => onChange({ addressAs: event.currentTarget.value })}
           />
           <TextField
             label={t("Avatar")}
             value={value.avatar ?? ""}
             maxLength={200}
             placeholder={t("Emoji or initials")}
-            onChange={(event) =>
-              onChange({ avatar: event.currentTarget.value })
-            }
+            onChange={(event) => onChange({ avatar: event.currentTarget.value })}
           />
           <Switch
             label={t("Show title")}
@@ -160,9 +152,7 @@ export function AssistantProfileFields({
           />
           {value.name?.trim() && (
             <p className={styles.muted}>
-              {value.showTitle
-                ? t("Assistant {p0}", { p0: value.name.trim() })
-                : value.name.trim()}{" "}
+              {value.showTitle ? t("Assistant {p0}", { p0: value.name.trim() }) : value.name.trim()}{" "}
               · {t("Room · {p0}", { p0: value.name.trim() })} ·{" "}
               {t("{p0} wrote", { p0: value.name.trim() })}
             </p>
@@ -183,9 +173,7 @@ export function AssistantProfileFields({
             ["ja-JP", "日本語"],
           ])}
           <p className={styles.muted}>
-            {t(
-              "Auto follows the language you speak. A selected language overrides it.",
-            )}
+            {t("Auto follows the language you speak. A selected language overrides it.")}
           </p>
         </>
       )}
@@ -214,9 +202,7 @@ export function AssistantProfileFields({
           <Switch
             label={t("Answer routine worker questions")}
             checked={value.allowRoutineQuestions ?? false}
-            onCheckedChange={(allowRoutineQuestions) =>
-              onChange({ allowRoutineQuestions })
-            }
+            onCheckedChange={(allowRoutineQuestions) => onChange({ allowRoutineQuestions })}
           />
           <p className={styles.muted}>
             {t(
@@ -273,9 +259,7 @@ export function AssistantProfileFields({
             />
           )}
           <p className={styles.muted}>
-            {t(
-              "Command approvals, publishing and credentials still require your authorization.",
-            )}
+            {t("Command approvals, publishing and credentials still require your authorization.")}
           </p>
           <div className={roleStyles.roleSection}>
             <div className={roleStyles.roleToggle}>
@@ -314,28 +298,52 @@ export function AssistantProfileFields({
             ["return", "Only when I return"],
             ["important", "Also for important events"],
           ])}
-          <p className={styles.muted}>
-            {t("The microphone opens only when you choose to talk.")}
-          </p>
+          <p className={styles.muted}>{t("The microphone opens only when you choose to talk.")}</p>
         </>
       )}
       {section === "presence" && (
         <>
-          {number("idleMinutes","Become idle after (minutes)",1,1440,policy.idleMinutes)}
-          {number("awayMinutes","Become away after (minutes)",2,10080,policy.awayMinutes)}
-          {!validAssistantPolicy(value)&&<p role="alert" className={styles.error}>{t("Away must start later than idle.")}</p>}
-          {number("activeStart","Work hours start",0,23,policy.activeStart)}
-          {number("activeEnd","Work hours end",0,23,policy.activeEnd)}
-          <p className={styles.muted}>{t("Matching work hours allow work all day. Outside these hours, accepted turns can finish; new work waits.")}</p>
-          {choice("notificationPresent","Notifications when present",[["all","All updates"],["urgent","Urgent only"],["none","None"]],policy.notificationPresent)}
-          {choice("notificationAway","Notifications when away",[["all","All updates"],["urgent","Urgent only"],["none","None"]],policy.notificationAway)}
-          <p className={styles.muted}>{t("Do not disturb and quiet hours hold notifications for your next briefing.")}</p>
+          {number("idleMinutes", "Become idle after (minutes)", 1, 1440, policy.idleMinutes)}
+          {number("awayMinutes", "Become away after (minutes)", 2, 10080, policy.awayMinutes)}
+          {!validAssistantPolicy(value) && (
+            <p role="alert" className={styles.error}>
+              {t("Away must start later than idle.")}
+            </p>
+          )}
+          {number("activeStart", "Work hours start", 0, 23, policy.activeStart)}
+          {number("activeEnd", "Work hours end", 0, 23, policy.activeEnd)}
+          <p className={styles.muted}>
+            {t(
+              "Matching work hours allow work all day. Outside these hours, accepted turns can finish; new work waits.",
+            )}
+          </p>
+          {choice(
+            "notificationPresent",
+            "Notifications when present",
+            [
+              ["all", "All updates"],
+              ["urgent", "Urgent only"],
+              ["none", "None"],
+            ],
+            policy.notificationPresent,
+          )}
+          {choice(
+            "notificationAway",
+            "Notifications when away",
+            [
+              ["all", "All updates"],
+              ["urgent", "Urgent only"],
+              ["none", "None"],
+            ],
+            policy.notificationAway,
+          )}
+          <p className={styles.muted}>
+            {t("Do not disturb and quiet hours hold notifications for your next briefing.")}
+          </p>
           <Switch
             label={t("Keep this computer awake while jobs are running")}
             checked={value.keepAwakeWhileWorking ?? false}
-            onCheckedChange={(keepAwakeWhileWorking) =>
-              onChange({ keepAwakeWhileWorking })
-            }
+            onCheckedChange={(keepAwakeWhileWorking) => onChange({ keepAwakeWhileWorking })}
           />
           <p className={styles.muted}>
             {t(
@@ -345,23 +353,26 @@ export function AssistantProfileFields({
           {number("quietStart", "Quiet hours start", 0, 23)}
           {number("quietEnd", "Quiet hours end", 0, 23)}
           {number("stallMinutes", "Stall timeout (minutes)", 5, 1440)}
-          <p className={styles.muted}>
-            {t("Work tracking continues while voice is off.")}
-          </p>
+          <p className={styles.muted}>{t("Work tracking continues while voice is off.")}</p>
         </>
       )}
       {section === "cost" && (
         <>
-          {number("chiefWakeLimit","Supervisor reviews per hour",1,120,policy.chiefWakeLimit)}
-          {number("nudgeLimit","Follow-ups before worker recovery",0,2,policy.nudgeLimit)}
-          {number("summaryRefreshMessages","Conversation summary interval (messages)",10,200,20)}
-          <p className={styles.muted}>{t("Zero disables follow-ups and automatic recovery. Manual conversations always wait for you after their limit.")}</p>
+          {number("chiefWakeLimit", "Supervisor reviews per hour", 1, 120, policy.chiefWakeLimit)}
+          {number("nudgeLimit", "Follow-ups before worker recovery", 0, 2, policy.nudgeLimit)}
           {number(
-            "perWakeTokenCap",
-            "Token reservation per review",
-            1000,
-            1_000_000,
+            "summaryRefreshMessages",
+            "Conversation summary interval (messages)",
+            10,
+            200,
+            20,
           )}
+          <p className={styles.muted}>
+            {t(
+              "Zero disables follow-ups and automatic recovery. Manual conversations always wait for you after their limit.",
+            )}
+          </p>
+          {number("perWakeTokenCap", "Token reservation per review", 1000, 1_000_000)}
           <p className={styles.muted}>
             {t(
               "Reservations guide local scheduling. Provider charges are not capped when usage or output limits are unavailable.",
@@ -392,10 +403,7 @@ export function AssistantProfileFields({
             {t("Advanced worker context limits")}
           </Button>
           {advancedWorkerContext && (
-            <div
-              id={workerContextId}
-              className={`${styles.fields} ${roleStyles.roleSection}`}
-            >
+            <div id={workerContextId} className={`${styles.fields} ${roleStyles.roleSection}`}>
               {number(
                 "workerSoftContext",
                 "Compact worker context at (tokens)",
@@ -432,11 +440,7 @@ export function AssistantProfileFields({
             </div>
           )}
           {!validWorkerContextSettings(value) && (
-            <p role="alert">
-              {t(
-                "Worker context limits must increase from compact to handoff.",
-              )}
-            </p>
+            <p role="alert">{t("Worker context limits must increase from compact to handoff.")}</p>
           )}
         </>
       )}

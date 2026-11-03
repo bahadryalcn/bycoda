@@ -174,9 +174,7 @@ function GoalCard({
           {goal.title}
         </h3>
         <Badge tone={GOAL_STATUS_TONES[goal.status]} className="shrink-0">
-          {goal.status === "planning" ? (
-            <Spinner size="xs" className="mr-1" />
-          ) : null}
+          {goal.status === "planning" ? <Spinner size="xs" className="mr-1" /> : null}
           {t(GOAL_STATUS_LABELS[goal.status])}
         </Badge>
         {progress.total > 0 ? (
@@ -212,9 +210,7 @@ function GoalCard({
           </span>
         </div>
         <div className="task-goal-actions ml-auto flex flex-wrap items-center gap-0.5">
-          {pending ? (
-            <Spinner size="xs" className="mx-1.5 text-(--ui-text-secondary)" />
-          ) : null}
+          {pending ? <Spinner size="xs" className="mx-1.5 text-(--ui-text-secondary)" /> : null}
           {goal.status !== "done" && goal.status !== "cancelled" ? (
             <Button
               variant="ghost"
@@ -1240,10 +1236,15 @@ export function GoalList({
   filter: string;
   tasks: BoardTask[];
   acting: string | null;
-  revealKey?:string;
+  revealKey?: string;
 }) {
-  const disclosure=useRef<HTMLDetailsElement>(null);
-  useEffect(()=>{if(revealKey&&disclosure.current){disclosure.current.open=true;disclosure.current.scrollIntoView?.({block:"nearest"});}},[revealKey]);
+  const disclosure = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (revealKey && disclosure.current) {
+      disclosure.current.open = true;
+      disclosure.current.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [revealKey]);
   return (
     <details ref={disclosure} className="task-goals-disclosure">
       <summary>

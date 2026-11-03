@@ -687,7 +687,10 @@ export function SurfaceTabs({
                   onSelectFile(next);
                   focusFileTab(next);
                 }}
-                tooltip={appendProblems(dirty ? `${tooltip} (${t("Unsaved changes")})` : tooltip, errors)}
+                tooltip={appendProblems(
+                  dirty ? `${tooltip} (${t("Unsaved changes")})` : tooltip,
+                  errors,
+                )}
                 tooltipWhen={isPlanTab(file) && !dirty && !errors ? "overflow" : "always"}
                 onClick={() => {
                   if (sortable.consumeClick()) return;
@@ -710,9 +713,17 @@ export function SurfaceTabs({
                 >
                   {label}
                 </TabLabel>
-                {errors ? <CircleAlert aria-hidden className="icon-xs shrink-0 text-(--ui-tone-danger-fg)" /> : null}
+                {errors ? (
+                  <CircleAlert
+                    aria-hidden
+                    className="icon-xs shrink-0 text-(--ui-tone-danger-fg)"
+                  />
+                ) : null}
                 {dirty ? (
-                  <span className="size-2 shrink-0 rounded-full bg-(--ui-text-secondary)" aria-label={t("Unsaved changes")} />
+                  <span
+                    className="size-2 shrink-0 rounded-full bg-(--ui-text-secondary)"
+                    aria-label={t("Unsaved changes")}
+                  />
                 ) : null}
               </Button>
               <InlineAction

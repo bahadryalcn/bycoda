@@ -6,7 +6,7 @@ import { bulkTaskKey } from "../model/taskBulkActions";
 import type { BoardTask } from "../model/taskClient";
 import { taskStatusLine } from "../model/taskStatusLine";
 import { useId, useState } from "react";
-import {AssistantTaskBadge} from "./AssistantTaskBadge";
+import { AssistantTaskBadge } from "./AssistantTaskBadge";
 
 const TASK_PAGE_SIZE = 50;
 
@@ -43,61 +43,57 @@ export function TaskList({
         {pageTasks.map((task, index) => {
           const status = taskStatusLine(task);
           return (
-          <li
-            key={bulkTaskKey(task)}
-            aria-setsize={tasks.length}
-            aria-posinset={start + index + 1}
-            className="task-management-row"
-            data-selected={selected.has(bulkTaskKey(task)) || undefined}
-            data-active={activeKey === `${task.machineId}:${task.id}` || undefined}
-          >
-            {selection ? (
-              <label className="task-row-select">
-                <Checkbox
-                  aria-label={t("Select task: {p0}", { p0: task.title })}
-                  disabled={disabled}
-                  checked={selected.has(bulkTaskKey(task))}
-                  onChange={(event) => onToggle(task, event.currentTarget.checked)}
-                />
-              </label>
-            ) : null}
-            <div className="task-management-identity">
-              <Button
-                variant="link"
-                layout="text"
-                align="start"
-                className="task-list-open"
-                onClick={() => onOpen(task)}
-              >
-                {task.title}
-              </Button>
-              <span>
-                {task.machineName} · {task.cwd}
-                {task.stale ? ` · ${t("Offline")}` : ""}
-              </span>
-              {planningLabel?.(task) ? (
-                <span className="task-planning-caption">{planningLabel(task)}</span>
-              ) : null}
-              <AssistantTaskBadge task={task}/>
-              {status.detail ? (
-                <p
-                  data-task-status-detail
-                  title={task.error ?? task.mergeError ?? status.detail}
-                  className="task-list-error line-clamp-1"
-                  data-tone={status.tone}
-                >
-                  {status.detail}
-                </p>
-              ) : null}
-            </div>
-            <Badge
-              tone={status.tone}
-              data-task-status={status.kind}
-              className="task-list-status"
+            <li
+              key={bulkTaskKey(task)}
+              aria-setsize={tasks.length}
+              aria-posinset={start + index + 1}
+              className="task-management-row"
+              data-selected={selected.has(bulkTaskKey(task)) || undefined}
+              data-active={activeKey === `${task.machineId}:${task.id}` || undefined}
             >
-              {status.label}
-            </Badge>
-          </li>
+              {selection ? (
+                <label className="task-row-select">
+                  <Checkbox
+                    aria-label={t("Select task: {p0}", { p0: task.title })}
+                    disabled={disabled}
+                    checked={selected.has(bulkTaskKey(task))}
+                    onChange={(event) => onToggle(task, event.currentTarget.checked)}
+                  />
+                </label>
+              ) : null}
+              <div className="task-management-identity">
+                <Button
+                  variant="link"
+                  layout="text"
+                  align="start"
+                  className="task-list-open"
+                  onClick={() => onOpen(task)}
+                >
+                  {task.title}
+                </Button>
+                <span>
+                  {task.machineName} · {task.cwd}
+                  {task.stale ? ` · ${t("Offline")}` : ""}
+                </span>
+                {planningLabel?.(task) ? (
+                  <span className="task-planning-caption">{planningLabel(task)}</span>
+                ) : null}
+                <AssistantTaskBadge task={task} />
+                {status.detail ? (
+                  <p
+                    data-task-status-detail
+                    title={task.error ?? task.mergeError ?? status.detail}
+                    className="task-list-error line-clamp-1"
+                    data-tone={status.tone}
+                  >
+                    {status.detail}
+                  </p>
+                ) : null}
+              </div>
+              <Badge tone={status.tone} data-task-status={status.kind} className="task-list-status">
+                {status.label}
+              </Badge>
+            </li>
           );
         })}
       </ul>

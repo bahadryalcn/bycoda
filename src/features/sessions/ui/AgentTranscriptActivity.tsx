@@ -1621,9 +1621,7 @@ function ToolCallSummary({
         )
       ) : (
         <OverflowTooltip label={target}>
-          <span
-            className={`flex min-w-0 flex-1 items-center gap-1.5 pl-1 ${targetTone}`}
-          >
+          <span className={`flex min-w-0 flex-1 items-center gap-1.5 pl-1 ${targetTone}`}>
             <span className="min-w-0 truncate">{target}</span>
           </span>
         </OverflowTooltip>

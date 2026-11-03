@@ -66,32 +66,65 @@ async function fixture() {
 }
 
 describe("durable Chief reasoning context", () => {
-  it("renews before exceeding a provider-reported model window and keeps unresolved pins",async()=>{
-    const f=await fixture(),profile={...f.input("profile").profile,execution:{harness:"codex" as const,model:"codex:capacity-test",modelSettings:{},runtimeMode:"supervised" as const,maxRunMinutes:30}};
-    f.text.mockImplementation(async(_profile,_prompt,_signal,context)=>{await context!.onThreadId(context!.threadId??"capacity-thread");return{text:'{"actions":[]}',contextWindow:12000};});
-    await f.context.wake(f.input("capacity-first",{profile}));
-    const repository=new AssistantRepository(f.store);
-    await f.store.transaction(async()=>{
-      const record=await repository.get<any>("runtime","chiefContext:v1");
-      record.value.provider.estimatedTokens=10000;
-      record.value.unresolved=[{operationId:"retained-pending",index:0,jobId:"job",requestId:"original-action",status:"unknown"}];
-      await repository.put("runtime",record,record.version);
+  it("renews before exceeding a provider-reported model window and keeps unresolved pins", async () => {
+    const f = await fixture(),
+      profile = {
+        ...f.input("profile").profile,
+        execution: {
+          harness: "codex" as const,
+          model: "codex:capacity-test",
+          modelSettings: {},
+          runtimeMode: "supervised" as const,
+          maxRunMinutes: 30,
+        },
+      };
+    f.text.mockImplementation(async (_profile, _prompt, _signal, context) => {
+      await context!.onThreadId(context!.threadId ?? "capacity-thread");
+      return { text: '{"actions":[]}', contextWindow: 12000 };
     });
-    const before=await f.context.status();
-    await f.context.wake(f.input("capacity-second",{profile}));
-    expect((await f.context.status()).generation).toBe(before.generation+1);
+    await f.context.wake(f.input("capacity-first", { profile }));
+    const repository = new AssistantRepository(f.store);
+    await f.store.transaction(async () => {
+      const record = await repository.get<any>("runtime", "chiefContext:v1");
+      record.value.provider.estimatedTokens = 10000;
+      record.value.unresolved = [
+        {
+          operationId: "retained-pending",
+          index: 0,
+          jobId: "job",
+          requestId: "original-action",
+          status: "unknown",
+        },
+      ];
+      await repository.put("runtime", record, record.version);
+    });
+    const before = await f.context.status();
+    await f.context.wake(f.input("capacity-second", { profile }));
+    expect((await f.context.status()).generation).toBe(before.generation + 1);
     expect(f.text.mock.calls[1][3]?.threadId).toBeUndefined();
     expect(f.text.mock.calls[1][1]).toContain("original-action");
   });
-  it("uses the retained local briefing time for a daily provider renewal",async()=>{
-    const f=await fixture(),repository=new AssistantRepository(f.store);
-    await f.store.transaction(()=>repository.put("runtime",{id:"briefingSchedule",version:0,createdAt:1,updatedAt:1,value:{enabled:true,time:"11:30"}}));
-    f.setNow(new Date(2026,10,2,23).getTime());await f.context.wake(f.input("cycle-evening"));
-    const generation=(await f.context.status()).generation;
-    f.setNow(new Date(2026,10,3,11,29).getTime());await f.context.wake(f.input("cycle-before"));
+  it("uses the retained local briefing time for a daily provider renewal", async () => {
+    const f = await fixture(),
+      repository = new AssistantRepository(f.store);
+    await f.store.transaction(() =>
+      repository.put("runtime", {
+        id: "briefingSchedule",
+        version: 0,
+        createdAt: 1,
+        updatedAt: 1,
+        value: { enabled: true, time: "11:30" },
+      }),
+    );
+    f.setNow(new Date(2026, 10, 2, 23).getTime());
+    await f.context.wake(f.input("cycle-evening"));
+    const generation = (await f.context.status()).generation;
+    f.setNow(new Date(2026, 10, 3, 11, 29).getTime());
+    await f.context.wake(f.input("cycle-before"));
     expect((await f.context.status()).generation).toBe(generation);
-    f.setNow(new Date(2026,10,3,11,30).getTime());await f.context.wake(f.input("cycle-due"));
-    expect((await f.context.status()).generation).toBe(generation+1);
+    f.setNow(new Date(2026, 10, 3, 11, 30).getTime());
+    await f.context.wake(f.input("cycle-due"));
+    expect((await f.context.status()).generation).toBe(generation + 1);
     expect((await f.context.status()).day).toBe("2026-11-03");
   });
   it("renews a retained old provider epoch before attempting another soft compact", async () => {
@@ -163,7 +196,10 @@ describe("durable Chief reasoning context", () => {
       await f.context.wake(f.input(id, { profile, contextPolicy: policy }));
     expect(completed).toBe(1);
     expect(f.text.mock.calls[2][3]?.compactBefore).toBe(true);
-    for(const call of f.text.mock.calls)expect(call[4]).toEqual(assistantTextLimits(call[1],1000000,call[3]?.compactBefore?2:1));
+    for (const call of f.text.mock.calls)
+      expect(call[4]).toEqual(
+        assistantTextLimits(call[1], 1000000, call[3]?.compactBefore ? 2 : 1),
+      );
     expect(await f.context.status()).toMatchObject({
       generation: 1,
       compactions: 1,
@@ -256,7 +292,7 @@ describe("durable Chief reasoning context", () => {
     const restarted = createAssistantChiefContext(f.store, f.text, { now: f.now });
     await restarted.wake(f.input("resumed", { profile }));
     expect(f.text.mock.calls[1][3]?.threadId).toBe("chief-1");
-    f.setNow(new Date(1970,0,2,9).getTime());
+    f.setNow(new Date(1970, 0, 2, 9).getTime());
     await restarted.wake(f.input("new-day", { profile }));
     expect(f.text.mock.calls[2][3]?.threadId).toBeUndefined();
     await restarted.wake(
@@ -362,7 +398,7 @@ describe("durable Chief reasoning context", () => {
   it("renews the logical generation daily without claiming a provider session", async () => {
     const f = await fixture();
     await f.context.wake(f.input("yesterday"));
-    f.setNow(new Date(1970,0,2,9).getTime());
+    f.setNow(new Date(1970, 0, 2, 9).getTime());
     await f.context.wake(f.input("today", { stateCard: "Canonical morning state" }));
     expect(await f.context.status()).toMatchObject({
       generation: 2,

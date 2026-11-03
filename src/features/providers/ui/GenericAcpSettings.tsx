@@ -314,16 +314,12 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           >
             <div className="min-w-0 flex-1">
               <OverflowTooltip label={config.name}>
-                <div
-                  className="truncate text-ui-caption font-medium text-content"
-                >
+                <div className="truncate text-ui-caption font-medium text-content">
                   {config.name}
                 </div>
               </OverflowTooltip>
               <OverflowTooltip label={config.command}>
-                <div
-                  className="truncate text-ui-caption text-(--ui-text-secondary)"
-                >
+                <div className="truncate text-ui-caption text-(--ui-text-secondary)">
                   {config.command} · {config.envKeys.length}
                   {t(" environment values")}
                 </div>
@@ -568,9 +564,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   >
                     <div className="min-w-0 flex-1">
                       <OverflowTooltip label={`${entry.name} ${entry.version}`}>
-                        <div
-                          className="truncate text-ui-caption font-medium text-content"
-                        >
+                        <div className="truncate text-ui-caption font-medium text-content">
                           {entry.name}{" "}
                           <span className="text-(--ui-text-secondary)">{entry.version}</span>
                         </div>

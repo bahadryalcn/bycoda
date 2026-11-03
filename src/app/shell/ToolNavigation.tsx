@@ -123,7 +123,8 @@ export function ToolPanel({
 export function ToolNavigation() {
   const t = useT();
   const assistant = useAssistantIdentity();
-  const label = (tool: WorkspaceToolId) => tool === "assistant" ? assistant.room : t(labels[tool]);
+  const label = (tool: WorkspaceToolId) =>
+    tool === "assistant" ? assistant.room : t(labels[tool]);
   const sshReviews = useSshRunbookQueue();
   const navigation = useContext(ToolNavigationContext);
   const [opening, setOpening] = useState<"single" | "grouped" | null>(null);

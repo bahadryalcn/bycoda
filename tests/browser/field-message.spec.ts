@@ -36,7 +36,9 @@ for (const theme of ["light", "dark"] as const) {
       }
       await page.waitForTimeout(motion === "reduce" ? 50 : 700);
       for (const name of fields) {
-        await expect(page.getByRole("region", { name, exact: true }).getByRole("alert")).toHaveCount(1);
+        await expect(
+          page.getByRole("region", { name, exact: true }).getByRole("alert"),
+        ).toHaveCount(1);
       }
       expect(await main.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       await main.screenshot({ path: resolve(screens, `field-message-error-${suffix}.png`) });

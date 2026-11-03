@@ -1,10 +1,5 @@
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
   HARNESS_LABEL,
   canReplaceSessionTitle,
@@ -93,7 +88,8 @@ export function useSessionDraftActions({
     (sessionId: string, draftBlockId: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
       if (!current) return false;
-      if (hostSessionBinding(current)) return remoteSessionActions(sessionId)?.removeDraft?.(draftBlockId) ?? false;
+      if (hostSessionBinding(current))
+        return remoteSessionActions(sessionId)?.removeDraft?.(draftBlockId) ?? false;
       const withoutDraft = removeSessionDraft(current, draftBlockId);
       if (!withoutDraft) return false;
 

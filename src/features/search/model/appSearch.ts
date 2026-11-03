@@ -91,11 +91,14 @@ export type GroupedHits = {
 };
 
 /** Counts describe loaded eligible hits, never the backend's total population. */
-export type GroupedHitCounts = Record<keyof GroupedHits, {
-  available: number;
-  shown: number;
-  omitted: number;
-}>;
+export type GroupedHitCounts = Record<
+  keyof GroupedHits,
+  {
+    available: number;
+    shown: number;
+    omitted: number;
+  }
+>;
 
 const ALL_LIMITS: Record<keyof GroupedHits, number> = {
   conversations: 8,
@@ -472,7 +475,10 @@ export function groupHits(hits: AppSearchHit[], scope: SearchScope): GroupedHits
   return groupHitsWithCounts(hits, scope).grouped;
 }
 
-export function groupHitsWithCounts(hits: AppSearchHit[], scope: SearchScope): {
+export function groupHitsWithCounts(
+  hits: AppSearchHit[],
+  scope: SearchScope,
+): {
   grouped: GroupedHits;
   counts: GroupedHitCounts;
   omitted: number;

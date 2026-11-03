@@ -63,7 +63,9 @@ export function ConfigImportChoices({
           {t("This endpoint is already saved. Choose an existing connection.")}
         </p>
       ) : host.duplicate ? (
-        <p className="text-ui-caption text-(--ui-text-muted)">{t("Duplicate entry in this import.")}</p>
+        <p className="text-ui-caption text-(--ui-text-muted)">
+          {t("Duplicate entry in this import.")}
+        </p>
       ) : null}
       {existing.map((candidate) => (
         <div key={candidate.id} className="flex flex-wrap items-center justify-between gap-2">

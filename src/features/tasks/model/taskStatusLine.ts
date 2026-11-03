@@ -96,7 +96,8 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
     detail?: string,
     notices = 0,
   ): TaskStatusLine => ({ kind, tone, label, ...(detail ? { detail } : {}), notices });
-  const active = task.status === "queued" || task.status === "running" || task.status === "verifying";
+  const active =
+    task.status === "queued" || task.status === "running" || task.status === "verifying";
 
   if (active && task.needsInput) return line("needs_input", "warning", t("Needs input"));
   if (task.status !== "blocked" && taskRequiresInstructions(task))
@@ -107,8 +108,19 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
       firstSentence(task.repairStop?.message ?? task.blockedTakeover?.blocker ?? task.error),
     );
 
-  if(task.status==="running"&&task.runStall&&task.runStall.runId===task.runId&&task.runStall.sessionId===task.sessionId&&task.runStall.detectedAt-task.runStall.lastActivityAt>=15*60_000)
-    return line("stalled","warning",t("Running · no recent output"),t("No output observed for at least 15 minutes. The task is still running."));
+  if (
+    task.status === "running" &&
+    task.runStall &&
+    task.runStall.runId === task.runId &&
+    task.runStall.sessionId === task.sessionId &&
+    task.runStall.detectedAt - task.runStall.lastActivityAt >= 15 * 60_000
+  )
+    return line(
+      "stalled",
+      "warning",
+      t("Running · no recent output"),
+      t("No output observed for at least 15 minutes. The task is still running."),
+    );
   switch (task.status) {
     case "todo":
       return line("todo", "neutral", t("To do"));
@@ -137,7 +149,12 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
     case "review":
     case "done": {
       if (task.mergeError)
-        return line("delivery_blocked", "danger", t("Delivery is blocked"), firstSentence(task.mergeError));
+        return line(
+          "delivery_blocked",
+          "danger",
+          t("Delivery is blocked"),
+          firstSentence(task.mergeError),
+        );
       const notices = finishedOwnerNotices(task).length;
       if (notices > 0 || task.completedWithFindings)
         return line(
@@ -205,7 +222,12 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
       firstSentence(task.blockedTakeover?.blocker ?? failureReason(task)),
     );
   if (task.mergeError)
-    return line("delivery_blocked", "danger", t("Delivery is blocked"), firstSentence(task.mergeError));
+    return line(
+      "delivery_blocked",
+      "danger",
+      t("Delivery is blocked"),
+      firstSentence(task.mergeError),
+    );
   if (task.error && INTERRUPTED.test(task.error))
     return line("interrupted", "danger", t("Interrupted"), firstSentence(task.error));
   if (task.verification?.review?.verdict === "fail")
@@ -219,6 +241,6 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
 
 function failureReason(task: HostTask): string | undefined {
   return task.verification?.review?.verdict === "fail"
-    ? (task.verification.review.note || stripPrefix(task.error, "Review failed: "))
+    ? task.verification.review.note || stripPrefix(task.error, "Review failed: ")
     : task.error;
 }

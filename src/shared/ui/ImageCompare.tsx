@@ -53,7 +53,10 @@ export function ImageCompare({
           label={orient === "vertical" ? t("Compare side by side") : t("Compare stacked")}
           onClick={() => setOrientation(orient === "vertical" ? "horizontal" : "vertical")}
         >
-          <SplitSquare className={`icon-sm ${orient === "vertical" ? "rotate-90" : ""}`} aria-hidden />
+          <SplitSquare
+            className={`icon-sm ${orient === "vertical" ? "rotate-90" : ""}`}
+            aria-hidden
+          />
         </MediaToolbarButton>
         <MediaToolbarButton
           tone={toolbarTone}

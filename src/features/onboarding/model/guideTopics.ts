@@ -199,7 +199,9 @@ export function guideTopics(): GuideTopic[] {
         t("The same + menu opens a folder on a connected machine; its agents run on that machine."),
         t("Project groups can be locked or hidden to keep unrelated work out of view."),
         t("A group's git overview shows changes across all of its projects."),
-        t("Without a project the terminal starts in your home folder; files, changes and git need a project."),
+        t(
+          "Without a project the terminal starts in your home folder; files, changes and git need a project.",
+        ),
       ],
       shortcuts: [
         { command: "App: Open Project", label: t("Open project") },
@@ -229,7 +231,9 @@ export function guideTopics(): GuideTopic[] {
         {
           id: "chat.access",
           title: t("Choose access mode"),
-          text: t("Pick what the agent may do without asking. A change applies from the next turn."),
+          text: t(
+            "Pick what the agent may do without asking. A change applies from the next turn.",
+          ),
           show: { targets: ["access-mode", "model-controls", "composer"], need: "chat" },
         },
         {
@@ -397,7 +401,9 @@ export function guideTopics(): GuideTopic[] {
         {
           id: "tasks.goal",
           title: t("Create a goal"),
-          text: t("For larger work, create a goal. It is split into tasks; review the plan before approving it."),
+          text: t(
+            "For larger work, create a goal. It is split into tasks; review the plan before approving it.",
+          ),
         },
         {
           id: "tasks.follow",
@@ -406,7 +412,9 @@ export function guideTopics(): GuideTopic[] {
         },
       ],
       tips: [
-        t("The Orchestrator in the + menu plans one request across a lead agent and workers. Review the proposal before it starts."),
+        t(
+          "The Orchestrator in the + menu plans one request across a lead agent and workers. Review the proposal before it starts.",
+        ),
         t("Subagents appear in the transcript. Open one to follow or stop it."),
         t("Blocked tasks show why. Retry them once the cause is fixed."),
         t("Stewards and the daily summary are on the Tasks board."),
@@ -439,7 +447,9 @@ export function guideTopics(): GuideTopic[] {
         },
       ],
       tips: [
-        t("An agent can create an automation for you from a chat. It keeps that chat's access mode."),
+        t(
+          "An agent can create an automation for you from a chat. It keeps that chat's access mode.",
+        ),
         t("Clicking a completion notification opens the automation."),
       ],
       shortcuts: [{ command: "App: Open Automations", label: t("Open automations") }],
@@ -529,7 +539,9 @@ export function guideTopics(): GuideTopic[] {
         },
       ],
       tips: [
-        t("Policies set per-platform limits and what agents may send. Drafts never send on their own."),
+        t(
+          "Policies set per-platform limits and what agents may send. Drafts never send on their own.",
+        ),
         t("Programs generate recurring content on a schedule."),
         t("Bulk replies answer many comments at once."),
       ],
@@ -540,7 +552,9 @@ export function guideTopics(): GuideTopic[] {
       id: "machines",
       group: connect,
       title: t("Machines & devices"),
-      summary: t("Connect other computers and phones, and work with simulators and development servers."),
+      summary: t(
+        "Connect other computers and phones, and work with simulators and development servers.",
+      ),
       steps: [
         {
           id: "machines.add",
@@ -559,7 +573,9 @@ export function guideTopics(): GuideTopic[] {
         },
       ],
       tips: [
-        t("Host tools in a session show devices, a host browser, development servers, logs and resource usage."),
+        t(
+          "Host tools in a session show devices, a host browser, development servers, logs and resource usage.",
+        ),
         t("iOS simulators run on a connected Mac."),
       ],
       shortcuts: [],

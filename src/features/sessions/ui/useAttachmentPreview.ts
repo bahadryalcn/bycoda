@@ -37,7 +37,10 @@ export function useAttachmentPreview(attachment: Attachment) {
   const update = (patch: Partial<PreviewState>) =>
     setHeld((previous) => ({
       owner,
-      state: { ...(previous && sameOwner(previous.owner, owner) ? previous.state : IDLE), ...patch },
+      state: {
+        ...(previous && sameOwner(previous.owner, owner) ? previous.state : IDLE),
+        ...patch,
+      },
     }));
   const request = useRef(0);
   const pending = useRef(false);

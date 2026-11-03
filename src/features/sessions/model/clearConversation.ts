@@ -5,7 +5,9 @@ import type { Session } from "./session";
 export function clearConversationBlocker(session: Session): string | undefined {
   if (session.busy) return t("Stop the current turn before clearing the conversation.");
   if (session.continuingElsewhere)
-    return t("The bycoda Host is running this conversation. Wait for it to finish before clearing.");
+    return t(
+      "The bycoda Host is running this conversation. Wait for it to finish before clearing.",
+    );
   if (session.historyLoading || session.historyPartial)
     return t("The conversation is still loading. Clear it once it has loaded.");
   if (session.adoptedSyncConflict)
@@ -14,7 +16,8 @@ export function clearConversationBlocker(session: Session): string | undefined {
     return t("The workspace is still being prepared. Clear the conversation afterwards.");
   if (session.orchestrationLeadId || session.automationId)
     return t("This conversation belongs to an orchestration or automation and cannot be cleared.");
-  if (session.pendingQuestion) return t("Answer the open question before clearing the conversation.");
+  if (session.pendingQuestion)
+    return t("Answer the open question before clearing the conversation.");
   if (session.editingQueuedMessageId)
     return t("Finish editing the queued message before clearing the conversation.");
   if ((session.queuedMessages?.length ?? 0) > 0)

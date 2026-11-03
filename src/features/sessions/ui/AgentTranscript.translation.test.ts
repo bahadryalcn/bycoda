@@ -5,7 +5,10 @@ import { expect, it, vi } from "vitest";
 import { AgentTranscript } from "./AgentTranscript";
 import { registerHarness } from "../../../integrations/harness/core/registry";
 import { codexAdapter } from "../../../integrations/harness/providers/codex/codexAdapter";
-import { saveDefaultTranslationChoice, saveDefaultRepromptChoice } from "../model/translationPreferences";
+import {
+  saveDefaultTranslationChoice,
+  saveDefaultRepromptChoice,
+} from "../model/translationPreferences";
 
 it.each([
   ["Translate to English", "Apply translation"],
@@ -13,7 +16,8 @@ it.each([
 ])(
   "previews %s for selected message text and reverses approved display without changing the saved block",
   async (action, applyLabel) => {
-    const saveChoice = action === "Reprompt" ? saveDefaultRepromptChoice : saveDefaultTranslationChoice;
+    const saveChoice =
+      action === "Reprompt" ? saveDefaultRepromptChoice : saveDefaultTranslationChoice;
     saveChoice({ harness: "codex", model: "codex:gpt-6.1", providerAccountId: "chosen" });
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal(

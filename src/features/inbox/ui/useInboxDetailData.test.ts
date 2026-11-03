@@ -43,11 +43,9 @@ beforeEach(() => {
   api.details
     .mockReset()
     .mockImplementation(async () => ({ body: `details-${api.details.mock.calls.length}` }));
-  api.thread
-    .mockReset()
-    .mockImplementation(async () => ({
-      comments: [{ body: `thread-${api.thread.mock.calls.length}` }],
-    }));
+  api.thread.mockReset().mockImplementation(async () => ({
+    comments: [{ body: `thread-${api.thread.mock.calls.length}` }],
+  }));
   api.diff.mockReset().mockResolvedValue({ files: [] });
   // Complete observer notifications inside async act.
   notifyManager.setScheduler(queueMicrotask);

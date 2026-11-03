@@ -1,6 +1,9 @@
 import { useCallback, useState, type MutableRefObject } from "react";
 import { type SidebarTabId } from "../../../features/settings/model/appearance";
-import { loadProjectSidebarTab, saveProjectSidebarTab } from "../../../features/settings/model/projectSidebarTab";
+import {
+  loadProjectSidebarTab,
+  saveProjectSidebarTab,
+} from "../../../features/settings/model/projectSidebarTab";
 import { pathKey } from "../../../shared/lib/paths";
 
 export interface SidebarTabSelectionDeps {

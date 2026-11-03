@@ -61,10 +61,7 @@ describe("machine snapshot", () => {
       goalMachines(),
       probeMachines(),
     ]);
-    await Promise.all([
-      listBoardTasks(reach.capable),
-      listBoardGoals(goalHosts),
-    ]);
+    await Promise.all([listBoardTasks(reach.capable), listBoardGoals(goalHosts)]);
     for (const machine of [mac, mini]) {
       expect(calls("environment.describe", machine.id)).toBe(1);
       expect(calls("projects.list", machine.id)).toBe(1);
@@ -72,11 +69,25 @@ describe("machine snapshot", () => {
     // Automation reveal needs a fresh, paired project/list read on the captured
     // environment; the shared Tasks/Goals cache cannot certify this source.
     await listHostAutomations(reach.capable);
-    for(const machine of [mac,mini]){
-      expect(calls("environment.describe",machine.id)).toBe(1);
-      expect(calls("projects.list",machine.id)).toBe(2);
-      expect(request).toHaveBeenCalledWith(machine.id,"projects.list",{},false,false,machine.environmentId);
-      expect(request).toHaveBeenCalledWith(machine.id,"automations.list",{},false,false,machine.environmentId);
+    for (const machine of [mac, mini]) {
+      expect(calls("environment.describe", machine.id)).toBe(1);
+      expect(calls("projects.list", machine.id)).toBe(2);
+      expect(request).toHaveBeenCalledWith(
+        machine.id,
+        "projects.list",
+        {},
+        false,
+        false,
+        machine.environmentId,
+      );
+      expect(request).toHaveBeenCalledWith(
+        machine.id,
+        "automations.list",
+        {},
+        false,
+        false,
+        machine.environmentId,
+      );
     }
   });
 

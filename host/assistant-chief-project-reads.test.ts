@@ -129,8 +129,7 @@ async function fixture() {
     await store.close();
     rmSync(folder, { recursive: true, force: true });
   });
-  const snapshot = () =>
-    reads.snapshot({ allowRoutineQuestions: false }, () => true);
+  const snapshot = () => reads.snapshot({ allowRoutineQuestions: false }, () => true);
   return {
     store,
     repository,
@@ -169,11 +168,7 @@ it("injects real scoped steward, automation and Host attention metadata without 
   expect(card.externalProviderInbox.available).toBe(false);
   expect(card.externalProviderInbox.reason).toContain("privacy grant");
   expect(card.projectReads[0].inbox.items.map((item) => item.id)).toEqual(
-    expect.arrayContaining([
-      "goal:assistant-job",
-      "task:task",
-      "automation:automation",
-    ]),
+    expect.arrayContaining(["goal:assistant-job", "task:task", "automation:automation"]),
   );
   expect(JSON.stringify(card)).not.toContain("PRIVATE");
   const result = await f.reads.execute(
@@ -198,10 +193,7 @@ it("injects real scoped steward, automation and Host attention metadata without 
     },
     () => true,
   );
-  expect(result.results.map((value) => (value.data as any).id)).toEqual([
-    "steward",
-    "automation",
-  ]);
+  expect(result.results.map((value) => (value.data as any).id)).toEqual(["steward", "automation"]);
   expect(JSON.stringify(result)).not.toContain("PRIVATE");
 });
 it("rejects foreign project/target and stale versions without widening the saved job", async () => {
@@ -229,9 +221,7 @@ it("rejects foreign project/target and stale versions without widening the saved
     },
     () => true,
   );
-  expect(result.results.every((value) => (value.data as any).unavailable)).toBe(
-    true,
-  );
+  expect(result.results.every((value) => (value.data as any).unavailable)).toBe(true);
   expect(JSON.stringify(result)).not.toContain("PRIVATE FOREIGN");
 });
 it("binds attention details to the complete canonical queue token and rechecks it after changes", async () => {
@@ -257,16 +247,10 @@ it("binds attention details to the complete canonical queue token and rechecks i
   f.task.status = "running";
   await f.save("tasks", f.task);
   const next = await f.snapshot();
-  expect(JSON.stringify(next.readResults?.results)).not.toContain(
-    "Blocked worker",
-  );
+  expect(JSON.stringify(next.readResults?.results)).not.toContain("Blocked worker");
   expect(
-    (
-      await f.reads.execute(
-        { operationId: "stale-attention", requests: [request] },
-        () => true,
-      )
-    ).results[0].data,
+    (await f.reads.execute({ operationId: "stale-attention", requests: [request] }, () => true))
+      .results[0].data,
   ).toHaveProperty("unavailable");
 });
 it("suppresses a result changed between read and disclosure even when a buggy writer kept its timestamp", async () => {
@@ -303,8 +287,7 @@ it("revalidates metadata after deferred unrelated work before exposing the next 
   let listCalls = 0;
   const notes = {
     list: async () => {
-      if (++listCalls === 1)
-        await f.save("stewards", { ...f.steward, enabled: false });
+      if (++listCalls === 1) await f.save("stewards", { ...f.steward, enabled: false });
       return { notes: [] };
     },
     get: async () => null,
@@ -384,9 +367,7 @@ it("enforces one shared four-read budget and exact scopes across all families", 
     ]),
   ).toThrow("repeat");
   expect(() =>
-    parseChiefReadRequests([
-      { op: "automations.delete", jobId: "j", projectId: "p", id: "s" },
-    ]),
+    parseChiefReadRequests([{ op: "automations.delete", jobId: "j", projectId: "p", id: "s" }]),
   ).toThrow();
   expect(CHIEF_READ_LIMITS.calls).toBe(4);
 });
@@ -433,12 +414,8 @@ it("limits quick jobs to their exact completed atomic automation receipt and nev
     name: "Exact automation",
   });
   expect(
-    (
-      await f.reads.execute(
-        { operationId: "missing-proof", requests: [request] },
-        () => true,
-      )
-    ).results[0].data,
+    (await f.reads.execute({ operationId: "missing-proof", requests: [request] }, () => true))
+      .results[0].data,
   ).toHaveProperty("unavailable");
   const receipt = {
     jobId: quick.id,
@@ -451,17 +428,11 @@ it("limits quick jobs to their exact completed atomic automation receipt and nev
     automationUpdatedAt: 12,
   };
   await f.store.db
-    .prepare(
-      "INSERT INTO assistant_quick_automations(job_id,value) VALUES(?,?)",
-    )
+    .prepare("INSERT INTO assistant_quick_automations(job_id,value) VALUES(?,?)")
     .run(quick.id, JSON.stringify({ ...receipt, state: "unknown" }));
   expect(
-    (
-      await f.reads.execute(
-        { operationId: "unknown-proof", requests: [request] },
-        () => true,
-      )
-    ).results[0].data,
+    (await f.reads.execute({ operationId: "unknown-proof", requests: [request] }, () => true))
+      .results[0].data,
   ).toHaveProperty("unavailable");
   await f.store.db
     .prepare("UPDATE assistant_quick_automations SET value=? WHERE job_id=?")
@@ -487,21 +458,15 @@ it("limits quick jobs to their exact completed atomic automation receipt and nev
     items: [{ id: automationId }],
   });
   expect((result.results[0].data as any).items).toHaveLength(1);
-  expect(
-    result.results.slice(1).every((value) => (value.data as any).unavailable),
-  ).toBe(true);
+  expect(result.results.slice(1).every((value) => (value.data as any).unavailable)).toBe(true);
   await f.save("automations", {
     ...f.automation,
     id: automationId,
     createdAt: 999,
   });
   expect(
-    (
-      await f.reads.execute(
-        { operationId: "recreated-id", requests: [request] },
-        () => true,
-      )
-    ).results[0].data,
+    (await f.reads.execute({ operationId: "recreated-id", requests: [request] }, () => true))
+      .results[0].data,
   ).toHaveProperty("unavailable");
 });
 it("bounds project-family discovery and keeps unavailable tables distinct from an empty list", async () => {
@@ -511,9 +476,7 @@ it("bounds project-family discovery and keeps unavailable tables distinct from a
   const list = await f.reads.execute(
     {
       operationId: "bounded-list",
-      requests: [
-        { op: "automations.list", jobId: "job", projectId: f.project.id },
-      ],
+      requests: [{ op: "automations.list", jobId: "job", projectId: f.project.id }],
     },
     () => true,
   );
@@ -522,16 +485,12 @@ it("bounds project-family discovery and keeps unavailable tables distinct from a
     truncated: true,
   });
   expect((list.results[0].data as any).items).toHaveLength(10);
-  expect(JSON.stringify(list).length).toBeLessThan(
-    CHIEF_READ_LIMITS.resultChars,
-  );
+  expect(JSON.stringify(list).length).toBeLessThan(CHIEF_READ_LIMITS.resultChars);
   await f.store.db.exec("DROP TABLE stewards");
   const missing = await f.reads.execute(
     {
       operationId: "missing-family",
-      requests: [
-        { op: "stewards.list", jobId: "job", projectId: f.project.id },
-      ],
+      requests: [{ op: "stewards.list", jobId: "job", projectId: f.project.id }],
     },
     () => true,
   );
@@ -576,15 +535,10 @@ it("keeps mixed-family results and cached retries inside the same combined chara
     { op: "tasks.read", jobId: "job", taskId: ids[0], expectedUpdatedAt: 7 },
   ]);
   for (let attempt = 0; attempt < 2; attempt++) {
-    const result = await f.reads.execute(
-      { operationId: "combined-bound", requests },
-      () => true,
-    );
+    const result = await f.reads.execute({ operationId: "combined-bound", requests }, () => true);
     expect(JSON.stringify(result.results).length).toBeLessThanOrEqual(
       CHIEF_READ_LIMITS.resultChars,
     );
-    expect(
-      result.results.some((value) => (value.data as any).unavailable),
-    ).toBe(true);
+    expect(result.results.some((value) => (value.data as any).unavailable)).toBe(true);
   }
 });

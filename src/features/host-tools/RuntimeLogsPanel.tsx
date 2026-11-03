@@ -465,40 +465,41 @@ function ScopedRuntimeLogsPanel({
   };
   // Each empty state offers the one local action that resolves it; the source
   // of captured output stays in the toolbar (website monitors) and the servers tool.
-  const emptyAction = !started && !busy ? (
-    <Button variant="secondary" size="sm" onClick={togglePause}>
-      {t("Read logs")}
-    </Button>
-  ) : error && !loaded ? undefined : paused && !buffer.entries.length ? (
-    <Button variant="secondary" size="sm" onClick={togglePause}>
-      {t("Resume")}
-    </Button>
-  ) : buffer.entries.length && !filtered.length ? (
-    <Button
-      variant="secondary"
-      size="sm"
-      onClick={() => {
-        setSource("all");
-        setSourceIds([]);
-        setLevel("all");
-        setSearch("");
-      }}
-    >
-      {t("Reset filters")}
-    </Button>
-  ) : target.kind === "project" && loaded && !buffer.entries.length ? (
-    <Button
-      variant="secondary"
-      size="sm"
-      onClick={() => {
-        setFiltersOpen(false);
-        setMoreOpen(false);
-        setMonitorsOpen(true);
-      }}
-    >
-      {t("Capture a website")}
-    </Button>
-  ) : undefined;
+  const emptyAction =
+    !started && !busy ? (
+      <Button variant="secondary" size="sm" onClick={togglePause}>
+        {t("Read logs")}
+      </Button>
+    ) : error && !loaded ? undefined : paused && !buffer.entries.length ? (
+      <Button variant="secondary" size="sm" onClick={togglePause}>
+        {t("Resume")}
+      </Button>
+    ) : buffer.entries.length && !filtered.length ? (
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => {
+          setSource("all");
+          setSourceIds([]);
+          setLevel("all");
+          setSearch("");
+        }}
+      >
+        {t("Reset filters")}
+      </Button>
+    ) : target.kind === "project" && loaded && !buffer.entries.length ? (
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => {
+          setFiltersOpen(false);
+          setMoreOpen(false);
+          setMonitorsOpen(true);
+        }}
+      >
+        {t("Capture a website")}
+      </Button>
+    ) : undefined;
   const emptyRetry =
     started && !(buffer.entries.length && !filtered.length) ? () => void read() : undefined;
 
@@ -1054,9 +1055,7 @@ const RuntimeLogRow = memo(function RuntimeLogRow({
             </time>
             <span className="runtime-log-level">{LEVEL_LABELS[runtimeLogDisplayLevel(entry)]}</span>
             <OverflowTooltip label={sourceLabel}>
-              <span className="runtime-log-source-label">
-                {sourceLabel}
-              </span>
+              <span className="runtime-log-source-label">{sourceLabel}</span>
             </OverflowTooltip>
             {group.entries.length > 1 ? (
               <Tooltip label={t("{p0} repeated events", { p0: group.entries.length })}>

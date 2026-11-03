@@ -110,10 +110,20 @@ describe("environment logical runtime", () => {
   });
   it.each([
     ["goals.list", {}],
-    ["tasks.save", { task: {
-      id: "task", title: "Captured owner payload", prompt: "Work", projectId: "p",
-      harness: "codex", model: "fixture", runtimeMode: "auto",
-    } }],
+    [
+      "tasks.save",
+      {
+        task: {
+          id: "task",
+          title: "Captured owner payload",
+          prompt: "Work",
+          projectId: "p",
+          harness: "codex",
+          model: "fixture",
+          runtimeMode: "auto",
+        },
+      },
+    ],
     ["files.write", { projectId: "p", path: "file", expected: "before", content: "after" }],
     ["devServers.bridgeRead", { projectId: "p", streamId: "bridge" }],
   ] as const)(

@@ -69,12 +69,8 @@ async function fixture() {
     title: "Task",
     prompt: "Task source",
   };
-  await store.db
-    .prepare("INSERT INTO goals VALUES(?,?)")
-    .run(goal.id, JSON.stringify(goal));
-  await store.db
-    .prepare("INSERT INTO tasks VALUES(?,?)")
-    .run(task.id, JSON.stringify(task));
+  await store.db.prepare("INSERT INTO goals VALUES(?,?)").run(goal.id, JSON.stringify(goal));
+  await store.db.prepare("INSERT INTO tasks VALUES(?,?)").run(task.id, JSON.stringify(task));
   const record = {
     projectId: project.id,
     status: "running",
@@ -112,19 +108,14 @@ async function fixture() {
     list: vi.fn(async () => ({ notes: [note] })),
     get: vi.fn(async (id: string) => (id === note.id ? note : null)),
   };
-  const reads = new AssistantChiefReads(
-    store,
-    () => notes as unknown as AsyncHostNotes,
-  );
+  const reads = new AssistantChiefReads(store, () => notes as unknown as AsyncHostNotes);
   await reads.ready;
   cleanups.push(async () => {
     await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  const snapshot = () =>
-    reads.snapshot({ allowRoutineQuestions: false }, () => true);
-  const token = async () =>
-    ((await snapshot()).statuses[0] as any).sourceToken as string;
+  const snapshot = () => reads.snapshot({ allowRoutineQuestions: false }, () => true);
+  const token = async () => ((await snapshot()).statuses[0] as any).sourceToken as string;
   return {
     store,
     repository,
@@ -139,9 +130,7 @@ async function fixture() {
     snapshot,
     token,
     saveTask: () =>
-      store.db
-        .prepare("UPDATE tasks SET value=? WHERE id=?")
-        .run(JSON.stringify(task), task.id),
+      store.db.prepare("UPDATE tasks SET value=? WHERE id=?").run(JSON.stringify(task), task.id),
   };
 }
 it("injects cheap canonical goal/task/status/note metadata before any transcript reads", async () => {
@@ -189,10 +178,7 @@ it("requires exact status source token, returns prose only, and bounds one excer
   expect(JSON.stringify(data)).not.toContain("PRIVATE");
   expect((await f.snapshot()).readResults?.operationId).toBe("read-one");
   await expect(
-    f.reads.execute(
-      { operationId: "read-one", requests: [{ ...request, limit: 1 }] },
-      () => true,
-    ),
+    f.reads.execute({ operationId: "read-one", requests: [{ ...request, limit: 1 }] }, () => true),
   ).rejects.toThrow("preserve");
 });
 it("retains exact settled read receipts through restart and withholds them after run/source replacement", async () => {
@@ -210,12 +196,10 @@ it("retains exact settled read receipts through restart and withholds them after
   await restarted.ready;
   expect(await restarted.execute(input, () => true)).toEqual(result);
   f.record.runId = "replacement";
-  expect(
-    JSON.stringify((await restarted.execute(input, () => true)).results),
-  ).not.toContain("xxxxxxxx");
-  expect(JSON.stringify((await f.snapshot()).readResults)).not.toContain(
+  expect(JSON.stringify((await restarted.execute(input, () => true)).results)).not.toContain(
     "xxxxxxxx",
   );
+  expect(JSON.stringify((await f.snapshot()).readResults)).not.toContain("xxxxxxxx");
 });
 it("does not re-read an interrupted original read or retarget it after pending receipt recovery", async () => {
   const f = await fixture(),
@@ -226,10 +210,7 @@ it("does not re-read an interrupted original read or retarget it after pending r
       sourceToken: await f.token(),
       limit: 1,
     };
-  await f.reads.execute(
-    { operationId: "unknown", requests: [request] },
-    () => true,
-  );
+  await f.reads.execute({ operationId: "unknown", requests: [request] }, () => true);
   const row = await f.store.db
       .prepare("SELECT value FROM assistant_chief_reads WHERE id='unknown:0'")
       .get(),
@@ -259,10 +240,7 @@ it("refuses arbitrary projects, manual session IDs, owner notes and task/goal ve
   for (const [index, request] of requests.entries())
     expect(
       JSON.stringify(
-        await f.reads.execute(
-          { operationId: `denied-${index}`, requests: [request] },
-          () => true,
-        ),
+        await f.reads.execute({ operationId: `denied-${index}`, requests: [request] }, () => true),
       ),
     ).toContain("unavailable");
   f.note.tags = [];
@@ -377,36 +355,22 @@ it("provides bounded own-note/task/goal reads and enforces whole-batch retry ide
     },
     { op: "goals.read" as const, jobId: "job", expectedUpdatedAt: 5 },
   ];
-  const result = await f.reads.execute(
-    { operationId: "scoped", requests },
-    () => true,
-  );
+  const result = await f.reads.execute({ operationId: "scoped", requests }, () => true);
   expect((result.results[0].data as any).body).toHaveLength(4000);
   expect(JSON.stringify(result.results)).toContain("Task source");
   expect(JSON.stringify(result.results)).toContain("Goal source");
-  expect(JSON.stringify(result.results).length).toBeLessThanOrEqual(
-    CHIEF_READ_LIMITS.resultChars,
-  );
+  expect(JSON.stringify(result.results).length).toBeLessThanOrEqual(CHIEF_READ_LIMITS.resultChars);
   await expect(
-    f.reads.execute(
-      { operationId: "scoped", requests: requests.slice(0, 1) },
-      () => true,
-    ),
+    f.reads.execute({ operationId: "scoped", requests: requests.slice(0, 1) }, () => true),
   ).rejects.toThrow("preserve");
 });
 it("validates finite read decisions separately from mutations and rejects authority fields or unbounded read lists", () => {
   const read = { op: "sessions.status", jobId: "job", sessionId: "worker" };
-  expect(chiefActions(JSON.stringify({ actions: [], reads: [read] }))).toEqual(
-    [],
-  );
-  expect(
-    chiefReadRequests(JSON.stringify({ actions: [], reads: [read] })),
-  ).toEqual([read]);
+  expect(chiefActions(JSON.stringify({ actions: [], reads: [read] }))).toEqual([]);
+  expect(chiefReadRequests(JSON.stringify({ actions: [], reads: [read] }))).toEqual([read]);
   for (const value of [
     {
-      actions: [
-        { op: "jobs.replan", id: "job", expectedVersion: 1, feedback: "x" },
-      ],
+      actions: [{ op: "jobs.replan", id: "job", expectedVersion: 1, feedback: "x" }],
       reads: [read],
     },
     { actions: [], reads: [{ ...read, principal: "owner" }] },
@@ -440,12 +404,9 @@ it("runs one reasoning call per wake, persists scoped reads and supplies them on
       };
     }
     expect(
-      JSON.parse(input.stateCard).workerReads.readResults.results[0].data
-        .messages,
+      JSON.parse(input.stateCard).workerReads.readResults.results[0].data.messages,
     ).toHaveLength(1);
-    expect(
-      JSON.parse(input.stateCard).workerReads.readResults.results[1].data,
-    ).toMatchObject({
+    expect(JSON.parse(input.stateCard).workerReads.readResults.results[1].data).toMatchObject({
       scope: "host-attention",
       externalProviderInboxAvailable: false,
     });
@@ -494,15 +455,10 @@ it("runs one reasoning call per wake, persists scoped reads and supplies them on
   );
   await core.tick();
   expect(wake).toHaveBeenCalledTimes(1);
-  expect(
-    (await core.request({ op: "snapshot" }, "owner")).snapshot!.usage
-      .chiefTokens,
-  ).toBe(50);
+  expect((await core.request({ op: "snapshot" }, "owner")).snapshot!.usage.chiefTokens).toBe(50);
   expect(
     await f.store.db
-      .prepare(
-        "SELECT id FROM assistant_chief_reads WHERE id!='latest' AND id NOT LIKE '%:batch'",
-      )
+      .prepare("SELECT id FROM assistant_chief_reads WHERE id!='latest' AND id NOT LIKE '%:batch'")
       .all(),
   ).toHaveLength(2);
   await core.tick();

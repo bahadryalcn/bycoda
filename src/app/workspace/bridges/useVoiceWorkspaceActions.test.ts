@@ -24,20 +24,51 @@ function setup(overrides: Partial<VoiceWorkspaceActionsDeps> = {}) {
 const args = { sessionId: "first", projectPath: "/project", requestId: "request-1" };
 
 describe("voice workspace owner actions", () => {
-  it("resolves the display/folder aliases but creates only at the exact listed cwd, preserving ambiguity and access",async()=>{
-    const path="G:/Projects/my_projects/monocode",onCreate=vi.fn(async()=>"exact-session");
-    const {deps,execute}=setup({getProjects:()=>voiceProjectNames([{path,name:"bycoda"}]),onCreate});
-    const resolved=await execute("workspace.projects.resolve",{query:"bycoda"});
-    expect(resolved).toMatchObject({ambiguous:false,projects:[{path,name:"bycoda",folderName:"monocode"}]});
-    expect(await execute("workspace.sessions.create",{projectPath:"bycoda",requestId:"bad-alias"})).toMatchObject({status:"rejected"});
+  it("resolves the display/folder aliases but creates only at the exact listed cwd, preserving ambiguity and access", async () => {
+    const path = "G:/Projects/my_projects/monocode",
+      onCreate = vi.fn(async () => "exact-session");
+    const { deps, execute } = setup({
+      getProjects: () => voiceProjectNames([{ path, name: "bycoda" }]),
+      onCreate,
+    });
+    const resolved = await execute("workspace.projects.resolve", { query: "bycoda" });
+    expect(resolved).toMatchObject({
+      ambiguous: false,
+      projects: [{ path, name: "bycoda", folderName: "monocode" }],
+    });
+    expect(
+      await execute("workspace.sessions.create", { projectPath: "bycoda", requestId: "bad-alias" }),
+    ).toMatchObject({ status: "rejected" });
     expect(onCreate).not.toHaveBeenCalled();
-    expect(await execute("workspace.sessions.create",{projectPath:path,requestId:"original-create"})).toMatchObject({sessionId:"exact-session",projectPath:path,submitted:false});
-    expect(onCreate).toHaveBeenCalledWith({projectPath:path,requestId:"original-create",prompt:"",submit:false});
-    deps.getProjects=()=>voiceProjectNames([{path,name:"bycoda"},{path:"remote://other/work/monocode",name:"bycoda"}]);
-    expect(await execute("workspace.projects.resolve",{query:"bycoda"})).toMatchObject({ambiguous:true,total:2});
-    deps.getProjects=()=>[];
-    expect(await execute("workspace.projects.resolve",{query:"bycoda"})).toMatchObject({projects:[],total:0});
-    expect(await execute("workspace.sessions.create",{projectPath:path,requestId:"after-lock"})).toMatchObject({status:"rejected"});
+    expect(
+      await execute("workspace.sessions.create", {
+        projectPath: path,
+        requestId: "original-create",
+      }),
+    ).toMatchObject({ sessionId: "exact-session", projectPath: path, submitted: false });
+    expect(onCreate).toHaveBeenCalledWith({
+      projectPath: path,
+      requestId: "original-create",
+      prompt: "",
+      submit: false,
+    });
+    deps.getProjects = () =>
+      voiceProjectNames([
+        { path, name: "bycoda" },
+        { path: "remote://other/work/monocode", name: "bycoda" },
+      ]);
+    expect(await execute("workspace.projects.resolve", { query: "bycoda" })).toMatchObject({
+      ambiguous: true,
+      total: 2,
+    });
+    deps.getProjects = () => [];
+    expect(await execute("workspace.projects.resolve", { query: "bycoda" })).toMatchObject({
+      projects: [],
+      total: 0,
+    });
+    expect(
+      await execute("workspace.sessions.create", { projectPath: path, requestId: "after-lock" }),
+    ).toMatchObject({ status: "rejected" });
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
   it("merges stored and loaded metadata without exposing hidden workers or another project's sessions", async () => {

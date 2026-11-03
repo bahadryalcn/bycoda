@@ -57,7 +57,13 @@ async function renderBoth() {
     createElement(
       "div",
       { "data-tab": documentId },
-      createElement(FileEditor, { path: PATH, documentId, cwd: "/repo", active: false, onDirtyChange }),
+      createElement(FileEditor, {
+        path: PATH,
+        documentId,
+        cwd: "/repo",
+        active: false,
+        onDirtyChange,
+      }),
     );
   await act(async () =>
     root.render(createElement("div", null, editor("file-tab"), editor("review-tab"))),

@@ -37,7 +37,9 @@ export function accountDisplayLabel(
 /** The model name of a choice without its trailing account label. */
 export function modelChoiceBaseName(choice: AccountModelChoice): string {
   const suffix = choice.accountLabel ? ` ${choice.accountLabel}` : "";
-  return suffix && choice.name.endsWith(suffix) ? choice.name.slice(0, -suffix.length) : choice.name;
+  return suffix && choice.name.endsWith(suffix)
+    ? choice.name.slice(0, -suffix.length)
+    : choice.name;
 }
 
 export function accountModelChoices(

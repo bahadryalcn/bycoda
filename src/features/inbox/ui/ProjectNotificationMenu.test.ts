@@ -198,9 +198,9 @@ it("shows persisted mute status on the project and in its reopened menu", async 
   expect(button("Mute notifications").textContent).not.toContain("Muted until");
   expect(document.querySelector('[aria-label="Resume notifications"]')).toBeNull();
   expect(
-    document.querySelector('[role="menu"]')?.firstElementChild?.querySelector(
-      '[aria-label="Group name"]',
-    ),
+    document
+      .querySelector('[role="menu"]')
+      ?.firstElementChild?.querySelector('[aria-label="Group name"]'),
   ).not.toBeNull();
 });
 

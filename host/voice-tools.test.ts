@@ -176,7 +176,7 @@ it("routes real owner voice RPCs through scoped tools without leaking or retaini
 
 function ports() {
   const issuer = () => ({
-    issueSessionGrant: vi.fn(async (sessionId:string) => ({
+    issueSessionGrant: vi.fn(async (sessionId: string) => ({
       token: "private-request-bound-grant",
       scope: {
         projectId: "project-a",
@@ -196,14 +196,48 @@ function ports() {
   } satisfies VoiceToolDispatchPorts;
 }
 
-it("binds causal disclosure metadata to the verified grant and rejects malformed context envelopes",async()=>{
- for(const extra of [{causalContextId:"ctx"},{causalContextId:"ctx",requestId:"request"},{causalContextId:1,threadId:"thread",requestId:"request"}])expect(()=>parseVoiceToolCall({...request(),...extra})).toThrow();
- const p={...ports(),threadIdentity:vi.fn(async()=>({id:"thread",projectId:"project-a"}))};
- const dispatch=await prepareVoiceToolDispatch({...request(),threadId:"thread",requestId:"exact-request",causalContextId:"captured-context"},p);
- expect(dispatch.causalContextId).toBe("captured-context");expect(dispatch.source).toEqual({threadId:"thread",projectId:"project-a",sessionId:"session-a",family:"conversation",action:"notes.create"});
- expect(dispatch.params).not.toHaveProperty("causalContextId");dispatch.release();
- const changed=ports();changed.issuers.conversation.issueSessionGrant.mockResolvedValue({token:"foreign",scope:{projectId:"other-project",sessionId:"session-a",provider:"codex",environmentId:"host-a"}});
- await expect(prepareVoiceToolDispatch(request(),changed)).rejects.toThrow("grant scope changed");expect(changed.issuers.conversation.revokeSessionGrant).toHaveBeenCalledWith("foreign");
+it("binds causal disclosure metadata to the verified grant and rejects malformed context envelopes", async () => {
+  for (const extra of [
+    { causalContextId: "ctx" },
+    { causalContextId: "ctx", requestId: "request" },
+    { causalContextId: 1, threadId: "thread", requestId: "request" },
+  ])
+    expect(() => parseVoiceToolCall({ ...request(), ...extra })).toThrow();
+  const p = {
+    ...ports(),
+    threadIdentity: vi.fn(async () => ({ id: "thread", projectId: "project-a" })),
+  };
+  const dispatch = await prepareVoiceToolDispatch(
+    {
+      ...request(),
+      threadId: "thread",
+      requestId: "exact-request",
+      causalContextId: "captured-context",
+    },
+    p,
+  );
+  expect(dispatch.causalContextId).toBe("captured-context");
+  expect(dispatch.source).toEqual({
+    threadId: "thread",
+    projectId: "project-a",
+    sessionId: "session-a",
+    family: "conversation",
+    action: "notes.create",
+  });
+  expect(dispatch.params).not.toHaveProperty("causalContextId");
+  dispatch.release();
+  const changed = ports();
+  changed.issuers.conversation.issueSessionGrant.mockResolvedValue({
+    token: "foreign",
+    scope: {
+      projectId: "other-project",
+      sessionId: "session-a",
+      provider: "codex",
+      environmentId: "host-a",
+    },
+  });
+  await expect(prepareVoiceToolDispatch(request(), changed)).rejects.toThrow("grant scope changed");
+  expect(changed.issuers.conversation.revokeSessionGrant).toHaveBeenCalledWith("foreign");
 });
 
 describe("voice tool gateway", () => {

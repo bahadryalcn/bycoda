@@ -1510,7 +1510,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
           {workingBadge}
           <div className="session-pane-header-actions">
             <AssistantManagedBadge management={session.managedBy} local={!remote} />
-            <AssistantSessionControl sessionId={session.id} cwd={session.cwd} management={session.managedBy} local={!remote}/>
+            <AssistantSessionControl
+              sessionId={session.id}
+              cwd={session.cwd}
+              management={session.managedBy}
+              local={!remote}
+            />
             {headerStatus}
             <BackgroundSessionIndicator key={session.id} session={session} />
             {projectActions}
@@ -1526,7 +1531,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
               <>
                 {workingBadge ? <div className="min-w-0 max-w-56">{workingBadge}</div> : null}
                 <AssistantManagedBadge management={session.managedBy} local={!remote} />
-                <AssistantSessionControl sessionId={session.id} cwd={session.cwd} management={session.managedBy} local={!remote}/>
+                <AssistantSessionControl
+                  sessionId={session.id}
+                  cwd={session.cwd}
+                  management={session.managedBy}
+                  local={!remote}
+                />
                 {headerStatus}
                 <BackgroundSessionIndicator key={session.id} session={session} />
                 {projectActions}
@@ -1541,7 +1551,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
           >
             {workingBadge ? <div className="me-auto min-w-0">{workingBadge}</div> : null}
             <AssistantManagedBadge management={session.managedBy} local={!remote} />
-            <AssistantSessionControl sessionId={session.id} cwd={session.cwd} management={session.managedBy} local={!remote}/>
+            <AssistantSessionControl
+              sessionId={session.id}
+              cwd={session.cwd}
+              management={session.managedBy}
+              local={!remote}
+            />
             {headerStatus}
             <BackgroundSessionIndicator key={session.id} session={session} />
             {projectActions}

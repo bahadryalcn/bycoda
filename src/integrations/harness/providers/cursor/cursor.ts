@@ -15,7 +15,10 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
-import { announceSlowProviderStartup, PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
+import {
+  announceSlowProviderStartup,
+  PROVIDER_STARTUP_TIMEOUT_MS,
+} from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -631,10 +634,14 @@ async function applyModelSelection(
     await setConfigOption(live, live.modelConfigId, base, acp);
   } catch {
     await acp
-      .request("session/set_model", {
-        sessionId: live.acpSessionId,
-        modelId: base,
-      }, 20_000)
+      .request(
+        "session/set_model",
+        {
+          sessionId: live.acpSessionId,
+          modelId: base,
+        },
+        20_000,
+      )
       .catch(() => undefined);
   }
 
@@ -654,11 +661,15 @@ async function setConfigOption(
   const current = live.configOptions.find((option) => option.id === configId);
   if (current && String(current.currentValue ?? "") === String(value)) return;
 
-  const result = await acp.request<SessionSetupResult>("session/set_config_option", {
-    sessionId: live.acpSessionId,
-    configId,
-    value,
-  }, 20_000);
+  const result = await acp.request<SessionSetupResult>(
+    "session/set_config_option",
+    {
+      sessionId: live.acpSessionId,
+      configId,
+      value,
+    },
+    20_000,
+  );
   if (result?.configOptions) {
     live.configOptions = readConfigOptions(result.configOptions);
     live.modelConfigId = extractModelConfigId(result) || live.modelConfigId;
@@ -702,7 +713,10 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
       }
       nativeOutputSink(responseScope.work, settleCursorBackgroundAgents)(live, "completed");
       // Final enrichment is optional and must not hold turn completion.
-      void nativeOutputSink(responseScope.work, refreshCursorSubagents)(live).catch((error: unknown) => {
+      void nativeOutputSink(
+        responseScope.work,
+        refreshCursorSubagents,
+      )(live).catch((error: unknown) => {
         console.warn("[cursor] Final subagent refresh failed", error);
       });
       if (live.cancelled || live.muteUpdates) return;
@@ -1234,11 +1248,15 @@ function refreshCursorSubagents(live: Live): Promise<void> {
   const emitNative = nativeOutputSink(outputWork, (event: HarnessEvent) => live.onEvent(event));
   const job = trackNativeOutputWork(
     (async () => {
-      const runs = await withTimeout(readStoredCursorSubagentRuns(
-        live.acpSessionId,
-        [...live.agentTools.keys()].slice(-256),
-        live.subagentRevisions,
-      ), 20_000, "Cursor subagent refresh timed out").catch(() => []);
+      const runs = await withTimeout(
+        readStoredCursorSubagentRuns(
+          live.acpSessionId,
+          [...live.agentTools.keys()].slice(-256),
+          live.subagentRevisions,
+        ),
+        20_000,
+        "Cursor subagent refresh timed out",
+      ).catch(() => []);
       if (live.muteUpdates || live.subagentGeneration !== generation) return;
       for (const run of runs) {
         if (!live.agentTools.has(run.toolCallId)) continue;

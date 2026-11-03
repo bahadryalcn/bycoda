@@ -285,7 +285,8 @@ async function dragIssue(key: string, over: () => Element | null) {
 afterEach(() => {
   Reflect.deleteProperty(document, "elementFromPoint");
 });
-const column = (name: string) => container.querySelector<HTMLElement>(`section[aria-label="${name}"]`)!;
+const column = (name: string) =>
+  container.querySelector<HTMLElement>(`section[aria-label="${name}"]`)!;
 const card = (key: string) =>
   [...container.querySelectorAll<HTMLElement>(".jira-board-card")].find((el) =>
     el.textContent?.includes(key),
@@ -304,7 +305,10 @@ it("marks the card a ranked drop lands before, and refuses the dragged card itse
   await dragIssue("ENG-1", () => card("ENG-2"));
   expect(hint()?.textContent).toBe("ENG-1Reorder in Ready");
   expect(card("ENG-2").getAttribute("data-drop-indicator")).toBe("before");
-  Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => card("ENG-1") });
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: () => card("ENG-1"),
+  });
   await pointer(handle("ENG-1"), "pointermove", { clientX: 61, clientY: 61 });
   expect(card("ENG-1").getAttribute("data-drop-indicator")).toBeNull();
   expect(hint()?.textContent).toBe("ENG-1Drop on a column");

@@ -26,7 +26,9 @@ describe("externalDraftAction", () => {
   });
 
   it("defers a different draft during an IME composition", () => {
-    expect(externalDraftAction({ external: "你", domValue: "你好", composing: true })).toBe("defer");
+    expect(externalDraftAction({ external: "你", domValue: "你好", composing: true })).toBe(
+      "defer",
+    );
   });
 });
 

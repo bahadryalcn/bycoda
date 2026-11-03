@@ -44,7 +44,9 @@ export function ServerActivity({
         <EmptyState
           size="inline"
           kind={bookmarkedOnly ? "filtered" : undefined}
-          description={t(bookmarkedOnly ? "No bookmarked activity." : "No connection activity yet.")}
+          description={t(
+            bookmarkedOnly ? "No bookmarked activity." : "No connection activity yet.",
+          )}
           onReset={bookmarkedOnly ? () => setBookmarkedOnly(false) : undefined}
         />
       ) : (

@@ -114,40 +114,40 @@ let workspaces: ManagedWorkspace[] = populated
       populatedWorkspace(10, "idle"),
     ]
   : [
-  {
-    id: "managed-blocked",
-    repositoryId: "repo",
-    projectId: project.id,
-    environmentId: machine.environmentId,
-    owner: { kind: "session", id: "session-readable" },
-    path: "/fixture/worktrees/wt-mc-851db1b6",
-    branchRef: "refs/heads/bycoda/s/settings-draft",
-    baseRef: "refs/heads/main",
-    baseCommit: "a".repeat(40),
-    targetBranchRef: "refs/heads/main",
-    state: "idle",
-    directoryState: "blocked",
-    revision: 1,
-    lastActivityAt: 1,
-    pinned: true,
-  },
-  {
-    id: "managed-merged",
-    repositoryId: "repo",
-    projectId: project.id,
-    environmentId: machine.environmentId,
-    owner: { kind: "task", id: "task-merged" },
-    path: "/fixture/worktrees/wt-merged",
-    branchRef: "refs/heads/bycoda/t/settings-reviewed",
-    baseRef: "refs/heads/main",
-    baseCommit: "a".repeat(40),
-    targetBranchRef: "refs/heads/main",
-    state: "merged",
-    directoryState: "present",
-    revision: 1,
-    lastActivityAt: 1,
-    pinned: false,
-  },
+      {
+        id: "managed-blocked",
+        repositoryId: "repo",
+        projectId: project.id,
+        environmentId: machine.environmentId,
+        owner: { kind: "session", id: "session-readable" },
+        path: "/fixture/worktrees/wt-mc-851db1b6",
+        branchRef: "refs/heads/bycoda/s/settings-draft",
+        baseRef: "refs/heads/main",
+        baseCommit: "a".repeat(40),
+        targetBranchRef: "refs/heads/main",
+        state: "idle",
+        directoryState: "blocked",
+        revision: 1,
+        lastActivityAt: 1,
+        pinned: true,
+      },
+      {
+        id: "managed-merged",
+        repositoryId: "repo",
+        projectId: project.id,
+        environmentId: machine.environmentId,
+        owner: { kind: "task", id: "task-merged" },
+        path: "/fixture/worktrees/wt-merged",
+        branchRef: "refs/heads/bycoda/t/settings-reviewed",
+        baseRef: "refs/heads/main",
+        baseCommit: "a".repeat(40),
+        targetBranchRef: "refs/heads/main",
+        state: "merged",
+        directoryState: "present",
+        revision: 1,
+        lastActivityAt: 1,
+        pinned: false,
+      },
     ];
 const workspaceCalls: { method: string; params: Record<string, unknown> }[] = [];
 Object.assign(window, {
@@ -195,11 +195,15 @@ const populatedTrees = [
   makeTree("detached-review", "", { branch: null, head: "def5678" }),
   ...baseTrees.slice(3),
   ...Array.from({ length: 9 }, (_, index) =>
-    makeTree(`spike-${index + 1}`, `spike/${["cache", "queue", "sync", "ui", "auth"][index % 5]}-${index + 1}`, {
-      dirty: index % 4 === 0 ? true : false,
-      unpushed: index % 3 === 0 ? 2 : 0,
-      sessionIds: index % 5 === 0 ? ["spike-session"] : [],
-    }),
+    makeTree(
+      `spike-${index + 1}`,
+      `spike/${["cache", "queue", "sync", "ui", "auth"][index % 5]}-${index + 1}`,
+      {
+        dirty: index % 4 === 0 ? true : false,
+        unpushed: index % 3 === 0 ? 2 : 0,
+        sessionIds: index % 5 === 0 ? ["spike-session"] : [],
+      },
+    ),
   ),
   // A managed directory is listed once, in the managed roster, never repeated here.
   makeTree("wt-populated-1-end", "bycoda/s/login-form-validation", {
@@ -361,9 +365,7 @@ applyThemePreference(
 );
 // A connected machine runs its commands through the same in-memory transport.
 if (remote) setRemoteCommandRunner((command, args) => invoke(command, args));
-const fixtureCwd = remote
-  ? `remote://${machine.environmentId}${project.cwd}`
-  : project.cwd;
+const fixtureCwd = remote ? `remote://${machine.environmentId}${project.cwd}` : project.cwd;
 const removeDisabled = async () => {
   throw new Error("Deletion is disabled in this fixture");
 };

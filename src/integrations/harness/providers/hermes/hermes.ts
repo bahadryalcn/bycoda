@@ -14,7 +14,10 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
-import { announceSlowProviderStartup, PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
+import {
+  announceSlowProviderStartup,
+  PROVIDER_STARTUP_TIMEOUT_MS,
+} from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -216,17 +219,16 @@ export async function steerHermesTurn(input: SteerTurnInput): Promise<void> {
 
   const blocks = hermesPromptBlocks(input.text, input.attachments);
   if (blocks.length === 0) return;
-  await acp.request(
-    "session/prompt",
-    { sessionId: live.acpSessionId, prompt: blocks },
-    CONTROL_TIMEOUT_MS,
-  ).catch((error: unknown) => {
-    if (error instanceof JsonRpcResponseError || error instanceof DeliveryUnknownError) throw error;
-    throw new DeliveryUnknownError(
-      "The follow-up may have been delivered. Wait for the provider before retrying.",
-      Promise.resolve("unknown"),
-    );
-  });
+  await acp
+    .request("session/prompt", { sessionId: live.acpSessionId, prompt: blocks }, CONTROL_TIMEOUT_MS)
+    .catch((error: unknown) => {
+      if (error instanceof JsonRpcResponseError || error instanceof DeliveryUnknownError)
+        throw error;
+      throw new DeliveryUnknownError(
+        "The follow-up may have been delivered. Wait for the provider before retrying.",
+        Promise.resolve("unknown"),
+      );
+    });
 }
 
 export function respondHermesApproval(
@@ -479,7 +481,10 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
       } catch (error) {
         if (!(error instanceof JsonRpcResponseError)) throw error;
         resumeByThread.delete(input.sessionId);
-        input.onEvent({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
+        input.onEvent({
+          type: "status",
+          text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+        });
       } finally {
         muteGate.current = false;
       }
@@ -551,7 +556,10 @@ async function applyModelSelection(
     live.modelId = modelId;
   } catch (error) {
     if (!(error instanceof JsonRpcResponseError)) throw error;
-    live.onEvent({ type: "status", text: "Hermes could not apply the selected model; continuing with its current setting." });
+    live.onEvent({
+      type: "status",
+      text: "Hermes could not apply the selected model; continuing with its current setting.",
+    });
   }
 }
 
@@ -572,7 +580,10 @@ async function applyRuntimeMode(
     live.modeId = modeId;
   } catch (error) {
     if (!(error instanceof JsonRpcResponseError)) throw error;
-    live.onEvent({ type: "status", text: "Hermes could not apply the selected mode; continuing with its current setting." });
+    live.onEvent({
+      type: "status",
+      text: "Hermes could not apply the selected mode; continuing with its current setting.",
+    });
   }
 }
 

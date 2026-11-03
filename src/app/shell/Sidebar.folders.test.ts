@@ -29,7 +29,8 @@ vi.mock("../../features/projects/model/projectData", () => ({
   projectSessionCount: vi.fn(async () => 0),
 }));
 vi.mock("../../features/sessions/model/sessionFolders", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../features/sessions/model/sessionFolders")>();
+  const actual =
+    await importOriginal<typeof import("../../features/sessions/model/sessionFolders")>();
   return { ...actual, saveSessionFolders: vi.fn(actual.saveSessionFolders) };
 });
 
@@ -115,9 +116,7 @@ describe("sidebar session folder pruning under StrictMode", () => {
   // StrictMode replays the mount effect once with the same closure; the effect
   // skips the replayed write when storage already holds the pruned value.
   it("persists a mount-time stale-session prune with the pruned value only", async () => {
-    seedFolders([
-      { id: "work", name: "Work", sessionIds: ["keep-1", "gone-1"], collapsed: false },
-    ]);
+    seedFolders([{ id: "work", name: "Work", sessionIds: ["keep-1", "gone-1"], collapsed: false }]);
     await renderStrict();
 
     const calls = vi.mocked(saveSessionFolders).mock.calls;

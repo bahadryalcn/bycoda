@@ -35,7 +35,12 @@ export type DevServerStart = {
   cwd?: string;
   expectedPort?: number;
 };
-export type DevServerTarget = { id: string; identity?: DevProcessIdentity; tree?: boolean; expectedImpact?: string };
+export type DevServerTarget = {
+  id: string;
+  identity?: DevProcessIdentity;
+  tree?: boolean;
+  expectedImpact?: string;
+};
 export type DevServerStop = {
   state: "stopped" | "running";
   requiresForce: boolean;

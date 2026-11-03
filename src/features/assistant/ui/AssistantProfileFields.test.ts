@@ -23,16 +23,13 @@ vi.mock("../../sessions/ui/ModelPicker", () => ({
           type: "button",
           onClick: () => props.onChange("claude", "selected-model"),
         },
-        props.inheritChoice?.selected
-          ? props.inheritChoice.label
-          : props.model || "Choose model",
+        props.inheritChoice?.selected ? props.inheritChoice.label : props.model || "Choose model",
       ),
       createElement(
         "button",
         {
           type: "button",
-          onClick: () =>
-            props.onSettingsChange({ ...props.values, effort: "low" }),
+          onClick: () => props.onSettingsChange({ ...props.values, effort: "low" }),
         },
         "Adjust effort",
       ),
@@ -94,40 +91,47 @@ afterEach(async () => {
   root = undefined;
   vi.unstubAllGlobals();
 });
-it("keeps a saved zero follow-up limit visible and does not silently enable it",async()=>{
- await setup({nudgeLimit:0,chiefWakeLimit:11},"cost");
- const values=[...container.querySelectorAll<HTMLInputElement>('input[type="number"]')].map(input=>input.value);
- expect(values.slice(0,2)).toEqual(["11","0"]);expect(observed.patches).toEqual([]);
- expect(container.textContent).toContain("Zero disables follow-ups and automatic recovery.");
+it("keeps a saved zero follow-up limit visible and does not silently enable it", async () => {
+  await setup({ nudgeLimit: 0, chiefWakeLimit: 11 }, "cost");
+  const values = [...container.querySelectorAll<HTMLInputElement>('input[type="number"]')].map(
+    (input) => input.value,
+  );
+  expect(values.slice(0, 2)).toEqual(["11", "0"]);
+  expect(observed.patches).toEqual([]);
+  expect(container.textContent).toContain("Zero disables follow-ups and automatic recovery.");
 });
-it("retains invalid presence thresholds for owner correction while showing the relationship error",async()=>{
- await setup({idleMinutes:90,awayMinutes:30,activeStart:22,activeEnd:6,notificationPresent:"none",notificationAway:"urgent"},"presence");
- expect(container.querySelector('[role="alert"]')?.textContent).toBe("Away must start later than idle.");
- expect([...container.querySelectorAll<HTMLInputElement>('input[type="number"]')].slice(0,4).map(input=>input.value)).toEqual(["90","30","22","6"]);
- expect(observed.patches).toEqual([]);expect(container.textContent).toContain("Do not disturb and quiet hours hold notifications");
+it("retains invalid presence thresholds for owner correction while showing the relationship error", async () => {
+  await setup(
+    {
+      idleMinutes: 90,
+      awayMinutes: 30,
+      activeStart: 22,
+      activeEnd: 6,
+      notificationPresent: "none",
+      notificationAway: "urgent",
+    },
+    "presence",
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Away must start later than idle.",
+  );
+  expect(
+    [...container.querySelectorAll<HTMLInputElement>('input[type="number"]')]
+      .slice(0, 4)
+      .map((input) => input.value),
+  ).toEqual(["90", "30", "22", "6"]);
+  expect(observed.patches).toEqual([]);
+  expect(container.textContent).toContain("Do not disturb and quiet hours hold notifications");
 });
 it("keeps worker context defaults independent of supervisor limits and exposes only explicit advanced edits", async () => {
   await setup({ chiefSoftContext: 20000, chiefHardContext: 40000 }, "cost");
   expect(container.textContent).toContain("Codex uses a local text limit");
-  expect(container.textContent).not.toContain(
-    "Compact worker context at (tokens)",
-  );
+  expect(container.textContent).not.toContain("Compact worker context at (tokens)");
   await click("Advanced worker context limits");
-  const values = [
-    ...container.querySelectorAll<HTMLInputElement>('input[type="number"]'),
-  ].map((input) => input.value);
-  expect(values).toEqual([
-    "20",
-    "2",
-    "20",
-    "",
-    "20000",
-    "40000",
-    "150000",
-    "300000",
-    "50",
-    "80",
-  ]);
+  const values = [...container.querySelectorAll<HTMLInputElement>('input[type="number"]')].map(
+    (input) => input.value,
+  );
+  expect(values).toEqual(["20", "2", "20", "", "20000", "40000", "150000", "300000", "50", "80"]);
   expect(observed.patches).toEqual([]);
   await click("Advanced worker context limits");
   await click("Advanced worker context limits");
@@ -140,9 +144,9 @@ it("keeps an invalid worker threshold draft visible instead of normalizing it in
   );
   await click("Advanced worker context limits");
   expect(
-    [
-      ...container.querySelectorAll<HTMLInputElement>('input[type="number"]'),
-    ].map((input) => input.value),
+    [...container.querySelectorAll<HTMLInputElement>('input[type="number"]')].map(
+      (input) => input.value,
+    ),
   ).toContain("40000");
   expect(observed.patches).toEqual([]);
 });
@@ -209,9 +213,9 @@ it("editing an inherited role effort creates an explicit clone instead of modify
 });
 it("keeps routine worker answers opt-in without changing model or execution authority", async () => {
   await setup({ execution });
-  const toggle = container.querySelector(
-    'button[role="switch"],input[role="switch"]',
-  ) as HTMLButtonElement | HTMLInputElement;
+  const toggle = container.querySelector('button[role="switch"],input[role="switch"]') as
+    | HTMLButtonElement
+    | HTMLInputElement;
   expect(toggle).toBeTruthy();
   expect(toggle.getAttribute("aria-checked")).toBe("false");
   await act(async () => toggle.click());

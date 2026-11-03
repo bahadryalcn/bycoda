@@ -309,23 +309,40 @@ describe("codex live turn sequence", () => {
     const sessionId = "codex-original-transfer";
     const context = Object.freeze({ operation: Object.freeze({}) });
     const { turn } = await startTurn(sessionId, { operationContext: context });
-    await expect(retireOriginalCodexWriter(sessionId, context)).rejects.toThrow("still has active work");
-    expect(processConstructions.operations.filter((operation) => operation.kind === "kill")).toHaveLength(0);
+    await expect(retireOriginalCodexWriter(sessionId, context)).rejects.toThrow(
+      "still has active work",
+    );
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill"),
+    ).toHaveLength(0);
     notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
     await turn;
     let release!: () => void;
-    killChild.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    killChild.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
     let retired = false;
-    const cleanup = retireOriginalCodexWriter(sessionId, context).then(() => { retired = true; });
+    const cleanup = retireOriginalCodexWriter(sessionId, context).then(() => {
+      retired = true;
+    });
     await waitFor(() => !!release, "original physical retirement");
     expect(retired).toBe(false);
     release();
     await cleanup;
-    expect(processConstructions.operations.filter((operation) => operation.kind === "kill")).toHaveLength(1);
-    await expect(retireOriginalCodexWriter(sessionId, context)).rejects.toThrow("cannot be verified");
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill"),
+    ).toHaveLength(1);
+    await expect(retireOriginalCodexWriter(sessionId, context)).rejects.toThrow(
+      "cannot be verified",
+    );
     sent.length = 0;
     const resumed = await startTurn(sessionId, { expectResume: true });
-    expect(parse().find((message) => message.method === "thread/resume")?.params).toMatchObject({ threadId: "thr_1" });
+    expect(parse().find((message) => message.method === "thread/resume")?.params).toMatchObject({
+      threadId: "thr_1",
+    });
     notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
     await resumed.turn;
     await stopCodexSession(sessionId);
@@ -338,9 +355,15 @@ describe("codex live turn sequence", () => {
     notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
     await turn;
     killChild.mockRejectedValueOnce(new Error("original cleanup unknown"));
-    await expect(retireOriginalCodexWriter(sessionId, context)).rejects.toThrow("previous provider has not stopped");
-    await expect(retireOriginalCodexWriter(sessionId, context)).rejects.toThrow("cannot be verified");
-    expect(processConstructions.operations.filter((operation) => operation.kind === "kill")).toHaveLength(1);
+    await expect(retireOriginalCodexWriter(sessionId, context)).rejects.toThrow(
+      "previous provider has not stopped",
+    );
+    await expect(retireOriginalCodexWriter(sessionId, context)).rejects.toThrow(
+      "cannot be verified",
+    );
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill"),
+    ).toHaveLength(1);
     // Explicit fixture teardown can join the retained failed physical ledger;
     // the transfer hook itself must never select a replacement by session ID.
     await stopCodexSession(sessionId);

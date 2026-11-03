@@ -7,7 +7,8 @@ import { launchAgent, systemdUnit } from "./service";
 
 const directories: string[] = [];
 afterEach(async () => {
-  for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
+  for (const directory of directories.splice(0))
+    await rm(directory, { recursive: true, force: true });
 });
 
 it("keeps macOS/Linux service executable paths stable across package and Node updates and rollback", async () => {

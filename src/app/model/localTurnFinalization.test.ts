@@ -3,10 +3,23 @@ import { finalizeLocalTurn } from "./localTurnFinalization";
 
 it("settles the retired turn's recording without committing a replacement's UI", async () => {
   const order: string[] = [];
-  const committed = await finalizeLocalTurn({ isCurrent: () => false,
-    retire: async () => { order.push("retire"); }, settle: async () => { order.push("snapshot"); },
-    checkpoint: async () => { order.push("flush"); }, commit: () => { order.push("commit"); } });
-  expect(committed).toBe(false); expect(order).toEqual(["retire", "snapshot"]);
+  const committed = await finalizeLocalTurn({
+    isCurrent: () => false,
+    retire: async () => {
+      order.push("retire");
+    },
+    settle: async () => {
+      order.push("snapshot");
+    },
+    checkpoint: async () => {
+      order.push("flush");
+    },
+    commit: () => {
+      order.push("commit");
+    },
+  });
+  expect(committed).toBe(false);
+  expect(order).toEqual(["retire", "snapshot"]);
 });
 
 function deferred() {

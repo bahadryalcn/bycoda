@@ -69,7 +69,9 @@
   position: relative;
   display: block;
   inline-size: 100%;
-  min-block-size: calc(var(--prompt-min-rows, 3) * 1lh + var(--prompt-pad-block-start) + var(--prompt-pad-block-end));
+  min-block-size: calc(
+    var(--prompt-min-rows, 3) * 1lh + var(--prompt-pad-block-start) + var(--prompt-pad-block-end)
+  );
   margin: 0;
   border: 0;
   border-radius: inherit;
@@ -80,7 +82,9 @@
   resize: none;
 }
 .input[data-max-rows] {
-  max-block-size: calc(var(--prompt-max-rows) * 1lh + var(--prompt-pad-block-start) + var(--prompt-pad-block-end));
+  max-block-size: calc(
+    var(--prompt-max-rows) * 1lh + var(--prompt-pad-block-start) + var(--prompt-pad-block-end)
+  );
 }
 .input[data-autosize] {
   overflow-y: hidden;

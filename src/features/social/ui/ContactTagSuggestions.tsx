@@ -79,11 +79,15 @@ export function ContactTagDialog({
   return (
     <SocialDialog
       title={
-        mode === "import" ? t("Suggest tags for this import") : t("Suggest tags for selected contacts")
+        mode === "import"
+          ? t("Suggest tags for this import")
+          : t("Suggest tags for selected contacts")
       }
       description={
         mode === "import"
-          ? t("The AI proposes tags for the rows in your import draft. You decide which ones to add.")
+          ? t(
+              "The AI proposes tags for the rows in your import draft. You decide which ones to add.",
+            )
           : t("The AI proposes tags for the selected contacts. You decide which ones to save.")
       }
       size="lg"
@@ -161,7 +165,11 @@ function ContactTagReview({
     setError("");
     try {
       // One id per ask: a retry after an error reuses it and gets the first receipt, not a second model call.
-      const answer = await client.request<ContactTagResult>("contacts.suggestTags", next.input, next.id);
+      const answer = await client.request<ContactTagResult>(
+        "contacts.suggestTags",
+        next.input,
+        next.id,
+      );
       if (current !== token.current) return;
       if (!answer || !Array.isArray(answer.proposals))
         throw new Error(t("The AI answer was incomplete. Try again."));
@@ -216,35 +224,38 @@ function ContactTagReview({
       const failed: Record<string, string> = {};
       const done: string[] = [];
       const ok = await pendingUi.run("contacts.apply-suggested-tags", () =>
-        run(async () => {
-          for (const ref of pendingRefs) {
-            const subject = subjects.find((item) => item.ref === ref);
-            if (!subject) {
-              failed[ref] = t("This contact is no longer in the selection.");
-              continue;
+        run(
+          async () => {
+            for (const ref of pendingRefs) {
+              const subject = subjects.find((item) => item.ref === ref);
+              if (!subject) {
+                failed[ref] = t("This contact is no longer in the selection.");
+                continue;
+              }
+              try {
+                // The normal contact update: only the tag list changes, consent and opt-out stay as they are.
+                await client.request("contacts.upsert", {
+                  accountId: subject.accountId,
+                  platformId: subject.platformId,
+                  tags: mergeTags(subject.tags, kept[ref]),
+                });
+                done.push(ref);
+              } catch (cause) {
+                failed[ref] = errorText(cause);
+              }
             }
-            try {
-              // The normal contact update: only the tag list changes, consent and opt-out stay as they are.
-              await client.request("contacts.upsert", {
-                accountId: subject.accountId,
-                platformId: subject.platformId,
-                tags: mergeTags(subject.tags, kept[ref]),
-              });
-              done.push(ref);
-            } catch (cause) {
-              failed[ref] = errorText(cause);
-            }
-          }
-          if (Object.keys(failed).length)
-            throw new Error(
-              t("{p0} of {p1} contacts could not be updated.", {
-                p0: Object.keys(failed).length,
-                p1: pendingRefs.length,
-              }),
-            );
-        }, pendingRefs.length === 1
-          ? t("Tags saved on 1 contact.")
-          : t("Tags saved on {p0} contacts.", { p0: pendingRefs.length })),
+            if (Object.keys(failed).length)
+              throw new Error(
+                t("{p0} of {p1} contacts could not be updated.", {
+                  p0: Object.keys(failed).length,
+                  p1: pendingRefs.length,
+                }),
+              );
+          },
+          pendingRefs.length === 1
+            ? t("Tags saved on 1 contact.")
+            : t("Tags saved on {p0} contacts.", { p0: pendingRefs.length }),
+        ),
       );
       setApplied((current) => [...current, ...done]);
       setFailures(failed);
@@ -280,7 +291,14 @@ function ContactTagReview({
             <dd>{t("Suggestions for {p0} of {p1} contacts", { p0: proposed, p1: total })}</dd>
           </div>
         </dl>
-        <Notice kind="info" title={mode === "import" ? t("Added to the import draft only") : t("Saved on the contacts you choose")}>
+        <Notice
+          kind="info"
+          title={
+            mode === "import"
+              ? t("Added to the import draft only")
+              : t("Saved on the contacts you choose")
+          }
+        >
           {mode === "import"
             ? t(
                 "Chosen tags are added to the rows of this import. Nothing is saved until you import, and importing never grants permission to message anyone.",
@@ -313,7 +331,11 @@ function ContactTagReview({
                   ),
                 }));
               return (
-                <li key={proposal.ref} className="social-tag-contact" data-state={done ? "done" : undefined}>
+                <li
+                  key={proposal.ref}
+                  className="social-tag-contact"
+                  data-state={done ? "done" : undefined}
+                >
                   <div className="social-tag-contact-head">
                     <strong>{proposal.name}</strong>
                     {proposal.currentTags.length ? (
@@ -335,11 +357,17 @@ function ContactTagReview({
                     {proposal.tags.map((entry, index) => {
                       const edit = edits[index];
                       if (!edit) return null;
-                      const issue = edit.use || !edit.text.trim() ? tagIssue(proposal.currentTags, edits, index) : "";
+                      const issue =
+                        edit.use || !edit.text.trim()
+                          ? tagIssue(proposal.currentTags, edits, index)
+                          : "";
                       return (
                         <li key={index}>
                           <Checkbox
-                            aria-label={t("Keep tag {p0} for {p1}", { p0: edit.text, p1: proposal.name })}
+                            aria-label={t("Keep tag {p0} for {p1}", {
+                              p0: edit.text,
+                              p1: proposal.name,
+                            })}
                             checked={edit.use}
                             disabled={locked || applying || done}
                             onChange={(event) => change(index, { use: event.target.checked })}
@@ -471,7 +499,8 @@ function ContactTagReview({
             {t("Account")}: <strong>{account?.name ?? t("None selected")}</strong>
           </span>
           <span>
-            {t("Project")}: <strong>{scope ? projectName(scope.projectId) : t("No project selected")}</strong>
+            {t("Project")}:{" "}
+            <strong>{scope ? projectName(scope.projectId) : t("No project selected")}</strong>
           </span>
         </p>
       )}

@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { clearInboxCache, inboxReadReachedLimit, listInboxItems, peekInboxList } from "./githubTasks";
+import {
+  clearInboxCache,
+  inboxReadReachedLimit,
+  listInboxItems,
+  peekInboxList,
+} from "./githubTasks";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 

@@ -17,11 +17,25 @@ export function eligibleRecoverySessions(
   const seen = new Set<string>();
   const rows: WorkspaceSessionStub[] = [];
   for (const stub of recovery.workspace.sessions) {
-    if (seen.has(stub.id) || recovery.resolvedIds?.includes(stub.id) || isLocked(stub.cwd)) continue;
+    if (seen.has(stub.id) || recovery.resolvedIds?.includes(stub.id) || isLocked(stub.cwd))
+      continue;
     seen.add(stub.id);
     if (isRemoteProjectPath(stub.cwd) && stub.remoteSessionId) {
-      if (sessions.some((session) => sameProjectPath(session.cwd, stub.cwd) && hostSessionFor(session.id) === stub.remoteSessionId)) continue;
-      if (rows.some((row) => sameProjectPath(row.cwd, stub.cwd) && row.remoteSessionId === stub.remoteSessionId)) continue;
+      if (
+        sessions.some(
+          (session) =>
+            sameProjectPath(session.cwd, stub.cwd) &&
+            hostSessionFor(session.id) === stub.remoteSessionId,
+        )
+      )
+        continue;
+      if (
+        rows.some(
+          (row) =>
+            sameProjectPath(row.cwd, stub.cwd) && row.remoteSessionId === stub.remoteSessionId,
+        )
+      )
+        continue;
     }
     rows.push(stub);
   }
@@ -35,7 +49,11 @@ export class RecoveryOpenError extends Error {
     readonly failed: string[],
     readonly acknowledgmentFailed = false,
   ) {
-    super(acknowledgmentFailed ? "Conversation tabs are open, but the recovery update could not be saved." : "Some recovery entries could not be opened.");
+    super(
+      acknowledgmentFailed
+        ? "Conversation tabs are open, but the recovery update could not be saved."
+        : "Some recovery entries could not be opened.",
+    );
     this.name = "RecoveryOpenError";
   }
 }
@@ -46,7 +64,9 @@ const saveFailureListeners = new Set<() => void>();
 export const getRecoverySaveFailure = () => saveFailure;
 export const subscribeRecoverySaveFailure = (listener: () => void) => {
   saveFailureListeners.add(listener);
-  return () => { saveFailureListeners.delete(listener); };
+  return () => {
+    saveFailureListeners.delete(listener);
+  };
 };
 export function setRecoverySaveFailure(value: RecoverySaveFailure) {
   saveFailure = value;

@@ -1399,15 +1399,15 @@ export function FileEditor({
         />
       )}
       {chromeError ? (
-        <InlineError className="shrink-0 border-t border-stroke px-2.5 py-1">{chromeError}</InlineError>
+        <InlineError className="shrink-0 border-t border-stroke px-2.5 py-1">
+          {chromeError}
+        </InlineError>
       ) : null}
       <footer
         className={`flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 border-t border-stroke px-2.5 text-ui-micro text-[var(--ui-text-muted)] ${saveState.status === "error" ? "flex-wrap" : ""}`}
       >
         <Tooltip label={path} when={path === relativePath ? "overflow" : "always"}>
-          <span className="min-w-0 flex-1 truncate font-mono">
-            {relativePath}
-          </span>
+          <span className="min-w-0 flex-1 truncate font-mono">{relativePath}</span>
         </Tooltip>
         {html ? (
           <Button

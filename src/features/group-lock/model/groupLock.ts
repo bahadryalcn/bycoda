@@ -329,9 +329,13 @@ function groupFingerprint(groupId: string): string | null {
 // ---- password --------------------------------------------------------------
 
 export async function setLockPassword(password: string): Promise<void> {
-  const revision = privacyRevision; const previous = JSON.stringify(settings.record);
+  const revision = privacyRevision;
+  const previous = JSON.stringify(settings.record);
   const record = await createPasswordRecord(password);
-  if (privacyRevision !== revision || JSON.stringify(settings.record) !== previous) throw new Error("Privacy settings changed. Review the current state before setting a password.");
+  if (privacyRevision !== revision || JSON.stringify(settings.record) !== previous)
+    throw new Error(
+      "Privacy settings changed. Review the current state before setting a password.",
+    );
   saveSettings({ ...settings, record }, true);
   writeAttempts(NO_ATTEMPTS);
 }
@@ -468,11 +472,13 @@ export function lockAllGroups() {
 
 /** Opens the group when the password is right, and expands it. */
 export async function unlockGroup(groupId: string, password: string): Promise<VerifyResult> {
-  const revision = privacyRevision; const group = groupFingerprint(groupId);
+  const revision = privacyRevision;
+  const group = groupFingerprint(groupId);
   if (!group) return staleVerification();
   const result = await verifyLockPassword(password);
   if (!result.ok) return result;
-  if (privacyRevision !== revision || groupFingerprint(groupId) !== group) return staleVerification();
+  if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
+    return staleVerification();
   const locked = currentView().lock.lockedGroupIds;
   dispatch({
     type: "unlock",
@@ -484,11 +490,13 @@ export async function unlockGroup(groupId: string, password: string): Promise<Ve
 
 /** Takes the lock off one group. Asks for the password even when it is open. */
 export async function removeGroupLock(groupId: string, password: string): Promise<VerifyResult> {
-  const revision = privacyRevision; const group = groupFingerprint(groupId);
+  const revision = privacyRevision;
+  const group = groupFingerprint(groupId);
   if (!group) return staleVerification();
   const result = await verifyLockPassword(password);
   if (!result.ok) return result;
-  if (privacyRevision !== revision || groupFingerprint(groupId) !== group) return staleVerification();
+  if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
+    return staleVerification();
   const saved = updateProjectGroup(groupId, ({ lockable: _lockable, ...group }) => group);
   // Locking stays the safe side of a failed save.
   dispatch({ type: "lock", groupIds: [groupId] });

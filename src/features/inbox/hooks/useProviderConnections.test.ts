@@ -57,7 +57,13 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
-const statusMocks = [githubStatus, linearConnected, jiraConnected, gitlabConnected, azureDevOpsConnected];
+const statusMocks = [
+  githubStatus,
+  linearConnected,
+  jiraConnected,
+  gitlabConnected,
+  azureDevOpsConnected,
+];
 const status = (connected: boolean) => ({ connected, installed: true });
 
 /** Make every provider answer `connected` (immediately) on its next call. */
@@ -110,7 +116,9 @@ describe("useProviderConnections", () => {
     await fire(LINEAR_CHANGE_EVENT);
     await settle();
     expect(persisted!).toHaveBeenCalledTimes(1);
-    expect(Object.values(persisted!.mock.calls[0]![0]).every((value) => value === false)).toBe(true);
+    expect(Object.values(persisted!.mock.calls[0]![0]).every((value) => value === false)).toBe(
+      true,
+    );
     await act(async () => older.resolve(status(true)));
     expect(persisted!).toHaveBeenCalledTimes(1);
   });
@@ -225,7 +233,12 @@ describe("useProviderConnections", () => {
     expect(githubStatus).toHaveBeenCalledTimes(1);
 
     let expected = 1;
-    for (const event of [LINEAR_CHANGE_EVENT, JIRA_CHANGE_EVENT, GITLAB_CHANGE_EVENT, AZUREDEVOPS_CHANGE_EVENT]) {
+    for (const event of [
+      LINEAR_CHANGE_EVENT,
+      JIRA_CHANGE_EVENT,
+      GITLAB_CHANGE_EVENT,
+      AZUREDEVOPS_CHANGE_EVENT,
+    ]) {
       await fire(event);
       await settle();
       expected += 1;
@@ -269,7 +282,12 @@ describe("useProviderConnections", () => {
     expect(renders.length).toBe(rendersBeforeUnmount);
 
     const callsBefore = githubStatus.mock.calls.length;
-    for (const event of [LINEAR_CHANGE_EVENT, JIRA_CHANGE_EVENT, GITLAB_CHANGE_EVENT, AZUREDEVOPS_CHANGE_EVENT]) {
+    for (const event of [
+      LINEAR_CHANGE_EVENT,
+      JIRA_CHANGE_EVENT,
+      GITLAB_CHANGE_EVENT,
+      AZUREDEVOPS_CHANGE_EVENT,
+    ]) {
       await fire(event);
     }
     expect(githubStatus.mock.calls.length).toBe(callsBefore);

@@ -1,11 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
 import type { HostStore } from "./store";
-import {
-  attachmentPath,
-  collectAttachmentGarbage,
-  type AttachmentScanResume,
-} from "./attachments";
+import { attachmentPath, collectAttachmentGarbage, type AttachmentScanResume } from "./attachments";
 export const ATTACHMENT_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 /** Pause between slices of one sweep, so queued database requests run first. */

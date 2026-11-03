@@ -111,52 +111,61 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
     };
   }, [props.value, props.form]);
   const editor = (
-      <input
-        {...props}
-        data-ui-focus={focus}
-        data-search-appearance={appearance}
-        data-search-size={fieldSize === "md" ? "md" : undefined}
-        onChange={(event) => {
-          if (props.value === undefined) setUncontrolledValue(event.target.value);
-          onChange?.(event);
-        }}
-        ref={input}
-        className={[className, styles.input, insetClear && styles.standaloneInput]
-          .filter(Boolean)
-          .join(" ")}
-        data-search-filled={canClear || undefined}
-      />
+    <input
+      {...props}
+      data-ui-focus={focus}
+      data-search-appearance={appearance}
+      data-search-size={fieldSize === "md" ? "md" : undefined}
+      onChange={(event) => {
+        if (props.value === undefined) setUncontrolledValue(event.target.value);
+        onChange?.(event);
+      }}
+      ref={input}
+      className={[className, styles.input, insetClear && styles.standaloneInput]
+        .filter(Boolean)
+        .join(" ")}
+      data-search-filled={canClear || undefined}
+    />
   );
   const clearAction = canClear ? (
-        <InlineAction
-          reveal="always"
-          label={t("Clear search")}
-          data-search-clear=""
-          className={styles.clear}
-          // Keep focus and the caret in the field while the pointer presses the action.
-          onPointerDown={(event) => event.preventDefault()}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={(event) => {
-            event.preventDefault();
-            const node = input.current;
-            if (!node) return;
-            // Use the native setter so React delivers the same onChange event as typing.
-            const view = node.ownerDocument.defaultView!;
-            Object.getOwnPropertyDescriptor(view.HTMLInputElement.prototype, "value")!.set!.call(
-              node,
-              "",
-            );
-            node.dispatchEvent(new view.Event("input", { bubbles: true }));
-            node.focus();
-          }}
-        >
-          <X aria-hidden="true" />
-        </InlineAction>
-      ) : null;
-  const control = <>{editor}{clearAction}</>;
+    <InlineAction
+      reveal="always"
+      label={t("Clear search")}
+      data-search-clear=""
+      className={styles.clear}
+      // Keep focus and the caret in the field while the pointer presses the action.
+      onPointerDown={(event) => event.preventDefault()}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={(event) => {
+        event.preventDefault();
+        const node = input.current;
+        if (!node) return;
+        // Use the native setter so React delivers the same onChange event as typing.
+        const view = node.ownerDocument.defaultView!;
+        Object.getOwnPropertyDescriptor(view.HTMLInputElement.prototype, "value")!.set!.call(
+          node,
+          "",
+        );
+        node.dispatchEvent(new view.Event("input", { bubbles: true }));
+        node.focus();
+      }}
+    >
+      <X aria-hidden="true" />
+    </InlineAction>
+  ) : null;
+  const control = (
+    <>
+      {editor}
+      {clearAction}
+    </>
+  );
   return insetClear ? (
     <span className={[styles.standalone, containerClassName].filter(Boolean).join(" ")}>
-      <FieldControl size={fieldSize ?? "sm"} appearance={appearance === "quiet" ? "quiet" : "default"} endAdornment={clearAction}>
+      <FieldControl
+        size={fieldSize ?? "sm"}
+        appearance={appearance === "quiet" ? "quiet" : "default"}
+        endAdornment={clearAction}
+      >
         {editor}
       </FieldControl>
     </span>

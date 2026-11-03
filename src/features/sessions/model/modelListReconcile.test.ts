@@ -36,7 +36,12 @@ it("falls back to the selected model, then the first eligible row", () => {
 it("treats an ineligible active identity as gone and never picks ineligible rows", () => {
   const isEligible = (model: AgentModel) => model.id !== "b";
   expect(
-    resolveActiveModelKey({ models: [a, b, c], activeKey: modelRowKey(b), selected: b, isEligible }),
+    resolveActiveModelKey({
+      models: [a, b, c],
+      activeKey: modelRowKey(b),
+      selected: b,
+      isEligible,
+    }),
   ).toBe(modelRowKey(a));
   expect(
     resolveActiveModelKey({ models: [b], activeKey: null, selected: null, isEligible }),

@@ -15,10 +15,20 @@ type ModelGroup = {
  * Model and Reasoning stay closest to the upward-opening composer trigger.
  */
 const SETTING_ORDER = [
-  "subagentPolicy", "subagentModel", "advisor",
-  "autoCompactWindow", "autoCompact", "context",
-  "fast", "serviceTier", "agent", "thinking", "variant",
-  "reasoningEffort", "reasoning", "effort",
+  "subagentPolicy",
+  "subagentModel",
+  "advisor",
+  "autoCompactWindow",
+  "autoCompact",
+  "context",
+  "fast",
+  "serviceTier",
+  "agent",
+  "thinking",
+  "variant",
+  "reasoningEffort",
+  "reasoning",
+  "effort",
 ];
 
 /** Menu/Extras grouping: delegation first, then Context and model options. */

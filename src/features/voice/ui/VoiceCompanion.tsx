@@ -1,5 +1,5 @@
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
-import { useEffect, useLayoutEffect, useRef, useState,useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Session } from "../../sessions/model/session";
 import { sessionsRef as liveSessions, useSession } from "../../sessions/model/sessionsStore";
 import { Button } from "../../../shared/ui/Button";
@@ -21,7 +21,7 @@ import {
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { LocalVoice, type SpeechBinding } from "../model/localVoice";
-import { useVoicePresence,readNativeVoicePresence } from "../model/voicePresence";
+import { useVoicePresence, readNativeVoicePresence } from "../model/voicePresence";
 import { classifyVoiceFailure, VOICE_RECONNECT_DELAYS } from "../model/voiceReconnect";
 import { RealtimeVoice } from "../model/realtimeVoice";
 import { realtimeSecret, type RealtimeProvider } from "../model/realtimeVoiceClient";
@@ -64,26 +64,47 @@ import {
 } from "../model/voiceOverlay";
 import { useVoiceOverlayHost } from "./useVoiceOverlayHost";
 import { voiceOwnerInstructions } from "../model/voiceOwner";
-import { forgetHostVoiceMemory, rememberHostVoiceMemory,ownerAskedToForget } from "../model/voiceHostMemory";
+import {
+  forgetHostVoiceMemory,
+  rememberHostVoiceMemory,
+  ownerAskedToForget,
+} from "../model/voiceHostMemory";
 import {
   assistantIdentity,
   assistantRequest,
   useAssistantSnapshot,
 } from "../../assistant/model/assistantClient";
 import { voiceLanguageCode } from "../model/voiceLanguage";
-import { VoiceThreadTranscript, voiceThreadSeed,voiceThreadSummary } from "../model/voiceThreads";
-import {VoiceCausalGeneration} from "../model/voiceCausalContext";
-import { VoiceHistoryBindings, type VoiceHistory,type VoiceHistoryBinding } from "../model/voiceHistory";
-import {captureVoiceHistorySession,captureLocalVoiceHistory} from "../model/voiceHistoryTransport";
-import {persistVoiceOwnerChoice,VoiceOwnerChoicePending} from "../model/voiceOwnerChoice";
-import {ownerQuestionDraftScope} from "../../assistant/model/assistantOwnerQuestions";
-import {resolveQuestionDraft} from "../../sessions/model/questionDrafts";
-import {captureVoiceHistoryScope,projectVoiceHistory,voiceHistoryMessageVisible,type VoiceHistoryScope} from "../model/voiceHistoryPrivacy";
-import {claimVoiceConversationActivity} from "../model/voiceActivity";
-import {captureVoiceOwnerRule,VoiceOwnerRuleWrites} from "../model/voiceOwnerRules";
-import {VoiceAssistantControls,VOICE_ASSISTANT_CONTROL_TOOLS,voiceOwnerRequestedStopAll,voiceOwnerPresenceIntent} from "../model/voiceAssistantControls";
-import {VoiceSpokenLanguageWrites} from "../model/voiceSpokenLanguage";
-import {loadVoiceMemory} from "../model/voiceMemory";
+import { VoiceThreadTranscript, voiceThreadSeed, voiceThreadSummary } from "../model/voiceThreads";
+import { VoiceCausalGeneration } from "../model/voiceCausalContext";
+import {
+  VoiceHistoryBindings,
+  type VoiceHistory,
+  type VoiceHistoryBinding,
+} from "../model/voiceHistory";
+import {
+  captureVoiceHistorySession,
+  captureLocalVoiceHistory,
+} from "../model/voiceHistoryTransport";
+import { persistVoiceOwnerChoice, VoiceOwnerChoicePending } from "../model/voiceOwnerChoice";
+import { ownerQuestionDraftScope } from "../../assistant/model/assistantOwnerQuestions";
+import { resolveQuestionDraft } from "../../sessions/model/questionDrafts";
+import {
+  captureVoiceHistoryScope,
+  projectVoiceHistory,
+  voiceHistoryMessageVisible,
+  type VoiceHistoryScope,
+} from "../model/voiceHistoryPrivacy";
+import { claimVoiceConversationActivity } from "../model/voiceActivity";
+import { captureVoiceOwnerRule, VoiceOwnerRuleWrites } from "../model/voiceOwnerRules";
+import {
+  VoiceAssistantControls,
+  VOICE_ASSISTANT_CONTROL_TOOLS,
+  voiceOwnerRequestedStopAll,
+  voiceOwnerPresenceIntent,
+} from "../model/voiceAssistantControls";
+import { VoiceSpokenLanguageWrites } from "../model/voiceSpokenLanguage";
+import { loadVoiceMemory } from "../model/voiceMemory";
 import {
   parseVoiceChoice,
   spokenVoiceChoice,
@@ -91,13 +112,28 @@ import {
   type VoiceChoice,
 } from "../model/voiceChoices";
 import { VoiceChoiceCard } from "./VoiceChoiceCard";
-import {VoiceJobReview} from "./VoiceJobReview";
-import {VoiceJobBatch,VoiceJobDraftsSchema,resolveVoiceJobDraft,changeVoiceJobRows,type VoiceJobDraft,type VoiceJobReviewState} from "../model/voiceJobs";
-import {captureAssistantHostRead} from "../../assistant/model/assistantHostRead";
-import {voiceAssistantControlChoice} from "../model/voiceAssistantControlChoice";
-import { assistantJobProjectIds, assistantJobVisible, assistantJobDraftVisible } from "../../assistant/model/assistantJobs";
+import { VoiceJobReview } from "./VoiceJobReview";
+import {
+  VoiceJobBatch,
+  VoiceJobDraftsSchema,
+  resolveVoiceJobDraft,
+  changeVoiceJobRows,
+  type VoiceJobDraft,
+  type VoiceJobReviewState,
+} from "../model/voiceJobs";
+import { captureAssistantHostRead } from "../../assistant/model/assistantHostRead";
+import { voiceAssistantControlChoice } from "../model/voiceAssistantControlChoice";
+import {
+  assistantJobProjectIds,
+  assistantJobVisible,
+  assistantJobDraftVisible,
+} from "../../assistant/model/assistantJobs";
 import { pathKey } from "../../../shared/lib/paths";
-import { isProjectLocked,subscribeGroupLock,getGroupLockView } from "../../group-lock/model/groupLock";
+import {
+  isProjectLocked,
+  subscribeGroupLock,
+  getGroupLockView,
+} from "../../group-lock/model/groupLock";
 import { previewVoice } from "../model/voicePreview";
 import { maySpeakVoiceBriefing } from "../model/voiceBriefing";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
@@ -108,7 +144,14 @@ const REALTIME: Record<"grok" | "openai", { provider: RealtimeProvider; name: st
   openai: { provider: "openai", name: "OpenAI Realtime" },
 };
 
-type SpeechTarget = { sessionId?: string; projectPath: string; globalScope?:boolean; projectPaths?:readonly string[];historyBinding?:VoiceHistoryBinding;historySessionId?:string };
+type SpeechTarget = {
+  sessionId?: string;
+  projectPath: string;
+  globalScope?: boolean;
+  projectPaths?: readonly string[];
+  historyBinding?: VoiceHistoryBinding;
+  historySessionId?: string;
+};
 // LocalVoice copies bindings while recognition is pending; carry the immutable
 // onset target with that copy without changing the accepted-turn owner yet.
 const speechTarget = Symbol("voiceSpeechTarget");
@@ -132,7 +175,7 @@ export type VoiceCompanionProps = {
 };
 export function VoiceCompanion(props: VoiceCompanionProps) {
   const locale = useLocale();
-  useSyncExternalStore(subscribeGroupLock,getGroupLockView);
+  useSyncExternalStore(subscribeGroupLock, getGroupLockView);
   const { snapshot: assistantSnapshot } = useAssistantSnapshot();
   const snapshotRef = useRef(assistantSnapshot);
   snapshotRef.current = assistantSnapshot;
@@ -149,8 +192,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const [status, setStatus] = useState<
     "idle" | "connecting" | "live" | "reconnecting" | "sleeping" | "ready"
   >("idle");
-  const conversationActive=status==="connecting"||status==="reconnecting"||status==="live"||playback;
-  useEffect(()=>conversationActive?claimVoiceConversationActivity():undefined,[conversationActive]);
+  const conversationActive =
+    status === "connecting" || status === "reconnecting" || status === "live" || playback;
+  useEffect(
+    () => (conversationActive ? claimVoiceConversationActivity() : undefined),
+    [conversationActive],
+  );
   const [phase, setPhase] = useState<"listening" | "speaking" | "transcribing" | "replying">(
     "listening",
   );
@@ -174,7 +221,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const turnSessionId = useRef<string | undefined>(undefined);
   const turnProjectPath = useRef("");
   const turnAllowedProjectPaths = useRef<readonly string[]>([]);
-  const turnGlobalScope=useRef(globalScope);
+  const turnGlobalScope = useRef(globalScope);
   const turnCaptured = useRef(false);
   const turnRevision = useRef(0);
   const pinnedRef = useRef(pinned);
@@ -186,129 +233,369 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const [message, setMessage] = useState("");
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState("");
-  const ownerSpeech=useRef("");
-  const spokenLanguage=useRef<VoiceSpokenLanguageWrites|null>(null);
-  if(!spokenLanguage.current)spokenLanguage.current=new VoiceSpokenLanguageWrites(assistantRequest);
-  const controlProjects=useRef(new Map<string,string>());
-  const assistantControls=useRef<VoiceAssistantControls|null>(null);
-  if(!assistantControls.current)assistantControls.current=new VoiceAssistantControls({
-    request:assistantRequest,
-    captureRequest:async()=>{const owner=await captureAssistantHostRead();return input=>assistantRequest(input,owner.environmentId);},
-    allowedProjectIds:async()=>{
-      const capturedPaths=turnCaptured.current?[...turnAllowedProjectPaths.current]:[...(currentSpeechTarget().projectPaths??[])];
-      const global=turnCaptured.current?(turnGlobalScope.current&&scopeRef.current):scopeRef.current;
-      const path=turnCaptured.current?turnProjectPath.current:currentSpeechTarget().projectPath;
-      const response=await assistantRequest({op:"projects.list"});
-      const visible=latest.current.projects??latest.current.sessions.map(session=>({path:session.cwd}));
-      const projects=(response.projects??[]).filter(project=>capturedPaths.some(path=>pathKey(path)===pathKey(project.path))&&!isProjectLocked(project.path)&&visible.some(item=>pathKey(item.path)===pathKey(project.path))&&(global||pathKey(project.path)===pathKey(path)));
-      controlProjects.current=new Map(projects.map(project=>[project.id,project.name]));return new Set(projects.map(project=>project.id));
-    },
-    confirm:async target=>{
-      const ids=target.projectIds??(target.projectId?[target.projectId]:[]),names=ids.map(id=>controlProjects.current.get(id));
-      const input=voiceAssistantControlChoice(target,names);if(!input)return false;
-      const result=await realtimeTool("present_choices",input,generation.current) as UserQuestionReply;
-      return result?.kind==="answered"&&result.answers.choice?.includes("confirm")===true;
-    },
-  });
-  const ownerRuleWrites=useRef<VoiceOwnerRuleWrites|null>(null);
-  const mounted=useRef(true);
-  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
-  if(!ownerRuleWrites.current)ownerRuleWrites.current=new VoiceOwnerRuleWrites(assistantRequest);
-  const [ruleNotice,setRuleNotice]=useState(()=>ownerRuleWrites.current!.hasPending?t("Rule save is pending. Retry."):"");
-  const [savingRule,setSavingRule]=useState(false);
-  async function saveOwnerRule(text?:string){
-    const epoch=generation.current;setSavingRule(true);
-    try{
-      const intent=text?captureVoiceOwnerRule(text):undefined;
-      const result=await (intent?ownerRuleWrites.current!.capture(intent):ownerRuleWrites.current!.retry());
-      if(!mounted.current)return;
-      const message=result.saved?t(result.manualTurnEnd?"Your rule was saved. Choose Finish turn when you are done speaking.":"Your rule was saved."):t(result.error??"Memory could not be changed.");
-      const canReply=generation.current===epoch&&Boolean(client.current);
-      setRuleNotice(result.saved&&canReply?"":message);
-      if(canReply)reply(message);
-    }catch{if(mounted.current)setRuleNotice(t("Rule save is pending. Retry."));}
-    finally{if(mounted.current)setSavingRule(false);}
+  const ownerSpeech = useRef("");
+  const spokenLanguage = useRef<VoiceSpokenLanguageWrites | null>(null);
+  if (!spokenLanguage.current)
+    spokenLanguage.current = new VoiceSpokenLanguageWrites(assistantRequest);
+  const controlProjects = useRef(new Map<string, string>());
+  const assistantControls = useRef<VoiceAssistantControls | null>(null);
+  if (!assistantControls.current)
+    assistantControls.current = new VoiceAssistantControls({
+      request: assistantRequest,
+      captureRequest: async () => {
+        const owner = await captureAssistantHostRead();
+        return (input) => assistantRequest(input, owner.environmentId);
+      },
+      allowedProjectIds: async () => {
+        const capturedPaths = turnCaptured.current
+          ? [...turnAllowedProjectPaths.current]
+          : [...(currentSpeechTarget().projectPaths ?? [])];
+        const global = turnCaptured.current
+          ? turnGlobalScope.current && scopeRef.current
+          : scopeRef.current;
+        const path = turnCaptured.current
+          ? turnProjectPath.current
+          : currentSpeechTarget().projectPath;
+        const response = await assistantRequest({ op: "projects.list" });
+        const visible =
+          latest.current.projects ??
+          latest.current.sessions.map((session) => ({ path: session.cwd }));
+        const projects = (response.projects ?? []).filter(
+          (project) =>
+            capturedPaths.some((path) => pathKey(path) === pathKey(project.path)) &&
+            !isProjectLocked(project.path) &&
+            visible.some((item) => pathKey(item.path) === pathKey(project.path)) &&
+            (global || pathKey(project.path) === pathKey(path)),
+        );
+        controlProjects.current = new Map(projects.map((project) => [project.id, project.name]));
+        return new Set(projects.map((project) => project.id));
+      },
+      confirm: async (target) => {
+        const ids = target.projectIds ?? (target.projectId ? [target.projectId] : []),
+          names = ids.map((id) => controlProjects.current.get(id));
+        const input = voiceAssistantControlChoice(target, names);
+        if (!input) return false;
+        const result = (await realtimeTool(
+          "present_choices",
+          input,
+          generation.current,
+        )) as UserQuestionReply;
+        return result?.kind === "answered" && result.answers.choice?.includes("confirm") === true;
+      },
+    });
+  const ownerRuleWrites = useRef<VoiceOwnerRuleWrites | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  if (!ownerRuleWrites.current)
+    ownerRuleWrites.current = new VoiceOwnerRuleWrites(assistantRequest);
+  const [ruleNotice, setRuleNotice] = useState(() =>
+    ownerRuleWrites.current!.hasPending ? t("Rule save is pending. Retry.") : "",
+  );
+  const [savingRule, setSavingRule] = useState(false);
+  async function saveOwnerRule(text?: string) {
+    const epoch = generation.current;
+    setSavingRule(true);
+    try {
+      const intent = text ? captureVoiceOwnerRule(text) : undefined;
+      const result = await (intent
+        ? ownerRuleWrites.current!.capture(intent)
+        : ownerRuleWrites.current!.retry());
+      if (!mounted.current) return;
+      const message = result.saved
+        ? t(
+            result.manualTurnEnd
+              ? "Your rule was saved. Choose Finish turn when you are done speaking."
+              : "Your rule was saved.",
+          )
+        : t(result.error ?? "Memory could not be changed.");
+      const canReply = generation.current === epoch && Boolean(client.current);
+      setRuleNotice(result.saved && canReply ? "" : message);
+      if (canReply) reply(message);
+    } catch {
+      if (mounted.current) setRuleNotice(t("Rule save is pending. Retry."));
+    } finally {
+      if (mounted.current) setSavingRule(false);
+    }
   }
-  function consumeOwnerRule(text:string){
-    const ownerName=snapshotRef.current?.profile.name??"",presenceIntent=voiceOwnerPresenceIntent(text,ownerName);
-    if(presenceIntent){
-      const epoch=generation.current,revision=turnRevision.current;setTranscript(text);
+  function consumeOwnerRule(text: string) {
+    const ownerName = snapshotRef.current?.profile.name ?? "",
+      presenceIntent = voiceOwnerPresenceIntent(text, ownerName);
+    if (presenceIntent) {
+      const epoch = generation.current,
+        revision = turnRevision.current;
+      setTranscript(text);
       void causalGeneration.current?.invalidate("unverified-tool");
-      void assistantControls.current!.call("assistant_presence",{},{key:`${epoch}:${revision}`,utterance:text,assistantName:ownerName},()=>generation.current===epoch&&turnRevision.current===revision).then(()=>{
-        manualPresenceCapture.current=false;
-        if(generation.current===epoch&&turnRevision.current===revision)reply(t("Availability: {p0}",{p0:t(presenceIntent==="away"?"Away":presenceIntent==="dnd"?"Do not disturb":"Here")}));
-      }).catch(()=>{manualPresenceCapture.current=false;if(generation.current===epoch)setError(t("Availability change was not confirmed."));});
+      void assistantControls
+        .current!.call(
+          "assistant_presence",
+          {},
+          { key: `${epoch}:${revision}`, utterance: text, assistantName: ownerName },
+          () => generation.current === epoch && turnRevision.current === revision,
+        )
+        .then(() => {
+          manualPresenceCapture.current = false;
+          if (generation.current === epoch && turnRevision.current === revision)
+            reply(
+              t("Availability: {p0}", {
+                p0: t(
+                  presenceIntent === "away"
+                    ? "Away"
+                    : presenceIntent === "dnd"
+                      ? "Do not disturb"
+                      : "Here",
+                ),
+              }),
+            );
+        })
+        .catch(() => {
+          manualPresenceCapture.current = false;
+          if (generation.current === epoch) setError(t("Availability change was not confirmed."));
+        });
       return true;
     }
-    if(voiceOwnerRequestedStopAll(text)){
+    if (voiceOwnerRequestedStopAll(text)) {
       void causalGeneration.current?.invalidate("unverified-tool");
-      const epoch=generation.current,revision=turnRevision.current;
-      cancelJobReview();releaseChoice();
-      void assistantControls.current!.call("assistant_stop_all",{}, {key:`${epoch}:${revision}`,utterance:text},()=>generation.current===epoch&&turnRevision.current===revision).then(()=>{if(generation.current===epoch&&turnRevision.current===revision)reply(t("Stop requested. Assistant work is paused."));}).catch(cause=>{if(generation.current===epoch)setError(voiceError(cause,"The stop request could not be confirmed. Check the Room."));});
+      const epoch = generation.current,
+        revision = turnRevision.current;
+      cancelJobReview();
+      releaseChoice();
+      void assistantControls
+        .current!.call(
+          "assistant_stop_all",
+          {},
+          { key: `${epoch}:${revision}`, utterance: text },
+          () => generation.current === epoch && turnRevision.current === revision,
+        )
+        .then(() => {
+          if (generation.current === epoch && turnRevision.current === revision)
+            reply(t("Stop requested. Assistant work is paused."));
+        })
+        .catch((cause) => {
+          if (generation.current === epoch)
+            setError(voiceError(cause, "The stop request could not be confirmed. Check the Room."));
+        });
       return true;
     }
-    if(!captureVoiceOwnerRule(text))return false;setTranscript(text);void saveOwnerRule(text);return true;
+    if (!captureVoiceOwnerRule(text)) return false;
+    setTranscript(text);
+    void saveOwnerRule(text);
+    return true;
   }
-  async function forgetOwnerMemory(id:unknown,quote:string,epoch:number,active:()=>boolean){
-    if(!loadVoiceMemory().enabled)return {forgotten:false,error:"Memory is turned off in Settings."};
-    if(!ownerAskedToForget(quote))return {forgotten:false,error:"Choose the exact memory to forget and confirm it."};
-    const found=await assistantRequest({op:"memory.search",query:"",limit:100});
-    const value=found.entries?.find(entry=>entry.id===id);const entry=value?{...value}:undefined;
-    if(!entry||entry.text.length>600)return {forgotten:false,error:"Review this memory in the Room before deleting it."};
-    if(generation.current!==epoch||!active())return {forgotten:false,error:"The spoken request is no longer active."};
-    const answer=await realtimeTool("present_choices",{question:t("Forget {p0}?",{p0:entry.text}),kind:"confirm",allowCustom:false,timeoutSec:60,options:[{id:"confirm",label:t("Forget")},{id:"cancel",label:t("Cancel")}]},epoch,active) as UserQuestionReply;
-    if(answer?.kind!=="answered"||!answer.answers.choice?.includes("confirm"))return {forgotten:false,error:"The memory was kept."};
-    if(generation.current!==epoch||!active())return {forgotten:false,error:"The spoken request is no longer active."};
-    return forgetHostVoiceMemory(id,assistantRequest,quote,{version:entry.version,text:entry.text});
+  async function forgetOwnerMemory(
+    id: unknown,
+    quote: string,
+    epoch: number,
+    active: () => boolean,
+  ) {
+    if (!loadVoiceMemory().enabled)
+      return { forgotten: false, error: "Memory is turned off in Settings." };
+    if (!ownerAskedToForget(quote))
+      return { forgotten: false, error: "Choose the exact memory to forget and confirm it." };
+    const found = await assistantRequest({ op: "memory.search", query: "", limit: 100 });
+    const value = found.entries?.find((entry) => entry.id === id);
+    const entry = value ? { ...value } : undefined;
+    if (!entry || entry.text.length > 600)
+      return { forgotten: false, error: "Review this memory in the Room before deleting it." };
+    if (generation.current !== epoch || !active())
+      return { forgotten: false, error: "The spoken request is no longer active." };
+    const answer = (await realtimeTool(
+      "present_choices",
+      {
+        question: t("Forget {p0}?", { p0: entry.text }),
+        kind: "confirm",
+        allowCustom: false,
+        timeoutSec: 60,
+        options: [
+          { id: "confirm", label: t("Forget") },
+          { id: "cancel", label: t("Cancel") },
+        ],
+      },
+      epoch,
+      active,
+    )) as UserQuestionReply;
+    if (answer?.kind !== "answered" || !answer.answers.choice?.includes("confirm"))
+      return { forgotten: false, error: "The memory was kept." };
+    if (generation.current !== epoch || !active())
+      return { forgotten: false, error: "The spoken request is no longer active." };
+    return forgetHostVoiceMemory(id, assistantRequest, quote, {
+      version: entry.version,
+      text: entry.text,
+    });
   }
-  const [historyNotice,setHistoryNotice]=useState("");
+  const [historyNotice, setHistoryNotice] = useState("");
   const [choice, setChoice] = useState<VoiceChoice | null>(null);
-  const [jobReview,setJobReview]=useState<VoiceJobReviewState|null>(null);
+  const [jobReview, setJobReview] = useState<VoiceJobReviewState | null>(null);
   const compact = settings.compact && !choice && !jobReview;
-  const pendingJobs=useRef<{review:VoiceJobReviewState;environmentId:string;batch:VoiceJobBatch;resolve:(value:unknown)=>void;released?:boolean}|null>(null);
-  function changeJobReview(rows:VoiceJobDraft[]) {
-    const pending=pendingJobs.current;if(!pending||pending.review.busy||pending.review.accepted.length||pending.review.error)return false;
-    if(!Array.isArray(rows)||rows.some(row=>!row||typeof row!=="object")||rows.length!==pending.review.jobs.length||new Set(rows.map(row=>row.id)).size!==rows.length)return false;
-    const next=changeVoiceJobRows(pending.review.jobs,rows,pending.review.projects,pending.review.quickNotes===true,pending.review.quickAutomations===true);if(!next)return false;
-    pending.review={...pending.review,jobs:next};setJobReview(pending.review);return true;
+  const pendingJobs = useRef<{
+    review: VoiceJobReviewState;
+    environmentId: string;
+    batch: VoiceJobBatch;
+    resolve: (value: unknown) => void;
+    released?: boolean;
+  } | null>(null);
+  function changeJobReview(rows: VoiceJobDraft[]) {
+    const pending = pendingJobs.current;
+    if (!pending || pending.review.busy || pending.review.accepted.length || pending.review.error)
+      return false;
+    if (
+      !Array.isArray(rows) ||
+      rows.some((row) => !row || typeof row !== "object") ||
+      rows.length !== pending.review.jobs.length ||
+      new Set(rows.map((row) => row.id)).size !== rows.length
+    )
+      return false;
+    const next = changeVoiceJobRows(
+      pending.review.jobs,
+      rows,
+      pending.review.projects,
+      pending.review.quickNotes === true,
+      pending.review.quickAutomations === true,
+    );
+    if (!next) return false;
+    pending.review = { ...pending.review, jobs: next };
+    setJobReview(pending.review);
+    return true;
   }
   function cancelJobReview() {
-    const pending=pendingJobs.current;if(!pending||pending.review.busy)return;
-    pending.resolve({status:"cancelled",jobs:pending.batch.accepted.filter(job=>assistantJobVisible(job,id=>{const project=pending.review.projects.find(project=>project.id===id);return !!project&&!isProjectLocked(project.path)&&(latest.current.projects??[{path:currentTarget()?.cwd??latest.current.projectPath??""}]).some(visible=>pathKey(visible.path)===pathKey(project.path));})).map(job=>({id:job.id,title:job.title,status:job.status}))});pendingJobs.current=null;setJobReview(null);
+    const pending = pendingJobs.current;
+    if (!pending || pending.review.busy) return;
+    pending.resolve({
+      status: "cancelled",
+      jobs: pending.batch.accepted
+        .filter((job) =>
+          assistantJobVisible(job, (id) => {
+            const project = pending.review.projects.find((project) => project.id === id);
+            return (
+              !!project &&
+              !isProjectLocked(project.path) &&
+              (
+                latest.current.projects ?? [
+                  { path: currentTarget()?.cwd ?? latest.current.projectPath ?? "" },
+                ]
+              ).some((visible) => pathKey(visible.path) === pathKey(project.path))
+            );
+          }),
+        )
+        .map((job) => ({ id: job.id, title: job.title, status: job.status })),
+    });
+    pendingJobs.current = null;
+    setJobReview(null);
   }
-  async function startReviewedJobs(rows:VoiceJobDraft[]) {
-    const pending=pendingJobs.current;if(!pending||pending.review.busy)return;
-    if(!pending.review.error&&!pending.review.accepted.length){if(!changeJobReview(rows))return;}
-    else if(JSON.stringify(rows)!==JSON.stringify(pending.review.jobs))return;
-    pending.review={...pending.review,busy:true,error:""};setJobReview(pending.review);
-    try{
-      const verified=await assistantRequest({op:"projects.list"},pending.environmentId);
-      if(pending.review.jobs.some(row=>row.kind==="quick")){
-        const current=await assistantRequest({op:"snapshot",limit:100},pending.environmentId);
-        if(pending.review.jobs.some(row=>row.kind==="quick"&&row.quickAction?.kind==="note")&&current.snapshot?.capabilities.quickNotes!==true)throw new Error("Quick note jobs are unavailable on this Host.");
-        if(pending.review.jobs.some(row=>row.kind==="quick"&&row.quickAction?.kind==="automation")&&current.snapshot?.capabilities.quickAutomations!==true)throw new Error("Quick automation jobs are unavailable for this project.");
+  async function startReviewedJobs(rows: VoiceJobDraft[]) {
+    const pending = pendingJobs.current;
+    if (!pending || pending.review.busy) return;
+    if (!pending.review.error && !pending.review.accepted.length) {
+      if (!changeJobReview(rows)) return;
+    } else if (JSON.stringify(rows) !== JSON.stringify(pending.review.jobs)) return;
+    pending.review = { ...pending.review, busy: true, error: "" };
+    setJobReview(pending.review);
+    try {
+      const verified = await assistantRequest({ op: "projects.list" }, pending.environmentId);
+      if (pending.review.jobs.some((row) => row.kind === "quick")) {
+        const current = await assistantRequest(
+          { op: "snapshot", limit: 100 },
+          pending.environmentId,
+        );
+        if (
+          pending.review.jobs.some(
+            (row) => row.kind === "quick" && row.quickAction?.kind === "note",
+          ) &&
+          current.snapshot?.capabilities.quickNotes !== true
+        )
+          throw new Error("Quick note jobs are unavailable on this Host.");
+        if (
+          pending.review.jobs.some(
+            (row) => row.kind === "quick" && row.quickAction?.kind === "automation",
+          ) &&
+          current.snapshot?.capabilities.quickAutomations !== true
+        )
+          throw new Error("Quick automation jobs are unavailable for this project.");
       }
-      for(const row of pending.review.jobs)for(const id of assistantJobProjectIds(row)){
-        const project=verified.projects?.find(project=>project.id===id);
-        if(!project||!pending.review.projects.some(captured=>captured.id===id&&pathKey(captured.path)===pathKey(project.path))||isProjectLocked(project.path)||(!scopeRef.current&&pathKey(project.path)!==pathKey(currentTarget()?.cwd??latest.current.projectPath??""))||!(latest.current.projects??[{path:currentTarget()?.cwd??latest.current.projectPath??""}]).some(visible=>pathKey(visible.path)===pathKey(project.path)))throw new Error("The project is hidden, locked or no longer available.");
+      for (const row of pending.review.jobs)
+        for (const id of assistantJobProjectIds(row)) {
+          const project = verified.projects?.find((project) => project.id === id);
+          if (
+            !project ||
+            !pending.review.projects.some(
+              (captured) => captured.id === id && pathKey(captured.path) === pathKey(project.path),
+            ) ||
+            isProjectLocked(project.path) ||
+            (!scopeRef.current &&
+              pathKey(project.path) !==
+                pathKey(currentTarget()?.cwd ?? latest.current.projectPath ?? "")) ||
+            !(
+              latest.current.projects ?? [
+                { path: currentTarget()?.cwd ?? latest.current.projectPath ?? "" },
+              ]
+            ).some((visible) => pathKey(visible.path) === pathKey(project.path))
+          )
+            throw new Error("The project is hidden, locked or no longer available.");
+        }
+      const jobs = await pending.batch.start(pending.review.jobs);
+      if (pendingJobs.current !== pending) return;
+      if (
+        !jobs.every((job) =>
+          assistantJobVisible(job, (id) => {
+            const project = pending.review.projects.find((project) => project.id === id);
+            return (
+              !!project &&
+              !isProjectLocked(project.path) &&
+              (
+                latest.current.projects ?? [
+                  { path: currentTarget()?.cwd ?? latest.current.projectPath ?? "" },
+                ]
+              ).some((visible) => pathKey(visible.path) === pathKey(project.path))
+            );
+          }),
+        )
+      )
+        throw new Error("The project is hidden, locked or no longer available.");
+      const receipt = {
+        status: "accepted",
+        jobs: jobs.map((job) => ({ id: job.id, title: job.title, status: job.status })),
+      };
+      pending.resolve(receipt);
+      pendingJobs.current = null;
+      setJobReview(null);
+      if (pending.released)
+        client.current?.speak(
+          t("{p0} personal notes saved. {p1} automations created. {p2} project jobs accepted.", {
+            p0: jobs.filter(
+              (job) => job.kind === "quick" && job.status === "done" && job.quickResult?.noteId,
+            ).length,
+            p1: jobs.filter(
+              (job) =>
+                job.kind === "quick" && job.status === "done" && job.quickResult?.automationId,
+            ).length,
+            p2: jobs.filter((job) => job.kind !== "quick").length,
+          }),
+        );
+    } catch (cause) {
+      if (pendingJobs.current === pending) {
+        pending.review = {
+          ...pending.review,
+          busy: false,
+          error: voiceError(cause, "Job status is unknown. Check the Room before retrying."),
+          accepted: pending.batch.accepted.map((job) => job.id),
+        };
+        setJobReview(pending.review);
       }
-      const jobs=await pending.batch.start(pending.review.jobs);
-      if(pendingJobs.current!==pending)return;
-      if(!jobs.every(job=>assistantJobVisible(job,id=>{const project=pending.review.projects.find(project=>project.id===id);return !!project&&!isProjectLocked(project.path)&&(latest.current.projects??[{path:currentTarget()?.cwd??latest.current.projectPath??""}]).some(visible=>pathKey(visible.path)===pathKey(project.path));})))throw new Error("The project is hidden, locked or no longer available.");
-      const receipt={status:"accepted",jobs:jobs.map(job=>({id:job.id,title:job.title,status:job.status}))};
-      pending.resolve(receipt);pendingJobs.current=null;setJobReview(null);
-      if(pending.released)client.current?.speak(t("{p0} personal notes saved. {p1} automations created. {p2} project jobs accepted.",{p0:jobs.filter(job=>job.kind==="quick"&&job.status==="done"&&job.quickResult?.noteId).length,p1:jobs.filter(job=>job.kind==="quick"&&job.status==="done"&&job.quickResult?.automationId).length,p2:jobs.filter(job=>job.kind!=="quick").length}));
-    }catch(cause){if(pendingJobs.current===pending){pending.review={...pending.review,busy:false,error:voiceError(cause,"Job status is unknown. Check the Room before retrying."),accepted:pending.batch.accepted.map(job=>job.id)};setJobReview(pending.review);}}
+    }
   }
   const pendingChoice = useRef<{
     choice: VoiceChoice;
     resolve: (value: unknown) => void;
     timer: ReturnType<typeof setTimeout>;
-    owner?:NonNullable<Awaited<ReturnType<typeof persistVoiceOwnerChoice>>>;
-    presentation?:VoiceOwnerChoicePending;
-    answering?:boolean;
+    owner?: NonNullable<Awaited<ReturnType<typeof persistVoiceOwnerChoice>>>;
+    presentation?: VoiceOwnerChoicePending;
+    answering?: boolean;
   } | null>(null);
-  const preparingChoice=useRef(false);
+  const preparingChoice = useRef(false);
   const transcriptStore = useRef<VoiceThreadTranscript | null>(null);
   if (!transcriptStore.current)
     transcriptStore.current = new VoiceThreadTranscript(assistantRequest, () =>
@@ -316,64 +603,165 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     );
   function answerChoice(reply: UserQuestionReply) {
     const pending = pendingChoice.current;
-    if (!pending || pending.presentation||!validVoiceChoiceReply(pending.choice, reply)) return;
-    if(pending.owner){
-      if(pending.answering)return;pending.answering=true;clearTimeout(pending.timer);
-      setChoice({...pending.choice,prompt:{...pending.choice.prompt,delivery:"sending"}});
-      void pending.owner.answer(reply).then(result=>{
-        if(pendingChoice.current!==pending)return;
-        pendingChoice.current=null;setChoice(null);
-        const source=pending.choice.ownerQuestion!;
-        resolveQuestionDraft(ownerQuestionDraftScope(source.environmentId,source.question),pending.choice.prompt);
-        pending.resolve(result.reply);
-      }).catch(cause=>{if(pendingChoice.current===pending){pending.answering=false;setChoice({...pending.choice,prompt:{...pending.choice.prompt,delivery:"unknown",error:voiceError(cause,"The answer is unconfirmed. Your original choice is kept.")}});}});
+    if (!pending || pending.presentation || !validVoiceChoiceReply(pending.choice, reply)) return;
+    if (pending.owner) {
+      if (pending.answering) return;
+      pending.answering = true;
+      clearTimeout(pending.timer);
+      setChoice({ ...pending.choice, prompt: { ...pending.choice.prompt, delivery: "sending" } });
+      void pending.owner
+        .answer(reply)
+        .then((result) => {
+          if (pendingChoice.current !== pending) return;
+          pendingChoice.current = null;
+          setChoice(null);
+          const source = pending.choice.ownerQuestion!;
+          resolveQuestionDraft(
+            ownerQuestionDraftScope(source.environmentId, source.question),
+            pending.choice.prompt,
+          );
+          pending.resolve(result.reply);
+        })
+        .catch((cause) => {
+          if (pendingChoice.current === pending) {
+            pending.answering = false;
+            setChoice({
+              ...pending.choice,
+              prompt: {
+                ...pending.choice.prompt,
+                delivery: "unknown",
+                error: voiceError(
+                  cause,
+                  "The answer is unconfirmed. Your original choice is kept.",
+                ),
+              },
+            });
+          }
+        });
       return;
     }
     clearTimeout(pending.timer);
     pendingChoice.current = null;
     setChoice(null);
-    if(reply.kind==="answered") {
-      const question=pending.choice.prompt.questions[0];
-      const labels=(reply.answers.choice??[]).map(id=>question.options.find(option=>option.id===id)?.label??"").filter(Boolean);
-      if(reply.custom?.choice)labels.push(reply.custom.choice);
-      transcriptStore.current?.record("user",`${question.prompt}\n${labels.join(", ")}`);
+    if (reply.kind === "answered") {
+      const question = pending.choice.prompt.questions[0];
+      const labels = (reply.answers.choice ?? [])
+        .map((id) => question.options.find((option) => option.id === id)?.label ?? "")
+        .filter(Boolean);
+      if (reply.custom?.choice) labels.push(reply.custom.choice);
+      transcriptStore.current?.record("user", `${question.prompt}\n${labels.join(", ")}`);
       transcriptStore.current?.finish();
     }
     pending.resolve(reply);
   }
-  async function retryChoice(){
-    const pending=pendingChoice.current;if(!pending||pending.answering)return;
-    pending.answering=true;clearTimeout(pending.timer);setChoice({...pending.choice,prompt:{...pending.choice.prompt,delivery:"sending"}});
-    try{
-      if(pending.presentation){
-        const owner=await pending.presentation.retry();if(pendingChoice.current!==pending)return;
-        if(owner.question.status==="answered"){pendingChoice.current=null;setChoice(null);pending.resolve(owner.answeredReply());return;}
-        if(owner.question.status!=="open"){pendingChoice.current=null;setChoice(null);pending.resolve(owner.deferred());return;}
-        pending.owner=owner;pending.presentation=undefined;pending.choice=owner.choice;pending.answering=false;pending.timer=setTimeout(releaseChoice,owner.choice.timeoutSec*1000);setChoice(owner.choice);return;
+  async function retryChoice() {
+    const pending = pendingChoice.current;
+    if (!pending || pending.answering) return;
+    pending.answering = true;
+    clearTimeout(pending.timer);
+    setChoice({ ...pending.choice, prompt: { ...pending.choice.prompt, delivery: "sending" } });
+    try {
+      if (pending.presentation) {
+        const owner = await pending.presentation.retry();
+        if (pendingChoice.current !== pending) return;
+        if (owner.question.status === "answered") {
+          pendingChoice.current = null;
+          setChoice(null);
+          pending.resolve(owner.answeredReply());
+          return;
+        }
+        if (owner.question.status !== "open") {
+          pendingChoice.current = null;
+          setChoice(null);
+          pending.resolve(owner.deferred());
+          return;
+        }
+        pending.owner = owner;
+        pending.presentation = undefined;
+        pending.choice = owner.choice;
+        pending.answering = false;
+        pending.timer = setTimeout(releaseChoice, owner.choice.timeoutSec * 1000);
+        setChoice(owner.choice);
+        return;
       }
-      if(pending.owner){
-        const result=await pending.owner.retryAnswer();if(pendingChoice.current!==pending)return;
-        const source=pending.choice.ownerQuestion!;resolveQuestionDraft(ownerQuestionDraftScope(source.environmentId,source.question),pending.choice.prompt);
-        pendingChoice.current=null;setChoice(null);pending.resolve(result.reply);
+      if (pending.owner) {
+        const result = await pending.owner.retryAnswer();
+        if (pendingChoice.current !== pending) return;
+        const source = pending.choice.ownerQuestion!;
+        resolveQuestionDraft(
+          ownerQuestionDraftScope(source.environmentId, source.question),
+          pending.choice.prompt,
+        );
+        pendingChoice.current = null;
+        setChoice(null);
+        pending.resolve(result.reply);
       }
-    }catch(cause){if(pendingChoice.current===pending){pending.answering=false;if(cause instanceof VoiceOwnerChoicePending)pending.presentation=cause;setChoice({...pending.choice,prompt:{...pending.choice.prompt,delivery:"unknown",error:t(pending.presentation?"Saving this question is unconfirmed. Retry to verify the original card.":"The answer is unconfirmed. Your original choice is kept.")}});}}
+    } catch (cause) {
+      if (pendingChoice.current === pending) {
+        pending.answering = false;
+        if (cause instanceof VoiceOwnerChoicePending) pending.presentation = cause;
+        setChoice({
+          ...pending.choice,
+          prompt: {
+            ...pending.choice.prompt,
+            delivery: "unknown",
+            error: t(
+              pending.presentation
+                ? "Saving this question is unconfirmed. Retry to verify the original card."
+                : "The answer is unconfirmed. Your original choice is kept.",
+            ),
+          },
+        });
+      }
+    }
   }
-  function releaseChoice(){
-    const pending=pendingChoice.current;if(!pending)return;
-    if(pending.presentation){clearTimeout(pending.timer);pendingChoice.current=null;setChoice(null);pending.resolve(pending.presentation.deferred());return;}
-    if(!pending.owner){answerChoice({kind:"skipped"});return;}
-    clearTimeout(pending.timer);pendingChoice.current=null;setChoice(null);pending.resolve(pending.owner.deferred());
+  function releaseChoice() {
+    const pending = pendingChoice.current;
+    if (!pending) return;
+    if (pending.presentation) {
+      clearTimeout(pending.timer);
+      pendingChoice.current = null;
+      setChoice(null);
+      pending.resolve(pending.presentation.deferred());
+      return;
+    }
+    if (!pending.owner) {
+      answerChoice({ kind: "skipped" });
+      return;
+    }
+    clearTimeout(pending.timer);
+    pendingChoice.current = null;
+    setChoice(null);
+    pending.resolve(pending.owner.deferred());
   }
   function consumeChoice(text: string) {
-    if(pendingJobs.current){
-      const input=text.trim().toLocaleLowerCase().replace(/[.!?]+$/g,"");
-      if(/^(start jobs|start them|başlat|işleri başlat|başla)$/.test(input)){rememberTurn("user",text);void startReviewedJobs(pendingJobs.current.review.jobs);return true;}
-      if(/^(cancel review|cancel|iptal)$/.test(input)){rememberTurn("user",text);cancelJobReview();return true;}
-      pendingJobs.current.released=true;pendingJobs.current.resolve({status:"awaiting_review",reviewId:pendingJobs.current.review.id});
+    if (pendingJobs.current) {
+      const input = text
+        .trim()
+        .toLocaleLowerCase()
+        .replace(/[.!?]+$/g, "");
+      if (/^(start jobs|start them|başlat|işleri başlat|başla)$/.test(input)) {
+        rememberTurn("user", text);
+        void startReviewedJobs(pendingJobs.current.review.jobs);
+        return true;
+      }
+      if (/^(cancel review|cancel|iptal)$/.test(input)) {
+        rememberTurn("user", text);
+        cancelJobReview();
+        return true;
+      }
+      pendingJobs.current.released = true;
+      pendingJobs.current.resolve({
+        status: "awaiting_review",
+        reviewId: pendingJobs.current.review.id,
+      });
     }
     const pending = pendingChoice.current;
     if (!pending) return false;
-    if(pending.presentation){releaseChoice();return false;}
+    if (pending.presentation) {
+      releaseChoice();
+      return false;
+    }
     const answer = spokenVoiceChoice(pending.choice, text);
     if (!answer) {
       releaseChoice();
@@ -397,66 +785,162 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }, [compact]);
   const returnFocus = useRef(false);
   const client = useRef<LocalVoice | RealtimeVoice | null>(null);
-  const ownerKey=JSON.stringify({profile:assistantSnapshot?.profile,memory:assistantSnapshot?.memory});
-  useEffect(()=>{if(client.current instanceof RealtimeVoice)client.current.updateOwnerInstructions?.(ownerInstructions());},[ownerKey]);
+  const ownerKey = JSON.stringify({
+    profile: assistantSnapshot?.profile,
+    memory: assistantSnapshot?.memory,
+  });
+  useEffect(() => {
+    if (client.current instanceof RealtimeVoice)
+      client.current.updateOwnerInstructions?.(ownerInstructions());
+  }, [ownerKey]);
   useEffect(() => {
     client.current?.configureConversation({
       turnEndSilence: settings.turnEndSilence,
       allowBargeIn: settings.allowBargeIn,
-      manualTurnEnd:settings.manualTurnEnd,
+      manualTurnEnd: settings.manualTurnEnd,
     });
-  }, [settings.turnEndSilence, settings.allowBargeIn,settings.manualTurnEnd]);
+  }, [settings.turnEndSilence, settings.allowBargeIn, settings.manualTurnEnd]);
   const detectedPresence = useVoicePresence(open, settings.idleSleepMinutes);
-  const manualPresenceCapture=useRef(false),checkingTalkPresence=useRef(false);
-  const presence = assistantSnapshot?.presence?.state === "away" || assistantSnapshot?.presence?.state === "dnd" ? "away" : detectedPresence;
-  const capturePresence=manualPresenceCapture.current&&detectedPresence==="active"?detectedPresence:presence;
+  const manualPresenceCapture = useRef(false),
+    checkingTalkPresence = useRef(false);
+  const presence =
+    assistantSnapshot?.presence?.state === "away" || assistantSnapshot?.presence?.state === "dnd"
+      ? "away"
+      : detectedPresence;
+  const capturePresence =
+    manualPresenceCapture.current && detectedPresence === "active" ? detectedPresence : presence;
   const presenceRef = useRef(presence);
   presenceRef.current = presence;
-  useEffect(()=>{
-    const profile=assistantSnapshot?.profile;const briefing=assistantSnapshot?.briefing;
-    if(!profile||!briefing||!maySpeakVoiceBriefing(profile,presence,status,settings.holdAnnouncements===true,new Date().getHours()))return;
-    if(assistantSnapshot.memory.some(entry=>entry.active&&entry.kind==="rule"&&entry.forbiddenTerms.some(term=>briefing.text.toLocaleLowerCase().includes(term.toLocaleLowerCase()))))return;
-    const key="bycoda.voice.last-briefing";
-    try {if(localStorage.getItem(key)===briefing.id)return;}catch{/* Dedupe still applies in this mounted lifecycle. */}
-    const abort=new AbortController();
-    const invitation=t("Press Talk when you want to answer.");
+  useEffect(() => {
+    const profile = assistantSnapshot?.profile;
+    const briefing = assistantSnapshot?.briefing;
+    if (
+      !profile ||
+      !briefing ||
+      !maySpeakVoiceBriefing(
+        profile,
+        presence,
+        status,
+        settings.holdAnnouncements === true,
+        new Date().getHours(),
+      )
+    )
+      return;
+    if (
+      assistantSnapshot.memory.some(
+        (entry) =>
+          entry.active &&
+          entry.kind === "rule" &&
+          entry.forbiddenTerms.some((term) =>
+            briefing.text.toLocaleLowerCase().includes(term.toLocaleLowerCase()),
+          ),
+      )
+    )
+      return;
+    const key = "bycoda.voice.last-briefing";
+    try {
+      if (localStorage.getItem(key) === briefing.id) return;
+    } catch {
+      /* Dedupe still applies in this mounted lifecycle. */
+    }
+    const abort = new AbortController();
+    const invitation = t("Press Talk when you want to answer.");
     setMessage(`${briefing.text}\n${invitation}`);
-    void previewVoice(loadVoiceSettings(),profile.language,profile.name,abort.signal,()=>{
-      if(!abort.signal.aborted){try{localStorage.setItem(key,briefing.id);}catch{/* Host briefing remains readable. */}}
-    },`${briefing.text}\n${invitation}`,(active)=>{if(!abort.signal.aborted)setPlayback(active);},{languageHint:assistantSnapshot.lastSpokenLanguage??undefined}).catch(cause=>{if(!abort.signal.aborted)setError(voiceError(cause,"Voice could not connect."));});
-    const timer=setTimeout(()=>{abort.abort();stopCapture("sleeping");},60_000);
-    return()=>{clearTimeout(timer);abort.abort();setPlayback(false);};
-  },[assistantSnapshot?.briefing?.id,assistantSnapshot?.lastSpokenLanguage,assistantSnapshot?.profile.proactiveSpeech,assistantSnapshot?.profile.quietStart,assistantSnapshot?.profile.quietEnd,ownerKey,presence,status,settings.holdAnnouncements]);
+    void previewVoice(
+      loadVoiceSettings(),
+      profile.language,
+      profile.name,
+      abort.signal,
+      () => {
+        if (!abort.signal.aborted) {
+          try {
+            localStorage.setItem(key, briefing.id);
+          } catch {
+            /* Host briefing remains readable. */
+          }
+        }
+      },
+      `${briefing.text}\n${invitation}`,
+      (active) => {
+        if (!abort.signal.aborted) setPlayback(active);
+      },
+      { languageHint: assistantSnapshot.lastSpokenLanguage ?? undefined },
+    ).catch((cause) => {
+      if (!abort.signal.aborted) setError(voiceError(cause, "Voice could not connect."));
+    });
+    const timer = setTimeout(() => {
+      abort.abort();
+      stopCapture("sleeping");
+    }, 60_000);
+    return () => {
+      clearTimeout(timer);
+      abort.abort();
+      setPlayback(false);
+    };
+  }, [
+    assistantSnapshot?.briefing?.id,
+    assistantSnapshot?.lastSpokenLanguage,
+    assistantSnapshot?.profile.proactiveSpeech,
+    assistantSnapshot?.profile.quietStart,
+    assistantSnapshot?.profile.quietEnd,
+    ownerKey,
+    presence,
+    status,
+    settings.holdAnnouncements,
+  ]);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const retryCount = useRef(0);
   const stableTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const recentTurns = useRef<{ role: "user" | "assistant"; text: string;projectIds?:readonly string[] }[]>([]);
-  const causalGeneration=useRef<VoiceCausalGeneration|undefined>(undefined);
-  const activeHistoryBinding=useRef<VoiceHistoryBinding|undefined>(undefined);
+  const recentTurns = useRef<
+    { role: "user" | "assistant"; text: string; projectIds?: readonly string[] }[]
+  >([]);
+  const causalGeneration = useRef<VoiceCausalGeneration | undefined>(undefined);
+  const activeHistoryBinding = useRef<VoiceHistoryBinding | undefined>(undefined);
   const threadSummary = useRef("");
-  const turnHistory=useRef<Promise<VoiceHistory|null>|undefined>(undefined);
-  const historyBindings=useRef<VoiceHistoryBindings|null>(null);
-  if(!historyBindings.current)historyBindings.current=new VoiceHistoryBindings(assistantRequest,undefined,captureLocalVoiceHistory);
+  const turnHistory = useRef<Promise<VoiceHistory | null> | undefined>(undefined);
+  const historyBindings = useRef<VoiceHistoryBindings | null>(null);
+  if (!historyBindings.current)
+    historyBindings.current = new VoiceHistoryBindings(
+      assistantRequest,
+      undefined,
+      captureLocalVoiceHistory,
+    );
   function rememberTurn(role: "user" | "assistant", text: string, append = false) {
-    transcriptStore.current?.record(role, text, append,role==="assistant"?causalGeneration.current?.proof():undefined);
-    if(role==="user")transcriptStore.current?.finish();
+    transcriptStore.current?.record(
+      role,
+      text,
+      append,
+      role === "assistant" ? causalGeneration.current?.proof() : undefined,
+    );
+    if (role === "user") transcriptStore.current?.finish();
     const turns = recentTurns.current;
     if (append && turns[turns.length - 1]?.role === role) turns[turns.length - 1].text += text;
     else {
-      const entry:{role:"user"|"assistant";text:string;projectIds?:readonly string[]}={role,text};turns.push(entry);
-      void activeHistoryBinding.current?.scope?.().then(scope=>{if(scope.complete)entry.projectIds=scope.projectIds;}).catch(()=>{});
+      const entry: { role: "user" | "assistant"; text: string; projectIds?: readonly string[] } = {
+        role,
+        text,
+      };
+      turns.push(entry);
+      void activeHistoryBinding.current
+        ?.scope?.()
+        .then((scope) => {
+          if (scope.complete) entry.projectIds = scope.projectIds;
+        })
+        .catch(() => {});
     }
     recentTurns.current = turns.slice(-6);
-    for(const turn of recentTurns.current)turn.text=turn.text.slice(-4000);
+    for (const turn of recentTurns.current) turn.text = turn.text.slice(-4000);
   }
   const realtime = settings.mode === "local" ? undefined : REALTIME[settings.mode];
   const generation = useRef(0);
   const sequence = useRef(0);
   const consumedSequence = useRef(0);
   const sideRequest = useRef<AbortController | null>(null);
-  const history = useRef(new Map<string, { role: string; text: string;projectIds?:readonly string[] }[]>());
+  const history = useRef(
+    new Map<string, { role: string; text: string; projectIds?: readonly string[] }[]>(),
+  );
   const jobs = useRef(new Map<string, { sawBusy: boolean; assistantId?: string }>());
   const workAttempt = useRef<{
     sessionId: string;
@@ -477,9 +961,18 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       getProjects: () =>
         (latest.current.projects ?? []).filter(
           (project) =>
-            !isProjectLocked(project.path)&&(!turnCaptured.current||turnAllowedProjectPaths.current.some(path=>pathKey(path)===pathKey(project.path)))&&((turnCaptured.current?(turnGlobalScope.current&&scopeRef.current):scopeRef.current) ||
-            project.path ===
-              (turnCaptured.current?turnProjectPath.current:(currentTarget()?.cwd ?? latest.current.projectPath))),
+            !isProjectLocked(project.path) &&
+            (!turnCaptured.current ||
+              turnAllowedProjectPaths.current.some(
+                (path) => pathKey(path) === pathKey(project.path),
+              )) &&
+            ((turnCaptured.current
+              ? turnGlobalScope.current && scopeRef.current
+              : scopeRef.current) ||
+              project.path ===
+                (turnCaptured.current
+                  ? turnProjectPath.current
+                  : (currentTarget()?.cwd ?? latest.current.projectPath))),
         ),
       getSessions: () => [
         ...latest.current.sessions.filter(
@@ -492,9 +985,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           ? turnProjectPath.current
           : (latest.current.projectPath ?? currentTarget()?.cwd ?? ""),
       getTargetId: () => (turnCaptured.current ? turnSessionId.current : currentTarget()?.id),
-      getThreadId:()=>turnHistory.current?.then(value=>value?.thread.id).catch(()=>undefined),
-      causalContext:()=>causalGeneration.current?.tool()??Promise.resolve(undefined),
-      invalidateCausalContext:async()=>{await causalGeneration.current?.invalidate("unverified-tool");},
+      getThreadId: () =>
+        turnHistory.current?.then((value) => value?.thread.id).catch(() => undefined),
+      causalContext: () => causalGeneration.current?.tool() ?? Promise.resolve(undefined),
+      invalidateCausalContext: async () => {
+        await causalGeneration.current?.invalidate("unverified-tool");
+      },
       workspace: latest.current.workspace ?? {
         tools: [],
         execute: async () => {
@@ -510,49 +1006,112 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   function currentSpeechTarget(): SpeechTarget {
     const session = currentTarget();
     const projectPath = session?.cwd ?? latest.current.projectPath ?? "";
-    const projectPaths = (scopeRef.current ? latest.current.projects?.map(project=>project.path) ?? [projectPath] : [projectPath]).filter(path=>path&&!isProjectLocked(path));
+    const projectPaths = (
+      scopeRef.current
+        ? (latest.current.projects?.map((project) => project.path) ?? [projectPath])
+        : [projectPath]
+    ).filter((path) => path && !isProjectLocked(path));
     return {
       sessionId: session?.id,
       projectPath,
-      projectPaths:Object.freeze([...new Set(projectPaths)]),
-      globalScope:scopeRef.current,
-      historyBinding:captureHistoryBinding(scopeRef.current,projectPath,projectPaths),
-      historySessionId:captureVoiceHistorySession(session,projectPath,scopeRef.current),
+      projectPaths: Object.freeze([...new Set(projectPaths)]),
+      globalScope: scopeRef.current,
+      historyBinding: captureHistoryBinding(scopeRef.current, projectPath, projectPaths),
+      historySessionId: captureVoiceHistorySession(session, projectPath, scopeRef.current),
     };
   }
-  function captureHistoryBinding(global:boolean,path:string,paths:readonly string[]=[path]):VoiceHistoryBinding{
-    const captured=historyBindings.current!.capture(global,path);
-    const frozenPaths=Object.freeze([...new Set(paths)]);
-    const visible=()=> (latest.current.projects?.map(project=>project.path)??frozenPaths).filter(path=>!isProjectLocked(path));
-    const allowed=()=>frozenPaths.every(path=>visible().some(current=>pathKey(current)===pathKey(path)));
-    const assert=()=>{if(!allowed())throw new Error("The project is hidden, locked or no longer available.");};
-    let capturedScope:Promise<VoiceHistoryScope>|undefined;
-    const scope=()=>capturedScope??=captured.request({op:"projects.list"}).then(result=>captureVoiceHistoryScope(frozenPaths,result.projects??[],visible)).catch(error=>{capturedScope=undefined;throw error;});
-    const request:VoiceHistoryBinding["request"]=async(input)=>{assert();const result=await captured.request(input);assert();if(result.messages){const bound=await scope();assert();return {...result,messages:result.messages.filter(message=>voiceHistoryMessageVisible(message,bound))};}return result;};
-    return {...captured,request,scope,current:allowed,global,open:async()=>{assert();const bound=await scope();assert();const result=await captured.open();assert();return {...projectVoiceHistory(result,global,bound),request,scope:bound};}};
+  function captureHistoryBinding(
+    global: boolean,
+    path: string,
+    paths: readonly string[] = [path],
+  ): VoiceHistoryBinding {
+    const captured = historyBindings.current!.capture(global, path);
+    const frozenPaths = Object.freeze([...new Set(paths)]);
+    const visible = () =>
+      (latest.current.projects?.map((project) => project.path) ?? frozenPaths).filter(
+        (path) => !isProjectLocked(path),
+      );
+    const allowed = () =>
+      frozenPaths.every((path) => visible().some((current) => pathKey(current) === pathKey(path)));
+    const assert = () => {
+      if (!allowed()) throw new Error("The project is hidden, locked or no longer available.");
+    };
+    let capturedScope: Promise<VoiceHistoryScope> | undefined;
+    const scope = () =>
+      (capturedScope ??= captured
+        .request({ op: "projects.list" })
+        .then((result) => captureVoiceHistoryScope(frozenPaths, result.projects ?? [], visible))
+        .catch((error) => {
+          capturedScope = undefined;
+          throw error;
+        }));
+    const request: VoiceHistoryBinding["request"] = async (input) => {
+      assert();
+      const result = await captured.request(input);
+      assert();
+      if (result.messages) {
+        const bound = await scope();
+        assert();
+        return {
+          ...result,
+          messages: result.messages.filter((message) => voiceHistoryMessageVisible(message, bound)),
+        };
+      }
+      return result;
+    };
+    return {
+      ...captured,
+      request,
+      scope,
+      current: allowed,
+      global,
+      open: async () => {
+        assert();
+        const bound = await scope();
+        assert();
+        const result = await captured.open();
+        assert();
+        return { ...projectVoiceHistory(result, global, bound), request, scope: bound };
+      },
+    };
   }
   function captureTurn(snapshot: SpeechTarget) {
     turnRevision.current++;
-    const revision=turnRevision.current;
-    const global=snapshot.globalScope??scopeRef.current;
-    const binding=snapshot.historyBinding??captureHistoryBinding(global,snapshot.projectPath,snapshot.projectPaths);
-    activeHistoryBinding.current=binding;
-    const selected=binding.open();
-    turnHistory.current=selected;
-      transcriptStore.current?.bindPending(async()=>(await binding.open()).thread,snapshot.historySessionId,binding.request);
-      void selected.then(value=>{
-        if(revision!==turnRevision.current||!value)return;
-        setHistoryNotice("");threadSummary.current=value.thread.summary;
-        const key=global?"global":snapshot.projectPath;
-        if(!history.current.has(key))history.current.set(key,voiceThreadSeed(value.thread,value.messages));
-      }).catch(()=>{if(revision===turnRevision.current)setHistoryNotice(t("Conversation was not saved. Retry."));});
+    const revision = turnRevision.current;
+    const global = snapshot.globalScope ?? scopeRef.current;
+    const binding =
+      snapshot.historyBinding ??
+      captureHistoryBinding(global, snapshot.projectPath, snapshot.projectPaths);
+    activeHistoryBinding.current = binding;
+    const selected = binding.open();
+    turnHistory.current = selected;
+    transcriptStore.current?.bindPending(
+      async () => (await binding.open()).thread,
+      snapshot.historySessionId,
+      binding.request,
+    );
+    void selected
+      .then((value) => {
+        if (revision !== turnRevision.current || !value) return;
+        setHistoryNotice("");
+        threadSummary.current = value.thread.summary;
+        const key = global ? "global" : snapshot.projectPath;
+        if (!history.current.has(key))
+          history.current.set(key, voiceThreadSeed(value.thread, value.messages));
+      })
+      .catch(() => {
+        if (revision === turnRevision.current)
+          setHistoryNotice(t("Conversation was not saved. Retry."));
+      });
     workAttempt.current = null;
     turnCaptured.current = true;
     turnSessionId.current = snapshot.sessionId;
     turnProjectPath.current = snapshot.projectPath;
-    turnAllowedProjectPaths.current = Object.freeze([...(snapshot.projectPaths??[snapshot.projectPath])]);
-    turnGlobalScope.current=global;
-    if (latest.current.workspace) controller.current!.captureTurn(global?"global":"project");
+    turnAllowedProjectPaths.current = Object.freeze([
+      ...(snapshot.projectPaths ?? [snapshot.projectPath]),
+    ]);
+    turnGlobalScope.current = global;
+    if (latest.current.workspace) controller.current!.captureTurn(global ? "global" : "project");
   }
   function submitWork(session: Session, text: string, epoch: number, active: () => boolean) {
     const previous = workAttempt.current;
@@ -580,9 +1139,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     workAttempt.current = { sessionId: session.id, text, result };
     return result;
   }
-  function stopCapture(next: typeof status,preserveDrafts=false) {
-    manualPresenceCapture.current=false;checkingTalkPresence.current=false;
-    if(!preserveDrafts){cancelJobReview();releaseChoice();}
+  function stopCapture(next: typeof status, preserveDrafts = false) {
+    manualPresenceCapture.current = false;
+    checkingTalkPresence.current = false;
+    if (!preserveDrafts) {
+      cancelJobReview();
+      releaseChoice();
+    }
     transcriptStore.current?.finish();
     clearTimeout(stableTimer.current);
     clearTimeout(retryTimer.current);
@@ -600,7 +1163,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     setPhase("listening");
   }
   function close() {
-    manualPresenceCapture.current=false;checkingTalkPresence.current=false;
+    manualPresenceCapture.current = false;
+    checkingTalkPresence.current = false;
     cancelJobReview();
     releaseChoice();
     transcriptStore.current?.finish();
@@ -632,7 +1196,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     mode: settings.mode,
     speaker: settings.mode === "local" ? undefined : settings.speakers[settings.mode],
     language: languageLock,
-    microphoneId:settings.microphoneId,
+    microphoneId: settings.microphoneId,
     scope: globalScope ? "global" : props.projectPath,
   });
   const connected = useRef(connection);
@@ -675,9 +1239,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     [],
   );
   /** `append` continues a streamed reply after the sentences already shown and queued. */
-  function voiceDisclosureCurrent(){return activeHistoryBinding.current?.current?.()??true;}
+  function voiceDisclosureCurrent() {
+    return activeHistoryBinding.current?.current?.() ?? true;
+  }
   function reply(text: string, session?: Session, append = false) {
-    if(!voiceDisclosureCurrent())return;
+    if (!voiceDisclosureCurrent()) return;
     rememberTurn("assistant", text, append);
     const spoken =
       !append && session && currentTarget()?.id !== session.id ? `${session.title}: ${text}` : text;
@@ -743,13 +1309,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }, [open, detached]);
   async function onSpeech(text: string, binding: SpeechBinding, epoch: number) {
     if (generation.current === epoch) {
-      const heldReview=pendingJobs.current;
-      if(consumeChoice(text))return;
-      if(heldReview?.released){
+      const heldReview = pendingJobs.current;
+      if (consumeChoice(text)) return;
+      if (heldReview?.released) {
         sequence.current++;
-        binding={...binding,sequence:sequence.current};
+        binding = { ...binding, sequence: sequence.current };
         sideRequest.current?.abort();
-        captureTurn((binding as CapturedSpeechBinding)[speechTarget]??currentSpeechTarget());
+        captureTurn((binding as CapturedSpeechBinding)[speechTarget] ?? currentSpeechTarget());
       }
     }
     if (
@@ -760,12 +1326,16 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       return;
     consumedSequence.current = binding.sequence;
     rememberTurn("user", text);
-    ownerSpeech.current=text;
-    let acceptedScope:VoiceHistoryScope|undefined;
-    try {acceptedScope=(await turnHistory.current)?.scope;} catch {setHistoryNotice(t("Conversation was not saved. Retry."));}
-    if(generation.current!==epoch||binding.sequence!==sequence.current)return;
-    if(activeHistoryBinding.current?.current&&!activeHistoryBinding.current.current())return;
-    if(consumeOwnerRule(text))return;
+    ownerSpeech.current = text;
+    let acceptedScope: VoiceHistoryScope | undefined;
+    try {
+      acceptedScope = (await turnHistory.current)?.scope;
+    } catch {
+      setHistoryNotice(t("Conversation was not saved. Retry."));
+    }
+    if (generation.current !== epoch || binding.sequence !== sequence.current) return;
+    if (activeHistoryBinding.current?.current && !activeHistoryBinding.current.current()) return;
+    if (consumeOwnerRule(text)) return;
     const session =
       findSession(binding.sessionId) ??
       (latest.current.workspace ? latest.current.assistantSession : undefined);
@@ -779,40 +1349,128 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     const controller = new AbortController();
     sideRequest.current?.abort();
     sideRequest.current = controller;
-    const acceptedTarget=(binding as CapturedSpeechBinding)[speechTarget];
-    const historyKey = latest.current.workspace ? ((acceptedTarget?.globalScope??scopeRef.current)?"global":acceptedTarget?.projectPath??session.cwd) : session.id;
-    const exchanges = acceptedScope?(history.current.get(historyKey)??[]).filter(entry=>voiceHistoryMessageVisible(entry,acceptedScope!)):[];
-    let promptExchanges=exchanges.map(({role,text})=>({role,text}));
-    let verifiedContext:unknown;
-    if(latest.current.workspace&&!activeHistoryBinding.current?.remote){
-      causalGeneration.current=new VoiceCausalGeneration([],false,()=>generation.current===epoch&&binding.sequence===sequence.current&&!controller.signal.aborted&&voiceDisclosureCurrent(),cause=>setHistoryNotice(voiceError(cause,"The voice question context could not be verified for saving.")));
+    const acceptedTarget = (binding as CapturedSpeechBinding)[speechTarget];
+    const historyKey = latest.current.workspace
+      ? (acceptedTarget?.globalScope ?? scopeRef.current)
+        ? "global"
+        : (acceptedTarget?.projectPath ?? session.cwd)
+      : session.id;
+    const exchanges = acceptedScope
+      ? (history.current.get(historyKey) ?? []).filter((entry) =>
+          voiceHistoryMessageVisible(entry, acceptedScope!),
+        )
+      : [];
+    let promptExchanges = exchanges.map(({ role, text }) => ({ role, text }));
+    let verifiedContext: unknown;
+    if (latest.current.workspace && !activeHistoryBinding.current?.remote) {
+      causalGeneration.current = new VoiceCausalGeneration(
+        [],
+        false,
+        () =>
+          generation.current === epoch &&
+          binding.sequence === sequence.current &&
+          !controller.signal.aborted &&
+          voiceDisclosureCurrent(),
+        (cause) =>
+          setHistoryNotice(
+            voiceError(cause, "The voice question context could not be verified for saving."),
+          ),
+      );
       void causalGeneration.current.invalidate("unverified-seed");
-      promptExchanges=[];verifiedContext={scope:acceptedTarget?.globalScope?"global":"project",historyAvailable:false};
-      const captured=activeHistoryBinding.current;
-      try{
-        if(!captured||!transcriptStore.current)throw new Error("Conversation history is unavailable.");
-        const owner=await transcriptStore.current.ownerReceipt();
-        const stored=await captured.request({op:"threads.messages",threadId:owner.message.threadId,limit:6});
-        if(controller.signal.aborted||generation.current!==epoch||binding.sequence!==sequence.current)return;
-        const seed=(stored.messages??[]).filter(message=>message.id!==owner.message.id&&acceptedScope&&voiceHistoryMessageVisible(message,acceptedScope));
-        const summary=acceptedScope&&stored.thread?.id===owner.message.threadId?voiceThreadSummary(stored.thread,acceptedScope):undefined;
-        const causal=new VoiceCausalGeneration(seed.map(message=>message.id),!!summary,()=>generation.current===epoch&&binding.sequence===sequence.current&&!controller.signal.aborted&&voiceDisclosureCurrent(),cause=>setHistoryNotice(voiceError(cause,"The voice question context could not be verified for saving.")),undefined,summary?.proofId);
-        causalGeneration.current=causal;
-        await causal.accept(captured,Promise.resolve(owner),text);
-        const context=await causal.context();
-        verifiedContext=context?.status==="known"?{scope:acceptedTarget?.globalScope?"global":"project",threadId:context.threadId,projectIds:context.projectIds}:{scope:acceptedTarget?.globalScope?"global":"project",historyAvailable:false};
+      promptExchanges = [];
+      verifiedContext = {
+        scope: acceptedTarget?.globalScope ? "global" : "project",
+        historyAvailable: false,
+      };
+      const captured = activeHistoryBinding.current;
+      try {
+        if (!captured || !transcriptStore.current)
+          throw new Error("Conversation history is unavailable.");
+        const owner = await transcriptStore.current.ownerReceipt();
+        const stored = await captured.request({
+          op: "threads.messages",
+          threadId: owner.message.threadId,
+          limit: 6,
+        });
+        if (
+          controller.signal.aborted ||
+          generation.current !== epoch ||
+          binding.sequence !== sequence.current
+        )
+          return;
+        const seed = (stored.messages ?? []).filter(
+          (message) =>
+            message.id !== owner.message.id &&
+            acceptedScope &&
+            voiceHistoryMessageVisible(message, acceptedScope),
+        );
+        const summary =
+          acceptedScope && stored.thread?.id === owner.message.threadId
+            ? voiceThreadSummary(stored.thread, acceptedScope)
+            : undefined;
+        const causal = new VoiceCausalGeneration(
+          seed.map((message) => message.id),
+          !!summary,
+          () =>
+            generation.current === epoch &&
+            binding.sequence === sequence.current &&
+            !controller.signal.aborted &&
+            voiceDisclosureCurrent(),
+          (cause) =>
+            setHistoryNotice(
+              voiceError(cause, "The voice question context could not be verified for saving."),
+            ),
+          undefined,
+          summary?.proofId,
+        );
+        causalGeneration.current = causal;
+        await causal.accept(captured, Promise.resolve(owner), text);
+        const context = await causal.context();
+        verifiedContext =
+          context?.status === "known"
+            ? {
+                scope: acceptedTarget?.globalScope ? "global" : "project",
+                threadId: context.threadId,
+                projectIds: context.projectIds,
+              }
+            : {
+                scope: acceptedTarget?.globalScope ? "global" : "project",
+                historyAvailable: false,
+              };
         // These are the exact canonical records actually sent to this isolated call.
-        promptExchanges=voiceThreadSeed(summary&&stored.thread?stored.thread:{summary:""},seed).map(({role,text})=>({role,text}));
-      }catch(cause){setHistoryNotice(voiceError(cause,"The voice question context could not be verified for saving."));}
+        promptExchanges = voiceThreadSeed(
+          summary && stored.thread ? stored.thread : { summary: "" },
+          seed,
+        ).map(({ role, text }) => ({ role, text }));
+      } catch (cause) {
+        setHistoryNotice(
+          voiceError(cause, "The voice question context could not be verified for saving."),
+        );
+      }
     }
-    if(controller.signal.aborted||generation.current!==epoch||binding.sequence!==sequence.current)return;
-    if(!voiceDisclosureCurrent()||(acceptedScope&&!acceptedScope.current())){stopCapture("ready",true);return;}
+    if (
+      controller.signal.aborted ||
+      generation.current !== epoch ||
+      binding.sequence !== sequence.current
+    )
+      return;
+    if (!voiceDisclosureCurrent() || (acceptedScope && !acceptedScope.current())) {
+      stopCapture("ready", true);
+      return;
+    }
     // Accepted speech is context even if a correction supersedes its pending
     // model reply. Keep the current utterance out of its own previous exchanges.
-    const contributorIds=acceptedScope?.complete?acceptedScope.projectIds:undefined;
-    history.current.set(historyKey, [...exchanges, { role: "user", text,projectIds:contributorIds }].slice(-12));
-    const recordResponse = (entry: { role: string; text: string;projectIds?:readonly string[] }) => {
-      entry.projectIds=contributorIds;
+    const contributorIds = acceptedScope?.complete ? acceptedScope.projectIds : undefined;
+    history.current.set(
+      historyKey,
+      [...exchanges, { role: "user", text, projectIds: contributorIds }].slice(-12),
+    );
+    const recordResponse = (entry: {
+      role: string;
+      text: string;
+      projectIds?: readonly string[];
+    }) => {
+      entry.projectIds = contributorIds;
       history.current.set(
         historyKey,
         [...(history.current.get(historyKey) ?? []), entry].slice(-12),
@@ -833,7 +1491,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         const decision = await converseWithAssistant({
           session,
           transcript: text,
-          context: verifiedContext??thisController().context(),
+          context: verifiedContext ?? thisController().context(),
           history: promptExchanges,
           signal: controller.signal,
           tools: voiceTools,
@@ -856,7 +1514,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         if (
           controller.signal.aborted ||
           generation.current !== epoch ||
-          binding.sequence !== sequence.current||!voiceDisclosureCurrent()
+          binding.sequence !== sequence.current ||
+          !voiceDisclosureCurrent()
         )
           return;
         recordResponse({ role: "assistant", text: decision.reply });
@@ -880,7 +1539,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       if (
         controller.signal.aborted ||
         generation.current !== epoch ||
-        binding.sequence !== sequence.current||!voiceDisclosureCurrent()
+        binding.sequence !== sequence.current ||
+        !voiceDisclosureCurrent()
       )
         return;
       if (decision.action === "silence") {
@@ -896,8 +1556,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         // Confirm only what actually changed on this device.
         const result =
           decision.action === "remember"
-            ? await rememberHostVoiceMemory(decision.text, "fact", assistantRequest,text)
-            : await forgetOwnerMemory(decision.id,text,epoch,()=>!controller.signal.aborted&&binding.sequence===sequence.current);
+            ? await rememberHostVoiceMemory(decision.text, "fact", assistantRequest, text)
+            : await forgetOwnerMemory(
+                decision.id,
+                text,
+                epoch,
+                () => !controller.signal.aborted && binding.sequence === sequence.current,
+              );
         const done = "saved" in result ? result.saved : result.forgotten;
         const spoken = done
           ? decision.reply ||
@@ -925,7 +1590,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             session.id,
             (history.current.get(session.id) ?? []).map((entry) =>
               entry === receipt
-                ? { ...entry,role: "assistant", text: JSON.stringify({ handoff: brief, ...outcome }) }
+                ? {
+                    ...entry,
+                    role: "assistant",
+                    text: JSON.stringify({ handoff: brief, ...outcome }),
+                  }
                 : entry,
             ),
           );
@@ -983,69 +1652,227 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   ) {
     const revision = turnRevision.current;
     const isActive = () => active() && turnRevision.current === revision;
-    if (generation.current !== epoch || !isActive()||!voiceDisclosureCurrent())
+    if (generation.current !== epoch || !isActive() || !voiceDisclosureCurrent())
       return { error: "The voice connection is no longer active." };
-    if(!["present_choices","app_tools_list","app_tool_call","app_context","composer_context","composer_attachment"].includes(name)){
-      const invalidation=causalGeneration.current?.invalidate("unverified-tool");
-      if(name==="assistant_stop_all"||name==="stop_work")void invalidation;else await invalidation;
+    if (
+      ![
+        "present_choices",
+        "app_tools_list",
+        "app_tool_call",
+        "app_context",
+        "composer_context",
+        "composer_attachment",
+      ].includes(name)
+    ) {
+      const invalidation = causalGeneration.current?.invalidate("unverified-tool");
+      if (name === "assistant_stop_all" || name === "stop_work") void invalidation;
+      else await invalidation;
     }
-    if(generation.current!==epoch||!isActive()||!voiceDisclosureCurrent())return name==="submit_work"?{accepted:false}:{error:"The voice connection is no longer active."};
-    if(VOICE_ASSISTANT_CONTROL_TOOLS.some(tool=>tool.name===name))return assistantControls.current!.call(name,args,{key:`${epoch}:${revision}`,utterance:ownerSpeech.current,assistantName:snapshotRef.current?.profile.name},()=>generation.current===epoch&&isActive());
-    if(name==="give_jobs"){
-      if(pendingJobs.current)return {status:"awaiting_review",reviewId:pendingJobs.current.review.id};
-      const input=VoiceJobDraftsSchema.parse(args.jobs);
-      const capturedHistory=activeHistoryBinding.current;
-      const capturedOwner=transcriptStore.current?.ownerReceipt().then(async source=>({source,environmentId:await capturedHistory?.environmentId?.()})).catch(()=>undefined);
-      const owner=await captureAssistantHostRead();
-      const result=await assistantRequest({op:"projects.list"},owner.environmentId);
-      if(generation.current!==epoch||!isActive())return {status:"cancelled"};
-      const visible=latest.current.projects??[{path:turnProjectPath.current||currentTarget()?.cwd||latest.current.projectPath||""}];
-      const allowed=turnCaptured.current?turnAllowedProjectPaths.current:[];
-      const projects=(result.projects??[]).filter(project=>allowed.some(path=>pathKey(path)===pathKey(project.path))&&!isProjectLocked(project.path)&&visible.some(item=>pathKey(item.path)===pathKey(project.path))&&((turnGlobalScope.current&&scopeRef.current)||pathKey(project.path)===pathKey(turnProjectPath.current)));
-      const defaultPath=turnProjectPath.current||latest.current.projectPath||currentTarget()?.cwd;
-      const capabilities=(await assistantRequest({op:"snapshot",limit:100},owner.environmentId)).snapshot?.capabilities;
-      if(generation.current!==epoch||!isActive())return {status:"cancelled"};
-      if(input.some(item=>item.kind==="quick"&&item.quickAction.kind==="note")&&capabilities?.quickNotes!==true)throw new Error("Quick note jobs are unavailable on this Host.");
-      if(input.some(item=>item.kind==="quick"&&item.quickAction.kind==="automation")&&capabilities?.quickAutomations!==true)throw new Error("Quick automation jobs are unavailable for this project.");
-      const jobs=input.map(item=>({...resolveVoiceJobDraft(item,projects,allowed,defaultPath??""),id:crypto.randomUUID(),idempotencyKey:crypto.randomUUID()}));
-      const review:VoiceJobReviewState={id:crypto.randomUUID(),jobs,projects,quickNotes:capabilities?.quickNotes===true,quickAutomations:capabilities?.quickAutomations===true,busy:false,error:"",accepted:[]};setJobReview(review);
-      return new Promise<unknown>(resolve=>{pendingJobs.current={review,environmentId:owner.environmentId,batch:new VoiceJobBatch(async request=>{
-        if(request.op==="jobs.create"){
-          const source=request.kind==="quick"&&request.quickAction.kind==="automation"?{...request,projectId:request.quickAction.projectId,projectIds:[request.quickAction.projectId]}:request;
-          if((request.kind!=="quick"||request.quickAction.kind==="automation")&&!assistantJobVisible(source,id=>{const project=review.projects.find(project=>project.id===id);return !!project&&!isProjectLocked(project.path)&&(scopeRef.current||pathKey(project.path)===pathKey(currentTarget()?.cwd??latest.current.projectPath??""))&&(latest.current.projects??[{path:currentTarget()?.cwd??latest.current.projectPath??""}]).some(visible=>pathKey(visible.path)===pathKey(project.path));}))throw new Error("The project is hidden, locked or no longer available.");
-        }
-        return assistantRequest(request,owner.environmentId);
-      },async accepted=>{
-        const original=await capturedOwner;
-        if(!original||!capturedHistory||original.environmentId!==owner.environmentId||original.source.request!==capturedHistory.request){setHistoryNotice(t("The job was accepted, but its conversation link is unavailable."));return;}
-        const result=await capturedHistory.request({op:"messages.linkJob",id:original.source.message.id,jobId:accepted.id,jobKey:accepted.idempotencyKey});
-        if(!result.message||result.message.id!==original.source.message.id||result.message.threadId!==original.source.message.threadId||!result.message.jobIds.includes(accepted.id))throw new Error("The job was accepted, but its conversation link is unconfirmed. Retry to verify it.");
-      }),resolve};});
+    if (generation.current !== epoch || !isActive() || !voiceDisclosureCurrent())
+      return name === "submit_work"
+        ? { accepted: false }
+        : { error: "The voice connection is no longer active." };
+    if (VOICE_ASSISTANT_CONTROL_TOOLS.some((tool) => tool.name === name))
+      return assistantControls.current!.call(
+        name,
+        args,
+        {
+          key: `${epoch}:${revision}`,
+          utterance: ownerSpeech.current,
+          assistantName: snapshotRef.current?.profile.name,
+        },
+        () => generation.current === epoch && isActive(),
+      );
+    if (name === "give_jobs") {
+      if (pendingJobs.current)
+        return { status: "awaiting_review", reviewId: pendingJobs.current.review.id };
+      const input = VoiceJobDraftsSchema.parse(args.jobs);
+      const capturedHistory = activeHistoryBinding.current;
+      const capturedOwner = transcriptStore.current
+        ?.ownerReceipt()
+        .then(async (source) => ({
+          source,
+          environmentId: await capturedHistory?.environmentId?.(),
+        }))
+        .catch(() => undefined);
+      const owner = await captureAssistantHostRead();
+      const result = await assistantRequest({ op: "projects.list" }, owner.environmentId);
+      if (generation.current !== epoch || !isActive()) return { status: "cancelled" };
+      const visible = latest.current.projects ?? [
+        {
+          path: turnProjectPath.current || currentTarget()?.cwd || latest.current.projectPath || "",
+        },
+      ];
+      const allowed = turnCaptured.current ? turnAllowedProjectPaths.current : [];
+      const projects = (result.projects ?? []).filter(
+        (project) =>
+          allowed.some((path) => pathKey(path) === pathKey(project.path)) &&
+          !isProjectLocked(project.path) &&
+          visible.some((item) => pathKey(item.path) === pathKey(project.path)) &&
+          ((turnGlobalScope.current && scopeRef.current) ||
+            pathKey(project.path) === pathKey(turnProjectPath.current)),
+      );
+      const defaultPath =
+        turnProjectPath.current || latest.current.projectPath || currentTarget()?.cwd;
+      const capabilities = (
+        await assistantRequest({ op: "snapshot", limit: 100 }, owner.environmentId)
+      ).snapshot?.capabilities;
+      if (generation.current !== epoch || !isActive()) return { status: "cancelled" };
+      if (
+        input.some((item) => item.kind === "quick" && item.quickAction.kind === "note") &&
+        capabilities?.quickNotes !== true
+      )
+        throw new Error("Quick note jobs are unavailable on this Host.");
+      if (
+        input.some((item) => item.kind === "quick" && item.quickAction.kind === "automation") &&
+        capabilities?.quickAutomations !== true
+      )
+        throw new Error("Quick automation jobs are unavailable for this project.");
+      const jobs = input.map((item) => ({
+        ...resolveVoiceJobDraft(item, projects, allowed, defaultPath ?? ""),
+        id: crypto.randomUUID(),
+        idempotencyKey: crypto.randomUUID(),
+      }));
+      const review: VoiceJobReviewState = {
+        id: crypto.randomUUID(),
+        jobs,
+        projects,
+        quickNotes: capabilities?.quickNotes === true,
+        quickAutomations: capabilities?.quickAutomations === true,
+        busy: false,
+        error: "",
+        accepted: [],
+      };
+      setJobReview(review);
+      return new Promise<unknown>((resolve) => {
+        pendingJobs.current = {
+          review,
+          environmentId: owner.environmentId,
+          batch: new VoiceJobBatch(
+            async (request) => {
+              if (request.op === "jobs.create") {
+                const source =
+                  request.kind === "quick" && request.quickAction.kind === "automation"
+                    ? {
+                        ...request,
+                        projectId: request.quickAction.projectId,
+                        projectIds: [request.quickAction.projectId],
+                      }
+                    : request;
+                if (
+                  (request.kind !== "quick" || request.quickAction.kind === "automation") &&
+                  !assistantJobVisible(source, (id) => {
+                    const project = review.projects.find((project) => project.id === id);
+                    return (
+                      !!project &&
+                      !isProjectLocked(project.path) &&
+                      (scopeRef.current ||
+                        pathKey(project.path) ===
+                          pathKey(currentTarget()?.cwd ?? latest.current.projectPath ?? "")) &&
+                      (
+                        latest.current.projects ?? [
+                          { path: currentTarget()?.cwd ?? latest.current.projectPath ?? "" },
+                        ]
+                      ).some((visible) => pathKey(visible.path) === pathKey(project.path))
+                    );
+                  })
+                )
+                  throw new Error("The project is hidden, locked or no longer available.");
+              }
+              return assistantRequest(request, owner.environmentId);
+            },
+            async (accepted) => {
+              const original = await capturedOwner;
+              if (
+                !original ||
+                !capturedHistory ||
+                original.environmentId !== owner.environmentId ||
+                original.source.request !== capturedHistory.request
+              ) {
+                setHistoryNotice(
+                  t("The job was accepted, but its conversation link is unavailable."),
+                );
+                return;
+              }
+              const result = await capturedHistory.request({
+                op: "messages.linkJob",
+                id: original.source.message.id,
+                jobId: accepted.id,
+                jobKey: accepted.idempotencyKey,
+              });
+              if (
+                !result.message ||
+                result.message.id !== original.source.message.id ||
+                result.message.threadId !== original.source.message.threadId ||
+                !result.message.jobIds.includes(accepted.id)
+              )
+                throw new Error(
+                  "The job was accepted, but its conversation link is unconfirmed. Retry to verify it.",
+                );
+            },
+          ),
+          resolve,
+        };
+      });
     }
     if (name === "present_choices") {
-      if (pendingChoice.current||preparingChoice.current) return { error: "A choice is already waiting for the owner." };
+      if (pendingChoice.current || preparingChoice.current)
+        return { error: "A choice is already waiting for the owner." };
       const next = parseVoiceChoice(args);
-      preparingChoice.current=true;
-      let owner:Awaited<ReturnType<typeof persistVoiceOwnerChoice>>;
-      let presentation:VoiceOwnerChoicePending|undefined;
-      try{if(next.kind!=="confirm"){
-        if(!activeHistoryBinding.current)throw new Error("Conversation history is unavailable.");
-        owner=await persistVoiceOwnerChoice(next,activeHistoryBinding.current,transcriptStore.current!,()=>generation.current===epoch&&isActive()&&voiceDisclosureCurrent(),causalGeneration.current?.proof());
-      }}catch(cause){if(cause instanceof VoiceOwnerChoicePending)presentation=cause;if(generation.current===epoch)setHistoryNotice(t(presentation?"Saving this question is unconfirmed. Retry to verify the original card.":"This choice could not be saved in the Room. Keep voice open to answer."));}
-      finally{preparingChoice.current=false;}
-      if(generation.current!==epoch||!isActive())return{error:"The voice question source changed before it could be saved."};
-      if(owner?.question.status==="answered")return owner.answeredReply();
-      if(owner&&owner.question.status!=="open")return owner.deferred();
-      const shown=presentation?{...next,presentationPending:true,prompt:{...next.prompt,delivery:"unknown" as const,error:t("Saving this question is unconfirmed. Retry to verify the original card.")}}:owner?.choice??next;setChoice(shown);
+      preparingChoice.current = true;
+      let owner: Awaited<ReturnType<typeof persistVoiceOwnerChoice>>;
+      let presentation: VoiceOwnerChoicePending | undefined;
+      try {
+        if (next.kind !== "confirm") {
+          if (!activeHistoryBinding.current)
+            throw new Error("Conversation history is unavailable.");
+          owner = await persistVoiceOwnerChoice(
+            next,
+            activeHistoryBinding.current,
+            transcriptStore.current!,
+            () => generation.current === epoch && isActive() && voiceDisclosureCurrent(),
+            causalGeneration.current?.proof(),
+          );
+        }
+      } catch (cause) {
+        if (cause instanceof VoiceOwnerChoicePending) presentation = cause;
+        if (generation.current === epoch)
+          setHistoryNotice(
+            t(
+              presentation
+                ? "Saving this question is unconfirmed. Retry to verify the original card."
+                : "This choice could not be saved in the Room. Keep voice open to answer.",
+            ),
+          );
+      } finally {
+        preparingChoice.current = false;
+      }
+      if (generation.current !== epoch || !isActive())
+        return { error: "The voice question source changed before it could be saved." };
+      if (owner?.question.status === "answered") return owner.answeredReply();
+      if (owner && owner.question.status !== "open") return owner.deferred();
+      const shown = presentation
+        ? {
+            ...next,
+            presentationPending: true,
+            prompt: {
+              ...next.prompt,
+              delivery: "unknown" as const,
+              error: t("Saving this question is unconfirmed. Retry to verify the original card."),
+            },
+          }
+        : (owner?.choice ?? next);
+      setChoice(shown);
       return new Promise<unknown>((resolve) => {
         const timer = setTimeout(releaseChoice, next.timeoutSec * 1000);
-        pendingChoice.current = { choice: shown, resolve, timer,owner,presentation };
+        pendingChoice.current = { choice: shown, resolve, timer, owner, presentation };
       });
     }
     // Memory belongs to this device, not to a session or project.
     if (name === "memory_save")
-      return rememberHostVoiceMemory(args.text, args.kind, assistantRequest,ownerSpeech.current);
-    if (name === "memory_forget") return forgetOwnerMemory(args.id,ownerSpeech.current,epoch,isActive);
+      return rememberHostVoiceMemory(args.text, args.kind, assistantRequest, ownerSpeech.current);
+    if (name === "memory_forget")
+      return forgetOwnerMemory(args.id, ownerSpeech.current, epoch, isActive);
     if (
       latest.current.workspace &&
       [
@@ -1086,7 +1913,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     return result;
   }
   function recoverRealtime(provider: RealtimeProvider, _reason: string, rotation = false) {
-    manualPresenceCapture.current=false;checkingTalkPresence.current=false;
+    manualPresenceCapture.current = false;
+    checkingTalkPresence.current = false;
     const wasMuted = mutedRef.current;
     if (presenceRef.current !== "active") {
       stopCapture("sleeping");
@@ -1116,7 +1944,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     }, delay);
   }
   useEffect(() => {
-    if(checkingTalkPresence.current&&status==="connecting")return;
+    if (checkingTalkPresence.current && status === "connecting") return;
     if (
       (capturePresence === "idle" || capturePresence === "away") &&
       (status === "live" || status === "connecting" || status === "reconnecting")
@@ -1134,7 +1962,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     _reconnect = false,
     restoreMuted = false,
   ) {
-    const capturedHistory=activeHistoryBinding.current;
+    const capturedHistory = activeHistoryBinding.current;
     const voice = new RealtimeVoice(
       provider,
       {
@@ -1144,30 +1972,32 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           setPhase(value);
         },
         reply: (text, append) => {
-          if (generation.current === epoch&&voiceDisclosureCurrent()) {
+          if (generation.current === epoch && voiceDisclosureCurrent()) {
             rememberTurn("assistant", text, append);
             setMessage((current) => (append ? current + text : text));
           }
         },
         transcript: (text) => {
           if (generation.current === epoch) {
-            ownerSpeech.current=text;
-            void spokenLanguage.current!.record(text).catch(()=>{});
+            ownerSpeech.current = text;
+            void spokenLanguage.current!.record(text).catch(() => {});
             rememberTurn("user", text);
-            const history=activeHistoryBinding.current,store=transcriptStore.current;
-            if(history&&store)void causalGeneration.current?.accept(history,store.ownerReceipt(),text);
+            const history = activeHistoryBinding.current,
+              store = transcriptStore.current;
+            if (history && store)
+              void causalGeneration.current?.accept(history, store.ownerReceipt(), text);
             setTranscript(text);
           }
         },
         interceptTranscript: consumeChoice,
-        consumeOwnerTranscript:text=>!voiceDisclosureCurrent()||consumeOwnerRule(text),
+        consumeOwnerTranscript: (text) => !voiceDisclosureCurrent() || consumeOwnerRule(text),
         replyDone: () => transcriptStore.current?.finish(),
         captureTurn: () => {
           const snapshot = currentSpeechTarget();
           return () => captureTurn(snapshot);
         },
         playback: (active) => {
-          if (generation.current === epoch&&voiceDisclosureCurrent()) setPlayback(active);
+          if (generation.current === epoch && voiceDisclosureCurrent()) setPlayback(active);
         },
         tool: (name, args) => realtimeTool(name, args, epoch),
         rotate: () => {
@@ -1192,36 +2022,78 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       settings.speakers[settings.mode === "grok" ? "grok" : "openai"],
       ownerInstructions(),
       languageLock,
-      { turnEndSilence: settings.turnEndSilence, allowBargeIn: settings.allowBargeIn,manualTurnEnd:settings.manualTurnEnd },
+      {
+        turnEndSilence: settings.turnEndSilence,
+        allowBargeIn: settings.allowBargeIn,
+        manualTurnEnd: settings.manualTurnEnd,
+      },
     );
     client.current = voice;
     if (restoreMuted) voice.mute(true);
-    let connectionScope:VoiceHistoryScope|undefined;
-    const disclosureCurrent=()=>generation.current===epoch&&voiceDisclosureCurrent()&&capturedHistory?.current?.()!==false&&(!connectionScope||connectionScope.current());
+    let connectionScope: VoiceHistoryScope | undefined;
+    const disclosureCurrent = () =>
+      generation.current === epoch &&
+      voiceDisclosureCurrent() &&
+      capturedHistory?.current?.() !== false &&
+      (!connectionScope || connectionScope.current());
     try {
       const secret = await realtimeSecret(provider);
       if (generation.current !== epoch) return;
-      const scope=await capturedHistory?.scope?.().catch(()=>undefined);
-      connectionScope=scope;
-      if(generation.current!==epoch)return;
-      if(capturedHistory?.current&&!capturedHistory.current()){stopCapture("ready",true);return;}
-      let seed:import("../../../shared/model/host-contracts/assistant").AssistantMessage[]=[];
-      let seededSummary:ReturnType<typeof voiceThreadSummary>;
-      try{
+      const scope = await capturedHistory?.scope?.().catch(() => undefined);
+      connectionScope = scope;
+      if (generation.current !== epoch) return;
+      if (capturedHistory?.current && !capturedHistory.current()) {
+        stopCapture("ready", true);
+        return;
+      }
+      let seed: import("../../../shared/model/host-contracts/assistant").AssistantMessage[] = [];
+      let seededSummary: ReturnType<typeof voiceThreadSummary>;
+      try {
         await transcriptStore.current?.retry();
-        const stored=await capturedHistory?.open();
-        if(stored&&scope?.current()){
-          const page=await capturedHistory!.request({op:"threads.messages",threadId:stored.thread.id,limit:6});
-          seed=page.messages?.filter(message=>voiceHistoryMessageVisible(message,scope))??[];
-          if(page.thread?.id===stored.thread.id)seededSummary=voiceThreadSummary(page.thread,scope);
+        const stored = await capturedHistory?.open();
+        if (stored && scope?.current()) {
+          const page = await capturedHistory!.request({
+            op: "threads.messages",
+            threadId: stored.thread.id,
+            limit: 6,
+          });
+          seed =
+            page.messages?.filter((message) => voiceHistoryMessageVisible(message, scope)) ?? [];
+          if (page.thread?.id === stored.thread.id)
+            seededSummary = voiceThreadSummary(page.thread, scope);
         }
-      }catch(cause){if(generation.current===epoch)setHistoryNotice(voiceError(cause,"Conversation was not saved. Retry."));}
-      if(generation.current!==epoch||capturedHistory?.current?.()===false)return;
-      const safeTurns=voiceThreadSeed({summary:""},seed).map(({role,text})=>({role,text}));
-      causalGeneration.current=new VoiceCausalGeneration(seed.map(message=>message.id),!!seededSummary,()=>generation.current===epoch&&voiceDisclosureCurrent(),cause=>{if(generation.current===epoch)setHistoryNotice(voiceError(cause,"The voice question context could not be verified for saving."));},undefined,seededSummary?.proofId);
-      const summary=seededSummary?.text??"";
-      await voice.connect(secret, safeTurns, { summary,disclosureCurrent,...(settings.microphoneId?{deviceId:settings.microphoneId}:{}) });
-      if(generation.current===epoch&&!disclosureCurrent()){stopCapture("ready",true);return;}
+      } catch (cause) {
+        if (generation.current === epoch)
+          setHistoryNotice(voiceError(cause, "Conversation was not saved. Retry."));
+      }
+      if (generation.current !== epoch || capturedHistory?.current?.() === false) return;
+      const safeTurns = voiceThreadSeed({ summary: "" }, seed).map(({ role, text }) => ({
+        role,
+        text,
+      }));
+      causalGeneration.current = new VoiceCausalGeneration(
+        seed.map((message) => message.id),
+        !!seededSummary,
+        () => generation.current === epoch && voiceDisclosureCurrent(),
+        (cause) => {
+          if (generation.current === epoch)
+            setHistoryNotice(
+              voiceError(cause, "The voice question context could not be verified for saving."),
+            );
+        },
+        undefined,
+        seededSummary?.proofId,
+      );
+      const summary = seededSummary?.text ?? "";
+      await voice.connect(secret, safeTurns, {
+        summary,
+        disclosureCurrent,
+        ...(settings.microphoneId ? { deviceId: settings.microphoneId } : {}),
+      });
+      if (generation.current === epoch && !disclosureCurrent()) {
+        stopCapture("ready", true);
+        return;
+      }
       if (generation.current === epoch) {
         if (restoreMuted) voice.mute(true);
         setStatus("live");
@@ -1232,7 +2104,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       }
     } catch (cause) {
       if (generation.current !== epoch) return;
-      if(!disclosureCurrent()){stopCapture("ready",true);return;}
+      if (!disclosureCurrent()) {
+        stopCapture("ready", true);
+        return;
+      }
       if (classifyVoiceFailure(cause).recoverable)
         recoverRealtime(provider, voiceError(cause, "Voice could not connect."));
       else {
@@ -1253,17 +2128,28 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     retryCount.current = 0;
     setMuted(false);
     const epoch = ++generation.current;
-    const manualAway=assistantSnapshot?.presence?.state==="away"||assistantSnapshot?.presence?.state==="dnd";
-    checkingTalkPresence.current=manualAway;
+    const manualAway =
+      assistantSnapshot?.presence?.state === "away" || assistantSnapshot?.presence?.state === "dnd";
+    checkingTalkPresence.current = manualAway;
     setStatus("connecting");
     setError("");
-    setTranscript("");setMessage("");
+    setTranscript("");
+    setMessage("");
     try {
-      if(manualAway){
-        const actual=await readNativeVoicePresence(settings.idleSleepMinutes);
-        if(generation.current!==epoch)return;checkingTalkPresence.current=false;
-        if(actual!=="active"||detectedPresence!=="active"){stopCapture("sleeping",true);setError(t("Current computer presence could not be verified. Mark yourself here before talking."));return;}
-        manualPresenceCapture.current=true;
+      if (manualAway) {
+        const actual = await readNativeVoicePresence(settings.idleSleepMinutes);
+        if (generation.current !== epoch) return;
+        checkingTalkPresence.current = false;
+        if (actual !== "active" || detectedPresence !== "active") {
+          stopCapture("sleeping", true);
+          setError(
+            t(
+              "Current computer presence could not be verified. Mark yourself here before talking.",
+            ),
+          );
+          return;
+        }
+        manualPresenceCapture.current = true;
       }
       const latestState = await assistantRequest({ op: "snapshot", limit: 100 });
       snapshotRef.current = latestState.snapshot ?? null;
@@ -1272,21 +2158,40 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       if (!currentProfile?.setupComplete || !currentProfile.voiceSetupComplete)
         throw new Error("Complete voice setup before starting.");
       historyBindings.current!.clear();
-      const selected=currentSpeechTarget(),binding=selected.historyBinding!;
-      activeHistoryBinding.current=binding;
-      const opening=binding.open();
-      turnHistory.current=opening;
-      transcriptStore.current?.bindPending(async()=>(await binding.open()).thread,selected.historySessionId,binding.request);
-      threadSummary.current="";recentTurns.current=[];
-      try{
-        const stored=await opening;
+      const selected = currentSpeechTarget(),
+        binding = selected.historyBinding!;
+      activeHistoryBinding.current = binding;
+      const opening = binding.open();
+      turnHistory.current = opening;
+      transcriptStore.current?.bindPending(
+        async () => (await binding.open()).thread,
+        selected.historySessionId,
+        binding.request,
+      );
+      threadSummary.current = "";
+      recentTurns.current = [];
+      try {
+        const stored = await opening;
         if (generation.current !== epoch) return;
-        transcriptStore.current?.bind(stored.thread,selected.historySessionId,stored.request);
+        transcriptStore.current?.bind(stored.thread, selected.historySessionId, stored.request);
         setHistoryNotice("");
-        threadSummary.current=stored.thread.summary;
-        recentTurns.current=stored.messages.map(({role,text,projectIds})=>({role,text,projectIds}));
-        history.current.set(latest.current.workspace?(scopeRef.current?"global":selected.projectPath):(selected.sessionId??"global"),voiceThreadSeed(stored.thread,stored.messages));
-      }catch{if(generation.current===epoch)setHistoryNotice(t("Conversation was not saved. Retry."));}
+        threadSummary.current = stored.thread.summary;
+        recentTurns.current = stored.messages.map(({ role, text, projectIds }) => ({
+          role,
+          text,
+          projectIds,
+        }));
+        history.current.set(
+          latest.current.workspace
+            ? scopeRef.current
+              ? "global"
+              : selected.projectPath
+            : (selected.sessionId ?? "global"),
+          voiceThreadSeed(stored.thread, stored.messages),
+        );
+      } catch {
+        if (generation.current === epoch) setHistoryNotice(t("Conversation was not saved. Retry."));
+      }
     } catch (cause) {
       if (generation.current === epoch) {
         close();
@@ -1294,7 +2199,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       }
       return;
     }
-    if(generation.current!==epoch)return;
+    if (generation.current !== epoch) return;
     const mode = loadVoiceSettings().mode;
     // Cloud modes replace local recognition, the reply provider and local speech.
     if (mode !== "local") return startRealtime(epoch, REALTIME[mode].provider);
@@ -1316,7 +2221,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           } satisfies CapturedSpeechBinding;
         },
         accept: (binding) => {
-          if (pendingChoice.current||pendingJobs.current) return { ...binding, sequence: sequence.current };
+          if (pendingChoice.current || pendingJobs.current)
+            return { ...binding, sequence: sequence.current };
           if (generation.current !== epoch || binding.sequence !== sequence.current) return;
           sequence.current++;
           sideRequest.current?.abort();
@@ -1326,7 +2232,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           return { ...binding, sequence: sequence.current };
         },
         transcript: (result, binding) => {
-          if(generation.current===epoch)void spokenLanguage.current!.record(result.text,result.language).catch(()=>{});
+          if (generation.current === epoch)
+            void spokenLanguage.current!.record(result.text, result.language).catch(() => {});
           void onSpeech(result.text, binding, epoch);
         },
         playback: (active) => {
@@ -1348,9 +2255,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       {
         turnEndSilence: settings.turnEndSilence,
         allowBargeIn: settings.allowBargeIn,
-        manualTurnEnd:settings.manualTurnEnd,
+        manualTurnEnd: settings.manualTurnEnd,
         languageLock: voiceLanguageCode(languageLock),
-        deviceId:settings.microphoneId,
+        deviceId: settings.microphoneId,
       },
     );
     client.current = voice;
@@ -1425,9 +2332,15 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     try {
       const next = saveVoiceTurnEndChoice(manual);
       // Synchronous storage + configuration finish before another audio frame.
-      client.current?.configureConversation({ turnEndSilence: next.turnEndSilence, allowBargeIn: next.allowBargeIn, manualTurnEnd: manual });
-      setError(current => current === t(VOICE_TURN_CHOICE_FAILED) ? "" : current);
-    } catch { setError(t(VOICE_TURN_CHOICE_FAILED)); }
+      client.current?.configureConversation({
+        turnEndSilence: next.turnEndSilence,
+        allowBargeIn: next.allowBargeIn,
+        manualTurnEnd: manual,
+      });
+      setError((current) => (current === t(VOICE_TURN_CHOICE_FAILED) ? "" : current));
+    } catch {
+      setError(t(VOICE_TURN_CHOICE_FAILED));
+    }
   }
   async function popOut(placement: Omit<VoiceOverlayPlacement, "width" | "height">) {
     if (!canDetach) return;
@@ -1451,9 +2364,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }
   function onOverlayCommand(command: VoiceOverlayCommand) {
     if (command === "start") void start();
-    else if(command==="finishTurn"){if(status==="live")client.current?.finishTurn();}
-    else if(command==="manualTurnEnd")setManualTurnEnd(true);
-    else if(command==="automaticTurnEnd")setManualTurnEnd(false);
+    else if (command === "finishTurn") {
+      if (status === "live") client.current?.finishTurn();
+    } else if (command === "manualTurnEnd") setManualTurnEnd(true);
+    else if (command === "automaticTurnEnd") setManualTurnEnd(false);
     else if (command === "toggleMute") {
       if (status === "live") toggleMute();
     } else if (command === "silence") client.current?.silence();
@@ -1464,11 +2378,32 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       dismiss();
     }
   }
-  const jobReviewVisible=!jobReview||jobReview.jobs.every(row=>assistantJobDraftVisible(row,id=>{const project=jobReview.projects.find(project=>project.id===id);return !!project&&!isProjectLocked(project.path)&&(props.projects??[{path:currentTarget()?.cwd??props.projectPath??""}]).some(visible=>pathKey(visible.path)===pathKey(project.path));}));
-  const historyScopeVisible=activeHistoryBinding.current?.current?.()??true;
-  const bodyVisible=jobReviewVisible&&historyScopeVisible;
-  useEffect(()=>{if(!bodyVisible){client.current?.silence();if(status==="live"||status==="connecting"||status==="reconnecting")stopCapture("ready",true);}},[bodyVisible,status]);
-  const shownTranscript=bodyVisible?transcript:"",shownMessage=bodyVisible?message:"",shownError=bodyVisible?error:"";
+  const jobReviewVisible =
+    !jobReview ||
+    jobReview.jobs.every((row) =>
+      assistantJobDraftVisible(row, (id) => {
+        const project = jobReview.projects.find((project) => project.id === id);
+        return (
+          !!project &&
+          !isProjectLocked(project.path) &&
+          (props.projects ?? [{ path: currentTarget()?.cwd ?? props.projectPath ?? "" }]).some(
+            (visible) => pathKey(visible.path) === pathKey(project.path),
+          )
+        );
+      }),
+    );
+  const historyScopeVisible = activeHistoryBinding.current?.current?.() ?? true;
+  const bodyVisible = jobReviewVisible && historyScopeVisible;
+  useEffect(() => {
+    if (!bodyVisible) {
+      client.current?.silence();
+      if (status === "live" || status === "connecting" || status === "reconnecting")
+        stopCapture("ready", true);
+    }
+  }, [bodyVisible, status]);
+  const shownTranscript = bodyVisible ? transcript : "",
+    shownMessage = bodyVisible ? message : "",
+    shownError = bodyVisible ? error : "";
   const scopeTitle =
     props.workspace && globalScope
       ? t("Global")
@@ -1484,16 +2419,16 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       visualState,
       statusText,
       title: `${identity.title} · ${scopeTitle}`,
-      choice:bodyVisible?choice:null,
-      jobReview:jobReviewVisible?jobReview:null,
+      choice: bodyVisible ? choice : null,
+      jobReview: jobReviewVisible ? jobReview : null,
       muted,
       working: Boolean(target?.busy),
       canStart: Boolean(target) || Boolean(props.workspace),
-      transcript:shownTranscript,
-      message:shownMessage,
-      error:shownError,
-      notice:historyNotice,
-      manualTurnEnd:settings.manualTurnEnd===true,
+      transcript: shownTranscript,
+      message: shownMessage,
+      error: shownError,
+      notice: historyNotice,
+      manualTurnEnd: settings.manualTurnEnd === true,
       privacy: realtime
         ? t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
             p1: realtime.name,
@@ -1506,12 +2441,24 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     onChoice: (id, reply) => {
       if (pendingChoice.current?.choice.id === id) answerChoice(reply);
     },
-    onChoiceRetry:id=>{if(pendingChoice.current?.choice.id===id)void retryChoice();},
-    onJobReview:(id,action,rows)=>{if(pendingJobs.current?.review.id!==id)return;if(action==="change"&&rows)changeJobReview(rows);else if(action==="start"&&rows)void startReviewedJobs(rows);else if(action==="cancel")cancelJobReview();},
+    onChoiceRetry: (id) => {
+      if (pendingChoice.current?.choice.id === id) void retryChoice();
+    },
+    onJobReview: (id, action, rows) => {
+      if (pendingJobs.current?.review.id !== id) return;
+      if (action === "change" && rows) changeJobReview(rows);
+      else if (action === "start" && rows) void startReviewedJobs(rows);
+      else if (action === "cancel") cancelJobReview();
+    },
     // Closed natively, or its owner reloaded: bring the controls home.
     onClosed: () => setDetached(false),
   });
-  const summary = voiceSummaryLine({ message:shownMessage, transcript:shownTranscript, error:shownError||historyNotice, statusText });
+  const summary = voiceSummaryLine({
+    message: shownMessage,
+    transcript: shownTranscript,
+    error: shownError || historyNotice,
+    statusText,
+  });
   const moveLabel = t(
     canDetach
       ? "Move voice window. Drag outside the app to float it. Use arrow keys to reposition."
@@ -1733,7 +2680,18 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           </div>
         )}
         {compact ? (
-          <>{status==="live"&&<VoiceTurnControl compact manual={settings.manualTurnEnd===true} muted={muted} onManualChange={setManualTurnEnd} onFinish={()=>client.current?.finishTurn()}/>} {micButton}</>
+          <>
+            {status === "live" && (
+              <VoiceTurnControl
+                compact
+                manual={settings.manualTurnEnd === true}
+                muted={muted}
+                onManualChange={setManualTurnEnd}
+                onFinish={() => client.current?.finishTurn()}
+              />
+            )}{" "}
+            {micButton}
+          </>
         ) : (
           // Floating is rare (dragging outside the app also floats), so it lives in the menu.
           <VoiceOptionsMenu
@@ -1775,17 +2733,51 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         </div>
       )}
       <div className={styles.body} hidden={compact}>
-        {choice && !detached&&bodyVisible ? <VoiceChoiceCard choice={choice} onRetry={()=>void retryChoice()} onReply={answerChoice} /> : null}
-        {jobReview&&!detached?(jobReviewVisible?
-          <VoiceJobReview key={jobReview.id} review={{...jobReview,projects:jobReview.projects.filter(project=>!isProjectLocked(project.path)&&(props.projects??[{path:currentTarget()?.cwd??props.projectPath??""}]).some(visible=>pathKey(visible.path)===pathKey(project.path)))}} onChange={changeJobReview} onStart={rows=>void startReviewedJobs(rows)} onCancel={cancelJobReview}/>:
-          <div><p role="status">{t("The selected project is no longer visible.")}</p><Button disabled={jobReview.busy} onClick={cancelJobReview}>{t("Cancel review")}</Button></div>):null}
-        {error === t("Conversation was not saved. Retry.") || historyNotice === t("Conversation was not saved. Retry.") ? (
+        {choice && !detached && bodyVisible ? (
+          <VoiceChoiceCard
+            choice={choice}
+            onRetry={() => void retryChoice()}
+            onReply={answerChoice}
+          />
+        ) : null}
+        {jobReview && !detached ? (
+          jobReviewVisible ? (
+            <VoiceJobReview
+              key={jobReview.id}
+              review={{
+                ...jobReview,
+                projects: jobReview.projects.filter(
+                  (project) =>
+                    !isProjectLocked(project.path) &&
+                    (
+                      props.projects ?? [{ path: currentTarget()?.cwd ?? props.projectPath ?? "" }]
+                    ).some((visible) => pathKey(visible.path) === pathKey(project.path)),
+                ),
+              }}
+              onChange={changeJobReview}
+              onStart={(rows) => void startReviewedJobs(rows)}
+              onCancel={cancelJobReview}
+            />
+          ) : (
+            <div>
+              <p role="status">{t("The selected project is no longer visible.")}</p>
+              <Button disabled={jobReview.busy} onClick={cancelJobReview}>
+                {t("Cancel review")}
+              </Button>
+            </div>
+          )
+        ) : null}
+        {error === t("Conversation was not saved. Retry.") ||
+        historyNotice === t("Conversation was not saved. Retry.") ? (
           <Button
             onClick={() => {
               transcriptStore.current?.finish();
               void transcriptStore.current
                 ?.retry()
-                .then(() => {setError("");setHistoryNotice("");})
+                .then(() => {
+                  setError("");
+                  setHistoryNotice("");
+                })
                 .catch(() => setError(t("Conversation was not saved. Retry.")));
             }}
           >
@@ -1845,11 +2837,30 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             {shownError}
           </p>
         )}
-        {historyNotice&&historyNotice!==shownError&&<p role="status" className={styles.caption}>{historyNotice}</p>}
-        {ruleNotice&&<p role="status" className={styles.caption}>{ruleNotice}</p>}
-        {ownerRuleWrites.current.hasPending&&<Button loading={savingRule} onClick={()=>void saveOwnerRule()}>{t("Retry rule save")}</Button>}
+        {historyNotice && historyNotice !== shownError && (
+          <p role="status" className={styles.caption}>
+            {historyNotice}
+          </p>
+        )}
+        {ruleNotice && (
+          <p role="status" className={styles.caption}>
+            {ruleNotice}
+          </p>
+        )}
+        {ownerRuleWrites.current.hasPending && (
+          <Button loading={savingRule} onClick={() => void saveOwnerRule()}>
+            {t("Retry rule save")}
+          </Button>
+        )}
         <div className={styles.actions}>
-          {status==="live"&&<VoiceTurnControl manual={settings.manualTurnEnd===true} muted={muted} onManualChange={setManualTurnEnd} onFinish={()=>client.current?.finishTurn()}/>}
+          {status === "live" && (
+            <VoiceTurnControl
+              manual={settings.manualTurnEnd === true}
+              muted={muted}
+              onManualChange={setManualTurnEnd}
+              onFinish={() => client.current?.finishTurn()}
+            />
+          )}
           {canTalk ? (
             <>
               <Button

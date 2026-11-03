@@ -6,7 +6,9 @@ vi.mock("../../platform/tauri/fs", () => ({
   invokeWorkspace: invoke,
   basename: (path: string) => path.split(/[\\/]/).pop()!,
 }));
-beforeEach(() => { invoke.mockReset(); });
+beforeEach(() => {
+  invoke.mockReset();
+});
 it("sends the unsaved buffer to the owning workspace and normalizes CRLF cursor positions", async () => {
   invoke.mockResolvedValue({ formatted: "a\r\nb\r\n", cursorOffset: 4 });
   expect(await formatProjectText("remote://machine/repo/Page.tsx", "original", 2)).toEqual({

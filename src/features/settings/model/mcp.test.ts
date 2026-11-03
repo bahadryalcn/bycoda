@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { canSignInMcp, isMcpConnected, parseClaudeMcpList, type McpConnection } from "./mcp";
 
 it("offers OAuth only for enabled remote connections with a supported CLI", () => {
-  const connection: McpConnection = { provider: "codex", name: "cloudflare", scope: "user", configPath: "/config.toml", transport: "http" };
+  const connection: McpConnection = {
+    provider: "codex",
+    name: "cloudflare",
+    scope: "user",
+    configPath: "/config.toml",
+    transport: "http",
+  };
   for (const provider of ["claude", "codex", "cursor", "opencode"] as const) {
     for (const transport of ["http", "sse", "streamable-http", "remote"]) {
       expect(canSignInMcp({ ...connection, provider, transport })).toBe(true);
@@ -18,8 +24,17 @@ it("offers OAuth only for enabled remote connections with a supported CLI", () =
 });
 
 it("recognizes only confirmed connected health as a repeat sign-in", () => {
-  for (const status of ["Connected", "✔ Connected", "✓ Connected", "√ Connected"]) expect(isMcpConnected(status)).toBe(true);
-  for (const status of ["Configured", "Disabled", "Disconnected", "Needs authentication", "Unknown", "Error"]) expect(isMcpConnected(status)).toBe(false);
+  for (const status of ["Connected", "✔ Connected", "✓ Connected", "√ Connected"])
+    expect(isMcpConnected(status)).toBe(true);
+  for (const status of [
+    "Configured",
+    "Disabled",
+    "Disconnected",
+    "Needs authentication",
+    "Unknown",
+    "Error",
+  ])
+    expect(isMcpConnected(status)).toBe(false);
 });
 
 describe("Claude MCP list", () => {

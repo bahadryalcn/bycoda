@@ -77,7 +77,16 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
       </Row>
       <Row
         id="streaming-text-mode"
-        feedback={failedMode ? <SettingsFeedback state="error" action={<Button onClick={() => saveMode(failedMode)}>{t("Retry")}</Button>}>{t("Could not save changes")}</SettingsFeedback> : undefined}
+        feedback={
+          failedMode ? (
+            <SettingsFeedback
+              state="error"
+              action={<Button onClick={() => saveMode(failedMode)}>{t("Retry")}</Button>}
+            >
+              {t("Could not save changes")}
+            </SettingsFeedback>
+          ) : undefined
+        }
         label={t("Streaming text animation")}
         description={t(
           "Paced reveals words steadily. Adaptive shows text as it arrives and adjusts the fade to the stream rhythm.",

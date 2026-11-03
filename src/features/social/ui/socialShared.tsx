@@ -281,11 +281,10 @@ export function SocialDialog({
 }: Omit<ComponentProps<typeof Modal>, "footer" | "footerAlign">) {
   const [footerElement, setFooterElement] = useState<HTMLElement | null>(null);
   return (
-    <Modal
-      {...props}
-      footer={<div ref={setFooterElement} className="social-composer-footer" />}
-    >
-      <ComposerFooterContext.Provider value={footerElement}>{children}</ComposerFooterContext.Provider>
+    <Modal {...props} footer={<div ref={setFooterElement} className="social-composer-footer" />}>
+      <ComposerFooterContext.Provider value={footerElement}>
+        {children}
+      </ComposerFooterContext.Provider>
     </Modal>
   );
 }

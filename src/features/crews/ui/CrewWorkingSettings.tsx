@@ -396,7 +396,9 @@ export function CrewWorkingSettings({
                       ? t("Used by the member set to Automatic.")
                       : automatic
                         ? t("Used by {p0} members set to Automatic.", { p0: automatic })
-                        : t("No member chooses its model automatically. This applies once one does.")
+                        : t(
+                            "No member chooses its model automatically. This applies once one does.",
+                          )
                   }
                 >
                   <SegmentedControl

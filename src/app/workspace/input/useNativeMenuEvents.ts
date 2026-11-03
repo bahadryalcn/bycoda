@@ -115,7 +115,10 @@ export function useNativeMenuEvents({ actions, run }: NativeMenuEventDeps): void
                     actions.current.onOpenTasks();
                   }
                 : sessionId === BACKGROUND_NOTIFICATION_TARGETS.assistant
-                  ? () => window.dispatchEvent(new CustomEvent("bycoda:open-assistant",{detail:{tab:"today"}}))
+                  ? () =>
+                      window.dispatchEvent(
+                        new CustomEvent("bycoda:open-assistant", { detail: { tab: "today" } }),
+                      )
                   : null;
         if (background) {
           // Background work is not held by a window: the one that announced

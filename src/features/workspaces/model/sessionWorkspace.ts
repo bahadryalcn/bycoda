@@ -68,14 +68,22 @@ export async function prepareSessionWorkspaceDetailed(
   if (!needsSessionWorkspace(session)) return none("not-needed");
   const explicitWorktree = session.workspaceMode === "worktree";
   const owner = hostSessionBinding(session);
-  const ownerContext = owner ? { cwd: session.cwd, environmentId: owner.environmentId, machineId: owner.machineId, projectId: owner.projectId, ownerProjectId: owner.projectId } : undefined;
+  const ownerContext = owner
+    ? {
+        cwd: session.cwd,
+        environmentId: owner.environmentId,
+        machineId: owner.machineId,
+        projectId: owner.projectId,
+        ownerProjectId: owner.projectId,
+      }
+    : undefined;
   let context: Awaited<ReturnType<typeof resolveWorkspaceContext>>;
   let policy: WorkspacePolicy;
   try {
     const read = async () => {
       const capabilities = await getWorkspaceCapabilities(ownerContext ?? { cwd: session.cwd });
       if (!capabilities.includes("workspaces.policy.v1") && !explicitWorktree) return null;
-      const ctx = ownerContext ?? await resolveWorkspaceContext(session.cwd);
+      const ctx = ownerContext ?? (await resolveWorkspaceContext(session.cwd));
       await requireWorkspaceCapability("workspaces.policy.v1", ctx);
       const { resolved } = await workspaceRequest(
         "projects.workspacePolicy.get",

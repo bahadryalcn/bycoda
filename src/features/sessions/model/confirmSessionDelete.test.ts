@@ -80,11 +80,15 @@ describe("session deletion dialog wording", () => {
     const host = vi.fn(async () => true);
     const unregister = registerAppConfirmHost(host);
     expect(await confirmSessionDelete({ count: 2 })).toBe(true);
-    expect(host).toHaveBeenCalledWith(expect.objectContaining({ title: "Delete 2 conversations?" }));
+    expect(host).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Delete 2 conversations?" }),
+    );
     expect(mocks.ask).not.toHaveBeenCalled();
     host.mockResolvedValueOnce(false as never);
     expect(await confirmSessionDelete("Delete 4 conversations? This can’t be undone.")).toBe(false);
-    expect(host).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Delete 4 conversations?" }));
+    expect(host).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Delete 4 conversations?" }),
+    );
     unregister();
     mocks.ask.mockResolvedValue(true);
     await confirmSessionDelete({ count: 1 });

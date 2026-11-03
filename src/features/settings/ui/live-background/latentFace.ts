@@ -263,7 +263,15 @@ const VISAGE_ASPECT = 0.84;
 const PLATE = 0.06;
 const PLATE_BEVEL = 0.028;
 
-function tiltedBox(u: number, v: number, cu: number, cv: number, hu: number, hv: number, angle: number) {
+function tiltedBox(
+  u: number,
+  v: number,
+  cu: number,
+  cv: number,
+  hu: number,
+  hv: number,
+  angle: number,
+) {
   const c = Math.cos(angle);
   const s = Math.sin(angle);
   const du = u - cu;
@@ -705,7 +713,8 @@ function createCodeFigureScene(
               const u = toU(px);
               const v = toV(py);
               // Plates kindle first, from the eyes outward, as if the machine were waking.
-              const wake = hash(columnId, row, 7) * 0.5 + clamp01(Math.hypot(u, v + 0.2) / 1.6) * 0.5;
+              const wake =
+                hash(columnId, row, 7) * 0.5 + clamp01(Math.hypot(u, v + 0.2) / 1.6) * 0.5;
               if (grid.tier === FIGURE) {
                 const closed = visageTone(u, v, 0);
                 const closedGlow = visageGlow;

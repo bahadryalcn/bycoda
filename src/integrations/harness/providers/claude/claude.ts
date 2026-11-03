@@ -423,7 +423,8 @@ export async function steerClaudeTurn(input: SteerTurnInput): Promise<void> {
   input = { ...input };
 
   const live = liveByThread.get(input.sessionId);
-  if (!live?.activeTurn) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  if (!live?.activeTurn)
+    throw new Error("The previous turn has finished. Send this follow-up as a new message.");
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
     throw new Error("Provider operation replaced before steer");
 
@@ -548,7 +549,6 @@ export async function stopClaudeBackgroundWork(
   callId?: string,
   context?: HarnessOperationContext,
 ): Promise<void> {
-
   const live = liveByThread.get(sessionId);
   if (!live || !ownsOperation(context, live.handle, live.operation)) return;
   const targets = resolveStopTargets(live, callId).map((target) => ({
@@ -1057,16 +1057,19 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   } catch (error) {
     clearStartupNotice();
     const failure = startup.live?.exitError ?? error;
-    if (/No conversation found with session ID:/i.test(String(failure)) && resumeByThread.has(input.sessionId)) {
+    if (
+      /No conversation found with session ID:/i.test(String(failure)) &&
+      resumeByThread.has(input.sessionId)
+    ) {
       await stopClaudeSession(input.sessionId, handle);
       resumeByThread.delete(input.sessionId);
-      input.onEvent({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
+      input.onEvent({
+        type: "status",
+        text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+      });
       return ensureLive(input);
     }
-    return preserveProviderFailure(
-      failure,
-      stopClaudeSession(input.sessionId, handle),
-    );
+    return preserveProviderFailure(failure, stopClaudeSession(input.sessionId, handle));
   } finally {
     clearStartupNotice();
     if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);

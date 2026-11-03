@@ -87,8 +87,12 @@ describe("modal scrim layers", () => {
     expect(css).toMatch(
       /\[data-modal-layer\] ~ \[data-modal-layer\] \.modal-backdrop \{[^}]*backdrop-filter: none;/,
     );
-    expect(css).toMatch(/\.modal-backdrop \{[^}]*backdrop-filter: blur\(var\(--ui-overlay-backdrop-blur\)\)/);
-    expect(css).toMatch(/@media \(forced-colors: active\), \(prefers-reduced-transparency: reduce\)/);
+    expect(css).toMatch(
+      /\.modal-backdrop \{[^}]*backdrop-filter: blur\(var\(--ui-overlay-backdrop-blur\)\)/,
+    );
+    expect(css).toMatch(
+      /@media \(forced-colors: active\), \(prefers-reduced-transparency: reduce\)/,
+    );
   });
 });
 
@@ -99,9 +103,7 @@ describe("focus return", () => {
       { id: "context" },
       createElement("button", { id: "sibling" }, "Sibling"),
       children as never,
-      open
-        ? createElement(Modal, { title: "Example", onClose: vi.fn(), children: "Body" })
-        : null,
+      open ? createElement(Modal, { title: "Example", onClose: vi.fn(), children: "Body" }) : null,
     );
   }
 

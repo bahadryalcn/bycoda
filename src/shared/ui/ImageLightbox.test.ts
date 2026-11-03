@@ -73,7 +73,13 @@ it("shows header actions, a loading stage and an honest error with Retry while k
   const actions = createElement("button", { type: "button", "aria-label": "Open in new tab" });
   await act(async () =>
     root.render(
-      createElement(ImageLightbox, { src: "", alt: "Photo", onClose: vi.fn(), actions, loading: true }),
+      createElement(ImageLightbox, {
+        src: "",
+        alt: "Photo",
+        onClose: vi.fn(),
+        actions,
+        loading: true,
+      }),
     ),
   );
   expect(document.querySelector('[role="status"]')).not.toBeNull();

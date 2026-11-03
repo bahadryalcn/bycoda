@@ -14,7 +14,11 @@ import type { DesktopLiveHandlers } from "../../../features/connections/model/de
 import type { HostSession } from "../../../features/connections/model/protocol";
 import { remoteSessionState } from "../../../features/connections/model/remoteSessionState";
 import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
-import { acknowledgedHostSessionBinding, hostSessionBinding, saveHostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
+import {
+  acknowledgedHostSessionBinding,
+  hostSessionBinding,
+  saveHostSessionBinding,
+} from "../../../features/connections/model/sessionExecutionBinding";
 import type { LinkedSessionUpdate } from "../../../features/inbox/model/linkedSessionUpdates";
 import { t } from "../../../shared/i18n";
 
@@ -89,14 +93,21 @@ export function useRemoteHostSync(): RemoteHostSync {
         snapshot.authorityGeneration,
       )!;
       const host = snapshot.session;
-      const next = saveHostSessionBinding({
-        ...shell, ...host, id: shell.id, cwd: shell.cwd,
-        hostBinding: acknowledged,
-        worktreeCwd: host.worktreeCwd || (host.cwd !== shell.cwd ? host.cwd : undefined),
-        busy: snapshot.status === "running", continuingElsewhere: undefined,
-        historyPartial: snapshot.history?.before !== undefined,
-      }, acknowledged);
-      setSessions((current) => current.map((entry) => entry.id === shellId ? next : entry));
+      const next = saveHostSessionBinding(
+        {
+          ...shell,
+          ...host,
+          id: shell.id,
+          cwd: shell.cwd,
+          hostBinding: acknowledged,
+          worktreeCwd: host.worktreeCwd || (host.cwd !== shell.cwd ? host.cwd : undefined),
+          busy: snapshot.status === "running",
+          continuingElsewhere: undefined,
+          historyPartial: snapshot.history?.before !== undefined,
+        },
+        acknowledged,
+      );
+      setSessions((current) => current.map((entry) => (entry.id === shellId ? next : entry)));
       return;
     }
     setSessions((current) => {

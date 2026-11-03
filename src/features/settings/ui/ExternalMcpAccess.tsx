@@ -264,14 +264,18 @@ function CreateToken({
                   options={[
                     { value: "", label: t("No access") },
                     { value: "read", label: t("Read") },
-                    ...(group === "runtime-logs" ? [] : [
-                      { value: "write", label: t("Write") },
-                      { value: "read,write", label: t("Read and write") },
-                    ]),
+                    ...(group === "runtime-logs"
+                      ? []
+                      : [
+                          { value: "write", label: t("Write") },
+                          { value: "read,write", label: t("Read and write") },
+                        ]),
                   ]}
                   onChange={(value) => setModes((current) => ({ ...current, [group]: value }))}
                 />
-                {group === "runtime-logs" ? <p className={styles.metadata}>{t("Runtime logs are read-only.")}</p> : null}
+                {group === "runtime-logs" ? (
+                  <p className={styles.metadata}>{t("Runtime logs are read-only.")}</p>
+                ) : null}
               </div>
             ))}
           </fieldset>
@@ -314,11 +318,20 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
   const pending = useRef(false);
   const epoch = useRef(0);
   useEffect(() => {
-    const next = Math.min(...(data?.tokens ?? []).filter((grant) => grant.revokedAt === undefined && grant.expiresAt > now).map((grant) => grant.expiresAt));
-    const timer = Number.isFinite(next) ? setTimeout(() => setNow(Date.now()), Math.max(16, Math.min(next - Date.now(), 2147483647))) : undefined;
+    const next = Math.min(
+      ...(data?.tokens ?? [])
+        .filter((grant) => grant.revokedAt === undefined && grant.expiresAt > now)
+        .map((grant) => grant.expiresAt),
+    );
+    const timer = Number.isFinite(next)
+      ? setTimeout(() => setNow(Date.now()), Math.max(16, Math.min(next - Date.now(), 2147483647)))
+      : undefined;
     const wake = () => setNow(Date.now());
     window.addEventListener("focus", wake);
-    return () => { clearTimeout(timer); window.removeEventListener("focus", wake); };
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", wake);
+    };
   }, [data?.tokens, now]);
   async function refresh() {
     const version = ++epoch.current;
@@ -387,9 +400,12 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
     ? `http://127.0.0.1:${new URL(data.machine.endpoint).port || "80"}/mcp`
     : "http://127.0.0.1:<port>/mcp";
   const examples = externalMcpExamples(endpoint);
-  const shownTokens = (data?.tokens ?? []).filter((grant) =>
-    (filter === "all" || grantStatus(grant, now) === filter) &&
-    `${grant.name} ${data?.projects.find((project) => project.id === grant.projectId)?.name ?? grant.projectId} ${Object.keys(grant.scopes).join(" ")}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+  const shownTokens = (data?.tokens ?? []).filter(
+    (grant) =>
+      (filter === "all" || grantStatus(grant, now) === filter) &&
+      `${grant.name} ${data?.projects.find((project) => project.id === grant.projectId)?.name ?? grant.projectId} ${Object.keys(grant.scopes).join(" ")}`
+        .toLocaleLowerCase()
+        .includes(query.trim().toLocaleLowerCase()),
   );
   return (
     <section
@@ -433,27 +449,84 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         </div>
       </div>
       {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
-      {loading && !data && <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>}
+      {loading && !data && (
+        <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>
+      )}
       <div className={styles.toolbar}>
         <div className={styles.search}>
-          <SearchInput appearance="field" aria-label={t("Search tokens")} placeholder={t("Search tokens")} value={query} onChange={(event) => setQuery(event.target.value)} />
+          <SearchInput
+            appearance="field"
+            aria-label={t("Search tokens")}
+            placeholder={t("Search tokens")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
         </div>
         <div className={styles.toolbarSlot}>
-          <Button ref={filterAnchor} variant="ghost" iconOnly label={t("Filters")} selected={filter !== "all"} aria-expanded={filtersOpen} aria-haspopup="dialog" onClick={() => setFiltersOpen(!filtersOpen)}><ListFilter /></Button>
+          <Button
+            ref={filterAnchor}
+            variant="ghost"
+            iconOnly
+            label={t("Filters")}
+            selected={filter !== "all"}
+            aria-expanded={filtersOpen}
+            aria-haspopup="dialog"
+            onClick={() => setFiltersOpen(!filtersOpen)}
+          >
+            <ListFilter />
+          </Button>
           {filter !== "all" || query ? (
-            <Button variant="ghost" iconOnly label={t("Reset filters")} onClick={() => { setFilter("all"); setQuery(""); }}><RotateCcw className="icon-sm" strokeWidth={1.75} /></Button>
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Reset filters")}
+              onClick={() => {
+                setFilter("all");
+                setQuery("");
+              }}
+            >
+              <RotateCcw className="icon-sm" strokeWidth={1.75} />
+            </Button>
           ) : null}
-          {data ? <span className={`${styles.metadata} ${styles.count}`} role="status">{t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}</span> : null}
+          {data ? (
+            <span className={`${styles.metadata} ${styles.count}`} role="status">
+              {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
+            </span>
+          ) : null}
         </div>
       </div>
-      {filtersOpen ? <Popover anchor={filterAnchor} role="dialog" aria-label={t("Filter tokens")} onDismiss={() => setFiltersOpen(false)} width={260}>
-        <div className={styles.help}>
-          <Select label={t("Status")} value={filter} onChange={setFilter} options={[
-            { value: "all", label: t("All") }, { value: "active", label: t("Active") }, { value: "expired", label: t("Expired") }, { value: "revoked", label: t("Revoked") },
-          ]} />
-          <Button variant="ghost" onClick={() => { setFilter("all"); setQuery(""); }}>{t("Reset filters")}</Button>
-        </div>
-      </Popover> : null}
+      {filtersOpen ? (
+        <Popover
+          anchor={filterAnchor}
+          role="dialog"
+          aria-label={t("Filter tokens")}
+          onDismiss={() => setFiltersOpen(false)}
+          width={260}
+        >
+          <div className={styles.help}>
+            <Select
+              label={t("Status")}
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: "all", label: t("All") },
+                { value: "active", label: t("Active") },
+                { value: "expired", label: t("Expired") },
+                { value: "revoked", label: t("Revoked") },
+              ]}
+            />
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setFilter("all");
+                setQuery("");
+              }}
+            >
+              {t("Reset filters")}
+            </Button>
+          </div>
+        </Popover>
+      ) : null}
       {!loading && !error && data && !data.projects.length && (
         <SettingsFeedback state="empty">
           {t("Register a project on the local host before creating a token.")}
@@ -464,7 +537,9 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           {t("No external tokens. Create a token to connect a client.")}
         </SettingsFeedback>
       )}
-      {!loading && data?.tokens.length && shownTokens.length === 0 ? <SettingsFeedback state="empty">{t("No tokens match your filters.")}</SettingsFeedback> : null}
+      {!loading && data?.tokens.length && shownTokens.length === 0 ? (
+        <SettingsFeedback state="empty">{t("No tokens match your filters.")}</SettingsFeedback>
+      ) : null}
       <div className={styles.list}>
         {shownTokens.map((grant) => (
           <div key={grant.id} className={styles.row}>

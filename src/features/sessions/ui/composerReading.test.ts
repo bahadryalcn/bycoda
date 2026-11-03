@@ -3,9 +3,9 @@ import { composerReadingActive, nextReadingHistory, READING_ENTER_PX } from "./c
 
 describe("nextReadingHistory", () => {
   it("does not start reading near the end, where compacting would clamp the position", () => {
-    expect(
-      nextReadingHistory(false, { following: false, distance: READING_ENTER_PX - 1 }),
-    ).toBe(false);
+    expect(nextReadingHistory(false, { following: false, distance: READING_ENTER_PX - 1 })).toBe(
+      false,
+    );
   });
 
   it("starts reading once the reader is clearly away from the end", () => {

@@ -20,7 +20,10 @@ export function submitClearConversation(ctx: SubmitDeps, sessionId: string): boo
     return false;
   }
   if (!ctx.refs.editedResends.start(sessionId)) {
-    showSubmitNotice(sessionId, t("Another change to this conversation is in progress. Try clearing again in a moment."));
+    showSubmitNotice(
+      sessionId,
+      t("Another change to this conversation is in progress. Try clearing again in a moment."),
+    );
     return false;
   }
   // Hold submission until both the provider binding and durable transcript are cleared.

@@ -117,17 +117,37 @@ it("opens global SSH management with an empty inventory and preserves config tex
 });
 
 it("retries only the failed SSH inventory and keeps a successful key list usable", async () => {
-  await act(async () => root.render(createElement(SshSettings, { server, servers: [server], onClose: vi.fn() })));
-  const initialKeys = native.invoke.mock.calls.filter(([command]) => command === "ssh_public_keys_list").length;
-  const initialHosts = native.invoke.mock.calls.filter(([command]) => command === "ssh_known_hosts_list").length;
-  const alert = [...document.querySelectorAll('[role="alert"]')].find((node) => node.textContent?.includes("Agent unavailable"))!;
+  await act(async () =>
+    root.render(createElement(SshSettings, { server, servers: [server], onClose: vi.fn() })),
+  );
+  const initialKeys = native.invoke.mock.calls.filter(
+    ([command]) => command === "ssh_public_keys_list",
+  ).length;
+  const initialHosts = native.invoke.mock.calls.filter(
+    ([command]) => command === "ssh_known_hosts_list",
+  ).length;
+  const alert = [...document.querySelectorAll('[role="alert"]')].find((node) =>
+    node.textContent?.includes("Agent unavailable"),
+  )!;
   const retry = alert.querySelector<HTMLButtonElement>("button")!;
   const previous = native.invoke.getMockImplementation()!;
-  native.invoke.mockImplementation((command: string, ...args: unknown[]) => command === "ssh_agent_identities" ? Promise.resolve({ status: "empty", identities: [] }) : previous(command, ...args));
+  native.invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "ssh_agent_identities"
+      ? Promise.resolve({ status: "empty", identities: [] })
+      : previous(command, ...args),
+  );
   await act(async () => retry.click());
-  expect(native.invoke.mock.calls.filter(([command]) => command === "ssh_agent_identities")).toHaveLength(2);
-  expect(native.invoke.mock.calls.filter(([command]) => command === "ssh_public_keys_list")).toHaveLength(initialKeys);
-  expect(native.invoke.mock.calls.filter(([command]) => command === "ssh_known_hosts_list")).toHaveLength(initialHosts);
+  expect(
+    native.invoke.mock.calls.filter(([command]) => command === "ssh_agent_identities"),
+  ).toHaveLength(2);
+  expect(
+    native.invoke.mock.calls.filter(([command]) => command === "ssh_public_keys_list"),
+  ).toHaveLength(initialKeys);
+  expect(
+    native.invoke.mock.calls.filter(([command]) => command === "ssh_known_hosts_list"),
+  ).toHaveLength(initialHosts);
   expect(document.body.textContent).not.toContain("Agent unavailable");
-  expect(document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')?.disabled).toBe(false);
+  expect(
+    document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')?.disabled,
+  ).toBe(false);
 });

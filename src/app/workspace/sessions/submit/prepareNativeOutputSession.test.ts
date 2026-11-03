@@ -73,9 +73,7 @@ it.each([false, undefined])(
   async (ack) => {
     const f = await fixture();
     mocks.upsert.mockResolvedValue(ack);
-    await expect(
-      f.prepareNativeOutputSession(f.session.id, () => true),
-    ).resolves.toBeUndefined();
+    await expect(f.prepareNativeOutputSession(f.session.id, () => true)).resolves.toBeUndefined();
   },
 );
 it("a retired turn cannot proceed after a late successful save", async () => {

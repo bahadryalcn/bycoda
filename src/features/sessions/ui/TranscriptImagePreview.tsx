@@ -211,15 +211,24 @@ export function TranscriptImagePreview({
   }, [cwd, path, attempt]);
 
   const remote = resolved.startsWith(REMOTE_PATH_PREFIX) || !!cwd?.startsWith(REMOTE_PATH_PREFIX);
-  const canReveal = !remote || (resolved.startsWith(REMOTE_PATH_PREFIX) && !!localExplorerPath(resolved));
+  const canReveal =
+    !remote || (resolved.startsWith(REMOTE_PATH_PREFIX) && !!localExplorerPath(resolved));
   const revealLabel = t(REVEAL_LABEL);
   const name = basename(path);
 
   const actions = (
     <>
       <MediaToolbarButton
-        label={canReveal ? revealLabel : t("Only files on this computer can be shown in the file manager.")}
-        tooltip={canReveal ? revealLabel : t("Only files on this computer can be shown in the file manager.")}
+        label={
+          canReveal
+            ? revealLabel
+            : t("Only files on this computer can be shown in the file manager.")
+        }
+        tooltip={
+          canReveal
+            ? revealLabel
+            : t("Only files on this computer can be shown in the file manager.")
+        }
         disabled={!canReveal || reveal.pending}
         onClick={() => reveal.copy(() => revealPath(resolved))}
       >

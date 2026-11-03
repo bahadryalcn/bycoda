@@ -6,11 +6,18 @@ import {
   type FilePaneTab,
   type WorkspaceTab,
 } from "../../../features/workspace/model/layout";
-import { isRemoteProjectPath, normalizeProjectPath } from "../../../features/projects/model/recents";
+import {
+  isRemoteProjectPath,
+  normalizeProjectPath,
+} from "../../../features/projects/model/recents";
 import { reportBootProjectState } from "../../model/bootDiagnostics";
 import { newTerminalCwd } from "../../../features/terminal/model/terminalTab";
 import { remoteTabCwd } from "../../../features/connections/model/connections";
-import { remotePath, remoteProjectFor, remoteSessionGitCwd } from "../../../features/connections/model/remoteProjects";
+import {
+  remotePath,
+  remoteProjectFor,
+  remoteSessionGitCwd,
+} from "../../../features/connections/model/remoteProjects";
 
 export interface ActiveWorkspaceContextDeps {
   tabs: WorkspaceTab[];
@@ -63,7 +70,11 @@ export function useActiveWorkspaceContext(
   const historyPending =
     sidebarCwdKey != null && !loadedProjects.has(sidebarCwdKey) && !historyFailed;
   const gitCwd = workspaceFile?.cwd ?? (active ? sessionWorkCwd(active) : sidebarCwd);
-  const terminalCwd = newTerminalCwd({ activeFile: workspaceFile, session: active, fallback: sidebarCwd });
+  const terminalCwd = newTerminalCwd({
+    activeFile: workspaceFile,
+    session: active,
+    fallback: sidebarCwd,
+  });
   const remoteFilesProject = remoteProjectFor(sidebarCwd);
   const remoteCheckout = remoteFilesProject ? remoteTabCwd(sidebarCwd, active?.id) : undefined;
   const filesCwd = remoteFilesProject
@@ -71,11 +82,12 @@ export function useActiveWorkspaceContext(
       ? gitCwd
       : remotePath(
           remoteFilesProject.environmentId,
-          remoteCheckout ??
-            (gitCwd && gitCwd !== sidebarCwd ? gitCwd : remoteFilesProject.cwd),
+          remoteCheckout ?? (gitCwd && gitCwd !== sidebarCwd ? gitCwd : remoteFilesProject.cwd),
         )
     : gitCwd;
-  const gitRootCwd = remoteFilesProject ? remoteSessionGitCwd(remoteFilesProject, gitCwd, sidebarCwd, remoteCheckout) : gitCwd;
+  const gitRootCwd = remoteFilesProject
+    ? remoteSessionGitCwd(remoteFilesProject, gitCwd, sidebarCwd, remoteCheckout)
+    : gitCwd;
   const gitCwdRef = useRef(gitRootCwd);
   gitCwdRef.current = gitRootCwd;
 

@@ -2,9 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
-const mock = fileURLToPath(
-  new URL("./assistant-room-mocks.tsx", import.meta.url),
-);
+const mock = fileURLToPath(new URL("./assistant-room-mocks.tsx", import.meta.url));
 export default defineConfig({
   plugins: [
     react(),
@@ -24,9 +22,14 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: {
-    alias: ["hostFeatureClient", "ModelPicker", "VoiceSetupSteps", "assistantBriefingSpeech", "assistantHostRead", "assistantSessionDetach"].map(
-      (name) => ({ find: new RegExp(`(?:.*\\/)${name}$`), replacement: mock }),
-    ),
+    alias: [
+      "hostFeatureClient",
+      "ModelPicker",
+      "VoiceSetupSteps",
+      "assistantBriefingSpeech",
+      "assistantHostRead",
+      "assistantSessionDetach",
+    ].map((name) => ({ find: new RegExp(`(?:.*\\/)${name}$`), replacement: mock })),
   },
   build: {
     outDir: "temp/build/assistant-room",

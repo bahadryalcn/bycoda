@@ -115,9 +115,7 @@ it("shows one workspace retry after a scoped load failure and recovers from it",
       }),
     ),
   );
-  expect(container.textContent).toContain(
-    "Path is outside this machine’s projects",
-  );
+  expect(container.textContent).toContain("Path is outside this machine’s projects");
   const retries = [...container.querySelectorAll("button")].filter(
     (button) => button.textContent === "Retry workspace",
   );
@@ -129,9 +127,7 @@ it("shows one workspace retry after a scoped load failure and recovers from it",
 
 it("leaves shared connection recovery to the conversation and reloads only for its machine", async () => {
   connection.status = "disconnected";
-  vi.mocked(workspaceRequest).mockRejectedValue(
-    new Error("Machine is unreachable"),
-  );
+  vi.mocked(workspaceRequest).mockRejectedValue(new Error("Machine is unreachable"));
   await act(async () =>
     root.render(
       createElement(SessionWorkspaceActions, {
@@ -145,8 +141,8 @@ it("leaves shared connection recovery to the conversation and reloads only for i
   await act(async () => notifyRemoteRecovered("another-machine"));
   expect(vi.mocked(workspaceRequest).mock.calls).toHaveLength(before);
   connection.status = "connected";
-  vi.mocked(workspaceRequest).mockImplementation(async (method) =>
-    (method === "workspaces.list" ? [workspace] : workspace) as never,
+  vi.mocked(workspaceRequest).mockImplementation(
+    async (method) => (method === "workspaces.list" ? [workspace] : workspace) as never,
   );
   await act(async () => notifyRemoteRecovered("env"));
   expect(container.textContent).toContain("Resume");

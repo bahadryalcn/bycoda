@@ -582,12 +582,12 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
       const placeholder = { ...session, historyLoading: true };
       const owns = () =>
         !!(liveWorkspace?.sessions() ?? bootingResumed?.sessions)?.some(
-            (value) =>
-              value.id === placeholder.id &&
-              !value.busy &&
-              value.blocks === placeholder.blocks &&
-              value.queuedMessages === placeholder.queuedMessages,
-          );
+          (value) =>
+            value.id === placeholder.id &&
+            !value.busy &&
+            value.blocks === placeholder.blocks &&
+            value.queuedMessages === placeholder.queuedMessages,
+        );
       if (interrupted.has(session.id)) {
         const failed = () =>
           publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR });
@@ -655,7 +655,8 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     // Normally the mounting workspace starts these. If it never mounts, still hydrate.
     if (deferredBootReads.length)
       setTimeout(() => {
-        if (!liveWorkspace) console.warn("appLifecycle starting boot hydration without a workspace");
+        if (!liveWorkspace)
+          console.warn("appLifecycle starting boot hydration without a workspace");
         startDeferredBootReads();
       }, BOOT_READ_TIMEOUT_MS);
     // Progressive callbacks can finish while interrupted sessions are being

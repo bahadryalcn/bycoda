@@ -4,15 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Button } from "../../../shared/ui/Button";
-import {
-  Maximize2,
-  Minimize2,
-  Mic,
-  MicOff,
-  Square,
-  VolumeX,
-  X,
-} from "../../../shared/ui/icons";
+import { Maximize2, Minimize2, Mic, MicOff, Square, VolumeX, X } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   VOICE_OVERLAY_COMMAND_EVENT,
@@ -31,7 +23,7 @@ import { VoiceTurnControl } from "./VoiceTurnControl";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import styles from "./VoiceOverlayWindow.module.css";
 import { VoiceChoiceCard } from "./VoiceChoiceCard";
-import {VoiceJobReview} from "./VoiceJobReview";
+import { VoiceJobReview } from "./VoiceJobReview";
 
 const MOVES: Record<string, [number, number]> = {
   ArrowLeft: [-16, 0],
@@ -114,7 +106,9 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   const summary = state ? voiceSummaryLine(state) : statusText;
   const moveLabel = t("Move voice window. Use arrow keys to reposition.");
   const canTalk = status === "idle" || status === "sleeping" || status === "ready";
-  const micLabel = t(canTalk ? status === "idle" ? "Start voice" : "Talk" : muted ? "Resume" : "Pause mic");
+  const micLabel = t(
+    canTalk ? (status === "idle" ? "Start voice" : "Talk") : muted ? "Resume" : "Pause mic",
+  );
   // One close: the floating window returns to the app and voice keeps running,
   // matching the native close. Disconnect stays an explicit body action.
   const backLabel = t("Return voice companion to the app");
@@ -169,9 +163,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         {handle}
         <div className={styles.heading}>
           <OverflowTooltip label={state?.title}>
-            <h1 className={styles.title}>
-              {state?.title ?? t("Voice companion")}
-            </h1>
+            <h1 className={styles.title}>{state?.title ?? t("Voice companion")}</h1>
           </OverflowTooltip>
           {compact && (
             <OverflowTooltip label={summary}>
@@ -181,7 +173,15 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             </OverflowTooltip>
           )}
         </div>
-        {compact&&status==="live"&&<VoiceTurnControl compact manual={state?.manualTurnEnd===true} muted={muted} onManualChange={manual=>send(manual?"manualTurnEnd":"automaticTurnEnd")} onFinish={()=>send("finishTurn")}/>}
+        {compact && status === "live" && (
+          <VoiceTurnControl
+            compact
+            manual={state?.manualTurnEnd === true}
+            muted={muted}
+            onManualChange={(manual) => send(manual ? "manualTurnEnd" : "automaticTurnEnd")}
+            onFinish={() => send("finishTurn")}
+          />
+        )}
         {compact && (
           <Button
             iconOnly
@@ -195,7 +195,11 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             aria-pressed={canTalk ? undefined : muted}
             onClick={() => send(canTalk ? "start" : "toggleMute")}
           >
-            {muted || status === "ready" || status === "sleeping" ? <MicOff size={14} /> : <Mic size={14} />}
+            {muted || status === "ready" || status === "sleeping" ? (
+              <MicOff size={14} />
+            ) : (
+              <Mic size={14} />
+            )}
           </Button>
         )}
         <Button
@@ -217,11 +221,49 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
       </div>
       {!compact && (
         <div className={styles.body}>
-      {state?.choice ? <VoiceChoiceCard choice={state.choice} onRetry={()=>{void emitTo(owner,VOICE_OVERLAY_CHOICE_EVENT,{id:state.choice!.id,action:"retry"}).catch(()=>undefined);}} onReply={(reply) => {void emitTo(owner,VOICE_OVERLAY_CHOICE_EVENT,{id:state.choice!.id,reply}).catch(()=>undefined);}}/> : null}
-      {state?.jobReview?<VoiceJobReview key={state.jobReview.id} review={state.jobReview}
-        onChange={rows=>{void emitTo(owner,VOICE_OVERLAY_JOB_EVENT,{id:state.jobReview!.id,action:"change",rows}).catch(()=>undefined);}}
-        onStart={rows=>{void emitTo(owner,VOICE_OVERLAY_JOB_EVENT,{id:state.jobReview!.id,action:"start",rows}).catch(()=>undefined);}}
-        onCancel={()=>{void emitTo(owner,VOICE_OVERLAY_JOB_EVENT,{id:state.jobReview!.id,action:"cancel"}).catch(()=>undefined);}}/>:null}
+          {state?.choice ? (
+            <VoiceChoiceCard
+              choice={state.choice}
+              onRetry={() => {
+                void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
+                  id: state.choice!.id,
+                  action: "retry",
+                }).catch(() => undefined);
+              }}
+              onReply={(reply) => {
+                void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
+                  id: state.choice!.id,
+                  reply,
+                }).catch(() => undefined);
+              }}
+            />
+          ) : null}
+          {state?.jobReview ? (
+            <VoiceJobReview
+              key={state.jobReview.id}
+              review={state.jobReview}
+              onChange={(rows) => {
+                void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
+                  id: state.jobReview!.id,
+                  action: "change",
+                  rows,
+                }).catch(() => undefined);
+              }}
+              onStart={(rows) => {
+                void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
+                  id: state.jobReview!.id,
+                  action: "start",
+                  rows,
+                }).catch(() => undefined);
+              }}
+              onCancel={() => {
+                void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
+                  id: state.jobReview!.id,
+                  action: "cancel",
+                }).catch(() => undefined);
+              }}
+            />
+          ) : null}
 
           {status === "idle" && state?.privacy && <p className={styles.caption}>{state.privacy}</p>}
           {state?.transcript && (
@@ -241,20 +283,35 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               {state.error}
             </p>
           )}
-          {state?.notice&&<p role="status" className={styles.caption}>{state.notice}</p>}
+          {state?.notice && (
+            <p role="status" className={styles.caption}>
+              {state.notice}
+            </p>
+          )}
           <div className={styles.actions}>
-            {status==="live"&&<VoiceTurnControl manual={state?.manualTurnEnd===true} muted={muted} onManualChange={manual=>send(manual?"manualTurnEnd":"automaticTurnEnd")} onFinish={()=>send("finishTurn")}/>}
+            {status === "live" && (
+              <VoiceTurnControl
+                manual={state?.manualTurnEnd === true}
+                muted={muted}
+                onManualChange={(manual) => send(manual ? "manualTurnEnd" : "automaticTurnEnd")}
+                onFinish={() => send("finishTurn")}
+              />
+            )}
             {canTalk ? (
               <>
-              <Button
-                variant="primary"
-                disabled={!state?.canStart}
-                onClick={() => send("start")}
-                startIcon={<Mic size={14} />}
-              >
-                {t(status === "idle" ? "Start voice" : "Talk")}
-              </Button>
-              {status !== "idle" && <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}><Square size={14} /></Button>}
+                <Button
+                  variant="primary"
+                  disabled={!state?.canStart}
+                  onClick={() => send("start")}
+                  startIcon={<Mic size={14} />}
+                >
+                  {t(status === "idle" ? "Start voice" : "Talk")}
+                </Button>
+                {status !== "idle" && (
+                  <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
+                    <Square size={14} />
+                  </Button>
+                )}
               </>
             ) : status === "connecting" || status === "reconnecting" ? (
               <>

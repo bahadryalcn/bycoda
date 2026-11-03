@@ -1,5 +1,5 @@
 import { mapAsync } from "./async-collections";
-import {AssistantTurnPolicyDeferredError} from "./assistant-turn-policy";
+import { AssistantTurnPolicyDeferredError } from "./assistant-turn-policy";
 import * as assistantTurnPolicy from "./assistant-turn-policy";
 import * as assistantTaskMetadata from "./assistant-task-metadata";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -21,35 +21,91 @@ import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { HostTasks, MAX_RUNNING_TASKS, MAX_REPAIR_ATTEMPTS } from "./tasks";
 import type { HostTask } from "../src/features/tasks/model/hostTasks";
-it("refreshes read-only assistant follow-up metadata and board ETags without rewriting a task or launching work",async()=>{
- const f=await setup();await f.tasks.save(f.input());
- const task=await f.task();
- await f.store.db.exec("CREATE TABLE IF NOT EXISTS assistant_jobs(id TEXT PRIMARY KEY,value TEXT NOT NULL,deleted_at INTEGER);CREATE TABLE IF NOT EXISTS assistant_session_receipts(id TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE IF NOT EXISTS goals(id TEXT PRIMARY KEY,value TEXT NOT NULL)");
- await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-job','$.sessionId','session') WHERE id=?").run(task.id);
- await f.store.db.prepare("INSERT INTO assistant_jobs(id,value) VALUES(?,?)").run("job",JSON.stringify({id:"job",goalId:"assistant-job",projectId:task.projectId,projectIds:[task.projectId],sessionIds:["session"],taskIds:[task.id]}));
- await f.store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run("assistant-job",JSON.stringify({id:"assistant-job",leadProjectId:task.projectId,projectIds:[task.projectId],taskIds:[task.id]}));
- const original=(await f.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(task.id))!.value;
- const etag=await f.tasks.changeEtag(),revision=await f.tasks.revision();
- const projection=vi.spyOn(assistantTaskMetadata,"withAssistantTaskMetadata");
- await f.tasks.list();await f.tasks.list();expect(projection).not.toHaveBeenCalled();
- const changed=vi.fn();f.tasks.onChange=changed;
- await f.store.db.prepare("INSERT INTO assistant_session_receipts(id,value) VALUES(?,?)").run("job:session:one",JSON.stringify({operation:{sessionId:"session",action:"send",state:"settled",delivery:"delivered"}}));
- await f.tasks.assistantFollowupsChanged();
- expect(changed).toHaveBeenCalledOnce();expect(await f.tasks.revision()).toBeGreaterThan(revision);
- expect(await f.tasks.changeEtag()).not.toBe(etag);
- expect((await f.tasks.list())[0].assistantFollowups).toEqual({delivered:1,unconfirmed:0});
-  const deliveredEtag=await f.tasks.changeEtag();
- expect(projection).toHaveBeenCalledOnce();projection.mockRestore();
+it("refreshes read-only assistant follow-up metadata and board ETags without rewriting a task or launching work", async () => {
+  const f = await setup();
+  await f.tasks.save(f.input());
+  const task = await f.task();
+  await f.store.db.exec(
+    "CREATE TABLE IF NOT EXISTS assistant_jobs(id TEXT PRIMARY KEY,value TEXT NOT NULL,deleted_at INTEGER);CREATE TABLE IF NOT EXISTS assistant_session_receipts(id TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE IF NOT EXISTS goals(id TEXT PRIMARY KEY,value TEXT NOT NULL)",
+  );
+  await f.store.db
+    .prepare(
+      "UPDATE tasks SET value=json_set(value,'$.goalId','assistant-job','$.sessionId','session') WHERE id=?",
+    )
+    .run(task.id);
+  await f.store.db
+    .prepare("INSERT INTO assistant_jobs(id,value) VALUES(?,?)")
+    .run(
+      "job",
+      JSON.stringify({
+        id: "job",
+        goalId: "assistant-job",
+        projectId: task.projectId,
+        projectIds: [task.projectId],
+        sessionIds: ["session"],
+        taskIds: [task.id],
+      }),
+    );
+  await f.store.db
+    .prepare("INSERT INTO goals(id,value) VALUES(?,?)")
+    .run(
+      "assistant-job",
+      JSON.stringify({
+        id: "assistant-job",
+        leadProjectId: task.projectId,
+        projectIds: [task.projectId],
+        taskIds: [task.id],
+      }),
+    );
+  const original = (await f.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(task.id))!
+    .value;
+  const etag = await f.tasks.changeEtag(),
+    revision = await f.tasks.revision();
+  const projection = vi.spyOn(assistantTaskMetadata, "withAssistantTaskMetadata");
+  await f.tasks.list();
+  await f.tasks.list();
+  expect(projection).not.toHaveBeenCalled();
+  const changed = vi.fn();
+  f.tasks.onChange = changed;
+  await f.store.db
+    .prepare("INSERT INTO assistant_session_receipts(id,value) VALUES(?,?)")
+    .run(
+      "job:session:one",
+      JSON.stringify({
+        operation: {
+          sessionId: "session",
+          action: "send",
+          state: "settled",
+          delivery: "delivered",
+        },
+      }),
+    );
+  await f.tasks.assistantFollowupsChanged();
+  expect(changed).toHaveBeenCalledOnce();
+  expect(await f.tasks.revision()).toBeGreaterThan(revision);
+  expect(await f.tasks.changeEtag()).not.toBe(etag);
+  expect((await f.tasks.list())[0].assistantFollowups).toEqual({ delivered: 1, unconfirmed: 0 });
+  const deliveredEtag = await f.tasks.changeEtag();
+  expect(projection).toHaveBeenCalledOnce();
+  projection.mockRestore();
   // Canonical source membership can change without touching a task or receipt.
-  await f.store.db.prepare("UPDATE goals SET value=json_set(value,'$.taskIds',json('[]')) WHERE id='assistant-job'").run();
+  await f.store.db
+    .prepare(
+      "UPDATE goals SET value=json_set(value,'$.taskIds',json('[]')) WHERE id='assistant-job'",
+    )
+    .run();
   expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
   expect(await f.tasks.changeEtag()).not.toBe(deliveredEtag);
-  await f.store.db.prepare("UPDATE goals SET value=json_set(value,'$.taskIds',json(?)) WHERE id='assistant-job'").run(JSON.stringify([task.id]));
+  await f.store.db
+    .prepare("UPDATE goals SET value=json_set(value,'$.taskIds',json(?)) WHERE id='assistant-job'")
+    .run(JSON.stringify([task.id]));
   expect((await f.tasks.list())[0].assistantFollowups?.delivered).toBe(1);
   await f.store.db.prepare("UPDATE assistant_jobs SET deleted_at=1 WHERE id='job'").run();
   expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
- expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(task.id))!.value).toBe(original);
- expect(f.turns).toHaveLength(0);
+  expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(task.id))!.value).toBe(
+    original,
+  );
+  expect(f.turns).toHaveLength(0);
 });
 import * as processExecution from "../src/shared/lib/processExecution.node";
 import * as hostShell from "./shell";
@@ -61,128 +117,345 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 const MINUTE = 60000;
-it("persists a current-run stalled diagnostic across scheduler restart without stopping work",async()=>{
-  const f=await setup();const date=vi.spyOn(Date,"now").mockImplementation(()=>f.clock.now);cleanups.push(()=>date.mockRestore());
-  const started=await f.run();const initial=(await f.store.session(started.sessionId!)).runActivity!;
-  f.clock.now+=15*MINUTE;await f.engine.updateSession(started.sessionId!,{title:"Metadata changed"});await f.tasks.tick();
-  const stalled=await f.task();expect(stalled).toMatchObject({status:"running",runStall:{runId:started.runId,sessionId:started.sessionId,lastActivityAt:initial.lastActivityAt}});
-  const restarted=new HostTasks(f.store,f.engine,()=>f.clock.now);f.clock.now+=MINUTE;await restarted.tick();
-  expect((await restarted.get(started.id))?.runStall).toEqual(stalled.runStall);expect((await f.store.session(started.sessionId!)).status).toBe("running");
-  const turn=f.turns[0];turn.input.onEvent({type:"tool.started",callId:"terminal-output",title:"Read output"});turn.input.onEvent({type:"tool.updated",callId:"terminal-output",detail:"still working"});
-  await vi.waitFor(async()=>expect((await f.store.session(started.sessionId!)).runActivity?.lastActivityAt).toBe(f.clock.now));await restarted.tick();
+it("persists a current-run stalled diagnostic across scheduler restart without stopping work", async () => {
+  const f = await setup();
+  const date = vi.spyOn(Date, "now").mockImplementation(() => f.clock.now);
+  cleanups.push(() => date.mockRestore());
+  const started = await f.run();
+  const initial = (await f.store.session(started.sessionId!)).runActivity!;
+  f.clock.now += 15 * MINUTE;
+  await f.engine.updateSession(started.sessionId!, { title: "Metadata changed" });
+  await f.tasks.tick();
+  const stalled = await f.task();
+  expect(stalled).toMatchObject({
+    status: "running",
+    runStall: {
+      runId: started.runId,
+      sessionId: started.sessionId,
+      lastActivityAt: initial.lastActivityAt,
+    },
+  });
+  const restarted = new HostTasks(f.store, f.engine, () => f.clock.now);
+  f.clock.now += MINUTE;
+  await restarted.tick();
+  expect((await restarted.get(started.id))?.runStall).toEqual(stalled.runStall);
+  expect((await f.store.session(started.sessionId!)).status).toBe("running");
+  const turn = f.turns[0];
+  turn.input.onEvent({ type: "tool.started", callId: "terminal-output", title: "Read output" });
+  turn.input.onEvent({ type: "tool.updated", callId: "terminal-output", detail: "still working" });
+  await vi.waitFor(async () =>
+    expect((await f.store.session(started.sessionId!)).runActivity?.lastActivityAt).toBe(
+      f.clock.now,
+    ),
+  );
+  await restarted.tick();
   expect((await restarted.get(started.id))?.runStall).toBeUndefined();
-  f.clock.now+=16*MINUTE;await restarted.tick();expect((await restarted.get(started.id))?.runStall).toBeDefined();
-  turn.input.onEvent({type:"tool.updated",callId:"terminal-output",detail:"still working"});
-  await vi.waitFor(async()=>expect((await f.store.session(started.sessionId!)).runActivity?.lastActivityAt).toBe(f.clock.now));await restarted.tick();expect((await restarted.get(started.id))?.runStall).toBeUndefined();
+  f.clock.now += 16 * MINUTE;
+  await restarted.tick();
+  expect((await restarted.get(started.id))?.runStall).toBeDefined();
+  turn.input.onEvent({ type: "tool.updated", callId: "terminal-output", detail: "still working" });
+  await vi.waitFor(async () =>
+    expect((await f.store.session(started.sessionId!)).runActivity?.lastActivityAt).toBe(
+      f.clock.now,
+    ),
+  );
+  await restarted.tick();
+  expect((await restarted.get(started.id))?.runStall).toBeUndefined();
 });
-it("does not label unknown timestamps or owner-input waits as stalled",async()=>{
-  const f=await setup();const date=vi.spyOn(Date,"now").mockImplementation(()=>f.clock.now);cleanups.push(()=>date.mockRestore());
-  const started=await f.run();const record=await f.store.session(started.sessionId!);
-  f.clock.now+=20*MINUTE;await f.store.save({...record,revision:record.revision+1,updatedAt:f.clock.now,runActivity:undefined},{type:"metadata"});await f.tasks.tick();expect((await f.task()).runStall).toBeUndefined();
-  const latest=await f.store.session(started.sessionId!);await f.store.save({...latest,revision:latest.revision+1,runActivity:{runId:started.runId!,lastActivityAt:started.startedAt!},session:{...latest.session,pendingQuestion:{requestId:1,questions:[]}}},{type:"question"});
-  await f.tasks.tick();expect(await f.task()).toMatchObject({status:"running",needsInput:true});expect((await f.task()).runStall).toBeUndefined();
+it("does not label unknown timestamps or owner-input waits as stalled", async () => {
+  const f = await setup();
+  const date = vi.spyOn(Date, "now").mockImplementation(() => f.clock.now);
+  cleanups.push(() => date.mockRestore());
+  const started = await f.run();
+  const record = await f.store.session(started.sessionId!);
+  f.clock.now += 20 * MINUTE;
+  await f.store.save(
+    { ...record, revision: record.revision + 1, updatedAt: f.clock.now, runActivity: undefined },
+    { type: "metadata" },
+  );
+  await f.tasks.tick();
+  expect((await f.task()).runStall).toBeUndefined();
+  const latest = await f.store.session(started.sessionId!);
+  await f.store.save(
+    {
+      ...latest,
+      revision: latest.revision + 1,
+      runActivity: { runId: started.runId!, lastActivityAt: started.startedAt! },
+      session: { ...latest.session, pendingQuestion: { requestId: 1, questions: [] } },
+    },
+    { type: "question" },
+  );
+  await f.tasks.tick();
+  expect(await f.task()).toMatchObject({ status: "running", needsInput: true });
+  expect((await f.task()).runStall).toBeUndefined();
 });
-it("cannot overwrite an owner change made while a stalled diagnostic reads the session",async()=>{
-  const f=await setup();const date=vi.spyOn(Date,"now").mockImplementation(()=>f.clock.now);cleanups.push(()=>date.mockRestore());
-  const started=await f.run();f.clock.now+=20*MINUTE;
-  let release!:()=>void,entered!:()=>void;const held=new Promise<void>(done=>release=done),reading=new Promise<void>(done=>entered=done);
-  const read=f.store.session.bind(f.store);let intercepted=false;
-  vi.spyOn(f.store,"session").mockImplementation(async id=>{const value=await read(id);if(id===started.sessionId&&!intercepted){intercepted=true;entered();await held;}return value;});
-  const settling=(f.tasks as unknown as {settle(task:HostTask,now:number):Promise<void>}).settle(started,f.clock.now);await reading;
-  await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.status','blocked','$.error','Stopped by you.') WHERE id=?").run(started.id);
-  release();await settling;expect(await f.task()).toMatchObject({status:"blocked",error:"Stopped by you."});expect((await f.task()).runStall).toBeUndefined();
+it("cannot overwrite an owner change made while a stalled diagnostic reads the session", async () => {
+  const f = await setup();
+  const date = vi.spyOn(Date, "now").mockImplementation(() => f.clock.now);
+  cleanups.push(() => date.mockRestore());
+  const started = await f.run();
+  f.clock.now += 20 * MINUTE;
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>((done) => (release = done)),
+    reading = new Promise<void>((done) => (entered = done));
+  const read = f.store.session.bind(f.store);
+  let intercepted = false;
+  vi.spyOn(f.store, "session").mockImplementation(async (id) => {
+    const value = await read(id);
+    if (id === started.sessionId && !intercepted) {
+      intercepted = true;
+      entered();
+      await held;
+    }
+    return value;
+  });
+  const settling = (
+    f.tasks as unknown as { settle(task: HostTask, now: number): Promise<void> }
+  ).settle(started, f.clock.now);
+  await reading;
+  await f.store.db
+    .prepare(
+      "UPDATE tasks SET value=json_set(value,'$.status','blocked','$.error','Stopped by you.') WHERE id=?",
+    )
+    .run(started.id);
+  release();
+  await settling;
+  expect(await f.task()).toMatchObject({ status: "blocked", error: "Stopped by you." });
+  expect((await f.task()).runStall).toBeUndefined();
 });
-it("queues a provably unstarted worker without replaying while execution policy remains closed",async()=>{
- const f=await setup();let allowed=true;
- vi.mocked(f.tasks.idle).mockRestore();
- vi.mocked(f.tasks.tick).mockRestore();
- f.tasks.assistantGoalAdmission=async()=>allowed;
- await f.tasks.save(f.input());await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'").run();
- f.engine.beforeProviderTurn=async()=>{allowed=false;throw new AssistantTurnPolicyDeferredError();};
- await f.tasks.tick();const started=await f.task();expect(started.sessionId).toBeTruthy();
- await f.engine.waitForRun(started.sessionId!,started.runId);expect(f.turns).toHaveLength(0);
- await f.tasks.tick();expect((await f.task()).status).toBe("queued");expect((await f.task()).sessionId).toBeUndefined();expect((await f.task()).runId).toBeUndefined();
- const count=(await f.store.sessions()).length;await f.tasks.tick();expect((await f.store.sessions()).length).toBe(count);
- allowed=true;f.engine.beforeProviderTurn=undefined;await f.tasks.tick();
- await vi.waitFor(()=>expect(f.turns).toHaveLength(1),{timeout:30000});expect((await f.task()).status).toBe("running");
- expect((await f.task()).sessionId).not.toBe(started.sessionId);
+it("queues a provably unstarted worker without replaying while execution policy remains closed", async () => {
+  const f = await setup();
+  let allowed = true;
+  vi.mocked(f.tasks.idle).mockRestore();
+  vi.mocked(f.tasks.tick).mockRestore();
+  f.tasks.assistantGoalAdmission = async () => allowed;
+  await f.tasks.save(f.input());
+  await f.store.db
+    .prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'")
+    .run();
+  f.engine.beforeProviderTurn = async () => {
+    allowed = false;
+    throw new AssistantTurnPolicyDeferredError();
+  };
+  await f.tasks.tick();
+  const started = await f.task();
+  expect(started.sessionId).toBeTruthy();
+  await f.engine.waitForRun(started.sessionId!, started.runId);
+  expect(f.turns).toHaveLength(0);
+  await f.tasks.tick();
+  expect((await f.task()).status).toBe("queued");
+  expect((await f.task()).sessionId).toBeUndefined();
+  expect((await f.task()).runId).toBeUndefined();
+  const count = (await f.store.sessions()).length;
+  await f.tasks.tick();
+  expect((await f.store.sessions()).length).toBe(count);
+  allowed = true;
+  f.engine.beforeProviderTurn = undefined;
+  await f.tasks.tick();
+  await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 30000 });
+  expect((await f.task()).status).toBe("running");
+  expect((await f.task()).sessionId).not.toBe(started.sessionId);
 });
-it("releases assistant hours and budget holds independently while preserving an owner pause",async()=>{
-  const f=await setup();await f.tasks.save(f.input());
-  await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'").run();
-  await f.tasks.setGoalPauseReason("assistant-goal","assistant-budget",true);
-  await f.tasks.setGoalPauseReason("assistant-goal","assistant-hours",true);
-  await f.tasks.setGoalPaused("assistant-goal",true);
-  await f.tasks.setGoalPauseReason("assistant-goal","assistant-budget",false);
+it("releases assistant hours and budget holds independently while preserving an owner pause", async () => {
+  const f = await setup();
+  await f.tasks.save(f.input());
+  await f.store.db
+    .prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'")
+    .run();
+  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-budget", true);
+  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-hours", true);
+  await f.tasks.setGoalPaused("assistant-goal", true);
+  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-budget", false);
   await expect(f.tasks.startTask("main")).rejects.toThrow("goal is paused");
-  await f.tasks.setGoalPauseReason("assistant-goal","assistant-hours",false);
+  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-hours", false);
   await expect(f.tasks.startTask("main")).rejects.toThrow("goal is paused");
-  expect(await f.store.db.prepare("SELECT goal_id FROM task_goal_holds WHERE goal_id=?").get("assistant-goal")).toBeTruthy();
-  await f.tasks.tick();expect(f.turns).toHaveLength(0);
-  await f.tasks.setGoalPaused("assistant-goal",false);await f.tasks.tick();
-  await vi.waitFor(()=>expect(f.turns).toHaveLength(1));
+  expect(
+    await f.store.db
+      .prepare("SELECT goal_id FROM task_goal_holds WHERE goal_id=?")
+      .get("assistant-goal"),
+  ).toBeTruthy();
+  await f.tasks.tick();
+  expect(f.turns).toHaveLength(0);
+  await f.tasks.setGoalPaused("assistant-goal", false);
+  await f.tasks.tick();
+  await vi.waitFor(() => expect(f.turns).toHaveLength(1));
 });
-it("preserves a queued task withdrawal while its new session title is being prepared",async()=>{
- const f=await setup();vi.mocked(f.tasks.tick).mockRestore();vi.mocked(f.tasks.idle).mockRestore();
- await f.tasks.save(f.input({isolate:false}));
- const entered=Promise.withResolvers<void>(),released=Promise.withResolvers<void>();const original=f.engine.updateSession.bind(f.engine);
- vi.spyOn(f.engine,"updateSession").mockImplementation(async(...args)=>{const result=await original(...args);if(args[1].title===f.input().title){entered.resolve();await released.promise;}return result;});
- const launching=f.tasks.tick();
- try{
-  await entered.promise;await f.tasks.move("main","todo");const stopped=(await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!.value;
-  released.resolve();await launching;await f.tasks.idle();
-  expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!.value).toBe(stopped);expect(f.turns).toHaveLength(0);
- }finally{released.resolve();await launching;}
+it("preserves a queued task withdrawal while its new session title is being prepared", async () => {
+  const f = await setup();
+  vi.mocked(f.tasks.tick).mockRestore();
+  vi.mocked(f.tasks.idle).mockRestore();
+  await f.tasks.save(f.input({ isolate: false }));
+  const entered = Promise.withResolvers<void>(),
+    released = Promise.withResolvers<void>();
+  const original = f.engine.updateSession.bind(f.engine);
+  vi.spyOn(f.engine, "updateSession").mockImplementation(async (...args) => {
+    const result = await original(...args);
+    if (args[1].title === f.input().title) {
+      entered.resolve();
+      await released.promise;
+    }
+    return result;
+  });
+  const launching = f.tasks.tick();
+  try {
+    await entered.promise;
+    await f.tasks.move("main", "todo");
+    const stopped = (await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!
+      .value;
+    released.resolve();
+    await launching;
+    await f.tasks.idle();
+    expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!.value).toBe(
+      stopped,
+    );
+    expect(f.turns).toHaveLength(0);
+  } finally {
+    released.resolve();
+    await launching;
+  }
 });
-it("preserves Stop after task association while provider preparation is pending",async()=>{
- const f=await setup();vi.mocked(f.tasks.tick).mockRestore();vi.mocked(f.tasks.idle).mockRestore();await f.tasks.save(f.input());
- const entered=Promise.withResolvers<void>(),released=Promise.withResolvers<void>();f.engine.ownerInstructions=async()=>{entered.resolve();await released.promise;return "Existing owner rules";};
- const launching=f.tasks.tick();
- try{
-  await entered.promise;const accepted=await f.task();expect(accepted.sessionId).toBeTruthy();expect(accepted.status).toBe("running");
-  await f.tasks.move("main","blocked");const stopped=(await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!.value;
-  released.resolve();await launching;await f.engine.waitForRun(accepted.sessionId!,accepted.runId);
-  expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!.value).toBe(stopped);expect(f.turns).toHaveLength(0);
- }finally{released.resolve();await launching;}
+it("preserves Stop after task association while provider preparation is pending", async () => {
+  const f = await setup();
+  vi.mocked(f.tasks.tick).mockRestore();
+  vi.mocked(f.tasks.idle).mockRestore();
+  await f.tasks.save(f.input());
+  const entered = Promise.withResolvers<void>(),
+    released = Promise.withResolvers<void>();
+  f.engine.ownerInstructions = async () => {
+    entered.resolve();
+    await released.promise;
+    return "Existing owner rules";
+  };
+  const launching = f.tasks.tick();
+  try {
+    await entered.promise;
+    const accepted = await f.task();
+    expect(accepted.sessionId).toBeTruthy();
+    expect(accepted.status).toBe("running");
+    await f.tasks.move("main", "blocked");
+    const stopped = (await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!
+      .value;
+    released.resolve();
+    await launching;
+    await f.engine.waitForRun(accepted.sessionId!, accepted.runId);
+    expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!.value).toBe(
+      stopped,
+    );
+    expect(f.turns).toHaveLength(0);
+  } finally {
+    released.resolve();
+    await launching;
+  }
 });
-it("preserves owner Stop after a task review's real deferred-turn proof",async()=>{
- const f=await setup(),started=await f.run({review:true});vi.mocked(f.tasks.tick).mockRestore();vi.mocked(f.tasks.idle).mockRestore();let allowed=true;
- await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'").run();f.tasks.assistantGoalAdmission=async()=>allowed;
- f.engine.beforeProviderTurn=async()=>{allowed=false;throw new AssistantTurnPolicyDeferredError();};f.turns[0].finish();await f.engine.waitForRun(started.sessionId!,started.runId);await f.tasks.tick();await f.tasks.idle();
- const reviewer=(await f.task()).reviewer!;await f.engine.waitForRun(reviewer.sessionId!,reviewer.runId);
- const entered=Promise.withResolvers<void>(),released=Promise.withResolvers<void>(),original=assistantTurnPolicy.deferredAssistantTurn;
- const proof=vi.spyOn(assistantTurnPolicy,"deferredAssistantTurn").mockImplementation(async(...args)=>{const value=await original(...args);if(value){entered.resolve();await released.promise;}return value;});
- const settling=f.tasks.tick();
- try{
-  await entered.promise;await f.tasks.move("main","blocked");const stopped=(await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!.value;
-  allowed=true;f.engine.beforeProviderTurn=undefined;released.resolve();await settling;await f.tasks.idle();
-  expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!.value).toBe(stopped);await f.tasks.tick();expect(f.turns).toHaveLength(1);
- }finally{released.resolve();proof.mockRestore();await settling;}
+it("preserves owner Stop after a task review's real deferred-turn proof", async () => {
+  const f = await setup(),
+    started = await f.run({ review: true });
+  vi.mocked(f.tasks.tick).mockRestore();
+  vi.mocked(f.tasks.idle).mockRestore();
+  let allowed = true;
+  await f.store.db
+    .prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'")
+    .run();
+  f.tasks.assistantGoalAdmission = async () => allowed;
+  f.engine.beforeProviderTurn = async () => {
+    allowed = false;
+    throw new AssistantTurnPolicyDeferredError();
+  };
+  f.turns[0].finish();
+  await f.engine.waitForRun(started.sessionId!, started.runId);
+  await f.tasks.tick();
+  await f.tasks.idle();
+  const reviewer = (await f.task()).reviewer!;
+  await f.engine.waitForRun(reviewer.sessionId!, reviewer.runId);
+  const entered = Promise.withResolvers<void>(),
+    released = Promise.withResolvers<void>(),
+    original = assistantTurnPolicy.deferredAssistantTurn;
+  const proof = vi
+    .spyOn(assistantTurnPolicy, "deferredAssistantTurn")
+    .mockImplementation(async (...args) => {
+      const value = await original(...args);
+      if (value) {
+        entered.resolve();
+        await released.promise;
+      }
+      return value;
+    });
+  const settling = f.tasks.tick();
+  try {
+    await entered.promise;
+    await f.tasks.move("main", "blocked");
+    const stopped = (await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!
+      .value;
+    allowed = true;
+    f.engine.beforeProviderTurn = undefined;
+    released.resolve();
+    await settling;
+    await f.tasks.idle();
+    expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id='main'").get())!.value).toBe(
+      stopped,
+    );
+    await f.tasks.tick();
+    expect(f.turns).toHaveLength(1);
+  } finally {
+    released.resolve();
+    proof.mockRestore();
+    await settling;
+  }
 });
-it("keeps a provably unstarted task reviewer pending while policy is closed",async()=>{
- const f=await setup();const started=await f.run({review:true});let allowed=true;
- vi.mocked(f.tasks.tick).mockRestore();vi.mocked(f.tasks.idle).mockRestore();
- await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'").run();
- f.tasks.assistantGoalAdmission=async()=>allowed;
- f.engine.beforeProviderTurn=async()=>{allowed=false;throw new AssistantTurnPolicyDeferredError();};
- f.turns[0].finish();await f.engine.waitForRun(started.sessionId!,started.runId);await f.tasks.tick();await f.tasks.idle();
- await vi.waitFor(async()=>expect((await f.task()).reviewer?.sessionId).toBeTruthy(),{timeout:30000});
- const before=(await f.task()).reviewer!;await f.engine.waitForRun(before.sessionId!,before.runId);expect(f.turns).toHaveLength(1);
- await f.tasks.tick();await f.tasks.idle();expect((await f.task()).status).toBe("verifying");expect((await f.task()).reviewer).toBeUndefined();
- const count=(await f.store.sessions()).length;await f.tasks.tick();await f.tasks.idle();expect((await f.store.sessions()).length).toBe(count);
- allowed=true;f.engine.beforeProviderTurn=undefined;await f.tasks.tick();
- await vi.waitFor(()=>expect(f.turns).toHaveLength(2),{timeout:30000});expect((await f.task()).reviewer?.sessionId).not.toBe(before.sessionId);
+it("keeps a provably unstarted task reviewer pending while policy is closed", async () => {
+  const f = await setup();
+  const started = await f.run({ review: true });
+  let allowed = true;
+  vi.mocked(f.tasks.tick).mockRestore();
+  vi.mocked(f.tasks.idle).mockRestore();
+  await f.store.db
+    .prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'")
+    .run();
+  f.tasks.assistantGoalAdmission = async () => allowed;
+  f.engine.beforeProviderTurn = async () => {
+    allowed = false;
+    throw new AssistantTurnPolicyDeferredError();
+  };
+  f.turns[0].finish();
+  await f.engine.waitForRun(started.sessionId!, started.runId);
+  await f.tasks.tick();
+  await f.tasks.idle();
+  await vi.waitFor(async () => expect((await f.task()).reviewer?.sessionId).toBeTruthy(), {
+    timeout: 30000,
+  });
+  const before = (await f.task()).reviewer!;
+  await f.engine.waitForRun(before.sessionId!, before.runId);
+  expect(f.turns).toHaveLength(1);
+  await f.tasks.tick();
+  await f.tasks.idle();
+  expect((await f.task()).status).toBe("verifying");
+  expect((await f.task()).reviewer).toBeUndefined();
+  const count = (await f.store.sessions()).length;
+  await f.tasks.tick();
+  await f.tasks.idle();
+  expect((await f.store.sessions()).length).toBe(count);
+  allowed = true;
+  f.engine.beforeProviderTurn = undefined;
+  await f.tasks.tick();
+  await vi.waitFor(() => expect(f.turns).toHaveLength(2), { timeout: 30000 });
+  expect((await f.task()).reviewer?.sessionId).not.toBe(before.sessionId);
 });
 it("persists a goal pause and prevents queued or explicit task admission until resumed", async () => {
   const f = await setup();
   await f.tasks.save(f.input());
-  await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'").run();
-  await f.tasks.setGoalPaused("assistant-goal",true);
-  expect(await f.store.db.prepare("SELECT goal_id FROM task_goal_holds WHERE goal_id=?").get("assistant-goal")).toBeTruthy();
+  await f.store.db
+    .prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'")
+    .run();
+  await f.tasks.setGoalPaused("assistant-goal", true);
+  expect(
+    await f.store.db
+      .prepare("SELECT goal_id FROM task_goal_holds WHERE goal_id=?")
+      .get("assistant-goal"),
+  ).toBeTruthy();
   await f.tasks.tick();
   expect(f.turns).toHaveLength(0);
   await expect(f.tasks.startTask("main")).rejects.toThrow("goal is paused");
-  await f.tasks.setGoalPaused("assistant-goal",false);
+  await f.tasks.setGoalPaused("assistant-goal", false);
   await f.tasks.tick();
   await vi.waitFor(() => expect(f.turns).toHaveLength(1));
 });
@@ -1563,9 +1836,7 @@ describe("host tasks", () => {
       ],
     });
     await vi.waitFor(async () =>
-      expect((await store.session(started.sessionId!)).session.pendingQuestion?.requestId).toBe(
-        7,
-      ),
+      expect((await store.session(started.sessionId!)).session.pendingQuestion?.requestId).toBe(7),
     );
     clock.now += MINUTE;
     await tasks.tick();
@@ -2716,9 +2987,9 @@ describe("task verification", () => {
     ).toContain("Friday is still missing.");
     expect(notices.at(-1)).toMatchObject({ kind: "auto_continued" });
     expect(notices.every((notice) => notice.message.length <= 240)).toBe(true);
-    expect(
-      (await new HostTasks(store, engine, () => clock.now).get("main"))!.ownerNotices,
-    ).toEqual(notices);
+    expect((await new HostTasks(store, engine, () => clock.now).get("main"))!.ownerNotices).toEqual(
+      notices,
+    );
     const count = turns.length;
     await tasks.tick();
     expect((await task()).blockedTakeover).toBeUndefined();

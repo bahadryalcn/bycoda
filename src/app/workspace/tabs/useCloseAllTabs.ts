@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { confirmCloseTerminals } from "../../../features/terminal/model/terminalClose";
 import {
   closeSurfacePanes,
@@ -56,7 +51,6 @@ export function useCloseAllTabs({
   setSessions,
   setComposerFocused,
 }: CloseAllTabsDeps) {
-
   const onCloseAllTabs = useCallback(() => {
     const tab = tabsRef.current.find((entry) => entry.id === activeTabIdRef.current);
     if (!tab) return;

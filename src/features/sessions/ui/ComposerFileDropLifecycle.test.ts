@@ -500,8 +500,7 @@ describe("Composer drop feedback", () => {
     expect(dropBadge()).toBe("Attach 2 files");
     expect(box().dataset.dropIndicator).toBe("inside");
     await act(async () => {
-      for (const handler of handlers)
-        handler({ payload: { type: "leave" } as DragDropEvent });
+      for (const handler of handlers) handler({ payload: { type: "leave" } as DragDropEvent });
     });
     expect(dropBadge()).toBeNull();
     expect(box().dataset.dropIndicator).toBeUndefined();
@@ -512,7 +511,11 @@ describe("Composer drop feedback", () => {
     await act(async () => {
       for (const handler of handlers)
         handler({
-          payload: { type: "enter", paths: ["/a.png"], position: { x: 100, y: 100 } } as DragDropEvent,
+          payload: {
+            type: "enter",
+            paths: ["/a.png"],
+            position: { x: 100, y: 100 },
+          } as DragDropEvent,
         });
     });
     expect(dropBadge()).toBe("Attach 1 file");
@@ -558,7 +561,13 @@ describe("Composer drop feedback", () => {
     await render();
     act(() =>
       window.dispatchEvent(
-        explorerDrag({ type: "move", path: "/p/a.ts", paths: ["/p/a.ts", "/p/b.ts"], x: 100, y: 100 }),
+        explorerDrag({
+          type: "move",
+          path: "/p/a.ts",
+          paths: ["/p/a.ts", "/p/b.ts"],
+          x: 100,
+          y: 100,
+        }),
       ),
     );
     expect(dropBadge()).toBe("Attach 2 files");

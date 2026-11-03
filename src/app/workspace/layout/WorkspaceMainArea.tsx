@@ -275,46 +275,48 @@ function WorkspaceMainAreaComponent({
                       className="flex h-full min-h-0 min-w-0 flex-1 flex-col"
                     >
                       {isHibernated(tab) ? null : (
-                      <PaneTree
-                        {...sessionPaneProps}
-                        visible={tab.id === activeTabId && !inboxViewOpen}
-                        layout={tab.layout}
-                        maximizedPaneId={
-                          maximizedPane?.tabId === tab.id ? maximizedPane.paneId : null
-                        }
-                        onToggleMaximizePane={onToggleMaximizePane}
-                        editorPanes={tabPanes(tab)}
-                        dirtyFileIds={dirtyFiles}
-                        fileErrorCounts={fileErrorCounts}
-                        focusedId={
-                          tab.id === activeTabId &&
-                          !inboxViewOpen &&
-                          !tab.diffFocused &&
-                          !projectTerminalFocused
-                            ? tab.focusedId
-                            : ""
-                        }
-                        addToChatSessionId={tab.id === activeTabId ? activeSessionId : undefined}
-                        composerFocused={composerFocused && !projectTerminalFocused}
-                        composerFocusToken={composerFocusToken}
-                        onSelectFile={onSelectFileSurface}
-                        onCloseFile={onCloseFile}
-                        onCloseOtherFiles={onCloseOtherFiles}
-                        onOpenInNewWindow={onOpenFileInNewWindow}
-                        onPinFile={onPinFile}
-                        onReorderFiles={onReorderFiles}
-                        onFileDirtyChange={onFileDirtyChange}
-                        onFileErrorCountChange={onFileErrorCountChange}
-                        transcriptPool={transcriptPool}
-                        onRatio={(splitId, index, ratio) => onRatio(tab.id, splitId, index, ratio)}
-                        editorNavigation={editorNavigation}
-                        onUpdatePlan={onUpdatePlan}
-                        onMovePane={onMovePane}
-                        onMoveFile={onMoveFileBetweenPanes}
-                        onDetachPane={onDetachPane}
-                        onPopOutPane={onPopOutPane}
-                        onTerminalMetaChange={onTerminalMetaChange}
-                      />
+                        <PaneTree
+                          {...sessionPaneProps}
+                          visible={tab.id === activeTabId && !inboxViewOpen}
+                          layout={tab.layout}
+                          maximizedPaneId={
+                            maximizedPane?.tabId === tab.id ? maximizedPane.paneId : null
+                          }
+                          onToggleMaximizePane={onToggleMaximizePane}
+                          editorPanes={tabPanes(tab)}
+                          dirtyFileIds={dirtyFiles}
+                          fileErrorCounts={fileErrorCounts}
+                          focusedId={
+                            tab.id === activeTabId &&
+                            !inboxViewOpen &&
+                            !tab.diffFocused &&
+                            !projectTerminalFocused
+                              ? tab.focusedId
+                              : ""
+                          }
+                          addToChatSessionId={tab.id === activeTabId ? activeSessionId : undefined}
+                          composerFocused={composerFocused && !projectTerminalFocused}
+                          composerFocusToken={composerFocusToken}
+                          onSelectFile={onSelectFileSurface}
+                          onCloseFile={onCloseFile}
+                          onCloseOtherFiles={onCloseOtherFiles}
+                          onOpenInNewWindow={onOpenFileInNewWindow}
+                          onPinFile={onPinFile}
+                          onReorderFiles={onReorderFiles}
+                          onFileDirtyChange={onFileDirtyChange}
+                          onFileErrorCountChange={onFileErrorCountChange}
+                          transcriptPool={transcriptPool}
+                          onRatio={(splitId, index, ratio) =>
+                            onRatio(tab.id, splitId, index, ratio)
+                          }
+                          editorNavigation={editorNavigation}
+                          onUpdatePlan={onUpdatePlan}
+                          onMovePane={onMovePane}
+                          onMoveFile={onMoveFileBetweenPanes}
+                          onDetachPane={onDetachPane}
+                          onPopOutPane={onPopOutPane}
+                          onTerminalMetaChange={onTerminalMetaChange}
+                        />
                       )}
                     </div>
                   </div>

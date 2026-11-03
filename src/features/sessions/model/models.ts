@@ -299,42 +299,66 @@ function foldFastVariants(models: AgentModel[]): AgentModel[] {
   const pairs = new Map<AgentModel, AgentModel>();
   for (const variant of models) {
     if (variant.harness !== "grok") continue;
-    if (!/[-_ ]fast$/i.test(variant.nativeId ?? variant.id) || !/ fast$/i.test(variant.name)) continue;
+    if (!/[-_ ]fast$/i.test(variant.nativeId ?? variant.id) || !/ fast$/i.test(variant.name))
+      continue;
     const name = variant.name.replace(/ fast$/i, "").toLowerCase();
-    const candidates = models.filter((base) =>
-      base !== variant && base.harness === variant.harness &&
-      base.provider?.id === variant.provider?.id && base.name.toLowerCase() === name &&
-      !base.settings?.some((setting) => setting.id === "fast"),
+    const candidates = models.filter(
+      (base) =>
+        base !== variant &&
+        base.harness === variant.harness &&
+        base.provider?.id === variant.provider?.id &&
+        base.name.toLowerCase() === name &&
+        !base.settings?.some((setting) => setting.id === "fast"),
     );
     if (candidates.length === 1 && !pairs.has(candidates[0])) pairs.set(candidates[0], variant);
   }
   const variants = new Set(pairs.values());
-  return models.filter((model) => !variants.has(model)).map((model) => {
-    const variant = pairs.get(model);
-    if (!variant) return model;
-    return {
-      ...model,
-      fastVariant: { id: variant.id, nativeId: variant.nativeId ?? nativeIdFrom(variant.id) },
-      settings: [...(model.settings ?? []), {
-        id: "fast", label: "Fast", kind: "toggle" as const, value: "false",
-        options: [{ value: "true", label: "On" }, { value: "false", label: "Off" }],
-      }],
-    };
-  });
+  return models
+    .filter((model) => !variants.has(model))
+    .map((model) => {
+      const variant = pairs.get(model);
+      if (!variant) return model;
+      return {
+        ...model,
+        fastVariant: { id: variant.id, nativeId: variant.nativeId ?? nativeIdFrom(variant.id) },
+        settings: [
+          ...(model.settings ?? []),
+          {
+            id: "fast",
+            label: "Fast",
+            kind: "toggle" as const,
+            value: "false",
+            options: [
+              { value: "true", label: "On" },
+              { value: "false", label: "Off" },
+            ],
+          },
+        ],
+      };
+    });
 }
 
 /** A historical fast id retains its launch identity and resolves to base + Fast. */
 function savedFastVariant(id: string): AgentModel | undefined {
-  const base = allModels().find((model) => model.fastVariant?.id === id || model.fastVariant?.nativeId === id);
-  return base ? {
-    ...base,
-    nativeId: base.fastVariant!.nativeId,
-    settings: base.settings?.map((setting) => setting.id === "fast" ? { ...setting, value: "true" } : setting),
-  } : undefined;
+  const base = allModels().find(
+    (model) => model.fastVariant?.id === id || model.fastVariant?.nativeId === id,
+  );
+  return base
+    ? {
+        ...base,
+        nativeId: base.fastVariant!.nativeId,
+        settings: base.settings?.map((setting) =>
+          setting.id === "fast" ? { ...setting, value: "true" } : setting,
+        ),
+      }
+    : undefined;
 }
 
 /** Resolve a catalog Fast toggle to the actual CLI model identity. */
-export function nativeModelIdWithSettings(modelId: string, settings?: Record<string, string>): string {
+export function nativeModelIdWithSettings(
+  modelId: string,
+  settings?: Record<string, string>,
+): string {
   const model = lookupModel(modelId) ?? findModelIdentity(modelId);
   if (!model?.fastVariant) return nativeModelId(model ?? modelId);
   const fast = settings?.fast ?? model.settings?.find((setting) => setting.id === "fast")?.value;

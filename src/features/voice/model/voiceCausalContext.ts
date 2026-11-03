@@ -84,7 +84,9 @@ export class VoiceCausalGeneration {
               ownerMessageId: owner.message.id,
               contextProjectIds: [...scope.projectIds],
               summaryUsed: this.summaryUsed,
-              ...(this.summaryUsed&&this.summaryProofId?{summaryProofId:this.summaryProofId}:{}),
+              ...(this.summaryUsed && this.summaryProofId
+                ? { summaryProofId: this.summaryProofId }
+                : {}),
               ...(this.head ? { previousContextId: this.head.id } : {}),
             })
           ).voiceContext,

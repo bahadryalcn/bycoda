@@ -55,8 +55,10 @@ const statuses: Record<SocialBrowserWorkflow["status"], string> = {
  * Typed details, acknowledgements and errors belong to one host and account.
  * Callers mount the workspace with this key so a changed identity starts clean.
  */
-export const socialBrowserWorkspaceKey = (client: SocialClient, account: Pick<SocialAccount, "id">) =>
-  `${socialQueryScope(client).join(":")}:${account.id}`;
+export const socialBrowserWorkspaceKey = (
+  client: SocialClient,
+  account: Pick<SocialAccount, "id">,
+) => `${socialQueryScope(client).join(":")}:${account.id}`;
 
 /** Owner-assisted work is shown separately from verified send and inbox adapters. */
 export function SocialBrowserWorkspace({
@@ -135,7 +137,11 @@ export function SocialBrowserWorkspace({
           account.connected ? monitor.refetch({ throwOnError: true }) : Promise.resolve(),
         ]);
       } catch {
-        setStatusError(refreshOnly ? t("Connection status could not be refreshed.") : t("Browser action completed. Its latest status could not be refreshed."));
+        setStatusError(
+          refreshOnly
+            ? t("Connection status could not be refreshed.")
+            : t("Browser action completed. Its latest status could not be refreshed."),
+        );
       }
     } catch {
       setError(
@@ -376,10 +382,22 @@ export function SocialBrowserWorkspace({
         </InlineError>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
-      {statusError ? <div role="status" className="flex flex-wrap items-center gap-2 text-ui-caption text-(--ui-tone-warning-fg)">
-        <span>{statusError}</span>
-        <Button variant="ghost" loading={busy} disabled={socialLocked} onClick={() => void perform(async () => undefined, true)}>{t("Refresh status")}</Button>
-      </div> : null}
+      {statusError ? (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-2 text-ui-caption text-(--ui-tone-warning-fg)"
+        >
+          <span>{statusError}</span>
+          <Button
+            variant="ghost"
+            loading={busy}
+            disabled={socialLocked}
+            onClick={() => void perform(async () => undefined, true)}
+          >
+            {t("Refresh status")}
+          </Button>
+        </div>
+      ) : null}
       {openBlocker ? <p className="social-muted">{openBlocker}</p> : null}
       <div className="social-actions">
         <Button

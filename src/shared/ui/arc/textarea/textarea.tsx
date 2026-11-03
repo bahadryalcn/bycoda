@@ -1,5 +1,12 @@
 "use client";
-import { forwardRef, useCallback, useId, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import type { CSSProperties, TextareaHTMLAttributes, ReactNode } from "react";
 import { FieldMessage } from "../lib/field-message";
 import { fieldDescribedBy, fieldMessageIds } from "../lib/field-ids";
@@ -86,7 +93,10 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
 ) {
   const generatedId = useId();
   const controlId = id ?? generatedId;
-  const { description: hintId, error: errorId } = fieldMessageIds(controlId, { description, error });
+  const { description: hintId, error: errorId } = fieldMessageIds(controlId, {
+    description,
+    error,
+  });
   const field = useRef<HTMLTextAreaElement>(null);
   useImperativeHandle(ref, () => field.current!, []);
   const fit = useCallback(() => {
@@ -121,32 +131,37 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       data-variant={fieldVariant}
     >
       {!hideLabel && <label htmlFor={controlId}>{label}</label>}
-      <FieldControl startAdornment={startAdornment} endAdornment={endAdornment} appearance={appearance} size={fieldSize}>
-      <textarea
-        {...props}
-        rows={rows ?? minRows}
-        style={rowStyle}
-        data-field-size={fieldSize}
-        data-min-rows={minRows ? "" : undefined}
-        data-max-rows={maxRows ? "" : undefined}
-        data-autosize={autosize ? "" : undefined}
-        data-monospace={monospace ? "" : undefined}
-        onInput={(event) => {
-          onInput?.(event);
-          // Uncontrolled fields have no value prop to re-measure on.
-          if (props.value === undefined) fit();
-        }}
-        aria-label={props["aria-label"] ?? (hideLabel ? label : undefined)}
-        id={controlId}
-        ref={field}
-        className={[styles.control, className].filter(Boolean).join(" ")}
-        aria-invalid={error ? true : props["aria-invalid"]}
-        aria-describedby={fieldDescribedBy(
-          controlId,
-          { description, error },
-          props["aria-describedby"],
-        )}
-      />
+      <FieldControl
+        startAdornment={startAdornment}
+        endAdornment={endAdornment}
+        appearance={appearance}
+        size={fieldSize}
+      >
+        <textarea
+          {...props}
+          rows={rows ?? minRows}
+          style={rowStyle}
+          data-field-size={fieldSize}
+          data-min-rows={minRows ? "" : undefined}
+          data-max-rows={maxRows ? "" : undefined}
+          data-autosize={autosize ? "" : undefined}
+          data-monospace={monospace ? "" : undefined}
+          onInput={(event) => {
+            onInput?.(event);
+            // Uncontrolled fields have no value prop to re-measure on.
+            if (props.value === undefined) fit();
+          }}
+          aria-label={props["aria-label"] ?? (hideLabel ? label : undefined)}
+          id={controlId}
+          ref={field}
+          className={[styles.control, className].filter(Boolean).join(" ")}
+          aria-invalid={error ? true : props["aria-invalid"]}
+          aria-describedby={fieldDescribedBy(
+            controlId,
+            { description, error },
+            props["aria-describedby"],
+          )}
+        />
       </FieldControl>
       <FieldMessage id={errorId} text={error} className={styles.error} alert />
       <FieldMessage id={hintId} text={description} className={styles.hint} />

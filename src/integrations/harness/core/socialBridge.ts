@@ -9,12 +9,9 @@ export type SocialBridge = McpBridge;
  * offline or social-less Host is answered `null` after a short cap, and that
  * answer is reused briefly. */
 const lookup = createBridgeLookup<SocialBridge>(async (sessionId) => {
-  const bridge = await invokeProviderCommand<SocialBridge | null>(
-    "harness_social_bridge",
-    {
-      sessionId,
-    },
-  );
+  const bridge = await invokeProviderCommand<SocialBridge | null>("harness_social_bridge", {
+    sessionId,
+  });
   if (
     bridge &&
     typeof bridge.command === "string" &&
@@ -44,19 +41,8 @@ export function socialSpawnArgs(
   args: string[],
   bridge: SocialBridge | null,
 ): string[] {
-  if (
-    !bridge ||
-    args.includes("--strict-mcp-config") ||
-    args.includes("--max-turns")
-  )
-    return args;
-  const http = httpMcpArgs(
-    provider,
-    args,
-    bridge,
-    "bycoda-social",
-    "BYCODA_SOCIAL_TOKEN",
-  );
+  if (!bridge || args.includes("--strict-mcp-config") || args.includes("--max-turns")) return args;
+  const http = httpMcpArgs(provider, args, bridge, "bycoda-social", "BYCODA_SOCIAL_TOKEN");
   if (http) return http;
   const server = {
     command: bridge.command,
@@ -64,16 +50,9 @@ export function socialSpawnArgs(
   };
   // MCP flags belong to conversation launches, not auth/update subcommands.
   if (provider === "claude" && args[0]?.startsWith("-"))
-    return [
-      ...args,
-      "--mcp-config",
-      JSON.stringify({ mcpServers: { "bycoda-social": server } }),
-    ];
+    return [...args, "--mcp-config", JSON.stringify({ mcpServers: { "bycoda-social": server } })];
   let commandIndex = 0;
-  while (
-    args[commandIndex] === "-c" &&
-    typeof args[commandIndex + 1] === "string"
-  )
+  while (args[commandIndex] === "-c" && typeof args[commandIndex + 1] === "string")
     commandIndex += 2;
   if (provider === "codex" && args[commandIndex] === "app-server") {
     // Codex app-server reads MCP configuration at process start for new and resumed threads.

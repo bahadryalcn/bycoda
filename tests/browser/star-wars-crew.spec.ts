@@ -30,13 +30,21 @@ test("initial crew title clears all character labels in hero and background pane
     }
     for (const width of [320, 420, 800, 1200]) {
       await page.setViewportSize({ width, height: 950 });
-      await expect.poll(() => scene.evaluate((element) => {
-        const title = element.querySelector(".crew-scene__theme-title")!.getBoundingClientRect();
-        return [...element.querySelectorAll(".crew-scene__label")].every((label) =>
-          label.getBoundingClientRect().top >= title.bottom + 4,
-        );
-      })).toBe(true);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await expect
+        .poll(() =>
+          scene.evaluate((element) => {
+            const title = element
+              .querySelector(".crew-scene__theme-title")!
+              .getBoundingClientRect();
+            return [...element.querySelectorAll(".crew-scene__label")].every(
+              (label) => label.getBoundingClientRect().top >= title.bottom + 4,
+            );
+          }),
+        )
+        .toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
       await scene.screenshot({ path: testInfo.outputPath(`initial-${variant}-${width}.png`) });
     }
   }

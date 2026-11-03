@@ -42,19 +42,17 @@ export async function recordDeferredAssistantTurn(
   await store.transaction(async () => {
     const record = await store.session(sessionId);
     if (!notEntered() || record.runId !== runId || record.status !== "running") return;
-    await store.db
-      .prepare("INSERT OR IGNORE INTO metadata(key,value) VALUES(?,?)")
-      .run(
-        key(sessionId, runId),
-        JSON.stringify({
-          version: 1,
-          sessionId,
-          runId,
-          authorId,
-          source: source(record),
-          knownZero: true,
-        }),
-      );
+    await store.db.prepare("INSERT OR IGNORE INTO metadata(key,value) VALUES(?,?)").run(
+      key(sessionId, runId),
+      JSON.stringify({
+        version: 1,
+        sessionId,
+        runId,
+        authorId,
+        source: source(record),
+        knownZero: true,
+      }),
+    );
   }, "critical");
 }
 /** Requeue only an unchanged exact run that the actual Engine fenced before entry. */

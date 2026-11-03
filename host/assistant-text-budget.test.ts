@@ -1,8 +1,5 @@
 import { expect, it } from "vitest";
-import {
-  assistantTextLimits,
-  AssistantTextPreflightError,
-} from "./assistant-text-budget";
+import { assistantTextLimits, AssistantTextPreflightError } from "./assistant-text-budget";
 
 it("reserves estimated input headroom and splits the remaining allowance across real phases", () => {
   expect(assistantTextLimits("a".repeat(400), 1000)).toEqual({
@@ -24,7 +21,5 @@ it("reserves estimated input headroom and splits the remaining allowance across 
 });
 it("refuses before a provider request when the estimate leaves no output headroom", () => {
   for (const cap of [0, 100, NaN, Infinity, 1.1])
-    expect(() => assistantTextLimits("a".repeat(400), cap)).toThrow(
-      AssistantTextPreflightError,
-    );
+    expect(() => assistantTextLimits("a".repeat(400), cap)).toThrow(AssistantTextPreflightError);
 });

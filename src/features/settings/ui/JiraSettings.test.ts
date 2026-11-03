@@ -56,9 +56,7 @@ async function input(label: string, value: string) {
 }
 
 async function pickOption(name: string) {
-  const checkbox = Array.from(
-    container.querySelectorAll<HTMLLabelElement>("label.inbox-scope-row"),
-  )
+  const checkbox = Array.from(container.querySelectorAll<HTMLLabelElement>("label.inbox-scope-row"))
     .find((row) => row.textContent?.includes(name))!
     .querySelector<HTMLInputElement>("input[type=checkbox]")!;
   await act(async () => checkbox.click());
@@ -138,9 +136,15 @@ it("connects Jira, synchronizes project filters, and disconnects", async () => {
   const project = await pickOption("Engineering");
   expect(project.checked).toBe(false);
   expect(loadHiddenJiraProjectIds()).toEqual(["10000"]);
-  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Account actions"]')!.click(),
+  );
   await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
-  await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) => button.textContent?.includes("Disconnect"))!.click());
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+      .find((button) => button.textContent?.includes("Disconnect"))!
+      .click(),
+  );
   expect(invoke).toHaveBeenCalledWith("jira_set_config", {
     site: "",
     email: "",

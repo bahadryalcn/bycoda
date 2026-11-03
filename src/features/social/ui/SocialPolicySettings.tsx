@@ -125,7 +125,11 @@ export function SocialPolicySettings({
       aria-label={t("Social media agent and content settings")}
     >
       <h2>{t("AI and content")}</h2>
-      {executorLabel ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Settings for computer: {p0}", { p0: executorLabel })}</p> : null}
+      {executorLabel ? (
+        <p className="text-ui-caption text-(--ui-text-secondary)">
+          {t("Settings for computer: {p0}", { p0: executorLabel })}
+        </p>
+      ) : null}
       <label className="social-policy-scope">
         {t("Settings scope")}
         <NativeSelect
@@ -152,7 +156,11 @@ export function SocialPolicySettings({
           : t("AI off · verified fixed reply")}
         {scope !== "global" && !policies.platforms[scope]?.agent ? ` · ${t("shared setting")}` : ""}
       </p>
-      {isEdited(draft) ? <p role="status" className="text-ui-caption text-(--ui-tone-warning-fg)">{t("Unsaved changes · the saved policy remains active.")}</p> : null}
+      {isEdited(draft) ? (
+        <p role="status" className="text-ui-caption text-(--ui-tone-warning-fg)">
+          {t("Unsaved changes · the saved policy remains active.")}
+        </p>
+      ) : null}
       {conflict ? (
         <Alert tone="danger">
           {t(
@@ -245,7 +253,9 @@ export function SocialPolicySettings({
         <fieldset className="social-workspace">
           <SocialModelField
             label={t("AI agent and model")}
-            inheritLabel={scope === "global" ? t("Do not use AI") : t("Use the shared agent setting")}
+            inheritLabel={
+              scope === "global" ? t("Do not use AI") : t("Use the shared agent setting")
+            }
             disabled={saving || socialLocked}
             value={{ provider: draft.provider, model: draft.model }}
             onChange={(next) => update(next)}
@@ -282,7 +292,11 @@ export function SocialPolicySettings({
                 />
               ))}
             </div>
-            <p className="text-ui-caption text-(--ui-text-secondary)">{t("These are additional policy limits. Platform limits and send approval still apply.")}</p>
+            <p className="text-ui-caption text-(--ui-text-secondary)">
+              {t(
+                "These are additional policy limits. Platform limits and send approval still apply.",
+              )}
+            </p>
           </section>
           <div className="social-actions">
             <Button

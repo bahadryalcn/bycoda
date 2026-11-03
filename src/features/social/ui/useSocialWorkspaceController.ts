@@ -228,7 +228,7 @@ export function useSocialWorkspaceController({
   });
   const client = useMemo(() => {
     const base = socialClient(readyMachineId);
-    const request: typeof base.request = async <T,>(
+    const request: typeof base.request = async <T>(
       action: string,
       input?: Record<string, unknown>,
       requestId?: string,
@@ -238,74 +238,77 @@ export function useSocialWorkspaceController({
     };
     return { ...base, request };
   }, [readyMachineId]);
-  const readWorkspace = useCallback(async (id: string, isCurrent: () => boolean) => {
-    const version = ++epoch.current;
-    const host = hostWorkspaces.current.get(id)!;
-    const input = query.current;
-    const queryKey = JSON.stringify(input);
-    const force = forceRefresh.current;
-    const withProjects = refreshProjects.current || !host.projectsLoaded;
-    forceRefresh.current = false;
-    refreshProjects.current = false;
-    const base = socialClient(id);
-    const read = async (): Promise<SocialWorkspaceResponse> => {
-      if (!legacyHosts.current.has(id)) {
-        try {
-          return await base.workspaceSnapshot(
-            {
-              ...input,
-              ...(force ? {} : { cursor: host.cursors.get(queryKey)?.cursor }),
-            },
-            force,
-          );
-        } catch (value) {
-          if (!String(value).includes(UNSUPPORTED_WORKSPACE_READ)) throw value;
-          legacyHosts.current.add(id);
+  const readWorkspace = useCallback(
+    async (id: string, isCurrent: () => boolean) => {
+      const version = ++epoch.current;
+      const host = hostWorkspaces.current.get(id)!;
+      const input = query.current;
+      const queryKey = JSON.stringify(input);
+      const force = forceRefresh.current;
+      const withProjects = refreshProjects.current || !host.projectsLoaded;
+      forceRefresh.current = false;
+      refreshProjects.current = false;
+      const base = socialClient(id);
+      const read = async (): Promise<SocialWorkspaceResponse> => {
+        if (!legacyHosts.current.has(id)) {
+          try {
+            return await base.workspaceSnapshot(
+              {
+                ...input,
+                ...(force ? {} : { cursor: host.cursors.get(queryKey)?.cursor }),
+              },
+              force,
+            );
+          } catch (value) {
+            if (!String(value).includes(UNSUPPORTED_WORKSPACE_READ)) throw value;
+            legacyHosts.current.add(id);
+          }
         }
+        return { cursor: "", unchanged: false, snapshot: await base.snapshot() };
+      };
+      if (force || !retainedSnapshot.current) setRefreshing(true);
+      const answers = await Promise.allSettled([
+        read(),
+        withProjects
+          ? remoteRequest<HostProject[]>(id, "projects.list", {}, force)
+          : Promise.resolve(host.projects),
+      ]);
+      if (!isCurrent() || version !== epoch.current || currentMachine.current !== id) return;
+      setStale(answers.some((answer) => answer.status === "rejected"));
+      if (answers[0].status === "fulfilled") {
+        const result = answers[0].value;
+        const next = result.snapshot ?? host.cursors.get(queryKey)?.snapshot;
+        if (!next) throw new Error(t("The Social Media refresh response is incomplete."));
+        retainCursor(host.cursors, queryKey, { ...result, snapshot: next });
+        host.snapshot = next;
+        if (legacyHosts.current.has(id)) {
+          for (const key of LEGACY_SNAPSHOT_SECTIONS) host.snapshots.set(key, next);
+        } else host.snapshots.set(input.section!, next);
+        publishHosts();
+        setSnapshot(next);
+        setLoadError("");
+        setUpdatedAt(Date.now());
+      } else {
+        setLoadError(String(answers[0].reason));
       }
-      return { cursor: "", unchanged: false, snapshot: await base.snapshot() };
-    };
-    if (force || !retainedSnapshot.current) setRefreshing(true);
-    const answers = await Promise.allSettled([
-      read(),
-      withProjects
-        ? remoteRequest<HostProject[]>(id, "projects.list", {}, force)
-        : Promise.resolve(host.projects),
-    ]);
-    if (!isCurrent() || version !== epoch.current || currentMachine.current !== id) return;
-    setStale(answers.some((answer) => answer.status === "rejected"));
-    if (answers[0].status === "fulfilled") {
-      const result = answers[0].value;
-      const next = result.snapshot ?? host.cursors.get(queryKey)?.snapshot;
-      if (!next) throw new Error(t("The Social Media refresh response is incomplete."));
-      retainCursor(host.cursors, queryKey, { ...result, snapshot: next });
-      host.snapshot = next;
-      if (legacyHosts.current.has(id)) {
-        for (const key of LEGACY_SNAPSHOT_SECTIONS) host.snapshots.set(key, next);
-      } else host.snapshots.set(input.section!, next);
-      publishHosts();
-      setSnapshot(next);
-      setLoadError("");
-      setUpdatedAt(Date.now());
-    } else {
-      setLoadError(String(answers[0].reason));
-    }
-    if (answers[1].status === "fulfilled") {
-      host.projects = answers[1].value;
-      host.projectsLoaded = true;
-      setProjects(answers[1].value);
-    } else if (answers[0].status === "fulfilled") {
-      const reason = answers[1].reason;
-      setLoadError(
-        t("Project list could not be refreshed: {p0}", {
-          p0: reason instanceof Error ? reason.message : String(reason),
-        }),
-      );
-    }
-    setLoading(false);
-    setRefreshing(false);
-    refreshSucceeded.current = answers.every((answer) => answer.status === "fulfilled");
-  }, [publishHosts]);
+      if (answers[1].status === "fulfilled") {
+        host.projects = answers[1].value;
+        host.projectsLoaded = true;
+        setProjects(answers[1].value);
+      } else if (answers[0].status === "fulfilled") {
+        const reason = answers[1].reason;
+        setLoadError(
+          t("Project list could not be refreshed: {p0}", {
+            p0: reason instanceof Error ? reason.message : String(reason),
+          }),
+        );
+      }
+      setLoading(false);
+      setRefreshing(false);
+      refreshSucceeded.current = answers.every((answer) => answer.status === "fulfilled");
+    },
+    [publishHosts],
+  );
   const refresh = useCallback(async (id: string, interactive = false, withProjects = false) => {
     if (id !== currentMachine.current || !scheduler.current) return false;
     forceRefresh.current ||= interactive;
@@ -442,8 +445,11 @@ export function useSocialWorkspaceController({
         t("Operation completed; results updated.");
       if (currentMachine.current === id) {
         let fresh = false;
-        try { fresh = await refresh(id, false, true); }
-        catch (cause) { setLoadError(cause instanceof Error ? cause.message : String(cause)); }
+        try {
+          fresh = await refresh(id, false, true);
+        } catch (cause) {
+          setLoadError(cause instanceof Error ? cause.message : String(cause));
+        }
         setNotice(
           fresh
             ? completedMessage
@@ -481,7 +487,18 @@ export function useSocialWorkspaceController({
   const hosts: [string, HostWorkspaceState][] = hostViews.map(([id, view]) => [
     id,
     id === readyMachineId
-      ? { ...view, tab, visited, filter, offsets, automationMode, client, run, projects, collectionFilters }
+      ? {
+          ...view,
+          tab,
+          visited,
+          filter,
+          offsets,
+          automationMode,
+          client,
+          run,
+          projects,
+          collectionFilters,
+        }
       : view,
   ]);
   const shownHost = hostViews.find(([id]) => id === machineId)?.[1];

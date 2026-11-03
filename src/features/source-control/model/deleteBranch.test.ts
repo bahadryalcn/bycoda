@@ -30,7 +30,9 @@ describe("deleteLocalBranch", () => {
 
   it("asks again before forcing an unmerged branch, and only forces after that answer", async () => {
     mocks.confirmInApp.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
-    mocks.gitDeleteBranch.mockRejectedValueOnce(new Error("error: The branch 'x' is not fully merged."));
+    mocks.gitDeleteBranch.mockRejectedValueOnce(
+      new Error("error: The branch 'x' is not fully merged."),
+    );
     await deleteLocalBranch("/repo", "x");
     expect(mocks.confirmInApp).toHaveBeenLastCalledWith(
       expect.objectContaining({ title: "Delete unmerged branch?", confirmLabel: "Delete anyway" }),

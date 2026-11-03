@@ -205,7 +205,11 @@ describe("HarnessUpdateNotice", () => {
       expect(snapshot().runs.opencode?.status).toBe("updating");
 
       await act(async () => finishUpdate());
-      expect(snapshot().runs.opencode).toEqual({ status: "updated", version: "2.0.26", catalogRefresh: "unchanged" });
+      expect(snapshot().runs.opencode).toEqual({
+        status: "updated",
+        version: "2.0.26",
+        catalogRefresh: "unchanged",
+      });
       expect(document.body.querySelector('[aria-label="Harness updates"]')).toBeNull();
       await act(async () => {
         root.render(null);

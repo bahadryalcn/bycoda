@@ -146,7 +146,11 @@ function Fixture() {
           >
             <FileTree
               // ?remote=down stands in for a project on a machine that cannot be reached.
-              cwd={new URLSearchParams(location.search).get("remote") === "down" ? "remote://machine-1/fixture" : "/fixture"}
+              cwd={
+                new URLSearchParams(location.search).get("remote") === "down"
+                  ? "remote://machine-1/fixture"
+                  : "/fixture"
+              }
               rootLabel="Fixture"
               onOpenFile={(path) => setOpened(path)}
               onSearch={() => setOpened("search")}

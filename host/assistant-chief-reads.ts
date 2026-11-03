@@ -2,18 +2,12 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { HostStore } from "./store";
 import type { HostSession } from "../src/features/connections/model/protocol";
-import type {
-  AssistantJob,
-  AssistantProfile,
-} from "../src/shared/model/host-contracts/assistant";
+import type { AssistantJob, AssistantProfile } from "../src/shared/model/host-contracts/assistant";
 import type { HostGoal } from "../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../src/features/tasks/model/hostTasks";
 import type { AsyncHostNotes } from "./host-notes-async";
 import { assistantJobProjectIds } from "../src/shared/model/assistantProjects";
-import {
-  assertAssistantGoalProjects,
-  assistantJobSessionBelongs,
-} from "./assistant-job-scope";
+import { assertAssistantGoalProjects, assistantJobSessionBelongs } from "./assistant-job-scope";
 import { readAssistantQuestionStatus } from "./assistant-questions";
 import {
   AssistantChiefProjectReads,
@@ -64,10 +58,7 @@ export const ChiefReadRequestSchema = z.discriminatedUnion("op", [
 ]);
 export type ChiefReadRequest = z.infer<typeof ChiefReadRequestSchema>;
 export function parseChiefReadRequests(raw: unknown): ChiefReadRequest[] {
-  const requests = z
-    .array(ChiefReadRequestSchema)
-    .max(CHIEF_READ_LIMITS.calls)
-    .parse(raw);
+  const requests = z.array(ChiefReadRequestSchema).max(CHIEF_READ_LIMITS.calls).parse(raw);
   const scopes = new Set<string>();
   let excerpts = 0;
   for (const request of requests) {
@@ -81,15 +72,10 @@ export function parseChiefReadRequests(raw: unknown): ChiefReadRequest[] {
             : request.op === "tasks.read"
               ? `task:${request.jobId}:${request.taskId}`
               : `${request.op}:${request.jobId}:${request.projectId}:${"id" in request ? request.id : "list"}`;
-    if (scopes.has(key))
-      throw new Error(
-        "Chief reads must not repeat an exact scope in one wake.",
-      );
+    if (scopes.has(key)) throw new Error("Chief reads must not repeat an exact scope in one wake.");
     scopes.add(key);
     if (request.op === "sessions.read" && ++excerpts > 1)
-      throw new Error(
-        "Only one bounded session excerpt is available per wake.",
-      );
+      throw new Error("Only one bounded session excerpt is available per wake.");
   }
   return requests;
 }
@@ -101,10 +87,8 @@ type ReadReceipt = {
   state: "started" | "settled";
   result?: ReadResult;
 };
-const hash = (value: unknown) =>
-  createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const cut = (value: string | undefined, max: number) =>
-  (value ?? "").slice(0, max);
+const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const cut = (value: string | undefined, max: number) => (value ?? "").slice(0, max);
 export function currentAssistantRunActivity(
   record: HostSession,
   now = Date.now(),
@@ -125,9 +109,7 @@ export class AssistantChiefReads {
     private readonly store: HostStore,
     private readonly notes?: () => Pick<AsyncHostNotes, "list" | "get">,
   ) {
-    this.projectReads = new AssistantChiefProjectReads(store, (id) =>
-      this.job(id),
-    );
+    this.projectReads = new AssistantChiefProjectReads(store, (id) => this.job(id));
     this.ready = store.ready.then(() =>
       store.db.scope(() =>
         store.db.exec(
@@ -138,21 +120,17 @@ export class AssistantChiefReads {
   }
   private async assert(authorized: Authorized) {
     await this.store.db.checkAuthorization();
-    if (!(await authorized()))
-      throw new Error("Chief read authority was revoked.");
+    if (!(await authorized())) throw new Error("Chief read authority was revoked.");
   }
   private async job(id: string) {
     const row = await this.store.db
-      .prepare(
-        "SELECT value FROM assistant_jobs WHERE id=? AND deleted_at IS NULL",
-      )
+      .prepare("SELECT value FROM assistant_jobs WHERE id=? AND deleted_at IS NULL")
       .get(id);
     if (!row) throw new Error("Chief read job is unavailable.");
     const job = JSON.parse(row.value) as AssistantJob;
     if (job.kind === "quick" || job.goalId !== `assistant-${job.id}`)
       throw new Error("Chief reads require a canonical project job.");
-    for (const projectId of assistantJobProjectIds(job))
-      await this.store.project(projectId);
+    for (const projectId of assistantJobProjectIds(job)) await this.store.project(projectId);
     const goalRow = await this.store.db
       .prepare("SELECT value FROM goals WHERE id=?")
       .get(job.goalId);
@@ -164,14 +142,7 @@ export class AssistantChiefReads {
   private async session(jobId: string, sessionId: string) {
     const { job } = await this.job(jobId),
       record = await this.store.session(sessionId);
-    if (
-      !(await assistantJobSessionBelongs(
-        this.store,
-        job,
-        sessionId,
-        record.projectId,
-      ))
-    )
+    if (!(await assistantJobSessionBelongs(this.store, job, sessionId, record.projectId)))
       throw new Error("Chief read session is outside its canonical job.");
     const sourceToken = hash({
       jobId,
@@ -228,9 +199,7 @@ export class AssistantChiefReads {
           }
         : {}),
       lastAssistantMessage: cut(
-        record.session.blocks
-          .filter((block) => block.role === "assistant")
-          .at(-1)?.text,
+        record.session.blocks.filter((block) => block.role === "assistant").at(-1)?.text,
         400,
       ),
     };
@@ -239,9 +208,7 @@ export class AssistantChiefReads {
     if (isProjectRead(request)) return this.projectReads.resolve(request);
     if (request.op === "notes.read") {
       if (!this.notes) throw new Error("Assistant notes are unavailable.");
-      const note = (await this.notes().list()).notes.find(
-        (note) => note.id === request.id,
-      );
+      const note = (await this.notes().list()).notes.find((note) => note.id === request.id);
       if (
         !note ||
         note.sourceCwd ||
@@ -273,26 +240,17 @@ export class AssistantChiefReads {
     }
     if (request.op === "sessions.status") {
       const row = await this.store.db
-        .prepare(
-          "SELECT value FROM assistant_profile WHERE id='profile' AND deleted_at IS NULL",
-        )
+        .prepare("SELECT value FROM assistant_profile WHERE id='profile' AND deleted_at IS NULL")
         .get();
       const status = await this.status(request.jobId, request.sessionId, {
-        allowRoutineQuestions: row
-          ? JSON.parse(row.value).allowRoutineQuestions === true
-          : false,
+        allowRoutineQuestions: row ? JSON.parse(row.value).allowRoutineQuestions === true : false,
       });
       return { source: hash(status), data: () => status };
     }
     if (request.op === "sessions.read") {
-      const { record, sourceToken } = await this.session(
-        request.jobId,
-        request.sessionId,
-      );
+      const { record, sourceToken } = await this.session(request.jobId, request.sessionId);
       if (request.sourceToken !== sourceToken)
-        throw new Error(
-          "Read fresh status before requesting this session excerpt.",
-        );
+        throw new Error("Read fresh status before requesting this session excerpt.");
       return {
         source: sourceToken,
         data: async () => {
@@ -304,9 +262,7 @@ export class AssistantChiefReads {
                   block.text.trim(),
               )
               .slice(-request.limit),
-            each = Math.floor(
-              CHIEF_READ_LIMITS.excerptChars / Math.max(1, messages.length),
-            );
+            each = Math.floor(CHIEF_READ_LIMITS.excerptChars / Math.max(1, messages.length));
           return {
             sessionId: request.sessionId,
             sourceToken,
@@ -391,11 +347,8 @@ export class AssistantChiefReads {
       data: { unavailable: "Wake read result limit reached." },
     });
     const bound = (result: ReadResult, index: number): ReadResult =>
-      JSON.stringify([
-        ...results,
-        result,
-        ...requests.slice(index + 1).map(overLimit),
-      ]).length > CHIEF_READ_LIMITS.resultChars
+      JSON.stringify([...results, result, ...requests.slice(index + 1).map(overLimit)]).length >
+      CHIEF_READ_LIMITS.resultChars
         ? overLimit(result.request)
         : result;
     const batchKey = `${input.operationId}:batch`,
@@ -406,16 +359,11 @@ export class AssistantChiefReads {
         .get(batchKey);
       if (old) {
         if (JSON.parse(old.value).fingerprint !== batchFingerprint)
-          throw new Error(
-            "A Chief read retry must preserve its original request.",
-          );
+          throw new Error("A Chief read retry must preserve its original request.");
       } else
         await this.store.db
           .prepare("INSERT INTO assistant_chief_reads(id,value) VALUES(?,?)")
-          .run(
-            batchKey,
-            JSON.stringify({ kind: "batch", fingerprint: batchFingerprint }),
-          );
+          .run(batchKey, JSON.stringify({ kind: "batch", fingerprint: batchFingerprint }));
     }, "critical");
     for (const [index, request] of requests.entries()) {
       await this.assert(authorized);
@@ -424,23 +372,16 @@ export class AssistantChiefReads {
         old = await this.store.db
           .prepare("SELECT value FROM assistant_chief_reads WHERE id=?")
           .get(key);
-      if (
-        old &&
-        (JSON.parse(old.value) as ReadReceipt).fingerprint !== fingerprint
-      )
-        throw new Error(
-          "A Chief read retry must preserve its original request.",
-        );
+      if (old && (JSON.parse(old.value) as ReadReceipt).fingerprint !== fingerprint)
+        throw new Error("A Chief read retry must preserve its original request.");
       let result: ReadResult;
       try {
         const source = await this.resolve(request);
         await this.assert(authorized);
         if (old) {
           const saved = JSON.parse(old.value) as ReadReceipt;
-          if (saved.fingerprint !== fingerprint)
-            throw new Error("Changed Chief read retry.");
-          if (saved.source !== source.source)
-            throw new Error("Changed Chief read source.");
+          if (saved.fingerprint !== fingerprint) throw new Error("Changed Chief read retry.");
+          if (saved.source !== source.source) throw new Error("Changed Chief read source.");
           result =
             saved.state === "settled"
               ? saved.result!
@@ -448,25 +389,20 @@ export class AssistantChiefReads {
                   request,
                   source: source.source,
                   data: {
-                    unavailable:
-                      "Original read outcome is unknown; request fresh status.",
+                    unavailable: "Original read outcome is unknown; request fresh status.",
                   },
                 };
         } else {
           await this.store.transaction(
             () =>
-              this.store.db
-                .prepare(
-                  "INSERT INTO assistant_chief_reads(id,value) VALUES(?,?)",
-                )
-                .run(
-                  key,
-                  JSON.stringify({
-                    fingerprint,
-                    source: source.source,
-                    state: "started",
-                  } satisfies ReadReceipt),
-                ),
+              this.store.db.prepare("INSERT INTO assistant_chief_reads(id,value) VALUES(?,?)").run(
+                key,
+                JSON.stringify({
+                  fingerprint,
+                  source: source.source,
+                  state: "started",
+                } satisfies ReadReceipt),
+              ),
             "critical",
           );
           const data = await source.data();
@@ -477,17 +413,15 @@ export class AssistantChiefReads {
           result = bound(result, index);
           await this.store.transaction(
             () =>
-              this.store.db
-                .prepare("UPDATE assistant_chief_reads SET value=? WHERE id=?")
-                .run(
-                  JSON.stringify({
-                    fingerprint,
-                    source: source.source,
-                    state: "settled",
-                    result,
-                  } satisfies ReadReceipt),
-                  key,
-                ),
+              this.store.db.prepare("UPDATE assistant_chief_reads SET value=? WHERE id=?").run(
+                JSON.stringify({
+                  fingerprint,
+                  source: source.source,
+                  state: "settled",
+                  result,
+                } satisfies ReadReceipt),
+                key,
+              ),
             "critical",
           );
         }
@@ -515,18 +449,13 @@ export class AssistantChiefReads {
     );
     return { operationId: input.operationId, results };
   }
-  async snapshot(
-    profile: Pick<AssistantProfile, "allowRoutineQuestions">,
-    authorized: Authorized,
-  ) {
+  async snapshot(profile: Pick<AssistantProfile, "allowRoutineQuestions">, authorized: Authorized) {
     await this.ready;
     await this.assert(authorized);
     const jobs: unknown[] = [],
       statuses: unknown[] = [],
       notes: unknown[] = [];
-    const projectReads: Awaited<
-      ReturnType<AssistantChiefProjectReads["snapshot"]>
-    >[] = [];
+    const projectReads: Awaited<ReturnType<AssistantChiefProjectReads["snapshot"]>>[] = [];
     const projectScopes = new Set<string>();
     let omittedJobs = 0,
       omittedSessions = 0,
@@ -552,19 +481,13 @@ export class AssistantChiefReads {
         if (projectScopes.size >= 5 || projectScopes.has(key)) continue;
         projectScopes.add(key);
         try {
-          projectReads.push(
-            await this.projectReads.snapshot(job.id, projectId),
-          );
+          projectReads.push(await this.projectReads.snapshot(job.id, projectId));
           await this.assert(authorized);
         } catch {
           unavailableProjectScopes++;
         }
       }
-      if (
-        job.kind === "quick" ||
-        ["done", "failed", "cancelled"].includes(job.status)
-      )
-        continue;
+      if (job.kind === "quick" || ["done", "failed", "cancelled"].includes(job.status)) continue;
       if (jobs.length >= 5) {
         omittedJobs++;
         continue;
@@ -578,10 +501,7 @@ export class AssistantChiefReads {
             .get(taskId);
           if (!value) continue;
           const task = JSON.parse(value.value) as HostTask;
-          if (
-            task.goalId === goal.id &&
-            assistantJobProjectIds(job).includes(task.projectId)
-          )
+          if (task.goalId === goal.id && assistantJobProjectIds(job).includes(task.projectId))
             tasks.push({
               id: task.id,
               title: cut(task.title, 80),
@@ -605,10 +525,7 @@ export class AssistantChiefReads {
           try {
             const status = await this.status(job.id, sessionId, profile);
             await this.assert(authorized);
-            if (
-              (await this.session(job.id, sessionId)).sourceToken !==
-              status.sourceToken
-            ) {
+            if ((await this.session(job.id, sessionId)).sourceToken !== status.sourceToken) {
               unavailableSessions++;
               continue;
             }
@@ -626,10 +543,7 @@ export class AssistantChiefReads {
         const list = await this.notes().list();
         for (const note of list.notes
           .filter(
-            (note) =>
-              !note.sourceCwd &&
-              !note.sourceSessionId &&
-              note.tags.includes("assistant"),
+            (note) => !note.sourceCwd && !note.sourceSessionId && note.tags.includes("assistant"),
           )
           .slice(0, 10))
           notes.push({
@@ -653,8 +567,7 @@ export class AssistantChiefReads {
     if (latest)
       for (const result of latest.results) {
         try {
-          if ((await this.resolve(result.request)).source === result.source)
-            results.push(result);
+          if ((await this.resolve(result.request)).source === result.source) results.push(result);
           else
             results.push({
               ...result,
@@ -685,9 +598,7 @@ export class AssistantChiefReads {
       unavailableSessions,
       omittedJobs,
       omittedSessions,
-      ...(latest
-        ? { readResults: { operationId: latest.operationId, results } }
-        : {}),
+      ...(latest ? { readResults: { operationId: latest.operationId, results } } : {}),
     };
     while (
       JSON.stringify(card).length > CHIEF_READ_LIMITS.cardChars &&
@@ -710,8 +621,8 @@ export class AssistantChiefReads {
       const value = projectReads[index];
       try {
         if (
-          (await this.projectReads.snapshot(value.jobId, value.projectId))
-            .sourceToken === value.sourceToken
+          (await this.projectReads.snapshot(value.jobId, value.projectId)).sourceToken ===
+          value.sourceToken
         )
           continue;
       } catch {}
@@ -725,10 +636,7 @@ export class AssistantChiefReads {
         sourceToken: string;
       };
       try {
-        if (
-          (await this.session(status.jobId, status.sessionId)).sourceToken ===
-          status.sourceToken
-        )
+        if ((await this.session(status.jobId, status.sessionId)).sourceToken === status.sourceToken)
           continue;
       } catch {}
       statuses.splice(index, 1);
@@ -737,8 +645,7 @@ export class AssistantChiefReads {
     for (let index = results.length - 1; index >= 0; index--) {
       const result = results[index];
       try {
-        if ((await this.resolve(result.request)).source === result.source)
-          continue;
+        if ((await this.resolve(result.request)).source === result.source) continue;
       } catch {}
       results[index] = {
         ...result,
@@ -751,8 +658,6 @@ export class AssistantChiefReads {
     return card;
   }
 }
-function isProjectRead(
-  request: ChiefReadRequest,
-): request is ChiefProjectReadRequest {
+function isProjectRead(request: ChiefReadRequest): request is ChiefProjectReadRequest {
   return ChiefProjectReadRequestSchema.safeParse(request).success;
 }

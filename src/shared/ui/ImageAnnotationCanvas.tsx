@@ -48,7 +48,9 @@ type Props = {
 
 const TOOL_ICON: Record<ImageAnnotationTool, (props: { className?: string }) => ReactNode> = {
   box: (props) => <Square {...props} aria-hidden />,
-  arrow: (props) => <ArrowUp {...props} className={`${props.className ?? ""} rotate-45`} aria-hidden />,
+  arrow: (props) => (
+    <ArrowUp {...props} className={`${props.className ?? ""} rotate-45`} aria-hidden />
+  ),
   pen: (props) => <Pencil {...props} aria-hidden />,
   pin: (props) => <Pin {...props} aria-hidden />,
 };
@@ -77,9 +79,7 @@ export function ImageAnnotationToolbar({
   canClear?: boolean;
   disabled?: boolean;
   tone?: MediaToolbarTone;
-  labels?: Partial<
-    Record<ImageAnnotationTool | "toolbar" | "undo" | "clear", string>
-  >;
+  labels?: Partial<Record<ImageAnnotationTool | "toolbar" | "undo" | "clear", string>>;
   /** Owner-specific actions (redo, note, finish...) placed after the standard ones in the same toolbar. */
   children?: ReactNode;
 }) {

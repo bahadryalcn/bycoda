@@ -1,9 +1,6 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
-import {
-  sessionWorkCwd,
-  type Session,
-} from "../../../features/sessions/model/session";
+import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
 import { isBlankSession } from "../../../features/projects/model/projectReturn";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {

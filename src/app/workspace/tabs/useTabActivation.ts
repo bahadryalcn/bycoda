@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
   leafIds,
   selectPaneTab,
@@ -29,9 +24,7 @@ export interface TabActivationDeps {
   activeTabIdRef: MutableRefObject<string>;
   setActiveTabIdState: Dispatch<SetStateAction<string>>;
   setActiveTabId: (id: string) => void;
-  setTabs: (
-    update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[]),
-  ) => void;
+  setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
   setComposerFocused: Dispatch<SetStateAction<boolean>>;
   projectOfTab: (id: string) => string | undefined;
 }

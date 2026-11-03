@@ -7,7 +7,7 @@ import type {
   AssistantResponse,
   AssistantSnapshot,
 } from "../../../shared/model/host-contracts/assistant";
-import {captureAssistantHostRead} from "./assistantHostRead";
+import { captureAssistantHostRead } from "./assistantHostRead";
 
 type State = {
   snapshot: AssistantSnapshot | null;
@@ -15,7 +15,7 @@ type State = {
   loading: boolean;
   error: string;
 };
-let state: State = { snapshot: null, environmentId:null, loading: false, error: "" };
+let state: State = { snapshot: null, environmentId: null, loading: false, error: "" };
 const listeners = new Set<() => void>();
 let pending: Promise<void> | null = null;
 let consumers = 0;
@@ -36,7 +36,7 @@ export async function refreshAssistant(): Promise<void> {
   emit({ loading: true });
   pending = (async () => {
     try {
-      const owner=await captureAssistantHostRead();
+      const owner = await captureAssistantHostRead();
       const result = AssistantResponseValidationSchema.parse(
         await hostToolRequest<AssistantResponse>(
           "",
@@ -47,9 +47,8 @@ export async function refreshAssistant(): Promise<void> {
           owner.environmentId,
         ),
       );
-      if (!result.snapshot)
-        throw new Error("The Host returned no assistant state.");
-      emit({ snapshot: result.snapshot, environmentId:owner.environmentId, error: "" });
+      if (!result.snapshot) throw new Error("The Host returned no assistant state.");
+      emit({ snapshot: result.snapshot, environmentId: owner.environmentId, error: "" });
     } catch (cause) {
       emit({ error: cause instanceof Error ? cause.message : String(cause) });
     } finally {
@@ -63,7 +62,7 @@ export async function refreshAssistant(): Promise<void> {
 /** Mutation retries remain explicit. Callers retain their idempotency key and draft. */
 export async function assistantRequest(
   request: AssistantRequest,
-  expectedEnvironmentId?:string,
+  expectedEnvironmentId?: string,
 ): Promise<AssistantResponse> {
   const result = AssistantResponseValidationSchema.parse(
     await hostToolRequest<AssistantResponse>(
@@ -117,9 +116,7 @@ export function useAssistantSnapshot() {
 /** Turkish proper-name possessive; other locales use a suffix-free room title. */
 export function possessiveName(name: string) {
   const clean = name.trim();
-  const vowels = [...clean.toLocaleLowerCase("tr")].filter((letter) =>
-    "aeıioöuü".includes(letter),
-  );
+  const vowels = [...clean.toLocaleLowerCase("tr")].filter((letter) => "aeıioöuü".includes(letter));
   const last = vowels[vowels.length - 1];
   if (!last) return clean;
   const suffix = "aı".includes(last)
@@ -139,14 +136,9 @@ export function assistantIdentity(
   const name = profile?.name.trim() ?? "";
   return {
     name,
-    title: name
-      ? profile?.showTitle
-        ? t("Assistant {p0}", { p0: name })
-        : name
-      : t("Set up"),
+    title: name ? (profile?.showTitle ? t("Assistant {p0}", { p0: name }) : name) : t("Set up"),
     room: name
-      ? locale.startsWith("tr") &&
-        /[aeıioöuü]/.test(name.toLocaleLowerCase("tr"))
+      ? locale.startsWith("tr") && /[aeıioöuü]/.test(name.toLocaleLowerCase("tr"))
         ? t("{p0} room", { p0: possessiveName(name) })
         : t("Room · {p0}", { p0: name })
       : t("Set up"),

@@ -17,12 +17,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { SocialHistory } from "./SocialHistory";
 import { SocialSendingControls } from "./SocialSendingControls";
 import { RetainedSocialPanel } from "./RetainedSocialPanel";
-import {
-  Empty,
-  Notice,
-  StatusBadge,
-  type Props,
-} from "./socialShared";
+import { Empty, Notice, StatusBadge, type Props } from "./socialShared";
 import { useRef, useState } from "react";
 import { isLocalSyncMachine } from "../../connections/model/localSync";
 import type { RemoteMachine } from "../../connections/model/protocol";
@@ -63,7 +58,16 @@ import {
   type Tab,
 } from "./useSocialWorkspaceController";
 
-const tabs: Tab[] = ["Today", "Campaigns", "Inbox", "Automations", "Audience", "Activity", "Accounts", "Settings"];
+const tabs: Tab[] = [
+  "Today",
+  "Campaigns",
+  "Inbox",
+  "Automations",
+  "Audience",
+  "Activity",
+  "Accounts",
+  "Settings",
+];
 function tabLabel(tab: Tab) {
   return {
     Today: t("Today"),
@@ -146,7 +150,9 @@ export function SocialView({
         dragRegion
         chromeInset={!besideRail ? true : compactRail ? "compact" : false}
         className="select-none"
-        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        leading={
+          besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+        }
         trailing={IS_MAC ? null : <WindowControls />}
       >
         <ToolHeader>
@@ -168,22 +174,24 @@ export function SocialView({
               <span>{t("Computer")}</span>
               {machines.length <= 1 ? (
                 <strong className="social-header-value">
-                  {machines[0] && !isLocalSyncMachine(machines[0]) ? machines[0].name : t("This computer")}
+                  {machines[0] && !isLocalSyncMachine(machines[0])
+                    ? machines[0].name
+                    : t("This computer")}
                 </strong>
               ) : (
-              <SearchableSelect
-                value={machineId}
-                disabled={socialLocked || busy}
-                label={t("Authoritative host")}
-                searchable={machines.length > 5}
-                searchPlaceholder={t("Search computers…")}
-                options={machines.map((machine) => ({
-                  value: machine.id,
-                  label: isLocalSyncMachine(machine) ? t("This computer") : machine.name,
-                }))}
-                onChange={actions.selectMachine}
-                searchLocale={getLocale()}
-              />
+                <SearchableSelect
+                  value={machineId}
+                  disabled={socialLocked || busy}
+                  label={t("Authoritative host")}
+                  searchable={machines.length > 5}
+                  searchPlaceholder={t("Search computers…")}
+                  options={machines.map((machine) => ({
+                    value: machine.id,
+                    label: isLocalSyncMachine(machine) ? t("This computer") : machine.name,
+                  }))}
+                  onChange={actions.selectMachine}
+                  searchLocale={getLocale()}
+                />
               )}
             </div>
             <div className="social-header-field social-project-filter">
@@ -563,7 +571,8 @@ function WorkspacePanels({
   const [projectIntent, setProjectIntent] = useState<{ projectId: string; token: number }>();
   const hostMachine = machines.find((machine) => machine.id === host.machineId);
   const executorLabel = hostMachine?.name ?? host.machineId;
-  const machineLabel = hostMachine && isLocalSyncMachine(hostMachine) ? t("This computer") : executorLabel;
+  const machineLabel =
+    hostMachine && isLocalSyncMachine(hostMachine) ? t("This computer") : executorLabel;
   const [programIntent, setProgramIntent] = useState<{ id: string; token: number }>();
   const feedback = { busy, error, notice };
   const props = (section: Section): Props => ({
@@ -571,7 +580,10 @@ function WorkspacePanels({
     run,
     projects,
     initialProject,
-    onOpenContent: (projectId) => { if (projectId) setProjectIntent({ projectId, token: ++intentSequence.current }); onNavigate("Campaigns"); },
+    onOpenContent: (projectId) => {
+      if (projectId) setProjectIntent({ projectId, token: ++intentSequence.current });
+      onNavigate("Campaigns");
+    },
     onOpenSettings: () => onNavigate("Settings"),
     snapshot: scopeSocialSnapshot(host.snapshots.get(section)!, filter)!,
     onFilterChange: (collection, next) => onCollectionFilter(section, collection, next),
@@ -601,9 +613,17 @@ function WorkspacePanels({
       ) : null}
       {present("Accounts", "accounts") ? (
         <RetainedSocialPanel {...feedback} active={active && tab === "Accounts"}>
-          <Accounts {...props("accounts")}
-            onPrepare={(accountId) => { setContentIntent({ accountId, token: ++intentSequence.current }); onNavigate("Campaigns"); }}
-            onOpenHistory={(accountId) => { if (accountId) setHistoryIntent({ accountId, token: ++intentSequence.current }); onOpenHistory(); }} />
+          <Accounts
+            {...props("accounts")}
+            onPrepare={(accountId) => {
+              setContentIntent({ accountId, token: ++intentSequence.current });
+              onNavigate("Campaigns");
+            }}
+            onOpenHistory={(accountId) => {
+              if (accountId) setHistoryIntent({ accountId, token: ++intentSequence.current });
+              onOpenHistory();
+            }}
+          />
         </RetainedSocialPanel>
       ) : null}
       {present("Campaigns", "campaigns") ? (
@@ -639,7 +659,6 @@ function WorkspacePanels({
               ["publish", t("Sharing plans")],
               ["reply", t("Reply rules")],
               ["sending", t("Sending controls")],
-
             ].map(([value, label]) => (
               <Button
                 disabled={socialLocked}
@@ -658,10 +677,7 @@ function WorkspacePanels({
               {...feedback}
               active={active && tab === "Automations" && automationMode === "publish"}
             >
-              <PublishingPlans
-                {...props("plans")}
-                onOpenAccounts={() => onNavigate("Accounts")}
-              />
+              <PublishingPlans {...props("plans")} onOpenAccounts={() => onNavigate("Accounts")} />
             </RetainedSocialPanel>
           ) : null}
           {host.snapshots.has("rules") ? (
@@ -682,8 +698,15 @@ function WorkspacePanels({
           ) : null}
         </RetainedSocialPanel>
       ) : null}
-      {(visited.includes("Activity") || visited.includes("Automations")) && host.snapshots.has("history") ? (
-        <RetainedSocialPanel {...feedback} active={active && (tab === "Activity" || (tab === "Automations" && automationMode === "history"))}>
+      {(visited.includes("Activity") || visited.includes("Automations")) &&
+      host.snapshots.has("history") ? (
+        <RetainedSocialPanel
+          {...feedback}
+          active={
+            active &&
+            (tab === "Activity" || (tab === "Automations" && automationMode === "history"))
+          }
+        >
           <SocialHistory {...props("history")} accountIntent={historyIntent} />
         </RetainedSocialPanel>
       ) : null}
@@ -779,4 +802,3 @@ function HostStatus({
     </div>
   );
 }
-

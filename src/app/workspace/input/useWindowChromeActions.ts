@@ -1,4 +1,11 @@
-import { useCallback, useLayoutEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import type { SidebarTabId } from "../../../features/settings/model/appearance";
 import {
   saveProjectRailOpen,

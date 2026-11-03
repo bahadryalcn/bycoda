@@ -26,7 +26,13 @@ const profile = {
   productName: "Demo",
   brandVoice: "Plain",
   facts: [
-    { id: "f1", topic: "Pricing", text: "Free tier", source: "https://example.test", verifiedAt: 1 },
+    {
+      id: "f1",
+      topic: "Pricing",
+      text: "Free tier",
+      source: "https://example.test",
+      verifiedAt: 1,
+    },
     { id: "f2", topic: "Release", text: "October", source: "https://example.test", verifiedAt: 1 },
   ],
 };
@@ -73,7 +79,9 @@ const button = (label: string) =>
     (item) => item.textContent?.trim() === label,
   )!;
 async function tick(facts: string[]) {
-  for (const box of Array.from(element.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')))
+  for (const box of Array.from(
+    element.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+  ))
     if (facts.includes(box.closest("label")?.textContent ?? "")) await act(async () => box.click());
 }
 

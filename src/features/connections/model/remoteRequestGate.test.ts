@@ -32,13 +32,24 @@ const machine = {
 it("pins workspace dispatch to the selected environment before the saved machine can change", async () => {
   adoptRemoteMachineInventory([machine]);
   let finish!: (value: unknown) => void;
-  invoke.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  invoke.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
   const request = remoteRequest("m1", "workspace.run", {
-    command: "write_text_file", args: { path: "C:/project/draft.txt", content: "draft" },
+    command: "write_text_file",
+    args: { path: "C:/project/draft.txt", content: "draft" },
   }).catch((error: unknown) => error);
-  expect(invoke).toHaveBeenCalledWith("remote_request", expect.objectContaining({
-    machineId: "m1", expectedEnvironmentId: "env", method: "workspace.run",
-  }));
+  expect(invoke).toHaveBeenCalledWith(
+    "remote_request",
+    expect.objectContaining({
+      machineId: "m1",
+      expectedEnvironmentId: "env",
+      method: "workspace.run",
+    }),
+  );
   adoptRemoteMachineInventory([{ ...machine, environmentId: "replacement" }]);
   finish("old-host-result");
   expect(String(await request)).toContain("Connection changed");

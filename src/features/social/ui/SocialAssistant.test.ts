@@ -35,7 +35,15 @@ const profile = {
   projectId: "p",
   productName: "Demo",
   brandVoice: "Plain",
-  facts: [{ id: "f1", topic: "Pricing", text: "Free tier", source: "https://example.test", verifiedAt: 1 }],
+  facts: [
+    {
+      id: "f1",
+      topic: "Pricing",
+      text: "Free tier",
+      source: "https://example.test",
+      verifiedAt: 1,
+    },
+  ],
 };
 
 beforeEach(() => {
@@ -117,7 +125,9 @@ it("saves the reviewed proposal paused with one idempotency id and opens the rea
   const [, input, requestId] = calls("programs.configure")[0];
   expect(input).not.toHaveProperty("id");
   expect(typeof requestId).toBe("string");
-  expect(request.mock.calls.some((call) => /activate|generate|send/.test(String(call[0])))).toBe(false);
+  expect(request.mock.calls.some((call) => /activate|generate|send/.test(String(call[0])))).toBe(
+    false,
+  );
   expect(element.textContent).toContain("Saved as a paused campaign");
   await act(async () => button("Open campaign")!.click());
   expect(onOpenProgram).toHaveBeenCalledWith("saved");
@@ -156,5 +166,7 @@ it("blocks asking when no text agent is set and never offers accounts without dr
   expect(element.textContent).toContain("Choose a text agent in Settings");
   expect(button("Prepare proposal")!.disabled).toBe(true);
   expect(element.textContent).toContain("Account b");
-  expect(element.querySelector(".social-assistant-context")!.textContent).not.toContain("Account a");
+  expect(element.querySelector(".social-assistant-context")!.textContent).not.toContain(
+    "Account a",
+  );
 });

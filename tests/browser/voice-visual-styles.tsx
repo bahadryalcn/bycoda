@@ -23,19 +23,27 @@ saveVoiceSettings({
 });
 // Persona setup appears on first launch; scenarios opt in with ?first-run.
 if (params.has("first-run")) localStorage.removeItem("bycoda.voice.persona");
-else if(!localStorage.getItem("bycoda.voice.persona")) localStorage.setItem("bycoda.voice.persona", JSON.stringify({ status: "skipped" }));
+else if (!localStorage.getItem("bycoda.voice.persona"))
+  localStorage.setItem("bycoda.voice.persona", JSON.stringify({ status: "skipped" }));
 const session = {
   id: "fixture",
   title: "Voice visual styles · a long session title to verify truncation",
-  cwd: params.has("remote")?"remote://paired/repo":"/fixture",
+  cwd: params.has("remote") ? "remote://paired/repo" : "/fixture",
   blocks: [],
   harness: "codex",
   model: "fixture-model",
   busy: params.get("state") === "working" || params.has("working"),
 } as unknown as Session;
 const global = params.has("global");
-if(params.has("control"))fixtureVoice.jobs.push({id:"control-job",title:"Recovery",projectId:"fixture-project",version:1,status:"running"});
-localStorage.setItem("bycoda.voice.scope",global?"global":"project");
+if (params.has("control"))
+  fixtureVoice.jobs.push({
+    id: "control-job",
+    title: "Recovery",
+    projectId: "fixture-project",
+    version: 1,
+    status: "running",
+  });
+localStorage.setItem("bycoda.voice.scope", global ? "global" : "project");
 if (global)
   registerVoiceDraftReader(session.id, () => ({
     text: "Please review this unsent request before I send it.",
@@ -66,29 +74,37 @@ const workspace = global
     }
   : undefined;
 createRoot(document.getElementById("root")!).render(
-  params.has("setup-step") ? <main style={{padding:24,maxInlineSize:560}}>
-    <p>Fixture evidence · actual setup controls, no microphone/provider acceptance</p>
-    <h1>Assistant Arif · {params.get("setup-step")}</h1>
-    <VoiceSetupSteps step={params.get("setup-step") as "provider"|"voice"|"microphone"} language="tr-TR" name="Arif" onValidChange={()=>{}}/>
-  </main> :
-  <main style={{ padding: 24, maxInlineSize: 720 }}>
-    <p>Fixture evidence · synthetic audio and session state</p>
-    <VoiceSettings />
-    <VoiceCompanion
-      activeId={params.has("no-active") ? undefined : session.id}
-      sessions={[session]}
-      onSubmit={() => {
-        fixtureVoice.submits++;
-        return false;
-      }}
-      onStop={() => {
-        fixtureVoice.stops++;
-      }}
-      workspace={workspace}
-      projects={global ? [{ path: session.cwd, name: "Fixture project" }] : undefined}
-      projectPath={global ? session.cwd : undefined}
-      assistantSession={global ? session : undefined}
-    />
-  </main>,
+  params.has("setup-step") ? (
+    <main style={{ padding: 24, maxInlineSize: 560 }}>
+      <p>Fixture evidence · actual setup controls, no microphone/provider acceptance</p>
+      <h1>Assistant Arif · {params.get("setup-step")}</h1>
+      <VoiceSetupSteps
+        step={params.get("setup-step") as "provider" | "voice" | "microphone"}
+        language="tr-TR"
+        name="Arif"
+        onValidChange={() => {}}
+      />
+    </main>
+  ) : (
+    <main style={{ padding: 24, maxInlineSize: 720 }}>
+      <p>Fixture evidence · synthetic audio and session state</p>
+      <VoiceSettings />
+      <VoiceCompanion
+        activeId={params.has("no-active") ? undefined : session.id}
+        sessions={[session]}
+        onSubmit={() => {
+          fixtureVoice.submits++;
+          return false;
+        }}
+        onStop={() => {
+          fixtureVoice.stops++;
+        }}
+        workspace={workspace}
+        projects={global ? [{ path: session.cwd, name: "Fixture project" }] : undefined}
+        projectPath={global ? session.cwd : undefined}
+        assistantSession={global ? session : undefined}
+      />
+    </main>
+  ),
 );
 Object.assign(window, { fixtureVoice });

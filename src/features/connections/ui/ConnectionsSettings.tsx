@@ -770,7 +770,10 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                     />
                     <div className="min-w-0 flex-1 basis-48">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <Tooltip label={machine.name} when={isLocalSyncMachine(machine) ? "always" : "overflow"}>
+                        <Tooltip
+                          label={machine.name}
+                          when={isLocalSyncMachine(machine) ? "always" : "overflow"}
+                        >
                           <span className="truncate text-ui-secondary font-medium">
                             {isLocalSyncMachine(machine) ? t("This computer") : machine.name}
                           </span>

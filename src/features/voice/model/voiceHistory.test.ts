@@ -34,8 +34,18 @@ it("opens each canonical local project once without substituting a path for proj
 });
 it("uses a captured remote transport without local RPCs or guessed IDs", async () => {
   const f = fixture();
-  const remote=vi.fn(async(input:AssistantRequest):Promise<AssistantResponse>=>input.op==="projects.list"?{projects:[{id:"actual-remote",path:"remote://paired/repo",name:"repo"}]}:input.op==="threads.open"?{thread:{id:"remote-thread"} as AssistantThread}:{messages:[]});
-  const bindings=new VoiceHistoryBindings(f.request,()=>({key:"paired:project",remote:true,request:remote}));
+  const remote = vi.fn(async (input: AssistantRequest): Promise<AssistantResponse> =>
+    input.op === "projects.list"
+      ? { projects: [{ id: "actual-remote", path: "remote://paired/repo", name: "repo" }] }
+      : input.op === "threads.open"
+        ? { thread: { id: "remote-thread" } as AssistantThread }
+        : { messages: [] },
+  );
+  const bindings = new VoiceHistoryBindings(f.request, () => ({
+    key: "paired:project",
+    remote: true,
+    request: remote,
+  }));
   expect((await bindings.open(false, "remote://paired/repo")).thread.id).toBe("remote-thread");
   expect(f.request).not.toHaveBeenCalled();
 });

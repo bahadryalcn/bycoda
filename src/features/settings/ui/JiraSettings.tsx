@@ -280,7 +280,8 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   <PrivateEmail key={status.email} email={status.email} />
                 </p>
               </div>
-              <Button stableWidth
+              <Button
+                stableWidth
                 disabled={busy}
                 onClick={() => {
                   setSite(status.site);
@@ -290,7 +291,11 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               >
                 {t("Edit")}
               </Button>
-              <InboxAccountActions onDisconnect={() => void disconnect()} loading={operation === "disconnect"} disabled={busy} />
+              <InboxAccountActions
+                onDisconnect={() => void disconnect()}
+                loading={operation === "disconnect"}
+                disabled={busy}
+              />
             </div>
           ) : (
             <form
@@ -353,7 +358,8 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               ))}
               <div className="flex items-center gap-3">
                 {status?.connected ? (
-                  <Button stableWidth
+                  <Button
+                    stableWidth
                     type="button"
                     disabled={busy}
                     onClick={() => {
@@ -364,7 +370,8 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                     {t("Cancel")}
                   </Button>
                 ) : null}
-                <Button stableWidth
+                <Button
+                  stableWidth
                   className="shrink-0"
                   type="submit"
                   loading={operation === "save"}
@@ -377,7 +384,8 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                       ? t("Retry save and test")
                       : t("Save and test connection")}
                 </Button>
-                <Button stableWidth
+                <Button
+                  stableWidth
                   variant="link"
                   type="button"
                   onClick={() =>
@@ -407,7 +415,11 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               {projectScope.error ? (
                 <SettingsFeedback
                   state="error"
-                  action={<Button stableWidth onClick={projectScope.retry}>{t("Retry")}</Button>}
+                  action={
+                    <Button stableWidth onClick={projectScope.retry}>
+                      {t("Retry")}
+                    </Button>
+                  }
                 >
                   {t("Saved Inbox scope is unavailable. Retry before changing it.")}
                 </SettingsFeedback>
@@ -433,7 +445,8 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   emptyLabel={t("No projects available. Refresh projects to try again.")}
                   noMatchLabel={t("No matching projects")}
                   actions={
-                    <Button stableWidth
+                    <Button
+                      stableWidth
                       className="shrink-0"
                       size="sm"
                       loading={projectsLoading}
@@ -460,7 +473,11 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               {boardScope.error ? (
                 <SettingsFeedback
                   state="error"
-                  action={<Button stableWidth onClick={boardScope.retry}>{t("Retry")}</Button>}
+                  action={
+                    <Button stableWidth onClick={boardScope.retry}>
+                      {t("Retry")}
+                    </Button>
+                  }
                 >
                   {t("Saved Inbox scope is unavailable. Retry before changing it.")}
                 </SettingsFeedback>
@@ -486,7 +503,8 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   emptyLabel={t("No boards available. Select projects and refresh boards.")}
                   noMatchLabel={t("No matching boards")}
                   actions={
-                    <Button stableWidth
+                    <Button
+                      stableWidth
                       className="shrink-0"
                       size="sm"
                       loading={boardsLoading}

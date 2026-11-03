@@ -204,9 +204,18 @@ export function GithubSettings() {
         info={description}
         scope={t("This computer · GitHub CLI account")}
       >
-        <Badge size="sm" appearance="subtle" role="status" aria-live="polite" aria-busy={checking || undefined}>{label}</Badge>
+        <Badge
+          size="sm"
+          appearance="subtle"
+          role="status"
+          aria-live="polite"
+          aria-busy={checking || undefined}
+        >
+          {label}
+        </Badge>
         {!checking && status && !status.installed ? (
-          <Button stableWidth
+          <Button
+            stableWidth
             className="shrink-0"
             onClick={() => {
               setHelpError(null);
@@ -218,7 +227,13 @@ export function GithubSettings() {
             {t("Installation guide")}
           </Button>
         ) : null}
-        <Button stableWidth reserveLabels={[t("Checking")]} className="shrink-0" onClick={() => void checkStatus()} loading={checking}>
+        <Button
+          stableWidth
+          reserveLabels={[t("Checking")]}
+          className="shrink-0"
+          onClick={() => void checkStatus()}
+          loading={checking}
+        >
           {checking ? t("Checking") : t("Check again")}
         </Button>
       </Row>
@@ -338,12 +353,11 @@ export function GitlabSettings() {
       >
         {connected && !editing ? (
           <div className="inbox-account-fields" data-state="summary">
-            <span
-              className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)"
-            >
+            <span className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)">
               {savedUrl}
             </span>
-            <Button stableWidth
+            <Button
+              stableWidth
               disabled={busy || checking}
               onClick={() => {
                 setUrl(savedUrl);
@@ -352,7 +366,11 @@ export function GitlabSettings() {
             >
               {t("Edit")}
             </Button>
-            <InboxAccountActions onDisconnect={() => void onDisconnect()} loading={operation === "disconnect"} disabled={busy || checking} />
+            <InboxAccountActions
+              onDisconnect={() => void onDisconnect()}
+              loading={operation === "disconnect"}
+              disabled={busy || checking}
+            />
           </div>
         ) : (
           <div className="inbox-account-fields" data-state="form">
@@ -381,7 +399,9 @@ export function GitlabSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <Button stableWidth reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+            <Button
+              stableWidth
+              reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
               className="shrink-0"
               onClick={() => void onSave()}
               loading={operation === "save"}
@@ -394,7 +414,8 @@ export function GitlabSettings() {
                   : t("Save and test connection")}
             </Button>
             {connected ? (
-              <Button stableWidth
+              <Button
+                stableWidth
                 disabled={busy}
                 onClick={() => {
                   setEditing(false);
@@ -523,12 +544,11 @@ export function AzureDevOpsSettings() {
       >
         {connected && !editing ? (
           <div className="inbox-account-fields" data-state="summary">
-            <span
-              className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)"
-            >
+            <span className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)">
               {savedUrl}
             </span>
-            <Button stableWidth
+            <Button
+              stableWidth
               disabled={busy || checking}
               onClick={() => {
                 setUrl(savedUrl);
@@ -537,7 +557,11 @@ export function AzureDevOpsSettings() {
             >
               {t("Edit")}
             </Button>
-            <InboxAccountActions onDisconnect={() => void onDisconnect()} loading={operation === "disconnect"} disabled={busy || checking} />
+            <InboxAccountActions
+              onDisconnect={() => void onDisconnect()}
+              loading={operation === "disconnect"}
+              disabled={busy || checking}
+            />
           </div>
         ) : (
           <div className="inbox-account-fields" data-state="form">
@@ -566,7 +590,9 @@ export function AzureDevOpsSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <Button stableWidth reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+            <Button
+              stableWidth
+              reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
               className="shrink-0"
               onClick={() => void onSave()}
               loading={operation === "save"}
@@ -579,7 +605,8 @@ export function AzureDevOpsSettings() {
                   : t("Save and test connection")}
             </Button>
             {connected ? (
-              <Button stableWidth
+              <Button
+                stableWidth
                 disabled={busy}
                 onClick={() => {
                   setEditing(false);
@@ -758,7 +785,11 @@ export function LinearSettings() {
             <Button stableWidth disabled={busy || checking} onClick={() => setEditing(true)}>
               {t("Edit")}
             </Button>
-            <InboxAccountActions onDisconnect={() => void onDisconnect()} loading={operation === "disconnect"} disabled={busy || checking} />
+            <InboxAccountActions
+              onDisconnect={() => void onDisconnect()}
+              loading={operation === "disconnect"}
+              disabled={busy || checking}
+            />
           </div>
         ) : (
           <div className="inbox-account-fields" data-state="form">
@@ -776,7 +807,9 @@ export function LinearSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <Button stableWidth reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+            <Button
+              stableWidth
+              reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
               className="shrink-0"
               onClick={() => void onSave()}
               loading={operation === "save"}
@@ -789,7 +822,8 @@ export function LinearSettings() {
                   : t("Save and test connection")}
             </Button>
             {connected ? (
-              <Button stableWidth
+              <Button
+                stableWidth
                 disabled={busy}
                 onClick={() => {
                   setEditing(false);
@@ -813,7 +847,11 @@ export function LinearSettings() {
             teamScope.error ? (
               <SettingsFeedback
                 state="error"
-                action={<Button stableWidth onClick={teamScope.retry}>{t("Retry")}</Button>}
+                action={
+                  <Button stableWidth onClick={teamScope.retry}>
+                    {t("Retry")}
+                  </Button>
+                }
               >
                 {t("Saved Inbox scope is unavailable. Retry before changing it.")}
               </SettingsFeedback>
@@ -835,7 +873,8 @@ export function LinearSettings() {
               emptyLabel={t("No teams available. Refresh teams to try again.")}
               noMatchLabel={t("No matching teams")}
               actions={
-                <Button stableWidth
+                <Button
+                  stableWidth
                   className="shrink-0"
                   size="sm"
                   loading={teamsLoading}

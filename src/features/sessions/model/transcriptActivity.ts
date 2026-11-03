@@ -204,7 +204,7 @@ const FENCE = "```";
 
 function countFences(text: string, from: number, to: number): number {
   let count = 0;
-  for (let at = text.indexOf(FENCE, from); at >= 0 && at + FENCE.length <= to; ) {
+  for (let at = text.indexOf(FENCE, from); at >= 0 && at + FENCE.length <= to;) {
     count++;
     at = text.indexOf(FENCE, at + FENCE.length);
   }

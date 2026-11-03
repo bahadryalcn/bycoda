@@ -8,7 +8,12 @@ import {
   type TranscriptSelection,
 } from "../model/transcriptSelection";
 
-it.each([[false, false], [false, true], [true, false], [true, true]])(
+it.each([
+  [false, false],
+  [false, true],
+  [true, false],
+  [true, true],
+])(
   "accepts an empty action-row boundary but rejects selecting action text (outside: %s, reverse: %s)",
   async (outsideText, reverse) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -32,7 +37,15 @@ it.each([[false, false], [false, true], [true, false], [true, true]])(
     try {
       await act(async () => root.render(createElement(Harness)));
       window.getSelection()!.removeAllRanges();
-      if (reverse) window.getSelection()!.setBaseAndExtent(range.endContainer, range.endOffset, range.startContainer, range.startOffset);
+      if (reverse)
+        window
+          .getSelection()!
+          .setBaseAndExtent(
+            range.endContainer,
+            range.endOffset,
+            range.startContainer,
+            range.startOffset,
+          );
       else window.getSelection()!.addRange(range);
       await act(async () => {
         document.dispatchEvent(new Event("selectionchange"));

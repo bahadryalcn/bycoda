@@ -16,19 +16,29 @@ describe("retained editor overview ownership", () => {
       return 1;
     });
     vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => ({
-      setTransform: vi.fn(), clearRect: vi.fn(), fillRect: paint,
-    }) as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+      () =>
+        ({
+          setTransform: vi.fn(),
+          clearRect: vi.fn(),
+          fillRect: paint,
+        }) as unknown as CanvasRenderingContext2D,
+    );
     owner = document.createElement("div");
     document.body.append(owner);
-    ruler = new OverviewRuler({
-      marks: () => [{ kind: "mod", top: 10, bottom: 30, pos: 20 }],
-      geometry: () => ({ contentHeight: 1000, viewportHeight: 100, scrollTop: 0 }),
-      scrollTo, reveal,
-    }, { interactive: true, band: false });
+    ruler = new OverviewRuler(
+      {
+        marks: () => [{ kind: "mod", top: 10, bottom: 30, pos: 20 }],
+        geometry: () => ({ contentHeight: 1000, viewportHeight: 100, scrollTop: 0 }),
+        scrollTo,
+        reveal,
+      },
+      { interactive: true, band: false },
+    );
     owner.append(ruler.dom);
     Object.defineProperties(ruler.dom, {
-      clientHeight: { value: 200 }, clientWidth: { value: 10 },
+      clientHeight: { value: 200 },
+      clientWidth: { value: 10 },
     });
   });
 
@@ -86,7 +96,9 @@ describe("retained editor overview ownership", () => {
     draw();
     owner.setAttribute("inert", "");
     expect(ruler.tickAt(3)).toBeNull();
-    ruler.dom.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientY: 3, cancelable: true }));
+    ruler.dom.dispatchEvent(
+      new PointerEvent("pointerdown", { button: 0, clientY: 3, cancelable: true }),
+    );
     expect(reveal).not.toHaveBeenCalled();
     expect(scrollTo).not.toHaveBeenCalled();
   });

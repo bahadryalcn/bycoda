@@ -47,14 +47,18 @@
     border-color: var(--ui-field-border-hover);
   }
 }
-.input:is([data-search-appearance="field"], [data-search-appearance="quiet"]):focus-visible:not([aria-invalid="true"]),
-.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(.input:focus-visible):not(
-    :has(.input[aria-invalid="true"])
-  ) {
+.input:is([data-search-appearance="field"], [data-search-appearance="quiet"]):focus-visible:not(
+    [aria-invalid="true"]
+  ),
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(
+    .input:focus-visible
+  ):not(:has(.input[aria-invalid="true"])) {
   border-color: var(--ui-field-border-focus);
 }
 .input:is([data-search-appearance="field"], [data-search-appearance="quiet"])[aria-invalid="true"],
-.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(.input[aria-invalid="true"]) {
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(
+    .input[aria-invalid="true"]
+  ) {
   border-color: var(--ui-tone-danger-fg);
 }
 /* Read-only keeps normal ink and its resting boundary on a transparent frame (compare disabled, which dims). */
@@ -63,14 +67,20 @@
     [aria-invalid="true"],
     :focus-visible
   ),
-.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(.input[readonly]):not(
-    :has(.input:disabled, .input[aria-invalid="true"], .input:focus-visible)
-  ) {
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(
+    .input[readonly]
+  ):not(:has(.input:disabled, .input[aria-invalid="true"], .input:focus-visible)) {
   background: transparent;
 }
 /* Form-size search aligns with md form controls and Buttons; compact stays the default. */
-.input:is([data-search-appearance="field"], [data-search-appearance="quiet"])[data-search-size="md"],
-.group:is([data-search-appearance="field"], [data-search-appearance="quiet"])[data-search-size="md"] {
+.input:is(
+    [data-search-appearance="field"],
+    [data-search-appearance="quiet"]
+  )[data-search-size="md"],
+.group:is(
+    [data-search-appearance="field"],
+    [data-search-appearance="quiet"]
+  )[data-search-size="md"] {
   min-block-size: var(--ui-field-height-md);
   block-size: var(--ui-field-height-md);
 }
@@ -128,13 +138,15 @@ html[data-control-density="touch"] .clear[data-search-clear] {
   min-block-size: var(--ui-control-clear-size);
 }
 
-
-
-:is(.input, .group)[data-search-appearance="quiet"]:not(:focus-within):not([aria-invalid="true"]):not(:has([aria-invalid="true"])) {
+:is(.input, .group)[data-search-appearance="quiet"]:not(:focus-within):not(
+    [aria-invalid="true"]
+  ):not(:has([aria-invalid="true"])) {
   border-color: transparent;
   background: transparent;
 }
-:is(.input, .group)[data-search-appearance="quiet"]:hover:not(:focus-within, :disabled) { background: var(--ui-surface-hover); }
+:is(.input, .group)[data-search-appearance="quiet"]:hover:not(:focus-within, :disabled) {
+  background: var(--ui-surface-hover);
+}
 
 /* A button that looks like the search text but opens a search surface elsewhere.
    It paints nothing of its own: the group frame is the only surface (hover border,
@@ -161,6 +173,8 @@ html[data-control-density="touch"] .clear[data-search-clear] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(.trigger:focus-visible) {
+.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(
+    .trigger:focus-visible
+  ) {
   border-color: var(--ui-field-border-focus);
 }

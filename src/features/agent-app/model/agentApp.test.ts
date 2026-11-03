@@ -114,16 +114,8 @@ describe("agent app commands", () => {
       sessionId: "other",
     };
     host.sessionReference = vi.fn(async () => locator);
-    const listed = (await handleAgentApp(
-      source,
-      "list",
-      "sessions.list",
-      {},
-      host,
-    )) as any;
-    expect(parseLocalSessionLink(listed.sessions[0].link)?.locator).toEqual(
-      locator,
-    );
+    const listed = (await handleAgentApp(source, "list", "sessions.list", {}, host)) as any;
+    expect(parseLocalSessionLink(listed.sessions[0].link)?.locator).toEqual(locator);
     const read = (await handleAgentApp(
       source,
       "read",
@@ -133,22 +125,10 @@ describe("agent app commands", () => {
     )) as any;
     expect(parseLocalSessionLink(read.link)?.locator).toEqual(locator);
     host.sessionReference = vi.fn(async () => null);
-    const unproven = (await handleAgentApp(
-      source,
-      "list-again",
-      "sessions.list",
-      {},
-      host,
-    )) as any;
+    const unproven = (await handleAgentApp(source, "list-again", "sessions.list", {}, host)) as any;
     expect(unproven.sessions[0]).not.toHaveProperty("link");
     await expect(
-      handleAgentApp(
-        source,
-        "foreign",
-        "sessions.read",
-        { sessionId: "foreign" },
-        host,
-      ),
+      handleAgentApp(source, "foreign", "sessions.read", { sessionId: "foreign" }, host),
     ).rejects.toThrow("not found in this project");
     expect(host.sessionReference).toHaveBeenCalledTimes(1);
   });

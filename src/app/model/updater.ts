@@ -121,7 +121,9 @@ async function runUpdateFlowOnce(
     if (!manual) return available;
 
     const notes = update.body?.trim();
-    const detail = notes ? `\n\n${notes.length > MAX_NOTES ? `${notes.slice(0, MAX_NOTES - 1)}…` : notes}` : "";
+    const detail = notes
+      ? `\n\n${notes.length > MAX_NOTES ? `${notes.slice(0, MAX_NOTES - 1)}…` : notes}`
+      : "";
     const yes = await confirmInApp({
       title: t("Update available"),
       message:

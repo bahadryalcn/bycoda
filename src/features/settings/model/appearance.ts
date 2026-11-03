@@ -343,7 +343,9 @@ const appliedTint: { hue?: number; saturation?: number; darkLightness?: number }
 function themeCanvases(): AccentCanvas {
   const hue = appliedTint.hue ?? loadThemeHue();
   const saturation = appliedTint.saturation ?? loadThemeSaturation();
-  const darkBase = hex(hslToRgb(hue, saturation, appliedTint.darkLightness ?? loadThemeDarkLightness()));
+  const darkBase = hex(
+    hslToRgb(hue, saturation, appliedTint.darkLightness ?? loadThemeDarkLightness()),
+  );
   const darkContent = hex(hslToRgb(hue, saturation, 92));
   const lightBase = hex(hslToRgb(hue, saturation * 0.2, 98.6));
   const lightContent = hex(hslToRgb(hue, saturation * 0.35, 13));

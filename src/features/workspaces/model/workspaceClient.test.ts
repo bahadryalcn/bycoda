@@ -56,9 +56,25 @@ it("resolves real host IDs and sends owner writes over authenticated transport",
 });
 
 it("pins an explicit session owner project/environment and forwards that identity to Native", async () => {
-  await workspaceRequest("projects.workspacePolicy.get", { projectId: "bound-project", environmentId: "env-local" }, { cwd: "/repo", environmentId: "env-local", machineId: "local-machine", ownerProjectId: "bound-project" });
+  await workspaceRequest(
+    "projects.workspacePolicy.get",
+    { projectId: "bound-project", environmentId: "env-local" },
+    {
+      cwd: "/repo",
+      environmentId: "env-local",
+      machineId: "local-machine",
+      ownerProjectId: "bound-project",
+    },
+  );
   expect(hostProjectFor).not.toHaveBeenCalled();
-  expect(remoteRequest).toHaveBeenCalledWith("local-machine", "projects.workspacePolicy.get", { projectId: "bound-project", environmentId: "env-local" }, false, true, "env-local");
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "local-machine",
+    "projects.workspacePolicy.get",
+    { projectId: "bound-project", environmentId: "env-local" },
+    false,
+    true,
+    "env-local",
+  );
 });
 
 it("never falls back to the local host when a remote project is disconnected", async () => {

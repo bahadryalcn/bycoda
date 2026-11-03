@@ -82,15 +82,18 @@ describe("Explorer context menu creation", () => {
     ["file", files, "src"],
     ["folder", folder, "src"],
     ["root", rootTarget, "Project"],
-  ])("offers New File then New Folder first for a %s and names the target", (_name, target, label) => {
-    const items = build(target, label);
-    expect(ids(items).startsWith("new-file,new-folder,|,cut,copy,paste")).toBe(true);
-    for (const id of ["new-file", "new-folder"]) {
-      expect(items.find((item) => item.kind === "item" && item.id === id)).toMatchObject({
-        description: `In ${label}`,
-      });
-    }
-  });
+  ])(
+    "offers New File then New Folder first for a %s and names the target",
+    (_name, target, label) => {
+      const items = build(target, label);
+      expect(ids(items).startsWith("new-file,new-folder,|,cut,copy,paste")).toBe(true);
+      for (const id of ["new-file", "new-folder"]) {
+        expect(items.find((item) => item.kind === "item" && item.id === id)).toMatchObject({
+          description: `In ${label}`,
+        });
+      }
+    },
+  );
 
   it("keeps root-only restrictions and the Git entries for a single file", () => {
     const root = build(rootTarget, "Project");
@@ -105,14 +108,25 @@ describe("Explorer context menu creation", () => {
 
   it("disables every mutating item while a file operation runs but leaves copy-path available", () => {
     const gated = gateBusyMenuItems(build(files, "src"), true);
-    for (const id of ["new-file", "new-folder", "cut", "paste", "duplicate", "rename", "delete", "reveal"]) {
+    for (const id of [
+      "new-file",
+      "new-folder",
+      "cut",
+      "paste",
+      "duplicate",
+      "rename",
+      "delete",
+      "reveal",
+    ]) {
       expect(gated.find((item) => item.kind === "item" && item.id === id)).toMatchObject({
         disabled: true,
       });
     }
-    expect(gated.find((item) => item.kind === "item" && item.id === "copy-path")).not.toMatchObject({
-      disabled: true,
-    });
+    expect(gated.find((item) => item.kind === "item" && item.id === "copy-path")).not.toMatchObject(
+      {
+        disabled: true,
+      },
+    );
     const open = build(files, "src");
     expect(gateBusyMenuItems(open, false)).toBe(open);
   });

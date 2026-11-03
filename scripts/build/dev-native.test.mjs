@@ -23,8 +23,15 @@ test("frozen native builds verify original source bytes and reject tampering or 
     await mkdir(join(root, "src"));
     const bytes = Buffer.from("export const original = true;\n");
     await writeFile(join(root, "src/main.ts"), bytes);
-    const identity = { ...nativeIdentity, sourceFingerprint: fingerprintFiles(new Map([["src/main.ts", bytes]])) };
-    const manifest = { schemaVersion: 1, identity, files: [{ path: "src/main.ts", sha256: createHash("sha256").update(bytes).digest("hex") }] };
+    const identity = {
+      ...nativeIdentity,
+      sourceFingerprint: fingerprintFiles(new Map([["src/main.ts", bytes]])),
+    };
+    const manifest = {
+      schemaVersion: 1,
+      identity,
+      files: [{ path: "src/main.ts", sha256: createHash("sha256").update(bytes).digest("hex") }],
+    };
     const save = () => writeFile(join(root, "frozen-source.json"), JSON.stringify(manifest));
     await save();
     assert.equal((await frozenSourceIdentity(root)).head, identity.head);
@@ -246,15 +253,36 @@ test("native CDP admission rejects a concrete stale stamp without accepting its 
 });
 
 test("native admission skips same-origin utility windows even with matching build identity", async () => {
-  const utility = {url:()=>"http://127.0.0.1:19001/desktop-control.html",evaluate:async()=>assert.fail("A utility window cannot certify main readiness")};
-  const main = {url:()=>"http://127.0.0.1:19001/",evaluate:async()=>nativeIdentity};
-  assert.equal(await waitForNativePage({contexts:()=>[{pages:()=>[utility,main]}]},"http://127.0.0.1:19001",nativeIdentity),main);
+  const utility = {
+    url: () => "http://127.0.0.1:19001/desktop-control.html",
+    evaluate: async () => assert.fail("A utility window cannot certify main readiness"),
+  };
+  const main = { url: () => "http://127.0.0.1:19001/", evaluate: async () => nativeIdentity };
+  assert.equal(
+    await waitForNativePage(
+      { contexts: () => [{ pages: () => [utility, main] }] },
+      "http://127.0.0.1:19001",
+      nativeIdentity,
+    ),
+    main,
+  );
 });
 
 test("one unresponsive main candidate cannot consume the whole discovery deadline", async () => {
-  const pending = {url:()=>"http://127.0.0.1:19001/",evaluate:()=>new Promise(()=>{})};
-  const main = {url:()=>"http://127.0.0.1:19001/index.html",evaluate:async()=>nativeIdentity};
-  assert.equal(await waitForNativePage({contexts:()=>[{pages:()=>[pending,main]}]},"http://127.0.0.1:19001",nativeIdentity,{timeoutMs:500,candidateTimeoutMs:10,pollMs:1}),main);
+  const pending = { url: () => "http://127.0.0.1:19001/", evaluate: () => new Promise(() => {}) };
+  const main = {
+    url: () => "http://127.0.0.1:19001/index.html",
+    evaluate: async () => nativeIdentity,
+  };
+  assert.equal(
+    await waitForNativePage(
+      { contexts: () => [{ pages: () => [pending, main] }] },
+      "http://127.0.0.1:19001",
+      nativeIdentity,
+      { timeoutMs: 500, candidateTimeoutMs: 10, pollMs: 1 },
+    ),
+    main,
+  );
 });
 
 test("native CDP discovery and an unresponsive IPC both have bounded unavailable outcomes", async () => {

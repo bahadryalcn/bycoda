@@ -69,7 +69,11 @@ export function cacheSkillPolicy(policy: SkillPolicy): void {
 if (typeof window !== "undefined") {
   window.addEventListener("bycoda:skills-change", invalidateRestrictions);
   window.addEventListener("storage", (event) => {
-    if (!event.key || event.key === DISABLED_SKILL_PATHS_KEY || event.key === DISABLED_SKILL_NAMES_KEY)
+    if (
+      !event.key ||
+      event.key === DISABLED_SKILL_PATHS_KEY ||
+      event.key === DISABLED_SKILL_NAMES_KEY
+    )
       invalidateRestrictions();
   });
 }
@@ -101,8 +105,13 @@ export async function loadSkillRestrictions(
   // An in-flight read must not restore a policy superseded by Settings.
   if (revision !== policyRevision) return loadSkillRestrictions(cwd);
   if (!cwd.startsWith("remote://")) persistSkillPolicy(policy);
-  for (const [key, entry] of restrictions) if (entry.expires <= Date.now()) restrictions.delete(key);
+  for (const [key, entry] of restrictions)
+    if (entry.expires <= Date.now()) restrictions.delete(key);
   if (restrictions.size >= 128) restrictions.delete(restrictions.keys().next().value!);
-  restrictions.set(cwd, { policy, expires: Date.now() + 30_000, storage: JSON.stringify(cachedSkillPolicy()) });
+  restrictions.set(cwd, {
+    policy,
+    expires: Date.now() + 30_000,
+    storage: JSON.stringify(cachedSkillPolicy()),
+  });
   return policy;
 }

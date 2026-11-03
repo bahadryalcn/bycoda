@@ -81,9 +81,12 @@ it("joins every original and retains failed kills until retry succeeds", async (
   ledger.admit(b, "failure-owner");
   const cohort = captureProviderRetirementCohort("failure-owner");
   let finished = false;
-  const first = cohort.retire().then(() => {
-    finished = true;
-  }).catch((error: unknown) => error);
+  const first = cohort
+    .retire()
+    .then(() => {
+      finished = true;
+    })
+    .catch((error: unknown) => error);
   await tick();
   expect(kill).toHaveBeenCalledTimes(2);
   expect(finished).toBe(false);

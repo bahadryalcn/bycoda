@@ -11,7 +11,12 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Sparkles } from "../../../shared/ui/icons";
 import { HARNESS_TITLE } from "../../sessions/model/session";
 import type { HostProject } from "../../connections/model/protocol";
-import type { SocialAccount, SocialPolicy, SocialProjectProfile, SocialRule } from "../model/social";
+import type {
+  SocialAccount,
+  SocialPolicy,
+  SocialProjectProfile,
+  SocialRule,
+} from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 import { socialQueryScope } from "../model/socialQuery";
 import type {
@@ -73,7 +78,8 @@ const splitPhrases = (text: string) =>
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((item) => b.includes(item));
+const sameSet = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((item) => b.includes(item));
 const errorText = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 const agentText = (agent?: { provider: string; model?: string }) =>
   agent
@@ -153,7 +159,9 @@ export function simplifyProblems(
     const topic = factTopic(answer.factId);
     if (!topic) problems.push(t("An answer uses a fact that is no longer verified."));
     else if (!draft.topics.includes(topic))
-      problems.push(t("The answer “{p0}” needs the topic “{p1}”.", { p0: answer.keyword, p1: topic }));
+      problems.push(
+        t("The answer “{p0}” needs the topic “{p1}”.", { p0: answer.keyword, p1: topic }),
+      );
   }
   if (draft.stopWords.length > MAX_STOP_PHRASES)
     problems.push(t("A rule can have at most {p0} stop phrases.", { p0: MAX_STOP_PHRASES }));
@@ -207,7 +215,9 @@ export function useRuleSimplify(context: RuleSimplifyContext) {
     ) ??
     scopes[0];
   const scopeRules = scope
-    ? rules.filter((rule) => rule.accountId === scope.accountId && rule.projectId === scope.projectId)
+    ? rules.filter(
+        (rule) => rule.accountId === scope.accountId && rule.projectId === scope.projectId,
+      )
     : [];
   const picked = scopeRules.filter((rule) => !unticked.includes(rule.id)).map((rule) => rule.id);
   const account = accounts.find((item) => item.id === scope?.accountId);
@@ -239,8 +249,9 @@ export function useRuleSimplify(context: RuleSimplifyContext) {
   const askChanged = () => setRetryId(undefined);
 
   const factTopic = (projectId: string) => (factId: string) =>
-    profiles.find((profile) => profile.projectId === projectId)?.facts.find((fact) => fact.id === factId)
-      ?.topic;
+    profiles
+      .find((profile) => profile.projectId === projectId)
+      ?.facts.find((fact) => fact.id === factId)?.topic;
   const problemsFor = (proposal: RuleSimplifyProposal, item: ItemState) =>
     simplifyProblems(
       proposal,
@@ -272,7 +283,11 @@ export function useRuleSimplify(context: RuleSimplifyContext) {
         ...(picked.length < scopeRules.length ? { ruleIds: picked } : {}),
         ...(text ? { instructions: text } : {}),
       };
-      const result = await client.request<RuleSimplifySuggestion>("rules.simplify", input, requestId);
+      const result = await client.request<RuleSimplifySuggestion>(
+        "rules.simplify",
+        input,
+        requestId,
+      );
       if (current !== token.current) return;
       setItems(
         Object.fromEntries(
@@ -330,7 +345,9 @@ export function useRuleSimplify(context: RuleSimplifyContext) {
     }, t("The original rule is paused."));
     patch(ruleId, {
       pause: ok ? "done" : "failed",
-      pauseError: ok ? "" : message || t("Another operation is in progress. Try again in a moment."),
+      pauseError: ok
+        ? ""
+        : message || t("Another operation is in progress. Try again in a moment."),
     });
   };
   const create = async (proposal: RuleSimplifyProposal, item: ItemState) => {
@@ -340,15 +357,22 @@ export function useRuleSimplify(context: RuleSimplifyContext) {
     patch(proposal.ruleId, { create: "pending", createError: "" });
     const out: { id?: string } = {};
     let message = "";
-    const ok = await run(async () => {
-      try {
-        const rule = await client.request<{ id?: string }>("automations.create", payload, item.requestId);
-        out.id = rule?.id;
-      } catch (cause) {
-        message = errorText(cause);
-        throw cause;
-      }
-    }, t("Paused rule “{p0}” created. The original rule is unchanged.", { p0: payload.name }));
+    const ok = await run(
+      async () => {
+        try {
+          const rule = await client.request<{ id?: string }>(
+            "automations.create",
+            payload,
+            item.requestId,
+          );
+          out.id = rule?.id;
+        } catch (cause) {
+          message = errorText(cause);
+          throw cause;
+        }
+      },
+      t("Paused rule “{p0}” created. The original rule is unchanged.", { p0: payload.name }),
+    );
     if (!ok) {
       patch(proposal.ruleId, {
         create: "failed",
@@ -410,7 +434,10 @@ export function useRuleSimplify(context: RuleSimplifyContext) {
     edit: (ruleId: string, change: Partial<SimplifyEdit>) =>
       setItems((current) =>
         current[ruleId]
-          ? { ...current, [ruleId]: { ...current[ruleId], edit: { ...current[ruleId].edit, ...change } } }
+          ? {
+              ...current,
+              [ruleId]: { ...current[ruleId], edit: { ...current[ruleId].edit, ...change } },
+            }
           : current,
       ),
     reject: (ruleId: string, rejected: boolean) => patch(ruleId, { rejected }),
@@ -494,7 +521,8 @@ function SimplifyAsk({
       ? t("Checking…")
       : t("Not set");
   const reason =
-    session.blocked || (!session.picked.length && session.scope ? t("Select at least one rule.") : "");
+    session.blocked ||
+    (!session.picked.length && session.scope ? t("Select at least one rule.") : "");
   return (
     <form
       id={formId}
@@ -785,7 +813,8 @@ function ProposalCard({
   const original = session.rules.find((rule) => rule.id === proposal.ruleId);
   if (!item) return null;
   const facts =
-    session.profiles.find((profile) => profile.projectId === proposal.proposed.projectId)?.facts ?? [];
+    session.profiles.find((profile) => profile.projectId === proposal.proposed.projectId)?.facts ??
+    [];
   const factTopic = (factId: string) => facts.find((fact) => fact.id === factId)?.topic;
   const problems = session.problemsFor(proposal, item);
   const settled = item.create === "pending" || item.create === "created";
@@ -912,20 +941,23 @@ function ProposalCard({
           {problems.join(" ")}
         </p>
       ) : null}
-      {item.create === "failed" ? (
-        <InlineError>{item.createError}</InlineError>
-      ) : null}
+      {item.create === "failed" ? <InlineError>{item.createError}</InlineError> : null}
       {item.create === "created" ? (
         <p className="social-rule-note" role="status">
-          {t("“{p0}” was created and is paused. Activate it from the rule list when you are ready.", {
-            p0: item.edit.name.trim(),
-          })}
+          {t(
+            "“{p0}” was created and is paused. Activate it from the rule list when you are ready.",
+            {
+              p0: item.edit.name.trim(),
+            },
+          )}
           {item.pause === "pending" ? ` ${t("Pausing the original rule…")}` : ""}
           {item.pause === "done" ? ` ${t("The original rule is paused.")}` : ""}
         </p>
       ) : null}
       {item.pause === "failed" ? (
-        <InlineError>{t("The original rule could not be paused: {p0}", { p0: item.pauseError })}</InlineError>
+        <InlineError>
+          {t("The original rule could not be paused: {p0}", { p0: item.pauseError })}
+        </InlineError>
       ) : null}
       <div className="social-rule-actions">
         {item.create === "created" ? (

@@ -35,19 +35,28 @@ it("shows the effective terminal size and resets only through its owner callback
     buffer: { active: { type: "normal" }, onBufferChange: () => ({ dispose() {} }) },
   } as unknown as Terminal;
   try {
-    await act(async () => root.render(createElement(TerminalTools, {
-      terminal,
-      ready: true,
-      mode: null,
-      onModeChange: vi.fn(),
-      fontSize: 19,
-      savedFontSize: 13,
-      onResetFontSize: reset,
-    })));
+    await act(async () =>
+      root.render(
+        createElement(TerminalTools, {
+          terminal,
+          ready: true,
+          mode: null,
+          onModeChange: vi.fn(),
+          fontSize: 19,
+          savedFontSize: 13,
+          onResetFontSize: reset,
+        }),
+      ),
+    );
     await openTools(host);
-    expect(document.querySelector('[role="status"][aria-label="Terminal font size"]')?.textContent?.trim()).toBe("19px");
-    const button = [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((node) => node.getAttribute("aria-label") === "Reset text size")!;
+    expect(
+      document
+        .querySelector('[role="status"][aria-label="Terminal font size"]')
+        ?.textContent?.trim(),
+    ).toBe("19px");
+    const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.getAttribute("aria-label") === "Reset text size",
+    )!;
     await act(async () => button.click());
     expect(reset).toHaveBeenCalledOnce();
     expect(terminal.input).not.toHaveBeenCalled();

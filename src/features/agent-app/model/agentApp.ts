@@ -27,7 +27,10 @@ import { pathKey } from "../../../shared/lib/paths";
 import type { SplitDir } from "../../workspace/model/layout";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
 import { sessionConversationPage, sessionConversationTurn } from "./sessionConversation";
-import { localSessionLinkFields, type LocalSessionLocator } from "../../sessions/model/localSessionReference";
+import {
+  localSessionLinkFields,
+  type LocalSessionLocator,
+} from "../../sessions/model/localSessionReference";
 
 export type AppSessionListing = {
   id: string;
@@ -292,9 +295,7 @@ export async function handleAgentApp(
             const locator = await host.sessionReference?.(session.id);
             return {
               ...session,
-              ...(locator
-                ? localSessionLinkFields(locator, session.title)
-                : {}),
+              ...(locator ? localSessionLinkFields(locator, session.title) : {}),
             };
           }),
         ),

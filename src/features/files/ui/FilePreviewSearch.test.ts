@@ -108,48 +108,63 @@ describe("FilePreviewSearch", () => {
     vi.unstubAllGlobals();
   });
 
-  it.each(["Markdown önizlemesi", "Aperçu Markdown"])("returns find focus to the document named %s", async (label) => {
-    const frames = new Map<number, FrameRequestCallback>();
-    let nextFrame = 0;
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      frames.set(++nextFrame, callback);
-      return nextFrame;
-    });
-    vi.stubGlobal("cancelAnimationFrame", (frame: number) => frames.delete(frame));
-    const flushFocus = () => act(() => {
-      const pending = [...frames.values()];
-      frames.clear();
-      pending.forEach((callback) => callback(performance.now()));
-    });
-    const preview = createElement("div", { className: "markdown-preview", tabIndex: 0, "aria-label": label }, "Alpha");
-    const renderPreview = (active: boolean) => act(async () => root.render(
-      createElement(FilePreviewSearch, { active, contentVersion: "Alpha" }, preview),
-    ));
-    await renderPreview(true);
-    await act(async () => {
-      handleEditorFindKey(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, cancelable: true }));
-    });
-    flushFocus();
-    expect(document.activeElement?.tagName).toBe("INPUT");
-    await act(async () => {
-      handleEditorFindKey(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
-    });
-    flushFocus();
-    expect(document.activeElement).toBe(container.querySelector(".markdown-preview"));
+  it.each(["Markdown önizlemesi", "Aperçu Markdown"])(
+    "returns find focus to the document named %s",
+    async (label) => {
+      const frames = new Map<number, FrameRequestCallback>();
+      let nextFrame = 0;
+      vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+        frames.set(++nextFrame, callback);
+        return nextFrame;
+      });
+      vi.stubGlobal("cancelAnimationFrame", (frame: number) => frames.delete(frame));
+      const flushFocus = () =>
+        act(() => {
+          const pending = [...frames.values()];
+          frames.clear();
+          pending.forEach((callback) => callback(performance.now()));
+        });
+      const preview = createElement(
+        "div",
+        { className: "markdown-preview", tabIndex: 0, "aria-label": label },
+        "Alpha",
+      );
+      const renderPreview = (active: boolean) =>
+        act(async () =>
+          root.render(
+            createElement(FilePreviewSearch, { active, contentVersion: "Alpha" }, preview),
+          ),
+        );
+      await renderPreview(true);
+      await act(async () => {
+        handleEditorFindKey(
+          new KeyboardEvent("keydown", { key: "f", ctrlKey: true, cancelable: true }),
+        );
+      });
+      flushFocus();
+      expect(document.activeElement?.tagName).toBe("INPUT");
+      await act(async () => {
+        handleEditorFindKey(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+      });
+      flushFocus();
+      expect(document.activeElement).toBe(container.querySelector(".markdown-preview"));
 
-    // A pane switch before the scheduled focus return must retire that frame.
-    await act(async () => {
-      handleEditorFindKey(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, cancelable: true }));
-    });
-    flushFocus();
-    await act(async () => {
-      handleEditorFindKey(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
-    });
-    await renderPreview(false);
-    const focus = vi.spyOn(container.querySelector<HTMLElement>(".markdown-preview")!, "focus");
-    flushFocus();
-    expect(focus).not.toHaveBeenCalled();
-  });
+      // A pane switch before the scheduled focus return must retire that frame.
+      await act(async () => {
+        handleEditorFindKey(
+          new KeyboardEvent("keydown", { key: "f", ctrlKey: true, cancelable: true }),
+        );
+      });
+      flushFocus();
+      await act(async () => {
+        handleEditorFindKey(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+      });
+      await renderPreview(false);
+      const focus = vi.spyOn(container.querySelector<HTMLElement>(".markdown-preview")!, "focus");
+      flushFocus();
+      expect(focus).not.toHaveBeenCalled();
+    },
+  );
 
   it("opens from a custom find shortcut instead of the default", async () => {
     saveKeybindingOverride("Editor: Find", { shortcut: "Control+Shift+KeyM" });

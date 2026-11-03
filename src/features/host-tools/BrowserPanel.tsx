@@ -531,219 +531,219 @@ function ProjectBrowserPanel({
         {hostLabel ? ` · ${hostLabel}` : ""}
       </h3>
       <div className="host-browser-bar">
-      <form
-        className="host-browser-toolbar"
-        aria-label={t("Open a website")}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void action(openWebsite);
-        }}
-      >
-        <Button
-          ref={statusTrigger}
-          motion="none"
-          type="button"
-          variant="ghost"
-          iconOnly
-          className="host-browser-status"
-          label={statusLabel}
-          tooltip={statusLabel}
-          tooltipDetails={statusDetails}
-          aria-haspopup="dialog"
-          aria-expanded={controlsOpen && controlsFromStatus}
-          onClick={() => {
-            setSelectionOpen(false);
-            setControlsOpen((open) => !open || !controlsFromStatus);
-            setControlsFromStatus(true);
+        <form
+          className="host-browser-toolbar"
+          aria-label={t("Open a website")}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void action(openWebsite);
           }}
         >
-          <span className="host-browser-status-dot" data-tone={statusTone} aria-hidden />
-        </Button>
-        <TextField
-          fieldClassName="host-browser-url"
-          label={t("Website address")}
-          hideLabel
-          value={url}
-          maxLength={4096}
-          disabled={busy || selecting}
-          onChange={(event) => setUrl(event.target.value)}
-          placeholder="http://localhost:3000"
-          required
-        />
-        <Button
-          motion="none"
-          type="submit"
-          variant="ghost"
-          iconOnly
-          label={t("Open website")}
-          tooltip={t("Open website")}
-          disabled={busy || selecting || setupRequired || !validUrl}
-        >
-          <Globe className="icon-sm" aria-hidden />
-        </Button>
-        <Button
-          motion="none"
-          type="button"
-          variant="ghost"
-          iconOnly
-          label={t("Refresh frame")}
-          tooltip={t("Refresh frame")}
-          disabled={busy || !state?.open}
-          onClick={() => void action(() => request("browser.frame"))}
-        >
-          <RefreshCw className="icon-sm" aria-hidden />
-        </Button>
-      </form>
-      <div
-        className="host-browser-view-actions"
-        role="toolbar"
-        aria-label={t("Browser controls and setup")}
-      >
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Live view")}
-          tooltip={t("Live view")}
-          role="switch"
-          aria-checked={live}
-          selected={live}
-          disabled={busy || !state?.open || selecting}
-          onClick={() => setLive((value) => !value)}
-        >
-          {live ? (
-            <Pause className="icon-sm" aria-hidden />
-          ) : (
-            <Play className="icon-sm" aria-hidden />
-          )}
-        </Button>
-        <Button
-          variant="ghost"
-          iconOnly
-          label={actualSize ? t("Fit preview") : t("Actual size")}
-          tooltip={actualSize ? t("Fit preview") : t("Actual size")}
-          aria-pressed={actualSize}
-          selected={actualSize}
-          disabled={!frame}
-          onClick={() => setActualSize((value) => !value)}
-        >
-          <Maximize2 className="icon-sm" aria-hidden />
-        </Button>
-        <Button
-          ref={controlsTrigger}
-          variant="ghost"
-          iconOnly
-          label={t("Browser controls and setup")}
-          tooltip={t("Browser controls and setup")}
-          aria-haspopup="dialog"
-          aria-expanded={controlsOpen && !controlsFromStatus}
-          selected={controlsOpen && !controlsFromStatus}
-          onClick={() => {
-            setSelectionOpen(false);
-            setControlsOpen((open) => !open || controlsFromStatus);
-            setControlsFromStatus(false);
-          }}
-        >
-          <SlidersHorizontal className="icon-sm" aria-hidden />
-        </Button>
-        <Button
-          motion="none"
-          type="button"
-          variant="ghost"
-          iconOnly
-          label={t("Select element and add to composer")}
-          tooltip={
-            !annotationsAllowed
-              ? t("Browser selections can be attached only on this conversation's project host.")
-              : t("Select element and add to composer")
-          }
-          aria-pressed={selecting}
-          selected={selecting}
-          disabled={
-            !canInput || !sessionId || !frame?.navigationId || selecting || !annotationsAllowed
-          }
-          onClick={() =>
-            void action(async () => {
-              const result = await request("browser.annotation.start", {
-                navigationId: frame?.navigationId,
-              });
-              if (!result?.annotationId || !result.navigationId) return;
-              mode.current = { id: result.annotationId, navigationId: result.navigationId };
-              setSelecting(true);
-              setNotice("");
-              setSelection(undefined);
-              setComment("");
-              setControlsOpen(false);
-            })
-          }
-        >
-          <CursorMagicSelection className="icon-sm" aria-hidden />
-        </Button>
-        {selecting ? (
           <Button
+            ref={statusTrigger}
+            motion="none"
             type="button"
             variant="ghost"
             iconOnly
-            label={t("Cancel selection")}
-            tooltip={t("Cancel selection")}
-            onClick={cancelSelection}
-          >
-            <X className="icon-sm" aria-hidden />
-          </Button>
-        ) : null}
-        {selection ? (
-          <Button
-            ref={selectionTrigger}
-            type="button"
-            variant="ghost"
-            iconOnly
-            label={t("Selected browser element")}
-            tooltip={t("Selected browser element")}
+            className="host-browser-status"
+            label={statusLabel}
+            tooltip={statusLabel}
+            tooltipDetails={statusDetails}
             aria-haspopup="dialog"
-            aria-expanded={selectionOpen}
-            selected={selectionOpen}
+            aria-expanded={controlsOpen && controlsFromStatus}
             onClick={() => {
-              setControlsOpen(false);
-              setSelectionOpen((value) => !value);
+              setSelectionOpen(false);
+              setControlsOpen((open) => !open || !controlsFromStatus);
+              setControlsFromStatus(true);
             }}
           >
-            <MessageSquarePlus className="icon-sm" aria-hidden />
+            <span className="host-browser-status-dot" data-tone={statusTone} aria-hidden />
           </Button>
-        ) : null}
-        <span className="host-browser-action-spacer" />
-        {state?.open ? (
-          <span className="host-browser-control-status" title={controlStatus ?? undefined}>
-            {state.controlling ? t("Control active") : t("View only")}
-          </span>
-        ) : null}
-        {state?.open && !state.controlling ? (
+          <TextField
+            fieldClassName="host-browser-url"
+            label={t("Website address")}
+            hideLabel
+            value={url}
+            maxLength={4096}
+            disabled={busy || selecting}
+            onChange={(event) => setUrl(event.target.value)}
+            placeholder="http://localhost:3000"
+            required
+          />
+          <Button
+            motion="none"
+            type="submit"
+            variant="ghost"
+            iconOnly
+            label={t("Open website")}
+            tooltip={t("Open website")}
+            disabled={busy || selecting || setupRequired || !validUrl}
+          >
+            <Globe className="icon-sm" aria-hidden />
+          </Button>
           <Button
             motion="none"
             type="button"
             variant="ghost"
             iconOnly
-            label={t("Claim control")}
-            tooltip={t("Claim control")}
-            disabled={busy}
-            onClick={() => void action(() => request("browser.claim", { takeover: true }))}
+            label={t("Refresh frame")}
+            tooltip={t("Refresh frame")}
+            disabled={busy || !state?.open}
+            onClick={() => void action(() => request("browser.frame"))}
           >
-            <Lock className="icon-sm" aria-hidden />
+            <RefreshCw className="icon-sm" aria-hidden />
           </Button>
-        ) : null}
-        {state?.open && state.controlling ? (
+        </form>
+        <div
+          className="host-browser-view-actions"
+          role="toolbar"
+          aria-label={t("Browser controls and setup")}
+        >
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Live view")}
+            tooltip={t("Live view")}
+            role="switch"
+            aria-checked={live}
+            selected={live}
+            disabled={busy || !state?.open || selecting}
+            onClick={() => setLive((value) => !value)}
+          >
+            {live ? (
+              <Pause className="icon-sm" aria-hidden />
+            ) : (
+              <Play className="icon-sm" aria-hidden />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            iconOnly
+            label={actualSize ? t("Fit preview") : t("Actual size")}
+            tooltip={actualSize ? t("Fit preview") : t("Actual size")}
+            aria-pressed={actualSize}
+            selected={actualSize}
+            disabled={!frame}
+            onClick={() => setActualSize((value) => !value)}
+          >
+            <Maximize2 className="icon-sm" aria-hidden />
+          </Button>
+          <Button
+            ref={controlsTrigger}
+            variant="ghost"
+            iconOnly
+            label={t("Browser controls and setup")}
+            tooltip={t("Browser controls and setup")}
+            aria-haspopup="dialog"
+            aria-expanded={controlsOpen && !controlsFromStatus}
+            selected={controlsOpen && !controlsFromStatus}
+            onClick={() => {
+              setSelectionOpen(false);
+              setControlsOpen((open) => !open || controlsFromStatus);
+              setControlsFromStatus(false);
+            }}
+          >
+            <SlidersHorizontal className="icon-sm" aria-hidden />
+          </Button>
           <Button
             motion="none"
             type="button"
             variant="ghost"
             iconOnly
-            label={t("Release")}
-            tooltip={t("Release")}
-            disabled={busy}
-            onClick={() => void action(() => request("browser.release"))}
+            label={t("Select element and add to composer")}
+            tooltip={
+              !annotationsAllowed
+                ? t("Browser selections can be attached only on this conversation's project host.")
+                : t("Select element and add to composer")
+            }
+            aria-pressed={selecting}
+            selected={selecting}
+            disabled={
+              !canInput || !sessionId || !frame?.navigationId || selecting || !annotationsAllowed
+            }
+            onClick={() =>
+              void action(async () => {
+                const result = await request("browser.annotation.start", {
+                  navigationId: frame?.navigationId,
+                });
+                if (!result?.annotationId || !result.navigationId) return;
+                mode.current = { id: result.annotationId, navigationId: result.navigationId };
+                setSelecting(true);
+                setNotice("");
+                setSelection(undefined);
+                setComment("");
+                setControlsOpen(false);
+              })
+            }
           >
-            <LockOpen className="icon-sm" aria-hidden />
+            <CursorMagicSelection className="icon-sm" aria-hidden />
           </Button>
-        ) : null}
-      </div>
+          {selecting ? (
+            <Button
+              type="button"
+              variant="ghost"
+              iconOnly
+              label={t("Cancel selection")}
+              tooltip={t("Cancel selection")}
+              onClick={cancelSelection}
+            >
+              <X className="icon-sm" aria-hidden />
+            </Button>
+          ) : null}
+          {selection ? (
+            <Button
+              ref={selectionTrigger}
+              type="button"
+              variant="ghost"
+              iconOnly
+              label={t("Selected browser element")}
+              tooltip={t("Selected browser element")}
+              aria-haspopup="dialog"
+              aria-expanded={selectionOpen}
+              selected={selectionOpen}
+              onClick={() => {
+                setControlsOpen(false);
+                setSelectionOpen((value) => !value);
+              }}
+            >
+              <MessageSquarePlus className="icon-sm" aria-hidden />
+            </Button>
+          ) : null}
+          <span className="host-browser-action-spacer" />
+          {state?.open ? (
+            <span className="host-browser-control-status" title={controlStatus ?? undefined}>
+              {state.controlling ? t("Control active") : t("View only")}
+            </span>
+          ) : null}
+          {state?.open && !state.controlling ? (
+            <Button
+              motion="none"
+              type="button"
+              variant="ghost"
+              iconOnly
+              label={t("Claim control")}
+              tooltip={t("Claim control")}
+              disabled={busy}
+              onClick={() => void action(() => request("browser.claim", { takeover: true }))}
+            >
+              <Lock className="icon-sm" aria-hidden />
+            </Button>
+          ) : null}
+          {state?.open && state.controlling ? (
+            <Button
+              motion="none"
+              type="button"
+              variant="ghost"
+              iconOnly
+              label={t("Release")}
+              tooltip={t("Release")}
+              disabled={busy}
+              onClick={() => void action(() => request("browser.release"))}
+            >
+              <LockOpen className="icon-sm" aria-hidden />
+            </Button>
+          ) : null}
+        </div>
       </div>
       {/* State, failures and notices are shown by the status dot's tooltip and
           the controls popover; screen readers still hear them here. */}
@@ -940,9 +940,7 @@ function ProjectBrowserPanel({
             aria-label={t("Selected browser element")}
           >
             <OverflowTooltip label={selection.element.selector}>
-              <p className="host-browser-target">
-                {selection.element.selector}
-              </p>
+              <p className="host-browser-target">{selection.element.selector}</p>
             </OverflowTooltip>
             <TextareaField
               label={t("Explain the selected element")}
@@ -1102,11 +1100,7 @@ function ProjectBrowserPanel({
           >
             <h4>{t("Browser controls and setup")}</h4>
             <div className="host-browser-state">
-              {state?.url ? (
-                <p className="host-browser-location">
-                  {state.url}
-                </p>
-              ) : null}
+              {state?.url ? <p className="host-browser-location">{state.url}</p> : null}
               <span className="host-tool-status" role="status">
                 {browserStatus}
               </span>

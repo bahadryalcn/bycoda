@@ -176,4 +176,8 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.location { flex-direction: row; flex-wrap: wrap; padding-block: 0; }
+.location {
+  flex-direction: row;
+  flex-wrap: wrap;
+  padding-block: 0;
+}

@@ -167,7 +167,11 @@ async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
       try {
         const receipt = await refreshProviderCatalog(update.harness, { force: true });
         catalogRefresh =
-          receipt.status === "fresh" ? "fresh" : receipt.status === "error" ? "failed" : "unchanged";
+          receipt.status === "fresh"
+            ? "fresh"
+            : receipt.status === "error"
+              ? "failed"
+              : "unchanged";
       } catch {
         catalogRefresh = "failed";
       }

@@ -20,7 +20,10 @@ import {
   revokeAttachment,
   MAX_EMBED_BYTES,
 } from "../../sessions/model/attachments";
-import { attachmentDropVerdict, type AttachmentDropBlock } from "../../sessions/model/attachmentDrop";
+import {
+  attachmentDropVerdict,
+  type AttachmentDropBlock,
+} from "../../sessions/model/attachmentDrop";
 import { harnessSupportsAttachments, type Attachment } from "../../sessions/model/session";
 import {
   isFileReferenceText,
@@ -247,9 +250,7 @@ export function useQuickAttachments(
         (owner?.draft().attachments ?? filesRef.current).length,
         dropBlock(),
       ),
-      "clientX" in pointer
-        ? pointer
-        : nativeDropPointer(pointer.position, pointerInside(target)),
+      "clientX" in pointer ? pointer : nativeDropPointer(pointer.position, pointerInside(target)),
     );
   };
   // The native listener outlives renders; it reads the latest verdict through this ref.

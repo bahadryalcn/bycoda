@@ -122,9 +122,19 @@ describe("FactSuggestions", () => {
     const value = review();
     expect(candidateBlock(value, result.suggestions[0], 0)).toContain("most facts");
     expect(acceptableCandidates(value, 0)).toEqual([]);
-    expect(acceptableCandidates(review({ result: { ...result, suggestions: [
-      { id: "x", topic: "A", text: "a", quote: "a" },
-      { id: "y", topic: "B", text: "b", quote: "b" },
-    ] } }), 1).map((item) => item.id)).toEqual(["x"]);
+    expect(
+      acceptableCandidates(
+        review({
+          result: {
+            ...result,
+            suggestions: [
+              { id: "x", topic: "A", text: "a", quote: "a" },
+              { id: "y", topic: "B", text: "b", quote: "b" },
+            ],
+          },
+        }),
+        1,
+      ).map((item) => item.id),
+    ).toEqual(["x"]);
   });
 });

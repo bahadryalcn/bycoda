@@ -8,23 +8,21 @@ describe("Expo preview boundaries", () => {
   it("reuses a verified official package and refreshes a corrupted archive", async () => {
     const directory = await mkdtemp(join(tmpdir(), "bycoda-expo-cache-"));
     let downloads = 0;
-    const fetcher = vi
-      .fn()
-      .mockImplementation(async (value) =>
-        String(value).includes("versions/latest")
-          ? Response.json({
-              data: {
-                sdkVersions: {
-                  "57.0.0": {
-                    iosClientUrl:
-                      "https://github.com/expo/expo-go-releases/releases/download/Expo-Go-57.0.9/Expo-Go-57.0.9.tar.gz",
-                    iosClientVersion: "57.0.9",
-                  },
+    const fetcher = vi.fn().mockImplementation(async (value) =>
+      String(value).includes("versions/latest")
+        ? Response.json({
+            data: {
+              sdkVersions: {
+                "57.0.0": {
+                  iosClientUrl:
+                    "https://github.com/expo/expo-go-releases/releases/download/Expo-Go-57.0.9/Expo-Go-57.0.9.tar.gz",
+                  iosClientVersion: "57.0.9",
                 },
               },
-            })
-          : (downloads++, new Response("official archive")),
-      );
+            },
+          })
+        : (downloads++, new Response("official archive")),
+    );
     const command = vi.fn<typeof deviceCommand>().mockImplementation(async (exe, args) => {
       if (exe.endsWith("PlistBuddy")) return "host.exp.Exponent";
       if (args[0] === "-tzf") return "Info.plist\n";

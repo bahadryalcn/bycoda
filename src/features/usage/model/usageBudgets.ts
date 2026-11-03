@@ -81,10 +81,10 @@ export function budgetMatches(
   return b.scope === "machine"
     ? b.target === "local" && !session.cwd.startsWith("remote://")
     : b.scope === "session"
-    ? b.target === session.id
-    : b.scope === "project"
-      ? pathKey(b.target) === pathKey(session.cwd)
-      : b.target === groupFor(session.cwd);
+      ? b.target === session.id
+      : b.scope === "project"
+        ? pathKey(b.target) === pathKey(session.cwd)
+        : b.target === groupFor(session.cwd);
 }
 
 export function budgetReading(

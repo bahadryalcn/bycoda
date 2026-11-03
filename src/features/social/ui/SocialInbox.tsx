@@ -144,16 +144,39 @@ export function Inbox({
             <h2>
               {t("Inbox")} <small>{threads.length}</small>
             </h2>
-            <Button variant="ghost" size="sm" loading={pollingPending} disabled={socialLocked || pollingPending || !snapshot.hostOnline}
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={pollingPending}
+              disabled={socialLocked || pollingPending || !snapshot.hostOnline}
               aria-pressed={!!snapshot.pollingEnabled}
-              aria-label={snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
-              tooltip={snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
-              onClick={() => void pendingUi.run("inbox.toggle-refresh", async () => {
-                setPollingPending(true);
-                try { await run(() => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }), snapshot.pollingEnabled ? t("Inbox auto-refresh turned off.") : t("Auto-refresh turned on for permitted accounts.")); }
-                finally { setPollingPending(false); }
-              })}>
-              <span className="social-status-dot" data-online={!!snapshot.pollingEnabled} aria-hidden="true" />
+              aria-label={
+                snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")
+              }
+              tooltip={
+                snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")
+              }
+              onClick={() =>
+                void pendingUi.run("inbox.toggle-refresh", async () => {
+                  setPollingPending(true);
+                  try {
+                    await run(
+                      () => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }),
+                      snapshot.pollingEnabled
+                        ? t("Inbox auto-refresh turned off.")
+                        : t("Auto-refresh turned on for permitted accounts."),
+                    );
+                  } finally {
+                    setPollingPending(false);
+                  }
+                })
+              }
+            >
+              <span
+                className="social-status-dot"
+                data-online={!!snapshot.pollingEnabled}
+                aria-hidden="true"
+              />
               {snapshot.pollingEnabled ? t("Auto-refresh on") : t("Auto-refresh off")}
             </Button>
             <Button
@@ -371,18 +394,36 @@ export function Inbox({
                       : t("No messages yet")
                 }
                 icon={InboxIcon}
-              action={<div className="mt-2 flex flex-wrap gap-2">
-                  {snapshot.threads.length ? <Button variant="ghost" onClick={() => { setQuery(""); setAccountFilter(""); setKindFilter(""); }}>{t("Clear filters")}</Button> : syncAccounts.length ? (
-                    <Button loading={syncing} disabled={socialLocked || !snapshot.hostOnline} onClick={() => void synchronize()}>{t("Refresh inbox")}</Button>
-                  ) : null}
-                </div>}
+                action={
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {snapshot.threads.length ? (
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setQuery("");
+                          setAccountFilter("");
+                          setKindFilter("");
+                        }}
+                      >
+                        {t("Clear filters")}
+                      </Button>
+                    ) : syncAccounts.length ? (
+                      <Button
+                        loading={syncing}
+                        disabled={socialLocked || !snapshot.hostOnline}
+                        onClick={() => void synchronize()}
+                      >
+                        {t("Refresh inbox")}
+                      </Button>
+                    ) : null}
+                  </div>
+                }
               >
                 {snapshot.threads.length
                   ? t("Change the search or filters.")
                   : syncAccounts.length
                     ? t("Refresh messages and comments from eligible accounts.")
                     : t("Connect an account with inbox access in the Accounts section.")}
-                
               </Empty>
             )}
           </div>
@@ -430,21 +471,23 @@ export function Inbox({
                 </div>
               </div>
               {suggesting === thread.id ? (
-              <SocialReplySuggestion
-                key={thread.id}
-                client={client}
-                thread={thread}
-                profile={snapshot.profiles.find((profile) => profile.projectId === thread.projectId)}
-                hostOnline={snapshot.hostOnline}
-                replacesDraft={!!answers[thread.id]?.text.trim()}
-                onClose={() => setSuggesting("")}
-                onOpenSettings={onOpenSettings}
-                onOpenContent={onOpenContent}
-                onSuggestion={(suggestion) => {
-                  setAnswers((current) => ({ ...current, [thread.id]: suggestion }));
-                  setReplyOpen((count) => count + 1);
-                }}
-              />
+                <SocialReplySuggestion
+                  key={thread.id}
+                  client={client}
+                  thread={thread}
+                  profile={snapshot.profiles.find(
+                    (profile) => profile.projectId === thread.projectId,
+                  )}
+                  hostOnline={snapshot.hostOnline}
+                  replacesDraft={!!answers[thread.id]?.text.trim()}
+                  onClose={() => setSuggesting("")}
+                  onOpenSettings={onOpenSettings}
+                  onOpenContent={onOpenContent}
+                  onSuggestion={(suggestion) => {
+                    setAnswers((current) => ({ ...current, [thread.id]: suggestion }));
+                    setReplyOpen((count) => count + 1);
+                  }}
+                />
               ) : null}
               {thread.reviewReason ? (
                 <Notice kind="warning" title={t("Check the project match")}>
@@ -493,7 +536,14 @@ export function Inbox({
                 {detail.loading ? (
                   <LoadingText>{t("Loading conversation history")}</LoadingText>
                 ) : null}
-                {detail.error ? <Notice kind="error">{detail.error}<Button variant="link" loading={detail.loading} onClick={detail.retry}>{t("Retry loading history")}</Button></Notice> : null}
+                {detail.error ? (
+                  <Notice kind="error">
+                    {detail.error}
+                    <Button variant="link" loading={detail.loading} onClick={detail.retry}>
+                      {t("Retry loading history")}
+                    </Button>
+                  </Notice>
+                ) : null}
                 {(!summary?.eventsPreview || detail.value ? thread.events : []).map((event) => (
                   <article
                     key={event.id}
@@ -520,10 +570,7 @@ export function Inbox({
                   <DraftList drafts={currentDrafts} client={client} run={run} snapshot={snapshot} />
                 </>
               ) : null}
-              <details
-                className="social-settings social-thread-history"
-
-              >
+              <details className="social-settings social-thread-history">
                 <summary>{t("Send history")}</summary>
                 <JobList snapshot={snapshot} client={client} run={run} thread={thread} />
               </details>

@@ -129,7 +129,8 @@ function WorkspaceSettingsSurfaceComponent({
   // Only claim a status when the loader reported one; otherwise Archive keeps
   // its plain "ready" behaviour.
   const sessionsStatus = useMemo<SettingsProps["sessionsStatus"]>(() => {
-    if (historyFailed) return { state: "unavailable", ...(onRetryHistory ? { onRetry: onRetryHistory } : {}) };
+    if (historyFailed)
+      return { state: "unavailable", ...(onRetryHistory ? { onRetry: onRetryHistory } : {}) };
     if (historyPending) return { state: "loading" };
     if (historyFailed === undefined && historyPending === undefined) return undefined;
     return { state: "ready" };

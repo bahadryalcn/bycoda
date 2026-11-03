@@ -165,7 +165,9 @@ export function InboxFiltersMenu({
       className="overflow-y-auto overscroll-none p-1"
     >
       <div className="flex h-8 items-center justify-between gap-2 ps-2">
-        <span className="text-ui-caption font-medium text-(--ui-text-secondary)">{t("Filter inbox")}</span>
+        <span className="text-ui-caption font-medium text-(--ui-text-secondary)">
+          {t("Filter inbox")}
+        </span>
         {hasActiveInboxFilters(filters, source, hiddenLinearTeamIds, hiddenJiraProjectIds) ||
         codeHostProjectsActive ? (
           <Button
@@ -369,7 +371,6 @@ export function InboxFiltersMenu({
           />
         </>
       ) : null}
-
     </Popover>
   );
 }

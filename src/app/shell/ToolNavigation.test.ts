@@ -10,7 +10,7 @@ import { preloadToolSurface } from "../workspace/surfaces/lazySurfaces";
 
 vi.mock("../workspace/surfaces/lazySurfaces", () => ({ preloadToolSurface: vi.fn() }));
 vi.mock("../../features/assistant/model/assistantClient", () => ({
-  useAssistantIdentity: () => ({name:"Arif",room:"Arif's Room",setupComplete:true}),
+  useAssistantIdentity: () => ({ name: "Arif", room: "Arif's Room", setupComplete: true }),
 }));
 
 vi.mock("../model/windowNavigation", () => ({

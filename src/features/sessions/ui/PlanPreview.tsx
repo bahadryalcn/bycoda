@@ -76,9 +76,7 @@ export function PlanPreview({
             </Button>
           ) : (
             <OverflowTooltip label={title}>
-              <span
-                className="block truncate font-sans text-ui-secondary font-medium text-(--ui-text-secondary)"
-              >
+              <span className="block truncate font-sans text-ui-secondary font-medium text-(--ui-text-secondary)">
                 {title}
               </span>
             </OverflowTooltip>

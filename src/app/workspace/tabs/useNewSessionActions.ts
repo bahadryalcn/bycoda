@@ -1,4 +1,10 @@
-import { useCallback, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { NEW_LOCAL_HOST_SESSION } from "../../../features/connections/model/newLocalHostSession";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
@@ -89,7 +95,8 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
   useEffect(() => {
     const open = (event: Event) => {
       const session = (event as CustomEvent<Session>).detail;
-      if (!session?.hostBinding || sessionsRef.current.some((entry) => entry.id === session.id)) return;
+      if (!session?.hostBinding || sessionsRef.current.some((entry) => entry.id === session.id))
+        return;
       const tab = newTab(session.id);
       setSearchViewOpen(false);
       setInboxViewOpen(false);

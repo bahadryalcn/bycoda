@@ -274,7 +274,10 @@ export function TabGroupMenu({
               void (async () => {
                 try {
                   const path = await pickAndSetProjectLogo(logoProject);
-                  if (path) { onLogoChange(); onClose(); }
+                  if (path) {
+                    onLogoChange();
+                    onClose();
+                  }
                 } catch (error) {
                   setLogoError(error instanceof Error ? error.message : String(error));
                 } finally {
@@ -314,9 +317,14 @@ export function TabGroupMenu({
                 logoOperation.current = true;
                 setLogoBusy(true);
                 setLogoError(null);
-                void clearProjectLogo(projectKey(logoProject)).then(onLogoChange, (error) => {
-                  setLogoError(error instanceof Error ? error.message : String(error));
-                }).finally(() => { logoOperation.current = false; setLogoBusy(false); });
+                void clearProjectLogo(projectKey(logoProject))
+                  .then(onLogoChange, (error) => {
+                    setLogoError(error instanceof Error ? error.message : String(error));
+                  })
+                  .finally(() => {
+                    logoOperation.current = false;
+                    setLogoBusy(false);
+                  });
               }}
               className="grid shrink-0 place-items-center"
             >
@@ -325,7 +333,11 @@ export function TabGroupMenu({
           ) : null}
         </div>
       ) : null}
-      {logoError ? <Alert tone="danger" role="alert">{logoError}</Alert> : null}
+      {logoError ? (
+        <Alert tone="danger" role="alert">
+          {logoError}
+        </Alert>
+      ) : null}
 
       <SectionLabel as="div" className="mb-1.5">
         {t("Color")}
@@ -497,9 +509,7 @@ export function TabGroupMenu({
             <div role="separator" className="my-1 h-px bg-stroke" />
             {extraItems.map((item) => (
               <Fragment key={item.id}>
-                {item.sepBefore ? (
-                  <div role="separator" className="my-1 h-px bg-stroke" />
-                ) : null}
+                {item.sepBefore ? <div role="separator" className="my-1 h-px bg-stroke" /> : null}
                 <MenuRow
                   item={item}
                   expanded={submenu?.item.id === item.id}
@@ -609,11 +619,7 @@ function MenuRow({
         ) : null}
       </span>
       {item.submenu ? (
-        <ChevronRight
-          data-branch-indicator
-          className="icon-sm shrink-0"
-          strokeWidth={1.75}
-        />
+        <ChevronRight data-branch-indicator className="icon-sm shrink-0" strokeWidth={1.75} />
       ) : null}
       {item.shortcut ? (
         <span className="shrink-0 text-ui-caption text-(--ui-text-muted)">{item.shortcut}</span>

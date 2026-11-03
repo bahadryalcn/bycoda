@@ -32,8 +32,7 @@ export function createBridgeLookup<T>(
     if (found.has(key)) return;
     const now = Date.now();
     for (const [id, expires] of missing) if (expires <= now) missing.delete(id);
-    if (missing.size >= MAX_NEGATIVE)
-      missing.delete(missing.keys().next().value!);
+    if (missing.size >= MAX_NEGATIVE) missing.delete(missing.keys().next().value!);
     missing.set(key, now + negativeTtlMs);
   };
 

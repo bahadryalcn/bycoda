@@ -37,7 +37,12 @@ type IconActionProps = Omit<ButtonProps, "iconOnly" | "label" | "size" | "varian
 };
 
 /** Icon action of the media toolbar. Pass a 14px glyph (`className="icon-sm"`) as the child. */
-export function MediaToolbarButton({ label, tone = "overlay", tooltip, ...props }: IconActionProps) {
+export function MediaToolbarButton({
+  label,
+  tone = "overlay",
+  tooltip,
+  ...props
+}: IconActionProps) {
   return (
     <Button
       {...props}

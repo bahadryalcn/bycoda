@@ -26,22 +26,48 @@ import * as skillPrompts from "./prompt-skills";
 import { execFileAsync } from "../src/shared/lib/processExecution.node";
 
 const cleanups: Array<() => Promise<void> | void> = [];
-it("stamps internal message authors without accepting a client author or leaking to the owner turn",async()=>{
-  const {engine,store,id,turns,waitForTurnStart}=await setup();
-  const author={kind:"assistant" as const,name:"Arif",jobId:"job-1",reason:"nudge" as const,operationId:"op-1"};
-  const input={type:"send" as const,commandId:"stamped-message",sessionId:id,text:"Continue the assigned task."};
-  const receipt=await engine.withMessageAuthor(author,()=>engine.command(input));
+it("stamps internal message authors without accepting a client author or leaking to the owner turn", async () => {
+  const { engine, store, id, turns, waitForTurnStart } = await setup();
+  const author = {
+    kind: "assistant" as const,
+    name: "Arif",
+    jobId: "job-1",
+    reason: "nudge" as const,
+    operationId: "op-1",
+  };
+  const input = {
+    type: "send" as const,
+    commandId: "stamped-message",
+    sessionId: id,
+    text: "Continue the assigned task.",
+  };
+  const receipt = await engine.withMessageAuthor(author, () => engine.command(input));
   await waitForTurnStart();
-  expect((await store.session(id)).session.blocks.find(block=>block.id===input.commandId)?.author).toEqual(author);
-  turns[0].finish();await engine.waitForRun(id,receipt.runId);
-  const forged=await engine.command({...input,commandId:"forged",author} as Parameters<HostEngine["command"]>[0]);
+  expect(
+    (await store.session(id)).session.blocks.find((block) => block.id === input.commandId)?.author,
+  ).toEqual(author);
+  turns[0].finish();
+  await engine.waitForRun(id, receipt.runId);
+  const forged = await engine.command({ ...input, commandId: "forged", author } as Parameters<
+    HostEngine["command"]
+  >[0]);
   await waitForTurnStart(2);
-  expect((await store.session(id)).session.blocks.find(block=>block.id==="forged")?.author).toBeUndefined();
-  turns[1].finish();await engine.waitForRun(id,forged.runId);
-  const owner=await engine.command({...input,commandId:"owner-message",text:"Owner follow-up"});
+  expect(
+    (await store.session(id)).session.blocks.find((block) => block.id === "forged")?.author,
+  ).toBeUndefined();
+  turns[1].finish();
+  await engine.waitForRun(id, forged.runId);
+  const owner = await engine.command({
+    ...input,
+    commandId: "owner-message",
+    text: "Owner follow-up",
+  });
   await waitForTurnStart(3);
-  expect((await store.session(id)).session.blocks.find(block=>block.id==="owner-message")?.author).toBeUndefined();
-  turns[2].finish();await engine.waitForRun(id,owner.runId);
+  expect(
+    (await store.session(id)).session.blocks.find((block) => block.id === "owner-message")?.author,
+  ).toBeUndefined();
+  turns[2].finish();
+  await engine.waitForRun(id, owner.runId);
 });
 
 it("validates and persists the explicitly selected profile before sending a new host session", async () => {
@@ -454,7 +480,12 @@ describe("assistant command delivery evidence", () => {
     const controller = new AbortController();
     const waiting = vi.spyOn(store.changes, "wait");
     let outcome: string | undefined;
-    const delivery = engine.commandDelivery(id, receipt.runId, command.commandId, false, controller.signal).then(value => { outcome = value; return value; });
+    const delivery = engine
+      .commandDelivery(id, receipt.runId, command.commandId, false, controller.signal)
+      .then((value) => {
+        outcome = value;
+        return value;
+      });
     try {
       await vi.waitFor(() => expect(waiting).toHaveBeenCalled());
       expect(outcome).toBeUndefined();
@@ -472,12 +503,22 @@ describe("assistant command delivery evidence", () => {
 
   it("wakes a pending delivery wait on provider acceptance without waiting for output", async () => {
     const { engine, store, id, turns, waitForTurnStart } = await setup();
-    const receipt = await engine.command({ type: "send", commandId: "delivery-accepted", sessionId: id, text: "Work" });
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "delivery-accepted",
+      sessionId: id,
+      text: "Work",
+    });
     await waitForTurnStart();
     const controller = new AbortController();
     const waiting = vi.spyOn(store.changes, "wait");
     let outcome: string | undefined;
-    const delivery = engine.commandDelivery(id, receipt.runId, "delivery-accepted", false, controller.signal).then(value => { outcome = value; return value; });
+    const delivery = engine
+      .commandDelivery(id, receipt.runId, "delivery-accepted", false, controller.signal)
+      .then((value) => {
+        outcome = value;
+        return value;
+      });
     try {
       await vi.waitFor(() => expect(waiting).toHaveBeenCalled());
       turns[0].input.onAccepted?.();
@@ -495,12 +536,27 @@ describe("assistant command delivery evidence", () => {
 
   it("does not call a provider startup failure delivered merely because its receipt exists", async () => {
     const { engine, store, id, provider } = await setup();
-    provider.send = vi.fn(async () => { throw new Error("Startup rejected before acceptance"); });
-    const command = { type: "send", commandId: "delivery-startup-error", sessionId: id, text: "Work" };
+    provider.send = vi.fn(async () => {
+      throw new Error("Startup rejected before acceptance");
+    });
+    const command = {
+      type: "send",
+      commandId: "delivery-startup-error",
+      sessionId: id,
+      text: "Work",
+    };
     const receipt = await engine.command(command);
     await engine.waitForRun(id, receipt.runId);
     expect(await store.receiptStatus(command.commandId)).toMatchObject({ runId: receipt.runId });
-    expect(await engine.commandDelivery(id, receipt.runId, command.commandId, false, new AbortController().signal)).toBe("unknown");
+    expect(
+      await engine.commandDelivery(
+        id,
+        receipt.runId,
+        command.commandId,
+        false,
+        new AbortController().signal,
+      ),
+    ).toBe("unknown");
     expect(await engine.command(command)).toEqual(receipt);
     expect(provider.send).toHaveBeenCalledOnce();
   });
@@ -508,25 +564,49 @@ describe("assistant command delivery evidence", () => {
   it("waits for delayed steer acknowledgement rather than treating in-flight delivery as settled uncertainty", async () => {
     const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
     let acceptSteer!: () => void;
-    provider.steer = vi.fn(() => new Promise<void>(resolve => { acceptSteer = resolve; }));
-    const receipt = await engine.command({ type: "send", commandId: "delivery-steer-primary", sessionId: id, text: "Work" });
+    provider.steer = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          acceptSteer = resolve;
+        }),
+    );
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "delivery-steer-primary",
+      sessionId: id,
+      text: "Work",
+    });
     await waitForTurnStart();
     turns[0].input.onAccepted?.();
-    const command = { type: "steer", commandId: "delivery-delayed-steer", sessionId: id, runId: receipt.runId, text: "Refine the work" };
+    const command = {
+      type: "steer",
+      commandId: "delivery-delayed-steer",
+      sessionId: id,
+      runId: receipt.runId,
+      text: "Refine the work",
+    };
     await engine.command(command);
     await vi.waitFor(() => expect(provider.steer).toHaveBeenCalledOnce());
     const controller = new AbortController();
     let outcome: string | undefined;
-    const delivery = engine.commandDelivery(id, receipt.runId, command.commandId, true, controller.signal).then(value => { outcome = value; return value; });
+    const delivery = engine
+      .commandDelivery(id, receipt.runId, command.commandId, true, controller.signal)
+      .then((value) => {
+        outcome = value;
+        return value;
+      });
     try {
       // Drain currently queued reads without resolving the fake provider acknowledgement.
       await store.session(id);
-      await new Promise<void>(resolve => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
       expect(outcome).toBeUndefined();
       acceptSteer();
       await vi.waitFor(() => expect(outcome).toBe("delivered"), { timeout: 1000 });
       expect(await delivery).toBe("delivered");
-      expect((await store.session(id)).session.blocks.find(block => block.id === command.commandId)?.followUpDelivery).toBeUndefined();
+      expect(
+        (await store.session(id)).session.blocks.find((block) => block.id === command.commandId)
+          ?.followUpDelivery,
+      ).toBeUndefined();
     } finally {
       controller.abort();
       acceptSteer();
@@ -1334,7 +1414,12 @@ afterEach(async () => {
 describe("Host writer transfer after settled task review", () => {
   it("retires the exact completed turn before desktop continuation and preserves resume history", async () => {
     const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
-    const receipt = await engine.command({ type: "send", commandId: "review", sessionId: id, text: "Read-only review" });
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "review",
+      sessionId: id,
+      text: "Read-only review",
+    });
     await waitForTurnStart();
     turns[0].input.onEvent({ type: "session.providerBound", providerSessionId: "review-thread" });
     turns[0].finish();
@@ -1343,7 +1428,12 @@ describe("Host writer transfer after settled task review", () => {
     expect(before.status).toBe("idle");
     expect(engine.hasRetainedProviderWriter(id)).toBe(true);
     let release!: () => void;
-    vi.mocked(provider.stop).mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    vi.mocked(provider.stop).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
     const grant = vi.fn(async () => "desktop-lease");
     const transfer = engine.withRetiredProviderWriter(id, grant);
     await vi.waitFor(() => expect(provider.stop).toHaveBeenCalledOnce());
@@ -1355,19 +1445,33 @@ describe("Host writer transfer after settled task review", () => {
     expect(grant).toHaveBeenCalledOnce();
     expect(engine.hasRetainedProviderWriter(id)).toBe(false);
     expect((await store.session(id)).session).toEqual(before.session);
-    expect(provider.bind).toHaveBeenLastCalledWith(id, "review-thread", before.session.cwd, undefined);
+    expect(provider.bind).toHaveBeenLastCalledWith(
+      id,
+      "review-thread",
+      before.session.cwd,
+      undefined,
+    );
   });
 
   it("refuses continuation after failed retirement, retaining the original receipt on retry", async () => {
     const { engine, id, provider, turns, waitForTurnStart } = await setup();
-    const receipt = await engine.command({ type: "send", commandId: "review-fail", sessionId: id, text: "Review" });
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "review-fail",
+      sessionId: id,
+      text: "Review",
+    });
     await waitForTurnStart();
     turns[0].finish();
     await engine.waitForRun(id, receipt.runId);
     vi.mocked(provider.stop).mockRejectedValueOnce(new Error("original writer retirement failed"));
     const grant = vi.fn(async () => "unsafe");
-    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow("HOST_WRITER_RETIREMENT_FAILED");
-    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow("HOST_WRITER_RETIREMENT_FAILED");
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow(
+      "HOST_WRITER_RETIREMENT_FAILED",
+    );
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow(
+      "HOST_WRITER_RETIREMENT_FAILED",
+    );
     expect(provider.stop).toHaveBeenCalledOnce();
     expect(engine.hasRetainedProviderWriter(id)).toBe(true);
     expect(grant).not.toHaveBeenCalled();
@@ -1375,7 +1479,12 @@ describe("Host writer transfer after settled task review", () => {
 
   it("never retires an active turn to grant a desktop continuation", async () => {
     const { engine, id, provider, waitForTurnStart } = await setup();
-    await engine.command({ type: "send", commandId: "active-review", sessionId: id, text: "Review" });
+    await engine.command({
+      type: "send",
+      commandId: "active-review",
+      sessionId: id,
+      text: "Review",
+    });
     await waitForTurnStart();
     const grant = vi.fn(async () => "unsafe");
     await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow("LEASE_HELD");
@@ -1385,7 +1494,12 @@ describe("Host writer transfer after settled task review", () => {
 
   it("keeps a timed-out retirement guarded and joins its original completion on owner retry", async () => {
     const { engine, id, provider, turns, waitForTurnStart } = await setup();
-    const receipt = await engine.command({ type: "send", commandId: "pending-review", sessionId: id, text: "Review" });
+    const receipt = await engine.command({
+      type: "send",
+      commandId: "pending-review",
+      sessionId: id,
+      text: "Review",
+    });
     await waitForTurnStart();
     turns[0].finish();
     await engine.waitForRun(id, receipt.runId);
@@ -1401,10 +1515,19 @@ describe("Host writer transfer after settled task review", () => {
       const transfer = engine.withRetiredProviderWriter(id, grant).catch((error: unknown) => error);
       await entered.promise;
       await vi.advanceTimersByTimeAsync(20_000);
-      expect(await transfer).toMatchObject({ message: expect.stringContaining("HOST_WRITER_RETIREMENT_PENDING") });
+      expect(await transfer).toMatchObject({
+        message: expect.stringContaining("HOST_WRITER_RETIREMENT_PENDING"),
+      });
       expect(grant).not.toHaveBeenCalled();
       expect(engine.hasRetainedProviderWriter(id)).toBe(true);
-      await expect(engine.command({ type: "send", commandId: "unsafe-replacement", sessionId: id, text: "Must wait" })).rejects.toThrow("HOST_WRITER_RETIREMENT_PENDING");
+      await expect(
+        engine.command({
+          type: "send",
+          commandId: "unsafe-replacement",
+          sessionId: id,
+          text: "Must wait",
+        }),
+      ).rejects.toThrow("HOST_WRITER_RETIREMENT_PENDING");
       expect(provider.send).toHaveBeenCalledOnce();
       released.resolve();
       expect(await engine.withRetiredProviderWriter(id, grant)).toBe("lease");
@@ -1419,7 +1542,12 @@ describe("Host writer transfer after settled task review", () => {
   it("uses the latest settled Host turn receipt and refuses unsupported transfer", async () => {
     const { engine, id, provider, turns, waitForTurnStart } = await setup();
     for (let index = 0; index < 2; index++) {
-      const receipt = await engine.command({ type: "send", commandId: `warm-${index}`, sessionId: id, text: "Review" });
+      const receipt = await engine.command({
+        type: "send",
+        commandId: `warm-${index}`,
+        sessionId: id,
+        text: "Review",
+      });
       await waitForTurnStart(index + 1);
       turns[index].finish();
       await engine.waitForRun(id, receipt.runId);
@@ -1427,7 +1555,9 @@ describe("Host writer transfer after settled task review", () => {
     const hook = provider.retireOriginal;
     delete provider.retireOriginal;
     const grant = vi.fn(async () => "lease");
-    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow("HOST_WRITER_RETIREMENT_FAILED");
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow(
+      "HOST_WRITER_RETIREMENT_FAILED",
+    );
     expect(provider.stop).not.toHaveBeenCalled();
     expect(grant).not.toHaveBeenCalled();
     provider.retireOriginal = hook;

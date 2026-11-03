@@ -2,7 +2,11 @@ import { z } from "zod";
 import { JsonObjectSchema, JsonValueSchema, SafeCounterSchema } from "./schemas";
 
 const empty = z.strictObject({});
-const assistantPresence = z.strictObject({state:z.enum(["present","idle","away","dnd","unknown"]),assistantName:z.string().optional(),setupComplete:z.boolean()});
+const assistantPresence = z.strictObject({
+  state: z.enum(["present", "idle", "away", "dnd", "unknown"]),
+  assistantName: z.string().optional(),
+  setupComplete: z.boolean(),
+});
 const scope = z.strictObject({
   projectId: z.string(),
   provider: z.string(),
@@ -41,10 +45,25 @@ export const NativeWorkspaceFormatParamsSchema = z.strictObject({
   args: z.strictObject({ path: z.string(), source: z.string(), cursorOffset: SafeCounterSchema }),
 });
 export const NATIVE_SERVICES_RPC_SCHEMAS = {
-  "native.services.assistant.presence.get":{params:empty,result:assistantPresence},
-  "native.services.assistant.presence.set":{params:z.strictObject({state:z.enum(["present","away","dnd"])}),result:assistantPresence},
-  "native.services.desktop.status":{params:empty,result:z.strictObject({enabled:z.boolean(),active:z.boolean(),stopped:z.boolean(),currentAction:z.strictObject({app:z.string(),action:z.string()}).optional(),assistantName:z.string().optional()})},
-  "native.services.desktop.stop":{params:empty,result:z.strictObject({stopped:z.literal(true)})},
+  "native.services.assistant.presence.get": { params: empty, result: assistantPresence },
+  "native.services.assistant.presence.set": {
+    params: z.strictObject({ state: z.enum(["present", "away", "dnd"]) }),
+    result: assistantPresence,
+  },
+  "native.services.desktop.status": {
+    params: empty,
+    result: z.strictObject({
+      enabled: z.boolean(),
+      active: z.boolean(),
+      stopped: z.boolean(),
+      currentAction: z.strictObject({ app: z.string(), action: z.string() }).optional(),
+      assistantName: z.string().optional(),
+    }),
+  },
+  "native.services.desktop.stop": {
+    params: empty,
+    result: z.strictObject({ stopped: z.literal(true) }),
+  },
   "native.services.runtimeLogs.bridge.describe": { params: empty, result: describe },
   "native.services.runtimeLogs.access.issue": { params: access, result: grant },
   "native.services.runtimeLogs.terminals.append": {

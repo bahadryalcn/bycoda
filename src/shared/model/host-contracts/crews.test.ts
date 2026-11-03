@@ -33,10 +33,7 @@ const candidate = {
   qualitySource: "owner-estimate" as const,
   samples: 3,
 };
-const agent = (
-  id: string,
-  role: "coordinator" | "specialist" | "reviewer",
-) => ({
+const agent = (id: string, role: "coordinator" | "specialist" | "reviewer") => ({
   id,
   name: id,
   role,
@@ -148,9 +145,7 @@ const question = {
       multiSelect: false,
       allowCustom: true,
       preserveCustomWhitespace: true,
-      options: [
-        { id: "o", label: "Option", description: "Description", literal: true },
-      ],
+      options: [{ id: "o", label: "Option", description: "Description", literal: true }],
     },
   ],
   behavior: "nonBlocking" as const,
@@ -257,15 +252,9 @@ it("inventories all declared Crew/candidate/policy/run and catalog/question fiel
     ["CrewAssignment", dto.CrewAssignmentSchema],
     ["CrewRun", dto.CrewRunSchema],
   ] as const)
-    expect(Object.keys(schema.shape).sort()).toEqual(
-      declaredKeys(source, name),
-    );
+    expect(Object.keys(schema.shape).sort()).toEqual(declaredKeys(source, name));
   expect(Object.keys(dto.SavedCrewAgentSchema.shape).sort()).toEqual(
-    [
-      ...Object.keys(dto.CrewAgentSchema.shape),
-      "projectId",
-      "updatedAt",
-    ].sort(),
+    [...Object.keys(dto.CrewAgentSchema.shape), "projectId", "updatedAt"].sort(),
   );
   expect(Object.keys(dto.CrewCapabilitiesSchema.shape).sort()).toEqual(
     [...CREW_CAPABILITIES].sort(),
@@ -289,18 +278,15 @@ it("inventories all declared Crew/candidate/policy/run and catalog/question fiel
 });
 
 it("roundtrips all20 complete params without defaults, coercions or request-fingerprint normalization", () => {
-  expect(Object.keys(dto.CREWS_RPC_SCHEMAS).sort()).toEqual(
-    Object.keys(params).sort(),
-  );
+  expect(Object.keys(dto.CREWS_RPC_SCHEMAS).sort()).toEqual(Object.keys(params).sort());
   for (const [method, schema] of Object.entries(dto.CREWS_RPC_SCHEMAS)) {
     const value = params[method as keyof typeof params];
     expect(schema.params.parse(value)).toStrictEqual(value);
     const { projectId: _scope, ...unscoped } = value;
     expect(schema.params.safeParse(unscoped).success).toBe(false);
-    expect(
-      schema.params.safeParse({ ...value, principal: { sessionId: "forged" } })
-        .success,
-    ).toBe(false);
+    expect(schema.params.safeParse({ ...value, principal: { sessionId: "forged" } }).success).toBe(
+      false,
+    );
   }
   expect(
     dto.CrewsDeleteParamsSchema.safeParse({
@@ -322,19 +308,13 @@ it("roundtrips all20 complete params without defaults, coercions or request-fing
     }).success,
   ).toBe(false);
   const { targetRunId: _target, ...withoutTarget } = params["crews.respond"];
-  expect(dto.CrewsRespondParamsSchema.parse(withoutTarget)).toStrictEqual(
-    withoutTarget,
-  );
+  expect(dto.CrewsRespondParamsSchema.parse(withoutTarget)).toStrictEqual(withoutTarget);
 });
 
 it("preserves object/JSON-string alternatives, full saved metadata and input/template revision differences", () => {
   const { updatedAt: _revision, ...template } = definition;
-  expect(dto.CrewDefinitionTemplateSchema.parse(template)).toStrictEqual(
-    template,
-  );
-  expect(dto.CrewDefinitionTemplateSchema.safeParse(definition).success).toBe(
-    false,
-  );
+  expect(dto.CrewDefinitionTemplateSchema.parse(template)).toStrictEqual(template);
+  expect(dto.CrewDefinitionTemplateSchema.safeParse(definition).success).toBe(false);
   expect(dto.CrewDefinitionInputSchema.parse(template)).toStrictEqual(template);
   expect(dto.CrewDefinitionSchema.safeParse(template).success).toBe(false);
   for (const value of [
@@ -364,18 +344,12 @@ it("preserves object/JSON-string alternatives, full saved metadata and input/tem
     },
   ])
     expect(dto.CrewsAgentSaveParamsSchema.parse(value)).toStrictEqual(value);
-  expect(
-    dto.CrewsSaveParamsSchema.safeParse({ projectId: "project" }).success,
-  ).toBe(false);
-  expect(
-    dto.CrewsAgentSaveParamsSchema.safeParse({ projectId: "project" }).success,
-  ).toBe(false);
-  expect(
-    dto.CrewAgentSchema.parse(agent("worker", "specialist")),
-  ).toStrictEqual(agent("worker", "specialist"));
-  expect(parseCrewAgent(agent("worker", "specialist")).source?.updatedAt).toBe(
-    2.5,
+  expect(dto.CrewsSaveParamsSchema.safeParse({ projectId: "project" }).success).toBe(false);
+  expect(dto.CrewsAgentSaveParamsSchema.safeParse({ projectId: "project" }).success).toBe(false);
+  expect(dto.CrewAgentSchema.parse(agent("worker", "specialist"))).toStrictEqual(
+    agent("worker", "specialist"),
   );
+  expect(parseCrewAgent(agent("worker", "specialist")).source?.updatedAt).toBe(2.5);
   expect(parseCrewDefinition(template).updatedAt).toBe(0);
 });
 
@@ -392,18 +366,14 @@ it("keeps raw mutation runs separate from declared sanitized read views and genu
     coordinatorStatus: "idle",
   };
   expect(dto.CrewRunViewSchema.parse(view)).toStrictEqual(view);
-  expect(
-    dto.CrewRunViewSchema.safeParse({ ...view, launch: rawRun.launch }).success,
-  ).toBe(false);
+  expect(dto.CrewRunViewSchema.safeParse({ ...view, launch: rawRun.launch }).success).toBe(false);
   expect(
     dto.CrewRunViewSchema.safeParse({
       ...view,
       pendingDelivery: rawRun.pendingDelivery,
     }).success,
   ).toBe(false);
-  expect(dto.CrewRunViewSchema.safeParse({ ...view, definition }).success).toBe(
-    false,
-  );
+  expect(dto.CrewRunViewSchema.safeParse({ ...view, definition }).success).toBe(false);
   const task = {
     id: "task",
     projectId: "project",
@@ -421,13 +391,10 @@ it("keeps raw mutation runs separate from declared sanitized read views and genu
     verification: { command: { exitCode: null, output: "", timedOut: false } },
   };
   expect(dto.CrewTaskViewSchema.parse(task)).toStrictEqual(task);
-  expect(
-    dto.CrewTaskViewSchema.safeParse({ ...task, prompt: "private" }).success,
-  ).toBe(false);
-  expect(
-    dto.CrewTaskViewSchema.safeParse({ ...task, retryFeedback: "private" })
-      .success,
-  ).toBe(false);
+  expect(dto.CrewTaskViewSchema.safeParse({ ...task, prompt: "private" }).success).toBe(false);
+  expect(dto.CrewTaskViewSchema.safeParse({ ...task, retryFeedback: "private" }).success).toBe(
+    false,
+  );
 });
 
 it("preserves finite provider settings/candidate evidence and full approval/question structures while rejecting invented fields/nulls", () => {
@@ -460,11 +427,13 @@ it("preserves finite provider settings/candidate evidence and full approval/ques
     targetRunId: "turn",
     question,
   };
-  expect(dto.CrewPendingInputSchema.parse(pendingQuestion)).toStrictEqual(
-    pendingQuestion,
-  );
-  expect(dto.CrewUserQuestionPromptSchema.safeParse({ ...question, occurrenceId: "invented" }).success).toBe(false);
-  expect(dto.CrewUserQuestionPromptSchema.safeParse({ ...question, occurrenceId: undefined }).success).toBe(true);
+  expect(dto.CrewPendingInputSchema.parse(pendingQuestion)).toStrictEqual(pendingQuestion);
+  expect(
+    dto.CrewUserQuestionPromptSchema.safeParse({ ...question, occurrenceId: "invented" }).success,
+  ).toBe(false);
+  expect(
+    dto.CrewUserQuestionPromptSchema.safeParse({ ...question, occurrenceId: undefined }).success,
+  ).toBe(true);
   for (const value of [
     { ...candidate, future: true },
     { ...candidate, qualitySource: "benchmark" },
@@ -506,13 +475,10 @@ it("preserves finite provider settings/candidate evidence and full approval/ques
       approval: { requestId: 0, decided: false },
     }).success,
   ).toBe(false);
-  expect(
-    dto.CrewUserQuestionPromptSchema.safeParse({ ...question, behavior: null })
-      .success,
-  ).toBe(false);
-  expect(dto.CrewRunSchema.safeParse({ ...rawRun, launch: null }).success).toBe(
+  expect(dto.CrewUserQuestionPromptSchema.safeParse({ ...question, behavior: null }).success).toBe(
     false,
   );
+  expect(dto.CrewRunSchema.safeParse({ ...rawRun, launch: null }).success).toBe(false);
 });
 
 it("exports all40 per-method schemas deterministically through the existing portable draft-2020-12 exporter", () => {
@@ -520,9 +486,7 @@ it("exports all40 per-method schemas deterministically through the existing port
     for (const schema of [pair.params, pair.result]) {
       const exported = exportWireSchema(schema);
       expect(exported).toEqual(exportWireSchema(schema));
-      expect(exported.$schema).toBe(
-        "https://json-schema.org/draft/2020-12/schema",
-      );
+      expect(exported.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
     }
 });
 
@@ -536,9 +500,7 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   cleanups.push(() => store.close());
   const project = await store.addProject("/crew-contract-fixture", "Fixture");
   let status: "idle" | "running" = "running";
-  vi.spyOn(store, "sessionStateMetadata").mockImplementation(
-    async () => ({ status }) as never,
-  );
+  vi.spyOn(store, "sessionStateMetadata").mockImplementation(async () => ({ status }) as never);
   vi.spyOn(store, "session").mockImplementation(
     async (id) =>
       ({
@@ -614,10 +576,7 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
     dto.CREWS_RPC_SCHEMAS[method].params.parse(input);
     const raw = await owner.call(method, args, project.id);
     const json = JSON.parse(JSON.stringify(raw));
-    expect(
-      dto.CREWS_RPC_SCHEMAS[method].result.parse(json),
-      method,
-    ).toStrictEqual(json);
+    expect(dto.CREWS_RPC_SCHEMAS[method].result.parse(json), method).toStrictEqual(json);
     covered.add(method);
     return json;
   };
@@ -654,9 +613,7 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   const directory = await call("crews.list");
   const visible = directory.runs.find((run) => run.id === started.id);
   expect(visible.launch).toBeUndefined();
-  expect(
-    visible.definition.agents.every((member) => member.instructions === ""),
-  ).toBe(true);
+  expect(visible.definition.agents.every((member) => member.instructions === "")).toBe(true);
   const detail = await call("crews.get", { runId: started.id });
   expect(detail.pendingInputs).toHaveLength(2);
   const request = await call("crews.request", {
@@ -688,9 +645,7 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   await call("crews.accept", { runId: started.id, taskId: task.id });
   await call("crews.finish", { runId: started.id });
   status = "idle";
-  const finished = (await call("crews.list")).runs.find(
-    (run) => run.id === started.id,
-  );
+  const finished = (await call("crews.list")).runs.find((run) => run.id === started.id);
   await call("crews.deleteRun", {
     runId: started.id,
     expectedUpdatedAt: finished.updatedAt,
@@ -700,7 +655,5 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
     definitionId: saved.id,
     expectedUpdatedAt: saved.updatedAt,
   });
-  expect([...covered].sort()).toEqual(
-    Object.keys(dto.CREWS_RPC_SCHEMAS).sort(),
-  );
+  expect([...covered].sort()).toEqual(Object.keys(dto.CREWS_RPC_SCHEMAS).sort());
 });

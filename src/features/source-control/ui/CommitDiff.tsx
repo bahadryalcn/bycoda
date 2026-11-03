@@ -157,9 +157,7 @@ export function CommitDiff({ cwd, sha }: Props) {
     );
   }
   if (files == null) {
-    return (
-      <SurfaceLoading />
-    );
+    return <SurfaceLoading />;
   }
 
   return <UnifiedDiffView files={models} totals={totals} />;

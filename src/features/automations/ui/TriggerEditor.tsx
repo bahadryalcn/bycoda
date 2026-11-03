@@ -17,7 +17,7 @@ import {
 } from "../model/automations";
 import { previewHostAutomation, type HostSchedulePreview } from "../model/hostAutomationClient";
 import { findTriggerEvent } from "../model/automationTriggerCatalog";
-import type {AutomationSchedule} from "../model/automationSchedule";
+import type { AutomationSchedule } from "../model/automationSchedule";
 
 export function TriggerMark({
   kind,

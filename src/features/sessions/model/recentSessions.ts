@@ -2,12 +2,7 @@ import { sessionIssue } from "./sessionIssue";
 import { sessionActivityAt } from "./sessionActivity";
 import { pathKey } from "../../../shared/lib/paths";
 import { isRemoteProjectPath } from "../../projects/model/recents";
-import {
-  sessionDisplayTitle,
-  sessionNeedsInput,
-  type HarnessId,
-  type Session,
-} from "./session";
+import { sessionDisplayTitle, sessionNeedsInput, type HarnessId, type Session } from "./session";
 
 /** Minimal shape of a stored session row; `SessionSummary` satisfies it. */
 export type StoredSessionRow = {
@@ -21,8 +16,7 @@ export type StoredSessionRow = {
   pinned?: boolean;
 };
 
-export type RecentSessionStatus =
-  "working" | "input" | "done" | "retrying" | "failed";
+export type RecentSessionStatus = "working" | "input" | "done" | "retrying" | "failed";
 
 /** What the in-memory sessions add to the stored rows. */
 export type LiveSessionInfo = {
@@ -81,9 +75,7 @@ export function loadRecentSessionsPrefs(): RecentSessionsPrefs {
     const { collapsed, count } = parsed as Record<string, unknown>;
     return {
       collapsed: collapsed === true,
-      count:
-        RECENT_SESSION_COUNTS.find((option) => option === count) ??
-        fallback.count,
+      count: RECENT_SESSION_COUNTS.find((option) => option === count) ?? fallback.count,
     };
   } catch {
     return fallback;
@@ -112,9 +104,7 @@ export function liveSessionInfos(
     if (session.inboxAsk || session.orchestrationLeadId) continue;
     if (!hasSentTurn(session)) continue;
     const needsInput = sessionNeedsInput(session);
-    const busy =
-      !session.worktreeRemoved &&
-      (!!session.busy || !!session.continuingElsewhere);
+    const busy = !session.worktreeRemoved && (!!session.busy || !!session.continuingElsewhere);
     infos.push({
       id: session.id,
       cwd: session.cwd,
@@ -162,9 +152,7 @@ export function sameLiveSessionInfos(
 
 function comparePinnedThenRecent(a: RecentSessionRow, b: RecentSessionRow) {
   return (
-    Number(b.pinned) - Number(a.pinned) ||
-    b.updatedAt - a.updatedAt ||
-    a.id.localeCompare(b.id)
+    Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id)
   );
 }
 
@@ -198,11 +186,7 @@ export function buildRecentSessions({
       title: sessionDisplayTitle(info?.title ?? row.title, row.harness),
       harness: row.harness,
       model: info?.model || row.model,
-      updatedAt: Math.max(
-        row.updatedAt,
-        info?.activityAt ?? 0,
-        active ? now : 0,
-      ),
+      updatedAt: Math.max(row.updatedAt, info?.activityAt ?? 0, active ? now : 0),
       pinned: !!row.pinned,
       pinnable: true,
       remote: isRemoteProjectPath(row.cwd),
@@ -223,10 +207,7 @@ export function buildRecentSessions({
       title: sessionDisplayTitle(info.title, info.harness),
       harness: info.harness,
       model: info.model,
-      updatedAt:
-        info.status === "working" || info.status === "input"
-          ? now
-          : info.activityAt,
+      updatedAt: info.status === "working" || info.status === "input" ? now : info.activityAt,
       pinned: false,
       pinnable: false,
       remote,

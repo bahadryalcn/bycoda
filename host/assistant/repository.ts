@@ -38,7 +38,9 @@ export class AssistantRepository {
           DELETE FROM assistant_messages_search WHERE id=OLD.id; END;
         INSERT INTO assistant_messages_search(id,thread_id,text) SELECT id,json_extract(value,'$.threadId'),json_extract(value,'$.text') FROM assistant_messages
           WHERE deleted_at IS NULL AND id NOT IN (SELECT id FROM assistant_messages_search);`);
-      await this.store.db.exec("CREATE INDEX IF NOT EXISTS assistant_messages_thread_created ON assistant_messages(json_extract(value,'$.threadId'),json_extract(value,'$.createdAt') DESC) WHERE deleted_at IS NULL");
+      await this.store.db.exec(
+        "CREATE INDEX IF NOT EXISTS assistant_messages_thread_created ON assistant_messages(json_extract(value,'$.threadId'),json_extract(value,'$.createdAt') DESC) WHERE deleted_at IS NULL",
+      );
     });
   }
   async get<T>(table: AssistantTable, id: string, deleted = false): Promise<T | undefined> {
@@ -55,7 +57,14 @@ export class AssistantRepository {
       .get(key);
     if (row?.deleted_at != null)
       throw new Error("This request was deleted; restore it instead of replaying it.");
-    if(!row&&await this.store.db.prepare("SELECT record_id FROM assistant_request_tombstones WHERE table_name=? AND request_key=?").get(table,key))
+    if (
+      !row &&
+      (await this.store.db
+        .prepare(
+          "SELECT record_id FROM assistant_request_tombstones WHERE table_name=? AND request_key=?",
+        )
+        .get(table, key))
+    )
       throw new Error("This request was permanently deleted and cannot be replayed.");
     return row ? (JSON.parse(row.value) as T) : undefined;
   }
@@ -83,13 +92,35 @@ export class AssistantRepository {
       .all(query, scope ?? null, scope ?? null, limit);
     return rows.map((row) => JSON.parse(row.value) as T);
   }
-  async messages<T>(threadId: string, limit: number, before?: number,beforeId?:string): Promise<T[]> {
-    if(beforeId!==undefined)return this.store.transaction(async()=>{
-      const cursor=await this.store.db.prepare("SELECT rowid AS cursor_rowid,json_extract(value,'$.threadId') AS thread_id,json_extract(value,'$.createdAt') AS created_at FROM assistant_messages WHERE id=? AND deleted_at IS NULL").get(beforeId);
-      if(before===undefined||!cursor||cursor.thread_id!==threadId||cursor.created_at!==before)throw new Error("The conversation history cursor changed or is unavailable. Reload its original conversation.");
-      const rows=await this.store.db.prepare("SELECT value FROM assistant_messages WHERE deleted_at IS NULL AND json_extract(value,'$.threadId')=? AND (json_extract(value,'$.createdAt')<? OR (json_extract(value,'$.createdAt')=? AND rowid<?)) ORDER BY json_extract(value,'$.createdAt') DESC,rowid DESC LIMIT ?").all(threadId,before,before,cursor.cursor_rowid,limit);
-      return rows.map(row=>JSON.parse(row.value) as T).reverse();
-    },"critical");
+  async messages<T>(
+    threadId: string,
+    limit: number,
+    before?: number,
+    beforeId?: string,
+  ): Promise<T[]> {
+    if (beforeId !== undefined)
+      return this.store.transaction(async () => {
+        const cursor = await this.store.db
+          .prepare(
+            "SELECT rowid AS cursor_rowid,json_extract(value,'$.threadId') AS thread_id,json_extract(value,'$.createdAt') AS created_at FROM assistant_messages WHERE id=? AND deleted_at IS NULL",
+          )
+          .get(beforeId);
+        if (
+          before === undefined ||
+          !cursor ||
+          cursor.thread_id !== threadId ||
+          cursor.created_at !== before
+        )
+          throw new Error(
+            "The conversation history cursor changed or is unavailable. Reload its original conversation.",
+          );
+        const rows = await this.store.db
+          .prepare(
+            "SELECT value FROM assistant_messages WHERE deleted_at IS NULL AND json_extract(value,'$.threadId')=? AND (json_extract(value,'$.createdAt')<? OR (json_extract(value,'$.createdAt')=? AND rowid<?)) ORDER BY json_extract(value,'$.createdAt') DESC,rowid DESC LIMIT ?",
+          )
+          .all(threadId, before, before, cursor.cursor_rowid, limit);
+        return rows.map((row) => JSON.parse(row.value) as T).reverse();
+      }, "critical");
     const rows = await this.store.db
       .prepare(
         "SELECT value FROM assistant_messages WHERE deleted_at IS NULL AND json_extract(value,'$.threadId')=? AND (? IS NULL OR json_extract(value,'$.createdAt')<?) ORDER BY json_extract(value,'$.createdAt') DESC,rowid DESC LIMIT ?",
@@ -129,10 +160,18 @@ export class AssistantRepository {
       .run(next.id, JSON.stringify(next), next.version, next.updatedAt, key ?? null);
     return next;
   }
-  async purge(table:AssistantTable,id:string) {
-    const row=await this.store.db.prepare(`SELECT request_key,deleted_at FROM assistant_${table} WHERE id=?`).get(id);
-    if(!row||row.deleted_at==null)throw new Error("Only a deleted assistant record can be permanently removed.");
-    if(row.request_key)await this.store.db.prepare("INSERT OR IGNORE INTO assistant_request_tombstones(table_name,request_key,record_id) VALUES (?,?,?)").run(table,row.request_key,id);
+  async purge(table: AssistantTable, id: string) {
+    const row = await this.store.db
+      .prepare(`SELECT request_key,deleted_at FROM assistant_${table} WHERE id=?`)
+      .get(id);
+    if (!row || row.deleted_at == null)
+      throw new Error("Only a deleted assistant record can be permanently removed.");
+    if (row.request_key)
+      await this.store.db
+        .prepare(
+          "INSERT OR IGNORE INTO assistant_request_tombstones(table_name,request_key,record_id) VALUES (?,?,?)",
+        )
+        .run(table, row.request_key, id);
     await this.store.db.prepare(`DELETE FROM assistant_${table} WHERE id=?`).run(id);
   }
   async trash(table: AssistantTable, id: string, expectedVersion: number, now: number) {

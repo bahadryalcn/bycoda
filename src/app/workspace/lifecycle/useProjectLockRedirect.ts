@@ -1,17 +1,17 @@
 import { useLayoutEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { isProjectLockedIn, type LockSnapshot } from "../../../features/group-lock/model/lockState";
 import { looksLikeProject } from "../../../features/projects/model/recents";
-import {
-  newDefaultSession,
-  type RuntimeMode,
-} from "../../../features/sessions/model/session";
+import { newDefaultSession, type RuntimeMode } from "../../../features/sessions/model/session";
 import { setSessions } from "../../../features/sessions/model/sessionsStore";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { t } from "../../../shared/i18n";
 import { showLockRedirectNotice } from "./lockRedirectNotice";
 
 const projectName = (path: string) =>
-  path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
+  path
+    .replace(/[\\/]+$/, "")
+    .split(/[\\/]/)
+    .pop() || path;
 
 export interface ProjectLockRedirectDeps {
   lockSnapshot: LockSnapshot;
@@ -62,9 +62,12 @@ export function useProjectLockRedirect({
       if (memory?.from === sidebarCwd) return;
       console.warn(`[lock] ${sidebarCwd} is in a locked group; moved to ${to}`);
       showLockRedirectNotice(
-        t("{p0} is in a locked group, so the window moved away from it. Unlock the group to return.", {
-          p0: projectName(sidebarCwd),
-        }),
+        t(
+          "{p0} is in a locked group, so the window moved away from it. Unlock the group to return.",
+          {
+            p0: projectName(sidebarCwd),
+          },
+        ),
       );
     };
     const next = visibleRecents.find((project) => looksLikeProject(project.path));

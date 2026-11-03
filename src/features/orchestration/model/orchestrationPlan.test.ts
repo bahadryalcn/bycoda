@@ -48,9 +48,16 @@ describe("orchestration proposals", () => {
     ...newSession("claude", "/repo"),
     id: "lead",
     blocks: [
-      { ...proposalBlock("original", completeOrchestrationProposal(draft, JSON.stringify(payload))), streaming: false },
+      {
+        ...proposalBlock("original", completeOrchestrationProposal(draft, JSON.stringify(payload))),
+        streaming: false,
+      },
       { id: "refinement", role: "user" as const, text: "Keep the existing layout too" },
-      { id: "revision", role: "assistant" as const, text: `<bycoda_proposal>${JSON.stringify({ ...payload, title: "Updated layout" })}</bycoda_proposal>` },
+      {
+        id: "revision",
+        role: "assistant" as const,
+        text: `<bycoda_proposal>${JSON.stringify({ ...payload, title: "Updated layout" })}</bycoda_proposal>`,
+      },
     ],
   });
 
@@ -61,13 +68,17 @@ describe("orchestration proposals", () => {
     expect(revision.id).toBe("revision");
     expect(revision.role).toBe("plan");
     expect(revision.orchestration).toMatchObject({
-      status: "ready", title: "Updated layout", settings: draft.settings,
+      status: "ready",
+      title: "Updated layout",
+      settings: draft.settings,
       request: "Build settings\n\nKeep the existing layout too",
     });
     expect(revision.text).not.toContain("<bycoda_proposal>");
     expect(session.blocks[2].role).toBe("assistant");
     expect(recoverTaggedOrchestrationProposals(recovered)).toBe(recovered);
-    expect(sanitizeSessionForPersist(recovered).blocks[2].orchestration).toEqual(revision.orchestration);
+    expect(sanitizeSessionForPersist(recovered).blocks[2].orchestration).toEqual(
+      revision.orchestration,
+    );
   });
 
   it("keeps an invalid revision non-executable and available for repair", () => {
@@ -81,8 +92,10 @@ describe("orchestration proposals", () => {
 
   it("does not turn quoted, streaming, user, tool or context-free text into cards", () => {
     for (const patch of [
-      { role: "user" as const }, { role: "tool" as const },
-      { streaming: true }, { internal: true },
+      { role: "user" as const },
+      { role: "tool" as const },
+      { streaming: true },
+      { internal: true },
       { text: `Example: ${revisionSession().blocks[2].text}` },
     ]) {
       const session: import("../../sessions/model/session").Session = revisionSession();
@@ -96,13 +109,17 @@ describe("orchestration proposals", () => {
 
   it("never inherits approval or crosses a proposal or checkout ownership barrier", () => {
     for (const patch of [
-      { status: "approved" as const }, { status: "starting" as const },
-      { status: "planning" as const }, { leadId: "other" },
-      { cwd: "/other" }, { checkoutCwd: "/other" },
+      { status: "approved" as const },
+      { status: "starting" as const },
+      { status: "planning" as const },
+      { leadId: "other" },
+      { cwd: "/other" },
+      { checkoutCwd: "/other" },
     ]) {
       const session: import("../../sessions/model/session").Session = revisionSession();
       session.blocks.splice(1, 0, {
-        ...session.blocks[0], id: "barrier",
+        ...session.blocks[0],
+        id: "barrier",
         orchestration: { ...session.blocks[0].orchestration!, ...patch },
       });
       expect(recoverTaggedOrchestrationProposals(session)).toBe(session);

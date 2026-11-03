@@ -23,9 +23,7 @@ export const CODEX_UTILITY_DISABLED_FEATURES = Object.freeze([
 ]);
 export const CODEX_UTILITY_CONFIG = Object.freeze({
   web_search: "disabled",
-  ...Object.fromEntries(
-    CODEX_UTILITY_DISABLED_FEATURES.map((name) => [`features.${name}`, false]),
-  ),
+  ...Object.fromEntries(CODEX_UTILITY_DISABLED_FEATURES.map((name) => [`features.${name}`, false])),
 });
 export function codexUtilitySpawnArgs(): string[] {
   return [
@@ -41,9 +39,7 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
     ? (value as Record<string, unknown>)
     : undefined;
 const denied = () =>
-  new Error(
-    "Codex utility isolation could not be verified; no reasoning prompt was sent.",
-  );
+  new Error("Codex utility isolation could not be verified; no reasoning prompt was sent.");
 /** Empty mcp_servers={} merges with inherited entries. Explicitly disable each
  * effective server using nested values so dots/quotes in names stay literal.
  * Verified with installed app-server config/read + thread/start (no turns).
@@ -64,14 +60,11 @@ export async function codexUtilityConfig(
     CODEX_UTILITY_DISABLED_FEATURES.some((name) => features[name] !== false)
   )
     throw denied();
-  const servers =
-    config.mcp_servers === undefined ? {} : record(config.mcp_servers);
+  const servers = config.mcp_servers === undefined ? {} : record(config.mcp_servers);
   if (!servers || Object.keys(servers).length > 200) throw denied();
   return {
     ...CODEX_UTILITY_CONFIG,
-    mcp_servers: Object.fromEntries(
-      Object.keys(servers).map((name) => [name, { enabled: false }]),
-    ),
+    mcp_servers: Object.fromEntries(Object.keys(servers).map((name) => [name, { enabled: false }])),
   };
 }
 /** Inspect every page of this exact thread's effective inventory before a turn.
@@ -90,8 +83,7 @@ export async function assertCodexUtilityIsolation(
         45000,
       ),
     );
-    if (!result || !Array.isArray(result.data) || result.data.length > 100)
-      throw denied();
+    if (!result || !Array.isArray(result.data) || result.data.length > 100) throw denied();
     for (const value of result.data) {
       const server = record(value),
         tools = record(server?.tools);
@@ -108,11 +100,7 @@ export async function assertCodexUtilityIsolation(
         throw denied();
     }
     if (result.nextCursor === null || result.nextCursor === undefined) return;
-    if (
-      typeof result.nextCursor !== "string" ||
-      !result.nextCursor ||
-      seen.has(result.nextCursor)
-    )
+    if (typeof result.nextCursor !== "string" || !result.nextCursor || seen.has(result.nextCursor))
       throw denied();
     cursor = result.nextCursor;
     seen.add(cursor);

@@ -8,7 +8,9 @@ async function selectSection(page: Page, name: string) {
   const tab = page
     .getByRole("navigation", { name: /^(Sosyal Medya bölümleri|Social Media sections)$/ })
     .getByRole("button", { name: label });
-  const compact = page.getByRole("button", { name: /^(Sosyal Medya bölümleri|Social Media sections):/ });
+  const compact = page.getByRole("button", {
+    name: /^(Sosyal Medya bölümleri|Social Media sections):/,
+  });
   // The section list renders after the first paint: wait for whichever form is shown.
   await expect(tab.or(compact).first()).toBeVisible();
   if (await tab.isVisible()) await tab.click();
@@ -759,7 +761,10 @@ test("TikTok publishing shows current privacy choices and explicit consent witho
   await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
   await page.goto("/tests/browser/social.html?tiktok=1");
   await selectSection(page, "İçerik hazırla");
-  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
+  await page
+    .locator(".social-main")
+    .getByRole("button", { name: "İçerik hazırla", exact: true })
+    .click();
   const form = page.getByRole("dialog");
   await form.getByRole("button", { name: "Sosyal hesaplar", exact: true }).click();
   await page.getByRole("option", { name: /Demo TikTok/ }).click();
@@ -772,7 +777,10 @@ test("TikTok publishing shows current privacy choices and explicit consent witho
   await expect(form.getByLabel("Yorumlara izin ver", { exact: true })).toBeDisabled();
   await expect(form.getByLabel(/Videoyu önizledim/)).toBeDisabled();
   await form.getByRole("button", { name: "Kapat", exact: true }).click();
-  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
+  await page
+    .locator(".social-main")
+    .getByRole("button", { name: "İçerik hazırla", exact: true })
+    .click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -881,7 +889,10 @@ async function completionCampaign(
   }, seed);
   await page.getByRole("button", { name: "Yenile", exact: true }).click();
   await selectSection(page, "İçerik hazırla");
-  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
+  await page
+    .locator(".social-main")
+    .getByRole("button", { name: "İçerik hazırla", exact: true })
+    .click();
   const form = page.getByRole("dialog", { name: "İçerik hazırla", exact: true });
   await form.getByLabel("Kampanya adı", { exact: true }).fill(name);
   await form.getByRole("button", { name: "İlgili projeler", exact: true }).click();
@@ -1410,7 +1421,10 @@ test("Telegram channel connects one reviewed bot and queues a media-only campaig
     },
   ]);
   await selectSection(page, "İçerik hazırla");
-  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
+  await page
+    .locator(".social-main")
+    .getByRole("button", { name: "İçerik hazırla", exact: true })
+    .click();
   const form = page.getByRole("dialog", { name: "İçerik hazırla", exact: true });
   await form.getByLabel("Kampanya adı", { exact: true }).fill("Reviewed channel image");
   await form.getByRole("button", { name: "İlgili projeler", exact: true }).click();
@@ -1942,7 +1956,10 @@ test("browser campaign uploads persist and approval binds the reviewed revision 
   );
   await page.getByRole("button", { name: "Yenile", exact: true }).click();
   await selectSection(page, "İçerik hazırla");
-  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
+  await page
+    .locator(".social-main")
+    .getByRole("button", { name: "İçerik hazırla", exact: true })
+    .click();
   const form = page.getByRole("dialog", { name: "İçerik hazırla", exact: true });
   await form.getByLabel("Kampanya adı", { exact: true }).fill("Browser image campaign");
   await form.getByRole("button", { name: "İlgili projeler", exact: true }).click();
@@ -2327,7 +2344,10 @@ test("history shows distinct outcomes, filters and keeps state after leaving Soc
   await expect(page.locator(".social-history-record")).toHaveCount(5);
   // Created time is part of the compact record row, not behind a disclosure.
   await expect(
-    page.locator(".social-history-record").first().getByText(/^Oluşturuldu/),
+    page
+      .locator(".social-history-record")
+      .first()
+      .getByText(/^Oluşturuldu/),
   ).toBeVisible();
   const colors = await page
     .locator(".social-history-record .social-status-badge")
@@ -2427,7 +2447,11 @@ test("owner creates and explicitly activates a daily 2–5 hour publishing plan"
   await expect(editor).not.toBeVisible();
   const activate = page.getByRole("button", { name: "Enable automatic publishing", exact: true });
   await expect(activate).toBeDisabled();
-  await page.getByLabel(/I approve automatic publishing with this account, these times and the approved content pool/).check();
+  await page
+    .getByLabel(
+      /I approve automatic publishing with this account, these times and the approved content pool/,
+    )
+    .check();
   await activate.click();
   await expect(page.getByRole("button", { name: "Pause plan", exact: true })).toBeVisible();
   // The one-time-sharing explanation now lives in the header help popover, not in the dialog.
@@ -2659,7 +2683,10 @@ test("searchable project selections keep unfinished forms compact across section
   await page.getByRole("button", { name: "Tamam", exact: true }).click();
   await contact.getByRole("button", { name: "Kapat", exact: true }).click();
   await selectSection(page, "İçerik hazırla");
-  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
+  await page
+    .locator(".social-main")
+    .getByRole("button", { name: "İçerik hazırla", exact: true })
+    .click();
   await expect(page.getByLabel("Kampanya adı", { exact: true })).toHaveValue("Unfinished campaign");
   await expect(
     editor.locator(
@@ -2737,7 +2764,13 @@ test("social workspace guides OAuth setup and keeps sends disabled", async ({ pa
   await expect(page.locator('.social-connection[role="status"] > strong')).toHaveText(
     "Tarayıcıda izin bekleniyor",
   );
-  for (const section of ["İçerik hazırla", "Gelen kutusu", "Hedef kitle", "Planlar ve yanıtlar", "Ayarlar"]) {
+  for (const section of [
+    "İçerik hazırla",
+    "Gelen kutusu",
+    "Hedef kitle",
+    "Planlar ve yanıtlar",
+    "Ayarlar",
+  ]) {
     await selectSection(page, section);
     await expect(page.getByRole("heading", { name: section, exact: true }).first()).toBeVisible();
     expect(
@@ -3137,7 +3170,9 @@ test("AI rule simplification shows a diff; accepting creates a new paused rule a
   await page.screenshot({ path: testInfo.outputPath("rules-ask.png"), animations: "disabled" });
   await page.getByRole("button", { name: "Suggest simpler rules", exact: true }).click();
   const review = page.getByRole("group", { name: "AI rule review", exact: true });
-  await expect(review.getByText("Accepting creates a new paused rule", { exact: true })).toBeVisible();
+  await expect(
+    review.getByText("Accepting creates a new paused rule", { exact: true }),
+  ).toBeVisible();
   await expect(review.getByText(/1 of 2 rules would change/)).toBeVisible();
   const proposal = review.getByRole("article", { name: "Proposal for Support questions" });
   await expect(proposal).toBeVisible();
@@ -3145,7 +3180,10 @@ test("AI rule simplification shows a diff; accepting creates a new paused rule a
   await page.screenshot({ path: testInfo.outputPath("rules-review.png"), animations: "disabled" });
   await proposal.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(review.getByText(/was created and is paused/)).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("rules-accepted.png"), animations: "disabled" });
+  await page.screenshot({
+    path: testInfo.outputPath("rules-accepted.png"),
+    animations: "disabled",
+  });
   const writes = await aiWrites(page);
   expect(writes.map((call) => call.action)).toEqual(["automations.create"]);
   expect(writes[0].input).toMatchObject({
@@ -3186,7 +3224,10 @@ test("AI fact suggestions stay unverified until the owner accepts one and saves 
   await expect(dialog.getByText("Added - save to verify").first()).toBeVisible();
   // Accepting only changes the draft: nothing is written until the owner saves.
   expect(await aiWrites(page)).toEqual([]);
-  await page.screenshot({ path: testInfo.outputPath("facts-accepted.png"), animations: "disabled" });
+  await page.screenshot({
+    path: testInfo.outputPath("facts-accepted.png"),
+    animations: "disabled",
+  });
   await dialog.getByRole("button", { name: "Save added facts", exact: true }).click();
   await expect.poll(async () => (await aiWrites(page)).length).toBe(1);
   const save = (await aiWrites(page))[0];
@@ -3211,7 +3252,9 @@ test("the content context line always states how the open form relates to the se
 }, testInfo) => {
   await seedAi(page);
   await selectSection(page, "Prepare content");
-  const context = page.locator(".social-content-context[data-entry] > .social-content-context-main");
+  const context = page.locator(
+    ".social-content-context[data-entry] > .social-content-context-main",
+  );
   // A saved campaign exists but is not selected: the form starts a new, unsaved campaign.
   await expect(context).toContainText("New campaign");
   await page.getByRole("button", { name: /^Loaded content:/ }).click();
@@ -3220,7 +3263,10 @@ test("the content context line always states how the open form relates to the se
   await expect(context).toContainText("New campaign");
   await expect(context).toContainText("Separate from Launch week teaser");
   await expect(context).not.toContainText("Not saved yet");
-  await page.screenshot({ path: testInfo.outputPath("header-write-selected.png"), animations: "disabled" });
+  await page.screenshot({
+    path: testInfo.outputPath("header-write-selected.png"),
+    animations: "disabled",
+  });
   await page.getByRole("button", { name: "Edit existing", exact: true }).click();
   await expect(page.getByRole("dialog").first()).toBeVisible();
   await page.keyboard.press("Escape");
@@ -3261,34 +3307,63 @@ for (const size of [
     await seedAi(page);
     // Stepped plan dialog: Next is in the footer, outside the scrolling content.
     await selectSection(page, "Plans and replies");
-    await page.getByRole("button", { name: "Create automatic publishing plan", exact: true }).click();
-    const plan = page.getByRole("dialog", { name: "Create automatic publishing plan", exact: true });
+    await page
+      .getByRole("button", { name: "Create automatic publishing plan", exact: true })
+      .click();
+    const plan = page.getByRole("dialog", {
+      name: "Create automatic publishing plan",
+      exact: true,
+    });
     const planFooter = plan.locator("footer");
     await expectInViewport(page, planFooter.getByRole("button", { name: "Next", exact: true }));
     await page.screenshot({ path: testInfo.outputPath("plan-step.png"), animations: "disabled" });
     // AI plan review.
     await plan.getByRole("button", { name: "Ask AI to suggest a plan", exact: true }).click();
     await planFooter.getByRole("button", { name: "Suggest a plan", exact: true }).click();
-    await expect(plan.getByRole("group", { name: "AI plan suggestion", exact: true })).toBeVisible();
-    await expectInViewport(page, planFooter.getByRole("button", { name: "Use as plan draft", exact: true }));
-    await expectInViewport(page, planFooter.getByRole("button", { name: "Discard suggestion", exact: true }));
-    await page.screenshot({ path: testInfo.outputPath("plan-review-footer.png"), animations: "disabled" });
+    await expect(
+      plan.getByRole("group", { name: "AI plan suggestion", exact: true }),
+    ).toBeVisible();
+    await expectInViewport(
+      page,
+      planFooter.getByRole("button", { name: "Use as plan draft", exact: true }),
+    );
+    await expectInViewport(
+      page,
+      planFooter.getByRole("button", { name: "Discard suggestion", exact: true }),
+    );
+    await page.screenshot({
+      path: testInfo.outputPath("plan-review-footer.png"),
+      animations: "disabled",
+    });
     await page.keyboard.press("Escape");
     // Stepped rule dialog and the rule simplify review.
     await page.getByRole("button", { name: "Reply rules", exact: true }).click();
     await page.getByRole("button", { name: "Create automation rule", exact: true }).click();
     const rule = page.getByRole("dialog", { name: "Create automation rule", exact: true });
-    await expectInViewport(page, rule.locator("footer").getByRole("button", { name: "Next", exact: true }));
+    await expectInViewport(
+      page,
+      rule.locator("footer").getByRole("button", { name: "Next", exact: true }),
+    );
     await page.screenshot({ path: testInfo.outputPath("rule-step.png"), animations: "disabled" });
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Simplify with AI", exact: true }).click();
     const simplify = page.getByRole("dialog", { name: "Simplify rules with AI", exact: true });
     const simplifyFooter = simplify.locator("footer");
-    await simplifyFooter.getByRole("button", { name: "Suggest simpler rules", exact: true }).click();
-    await expect(simplify.getByRole("group", { name: "AI rule review", exact: true })).toBeVisible();
+    await simplifyFooter
+      .getByRole("button", { name: "Suggest simpler rules", exact: true })
+      .click();
+    await expect(
+      simplify.getByRole("group", { name: "AI rule review", exact: true }),
+    ).toBeVisible();
     await expectInViewport(page, simplifyFooter.getByRole("button", { name: /^Accept all valid/ }));
-    await expectInViewport(page, simplifyFooter.getByRole("button", { name: "Close", exact: true }));
-    await page.screenshot({ path: testInfo.outputPath("rules-review-footer.png"), animations: "disabled" });
+    await expectInViewport(
+      page,
+      simplifyFooter.getByRole("button", { name: "Close", exact: true }),
+    );
+    await page.screenshot({
+      path: testInfo.outputPath("rules-review-footer.png"),
+      animations: "disabled",
+    });
     await page.keyboard.press("Escape");
     // Fact suggestions inside the product knowledge dialog.
     await selectSection(page, "Prepare content");
@@ -3306,15 +3381,37 @@ for (const size of [
       knowledge.getByRole("region", { name: "Suggestions - not verified yet" }),
     ).toBeVisible();
     const knowledgeFooter = knowledge.locator("footer");
-    await expectInViewport(page, knowledgeFooter.getByRole("button", { name: "Accept all valid", exact: true }));
-    await expectInViewport(page, knowledgeFooter.getByRole("button", { name: "Reject all", exact: true }));
-    await page.screenshot({ path: testInfo.outputPath("facts-review-footer.png"), animations: "disabled" });
+    await expectInViewport(
+      page,
+      knowledgeFooter.getByRole("button", { name: "Accept all valid", exact: true }),
+    );
+    await expectInViewport(
+      page,
+      knowledgeFooter.getByRole("button", { name: "Reject all", exact: true }),
+    );
+    await page.screenshot({
+      path: testInfo.outputPath("facts-review-footer.png"),
+      animations: "disabled",
+    });
   });
 }
 
 const IMPORT_FILE = JSON.stringify([
-  { accountId: "x", platformId: "dara-news", name: "Dara News Blog", projectIds: ["demo"], language: "en", tags: ["lead"] },
-  { accountId: "x", platformId: "emre-shop", name: "Emre Retail Shop", projectIds: ["demo"], language: "tr" },
+  {
+    accountId: "x",
+    platformId: "dara-news",
+    name: "Dara News Blog",
+    projectIds: ["demo"],
+    language: "en",
+    tags: ["lead"],
+  },
+  {
+    accountId: "x",
+    platformId: "emre-shop",
+    name: "Emre Retail Shop",
+    projectIds: ["demo"],
+    language: "tr",
+  },
   { accountId: "x", platformId: "fay", name: "Fay Person", projectIds: ["demo"] },
   { accountId: "missing", platformId: "bad", name: "Broken row", projectIds: ["demo"] },
 ]);
@@ -3347,13 +3444,18 @@ test("tag suggestions for an import are reviewed per tag and added to the import
   await preview.getByRole("button", { name: "Suggest tags", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Suggest tags for this import", exact: true });
   await expect(dialog.getByText(/are sent to/)).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("tags-import-ask.png"), animations: "disabled" });
+  await page.screenshot({
+    path: testInfo.outputPath("tags-import-ask.png"),
+    animations: "disabled",
+  });
   await dialog.locator("footer").getByRole("button", { name: "Suggest tags", exact: true }).click();
   const review = dialog.getByRole("group", { name: "AI tag suggestions", exact: true });
   await expect(review.getByText("Added to the import draft only")).toBeVisible();
   await expect(review.getByText("Suggestions for 2 of 3 contacts")).toBeVisible();
   // Nothing is chosen yet and nothing was written.
-  const apply = dialog.locator("footer").getByRole("button", { name: /^Add \d+ tags? to the import draft$/ });
+  const apply = dialog
+    .locator("footer")
+    .getByRole("button", { name: /^Add \d+ tags? to the import draft$/ });
   await expect(apply).toBeDisabled();
   expect(await contactWrites(page)).toEqual([]);
   // Edit one suggestion, keep it, and leave the others unticked (rejected).
@@ -3361,21 +3463,34 @@ test("tag suggestions for an import are reviewed per tag and added to the import
   await blog.getByRole("textbox", { name: "Tag for Dara News Blog" }).first().fill("press-contact");
   await blog.getByRole("checkbox", { name: /Keep tag press-contact for Dara News Blog/ }).check();
   await expect(apply).toHaveText("Add 1 tag to the import draft");
-  await page.screenshot({ path: testInfo.outputPath("tags-import-review.png"), animations: "disabled" });
+  await page.screenshot({
+    path: testInfo.outputPath("tags-import-review.png"),
+    animations: "disabled",
+  });
   await apply.click();
   await expect(dialog).not.toBeVisible();
   expect(await contactWrites(page)).toEqual([]);
   // The edited tag is in the import draft, labelled as coming from the suggestions.
   await preview.getByText(/Tags in this import · 1 added from AI suggestions/).click();
   await expect(preview.getByText(/lead, press-contact/)).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("tags-import-draft.png"), animations: "disabled" });
+  await page.screenshot({
+    path: testInfo.outputPath("tags-import-draft.png"),
+    animations: "disabled",
+  });
   // Importing is the owner's separate action and carries the accepted tag only.
   await preview.getByRole("button", { name: /^Import 3 valid contacts$/ }).click();
   await expect.poll(async () => (await contactWrites(page)).length).toBe(1);
   const imported = (await contactWrites(page))[0];
   expect(imported.action).toBe("contacts.import");
-  const rows = imported.input.contacts as { platformId: string; tags?: string[]; consent?: unknown }[];
-  expect(rows.find((row) => row.platformId === "dara-news")?.tags).toEqual(["lead", "press-contact"]);
+  const rows = imported.input.contacts as {
+    platformId: string;
+    tags?: string[];
+    consent?: unknown;
+  }[];
+  expect(rows.find((row) => row.platformId === "dara-news")?.tags).toEqual([
+    "lead",
+    "press-contact",
+  ]);
   expect(rows.find((row) => row.platformId === "emre-shop")?.tags).toBeUndefined();
   expect(rows.every((row) => row.consent === undefined)).toBe(true);
 });
@@ -3388,7 +3503,10 @@ test("tag suggestions for selected contacts are saved only for the tags the owne
   await page.getByRole("checkbox", { name: "Select contact Ada Press", exact: true }).check();
   await page.getByRole("checkbox", { name: "Select contact Bo Retail Shop", exact: true }).check();
   await page.getByRole("button", { name: "Suggest tags", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Suggest tags for selected contacts", exact: true });
+  const dialog = page.getByRole("dialog", {
+    name: "Suggest tags for selected contacts",
+    exact: true,
+  });
   await dialog.getByLabel(/What should the tags describe/).fill("Mark journalists as press");
   await dialog.locator("footer").getByRole("button", { name: "Suggest tags", exact: true }).click();
   const review = dialog.getByRole("group", { name: "AI tag suggestions", exact: true });
@@ -3408,8 +3526,14 @@ test("tag suggestions for selected contacts are saved only for the tags the owne
   await dialog.locator("footer").getByRole("button", { name: "Keep all valid" }).click();
   // Reject Bo's retail tag again; keep the rest.
   await review.getByRole("checkbox", { name: /Keep tag retail for Bo Retail Shop/ }).uncheck();
-  await page.screenshot({ path: testInfo.outputPath("tags-contacts-review.png"), animations: "disabled" });
-  await dialog.locator("footer").getByRole("button", { name: /^Save \d+ tags?$/ }).click();
+  await page.screenshot({
+    path: testInfo.outputPath("tags-contacts-review.png"),
+    animations: "disabled",
+  });
+  await dialog
+    .locator("footer")
+    .getByRole("button", { name: /^Save \d+ tags?$/ })
+    .click();
   await expect(dialog).not.toBeVisible();
   const saves = await contactWrites(page);
   expect(saves.map((call) => call.input)).toHaveLength(2);

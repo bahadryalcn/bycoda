@@ -23,7 +23,15 @@ export type BadgeProps = Omit<ArcBadgeProps, "size"> & {
 export const BADGE_COUNT_MAX = 99;
 
 /** Concise status presentation; domain-to-tone mapping remains with the caller (or StatusBadge). */
-export function Badge({ className, minWidth, style, size = "md", max, variant, ...props }: BadgeProps) {
+export function Badge({
+  className,
+  minWidth,
+  style,
+  size = "md",
+  max,
+  variant,
+  ...props
+}: BadgeProps) {
   return (
     <ArcBadge
       {...props}
@@ -93,7 +101,10 @@ export function useStatusBadgeLabel(): (status: BadgeStatus) => string {
   };
 }
 
-export type StatusBadgeProps = Omit<BadgeProps, "tone" | "icon" | "variant" | "children" | "label"> & {
+export type StatusBadgeProps = Omit<
+  BadgeProps,
+  "tone" | "icon" | "variant" | "children" | "label"
+> & {
   status: BadgeStatus;
   /** Replaces the standard label (e.g. "Failed · 3"); tone and icon stay fixed by the status. */
   children?: ReactNode;

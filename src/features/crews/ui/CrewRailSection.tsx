@@ -6,15 +6,7 @@ import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/Dropdown
 import { InlineError } from "../../../shared/ui/InlineError";
 import type { PopoverAnchor } from "../../../shared/ui/Popover";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import {
-  Bot,
-  Copy,
-  Globe,
-  Pencil,
-  Play,
-  Plus,
-  Trash2,
-} from "../../../shared/ui/icons";
+import { Bot, Copy, Globe, Pencil, Play, Plus, Trash2 } from "../../../shared/ui/icons";
 import {
   RAIL_SECTION_BLOCK,
   RailSectionHeader,
@@ -399,9 +391,7 @@ export function CrewRailSection({
             </ActionHost>
           );
         })}
-        {error ? (
-          <InlineError className="px-2">{error}</InlineError>
-        ) : null}
+        {error ? <InlineError className="px-2">{error}</InlineError> : null}
       </div>
       {menu?.kind === "crew" && menuCrew ? (
         <DropdownMenu

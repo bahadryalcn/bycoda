@@ -87,7 +87,12 @@ export function useOpenRecoveredSessions({
           ? `${stub.cwd}|${stub.remoteSessionId}`
           : undefined;
       const existing = tabsRef.current.find((tab) => leafIds(tab.layout).includes(stub.id));
-      if (existing && sessionsRef.current.some((session) => session.id === stub.id && sameProjectPath(session.cwd, stub.cwd))) {
+      if (
+        existing &&
+        sessionsRef.current.some(
+          (session) => session.id === stub.id && sameProjectPath(session.cwd, stub.cwd),
+        )
+      ) {
         covered.set(stub.id, existing);
         continue;
       }

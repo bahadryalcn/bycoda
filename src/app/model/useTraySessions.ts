@@ -18,26 +18,14 @@ export function useTraySessions(
 ) {
   const locale = useLocale();
   const enabled = isTauri();
-  const { rows: stored } = useRecentSessions(
-    options.history,
-    options.live,
-    enabled,
-  );
+  const { rows: stored } = useRecentSessions(options.history, options.live, enabled);
   const onOpen = useRef(options.onOpen);
   onOpen.current = options.onOpen;
   const onSettings = useRef(options.onSettings);
   onSettings.current = options.onSettings;
   const rows = useMemo(
     () => traySessions({ ...options, stored }),
-    [
-      enabled,
-      stored,
-      options.live,
-      options.agents,
-      options.projectKeys,
-      options.ownedKeys,
-      locale,
-    ],
+    [enabled, stored, options.live, options.agents, options.projectKeys, options.ownedKeys, locale],
   );
   const currentRows = useRef(rows);
   const published = useRef<string | null>(null);
@@ -50,8 +38,7 @@ export function useTraySessions(
     return retainAsyncSubscription(
       listen<string>(TRAY_OPEN_EVENT, ({ payload }) => {
         // Check current visibility again: a menu click can race a group lock.
-        if (currentRows.current.some((row) => row.id === payload))
-          onOpen.current(payload);
+        if (currentRows.current.some((row) => row.id === payload)) onOpen.current(payload);
       }),
       (error) => console.warn("Session menu subscription failed", error),
     );
@@ -61,8 +48,7 @@ export function useTraySessions(
     if (!enabled) return;
     return retainAsyncSubscription(
       listen("bycoda:tray-notifications", () => onSettings.current()),
-      (error) =>
-        console.warn("Session menu settings subscription failed", error),
+      (error) => console.warn("Session menu settings subscription failed", error),
     );
   }, [enabled]);
 
@@ -82,7 +68,18 @@ export function useTraySessions(
         failed: t("Failed or usage limit"),
         retrying: t("Retrying"),
         notifications: t("Notifications"),
-        presence: {availability:t("Availability"),here:t("Here"),away:t("Away"),dnd:t("Do not disturb"),idle:t("Idle"),unknown:t("Unknown"),pending:t("Updating availability..."),failed:t("Availability change was not confirmed."),retry:t("Retry"),refresh:t("Refresh")},
+        presence: {
+          availability: t("Availability"),
+          here: t("Here"),
+          away: t("Away"),
+          dnd: t("Do not disturb"),
+          idle: t("Idle"),
+          unknown: t("Unknown"),
+          pending: t("Updating availability..."),
+          failed: t("Availability change was not confirmed."),
+          retry: t("Retry"),
+          refresh: t("Refresh"),
+        },
       },
     };
     const signature = JSON.stringify(payload);

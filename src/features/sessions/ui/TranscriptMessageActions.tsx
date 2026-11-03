@@ -47,11 +47,7 @@ export function TurnOutputActions({
       ? [
           {
             id: "copy",
-            label: copy.copied
-              ? t("Copied")
-              : copy.failed
-                ? t("Retry copy")
-                : t("Copy response"),
+            label: copy.copied ? t("Copied") : copy.failed ? t("Retry copy") : t("Copy response"),
             icon: copy.copied ? <Check /> : copy.failed ? <RotateCcw /> : <Copy />,
             tone: copy.copied ? "success" : copy.failed ? "danger" : undefined,
             loading: copy.pending,

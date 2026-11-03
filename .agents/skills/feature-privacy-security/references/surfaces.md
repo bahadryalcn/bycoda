@@ -2,14 +2,14 @@
 
 Code paths are repository-relative.
 
-| Area | Owner |
-| --- | --- |
-| Privacy/masking/file controls | `src/features/settings/ui/PrivacyStartupSettings.tsx`, `FileAccessSettings.tsx`; Settings model/search and `displayPrefs.ts` |
-| Lock/hidden/password UI | `src/features/group-lock/ui/GroupLockSettings.tsx`, `HiddenGroupsSettings.tsx`, `GroupPrivacy.css`, `SetLockPasswordDialog.tsx`, `PasswordPromptDialog.tsx`, `ForgotLockPasswordDialog.tsx`, `UnlockGroupDialog.tsx`, `PrivacyLaunchGate.tsx` |
-| Lock state and races | `src/features/group-lock/model/groupLock.ts`, `lockSettings.ts`, `lockState.ts`, `passwordRecord.ts`, `attemptThrottle.ts`, `autoLock.ts`; follow `useGroupLock` |
-| Membership/masking | `src/features/projects/model/projectGroups.ts`; `src/shared/ui/PrivateEmail.tsx` |
-| Startup/consumer access | `src/main.tsx`; Quick composer entry; `src/app/workspace/lifecycle/useProjectLockRedirect.ts`; rail/search/recents/task/draft consumers |
-| Native file grants | `src/platform/tauri/fileAccess.ts`; `src-tauri/src/file_access.rs`; registration in `src-tauri/src/lib.rs` |
+| Area                          | Owner                                                                                                                                                                                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Privacy/masking/file controls | `src/features/settings/ui/PrivacyStartupSettings.tsx`, `FileAccessSettings.tsx`; Settings model/search and `displayPrefs.ts`                                                                                                                  |
+| Lock/hidden/password UI       | `src/features/group-lock/ui/GroupLockSettings.tsx`, `HiddenGroupsSettings.tsx`, `GroupPrivacy.css`, `SetLockPasswordDialog.tsx`, `PasswordPromptDialog.tsx`, `ForgotLockPasswordDialog.tsx`, `UnlockGroupDialog.tsx`, `PrivacyLaunchGate.tsx` |
+| Lock state and races          | `src/features/group-lock/model/groupLock.ts`, `lockSettings.ts`, `lockState.ts`, `passwordRecord.ts`, `attemptThrottle.ts`, `autoLock.ts`; follow `useGroupLock`                                                                              |
+| Membership/masking            | `src/features/projects/model/projectGroups.ts`; `src/shared/ui/PrivateEmail.tsx`                                                                                                                                                              |
+| Startup/consumer access       | `src/main.tsx`; Quick composer entry; `src/app/workspace/lifecycle/useProjectLockRedirect.ts`; rail/search/recents/task/draft consumers                                                                                                       |
+| Native file grants            | `src/platform/tauri/fileAccess.ts`; `src-tauri/src/file_access.rs`; registration in `src-tauri/src/lib.rs`                                                                                                                                    |
 
 ## State and consent boundaries
 

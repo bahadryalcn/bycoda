@@ -7,7 +7,12 @@ import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t } from "../../../shared/i18n";
-import { PROGRAM_STEPS, type ProgramTarget, type SocialOccurrence, type SocialProgram } from "../model/socialProgram";
+import {
+  PROGRAM_STEPS,
+  type ProgramTarget,
+  type SocialOccurrence,
+  type SocialProgram,
+} from "../model/socialProgram";
 import { PROGRAM_STEP_LABELS } from "../model/socialProgramForm";
 import type { CampaignVariant } from "../model/social";
 import { ProgramLabel, programStates } from "./ProgramFormShared";

@@ -93,7 +93,9 @@ export function GroupLockSettings({
       <div className="privacy-save-feedback">
         <Alert tone="danger">
           {applied
-            ? t("Applied in this window, but not saved. The next launch may use the previous choice.")
+            ? t(
+                "Applied in this window, but not saved. The next launch may use the previous choice.",
+              )
             : t("Could not save this change. It was not applied.")}
         </Alert>
         <Button size="sm" variant="ghost" onClick={unsaved[id]}>

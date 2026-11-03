@@ -70,7 +70,13 @@ const target = args.includes("--target")
   : `${process.platform}-${process.arch}`;
 const targets = args.includes("--all") ? Object.keys(runtimes) : [target];
 const signDesktopHelper = args.includes("--sign-desktop-helper");
-if(signDesktopHelper && (process.platform!=="win32" || targets.length!==1 || target!==`win32-${process.arch}` || !args.includes("--desktop-helper")))
+if (
+  signDesktopHelper &&
+  (process.platform !== "win32" ||
+    targets.length !== 1 ||
+    target !== `win32-${process.arch}` ||
+    !args.includes("--desktop-helper"))
+)
   throw new Error("--sign-desktop-helper requires one local Windows target and --desktop-helper.");
 const desktopHelperCacheIndex = args.indexOf("--desktop-helper-cache");
 if (
@@ -245,11 +251,12 @@ for (const target of targets) {
     );
     if (JSON.stringify(copied.manifest) !== JSON.stringify(expected.manifest))
       throw new Error(`Desktop helper changed before packaging ${target}`);
-    if(signDesktopHelper)await signDesktopHelperBundle(join(folder,"agent-desktop"),{
-      certificateThumbprint:process.env.BYCODA_WINDOWS_SIGNING_CERT_SHA1,
-      storeLocation:process.env.BYCODA_WINDOWS_SIGNING_STORE || "CurrentUser",
-      arch,
-    });
+    if (signDesktopHelper)
+      await signDesktopHelperBundle(join(folder, "agent-desktop"), {
+        certificateThumbprint: process.env.BYCODA_WINDOWS_SIGNING_CERT_SHA1,
+        storeLocation: process.env.BYCODA_WINDOWS_SIGNING_STORE || "CurrentUser",
+        arch,
+      });
   }
   if (nativeAdmission)
     await copyAdmissionBundle(

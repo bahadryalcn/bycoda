@@ -4,17 +4,52 @@ export type SessionGrantScope = SessionAuthorityIdentity & {
   sessionId: string;
   environmentId: string;
 };
-export type AssistantThreadAuthorityResolver = (threadId:string)=>Promise<{id:string;projectId?:string}|null>;
-export type AssistantThreadGrantScope = {kind:"assistant-thread";threadId:string;projectId:string;environmentId:string};
-export type AssistantThreadPrincipal = {kind:"assistant-thread";threadId:string;projectId:string;provider:"assistant";sessionId?:undefined};
-export async function assertAssistantThreadScope(resolver:AssistantThreadAuthorityResolver|undefined,threadId:string,projectId:string) {
-  if(!resolver||!threadId||threadId.length>200||!projectId)throw new Error("Verified assistant thread identity required.");
-  const thread=await resolver(threadId);
-  if(!thread||thread.id!==threadId||(thread.projectId!==undefined&&thread.projectId!==projectId))throw new Error("Assistant thread scope changed or belongs to another project.");
+export type AssistantThreadAuthorityResolver = (
+  threadId: string,
+) => Promise<{ id: string; projectId?: string } | null>;
+export type AssistantThreadGrantScope = {
+  kind: "assistant-thread";
+  threadId: string;
+  projectId: string;
+  environmentId: string;
+};
+export type AssistantThreadPrincipal = {
+  kind: "assistant-thread";
+  threadId: string;
+  projectId: string;
+  provider: "assistant";
+  sessionId?: undefined;
+};
+export async function assertAssistantThreadScope(
+  resolver: AssistantThreadAuthorityResolver | undefined,
+  threadId: string,
+  projectId: string,
+) {
+  if (!resolver || !threadId || threadId.length > 200 || !projectId)
+    throw new Error("Verified assistant thread identity required.");
+  const thread = await resolver(threadId);
+  if (
+    !thread ||
+    thread.id !== threadId ||
+    (thread.projectId !== undefined && thread.projectId !== projectId)
+  )
+    throw new Error("Assistant thread scope changed or belongs to another project.");
 }
-export function assertAssistantThreadGrantScope(expected:unknown,current:AssistantThreadGrantScope) {
-  if(expected===undefined)return;
-  if(!expected||typeof expected!=="object"||Array.isArray(expected)||Object.keys(expected).length!==4||Object.entries(current).some(([key,value])=>(expected as Record<string,unknown>)[key]!==value))throw new Error("Assistant thread grant scope changed.");
+export function assertAssistantThreadGrantScope(
+  expected: unknown,
+  current: AssistantThreadGrantScope,
+) {
+  if (expected === undefined) return;
+  if (
+    !expected ||
+    typeof expected !== "object" ||
+    Array.isArray(expected) ||
+    Object.keys(expected).length !== 4 ||
+    Object.entries(current).some(
+      ([key, value]) => (expected as Record<string, unknown>)[key] !== value,
+    )
+  )
+    throw new Error("Assistant thread grant scope changed.");
 }
 
 /** Preparation changed while waiting for SQL admission. Keep the grant, but fail closed. */
@@ -74,8 +109,7 @@ export function createSessionAuthorityResolver(
       // normal activity; only a read that is no longer fresh is repeated.
       const stale = () =>
         !value ||
-        (desktop.fingerprint() !== value.fingerprint &&
-          Date.now() - value.at > PREPARED_FRESH_MS);
+        (desktop.fingerprint() !== value.fingerprint && Date.now() - value.at > PREPARED_FRESH_MS);
       if (!value || stale()) throw new SessionAuthorityUnavailable();
       const project = (await store.projects()).find((project) =>
         desktop.samePath(project.cwd, value.cwd),

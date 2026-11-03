@@ -47,7 +47,11 @@ const account = (id: string, patch: Partial<SocialAccount> = {}): SocialAccount 
   createdAt: 1,
   ...patch,
 });
-const job = (id: string, status: SocialJob["status"], patch: Partial<SocialJob> = {}): SocialJob => ({
+const job = (
+  id: string,
+  status: SocialJob["status"],
+  patch: Partial<SocialJob> = {},
+): SocialJob => ({
   id,
   operationId: id,
   dedupeKey: id,
@@ -134,7 +138,9 @@ describe("buildAttention", () => {
       target: "Activity",
     });
     expect(result.items[0].detail).toContain("do not resend");
-    expect(result.failures).toEqual([{ reason: "Rate limited", count: 2, accounts: ["Account a"] }]);
+    expect(result.failures).toEqual([
+      { reason: "Rate limited", count: 2, accounts: ["Account a"] },
+    ]);
   });
 
   it("lists upcoming queued posts in time order from real jobs only", () => {

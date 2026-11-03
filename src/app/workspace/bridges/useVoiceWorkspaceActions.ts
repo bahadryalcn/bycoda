@@ -51,7 +51,12 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
       const projects = read()
         .getProjects()
         .slice(0, 200)
-        .map(({ path, name, folderName, aliases }) => ({ path, name, ...(folderName ? {folderName} : {}), ...(aliases ? {aliases} : {}) }));
+        .map(({ path, name, folderName, aliases }) => ({
+          path,
+          name,
+          ...(folderName ? { folderName } : {}),
+          ...(aliases ? { aliases } : {}),
+        }));
       return {
         action,
         status: "completed",
@@ -62,7 +67,11 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
       };
     }
     if (action === "workspace.projects.resolve")
-      return { action, status: "completed", ...resolveVoiceProjects(read().getProjects(), clean(args.query, "query")) };
+      return {
+        action,
+        status: "completed",
+        ...resolveVoiceProjects(read().getProjects(), clean(args.query, "query")),
+      };
     const path = project(clean(args.projectPath, "projectPath"));
     if (action === "workspace.sessions.list") {
       const rawLimit = args.limit ?? 50;
@@ -199,7 +208,8 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         if (!(key in tool.parameters.properties)) throw new Error(`Unknown argument: ${key}.`);
       for (const key of tool.parameters.required)
         if (args[key] === undefined) throw new Error(`Missing ${key}.`);
-      if (action.endsWith(".list") || action === "workspace.projects.resolve") return await perform(action, args);
+      if (action.endsWith(".list") || action === "workspace.projects.resolve")
+        return await perform(action, args);
       const requestId = clean(args.requestId, "requestId");
       const signature = JSON.stringify([
         action,

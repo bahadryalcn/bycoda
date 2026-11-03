@@ -82,7 +82,14 @@ it("publishes status and canonical ownership and routes only visible selections"
   expect(api.invoke).toHaveBeenCalledWith(
     "tray_sessions_update",
     expect.objectContaining({
-      labels:expect.objectContaining({presence:expect.objectContaining({availability:"Availability",here:"Here",away:"Away",dnd:"Do not disturb"})}),
+      labels: expect.objectContaining({
+        presence: expect.objectContaining({
+          availability: "Availability",
+          here: "Here",
+          away: "Away",
+          dnd: "Do not disturb",
+        }),
+      }),
       rows: [
         expect.objectContaining({
           id: "local",
@@ -104,19 +111,14 @@ it("publishes status and canonical ownership and routes only visible selections"
   api.callbacks.get("bycoda:tray-notifications")?.({ payload: "" });
   expect(onSettings).toHaveBeenCalledOnce();
   await act(async () => root.unmount());
-  expect(api.releases.every((release) => release.mock.calls.length === 1)).toBe(
-    true,
-  );
+  expect(api.releases.every((release) => release.mock.calls.length === 1)).toBe(true);
   root = createRoot(container);
 });
 
 it("publishes native snapshots on Windows and skips IPC in browsers", async () => {
   api.mac = false;
   await act(async () => root.render(createElement(Probe)));
-  expect(api.invoke).toHaveBeenCalledWith(
-    "tray_sessions_update",
-    expect.any(Object),
-  );
+  expect(api.invoke).toHaveBeenCalledWith("tray_sessions_update", expect.any(Object));
   expect(api.callbacks.size).toBe(2);
   vi.clearAllMocks();
   api.callbacks.clear();

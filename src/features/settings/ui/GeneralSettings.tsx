@@ -153,7 +153,9 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         <Row
           id="keep-awake-duration"
           label={t("After agents finish")}
-          description={t("Choose when this computer can sleep again after the last agent finishes.")}
+          description={t(
+            "Choose when this computer can sleep again after the last agent finishes.",
+          )}
           dependsOn={keepAwake}
           disabledReason={t("Turn on Prevent sleep while agents work first")}
         >
@@ -205,7 +207,9 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         <Row
           id="getting-started"
           label={t("Getting started")}
-          description={t("Take a one-minute tour, or connect computers, set up agents and choose your projects.")}
+          description={t(
+            "Take a one-minute tour, or connect computers, set up agents and choose your projects.",
+          )}
         >
           <div className="flex shrink-0 items-center gap-2">
             {/* The tour request closes Settings and points at the workspace controls. */}
@@ -307,10 +311,10 @@ function ProductLink({
         setCopied(true);
       }
       // Recovery controls disappear on success; retain focus only if it is still there.
-      returnFocus.current = beganInRecovery && (
-        document.activeElement === document.body ||
-        Boolean(recoveryActions.current?.contains(document.activeElement))
-      );
+      returnFocus.current =
+        beganInRecovery &&
+        (document.activeElement === document.body ||
+          Boolean(recoveryActions.current?.contains(document.activeElement)));
       setFailure(null);
     } catch {
       setFailure(operation === "copy" ? "copy" : "open");

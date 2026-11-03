@@ -69,7 +69,11 @@ describe("effectful domain failure outcomes", () => {
     const error = await dispatch
       .dispatch("notes.delete", { id: "note", expectedUpdatedAt: 1 }, context)
       .catch((cause) => cause);
-    const wire = RpcErrorSchema.parse({ code: -32603, message: error.message, data: error.details });
+    const wire = RpcErrorSchema.parse({
+      code: -32603,
+      message: error.message,
+      data: error.details,
+    });
     expect(wire.data).toEqual({ category: "unavailable", retryable: false, delivery: "accepted" });
     expect(JSON.stringify(wire)).not.toMatch(/private|secret|commandId|operationId/);
   });
@@ -88,9 +92,16 @@ describe("effectful domain failure outcomes", () => {
         },
       },
     });
-    await expect(dispatch.dispatch("notes.delete", { id: "note", expectedUpdatedAt: 1 }, {
-      ...context, authorized: async () => permitted,
-    })).rejects.toMatchObject({ code: "unauthorized" });
+    await expect(
+      dispatch.dispatch(
+        "notes.delete",
+        { id: "note", expectedUpdatedAt: 1 },
+        {
+          ...context,
+          authorized: async () => permitted,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "unauthorized" });
   });
 
   it("preserves uncertainty after a non-command service has performed its effect", async () => {

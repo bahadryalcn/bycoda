@@ -14,7 +14,10 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
-import { announceSlowProviderStartup, PROVIDER_STARTUP_TIMEOUT_MS } from "../../core/providerStartupStatus";
+import {
+  announceSlowProviderStartup,
+  PROVIDER_STARTUP_TIMEOUT_MS,
+} from "../../core/providerStartupStatus";
 import {
   createProviderRetirementLedger,
   preserveProviderFailure,
@@ -433,7 +436,10 @@ async function ensureStartedLive(input: SendTurnInput): Promise<Live> {
         } catch (error) {
           if (!(error instanceof JsonRpcResponseError)) throw error;
           resumeByThread.delete(input.sessionId);
-          input.onEvent({ type: "status", text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context." });
+          input.onEvent({
+            type: "status",
+            text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+          });
         } finally {
           muteGate.current = false;
         }

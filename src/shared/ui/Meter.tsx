@@ -62,8 +62,7 @@ export function Meter({
   ...props
 }: MeterProps) {
   const span = max - min;
-  const ratio =
-    value === null || !(span > 0) ? 0 : Math.min(1, Math.max(0, (value - min) / span));
+  const ratio = value === null || !(span > 0) ? 0 : Math.min(1, Math.max(0, (value - min) / span));
   const known = value !== null;
   const shared = {
     ...props,
@@ -79,7 +78,13 @@ export function Meter({
   if (variant === "ring")
     return (
       <div {...shared} className={[styles.meter, styles.ring, className].filter(Boolean).join(" ")}>
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false" className={styles.ringSvg}>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+          focusable="false"
+          className={styles.ringSvg}
+        >
           <circle cx="12" cy="12" r="10" strokeWidth="2" className={styles.ringTrack} />
           {ratio > 0 ? (
             <circle

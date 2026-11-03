@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { invalidateProjectFiles } from "../../../features/files/model/fileIndex";
 import { isEqualOrInside, rebasePath } from "../../../shared/lib/paths";
 import {

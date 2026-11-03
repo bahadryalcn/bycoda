@@ -4,25 +4,25 @@ All code paths below are repository-relative. This is a starting map; follow cur
 
 ## Route page work
 
-| Change | Read only the relevant specialist |
-| --- | --- |
-| General, languages, power, diagnostics, updater | [General](../../feature-general-settings/SKILL.md) |
-| Theme, typography, density, backgrounds | [Appearance](../../feature-appearance/SKILL.md); shared role changes also [theme foundation](../../feature-theme-foundation/SKILL.md) |
-| Notifications, mute, request center | [Notifications](../../feature-notifications/SKILL.md) |
-| Shortcut capture, overrides, global registration | [Keybindings](../../feature-keybindings/SKILL.md) |
-| Privacy launch, locks, hidden groups, file access | [Privacy/security](../../feature-privacy-security/SKILL.md) |
-| Editor/tool preferences, local Host experiment | [Workspace settings](../../feature-workspace-settings/SKILL.md) |
-| Terminal profiles | [Terminal](../../feature-terminal/SKILL.md) |
-| Worktree policy and Git preferences | [Source control](../../feature-source-control/SKILL.md); execution lifecycle also [managed workspaces](../../feature-managed-workspaces/SKILL.md) |
-| Inbox credentials/scope | [Inbox settings](../../feature-inbox-settings/SKILL.md) |
-| Archive management | [Archive](../../feature-archive/SKILL.md) |
-| Chat preferences and prompt templates | [Chat settings](../../feature-chat-settings/SKILL.md) |
-| Models/accounts/provider setup | [Providers](../../feature-providers/SKILL.md) |
-| Usage analytics, provider quotas, local budgets | [Usage](../../feature-usage/SKILL.md) |
-| Outgoing MCP config or incoming grants | [MCP](../../feature-mcp/SKILL.md) |
-| Skill management | [Skills](../../feature-skills/SKILL.md) |
-| Crew configuration | [Crews](../../feature-crews/SKILL.md) |
-| Voice runtime/setup | [Voice](../../feature-voice/SKILL.md) |
+| Change                                            | Read only the relevant specialist                                                                                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| General, languages, power, diagnostics, updater   | [General](../../feature-general-settings/SKILL.md)                                                                                                |
+| Theme, typography, density, backgrounds           | [Appearance](../../feature-appearance/SKILL.md); shared role changes also [theme foundation](../../feature-theme-foundation/SKILL.md)             |
+| Notifications, mute, request center               | [Notifications](../../feature-notifications/SKILL.md)                                                                                             |
+| Shortcut capture, overrides, global registration  | [Keybindings](../../feature-keybindings/SKILL.md)                                                                                                 |
+| Privacy launch, locks, hidden groups, file access | [Privacy/security](../../feature-privacy-security/SKILL.md)                                                                                       |
+| Editor/tool preferences, local Host experiment    | [Workspace settings](../../feature-workspace-settings/SKILL.md)                                                                                   |
+| Terminal profiles                                 | [Terminal](../../feature-terminal/SKILL.md)                                                                                                       |
+| Worktree policy and Git preferences               | [Source control](../../feature-source-control/SKILL.md); execution lifecycle also [managed workspaces](../../feature-managed-workspaces/SKILL.md) |
+| Inbox credentials/scope                           | [Inbox settings](../../feature-inbox-settings/SKILL.md)                                                                                           |
+| Archive management                                | [Archive](../../feature-archive/SKILL.md)                                                                                                         |
+| Chat preferences and prompt templates             | [Chat settings](../../feature-chat-settings/SKILL.md)                                                                                             |
+| Models/accounts/provider setup                    | [Providers](../../feature-providers/SKILL.md)                                                                                                     |
+| Usage analytics, provider quotas, local budgets   | [Usage](../../feature-usage/SKILL.md)                                                                                                             |
+| Outgoing MCP config or incoming grants            | [MCP](../../feature-mcp/SKILL.md)                                                                                                                 |
+| Skill management                                  | [Skills](../../feature-skills/SKILL.md)                                                                                                           |
+| Crew configuration                                | [Crews](../../feature-crews/SKILL.md)                                                                                                             |
+| Voice runtime/setup                               | [Voice](../../feature-voice/SKILL.md)                                                                                                             |
 
 ## Shell and shared state
 

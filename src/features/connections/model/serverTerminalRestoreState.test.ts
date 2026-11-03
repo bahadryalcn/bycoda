@@ -107,7 +107,11 @@ describe("saved server tab restore ownership", () => {
   });
   it("reports the real write result and lets a later success clear a failure", () => {
     const state = createServerTerminalRestoreState();
-    state.initialize({ version: 1, enabled: true, tabs: [{ tabId: "ui-1", serverId: "server-1" }] });
+    state.initialize({
+      version: 1,
+      enabled: true,
+      tabs: [{ tabId: "ui-1", serverId: "server-1" }],
+    });
     expect(state.getSnapshot().saveStatus).toBe("idle");
     state.saveStarted();
     expect(state.getSnapshot().saveStatus).toBe("saving");

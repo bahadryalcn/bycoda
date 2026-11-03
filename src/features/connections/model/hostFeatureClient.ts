@@ -153,14 +153,27 @@ const PROJECT_BROWSER_METHODS = new Set([
   "browser.annotation.read",
   "browser.annotation.cancel",
 ]);
-const OWNER_HOST_METHOD_CAPABILITIES:Readonly<Record<string,string>>={
-  "assistant.request":"assistant.v1",
-  "desktop.request":"desktop.control.v1",
-  "desktop.helper.request":"desktop.control.v1",
+const OWNER_HOST_METHOD_CAPABILITIES: Readonly<Record<string, string>> = {
+  "assistant.request": "assistant.v1",
+  "desktop.request": "desktop.control.v1",
+  "desktop.helper.request": "desktop.control.v1",
 };
-async function ownerToolMachine(target:Exclude<HostToolTarget,{kind:"project"}>,expectedEnvironmentId?:string){
-  const machine=target.kind==="local"?await invoke<RemoteMachine|null>("local_host_connect"):(await invoke<RemoteMachine[]>("remote_machines")).find(value=>value.id===target.machineId);
-  if(!machine||!machine.environmentId||expectedEnvironmentId&&machine.environmentId!==expectedEnvironmentId)throw new Error("The captured Host is no longer available. Retry its original connection.");
+async function ownerToolMachine(
+  target: Exclude<HostToolTarget, { kind: "project" }>,
+  expectedEnvironmentId?: string,
+) {
+  const machine =
+    target.kind === "local"
+      ? await invoke<RemoteMachine | null>("local_host_connect")
+      : (await invoke<RemoteMachine[]>("remote_machines")).find(
+          (value) => value.id === target.machineId,
+        );
+  if (
+    !machine ||
+    !machine.environmentId ||
+    (expectedEnvironmentId && machine.environmentId !== expectedEnvironmentId)
+  )
+    throw new Error("The captured Host is no longer available. Retry its original connection.");
   return structuredClone(machine);
 }
 
@@ -172,24 +185,33 @@ export async function hostToolRequest<T>(
   method: string,
   params: Record<string, unknown> = {},
   target: HostToolTarget = { kind: "project" },
-  expectedEnvironmentId?:string,
+  expectedEnvironmentId?: string,
 ): Promise<T> {
-  const ownerCapability=OWNER_HOST_METHOD_CAPABILITIES[method];
-  if(ownerCapability){
-    if(capability!==ownerCapability||target.kind==="project")throw new Error("This owner operation requires its explicit computer and capability.");
-    const machine=await ownerToolMachine(target,expectedEnvironmentId),environmentId=expectedEnvironmentId??machine.environmentId;
-    const capabilities=await machineCapabilities(machine);
-    if(!capabilities.includes(ownerCapability))throw new Error("Update bycoda Host on the selected computer to use this feature.");
-    const current=await ownerToolMachine(target,environmentId);
-    const route=(value:RemoteMachine)=>JSON.stringify([value.id,value.environmentId,value.endpoint,value.ssh??null]);
-    if(route(current)!==route(machine))throw new Error("The captured Host connection changed. Retry its original connection.");
+  const ownerCapability = OWNER_HOST_METHOD_CAPABILITIES[method];
+  if (ownerCapability) {
+    if (capability !== ownerCapability || target.kind === "project")
+      throw new Error("This owner operation requires its explicit computer and capability.");
+    const machine = await ownerToolMachine(target, expectedEnvironmentId),
+      environmentId = expectedEnvironmentId ?? machine.environmentId;
+    const capabilities = await machineCapabilities(machine);
+    if (!capabilities.includes(ownerCapability))
+      throw new Error("Update bycoda Host on the selected computer to use this feature.");
+    const current = await ownerToolMachine(target, environmentId);
+    const route = (value: RemoteMachine) =>
+      JSON.stringify([value.id, value.environmentId, value.endpoint, value.ssh ?? null]);
+    if (route(current) !== route(machine))
+      throw new Error("The captured Host connection changed. Retry its original connection.");
     // Owner requests carry canonical IDs already verified on this exact Host.
     // The Native expected-environment guard also fences endpoint resolution/disclosure.
-    const result=await remoteRequest<T>(machine.id,method,params,false,false,environmentId);
-    if(route(await ownerToolMachine(target,environmentId))!==route(machine))throw new Error("The Host connection changed before its reply. The outcome is unknown; retry the original request.");
+    const result = await remoteRequest<T>(machine.id, method, params, false, false, environmentId);
+    if (route(await ownerToolMachine(target, environmentId)) !== route(machine))
+      throw new Error(
+        "The Host connection changed before its reply. The outcome is unknown; retry the original request.",
+      );
     return result;
   }
-  if(expectedEnvironmentId)throw new Error("This tool does not support a captured owner Host target.");
+  if (expectedEnvironmentId)
+    throw new Error("This tool does not support a captured owner Host target.");
   if (target.kind === "project") return hostFeatureRequest<T>(cwd, capability, method, params);
   const annotation = PROJECT_BROWSER_METHODS.has(method);
   if (!HOST_SCOPED_TOOL_METHODS.has(method) && !annotation)

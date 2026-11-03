@@ -78,7 +78,13 @@ export function Field({
 }
 
 /** One frame and intrinsic action columns: no guessed padding or overlapping text. */
-export function FieldControl({ children, startAdornment, endAdornment, appearance = "default", size }: {
+export function FieldControl({
+  children,
+  startAdornment,
+  endAdornment,
+  appearance = "default",
+  size,
+}: {
   children: ReactNode;
   startAdornment?: ReactNode;
   endAdornment?: ReactNode;
@@ -86,10 +92,23 @@ export function FieldControl({ children, startAdornment, endAdornment, appearanc
   size?: "sm" | "md";
 }) {
   return (
-    <div className={styles.control} data-field-control="" data-field-appearance={appearance} data-field-size={size}>
-      {startAdornment != null && <div className={styles.adornment} data-field-slot="start">{startAdornment}</div>}
+    <div
+      className={styles.control}
+      data-field-control=""
+      data-field-appearance={appearance}
+      data-field-size={size}
+    >
+      {startAdornment != null && (
+        <div className={styles.adornment} data-field-slot="start">
+          {startAdornment}
+        </div>
+      )}
       <div className={styles.editor}>{children}</div>
-      {endAdornment != null && <div className={styles.adornment} data-field-slot="end">{endAdornment}</div>}
+      {endAdornment != null && (
+        <div className={styles.adornment} data-field-slot="end">
+          {endAdornment}
+        </div>
+      )}
     </div>
   );
 }

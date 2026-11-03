@@ -23,7 +23,15 @@ function chat(cwd: string, patch: Partial<Session> = {}): Session {
 describe("isInFlightSession", () => {
   it("leaves explicit local Host work running when its client detaches", () => {
     const session = chat("/tmp/local", { busy: true });
-    session.hostBinding = { kind: "local-host", machineId: "local", environmentId: "home", projectId: "project", sessionId: session.id, authorityGeneration: null, created: true };
+    session.hostBinding = {
+      kind: "local-host",
+      machineId: "local",
+      environmentId: "home",
+      projectId: "project",
+      sessionId: session.id,
+      authorityGeneration: null,
+      created: true,
+    };
     expect(isInFlightSession(session)).toBe(false);
     expect(inFlightRefs([session], [newTab(session.id)])).toEqual([]);
   });

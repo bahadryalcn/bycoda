@@ -5,12 +5,23 @@ type Rgba = readonly [number, number, number, number];
 /** CSS is resolved to sRGB by the caller, before xterm parses it. */
 function channels(color: string): Rgba | undefined {
   const hex = color.match(/^#([\da-f]{6})([\da-f]{2})?$/i);
-  if (hex) return [parseInt(hex[1].slice(0, 2), 16), parseInt(hex[1].slice(2, 4), 16), parseInt(hex[1].slice(4, 6), 16), hex[2] ? parseInt(hex[2], 16) / 255 : 1];
+  if (hex)
+    return [
+      parseInt(hex[1].slice(0, 2), 16),
+      parseInt(hex[1].slice(2, 4), 16),
+      parseInt(hex[1].slice(4, 6), 16),
+      hex[2] ? parseInt(hex[2], 16) / 255 : 1,
+    ];
   const rgb = color.match(/^rgba?\(([^)]+)\)$/);
   if (!rgb) return undefined;
   const values = rgb[1].split(/[\s,/]+/).filter(Boolean);
   if (values.length < 3 || values.some((value) => value.includes("%"))) return undefined;
-  const result: Rgba = [Number(values[0]), Number(values[1]), Number(values[2]), values[3] === undefined ? 1 : Number(values[3])];
+  const result: Rgba = [
+    Number(values[0]),
+    Number(values[1]),
+    Number(values[2]),
+    values[3] === undefined ? 1 : Number(values[3]),
+  ];
   return result.every(Number.isFinite) ? result : undefined;
 }
 
@@ -24,15 +35,21 @@ export type TerminalCanvas = { color: string; resolved: true } | { resolved: fal
  * Images, opacity groups and filters require pixel/backdrop knowledge we do not
  * have. Keep their glass visible and explicitly decline contrast correction.
  */
-export function resolveTerminalCanvas(scope: HTMLElement, resolveColor: (value: string) => string): TerminalCanvas {
+export function resolveTerminalCanvas(
+  scope: HTMLElement,
+  resolveColor: (value: string) => string,
+): TerminalCanvas {
   const layers: Rgba[] = [];
   let opaque = false;
   for (let node: HTMLElement | null = scope; node; node = node.parentElement) {
     const style = getComputedStyle(node);
-    if ((style.opacity && Number(style.opacity) < 1) ||
-        (style.filter && style.filter !== "none") ||
-        (style.backdropFilter && style.backdropFilter !== "none") ||
-        (style.mixBlendMode && style.mixBlendMode !== "normal")) return { resolved: false };
+    if (
+      (style.opacity && Number(style.opacity) < 1) ||
+      (style.filter && style.filter !== "none") ||
+      (style.backdropFilter && style.backdropFilter !== "none") ||
+      (style.mixBlendMode && style.mixBlendMode !== "normal")
+    )
+      return { resolved: false };
     if (opaque) continue;
     if (style.backgroundImage && style.backgroundImage !== "none") return { resolved: false };
     if (!style.backgroundColor || style.backgroundColor === "transparent") continue;
@@ -46,12 +63,24 @@ export function resolveTerminalCanvas(scope: HTMLElement, resolveColor: (value: 
   while (layers.length) {
     const top = layers.pop()!;
     const alpha = top[3];
-    result = [top[0] * alpha + result[0] * (1 - alpha), top[1] * alpha + result[1] * (1 - alpha), top[2] * alpha + result[2] * (1 - alpha), 1];
+    result = [
+      top[0] * alpha + result[0] * (1 - alpha),
+      top[1] * alpha + result[1] * (1 - alpha),
+      top[2] * alpha + result[2] * (1 - alpha),
+      1,
+    ];
   }
   return { color: rgb(result), resolved: true };
 }
 
-export function terminalRenderingPolicy({ canvas, fallbackCanvas, foreground, cursor, selectionBackground, selectionForeground }: {
+export function terminalRenderingPolicy({
+  canvas,
+  fallbackCanvas,
+  foreground,
+  cursor,
+  selectionBackground,
+  selectionForeground,
+}: {
   canvas: TerminalCanvas;
   fallbackCanvas: string;
   foreground: string;

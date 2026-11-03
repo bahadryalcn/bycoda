@@ -407,7 +407,8 @@ html[data-performance-no-blur] [data-activity-dock] {
    actions: no filled box. "On" is a small dot on the icon (the same cue as an active
    search filter), so it reads in every accent, including the neutral default. */
 [data-tool-inspection] .bycoda-arc[data-fbg-item][data-button-selected],
-[data-tool-inspection] .bycoda-arc[data-fbg-item][data-button-selected]:hover:not([aria-disabled="true"]) {
+[data-tool-inspection]
+  .bycoda-arc[data-fbg-item][data-button-selected]:hover:not([aria-disabled="true"]) {
   border-color: transparent;
   background: transparent;
   color: var(--color-content);

@@ -16,16 +16,27 @@ const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 it("closes admission before draining existing device lanes", async () => {
   const host = new DeviceHost("/unused", { env: {} });
-  const internal = host as unknown as { runForDevice: (id: string, work: () => Promise<void>) => Promise<void>; shutdown: () => Promise<void> };
-  const held = gate(), later = vi.fn(async () => {}), shutdown = vi.spyOn(internal, "shutdown").mockResolvedValue();
-  const accepted = internal.runForDevice("A", async () => { await held.promise; });
+  const internal = host as unknown as {
+    runForDevice: (id: string, work: () => Promise<void>) => Promise<void>;
+    shutdown: () => Promise<void>;
+  };
+  const held = gate(),
+    later = vi.fn(async () => {}),
+    shutdown = vi.spyOn(internal, "shutdown").mockResolvedValue();
+  const accepted = internal.runForDevice("A", async () => {
+    await held.promise;
+  });
   await turn();
-  const closing = host.dispose(), again = host.dispose();
+  const closing = host.dispose(),
+    again = host.dispose();
   try {
     await expect(internal.runForDevice("B", later)).rejects.toThrow("disposed");
     expect(later).not.toHaveBeenCalled();
     expect(shutdown).not.toHaveBeenCalled();
-  } finally { held.release(); await Promise.all([accepted, closing, again]); }
+  } finally {
+    held.release();
+    await Promise.all([accepted, closing, again]);
+  }
   expect(shutdown).toHaveBeenCalledTimes(1);
 });
 

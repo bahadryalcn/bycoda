@@ -42,7 +42,9 @@ export function PrivacyStartupSettings() {
                   </Button>
                 }
               >
-                {t("Applied in this window, but not saved. The next launch may not start in privacy mode.")}
+                {t(
+                  "Applied in this window, but not saved. The next launch may not start in privacy mode.",
+                )}
               </SettingsFeedback>
             )
           }

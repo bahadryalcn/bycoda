@@ -510,7 +510,8 @@ export async function steerTurn(flavor: PiFlavor, input: SteerTurnInput): Promis
   input = { ...input };
 
   const live = stateFor(flavor).liveByThread.get(input.sessionId);
-  if (!live?.activeTurn) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  if (!live?.activeTurn)
+    throw new Error("The previous turn has finished. Send this follow-up as a new message.");
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
     throw new Error("Provider operation replaced before steer");
   const rpc = await piTurnWriter(

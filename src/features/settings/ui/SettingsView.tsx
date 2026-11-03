@@ -437,11 +437,7 @@ export function SettingsView({
             label={t("Settings categories")}
           >
             {categoryGroups.map((group) => (
-              <div
-                key={group.id}
-                className="bycoda-settings-category-group"
-                role="presentation"
-              >
+              <div key={group.id} className="bycoda-settings-category-group" role="presentation">
                 <span className="bycoda-settings-category-label" aria-hidden="true">
                   {group.label}
                 </span>
@@ -510,7 +506,9 @@ export function SettingsView({
                         data-settings-section={section}
                         className="bycoda-settings-content bycoda-settings-form min-w-0 w-full"
                       >
-                        {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
+                        {section === "general" ? (
+                          <GeneralPage onOpenWhatsNew={onOpenWhatsNew} />
+                        ) : null}
                         {section === "crews" ? (
                           <div className="settings-topics">
                             <CrewsSettings
@@ -531,14 +529,18 @@ export function SettingsView({
                             <ConnectionsSettings />
                           </>
                         ) : null}
-                        {section === "appearance" ? <AppearancePage appearance={appearance} /> : null}
+                        {section === "appearance" ? (
+                          <AppearancePage appearance={appearance} />
+                        ) : null}
                         {section === "workspace" ? (
                           <WorkspacePage>
                             <Group title={t("Explorer")} layout="full">
                               <Row
                                 id="show-excluded-files"
                                 label={t("Show excluded files")}
-                                feedback={<AppearanceSaveFeedback settingIds={["show-excluded-files"]} />}
+                                feedback={
+                                  <AppearanceSaveFeedback settingIds={["show-excluded-files"]} />
+                                }
                                 description={t(
                                   "Show files and folders Git excludes, such as build output and dependencies, in the explorer.",
                                 )}
@@ -575,7 +577,9 @@ export function SettingsView({
                         {section === "keybindings" ? <KeybindingsPage /> : null}
                         {section === "terminal" ? <TerminalPage /> : null}
                         {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
-                        {section === "providers" ? <ProvidersPage cwd={cwd} recents={recents} /> : null}
+                        {section === "providers" ? (
+                          <ProvidersPage cwd={cwd} recents={recents} />
+                        ) : null}
                         {section === "usage" ? <UsagePage /> : null}
                         {section === "limits" ? <UsagePage limitsOnly /> : null}
                         {section === "worktrees" ? (

@@ -304,7 +304,13 @@ describe("Social management workflows", () => {
     const file = new File(
       [
         JSON.stringify([
-          { accountId: "account", platformId: "u1", name: "Ada", projectIds: ["a"], consent: { allowed: true } },
+          {
+            accountId: "account",
+            platformId: "u1",
+            name: "Ada",
+            projectIds: ["a"],
+            consent: { allowed: true },
+          },
           { accountId: "nobody", platformId: "u2", name: "Bob", projectIds: ["a"] },
         ]),
       ],
@@ -637,7 +643,9 @@ describe("Reply rule steps", () => {
       expect(summary).toContain(part);
     expect(
       Array.from(
-        container.querySelectorAll('dl[aria-label="Rule summary"] ul[aria-label="Stop phrases"] li'),
+        container.querySelectorAll(
+          'dl[aria-label="Rule summary"] ul[aria-label="Stop phrases"] li',
+        ),
         (item) => item.textContent,
       ),
     ).toEqual(["a", "b"]);

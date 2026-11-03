@@ -90,7 +90,10 @@ export default function PdfViewer({
     );
   if (!doc) {
     return (
-      <div role="status" className="grid h-full min-w-0 place-items-center p-3 text-ui-caption text-(--ui-text-muted)">
+      <div
+        role="status"
+        className="grid h-full min-w-0 place-items-center p-3 text-ui-caption text-(--ui-text-muted)"
+      >
         {t("Loading PDF…")}
       </div>
     );
@@ -306,13 +309,25 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
         />
         <span className="tabular-nums">/ {doc.numPages}</span>
         <span className="flex-1" />
-        <Button size="sm" variant="ghost" iconOnly label={t("Zoom out")} onClick={() => zoomBy(1 / ZOOM_STEP)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconOnly
+          label={t("Zoom out")}
+          onClick={() => zoomBy(1 / ZOOM_STEP)}
+        >
           <Minus className="icon-xs" strokeWidth={1.75} />
         </Button>
         <span ref={percentRef} className="w-10 text-center tabular-nums">
           {formatZoomPercent(scale)}
         </span>
-        <Button size="sm" variant="ghost" iconOnly label={t("Zoom in")} onClick={() => zoomBy(ZOOM_STEP)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconOnly
+          label={t("Zoom in")}
+          onClick={() => zoomBy(ZOOM_STEP)}
+        >
           <Plus className="icon-xs" strokeWidth={1.75} />
         </Button>
         <Button

@@ -1,9 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  HostSession,
-  RemoteMachine,
-} from "../../connections/model/protocol";
+import type { HostSession, RemoteMachine } from "../../connections/model/protocol";
 import { saveHostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import type { Session } from "./session";
 import type { LocalSessionLocator } from "./localSessionReference";
@@ -30,10 +27,7 @@ vi.mock("./nativeSessionReference", () => ({
   nativeSessionReference: mocks.nativeSessionReference,
   resolveNativeSessionReference: mocks.resolveNativeSessionReference,
 }));
-import {
-  localReferenceForSession,
-  resolveLocalSessionReference,
-} from "./localSessionNavigation";
+import { localReferenceForSession, resolveLocalSessionReference } from "./localSessionNavigation";
 
 const native: LocalSessionLocator = {
   kind: "native",
@@ -89,18 +83,14 @@ describe("local session owner resolution", () => {
       archived: true,
       cwd: "/project",
     });
-    expect(mocks.resolveNativeSessionReference).toHaveBeenCalledExactlyOnceWith(
-      native,
-    );
+    expect(mocks.resolveNativeSessionReference).toHaveBeenCalledExactlyOnceWith(native);
     expect(mocks.invoke).not.toHaveBeenCalled();
     expect(mocks.remoteRequest).not.toHaveBeenCalled();
   });
 
   it("rejects a foreign Native origin without retrying the same session id against Host", async () => {
     mocks.resolveNativeSessionReference.mockResolvedValue(null);
-    await expect(
-      resolveLocalSessionReference({ locator: native }),
-    ).rejects.toThrow("unavailable");
+    await expect(resolveLocalSessionReference({ locator: native })).rejects.toThrow("unavailable");
     expect(mocks.remoteRequest).not.toHaveBeenCalled();
   });
 
@@ -111,9 +101,9 @@ describe("local session owner resolution", () => {
       { ...machine, ssh: {} },
     ]) {
       mocks.invoke.mockResolvedValue(foreign);
-      await expect(
-        resolveLocalSessionReference({ locator: host }),
-      ).rejects.toThrow("another local Host");
+      await expect(resolveLocalSessionReference({ locator: host })).rejects.toThrow(
+        "another local Host",
+      );
     }
     expect(mocks.remoteRequest).not.toHaveBeenCalled();
   });
@@ -138,15 +128,11 @@ describe("local session owner resolution", () => {
         ? [project]
         : { ...snapshot, session: { ...snapshot.session, id: "wrong-id" } },
     );
-    await expect(
-      resolveLocalSessionReference({ locator: host }),
-    ).rejects.toThrow("unavailable");
+    await expect(resolveLocalSessionReference({ locator: host })).rejects.toThrow("unavailable");
     mocks.remoteRequest.mockImplementation(async (_machine, method) =>
       method === "projects.list" ? [] : snapshot,
     );
-    await expect(
-      resolveLocalSessionReference({ locator: host }),
-    ).rejects.toThrow("unavailable");
+    await expect(resolveLocalSessionReference({ locator: host })).rejects.toThrow("unavailable");
   });
 
   it("rejects metadata when privacy changes in flight and while the project is locked", async () => {
@@ -159,13 +145,9 @@ describe("local session owner resolution", () => {
         archived: false,
       };
     });
-    await expect(
-      resolveLocalSessionReference({ locator: native }),
-    ).rejects.toThrow("unavailable");
+    await expect(resolveLocalSessionReference({ locator: native })).rejects.toThrow("unavailable");
     mocks.locked = true;
-    await expect(
-      resolveLocalSessionReference({ locator: host }),
-    ).rejects.toThrow("unavailable");
+    await expect(resolveLocalSessionReference({ locator: host })).rejects.toThrow("unavailable");
   });
 
   it("follows only the Native resolver's proven Host mapping, preserving exact environment identity", async () => {
@@ -222,8 +204,6 @@ describe("local session owner resolution", () => {
       localReferenceForSession({ id: "draft-shell", hostBinding: binding }),
     ).rejects.toThrow("Save");
     mocks.nativeSessionReference.mockResolvedValue(null);
-    await expect(
-      localReferenceForSession({ id: "draft-native" }),
-    ).rejects.toThrow("unavailable");
+    await expect(localReferenceForSession({ id: "draft-native" })).rejects.toThrow("unavailable");
   });
 });

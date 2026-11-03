@@ -49,9 +49,7 @@ export function HiddenGroupsSettings({
       )}
     >
       {!authorized ? (
-        <Row
-          label={t("Group names are concealed")}
-        >
+        <Row label={t("Group names are concealed")}>
           <Button className="shrink-0" onClick={() => setPrompt(true)}>
             {t("Manage hidden groups…")}
           </Button>

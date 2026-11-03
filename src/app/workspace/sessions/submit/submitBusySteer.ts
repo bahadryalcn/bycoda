@@ -432,8 +432,12 @@ export function steerBusySubmit(
           const paused = sessionsRef.current.find((entry) => entry.id === sessionId)?.queueStatus;
           const note =
             paused === "paused" || paused === "restored"
-              ? t("The provider is not taking follow-ups right now. Your message is in the paused queue; resume the queue to send it.")
-              : t("The provider is not taking follow-ups right now. Your message is queued and will be sent next.");
+              ? t(
+                  "The provider is not taking follow-ups right now. Your message is in the paused queue; resume the queue to send it.",
+                )
+              : t(
+                  "The provider is not taking follow-ups right now. Your message is queued and will be sent next.",
+                );
           updateDeliveryProgress(sessionId, progress, "rejected", note);
           showSubmitNotice(sessionId, note);
           wakeSharedLocalQueues([sessionId]);

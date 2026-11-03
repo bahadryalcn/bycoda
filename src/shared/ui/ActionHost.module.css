@@ -65,7 +65,12 @@
   max-inline-size: 0;
   overflow: hidden;
 }
-:global([data-action-host]):is(:hover, :focus-within, [data-selected], :has([data-action-slot="collapse"] [aria-expanded="true"]))
+:global([data-action-host]):is(
+    :hover,
+    :focus-within,
+    [data-selected],
+    :has([data-action-slot="collapse"] [aria-expanded="true"])
+  )
   :global([data-action-slot="collapse"]) {
   max-inline-size: none;
   overflow: visible;
@@ -89,7 +94,9 @@
    expanding form above, and touch keeps the actions always visible beside the text.
    `data-action-anchor="end"` aligns the actions to the row's last line. */
 @media (hover: hover) and (pointer: fine) {
-  :global([data-action-host]):has(:global([data-action-slot="collapse"])):has(:global([data-action-yield]))
+  :global([data-action-host]):has(:global([data-action-slot="collapse"])):has(
+      :global([data-action-yield])
+    )
     :global([data-action-slot="collapse"]) {
     position: absolute;
     inset-block: 0;
@@ -100,11 +107,14 @@
     overflow: visible;
     pointer-events: none;
   }
-  :global([data-action-host]):has(:global([data-action-slot="collapse"])):has(:global([data-action-yield]))
+  :global([data-action-host]):has(:global([data-action-slot="collapse"])):has(
+      :global([data-action-yield])
+    )
     :global([data-action-slot="collapse"][data-action-anchor="end"]) {
     align-items: flex-end;
   }
-  :global([data-action-host]):has(:global([data-action-slot="collapse"])) :global([data-action-yield]) {
+  :global([data-action-host]):has(:global([data-action-slot="collapse"]))
+    :global([data-action-yield]) {
     min-inline-size: 1.5rem;
     text-align: end;
     transition: opacity var(--duration-fast) var(--ease-standard);

@@ -29,12 +29,7 @@ import {
   type ThemePreference,
 } from "../model/appearance";
 import { THEME_PALETTE_PRESETS, matchThemePalette } from "../model/themePalettes";
-import {
-  UI_SCALE_DEFAULT,
-  UI_SCALE_MAX,
-  UI_SCALE_MIN,
-  UI_SCALE_STEP,
-} from "../model/uiScale";
+import { UI_SCALE_DEFAULT, UI_SCALE_MAX, UI_SCALE_MIN, UI_SCALE_STEP } from "../model/uiScale";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useCodeTheme } from "../../../shared/hooks/useCodeTheme";
 import { Button } from "../../../shared/ui/Button";
@@ -231,7 +226,9 @@ function CanvasBackgroundRow({
       label={t("Background tone")}
       description={
         customColors
-          ? t("Custom surface colors keep their own background. Choose a theme palette to use Pure.")
+          ? t(
+              "Custom surface colors keep their own background. Choose a theme palette to use Pure.",
+            )
           : t("Pure is true black in dark mode and white in light mode.")
       }
       disabled={customColors}

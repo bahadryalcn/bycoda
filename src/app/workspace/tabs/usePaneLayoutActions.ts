@@ -93,7 +93,11 @@ export function usePaneLayoutActions({
       const emptySessions =
         layoutLeaves(current.layout).length === 1
           ? Array.from({ length: suggestedPaneCount(preset) - 1 }, () =>
-              newWorkspaceSession(sidebarCwd, sessionDefaults?.runtimeMode, worktreeFocus(sidebarCwd)),
+              newWorkspaceSession(
+                sidebarCwd,
+                sessionDefaults?.runtimeMode,
+                worktreeFocus(sidebarCwd),
+              ),
             )
           : [];
       const next = tabsRef.current.map((tab) =>

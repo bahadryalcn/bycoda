@@ -137,9 +137,12 @@ async function setInput(input: HTMLInputElement, value: string) {
 }
 const dialogForm = () => document.body.querySelector<HTMLFormElement>("form.social-plan-form")!;
 const stepButton = (label: string) =>
-  document.body.querySelector<HTMLButtonElement>(`nav[aria-label="Plan steps"] button[aria-label="${label}"]`)!;
+  document.body.querySelector<HTMLButtonElement>(
+    `nav[aria-label="Plan steps"] button[aria-label="${label}"]`,
+  )!;
 const currentStep = () =>
-  document.body.querySelector('nav[aria-label="Plan steps"] [aria-current="step"]')?.textContent ?? "";
+  document.body.querySelector('nav[aria-label="Plan steps"] [aria-current="step"]')?.textContent ??
+  "";
 const nameInput = () => dialogForm().querySelector<HTMLInputElement>("input")!;
 const mutatingCalls = () =>
   request.mock.calls.filter(([action]) => String(action).startsWith("publishing-plans."));
@@ -384,7 +387,10 @@ it("splits the dialog into three steps and keeps every value across Back, Next a
   await setInput(nameInput(), "Renamed");
   await act(async () => dialogButton("Next").click());
   expect(currentStep()).toContain("Schedule");
-  await setInput(dialogForm().querySelector<HTMLInputElement>('input.date-time-time-input')!, "10:00");
+  await setInput(
+    dialogForm().querySelector<HTMLInputElement>("input.date-time-time-input")!,
+    "10:00",
+  );
   await act(async () => dialogButton("Review plan").click());
   expect(currentStep()).toContain("Review");
   const text = dialogForm().textContent!;
@@ -399,7 +405,9 @@ it("splits the dialog into three steps and keeps every value across Back, Next a
   await act(async () => stepButton("1 Account and content").click());
   expect(nameInput().value).toBe("Renamed");
   await act(async () => dialogButton("Next").click());
-  expect(dialogForm().querySelector<HTMLInputElement>('input.date-time-time-input')!.value).toBe("10:00");
+  expect(dialogForm().querySelector<HTMLInputElement>("input.date-time-time-input")!.value).toBe(
+    "10:00",
+  );
   expect(mutatingCalls()).toEqual([]);
 });
 
@@ -453,7 +461,10 @@ it("keeps the unsaved draft and the current step when the dialog is closed and r
   await act(async () => button("Edit plan").click());
   await setInput(nameInput(), "Kept draft");
   await act(async () => dialogButton("Next").click());
-  await setInput(dialogForm().querySelector<HTMLInputElement>('input.date-time-time-input')!, "11:00");
+  await setInput(
+    dialogForm().querySelector<HTMLInputElement>("input.date-time-time-input")!,
+    "11:00",
+  );
   await act(async () => dialogButton("Close").click());
   expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   // Another snapshot (for example after visiting another section) must not reset it either.
@@ -461,7 +472,9 @@ it("keeps the unsaved draft and the current step when the dialog is closed and r
   await act(async () => button("Edit publishing plan").click());
   expect(document.body.querySelector('[role="dialog"]')).toBeTruthy();
   expect(currentStep()).toContain("Schedule");
-  expect(dialogForm().querySelector<HTMLInputElement>('input.date-time-time-input')!.value).toBe("11:00");
+  expect(dialogForm().querySelector<HTMLInputElement>("input.date-time-time-input")!.value).toBe(
+    "11:00",
+  );
   await act(async () => dialogButton("Back").click());
   expect(nameInput().value).toBe("Kept draft");
   expect(mutatingCalls()).toEqual([]);

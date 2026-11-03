@@ -276,7 +276,12 @@ export function GitHistoryGraph({
   const list = (variant: "compact" | "workspace") => {
     const empty =
       !cwd || cwd === "~" ? (
-        <EmptyState size="inline" kind="empty" className="px-3" description={t("No project folder")} />
+        <EmptyState
+          size="inline"
+          kind="empty"
+          className="px-3"
+          description={t("No project folder")}
+        />
       ) : commits.length === 0 ? (
         loading ? (
           <GitLoading text="Loading commit graph…" />
@@ -289,7 +294,12 @@ export function GitHistoryGraph({
             onRetry={refresh}
           />
         ) : (
-          <EmptyState size="inline" kind="empty" className="px-3" description={t("No commits yet")} />
+          <EmptyState
+            size="inline"
+            kind="empty"
+            className="px-3"
+            description={t("No commits yet")}
+          />
         )
       ) : items.length === 0 ? (
         <EmptyState

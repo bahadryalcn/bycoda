@@ -493,16 +493,12 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
     );
   }
   if (files == null) {
-    return (
-      <SurfaceLoading />
-    );
+    return <SurfaceLoading />;
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {mutationError && (
-        <InlineError className="shrink-0 px-3 py-2">{mutationError}</InlineError>
-      )}
+      {mutationError && <InlineError className="shrink-0 px-3 py-2">{mutationError}</InlineError>}
       <UnifiedDiffView
         files={models}
         fileCount={focusKind ? entries.length : files.length}

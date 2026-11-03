@@ -93,14 +93,30 @@ function fixture() {
     },
   };
 }
-it("retains the immutable summary proof actually seeded across accepted turns",async()=>{
-  const f=fixture();let requestId=0;
-  const generation=new VoiceCausalGeneration([],true,()=>true,f.failed,()=>`summary-request-${++requestId}`,"original-summary-proof");
-  await generation.accept(f.binding,f.source(),"Owner text");
-  await generation.accept(f.binding,f.source("later-owner","Continue"),"Continue");
-  expect(f.request.mock.calls.filter(([input])=>input.op==="voice.context.open").map(([input])=>input)).toEqual([
-    expect.objectContaining({summaryUsed:true,summaryProofId:"original-summary-proof"}),
-    expect.objectContaining({summaryUsed:true,summaryProofId:"original-summary-proof",previousContextId:expect.any(String)}),
+it("retains the immutable summary proof actually seeded across accepted turns", async () => {
+  const f = fixture();
+  let requestId = 0;
+  const generation = new VoiceCausalGeneration(
+    [],
+    true,
+    () => true,
+    f.failed,
+    () => `summary-request-${++requestId}`,
+    "original-summary-proof",
+  );
+  await generation.accept(f.binding, f.source(), "Owner text");
+  await generation.accept(f.binding, f.source("later-owner", "Continue"), "Continue");
+  expect(
+    f.request.mock.calls
+      .filter(([input]) => input.op === "voice.context.open")
+      .map(([input]) => input),
+  ).toEqual([
+    expect.objectContaining({ summaryUsed: true, summaryProofId: "original-summary-proof" }),
+    expect.objectContaining({
+      summaryUsed: true,
+      summaryProofId: "original-summary-proof",
+      previousContextId: expect.any(String),
+    }),
   ]);
 });
 it("chains the exact initial canonical seeds and accepted owner receipts in one actual generation", async () => {

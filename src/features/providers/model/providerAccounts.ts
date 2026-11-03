@@ -336,7 +336,9 @@ export function providerAccountLabel(
     providerAccounts(provider).find(
       (account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID),
     )?.label ??
-    (accountId && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID ? t("Removed account") : t("Default account"))
+    (accountId && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID
+      ? t("Removed account")
+      : t("Default account"))
   );
 }
 

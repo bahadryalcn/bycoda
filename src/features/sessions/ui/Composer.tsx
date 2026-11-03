@@ -893,9 +893,7 @@ function MessageQueue({
                 )}
                 <div className="min-w-0 py-1">
                   <OverflowTooltip label={label}>
-                    <div className="truncate text-(--ui-text-secondary)">
-                      {label}
-                    </div>
+                    <div className="truncate text-(--ui-text-secondary)">{label}</div>
                   </OverflowTooltip>
                   {attachmentGone ? (
                     <span

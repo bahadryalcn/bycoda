@@ -47,7 +47,20 @@ const rewind = z.strictObject({
 });
 
 const NativeSessionRecordSchema = z.strictObject({
-  managedBy:z.union([z.strictObject({assistant:z.literal(true),jobId:IdentifierSchema,managedAt:SafeCounterSchema}),z.strictObject({assistant:z.literal(true),supervisionId:IdentifierSchema,managedAt:SafeCounterSchema})]).optional(),
+  managedBy: z
+    .union([
+      z.strictObject({
+        assistant: z.literal(true),
+        jobId: IdentifierSchema,
+        managedAt: SafeCounterSchema,
+      }),
+      z.strictObject({
+        assistant: z.literal(true),
+        supervisionId: IdentifierSchema,
+        managedAt: SafeCounterSchema,
+      }),
+    ])
+    .optional(),
   transcriptRevision: SafeCounterSchema.optional(),
   orchestrationLeadId: text.optional(),
   id: IdentifierSchema,

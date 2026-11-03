@@ -460,9 +460,9 @@ describe("accent readability", () => {
   it("defaults to auto and migrates records saved before the preference existed", () => {
     expect(APPEARANCE_DEFAULTS.accentReadability).toBe("auto");
     expect(normalizeAppearancePreferences({}).accentReadability).toBe("auto");
-    expect(normalizeAppearancePreferences({ accentReadability: "bogus" as never }).accentReadability).toBe(
-      "auto",
-    );
+    expect(
+      normalizeAppearancePreferences({ accentReadability: "bogus" as never }).accentReadability,
+    ).toBe("auto");
     localStorage.setItem("bycoda.appearancePreferences.v1", JSON.stringify({ contrast: 120 }));
     expect(loadAppearancePreferences().accentReadability).toBe("auto");
     expect(loadAppearancePreferences().contrast).toBe(120);
@@ -472,7 +472,9 @@ describe("accent readability", () => {
     for (const accent of ["#fde68a", "#3b0764", "#a855f7", "#ff0000", "#0000ff"]) {
       applyAccentColor(accent);
       expect(read("--user-accent-color")).toBe(accent);
-      expect(contrastRatio(read("--user-accent-solid"), read("--user-accent-foreground"))).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrastRatio(read("--user-accent-solid"), read("--user-accent-foreground")),
+      ).toBeGreaterThanOrEqual(4.5);
       expect(read("--user-accent-solid")).toBe(accent);
     }
   });
@@ -488,16 +490,23 @@ describe("accent readability", () => {
     // The published ink travels with each fill (it can flip to keep both 7:1 text and 3:1 canvas).
     for (const scheme of ["dark", "light"]) {
       expect(
-        contrastRatio(read(`--user-accent-selection-${scheme}`), read(`--user-accent-selection-${scheme}-ink`)),
+        contrastRatio(
+          read(`--user-accent-selection-${scheme}`),
+          read(`--user-accent-selection-${scheme}-ink`),
+        ),
       ).toBeGreaterThanOrEqual(7);
     }
-    expect(contrastRatio(read("--user-accent-selection-paper"), "#000000")).toBeGreaterThanOrEqual(7);
+    expect(contrastRatio(read("--user-accent-selection-paper"), "#000000")).toBeGreaterThanOrEqual(
+      7,
+    );
   });
 
   it("publishes hover and pressed steps that keep the ink readable", () => {
     applyAccentColor("#8b5cf6");
     for (const name of ["--user-accent-solid-hover", "--user-accent-solid-pressed"]) {
-      expect(contrastRatio(read(name), read("--user-accent-foreground"))).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(read(name), read("--user-accent-foreground"))).toBeGreaterThanOrEqual(
+        4.5,
+      );
     }
   });
 });

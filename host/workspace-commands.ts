@@ -612,14 +612,17 @@ export class WorkspaceCommands {
       // may be junctions/symlinks, while `actual` above is already canonical.
       // Resolve on every admission, so cached worktree names cannot retain a
       // previous link target. Missing/unreadable roots grant no access.
-      const physicalRoots = await Promise.all(roots.map((root) => realpath(root).catch(() => undefined)));
+      const physicalRoots = await Promise.all(
+        roots.map((root) => realpath(root).catch(() => undefined)),
+      );
       for (const [index, physicalRoot] of physicalRoots.entries()) {
         if (!physicalRoot) continue;
         const rel = relative(physicalRoot, actual);
         if (rel === ".." || /^\.\.[\\/]/.test(rel) || isAbsolute(rel)) continue;
         // Preserve the registered spelling for project ownership and idle gates;
         // existingPath/workspacePath enforce physical containment at I/O.
-        if (!found || rel.length < found.relative.length) found = { root: roots[index], relative: rel };
+        if (!found || rel.length < found.relative.length)
+          found = { root: roots[index], relative: rel };
       }
     };
     await find((await this.store.projects()).map((project) => project.cwd));

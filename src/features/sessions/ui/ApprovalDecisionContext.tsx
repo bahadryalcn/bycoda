@@ -26,10 +26,15 @@ export function ApprovalDecisionProvider({
 }) {
   const current = useRef(session);
   current.current = session;
-  const value = useMemo(() => ({
-    get session() { return getSession?.() ?? current.current; },
-    dispatch,
-  }), [dispatch, getSession]);
+  const value = useMemo(
+    () => ({
+      get session() {
+        return getSession?.() ?? current.current;
+      },
+      dispatch,
+    }),
+    [dispatch, getSession],
+  );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

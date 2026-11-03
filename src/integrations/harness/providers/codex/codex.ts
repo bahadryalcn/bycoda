@@ -441,7 +441,8 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
     throw new Error("Provider operation replaced before steer");
   const turnId = live.activeTurnId;
-  if (!turnId) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  if (!turnId)
+    throw new Error("The previous turn has finished. Send this follow-up as a new message.");
 
   const rpc = await rpcTurnWriter(
     live.handle,
@@ -650,9 +651,9 @@ export async function cancelCodexTurn(
   let rpc;
   try {
     rpc =
-    context && turnId
-      ? await rpcTurnWriter(live.handle, live.rpc, context.nativeControlTurn, context, "control")
-      : live.rpc;
+      context && turnId
+        ? await rpcTurnWriter(live.handle, live.rpc, context.nativeControlTurn, context, "control")
+        : live.rpc;
   } catch (error) {
     console.warn("[codex] Control writer unavailable; stopping process", error);
     await stopCodexSession(sessionId, live.handle);
@@ -668,10 +669,14 @@ export async function cancelCodexTurn(
     await stopCodexSession(sessionId, live.handle);
   } else if (turnId) {
     await rpc
-      .request("turn/interrupt", {
-        threadId: live.threadId,
-        turnId,
-      }, 5_000)
+      .request(
+        "turn/interrupt",
+        {
+          threadId: live.threadId,
+          turnId,
+        },
+        5_000,
+      )
       .catch(async (error: unknown) => {
         console.warn("[codex] Interrupt failed; stopping process", error);
         await stopCodexSession(sessionId, live.handle);
@@ -739,7 +744,9 @@ export async function retireOriginalCodexWriter(
   )
     throw new Error("The original Codex writer cannot be verified; continuation remains guarded.");
   if (live.activeTurnId || live.pendingTurnStart)
-    throw new Error("The original Codex writer still has active work; continuation remains guarded.");
+    throw new Error(
+      "The original Codex writer still has active work; continuation remains guarded.",
+    );
   // stopCodexSession captures the matching handle synchronously, before waiting
   // for retirement. Unlike forget, it preserves the persisted resume identity.
   await stopCodexSession(sessionId, context);

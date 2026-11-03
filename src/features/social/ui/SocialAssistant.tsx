@@ -96,7 +96,8 @@ export function SocialAssistant({
   const profile = profiles.find((item) => item.projectId === effectiveProject);
   const projectName =
     projects.find((item) => item.id === effectiveProject)?.name ?? t("No project selected");
-  const accountName = (id: string) => accounts.find((item) => item.id === id)?.name ?? t("Removed account");
+  const accountName = (id: string) =>
+    accounts.find((item) => item.id === id)?.name ?? t("Removed account");
   // The text agent the Host will use is the effective policy of the first selected account.
   const policyQuery = useQuery({
     queryKey: [...socialQueryScope(client), "assistant-policy", accountIds[0] ?? ""],
@@ -180,17 +181,22 @@ export function SocialAssistant({
   const accept = async () => {
     if (!proposal) return;
     let result: SocialProgram | undefined;
-    const ok = await run(async () => {
-      // One request id per proposal: a retry after an unclear result returns the first receipt.
-      result = await client.request<SocialProgram>(
-        "programs.configure",
-        {
-          config: proposal.config,
-          ...(program ? { id: program.id, expectedRevision: proposal.revision } : {}),
-        },
-        proposal.requestId,
-      );
-    }, program ? t("Campaign revised from the AI suggestion. It is paused until you review it.") : t("Paused campaign saved from the AI suggestion. Review it before activating."));
+    const ok = await run(
+      async () => {
+        // One request id per proposal: a retry after an unclear result returns the first receipt.
+        result = await client.request<SocialProgram>(
+          "programs.configure",
+          {
+            config: proposal.config,
+            ...(program ? { id: program.id, expectedRevision: proposal.revision } : {}),
+          },
+          proposal.requestId,
+        );
+      },
+      program
+        ? t("Campaign revised from the AI suggestion. It is paused until you review it.")
+        : t("Paused campaign saved from the AI suggestion. Review it before activating."),
+    );
     if (ok && result) {
       setSaved({ id: result.id, name: result.name });
       setProposal(undefined);
@@ -201,7 +207,8 @@ export function SocialAssistant({
   const risks = proposal ? proposalRisks(proposal.config, proposal.base) : [];
   const changedKeys = proposal
     ? proposalChangedKeys(proposal.config, program ? proposal.base : undefined).filter(
-        (key) => !["limits", "textAgent", "poolCampaignIds", "mediaOverrides", "youtube"].includes(key),
+        (key) =>
+          !["limits", "textAgent", "poolCampaignIds", "mediaOverrides", "youtube"].includes(key),
       )
     : [];
   const summaryContext = { locale, snapshot: { accounts, profiles, campaigns: [] }, projects };
@@ -210,7 +217,14 @@ export function SocialAssistant({
   if (!open)
     return (
       <div className="social-assistant" data-collapsed="">
-        <Button variant="secondary" size="sm" type="button" disabled={locked} onClick={() => setOpen(true)} startIcon={<Sparkles aria-hidden="true" />}>
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          disabled={locked}
+          onClick={() => setOpen(true)}
+          startIcon={<Sparkles aria-hidden="true" />}
+        >
           {program ? t("Ask AI to change this campaign") : t("Ask AI to prepare content")}
         </Button>
       </div>
@@ -228,7 +242,9 @@ export function SocialAssistant({
         }}
       >
         <TextareaField
-          label={program ? t("What should change in this campaign?") : t("What should the AI prepare?")}
+          label={
+            program ? t("What should change in this campaign?") : t("What should the AI prepare?")
+          }
           rows={1}
           value={request}
           disabled={locked || phase === "working"}
@@ -240,7 +256,11 @@ export function SocialAssistant({
           }
           onChange={(event) => setRequest(event.target.value)}
         />
-        <div className="social-assistant-context" role="group" aria-label={t("What the AI will use")}>
+        <div
+          className="social-assistant-context"
+          role="group"
+          aria-label={t("What the AI will use")}
+        >
           <span>
             {t("Computer")}: <strong>{machineLabel}</strong>
           </span>
@@ -319,8 +339,13 @@ export function SocialAssistant({
           </p>
         ) : null}
         <div className="social-assistant-actions">
-          <Button type="submit" loading={phase === "working"} disabled={!canAsk} startIcon={<Sparkles aria-hidden="true" />}>
-{program ? t("Suggest changes") : t("Prepare proposal")}
+          <Button
+            type="submit"
+            loading={phase === "working"}
+            disabled={!canAsk}
+            startIcon={<Sparkles aria-hidden="true" />}
+          >
+            {program ? t("Suggest changes") : t("Prepare proposal")}
           </Button>
           {phase === "working" ? (
             <>
@@ -338,20 +363,33 @@ export function SocialAssistant({
           ) : null}
         </div>
         <p className="social-assistant-note">
-          {t("The AI only proposes. Nothing is sent or activated, and credentials and approvals are not touched.")}
+          {t(
+            "The AI only proposes. Nothing is sent or activated, and credentials and approvals are not touched.",
+          )}
         </p>
       </form>
       {error ? (
         <Notice kind="error" title={t("The AI could not prepare a proposal")}>
           <p>{error}</p>
-          <Button variant="secondary" size="sm" type="button" disabled={!canAsk} onClick={() => void ask()}>
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            disabled={!canAsk}
+            onClick={() => void ask()}
+          >
             {t("Try again")}
           </Button>
         </Notice>
       ) : null}
       {saved ? (
         <Notice kind="success" title={t("Saved as a paused campaign")}>
-          <p>{t("“{p0}” is saved and still paused. Review it, generate a sample and activate it from the campaign screen.", { p0: saved.name })}</p>
+          <p>
+            {t(
+              "“{p0}” is saved and still paused. Review it, generate a sample and activate it from the campaign screen.",
+              { p0: saved.name },
+            )}
+          </p>
           <Button size="sm" type="button" onClick={() => onOpenProgram(saved.id)}>
             {t("Open campaign")}
           </Button>
@@ -362,36 +400,48 @@ export function SocialAssistant({
           <h3>{program ? t("Proposed changes") : t("Proposed paused campaign")}</h3>
           <p className="social-assistant-note">
             {program
-              ? t("Saving replaces the unsent draft slots of “{p0}” and keeps it paused.", { p0: program.name })
-              : t("Saving creates one campaign record in {p0}. It stays paused and nothing is sent.", { p0: projectName })}
+              ? t("Saving replaces the unsent draft slots of “{p0}” and keeps it paused.", {
+                  p0: program.name,
+                })
+              : t(
+                  "Saving creates one campaign record in {p0}. It stays paused and nothing is sent.",
+                  { p0: projectName },
+                )}
           </p>
-          {program ? null : <dl className="social-assistant-facts">
-            <div>
-              <dt>{t("Project")}</dt>
-              <dd>{summarizeProgramSuggestion("projectId", proposal.config, summaryContext)}</dd>
-            </div>
-            <div>
-              <dt>{t("Accounts")}</dt>
-              <dd>
-                {proposal.config.accountIds.length} · {summarizeProgramSuggestion("accountIds", proposal.config, summaryContext)}
-              </dd>
-            </div>
-            <div>
-              <dt>{t("Posts")}</dt>
-              <dd>
-                {proposal.config.totalPosts === null ? t("Unlimited") : proposal.config.totalPosts}
-                {weekly !== undefined ? ` · ${t("up to {p0} per week", { p0: weekly })}` : ""}
-              </dd>
-            </div>
-            <div>
-              <dt>{t("When")}</dt>
-              <dd className="whitespace-pre-line">{summarizeProgramSuggestion("schedule", proposal.config, summaryContext)}</dd>
-            </div>
-            <div>
-              <dt>{t("Review steps")}</dt>
-              <dd>{summarizeProgramSuggestion("approval", proposal.config, summaryContext)}</dd>
-            </div>
-          </dl>}
+          {program ? null : (
+            <dl className="social-assistant-facts">
+              <div>
+                <dt>{t("Project")}</dt>
+                <dd>{summarizeProgramSuggestion("projectId", proposal.config, summaryContext)}</dd>
+              </div>
+              <div>
+                <dt>{t("Accounts")}</dt>
+                <dd>
+                  {proposal.config.accountIds.length} ·{" "}
+                  {summarizeProgramSuggestion("accountIds", proposal.config, summaryContext)}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("Posts")}</dt>
+                <dd>
+                  {proposal.config.totalPosts === null
+                    ? t("Unlimited")
+                    : proposal.config.totalPosts}
+                  {weekly !== undefined ? ` · ${t("up to {p0} per week", { p0: weekly })}` : ""}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("When")}</dt>
+                <dd className="whitespace-pre-line">
+                  {summarizeProgramSuggestion("schedule", proposal.config, summaryContext)}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("Review steps")}</dt>
+                <dd>{summarizeProgramSuggestion("approval", proposal.config, summaryContext)}</dd>
+              </div>
+            </dl>
+          )}
           {program ? (
             <dl className="social-assistant-facts" aria-label={t("Changed settings")}>
               {changedKeys.map((key) => (
@@ -437,7 +487,10 @@ export function SocialAssistant({
               maxLength={1000}
               disabled={locked}
               onChange={(event) =>
-                edit((config) => ({ ...config, brief: { ...config.brief, topic: event.target.value } }))
+                edit((config) => ({
+                  ...config,
+                  brief: { ...config.brief, topic: event.target.value },
+                }))
               }
             />
             <TextareaField
@@ -459,7 +512,9 @@ export function SocialAssistant({
           <div className="social-assistant-actions">
             <Button
               type="button"
-              disabled={locked || !proposal.config.name.trim() || !proposal.config.brief.topic.trim()}
+              disabled={
+                locked || !proposal.config.name.trim() || !proposal.config.brief.topic.trim()
+              }
               onClick={() => void accept()}
             >
               {program ? t("Save changes (stays paused)") : t("Save as paused campaign")}

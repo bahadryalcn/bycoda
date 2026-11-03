@@ -652,7 +652,9 @@ export function validateContactTagAnswer(
     .filter((proposal): proposal is ContactTagProposal => !!proposal);
   return {
     proposals,
-    unchangedRefs: subjects.filter((subject) => !proposed.has(subject.ref)).map((subject) => subject.ref),
+    unchangedRefs: subjects
+      .filter((subject) => !proposed.has(subject.ref))
+      .map((subject) => subject.ref),
     notes: dropped
       ? [
           dropped === 1

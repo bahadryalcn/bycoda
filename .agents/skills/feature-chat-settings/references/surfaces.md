@@ -2,15 +2,15 @@
 
 Code paths are repository-relative.
 
-| Area | Source owner |
-| --- | --- |
-| Page/display | `src/features/settings/ui/ChatSettings.tsx`, `ConversationDisplaySettings.tsx`, `ChatSettings.css`; `useAppearanceSettings.tsx` and the Appearance preference model |
+| Area                  | Source owner                                                                                                                                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page/display          | `src/features/settings/ui/ChatSettings.tsx`, `ConversationDisplaySettings.tsx`, `ChatSettings.css`; `useAppearanceSettings.tsx` and the Appearance preference model                          |
 | Continuation/spelling | `src/features/settings/model/settings.ts`, `composerSpelling.ts`; runtime `src/features/sessions/model/usageLimit.ts`, `turnRecovery.ts`; `src/features/connections/model/remoteRecovery.ts` |
-| Templates | `src/features/settings/ui/TemplatesSettings.tsx`; `src/features/sessions/model/promptTemplates.ts` |
-| Insertion/SSH | `src/features/sessions/ui/Composer.tsx`; `src/features/connections/model/sshSnippets.ts` |
-| Translation/reprompt | `src/features/settings/ui/TranslationSettings.tsx`; `src/features/sessions/model/translationPreferences.ts`, `translation.ts`; `src/features/sessions/ui/TranslationResultDialog.tsx` |
-| Voice settings | `src/features/voice/ui/VoiceSettings.tsx`; follow current voice model and Host setup owner rather than duplicating voice runtime here |
-| Desktop control | `src/features/sessions/model/desktopPreferencesControl.ts`; `src/app/workspace/control/useAppControlRequests.ts`; `src-tauri/src/control.rs` |
+| Templates             | `src/features/settings/ui/TemplatesSettings.tsx`; `src/features/sessions/model/promptTemplates.ts`                                                                                           |
+| Insertion/SSH         | `src/features/sessions/ui/Composer.tsx`; `src/features/connections/model/sshSnippets.ts`                                                                                                     |
+| Translation/reprompt  | `src/features/settings/ui/TranslationSettings.tsx`; `src/features/sessions/model/translationPreferences.ts`, `translation.ts`; `src/features/sessions/ui/TranslationResultDialog.tsx`        |
+| Voice settings        | `src/features/voice/ui/VoiceSettings.tsx`; follow current voice model and Host setup owner rather than duplicating voice runtime here                                                        |
+| Desktop control       | `src/features/sessions/model/desktopPreferencesControl.ts`; `src/app/workspace/control/useAppControlRequests.ts`; `src-tauri/src/control.rs`                                                 |
 
 ## Data and capabilities
 

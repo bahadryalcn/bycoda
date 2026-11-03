@@ -121,7 +121,12 @@ export function ChatFilterBar({
               />
               {t("Archived")}
             </label>
-            <Button variant="ghost" size="sm" disabled={!active} onClick={() => onChange({ ...DEFAULT_CHAT_FILTERS })}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!active}
+              onClick={() => onChange({ ...DEFAULT_CHAT_FILTERS })}
+            >
               {t("Reset")}
             </Button>
           </div>
@@ -135,7 +140,11 @@ function Marked({ text, ranges }: { text: string; ranges: [number, number][] }) 
   useLocale();
   const positions: number[] = [];
   for (const [from, to] of ranges) {
-    for (let index = Math.max(0, from); index < Math.min(to, text.length) && positions.length < MAX_MATCH_POSITIONS; index++) {
+    for (
+      let index = Math.max(0, from);
+      index < Math.min(to, text.length) && positions.length < MAX_MATCH_POSITIONS;
+      index++
+    ) {
       positions.push(index);
     }
     if (positions.length === MAX_MATCH_POSITIONS) break;
@@ -219,7 +228,9 @@ export function ChatSearchResults({
         <section key={group.key} aria-label={group.name} className="app-search-project">
           <h3 className="app-search-project-heading">
             <Folder className="icon-xs shrink-0" strokeWidth={1.75} />
-            <span className="min-w-0 flex-1 break-words" title={group.cwd}>{group.name}</span>
+            <span className="min-w-0 flex-1 break-words" title={group.cwd}>
+              {group.name}
+            </span>
             {group.groupName ? (
               <Badge size="sm" appearance="subtle" className="shrink-0">
                 {group.groupName}
@@ -248,21 +259,21 @@ export function ChatSearchResults({
                     <Marked text={session.title} ranges={session.titleRanges} />
                   </span>
                   <span className="flex flex-wrap items-center gap-1.5 @max-[560px]/search:basis-full @max-[560px]/search:ps-6">
-                  {session.archived ? (
-                    <Badge size="sm" appearance="subtle" className="shrink-0">
-                      {t("Archived")}
-                    </Badge>
-                  ) : null}
-                  {session.hitCount > 0 ? (
-                    <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
-                      {session.hitCount === 1
-                        ? t("1 match")
-                        : t("{p0} matches", { p0: session.hitCount })}
+                    {session.archived ? (
+                      <Badge size="sm" appearance="subtle" className="shrink-0">
+                        {t("Archived")}
+                      </Badge>
+                    ) : null}
+                    {session.hitCount > 0 ? (
+                      <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+                        {session.hitCount === 1
+                          ? t("1 match")
+                          : t("{p0} matches", { p0: session.hitCount })}
+                      </span>
+                    ) : null}
+                    <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                      {formatChatDate(session.updatedAt)}
                     </span>
-                  ) : null}
-                  <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
-                    {formatChatDate(session.updatedAt)}
-                  </span>
                   </span>
                 </Button>
                 {session.hits.map((hit) => {

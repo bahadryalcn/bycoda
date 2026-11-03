@@ -83,7 +83,9 @@ const update = (id: string, patch: Partial<Session>) =>
 it("reads each pane's session from the store without a sessions prop", () => {
   render();
   expect(
-    [...container.querySelectorAll("[data-session]")].map((node) => node.getAttribute("data-title")),
+    [...container.querySelectorAll("[data-session]")].map((node) =>
+      node.getAttribute("data-title"),
+    ),
   ).toEqual(["a", "b"]);
 });
 

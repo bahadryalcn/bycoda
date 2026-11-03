@@ -268,10 +268,34 @@ it("reprojects receipt snapshots after another group becomes private and refuses
   );
 });
 it("records refused cyclic moves and serializes exact operation identities before awaited reads", async () => {
- saveSessionFolders("/alpha", [{ id: "parent", name: "Parent", sessionIds: ["s1"], collapsed: false }, { id: "child", name: "Child", sessionIds: ["s2"], parentId: "parent", collapsed: false }]); const f = fixture(); const initial = await f.read();
- const cycle = { expectedRevision: initial.revision, operationId: "cycle", change: { kind: "folderMove", folderId: "parent", target: { kind: "into", id: "child" } } };
- expect(await f.control(f.context, "organization.patch", cycle)).toMatchObject({ state: "failed" }); expect(loadSessionFolders("/alpha").find((row) => row.id === "parent")?.parentId).toBeUndefined();
- const preview = await f.read(); const base = { expectedRevision: preview.revision, operationId: "concurrent" };
- const results = await Promise.allSettled([f.control(f.context, "organization.patch", { ...base, change: { kind: "projectName", name: "One" } }), f.control(f.context, "organization.patch", { ...base, change: { kind: "projectName", name: "Two" } })]);
- expect(results.filter((row) => row.status === "fulfilled")).toHaveLength(1); expect(results.filter((row) => row.status === "rejected")).toHaveLength(1); expect(loadCustomTabGroupLabels()[projectKey("/alpha")]).toBe("One");
+  saveSessionFolders("/alpha", [
+    { id: "parent", name: "Parent", sessionIds: ["s1"], collapsed: false },
+    { id: "child", name: "Child", sessionIds: ["s2"], parentId: "parent", collapsed: false },
+  ]);
+  const f = fixture();
+  const initial = await f.read();
+  const cycle = {
+    expectedRevision: initial.revision,
+    operationId: "cycle",
+    change: { kind: "folderMove", folderId: "parent", target: { kind: "into", id: "child" } },
+  };
+  expect(await f.control(f.context, "organization.patch", cycle)).toMatchObject({
+    state: "failed",
+  });
+  expect(loadSessionFolders("/alpha").find((row) => row.id === "parent")?.parentId).toBeUndefined();
+  const preview = await f.read();
+  const base = { expectedRevision: preview.revision, operationId: "concurrent" };
+  const results = await Promise.allSettled([
+    f.control(f.context, "organization.patch", {
+      ...base,
+      change: { kind: "projectName", name: "One" },
+    }),
+    f.control(f.context, "organization.patch", {
+      ...base,
+      change: { kind: "projectName", name: "Two" },
+    }),
+  ]);
+  expect(results.filter((row) => row.status === "fulfilled")).toHaveLength(1);
+  expect(results.filter((row) => row.status === "rejected")).toHaveLength(1);
+  expect(loadCustomTabGroupLabels()[projectKey("/alpha")]).toBe("One");
 });

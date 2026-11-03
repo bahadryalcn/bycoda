@@ -345,15 +345,19 @@ for (const theme of ["light", "dark"])
       await expect(page.getByRole("alert")).toContainText("Already used");
       await expect(recorder).toContainText("Q");
       const recorderBounds = (await recorder.boundingBox())!;
-      const resetBounds = (await page.getByRole("button", {
-        name: "Reset App: Open Inbox shortcut", exact: true,
-      }).boundingBox())!;
+      const resetBounds = (await page
+        .getByRole("button", {
+          name: "Reset App: Open Inbox shortcut",
+          exact: true,
+        })
+        .boundingBox())!;
       // Conflict feedback must not collapse the recorder beneath its reset
       // action and leave pointer activation waiting behind another control.
       expect(recorderBounds.width).toBeGreaterThan(40);
       expect(recorderBounds.x + recorderBounds.width).toBeLessThanOrEqual(resetBounds.x + 1);
       if ([390, 800, 1280].includes(width)) {
-        const conflictCaptures = "temp/verification/2026-11-01-release-performance/keybindings-conflict";
+        const conflictCaptures =
+          "temp/verification/2026-11-01-release-performance/keybindings-conflict";
         mkdirSync(conflictCaptures, { recursive: true });
         await page.screenshot({ path: `${conflictCaptures}/${theme}-${width}.png` });
       }

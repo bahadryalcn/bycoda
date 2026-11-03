@@ -1,5 +1,12 @@
 import { statFiles } from "../../../platform/tauri/fs";
-import { isEqualOrInside, joinPath, parentPath, pathKey, resolveWorkspacePath, slash } from "../../../shared/lib/paths";
+import {
+  isEqualOrInside,
+  joinPath,
+  parentPath,
+  pathKey,
+  resolveWorkspacePath,
+  slash,
+} from "../../../shared/lib/paths";
 
 const MAX_MESSAGE_FOLDERS = 24;
 

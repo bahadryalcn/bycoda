@@ -2991,9 +2991,7 @@ it("keeps the transcript on disconnect, shows one connection notice and reconnec
 it("uses one connection recovery for blocked conversation and queue reads without replaying messages", async () => {
   sharedQueueSupported = true;
   hostQueue = {
-    messages: [
-      { id: "saved", text: "Retain the saved queue", attachments: [] },
-    ],
+    messages: [{ id: "saved", text: "Retain the saved queue", attachments: [] }],
     revision: 1,
     status: "paused",
   };
@@ -3003,18 +3001,12 @@ it("uses one connection recovery for blocked conversation and queue reads withou
     "RPC_WS_BLOCKED: Native Host connection requires updated authentication, identity or protocol";
   await act(async () => notifyRemoteRecovered("env"));
   await vi.waitFor(() =>
-    expect(remoteOverrides.sendBlockedReason).toContain(
-      "Could not load queued messages",
-    ),
+    expect(remoteOverrides.sendBlockedReason).toContain("Could not load queued messages"),
   );
   expect(container.querySelector("[data-remote-data-state]")).toBeNull();
-  expect(container.textContent).not.toContain(
-    "Could not load queued messages. Sending is held",
-  );
+  expect(container.textContent).not.toContain("Could not load queued messages. Sending is held");
   expect(
-    [...container.querySelectorAll("button")].filter(
-      (button) => button.textContent === "Retry",
-    ),
+    [...container.querySelectorAll("button")].filter((button) => button.textContent === "Retry"),
   ).toHaveLength(0);
   const reconnect = [...container.querySelectorAll("button")].filter(
     (button) => button.textContent === "Reconnect",
@@ -3022,12 +3014,10 @@ it("uses one connection recovery for blocked conversation and queue reads withou
   expect(reconnect).toHaveLength(1);
   machineDown = undefined;
   await act(async () => reconnect[0].click());
-  await vi.waitFor(() =>
-    expect(remoteOverrides.sendBlockedReason).toBeUndefined(),
-  );
-  expect(
-    remoteOverrides.session?.queuedMessages?.map((row) => row.text),
-  ).toEqual(["Retain the saved queue"]);
+  await vi.waitFor(() => expect(remoteOverrides.sendBlockedReason).toBeUndefined());
+  expect(remoteOverrides.session?.queuedMessages?.map((row) => row.text)).toEqual([
+    "Retain the saved queue",
+  ]);
   expect(commands).toEqual([]);
 });
 
@@ -3038,9 +3028,7 @@ it("keeps an independent queue-storage retry available beside a connection probl
   await renderRemoteProbe();
   expect(container.textContent).toContain("queue storage unavailable");
   expect(
-    [...container.querySelectorAll("button")].filter(
-      (button) => button.textContent === "Retry",
-    ),
+    [...container.querySelectorAll("button")].filter((button) => button.textContent === "Retry"),
   ).toHaveLength(1);
   expect(
     [...container.querySelectorAll("button")].filter(

@@ -2,11 +2,17 @@ import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 
 import { synchronizeProjectLocation } from "../../../../features/projects/model/projectLocation";
 import { looksLikeProject } from "../../../../features/projects/model/recents";
-import { holdUndeliveredFollowUp, queuedModelTarget } from "../../../../features/sessions/model/messageQueue";
+import {
+  holdUndeliveredFollowUp,
+  queuedModelTarget,
+} from "../../../../features/sessions/model/messageQueue";
 import { type QueuedMessage } from "../../../../features/sessions/model/session";
 import { setSessions } from "../../../../features/sessions/model/sessionsStore";
 import { pathKey } from "../../../../shared/lib/paths";
-import { submitAfterProjectSync, type SubmissionAcceptance } from "../../../model/submissionAcceptance";
+import {
+  submitAfterProjectSync,
+  type SubmissionAcceptance,
+} from "../../../model/submissionAcceptance";
 import { flushSync } from "react-dom";
 
 export function gateProjectLocation(
@@ -25,9 +31,7 @@ export function gateProjectLocation(
     flushSync(() =>
       setSessions((prev) =>
         prev.map((session) =>
-          session.id === sessionId
-            ? { ...session, busy: true, worktreePreparing: true }
-            : session,
+          session.id === sessionId ? { ...session, busy: true, worktreePreparing: true } : session,
         ),
       ),
     );
@@ -113,4 +117,3 @@ export function gateProjectLocation(
     });
   }
 }
-

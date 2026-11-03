@@ -98,7 +98,9 @@ export function PickerPopover({
         onDismiss(reason);
         if (reason === "escape" && restoreFocus) node?.focus({ preventScroll: true });
       }}
-      className={["bycoda-arc bycoda-arc-menu", styles.popover, className].filter(Boolean).join(" ")}
+      className={["bycoda-arc bycoda-arc-menu", styles.popover, className]
+        .filter(Boolean)
+        .join(" ")}
     >
       {header}
       <div className={styles.popoverBody}>{children}</div>

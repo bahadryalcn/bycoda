@@ -21,9 +21,10 @@ class Socket {
   onclose?: ((event?: { code: number }) => void) | null;
   onerror?: (() => void) | null;
   onmessage?: ((message: { data: string }) => void) | null;
-  send = vi.fn((raw:string) => {
-    const event=JSON.parse(raw);
-    if(event.type==="conversation.item.delete")this.emit({type:"conversation.item.deleted",item_id:event.item_id});
+  send = vi.fn((raw: string) => {
+    const event = JSON.parse(raw);
+    if (event.type === "conversation.item.delete")
+      this.emit({ type: "conversation.item.deleted", item_id: event.item_id });
   });
   close = vi.fn();
   constructor(
@@ -53,7 +54,11 @@ class Context {
   close = vi.fn(async () => {
     this.state = "closed";
   });
-  audioWorklet = { addModule: vi.fn(async () => { await workletGate; }) };
+  audioWorklet = {
+    addModule: vi.fn(async () => {
+      await workletGate;
+    }),
+  };
   createMediaStreamSource = vi.fn(node);
   createBuffer = vi.fn(() => ({ getChannelData: () => new Float32Array(1), duration: 1 / 24000 }));
   createBufferSource = vi.fn(() => ({
@@ -118,7 +123,11 @@ function candidateInput(socket: Socket, id: string, created = true) {
   // End-of-turn silence (REALTIME_END_SILENCE) at 1024-sample frames.
   for (let i = 0; i < 30; i++) pushFrame(new Int16Array(1024));
   socket.emit({ type: "input_audio_buffer.committed", item_id: id });
-  if(created)socket.emit({type:socket.url.endsWith("/xai")?"conversation.item.added":"conversation.item.created",item:{id,type:"message",role:"user"}});
+  if (created)
+    socket.emit({
+      type: socket.url.endsWith("/xai") ? "conversation.item.added" : "conversation.item.created",
+      item: { id, type: "message", role: "user" },
+    });
 }
 
 function acceptInput(socket: Socket, text: string, id = "input1") {
@@ -130,98 +139,243 @@ function acceptInput(socket: Socket, text: string, id = "input1") {
   });
 }
 
-it.each(["xai","openai"] as const)("%s does not delete a startup ambient candidate before the provider confirms the committed item actually exists",async(provider)=>{
- vi.useFakeTimers();
- try{
-  const events=callbacks(),voice=await connectedWithFakeTimers(events,provider),socket=sockets[0];
-  const id="86671bb0-3d26-4947-a776-7403517bc7a3";let exists=false;
-  socket.send.mockImplementation((raw:string)=>{
-   const event=JSON.parse(raw);
-   if(event.type==="conversation.item.delete")queueMicrotask(()=>{
-    if(!exists)socket.emit({type:"error",error:{code:"item_not_found",message:`Item not found: ${id}`}});
-    else{exists=false;socket.emit({type:"conversation.item.deleted",item_id:id});}
-   });
+it.each(["xai", "openai"] as const)(
+  "%s does not delete a startup ambient candidate before the provider confirms the committed item actually exists",
+  async (provider) => {
+    vi.useFakeTimers();
+    try {
+      const events = callbacks(),
+        voice = await connectedWithFakeTimers(events, provider),
+        socket = sockets[0];
+      const id = "86671bb0-3d26-4947-a776-7403517bc7a3";
+      let exists = false;
+      socket.send.mockImplementation((raw: string) => {
+        const event = JSON.parse(raw);
+        if (event.type === "conversation.item.delete")
+          queueMicrotask(() => {
+            if (!exists)
+              socket.emit({
+                type: "error",
+                error: { code: "item_not_found", message: `Item not found: ${id}` },
+              });
+            else {
+              exists = false;
+              socket.emit({ type: "conversation.item.deleted", item_id: id });
+            }
+          });
+      });
+      candidateInput(socket, id, false);
+      await vi.advanceTimersByTimeAsync(15001);
+      expect(events.transcript).not.toHaveBeenCalled();
+      expect(events.tool).not.toHaveBeenCalled();
+      expect(events.error).not.toHaveBeenCalled();
+      expect(
+        socket.sent().filter((event) => event.type === "conversation.item.delete"),
+      ).toHaveLength(0);
+      socket.emit({ type: "conversation.item.added", item: { id: "unrelated-created-item" } });
+      expect(
+        socket.sent().filter((event) => event.type === "conversation.item.delete"),
+      ).toHaveLength(0);
+      exists = true;
+      socket.emit({
+        type: provider === "xai" ? "conversation.item.added" : "conversation.item.created",
+        item: { id, type: "message", role: "user" },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(socket.sent().filter((event) => event.type === "conversation.item.delete")).toEqual([
+        { type: "conversation.item.delete", item_id: id },
+      ]);
+      expect(events.error).not.toHaveBeenCalled();
+      voice.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+it.each(["xai", "openai"] as const)(
+  "%s holds new responses and candidate uploads until rejected input deletion is acknowledged",
+  async (provider) => {
+    vi.useFakeTimers();
+    try {
+      const events = callbacks(),
+        voice = await connectedWithFakeTimers(events, provider),
+        socket = sockets[0];
+      socket.send.mockImplementation(() => {});
+      candidateInput(socket, "rejected");
+      socket.emit({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "rejected",
+        transcript: "",
+      });
+      voice.speak("An existing job finished");
+      candidateAudio();
+      expect(
+        socket.sent().filter((event) => event.type === "input_audio_buffer.commit"),
+      ).toHaveLength(1);
+      expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(0);
+      socket.emit({ type: "conversation.item.deleted", item_id: "different-item" });
+      expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(0);
+      socket.emit({ type: "conversation.item.deleted", item_id: "rejected" });
+      expect(
+        socket.sent().filter((event) => event.type === "input_audio_buffer.commit"),
+      ).toHaveLength(2);
+      expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(0);
+      socket.emit({ type: "input_audio_buffer.committed", item_id: "real" });
+      socket.emit({ type: "conversation.item.created", item: { id: "real" } });
+      socket.emit({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "real",
+        transcript: "Continue my full request",
+      });
+      expect(events.transcript).toHaveBeenCalledExactlyOnceWith("Continue my full request");
+      expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(1);
+      expect(events.tool).not.toHaveBeenCalled();
+      voice.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it.each([
+  ["xai", "expire"],
+  ["xai", "close"],
+  ["openai", "expire"],
+  ["openai", "close"],
+] as const)(
+  "%s bounds unresolved input cleanup and preserves explicit %s without silently replying",
+  async (provider, outcome) => {
+    vi.useFakeTimers();
+    try {
+      const events = callbacks(),
+        voice = await connectedWithFakeTimers(events, provider),
+        socket = sockets[0];
+      socket.send.mockImplementation(() => {});
+      candidateInput(socket, "uncertain");
+      socket.emit({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "uncertain",
+        transcript: "",
+      });
+      voice.speak("Pending status");
+      if (outcome === "close") voice.close();
+      await vi.advanceTimersByTimeAsync(15001);
+      if (outcome === "expire")
+        expect(events.error).toHaveBeenCalledExactlyOnceWith(
+          "Voice input cleanup was not confirmed. Start voice again.",
+          true,
+          { recoverable: false, code: "input_cleanup_unconfirmed" },
+        );
+      else expect(events.error).not.toHaveBeenCalled();
+      expect(socket.close).toHaveBeenCalledOnce();
+      expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(0);
+      expect(track.stop).toHaveBeenCalledOnce();
+      const sent = socket.sent().length;
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(socket.sent()).toHaveLength(sent);
+      expect(sockets).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("does not re-delete an input already removed by the provider, or hide unrelated provider item errors", async () => {
+  setup();
+  const events = callbacks(),
+    voice = new RealtimeVoice("xai", events, "tr");
+  await voice.connect(secret("xai"));
+  const socket = sockets[0];
+  candidateInput(socket, "provider-removed", false);
+  socket.emit({ type: "conversation.item.deleted", item_id: "provider-removed" });
+  socket.emit({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "provider-removed",
+    transcript: "",
   });
-  candidateInput(socket,id,false);await vi.advanceTimersByTimeAsync(15001);
-  expect(events.transcript).not.toHaveBeenCalled();expect(events.tool).not.toHaveBeenCalled();expect(events.error).not.toHaveBeenCalled();
-  expect(socket.sent().filter(event=>event.type==="conversation.item.delete")).toHaveLength(0);
-  socket.emit({type:"conversation.item.added",item:{id:"unrelated-created-item"}});
-  expect(socket.sent().filter(event=>event.type==="conversation.item.delete")).toHaveLength(0);
-  exists=true;socket.emit({type:provider==="xai"?"conversation.item.added":"conversation.item.created",item:{id,type:"message",role:"user"}});await vi.advanceTimersByTimeAsync(0);
-  expect(socket.sent().filter(event=>event.type==="conversation.item.delete")).toEqual([{type:"conversation.item.delete",item_id:id}]);
-  expect(events.error).not.toHaveBeenCalled();voice.close();
- }finally{vi.useRealTimers();}
-});
-it.each(["xai","openai"] as const)("%s holds new responses and candidate uploads until rejected input deletion is acknowledged",async(provider)=>{
- vi.useFakeTimers();
- try{
-  const events=callbacks(),voice=await connectedWithFakeTimers(events,provider),socket=sockets[0];
-  socket.send.mockImplementation(()=>{});
-  candidateInput(socket,"rejected");socket.emit({type:"conversation.item.input_audio_transcription.completed",item_id:"rejected",transcript:""});
-  voice.speak("An existing job finished");candidateAudio();
-  expect(socket.sent().filter(event=>event.type==="input_audio_buffer.commit")).toHaveLength(1);
-  expect(socket.sent().filter(event=>event.type==="response.create")).toHaveLength(0);
-  socket.emit({type:"conversation.item.deleted",item_id:"different-item"});expect(socket.sent().filter(event=>event.type==="response.create")).toHaveLength(0);
-  socket.emit({type:"conversation.item.deleted",item_id:"rejected"});
-  expect(socket.sent().filter(event=>event.type==="input_audio_buffer.commit")).toHaveLength(2);
-  expect(socket.sent().filter(event=>event.type==="response.create")).toHaveLength(0);
-  socket.emit({type:"input_audio_buffer.committed",item_id:"real"});socket.emit({type:"conversation.item.created",item:{id:"real"}});
-  socket.emit({type:"conversation.item.input_audio_transcription.completed",item_id:"real",transcript:"Continue my full request"});
-  expect(events.transcript).toHaveBeenCalledExactlyOnceWith("Continue my full request");
-  expect(socket.sent().filter(event=>event.type==="response.create")).toHaveLength(1);expect(events.tool).not.toHaveBeenCalled();voice.close();
- }finally{vi.useRealTimers();}
-});
-
-it.each([["xai","expire"],["xai","close"],["openai","expire"],["openai","close"]] as const)("%s bounds unresolved input cleanup and preserves explicit %s without silently replying",async(provider,outcome)=>{
- vi.useFakeTimers();
- try{
-  const events=callbacks(),voice=await connectedWithFakeTimers(events,provider),socket=sockets[0];socket.send.mockImplementation(()=>{});
-  candidateInput(socket,"uncertain");socket.emit({type:"conversation.item.input_audio_transcription.completed",item_id:"uncertain",transcript:""});
-  voice.speak("Pending status");if(outcome==="close")voice.close();await vi.advanceTimersByTimeAsync(15001);
-  if(outcome==="expire")expect(events.error).toHaveBeenCalledExactlyOnceWith("Voice input cleanup was not confirmed. Start voice again.",true,{recoverable:false,code:"input_cleanup_unconfirmed"});
-  else expect(events.error).not.toHaveBeenCalled();
-  expect(socket.close).toHaveBeenCalledOnce();expect(socket.sent().filter(event=>event.type==="response.create")).toHaveLength(0);expect(track.stop).toHaveBeenCalledOnce();
-  const sent=socket.sent().length;await vi.advanceTimersByTimeAsync(30000);expect(socket.sent()).toHaveLength(sent);expect(sockets).toHaveLength(1);
- }finally{vi.useRealTimers();}
-});
-
-it("does not re-delete an input already removed by the provider, or hide unrelated provider item errors",async()=>{
- setup();const events=callbacks(),voice=new RealtimeVoice("xai",events,"tr");await voice.connect(secret("xai"));const socket=sockets[0];
- candidateInput(socket,"provider-removed",false);socket.emit({type:"conversation.item.deleted",item_id:"provider-removed"});
- socket.emit({type:"conversation.item.input_audio_transcription.completed",item_id:"provider-removed",transcript:""});
- expect(socket.sent().filter(event=>event.type==="conversation.item.delete")).toHaveLength(0);
- socket.emit({type:"error",error:{code:"item_not_found",message:"Item not found: foreign-provider-item"}});
- expect(events.error).toHaveBeenCalledExactlyOnceWith("Item not found: foreign-provider-item",false,{recoverable:true,code:"item_not_found"});voice.close();
-});
-
-it("does not commit manual audio across a long pause until Finish turn",async()=>{
-  setup();const events=callbacks();const voice=new RealtimeVoice("openai",events,"tr",undefined,undefined,undefined,"auto",{manualTurnEnd:true});
-  await voice.connect(secret("openai"));const socket=sockets[0];
-  const speech=Int16Array.from({length:1024},(_,index)=>Math.round(4000*Math.sin(2*Math.PI*150*index/24000)));
-  for(let n=0;n<9;n++)pushFrame(speech);for(let n=0;n<1000;n++)pushFrame(new Int16Array(1024));
-  expect(socket.sent().some(event=>event.type==="input_audio_buffer.commit")).toBe(false);
-  voice.finishTurn();expect(socket.sent().some(event=>event.type==="input_audio_buffer.commit")).toBe(true);
+  expect(socket.sent().filter((event) => event.type === "conversation.item.delete")).toHaveLength(
+    0,
+  );
+  socket.emit({
+    type: "error",
+    error: { code: "item_not_found", message: "Item not found: foreign-provider-item" },
+  });
+  expect(events.error).toHaveBeenCalledExactlyOnceWith(
+    "Item not found: foreign-provider-item",
+    false,
+    { recoverable: true, code: "item_not_found" },
+  );
   voice.close();
 });
 
-it("switches an active cloud utterance to manual completion before its automatic endpoint without losing its capture",async()=>{
- setup();const events=callbacks(),activate=vi.fn(),captureTurn=vi.fn(()=>activate);
- const voice=new RealtimeVoice("openai",{...events,captureTurn},"tr");await voice.connect(secret("openai"));
- const speech=Int16Array.from({length:1024},(_,index)=>Math.round(4000*Math.sin(2*Math.PI*150*index/24000)));
- for(let n=0;n<9;n++)pushFrame(speech);for(let n=0;n<10;n++)pushFrame(new Int16Array(1024));
- voice.configureConversation({manualTurnEnd:true});for(let n=0;n<1000;n++)pushFrame(new Int16Array(1024));
- expect(sockets[0].sent().some(event=>event.type==="input_audio_buffer.commit")).toBe(false);expect(events.transcript).not.toHaveBeenCalled();expect(activate).not.toHaveBeenCalled();
- for(let n=0;n<9;n++)pushFrame(speech);voice.finishTurn();
- expect(sockets[0].sent().filter(event=>event.type==="input_audio_buffer.commit")).toHaveLength(1);
- sockets[0].emit({type:"input_audio_buffer.committed",item_id:"complete-request"});sockets[0].emit({type:"conversation.item.created",item:{id:"complete-request"}});
- sockets[0].emit({type:"conversation.item.input_audio_transcription.completed",item_id:"complete-request",transcript:"The entire request after my thinking pause"});
- expect(captureTurn).toHaveBeenCalledOnce();expect(activate).toHaveBeenCalledOnce();expect(events.transcript).toHaveBeenCalledExactlyOnceWith("The entire request after my thinking pause");voice.close();
+it("does not commit manual audio across a long pause until Finish turn", async () => {
+  setup();
+  const events = callbacks();
+  const voice = new RealtimeVoice("openai", events, "tr", undefined, undefined, undefined, "auto", {
+    manualTurnEnd: true,
+  });
+  await voice.connect(secret("openai"));
+  const socket = sockets[0];
+  const speech = Int16Array.from({ length: 1024 }, (_, index) =>
+    Math.round(4000 * Math.sin((2 * Math.PI * 150 * index) / 24000)),
+  );
+  for (let n = 0; n < 9; n++) pushFrame(speech);
+  for (let n = 0; n < 1000; n++) pushFrame(new Int16Array(1024));
+  expect(socket.sent().some((event) => event.type === "input_audio_buffer.commit")).toBe(false);
+  voice.finishTurn();
+  expect(socket.sent().some((event) => event.type === "input_audio_buffer.commit")).toBe(true);
+  voice.close();
 });
-it("consumes a proven owner correction after transcript activation without creating a model response",async()=>{
-  setup();const consumeOwnerTranscript=vi.fn(()=>true),activate=vi.fn();const events={...callbacks(),consumeOwnerTranscript,captureTurn:()=>activate};
-  const voice=new RealtimeVoice("openai",events,"tr");await voice.connect(secret("openai"));
-  acceptInput(sockets[0],"Sözümü kesme");expect(activate).toHaveBeenCalledOnce();expect(events.transcript).toHaveBeenCalledWith("Sözümü kesme");
-  expect(consumeOwnerTranscript).toHaveBeenCalledWith("Sözümü kesme");expect(sockets[0].sent().some(event=>event.type==="response.create")).toBe(false);voice.close();
+
+it("switches an active cloud utterance to manual completion before its automatic endpoint without losing its capture", async () => {
+  setup();
+  const events = callbacks(),
+    activate = vi.fn(),
+    captureTurn = vi.fn(() => activate);
+  const voice = new RealtimeVoice("openai", { ...events, captureTurn }, "tr");
+  await voice.connect(secret("openai"));
+  const speech = Int16Array.from({ length: 1024 }, (_, index) =>
+    Math.round(4000 * Math.sin((2 * Math.PI * 150 * index) / 24000)),
+  );
+  for (let n = 0; n < 9; n++) pushFrame(speech);
+  for (let n = 0; n < 10; n++) pushFrame(new Int16Array(1024));
+  voice.configureConversation({ manualTurnEnd: true });
+  for (let n = 0; n < 1000; n++) pushFrame(new Int16Array(1024));
+  expect(sockets[0].sent().some((event) => event.type === "input_audio_buffer.commit")).toBe(false);
+  expect(events.transcript).not.toHaveBeenCalled();
+  expect(activate).not.toHaveBeenCalled();
+  for (let n = 0; n < 9; n++) pushFrame(speech);
+  voice.finishTurn();
+  expect(
+    sockets[0].sent().filter((event) => event.type === "input_audio_buffer.commit"),
+  ).toHaveLength(1);
+  sockets[0].emit({ type: "input_audio_buffer.committed", item_id: "complete-request" });
+  sockets[0].emit({ type: "conversation.item.created", item: { id: "complete-request" } });
+  sockets[0].emit({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "complete-request",
+    transcript: "The entire request after my thinking pause",
+  });
+  expect(captureTurn).toHaveBeenCalledOnce();
+  expect(activate).toHaveBeenCalledOnce();
+  expect(events.transcript).toHaveBeenCalledExactlyOnceWith(
+    "The entire request after my thinking pause",
+  );
+  voice.close();
+});
+it("consumes a proven owner correction after transcript activation without creating a model response", async () => {
+  setup();
+  const consumeOwnerTranscript = vi.fn(() => true),
+    activate = vi.fn();
+  const events = { ...callbacks(), consumeOwnerTranscript, captureTurn: () => activate };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  acceptInput(sockets[0], "Sözümü kesme");
+  expect(activate).toHaveBeenCalledOnce();
+  expect(events.transcript).toHaveBeenCalledWith("Sözümü kesme");
+  expect(consumeOwnerTranscript).toHaveBeenCalledWith("Sözümü kesme");
+  expect(sockets[0].sent().some((event) => event.type === "response.create")).toBe(false);
+  voice.close();
 });
 afterEach(() => {
   autoSessionUpdate = true;
@@ -235,62 +389,91 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it.each(["openai", "xai"] as const)("withholds %s summary and recent seeds when privacy changes before the provider ACK", async (provider) => {
-  const microphone = setup(), events = callbacks();
-  autoSessionUpdate = false;
-  let visible = true;
-  const voice = new RealtimeVoice(provider, events, "tr");
-  const connecting = voice.connect(secret(provider), [{ role: "user", text: "PRIVATE RECENT" }], {
-    microphone: false, summary: "PRIVATE SUMMARY", disclosureCurrent: () => visible,
-  });
-  const rejected = expect(connecting).rejects.toThrow("Voice connection closed.");
-  await Promise.resolve();
-  expect(sockets[0].sent().map(event => event.type)).toEqual(["session.update"]);
-  visible = false;
-  sockets[0].emit({ type: "session.updated" });
-  await rejected;
-  expect(sockets[0].sent().some(event => event.type === "conversation.item.create")).toBe(false);
-  expect(sockets[0].close).toHaveBeenCalledOnce();
-  expect(microphone).not.toHaveBeenCalled();
-  expect(events.error).not.toHaveBeenCalled();
-  expect(events.tool).not.toHaveBeenCalled();
-});
+it.each(["openai", "xai"] as const)(
+  "withholds %s summary and recent seeds when privacy changes before the provider ACK",
+  async (provider) => {
+    const microphone = setup(),
+      events = callbacks();
+    autoSessionUpdate = false;
+    let visible = true;
+    const voice = new RealtimeVoice(provider, events, "tr");
+    const connecting = voice.connect(secret(provider), [{ role: "user", text: "PRIVATE RECENT" }], {
+      microphone: false,
+      summary: "PRIVATE SUMMARY",
+      disclosureCurrent: () => visible,
+    });
+    const rejected = expect(connecting).rejects.toThrow("Voice connection closed.");
+    await Promise.resolve();
+    expect(sockets[0].sent().map((event) => event.type)).toEqual(["session.update"]);
+    visible = false;
+    sockets[0].emit({ type: "session.updated" });
+    await rejected;
+    expect(sockets[0].sent().some((event) => event.type === "conversation.item.create")).toBe(
+      false,
+    );
+    expect(sockets[0].close).toHaveBeenCalledOnce();
+    expect(microphone).not.toHaveBeenCalled();
+    expect(events.error).not.toHaveBeenCalled();
+    expect(events.tool).not.toHaveBeenCalled();
+  },
+);
 
-it.each(["microphone", "worklet"] as const)("closes capture when privacy changes during the awaited %s setup", async (stage) => {
-  const microphone = setup();
-  let release!: () => void;
-  const held = new Promise<void>(resolve => { release = resolve; });
-  if (stage === "microphone") microphone.mockImplementationOnce(async () => {
-    await held;
-    return { getTracks: () => [track], getAudioTracks: () => [track] };
-  });
-  else workletGate = held;
-  let visible = true;
-  const events = callbacks(), voice = new RealtimeVoice("openai", events, "tr");
-  const connecting = voice.connect(secret("openai"), [{ role: "user", text: "PRIVATE" }], { disclosureCurrent: () => visible });
-  const rejected = expect(connecting).rejects.toThrow("Voice connection closed.");
-  if (stage === "worklet") await vi.waitFor(() => expect(contexts[0]?.audioWorklet.addModule).toHaveBeenCalledOnce());
-  visible = false;
-  release();
-  await rejected;
-  expect(track.stop).toHaveBeenCalledOnce();
-  expect(sockets).toHaveLength(0);
-  expect(captures).toHaveLength(0);
-  expect(events.error).not.toHaveBeenCalled();
-  expect(microphone).toHaveBeenCalledOnce();
-});
+it.each(["microphone", "worklet"] as const)(
+  "closes capture when privacy changes during the awaited %s setup",
+  async (stage) => {
+    const microphone = setup();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    if (stage === "microphone")
+      microphone.mockImplementationOnce(async () => {
+        await held;
+        return { getTracks: () => [track], getAudioTracks: () => [track] };
+      });
+    else workletGate = held;
+    let visible = true;
+    const events = callbacks(),
+      voice = new RealtimeVoice("openai", events, "tr");
+    const connecting = voice.connect(secret("openai"), [{ role: "user", text: "PRIVATE" }], {
+      disclosureCurrent: () => visible,
+    });
+    const rejected = expect(connecting).rejects.toThrow("Voice connection closed.");
+    if (stage === "worklet")
+      await vi.waitFor(() => expect(contexts[0]?.audioWorklet.addModule).toHaveBeenCalledOnce());
+    visible = false;
+    release();
+    await rejected;
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(sockets).toHaveLength(0);
+    expect(captures).toHaveLength(0);
+    expect(events.error).not.toHaveBeenCalled();
+    expect(microphone).toHaveBeenCalledOnce();
+  },
+);
 
-it.each(["error", "close"] as const)("does not request recovery for a revoked scope when the connecting socket reports %s", async (event) => {
-  setup();autoSessionUpdate = false;
-  let visible = true;
-  const events = callbacks(), voice = new RealtimeVoice("openai", events, "tr");
-  const connecting = voice.connect(secret("openai"), [], { microphone: false, disclosureCurrent: () => visible });
-  const rejected = expect(connecting).rejects.toThrow("Voice connection closed.");
-  await Promise.resolve();visible = false;
-  if (event === "error") sockets[0].onerror?.();else sockets[0].onclose?.({ code: 1006 });
-  await rejected;
-  expect(events.error).not.toHaveBeenCalled();expect(sockets[0].close).toHaveBeenCalledOnce();
-});
+it.each(["error", "close"] as const)(
+  "does not request recovery for a revoked scope when the connecting socket reports %s",
+  async (event) => {
+    setup();
+    autoSessionUpdate = false;
+    let visible = true;
+    const events = callbacks(),
+      voice = new RealtimeVoice("openai", events, "tr");
+    const connecting = voice.connect(secret("openai"), [], {
+      microphone: false,
+      disclosureCurrent: () => visible,
+    });
+    const rejected = expect(connecting).rejects.toThrow("Voice connection closed.");
+    await Promise.resolve();
+    visible = false;
+    if (event === "error") sockets[0].onerror?.();
+    else sockets[0].onclose?.({ code: 1006 });
+    await rejected;
+    expect(events.error).not.toHaveBeenCalled();
+    expect(sockets[0].close).toHaveBeenCalledOnce();
+  },
+);
 
 it("rotates once at minute 55 only after playback, response and tools settle", async () => {
   vi.useFakeTimers();
@@ -337,45 +520,86 @@ it("clears the rotation timer on explicit disconnect", async () => {
 it("restores transcript context without replaying tools or requesting a reply", async () => {
   setup();
   const voice = new RealtimeVoice("openai", callbacks(), "tr");
-  await voice.connect(secret("openai"), [{ role: "user", text: "Keep the draft" }, { role: "assistant", text: "I saved it" }]);
-  expect(sockets[0].sent().slice(1).map((event) => event.type)).toEqual(["conversation.item.create", "conversation.item.create"]);
+  await voice.connect(secret("openai"), [
+    { role: "user", text: "Keep the draft" },
+    { role: "assistant", text: "I saved it" },
+  ]);
+  expect(
+    sockets[0]
+      .sent()
+      .slice(1)
+      .map((event) => event.type),
+  ).toEqual(["conversation.item.create", "conversation.item.create"]);
   expect(sockets[0].sent()[1].item.content[0].text).toBe("Keep the draft");
   voice.close();
 });
-it.each(["openai","xai"] as const)("starts %s from the supplied transcript without automatically reading renderer context",async(provider)=>{
- const microphone=setup(),events=callbacks();const voice=new RealtimeVoice(provider,events,"tr");
- await voice.connect(secret(provider),[{role:"user",text:"Canonical saved planning discussion"}],{microphone:false});
- expect(microphone).not.toHaveBeenCalled();expect(events.tool).not.toHaveBeenCalled();
- const update=sockets[0].sent().find(event=>event.type==="session.update");
- expect(update.session.instructions).toContain("You can call present_choices directly when those sources are sufficient.");
- expect(update.session.instructions).toContain("Read app_context only when the owner's request needs current application");
- expect(update.session.instructions).not.toContain("Start with app_context");
- expect(sockets[0].sent().filter(event=>event.type==="conversation.item.create")).toHaveLength(1);voice.close();
-});
+it.each(["openai", "xai"] as const)(
+  "starts %s from the supplied transcript without automatically reading renderer context",
+  async (provider) => {
+    const microphone = setup(),
+      events = callbacks();
+    const voice = new RealtimeVoice(provider, events, "tr");
+    await voice.connect(
+      secret(provider),
+      [{ role: "user", text: "Canonical saved planning discussion" }],
+      { microphone: false },
+    );
+    expect(microphone).not.toHaveBeenCalled();
+    expect(events.tool).not.toHaveBeenCalled();
+    const update = sockets[0].sent().find((event) => event.type === "session.update");
+    expect(update.session.instructions).toContain(
+      "You can call present_choices directly when those sources are sufficient.",
+    );
+    expect(update.session.instructions).toContain(
+      "Read app_context only when the owner's request needs current application",
+    );
+    expect(update.session.instructions).not.toContain("Start with app_context");
+    expect(
+      sockets[0].sent().filter((event) => event.type === "conversation.item.create"),
+    ).toHaveLength(1);
+    voice.close();
+  },
+);
 
-it("opens an output-only preview without requesting microphone permission",async()=>{
-  const getUserMedia=setup();const voice=new RealtimeVoice("openai",callbacks(),"tr");
-  await voice.connect(secret("openai"),[],{microphone:false});
-  expect(getUserMedia).not.toHaveBeenCalled();expect(captures).toHaveLength(0);
+it("opens an output-only preview without requesting microphone permission", async () => {
+  const getUserMedia = setup();
+  const voice = new RealtimeVoice("openai", callbacks(), "tr");
+  await voice.connect(secret("openai"), [], { microphone: false });
+  expect(getUserMedia).not.toHaveBeenCalled();
+  expect(captures).toHaveLength(0);
   expect(voice.speak("Read a sample.")).toBe(true);
-  expect(sockets[0].sent().find(event=>event.type==="response.create")).toMatchObject({response:{tool_choice:"none"}});
+  expect(sockets[0].sent().find((event) => event.type === "response.create")).toMatchObject({
+    response: { tool_choice: "none" },
+  });
   voice.close();
 });
-it("applies changed owner rules without reconnecting or authorizing a response",async()=>{
-  const getUserMedia=setup();const voice=new RealtimeVoice("openai",callbacks(),"tr");await voice.connect(secret("openai"));
+it("applies changed owner rules without reconnecting or authorizing a response", async () => {
+  const getUserMedia = setup();
+  const voice = new RealtimeVoice("openai", callbacks(), "tr");
+  await voice.connect(secret("openai"));
   voice.updateOwnerInstructions("Do not interrupt the owner.");
-  expect(getUserMedia).toHaveBeenCalledTimes(1);expect(sockets).toHaveLength(1);
-  expect(sockets[0].sent().slice(-1)[0]).toMatchObject({type:"session.update",session:{instructions:expect.stringContaining("Do not interrupt the owner.")}});
-  expect(sockets[0].sent().some(event=>event.type==="response.create")).toBe(false);voice.close();
+  expect(getUserMedia).toHaveBeenCalledTimes(1);
+  expect(sockets).toHaveLength(1);
+  expect(sockets[0].sent().slice(-1)[0]).toMatchObject({
+    type: "session.update",
+    session: { instructions: expect.stringContaining("Do not interrupt the owner.") },
+  });
+  expect(sockets[0].sent().some((event) => event.type === "response.create")).toBe(false);
+  voice.close();
 });
 
-it("consumes a spoken choice without activating a new tool-authorized user turn",async()=>{
-  setup();const events=callbacks();const interceptTranscript=vi.fn(()=>true);const captureTurn=vi.fn(()=>vi.fn());
-  const voice=new RealtimeVoice("openai",{...events,interceptTranscript,captureTurn},"tr");await voice.connect(secret("openai"));
-  acceptInput(sockets[0],"the second one");
-  expect(interceptTranscript).toHaveBeenCalledWith("the second one");expect(events.transcript).not.toHaveBeenCalled();
+it("consumes a spoken choice without activating a new tool-authorized user turn", async () => {
+  setup();
+  const events = callbacks();
+  const interceptTranscript = vi.fn(() => true);
+  const captureTurn = vi.fn(() => vi.fn());
+  const voice = new RealtimeVoice("openai", { ...events, interceptTranscript, captureTurn }, "tr");
+  await voice.connect(secret("openai"));
+  acceptInput(sockets[0], "the second one");
+  expect(interceptTranscript).toHaveBeenCalledWith("the second one");
+  expect(events.transcript).not.toHaveBeenCalled();
   expect(captureTurn.mock.results[0].value).not.toHaveBeenCalled();
-  expect(sockets[0].sent().some(event=>event.type==="response.create")).toBe(false);
+  expect(sockets[0].sent().some((event) => event.type === "response.create")).toBe(false);
   voice.close();
 });
 
@@ -387,7 +611,10 @@ it("preserves an already muted microphone during reconnect and reports device lo
   await voice.connect(secret("openai"));
   expect(track.enabled).toBe(false);
   track.onended?.();
-  expect(events.error).toHaveBeenCalledWith("Microphone lost.", true, { recoverable: true, code: "microphone_lost" });
+  expect(events.error).toHaveBeenCalledWith("Microphone lost.", true, {
+    recoverable: true,
+    code: "microphone_lost",
+  });
   expect(track.stop).toHaveBeenCalled();
 });
 
@@ -398,8 +625,13 @@ it("classifies provider permission closure as requiring owner intervention", asy
   const voice = new RealtimeVoice("openai", { ...events, diagnostic }, "tr");
   await voice.connect(secret("openai"));
   sockets[0].onclose?.({ code: 1008 });
-  expect(events.error).toHaveBeenCalledWith("Voice connection permission denied.", true, { recoverable: false, code: "1008" });
-  expect(diagnostic).toHaveBeenCalledWith(expect.objectContaining({ kind: "close", code: 1008, intentional: false }));
+  expect(events.error).toHaveBeenCalledWith("Voice connection permission denied.", true, {
+    recoverable: false,
+    code: "1008",
+  });
+  expect(diagnostic).toHaveBeenCalledWith(
+    expect.objectContaining({ kind: "close", code: 1008, intentional: false }),
+  );
 });
 
 it("authenticates per provider and disables automatic provider responses/interruption", async () => {
@@ -421,7 +653,11 @@ it("authenticates per provider and disables automatic provider responses/interru
     type: null,
   });
   expect(realtimeSession("xai", "m", "en").tools.map((tool) => tool.name)).toEqual([
-    "assistant_status","assistant_job_control","assistant_note_delete","assistant_stop_all","assistant_presence",
+    "assistant_status",
+    "assistant_job_control",
+    "assistant_note_delete",
+    "assistant_stop_all",
+    "assistant_presence",
     "give_jobs",
     "present_choices",
     "app_context",
@@ -606,7 +842,10 @@ it("reports a dropped connection as fatal and releases a late permission grant",
   const voice = new RealtimeVoice("openai", events, "tr");
   await voice.connect(secret("openai"));
   sockets[0].onclose?.();
-  expect(events.error).toHaveBeenCalledWith("Voice connection closed.", true, { recoverable: true, code: "1006" });
+  expect(events.error).toHaveBeenCalledWith("Voice connection closed.", true, {
+    recoverable: true,
+    code: "1006",
+  });
 
   let grant!: (value: unknown) => void;
   getUserMedia.mockImplementation(
@@ -957,7 +1196,10 @@ function candidateAudio() {
   for (let i = 0; i < 30; i++) pushFrame(new Int16Array(1024));
 }
 
-async function connectedWithFakeTimers(events: ReturnType<typeof callbacks>,provider:"xai"|"openai"="openai") {
+async function connectedWithFakeTimers(
+  events: ReturnType<typeof callbacks>,
+  provider: "xai" | "openai" = "openai",
+) {
   setup();
   const voice = new RealtimeVoice(provider, events, "tr");
   const connection = voice.connect(secret(provider));

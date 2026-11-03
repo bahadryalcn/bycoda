@@ -16,7 +16,7 @@ export function usePlanActions({ onSubmit }: PlanActionDeps) {
   const onUpdatePlan = useCallback((sessionId: string, blockId: string, text: string) => {
     setSessions((prev) =>
       prev.map((session) => {
-        if ((hostSessionBinding(session) || remoteProjectFor(session.cwd))) return session;
+        if (hostSessionBinding(session) || remoteProjectFor(session.cwd)) return session;
         if (session.id !== sessionId || session.busy) return session;
         return {
           ...session,

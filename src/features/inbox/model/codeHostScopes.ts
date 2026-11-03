@@ -128,7 +128,8 @@ export function useCodeHostScopes(source: string, revision: number) {
       live = false;
     };
   }, [provider, revision, tick]);
-  const getHidden = () => (provider && scopes ? hiddenScopesSnapshot(provider, scopes.instance) : NO_HIDDEN);
+  const getHidden = () =>
+    provider && scopes ? hiddenScopesSnapshot(provider, scopes.instance) : NO_HIDDEN;
   const hidden = useSyncExternalStore(subscribeHiddenScopes, getHidden, getHidden);
   const save = (ids: string[]) => {
     if (!provider || !scopes) return;

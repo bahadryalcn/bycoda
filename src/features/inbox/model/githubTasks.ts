@@ -787,7 +787,9 @@ export async function githubPrAction(
       sources.set(sourceKey, {
         ...source,
         items: source.items.map((cached) =>
-          cached.kind === "pr" && cached.repo.toLowerCase() === repo.trim().toLowerCase() && cached.number === number
+          cached.kind === "pr" &&
+          cached.repo.toLowerCase() === repo.trim().toLowerCase() &&
+          cached.number === number
             ? { ...cached, ...item }
             : cached,
         ),
@@ -927,10 +929,19 @@ export function prefetchGithubWorkItem(
 export async function listInboxItems(
   projects: readonly { path: string }[],
   query: InboxQuery,
-  options?: { force?: boolean; retryFailedOnly?: boolean; maxAgeMs?: number; onProgress?: (result: InboxListResult) => void },
+  options?: {
+    force?: boolean;
+    retryFailedOnly?: boolean;
+    maxAgeMs?: number;
+    onProgress?: (result: InboxListResult) => void;
+  },
 ): Promise<InboxListResult> {
   const key = inboxListCacheKey(projects, query);
-  if (!options?.force && !options?.retryFailedOnly && inboxListIsFresh(projects, query, Date.now(), options?.maxAgeMs)) {
+  if (
+    !options?.force &&
+    !options?.retryFailedOnly &&
+    inboxListIsFresh(projects, query, Date.now(), options?.maxAgeMs)
+  ) {
     return peekInboxList(projects, query) ?? { items: [], errors: {} };
   }
   const pending = inboxListInflight.get(key);
@@ -939,7 +950,11 @@ export async function listInboxItems(
   if (options?.onProgress) listeners.add(options.onProgress);
   const latest = inboxProgressLatest.get(key);
   if (pending && latest && options?.onProgress) {
-    try { options.onProgress(latest); } catch { /* A view cannot fail provider discovery. */ }
+    try {
+      options.onProgress(latest);
+    } catch {
+      /* A view cannot fail provider discovery. */
+    }
   }
   const unsubscribe = () => {
     if (options?.onProgress) listeners.delete(options.onProgress);
@@ -968,7 +983,9 @@ export async function listInboxItems(
         const previous = inboxListCaches.get(key);
         // GitHub retains failures per source below; a provider-wide merge would
         // also resurrect deleted/closed rows from healthy repositories.
-        const failed = new Set(Object.keys(result.errors).filter((provider) => provider !== "github"));
+        const failed = new Set(
+          Object.keys(result.errors).filter((provider) => provider !== "github"),
+        );
         const items = dedupeInboxItems(
           [...result.items, ...(previous?.items.filter((item) => failed.has(item.provider)) ?? [])],
           projects.map((project) => project.path),
@@ -994,7 +1011,11 @@ export async function listInboxItems(
 async function fetchInboxItems(
   projects: readonly { path: string }[],
   query: InboxQuery,
-  options?: { force?: boolean; retryFailedOnly?: boolean; onProgress?: (result: InboxListResult) => void },
+  options?: {
+    force?: boolean;
+    retryFailedOnly?: boolean;
+    onProgress?: (result: InboxListResult) => void;
+  },
 ): Promise<InboxFetchResult> {
   const unique = uniqueInboxProjects(projects);
   const preferredPaths = unique.map((project) => project.path);
@@ -1003,7 +1024,12 @@ async function fetchInboxItems(
 
   // Providers are independent, so a slow one does not hold the others back.
   // Each reports its own error; the merge below keeps the fixed provider order.
-  const fetchGithub = async (): Promise<{ items: InboxItem[]; error?: string; limited?: boolean; sources?: Map<string, GithubInboxSource> }> => {
+  const fetchGithub = async (): Promise<{
+    items: InboxItem[];
+    error?: string;
+    limited?: boolean;
+    sources?: Map<string, GithubInboxSource>;
+  }> => {
     if (query.githubKinds?.length === 0) return { items: [] };
     const discovery = await settleWithLimit(
       unique.map((project) => () => githubRepositories(project.path)),
@@ -1025,30 +1051,38 @@ async function fetchInboxItems(
     // Preserve repository/kind order when equal-timestamp rows are merged;
     // network completion order must not reorder the collection.
     for (const { key } of jobs) sources.set(key, { items: [] });
-    await settleWithLimit(jobs.map(({ key, project, kind }) => async () => {
-      const previous = previousSources?.get(key);
-      if (options?.retryFailedOnly && previous && !previous.error) {
-        sources.set(key, previous);
-        return;
-      }
-      try {
-        const items = await listGithubWorkItems(project.path, project.repo,
-          { ...query, kind }, { force: options?.force || options?.retryFailedOnly });
-        sources.set(key, {
-          items: items.map((item) => ({
-            ...item, projectPath: project.path, provider: "github" as const,
-            repo: item.repo || project.repo,
-          })),
-          ...(inboxReadReachedLimit(items.length, query) ? { limited: true } : {}),
-        });
-      } catch (error) {
-        sources.set(key, {
-          items: previous?.items ?? [],
-          error: `${project.repo} (${kind}): ${inboxErrorMessage(error)}`,
-          ...(previous?.limited ? { limited: true } : {}),
-        });
-      }
-    }));
+    await settleWithLimit(
+      jobs.map(({ key, project, kind }) => async () => {
+        const previous = previousSources?.get(key);
+        if (options?.retryFailedOnly && previous && !previous.error) {
+          sources.set(key, previous);
+          return;
+        }
+        try {
+          const items = await listGithubWorkItems(
+            project.path,
+            project.repo,
+            { ...query, kind },
+            { force: options?.force || options?.retryFailedOnly },
+          );
+          sources.set(key, {
+            items: items.map((item) => ({
+              ...item,
+              projectPath: project.path,
+              provider: "github" as const,
+              repo: item.repo || project.repo,
+            })),
+            ...(inboxReadReachedLimit(items.length, query) ? { limited: true } : {}),
+          });
+        } catch (error) {
+          sources.set(key, {
+            items: previous?.items ?? [],
+            error: `${project.repo} (${kind}): ${inboxErrorMessage(error)}`,
+            ...(previous?.limited ? { limited: true } : {}),
+          });
+        }
+      }),
+    );
     const discoveryErrors: string[] = [];
     discovery.forEach((result, index) => {
       if (result.status !== "rejected") return;
@@ -1061,10 +1095,16 @@ async function fetchInboxItems(
         if (key.startsWith(prefix) && !sources.has(key)) sources.set(key, previous);
       }
     });
-    const errors = [...discoveryErrors, ...[...sources.values()].flatMap((source) => source.error ? [source.error] : [])];
+    const errors = [
+      ...discoveryErrors,
+      ...[...sources.values()].flatMap((source) => (source.error ? [source.error] : [])),
+    ];
     return {
       sources,
-      items: dedupeInboxItems([...sources.values()].flatMap((source) => source.items), preferredPaths),
+      items: dedupeInboxItems(
+        [...sources.values()].flatMap((source) => source.items),
+        preferredPaths,
+      ),
       ...([...sources.values()].some((source) => source.limited) ? { limited: true } : {}),
       ...(errors.length ? { error: [...new Set(errors)].join("\n") } : {}),
     };
@@ -1079,7 +1119,11 @@ async function fetchInboxItems(
     }
   };
 
-  const fetchJira = async (): Promise<{ items: InboxItem[]; error?: string; limited?: boolean }> => {
+  const fetchJira = async (): Promise<{
+    items: InboxItem[];
+    error?: string;
+    limited?: boolean;
+  }> => {
     if (query.jiraEnabled === false) return { items: [] };
     try {
       if (!(await jiraConnected()).connected) return { items: [] };
@@ -1097,7 +1141,12 @@ async function fetchInboxItems(
       ? fetchRepositoryInboxItems(provider, unique, query, preferredPaths)
       : { items: [] };
 
-  type ProviderRead = { items: InboxItem[]; error?: string; limited?: boolean; sources?: Map<string, GithubInboxSource> };
+  type ProviderRead = {
+    items: InboxItem[];
+    error?: string;
+    limited?: boolean;
+    sources?: Map<string, GithubInboxSource>;
+  };
   const jobs: [InboxProvider, () => Promise<ProviderRead>][] = [
     ["github", fetchGithub],
     ["linear", fetchLinear],
@@ -1109,16 +1158,17 @@ async function fetchInboxItems(
   const previous = peekInboxList(projects, query);
   const [github, linear, jira, gitlab, azuredevops] = await Promise.all(
     jobs.map(async ([provider, work]) => {
-      const value: ProviderRead = options?.retryFailedOnly && provider !== "github" && previous
-        ? {
-            items: previous.items.filter((item) => item.provider === provider),
-            error: previous.errors[provider],
-            ...(previous.limited?.includes(provider) ? { limited: true } : {}),
-          }
-        : await work().catch((reason) => ({
-        items: [] as InboxItem[],
-        error: inboxErrorMessage(reason),
-      }));
+      const value: ProviderRead =
+        options?.retryFailedOnly && provider !== "github" && previous
+          ? {
+              items: previous.items.filter((item) => item.provider === provider),
+              error: previous.errors[provider],
+              ...(previous.limited?.includes(provider) ? { limited: true } : {}),
+            }
+          : await work().catch((reason) => ({
+              items: [] as InboxItem[],
+              error: inboxErrorMessage(reason),
+            }));
       ready.set(provider, value);
       const errors: InboxProviderErrors = {};
       for (const [name, result] of ready) if (result.error) errors[name] = result.error;
@@ -1126,7 +1176,9 @@ async function fetchInboxItems(
         [
           ...jobs.flatMap(([name]) => ready.get(name)?.items ?? []),
           ...(previous?.items.filter(
-            (item) => !ready.has(item.provider) || (item.provider !== "github" && ready.get(item.provider)?.error),
+            (item) =>
+              !ready.has(item.provider) ||
+              (item.provider !== "github" && ready.get(item.provider)?.error),
           ) ?? []),
         ],
         preferredPaths,

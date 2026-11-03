@@ -423,8 +423,9 @@ it("retains genuine item comparisons and the exact immutable admitted payload af
   const { comparison } = await fullComparison(f, session);
   expect(comparison.admittedPayload).toBe(admitted);
   expect(admitted.captureOutputReceipt).toBe(true);
-  expect(f.projection.sessionOutputFullCandidateObservation(session.id).payloadBytes)
-    .toBe(new TextEncoder().encode(JSON.stringify(admitted)).byteLength);
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id).payloadBytes).toBe(
+    new TextEncoder().encode(JSON.stringify(admitted)).byteLength,
+  );
   expect(comparison).toMatchObject({
     qualified: false,
     fullCheckpoint: false,
@@ -610,7 +611,9 @@ it("leaves arguments untouched without inspecting them when only historical outp
   const session = f.emit({ type: "context", used: 1 }).session;
   await f.persistence.upsertSession(session);
   const write = f.projection.captureSessionOutputWrite(session);
-  const read = vi.fn(() => { throw new Error("must not inspect"); });
+  const read = vi.fn(() => {
+    throw new Error("must not inspect");
+  });
   const input = Object.defineProperty({}, "session", { enumerable: true, get: read });
   expect(f.projection.prepareSessionOutputWritePayload(write, input, "replace")).toBe(input);
   expect(read).not.toHaveBeenCalled();

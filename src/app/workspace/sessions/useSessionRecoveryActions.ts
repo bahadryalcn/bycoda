@@ -1,4 +1,10 @@
-import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { workspaceSnapshotWriteBlocked } from "../../model/appLifecycle";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 import {
@@ -10,9 +16,7 @@ import {
   setSessionRecovery,
   type SessionRecovery,
 } from "../../../features/workspace/model/sessionRecovery";
-import {
-  collectWorkspaceSnapshot,
-} from "../../../features/workspace/model/workspaceSnapshot";
+import { collectWorkspaceSnapshot } from "../../../features/workspace/model/workspaceSnapshot";
 import { saveWorkspaceSnapshot } from "../../../features/sessions/data/sessionStore";
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
@@ -77,14 +81,25 @@ export function useSessionRecoveryActions({
     dismissSavePending.current = true;
     const context = latest.current;
     try {
-      await saveWorkspaceSnapshot(collectWorkspaceSnapshot(
-        tabsRef.current, sessionsRef.current, activeTabIdRef.current,
-        context.projectCwd, projectReturnRef.current, context.projectTerminals,
-        context.lastDockSide ?? undefined, context.keepWorkspaceTab,
-      ));
-      if (mounted.current && getRecoverySaveFailure()?.owner === owner.current) setRecoverySaveFailure(null);
+      await saveWorkspaceSnapshot(
+        collectWorkspaceSnapshot(
+          tabsRef.current,
+          sessionsRef.current,
+          activeTabIdRef.current,
+          context.projectCwd,
+          projectReturnRef.current,
+          context.projectTerminals,
+          context.lastDockSide ?? undefined,
+          context.keepWorkspaceTab,
+        ),
+      );
+      if (mounted.current && getRecoverySaveFailure()?.owner === owner.current)
+        setRecoverySaveFailure(null);
     } catch {
-      if (mounted.current && (!getRecoverySaveFailure() || getRecoverySaveFailure()?.owner === owner.current)) {
+      if (
+        mounted.current &&
+        (!getRecoverySaveFailure() || getRecoverySaveFailure()?.owner === owner.current)
+      ) {
         setRecoverySaveFailure({ owner: owner.current, retry: persistDismissal });
       }
     } finally {
@@ -112,9 +127,14 @@ export function useSessionRecoveryActions({
     try {
       await saveWorkspaceSnapshot(
         collectWorkspaceSnapshot(
-          tabsRef.current, sessionsRef.current, activeTabIdRef.current,
-          projectCwd, projectReturnRef.current, projectTerminals,
-          lastDockSide ?? undefined, keepWorkspaceTab,
+          tabsRef.current,
+          sessionsRef.current,
+          activeTabIdRef.current,
+          projectCwd,
+          projectReturnRef.current,
+          projectTerminals,
+          lastDockSide ?? undefined,
+          keepWorkspaceTab,
         ),
       );
     } catch (error) {
@@ -123,16 +143,22 @@ export function useSessionRecoveryActions({
       throw error;
     }
   };
-  const recoveryCount = sessionRecovery ? eligibleRecoverySessions(
-    sessionRecovery, sessionsRef.current,
-    (cwd) => isProjectLockedIn(lockSnapshot, cwd), remoteSessionFor,
-  ).length : 0;
+  const recoveryCount = sessionRecovery
+    ? eligibleRecoverySessions(
+        sessionRecovery,
+        sessionsRef.current,
+        (cwd) => isProjectLockedIn(lockSnapshot, cwd),
+        remoteSessionFor,
+      ).length
+    : 0;
   const clearRecoveredSessions = async () => {
     const current = getSessionRecovery();
     if (!current) return;
-    await removeRecoveredSessions(current.workspace.sessions.filter(
-      (stub) => !isProjectLockedIn(getGroupLockView().lock, stub.cwd),
-    ).map((stub) => stub.id));
+    await removeRecoveredSessions(
+      current.workspace.sessions
+        .filter((stub) => !isProjectLockedIn(getGroupLockView().lock, stub.cwd))
+        .map((stub) => stub.id),
+    );
   };
   return { closeRecovery, removeRecoveredSessions, recoveryCount, clearRecoveredSessions };
 }
