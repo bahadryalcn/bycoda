@@ -304,6 +304,8 @@ export class LocalVoiceService {
         };
         child.on("error", failed);
         child.on("exit", failed);
+        // A dead worker pipe (EPIPE) must fail pending requests instead of crashing the Host.
+        child.stdin.on("error", failed);
       },
     );
     return this.loading;

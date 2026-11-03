@@ -150,6 +150,10 @@ fn listen(
                     if !peer.ip().is_loopback() || running.active.load(Ordering::SeqCst) >= 16 {
                         continue;
                     }
+                    // Accepted sockets can inherit the listener's nonblocking mode.
+                    let _ = socket.set_nonblocking(false);
+                    let _ = socket.set_read_timeout(Some(Duration::from_secs(15)));
+                    let _ = socket.set_write_timeout(Some(Duration::from_secs(15)));
                     running.active.fetch_add(1, Ordering::SeqCst);
                     let session = running.clone();
                     std::thread::spawn(move || {

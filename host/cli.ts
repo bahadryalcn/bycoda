@@ -9,7 +9,6 @@ import {
   renameSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
@@ -20,6 +19,7 @@ import { REMOTE_PROVIDERS, type RemoteProvider } from "../src/features/connectio
 import { version } from "../package.json";
 import { readHostBuildIdentity } from "./build-identity";
 import { createNativeAuthorityBootstrap } from "./native-authority/bootstrap";
+import { writeFileAtomic } from "./storage/atomic-write";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -42,22 +42,37 @@ const directory = resolve(
 const port = Number(option("port", process.env.BYCODA_DEV_HOST_PORT ?? "3776"));
 const statePath = join(directory, "running.json");
 type Running = { pid: number; port: number; secret: string };
+const isRunning = (value: unknown): value is Running =>
+  !!value &&
+  typeof value === "object" &&
+  Number.isSafeInteger((value as Running).pid) &&
+  Number.isSafeInteger((value as Running).port) &&
+  typeof (value as Running).secret === "string";
+/** The running host's state, or nothing. An empty or unparsable file (a crash
+ * mid-write) is moved aside as `running.json.corrupt-<timestamp>` so status and
+ * stop keep working; the callers poll this synchronously, hence no readStateFile. */
 const readRunning = (): Running | undefined => {
-  if (!existsSync(statePath)) return;
+  let text: string;
   try {
-    const state = JSON.parse(readFileSync(statePath, "utf8")) as Partial<Running> | null;
-    if (
-      !state ||
-      !Number.isInteger(state.pid) ||
-      !Number.isInteger(state.port) ||
-      typeof state.secret !== "string"
-    )
-      return;
-    return state as Running;
-  } catch {
-    // Corrupt or half-written running.json: treat as not running.
-    return;
+    text = readFileSync(statePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
   }
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (isRunning(parsed)) return parsed;
+  } catch {
+    // Quarantined below.
+  }
+  const quarantined = `${statePath}.corrupt-${Date.now()}`;
+  try {
+    renameSync(statePath, quarantined);
+    console.error(`Host state ${statePath} was unreadable; moved aside to ${quarantined}.`);
+  } catch {
+    // Already moved by a concurrent command.
+  }
+  return;
 };
 class HostUnreachableError extends Error {}
 const safeEqual = (a: string, b: string): boolean => {
@@ -75,6 +90,7 @@ const readStdinText = async (limit?: number, message = "Input is too large."): P
     chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString("utf8");
+
 };
 const lifecycle = async (state: Running, action: "status" | "stop") => {
   let response: Response;
@@ -513,7 +529,9 @@ Connect another computer using an SSH forward to the loopback port.`);
     automations.start();
     tasks.start();
     stewards.start();
-    writeFileSync(statePath, JSON.stringify({ pid: process.pid, port, secret }), { mode: 0o600 });
+    await writeFileAtomic(statePath, JSON.stringify({ pid: process.pid, port, secret }), {
+      mode: 0o600,
+    });
     process.once("SIGTERM", () => {
       void stop();
     });

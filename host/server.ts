@@ -5593,7 +5593,9 @@ export async function createHostServer(
                 case "host.settings.save":
                   await tasks.limits.save(params.settings);
                   result = await tasks.limits.state();
-                  void tasks.tick();
+                  void tasks
+                    .tick()
+                    .catch((error) => console.warn("Task scheduler tick failed", error));
                   break;
                 case "stewards.list":
                   result = await stewardsService.list(params, domainContext, { legacy: true });
