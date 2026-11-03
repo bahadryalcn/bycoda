@@ -604,7 +604,7 @@ export function AssistantView(props: AssistantViewProps) {
               ))}
             </div>
           ) : reviewError ? (
-            <p role="alert">{t(reviewError)}</p>
+            <InlineError>{t(reviewError)}</InlineError>
           ) : undefined,
           consequences: (state) => [
             t(
@@ -814,11 +814,7 @@ export function AssistantView(props: AssistantViewProps) {
     projects.find((project) => (project.id ?? project.path) === id)?.name ??
     t("Project unavailable");
   const errorFor = (key: string) =>
-    error?.key === key ? (
-      <p role="alert" className={styles.error}>
-        {error.text}
-      </p>
-    ) : null;
+    error?.key === key ? <InlineError className={styles.error}>{error.text}</InlineError> : null;
   const empty = (text: string) => <p className={styles.empty}>{t(text)}</p>;
   function clearHistory() {
     setConfirm({
@@ -851,7 +847,7 @@ export function AssistantView(props: AssistantViewProps) {
                     : active.some((job) => job.status === "waiting")
                       ? t("Waiting for you")
                       : t("Ready")}
-              <ChevronDown size={12} />
+              <ChevronDown className="icon-xs" />
             </Button>
           )}
         </div>
@@ -872,7 +868,7 @@ export function AssistantView(props: AssistantViewProps) {
                     error?.key.startsWith("presence"),
                   )}
                 />
-                <ChevronDown size={12} />
+                <ChevronDown className="icon-xs" />
               </Button>
               <Button
                 iconOnly
@@ -887,7 +883,7 @@ export function AssistantView(props: AssistantViewProps) {
                     : void stopEverything()
                 }
               >
-                <Square size={14} />
+                <Square className="icon-sm" />
               </Button>
             </>
           )}
@@ -897,7 +893,7 @@ export function AssistantView(props: AssistantViewProps) {
             onClick={() => setSettings(true)}
             disabled={!snapshot}
           >
-            <Settings size={15} />
+            <Settings className="icon-md" />
           </Button>
           <Button
             iconOnly
@@ -906,11 +902,11 @@ export function AssistantView(props: AssistantViewProps) {
             aria-expanded={Boolean(menu)}
             onClick={(event) => setMenu(event.currentTarget)}
           >
-            <MoreHorizontal size={15} />
+            <MoreHorizontal className="icon-md" />
           </Button>
           {props.onClose && (
             <Button iconOnly label={t("Close")} onClick={props.onClose}>
-              <X size={15} />
+              <X className="icon-md" />
             </Button>
           )}
         </div>
@@ -931,14 +927,14 @@ export function AssistantView(props: AssistantViewProps) {
               kind: "item",
               id: "refresh",
               label: t("Refresh"),
-              icon: <RefreshCw size={14} />,
+              icon: <RefreshCw className="icon-sm" />,
               disabled: loading,
             },
             {
               kind: "item",
               id: "trash",
               label: t("Recently deleted"),
-              icon: <Trash2 size={14} />,
+              icon: <Trash2 className="icon-sm" />,
             },
             { kind: "item", id: "setup", label: t("Run setup again") },
           ]}
@@ -1143,7 +1139,7 @@ export function AssistantView(props: AssistantViewProps) {
                       {t("Summarize today")}
                     </Button>
                     <Button
-                      startIcon={<Plus size={14} />}
+                      startIcon={<Plus className="icon-sm" />}
                       disabled={!snapshot.capabilities.notes}
                       onClick={() => setNoteEdit("new")}
                     >
@@ -1157,7 +1153,10 @@ export function AssistantView(props: AssistantViewProps) {
                   </Button>
                 )}
                 {view === "Memory" && (
-                  <Button startIcon={<Plus size={14} />} onClick={() => setMemoryEdit("new")}>
+                  <Button
+                    startIcon={<Plus className="icon-sm" />}
+                    onClick={() => setMemoryEdit("new")}
+                  >
                     {t("Add memory")}
                   </Button>
                 )}
@@ -1352,7 +1351,7 @@ export function AssistantView(props: AssistantViewProps) {
                   />
                   <Button
                     variant="primary"
-                    startIcon={<Plus size={14} />}
+                    startIcon={<Plus className="icon-sm" />}
                     disabled={
                       !jobDraftVisible ||
                       !jobText.trim() ||
@@ -1531,7 +1530,7 @@ export function AssistantView(props: AssistantViewProps) {
                           })
                         }
                       >
-                        <Trash2 size={14} />
+                        <Trash2 className="icon-sm" />
                       </Button>
                     </div>
                   ))}
@@ -1646,7 +1645,7 @@ export function AssistantView(props: AssistantViewProps) {
                                 })
                               }
                             >
-                              <Trash2 size={14} />
+                              <Trash2 className="icon-sm" />
                             </Button>
                             {errorFor(entry.id)}
                           </div>
@@ -1698,7 +1697,7 @@ export function AssistantView(props: AssistantViewProps) {
               {t("Undo")}
             </Button>
             <Button iconOnly label={t("Dismiss")} onClick={() => setUndo(null)}>
-              <X size={14} />
+              <X className="icon-sm" />
             </Button>
             {errorFor("undo")}
           </div>
@@ -1717,7 +1716,7 @@ export function AssistantView(props: AssistantViewProps) {
             {t("Recently deleted")}
           </Button>
           <Button iconOnly label={t("Dismiss")} onClick={() => setDeletedNoteWithoutReceipt(null)}>
-            <X size={14} />
+            <X className="icon-sm" />
           </Button>
         </div>
       )}
@@ -1975,9 +1974,7 @@ export function AssistantView(props: AssistantViewProps) {
                 </Button>
               ))}
               {error?.key.startsWith("navigation:") && (
-                <p role="alert" className={styles.error}>
-                  {error.text}
-                </p>
+                <InlineError className={styles.error}>{error.text}</InlineError>
               )}
               {(openJob.kind !== "quick" || openJob.taskIds.length > 0) && <h3>{t("Tasks")}</h3>}
               {openJob.taskIds.map((id) => (
@@ -2433,11 +2430,7 @@ function JobOwnerEditDialog({
             )}
           </p>
         )}
-        {error && (
-          <p role="alert" className={styles.error}>
-            {error}
-          </p>
-        )}
+        {error && <InlineError className={styles.error}>{error}</InlineError>}
       </form>
     </Modal>
   );
@@ -2490,11 +2483,7 @@ function JobRow({
             {t("Dispatch status unknown. Check the linked goal before retrying.")}
           </p>
         )}
-        {error && (
-          <p role="alert" className={styles.error}>
-            {error}
-          </p>
-        )}
+        {error && <InlineError className={styles.error}>{error}</InlineError>}
       </div>
       <Badge
         tone={
@@ -2525,7 +2514,7 @@ function JobRow({
           disabled={disabled}
           onClick={() => onControl("stop")}
         >
-          <Square size={13} />
+          <Square className="icon-sm" />
         </Button>
       )}
       <Button
@@ -2534,7 +2523,7 @@ function JobRow({
         disabled={disabled}
         onClick={(event) => setMenu(event.currentTarget)}
       >
-        <MoreHorizontal size={15} />
+        <MoreHorizontal className="icon-md" />
       </Button>
       {menu && (
         <DropdownMenu
@@ -2615,7 +2604,7 @@ function HistoryPanel({
                     label={t("Open session")}
                     onClick={() => onOpenSession(item.sessionId!)}
                   >
-                    <ExternalLink size={14} />
+                    <ExternalLink className="icon-sm" />
                   </Button>
                 )}
               </div>
@@ -3126,7 +3115,7 @@ function ConversationPanel({
                 loading={clearing || summaryRefreshing}
                 onClick={(event) => setThreadMenu(event.currentTarget)}
               >
-                <MoreHorizontal size={15} />
+                <MoreHorizontal className="icon-md" />
               </Button>
             </div>
           )}
@@ -3172,9 +3161,7 @@ function ConversationPanel({
             </p>
           )}
           {summaryError?.threadId === threadId && (
-            <p role="alert" className={styles.error}>
-              {summaryError.text}
-            </p>
+            <InlineError className={styles.error}>{summaryError.text}</InlineError>
           )}
           {hasMore[threadId] && (
             <Button
@@ -3226,7 +3213,7 @@ function ConversationPanel({
                     })
                   }
                 >
-                  <Trash2 size={12} />
+                  <Trash2 className="icon-xs" />
                 </Button>
               </div>
               {message.ownerQuestionId && (
@@ -3928,15 +3915,11 @@ function TrashPanel({
                 })
               }
             >
-              <Trash2 size={14} />
+              <Trash2 className="icon-sm" />
             </Button>
           </div>
         ))}
-        {error && (
-          <p role="alert" className={styles.error}>
-            {error}
-          </p>
-        )}
+        {error && <InlineError className={styles.error}>{error}</InlineError>}
         {confirm && <ConfirmDialog request={confirm} onSettle={() => setConfirm(null)} />}
       </div>
     </Modal>

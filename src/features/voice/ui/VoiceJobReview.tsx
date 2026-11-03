@@ -16,6 +16,7 @@ import { AssistantQuickAutomationFields } from "../../assistant/ui/AssistantQuic
 import { t } from "../../../shared/i18n";
 import type { VoiceJobDraft, VoiceJobReviewState } from "../model/voiceJobs";
 import styles from "./VoiceJobReview.module.css";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 /** The owner reviews editable requests before any job is created. */
 export function VoiceJobReview({
@@ -157,7 +158,7 @@ export function VoiceJobReview({
           {t("{p0} jobs accepted. They continue independently.", { p0: review.accepted.length })}
         </p>
       ) : null}
-      {review.error ? <p role="alert">{review.error}</p> : null}
+      {review.error ? <InlineError>{review.error}</InlineError> : null}
       <div className={styles.actions}>
         <Button
           variant="primary"

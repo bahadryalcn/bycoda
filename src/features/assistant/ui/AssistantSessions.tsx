@@ -170,7 +170,7 @@ function ManagedSessionRow({
             return expected ? onOpenSession(id, expected) : onOpenSession(id);
           }}
         >
-          <ExternalLink size={14} />
+          <ExternalLink className="icon-sm" />
         </Button>
       )}
     </div>

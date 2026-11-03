@@ -9,6 +9,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { Bot } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 export function AssistantSessionControl(props: {
   sessionId: string;
@@ -118,7 +119,7 @@ function LocalControl({
           disabled={!environmentId}
           onClick={() => void inspect()}
         >
-          <Bot size={14} />
+          <Bot className="icon-sm" />
         </Button>
       )}
       {open && (
@@ -138,7 +139,7 @@ function LocalControl({
                 "Remove assistant follow-ups from this session. Its task and running worker continue.",
               )}
             </p>
-            {error && <p role="alert">{error}</p>}
+            {error && <InlineError>{error}</InlineError>}
             {detached ? (
               <p role="status">{t("Assistant supervision removed")}</p>
             ) : uncertain ? (

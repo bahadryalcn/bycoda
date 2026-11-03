@@ -11,9 +11,6 @@
     "src/app/shell/LastSessionsSection.tsx": {
       "native-title": 3
     },
-    "src/app/shell/sessionList.css": {
-      "radius-size": 1
-    },
     "src/features/files/ui/BinaryFileView.tsx": {
       "icon-numeric-size": 1
     },
@@ -112,13 +109,6 @@
       "layer": 2,
       "radius-size": 2,
       "typography": 6
-    },
-    "src/features/voice/ui/VoiceCompanion.tsx": {
-      "icon-numeric-size": 15,
-      "role-alert-text": 1
-    },
-    "src/features/voice/ui/VoicePanelChoices.tsx": {
-      "icon-numeric-size": 7
     },
     "src/features/voice/ui/VoiceVisualizer.module.css": {
       "radius-size": 1

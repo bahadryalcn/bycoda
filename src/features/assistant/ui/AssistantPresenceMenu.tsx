@@ -13,6 +13,7 @@ import {
   type AssistantPresencePort,
   type AssistantPresenceView,
 } from "../model/assistantPresence";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 export function AssistantPresenceMenu({
   port = nativeAssistantPresencePort,
@@ -167,9 +168,9 @@ export function AssistantPresenceMenu({
         <AssistantPresenceIndicator state={state} label={label} className="max-w-24" />
       </Button>
       {error && (
-        <span className="sr-only" role="alert">
+        <InlineError icon={null} className="sr-only">
           {t("Availability change was not confirmed.")}
-        </span>
+        </InlineError>
       )}
       {token !== undefined && (
         <DropdownMenu

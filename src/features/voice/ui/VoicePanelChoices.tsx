@@ -75,7 +75,7 @@ export function VoiceSessionPicker({
 }
 
 const MODES: { value: VoiceMode; label: () => string; icon: () => ReactNode }[] = [
-  { value: "local", label: () => t("Local"), icon: () => <Laptop size={14} /> },
+  { value: "local", label: () => t("Local"), icon: () => <Laptop className="icon-sm" /> },
   {
     value: "grok",
     label: () => "Grok Voice",
@@ -129,7 +129,7 @@ export function VoiceOptionsMenu({ onFloat }: { onFloat?: () => void } = {}) {
       id: "reply",
       label: t("Reply voice"),
       description: REPLIES.find((entry) => entry.value === reply)?.label(),
-      icon: <AudioLines size={14} />,
+      icon: <AudioLines className="icon-sm" />,
       submenu: REPLIES.map((entry) => ({
         kind: "item" as const,
         id: `reply:${entry.value}`,
@@ -143,7 +143,7 @@ export function VoiceOptionsMenu({ onFloat }: { onFloat?: () => void } = {}) {
       id: "speaker",
       label: t("Speaker"),
       description: speakerLabel(speaker, settings.speakers[speaker]),
-      icon: <UserRound size={14} />,
+      icon: <UserRound className="icon-sm" />,
       submenu: speakerOptions(speaker).map((option) => ({
         kind: "item" as const,
         id: `speaker:${option.value}`,
@@ -158,7 +158,7 @@ export function VoiceOptionsMenu({ onFloat }: { onFloat?: () => void } = {}) {
         kind: "item",
         id: "float",
         label: t("Float outside the app"),
-        icon: <ExternalLink size={14} />,
+        icon: <ExternalLink className="icon-sm" />,
       },
     );
   return (
@@ -171,7 +171,7 @@ export function VoiceOptionsMenu({ onFloat }: { onFloat?: () => void } = {}) {
         aria-expanded={Boolean(anchor)}
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
       >
-        <SlidersHorizontal size={14} />
+        <SlidersHorizontal className="icon-sm" />
       </Button>
       {anchor && (
         <ContextMenu

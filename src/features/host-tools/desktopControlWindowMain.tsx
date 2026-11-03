@@ -27,6 +27,7 @@ import {
 import { languageReady, t, useLocale } from "../../shared/i18n";
 import { installNativeContextMenuGuard } from "../../shared/lib/nativeContextMenu";
 import "../../styles/index.css";
+import { InlineError } from "../../shared/ui/InlineError";
 installNativeContextMenuGuard();
 function appearance() {
   applyAppearancePreferences(loadAppearancePreferences());
@@ -66,7 +67,7 @@ function IndicatorWindow() {
           );
         }}
       />
-      {error && <span role="alert">{error}</span>}
+      {error && <InlineError>{error}</InlineError>}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Switch } from "../../../shared/ui/Switch";
 import type { ManualProject, ManualSupervisionController } from "../model/assistantManual";
 import styles from "./AssistantView.module.css";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 export function ManualSessionSupervision({
   controller,
@@ -124,11 +125,7 @@ export function ManualSessionSupervision({
           {t("Chief autonomy is required for manual session supervision.")}
         </p>
       )}
-      {error && (
-        <p role="alert" className={styles.error}>
-          {t(error)}
-        </p>
-      )}
+      {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
       {!data && (
         <p role="status" className={styles.muted}>
           {t(pending ? "Loading…" : "Manual supervision state is unavailable. Refresh to retry.")}
@@ -323,11 +320,7 @@ export function ManualSessionSupervision({
               {t("No visible conversations are available for enrollment.")}
             </p>
           )}
-          {openError && (
-            <p role="alert" className={styles.error}>
-              {t(openError)}
-            </p>
-          )}
+          {openError && <InlineError className={styles.error}>{t(openError)}</InlineError>}
         </>
       )}
     </section>

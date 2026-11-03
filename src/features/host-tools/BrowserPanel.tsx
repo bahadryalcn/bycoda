@@ -752,9 +752,9 @@ function ProjectBrowserPanel({
         {notice ? ` · ${notice}` : ""}
       </span>
       {error ? (
-        <span className="sr-only" role="alert">
+        <InlineError icon={null} className="sr-only">
           {errorSummary}
-        </span>
+        </InlineError>
       ) : null}
       {setupRequired ? (
         <section className="host-browser-setup" aria-label={t("Browser setup required")}>

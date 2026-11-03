@@ -65,7 +65,7 @@ export function TaskStatusText({
       align="start"
       data-no-drag=""
       data-task-status-line={status.kind}
-      title={t("Show details")}
+      tooltip={t("Show details")}
       className={shared}
       onClick={(event) => {
         event.stopPropagation();

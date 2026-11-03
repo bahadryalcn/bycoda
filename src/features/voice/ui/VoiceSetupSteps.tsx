@@ -18,6 +18,7 @@ import { RealtimeVoice } from "../model/realtimeVoice";
 import { LocalVoice } from "../model/localVoice";
 import { voiceLanguageCode } from "../model/voiceLanguage";
 import { VoiceSettings } from "./VoiceSettings";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 export function VoiceSetupSteps({
   step,
@@ -273,7 +274,7 @@ export function VoiceSetupSteps({
           {transcript ? <p role="status">{transcript}</p> : null}
         </>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
     </div>
   );
 }

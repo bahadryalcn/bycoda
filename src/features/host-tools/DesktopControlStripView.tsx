@@ -1,6 +1,7 @@
 import { Button } from "../../shared/ui/Button";
 import { t } from "../../shared/i18n";
 import styles from "./DesktopControlStrip.module.css";
+import { InlineError } from "../../shared/ui/InlineError";
 export type DesktopIndicatorStatus = {
   enabled: boolean;
   active: boolean;
@@ -77,11 +78,7 @@ export function DesktopControlStripView({
       >
         {label}
       </span>
-      {error && (
-        <span role="alert" className={styles.error}>
-          {error}
-        </span>
-      )}
+      {error && <InlineError className={styles.error}>{error}</InlineError>}
       {inactive && onDismiss ? (
         <Button size="sm" onClick={onDismiss}>
           {t("Dismiss")}

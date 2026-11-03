@@ -442,7 +442,10 @@ function AutomationsContent({
     >
       {confirmDialog}
       {revealStatus && revealAutomation && (
-        <div role="status" className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm">
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-2 px-4 py-2 text-ui-secondary"
+        >
           <span>
             {t(
               revealStatus === "draft"

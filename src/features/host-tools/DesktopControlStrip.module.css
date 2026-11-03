@@ -23,7 +23,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   background: var(--ui-surface);
   border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: 8px;
+  border-radius: var(--ui-radius-card);
   padding: 8px 10px;
 }
 .floating .status {

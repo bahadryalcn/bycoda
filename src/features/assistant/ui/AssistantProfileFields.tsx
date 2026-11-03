@@ -22,6 +22,7 @@ import {
   workerContextSettings,
   validWorkerContextSettings,
 } from "../../../shared/model/assistantContext";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 export type ProfileSection =
   | "identity"
@@ -306,9 +307,9 @@ export function AssistantProfileFields({
           {number("idleMinutes", "Become idle after (minutes)", 1, 1440, policy.idleMinutes)}
           {number("awayMinutes", "Become away after (minutes)", 2, 10080, policy.awayMinutes)}
           {!validAssistantPolicy(value) && (
-            <p role="alert" className={styles.error}>
+            <InlineError className={styles.error}>
               {t("Away must start later than idle.")}
-            </p>
+            </InlineError>
           )}
           {number("activeStart", "Work hours start", 0, 23, policy.activeStart)}
           {number("activeEnd", "Work hours end", 0, 23, policy.activeEnd)}
@@ -440,7 +441,9 @@ export function AssistantProfileFields({
             </div>
           )}
           {!validWorkerContextSettings(value) && (
-            <p role="alert">{t("Worker context limits must increase from compact to handoff.")}</p>
+            <InlineError>
+              {t("Worker context limits must increase from compact to handoff.")}
+            </InlineError>
           )}
         </>
       )}

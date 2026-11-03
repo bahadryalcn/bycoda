@@ -18,6 +18,7 @@ import { requestTranscriptJump } from "../../sessions/model/transcriptJump";
 import styles from "./AssistantView.module.css";
 import { assistantJobVisible } from "../model/assistantJobs";
 import { captureAssistantHostRead, type AssistantHostRead } from "../model/assistantHostRead";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 export function AssistantBriefingCard({
   snapshot,
@@ -192,7 +193,7 @@ export function AssistantBriefingCard({
             })
           }
         >
-          <X size={14} />
+          <X className="icon-sm" />
         </Button>
       </div>
       <div className={styles.toolbar}>
@@ -244,18 +245,14 @@ export function AssistantBriefingCard({
           <Button onClick={onChooseLanguage}>{t("Choose language")}</Button>
         </div>
       )}
-      {audioError && (
-        <p role="alert" className={styles.error}>
-          {t(audioError)}
-        </p>
-      )}
+      {audioError && <InlineError className={styles.error}>{t(audioError)}</InlineError>}
       {approvals?.length === 0 && unavailable === 0 && (
         <p role="status" className={styles.muted}>
           {t("No pending approvals found.")}
         </p>
       )}
       {unavailable > 0 && (
-        <p role="alert">{t("Some approval sources could not be checked. Try again.")}</p>
+        <InlineError>{t("Some approval sources could not be checked. Try again.")}</InlineError>
       )}
       {approvals && approvals.length > 0 && (
         <div className={styles.approvalLinks}>
@@ -284,11 +281,7 @@ export function AssistantBriefingCard({
             ))}
         </div>
       )}
-      {error && (
-        <p role="alert" className={styles.error}>
-          {t(error)}
-        </p>
-      )}
+      {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
     </section>
   );
 }

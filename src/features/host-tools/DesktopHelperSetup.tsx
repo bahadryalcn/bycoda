@@ -4,6 +4,7 @@ import { Button } from "../../shared/ui/Button";
 import { Row } from "../settings/ui/settingsControls";
 import { desktopHelperRequest } from "./desktopControlClient";
 import type { DesktopHelperResponse } from "../../shared/model/host-contracts/desktop-helper";
+import { InlineError } from "../../shared/ui/InlineError";
 
 export function DesktopHelperSetup({
   disabled,
@@ -75,7 +76,7 @@ export function DesktopHelperSetup({
               ? t("Preparation interrupted")
               : t("Helper not prepared")}
       </div>
-      {(error || state?.error) && <p role="alert">{error || state?.error}</p>}
+      {(error || state?.error) && <InlineError>{error || state?.error}</InlineError>}
       {state?.phase === "preparing" ? (
         <Button type="button" loading={pending} onClick={() => void act("cancel")}>
           {t("Cancel preparation")}

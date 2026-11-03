@@ -10,6 +10,7 @@ import type {
 } from "../../shared/model/host-contracts/desktop-control";
 import { desktopControlRequest } from "./desktopControlClient";
 import { DesktopHelperSetup } from "./DesktopHelperSetup";
+import { InlineError } from "../../shared/ui/InlineError";
 
 /** Owner configuration and emergency stop; no observation or desktop input on mount. */
 export function DesktopControlSettings() {
@@ -135,7 +136,7 @@ export function DesktopControlSettings() {
           {t("Refresh")}
         </Button>
       </Row>
-      {error && <p role="alert">{error}</p>}
+      {error && <InlineError>{error}</InlineError>}
       {draft && (
         <>
           <Row label={t("Enable computer use")}>
