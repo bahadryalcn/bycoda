@@ -34,7 +34,13 @@ const policy = {
   disk: { budgetBytes: 53687091200, warningRatio: 0.8, minimumFreeBytes: 21474836480 },
 };
 const head = "a1b2c3d4e5f67890123456789012345678901234";
+const observations = {
+  ipc: [] as { command: string; machineId?: unknown; method?: unknown; params?: unknown }[],
+  submissions: [] as { text: string; attachmentCount: number; mode: string; cwd: string }[],
+};
+Object.assign(window, { workspaceCreationObservations: observations });
 mockIPC((command, payload) => {
+  observations.ipc.push({ command, ...payload });
   if (command.startsWith("plugin:event|")) return null;
   if (command === "local_host_connect") return machine;
   if (command === "remote_machines") return [machine];
@@ -128,7 +134,13 @@ function Fixture() {
           onCwdChange={() => {}}
           onModelChange={() => {}}
           onRuntimeModeChange={() => {}}
-          onSubmit={() => {
+          onSubmit={(text, attachments) => {
+            observations.submissions.push({
+              text,
+              attachmentCount: attachments.length,
+              mode: mode ?? "current",
+              cwd,
+            });
             setSent(true);
             return false;
           }}
