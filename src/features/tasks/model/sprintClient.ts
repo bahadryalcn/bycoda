@@ -105,7 +105,7 @@ export function useSprintBoard(
       return "";
     }
   });
-  const [loading, setLoading] = useState(false);
+  const [loadingState, setLoadingState] = useState({ key: "", value: false });
   const generation = useRef(0);
   const latestSync = useRef<{
     epoch: number;
@@ -156,6 +156,8 @@ export function useSprintBoard(
   const routeScope = JSON.stringify(
     machines.map((machine) => [machine.id, machine.environmentId, machine.endpoint]),
   );
+  const loadingKey = JSON.stringify([boardKey, projectScope, routeScope]);
+  const loading = loadingState.key === loadingKey && loadingState.value;
   const requestId = (signature: string) => {
     const key = `${effectiveEnvironment}:${signature}`;
     let id = requests.current.get(key);
@@ -176,10 +178,11 @@ export function useSprintBoard(
       const beginCoordinatorRead = () => {
         const token = Symbol();
         coordinatorReads.current.add(token);
-        setLoading(true);
+        setLoadingState({ key: loadingKey, value: true });
         return () => {
           coordinatorReads.current.delete(token);
-          if (current()) setLoading(coordinatorReads.current.size > 0);
+          if (current())
+            setLoadingState({ key: loadingKey, value: coordinatorReads.current.size > 0 });
         };
       };
       const readBoard = async () => {
@@ -378,10 +381,10 @@ export function useSprintBoard(
         finishInitialRead();
       }
     },
-    [coordinatorId, effectiveEnvironment],
+    [coordinatorId, effectiveEnvironment, loadingKey],
   );
   const read = useCallback(
-    (sync = true): Promise<void> => {
+    function read(sync = true): Promise<void> {
       const epoch = generation.current;
       if (sync) {
         if (syncRead.current?.epoch === epoch) return syncRead.current.promise;
@@ -415,7 +418,6 @@ export function useSprintBoard(
     publication.current++;
     latestSync.current = { epoch: -1, failures: {} };
     coordinatorReads.current.clear();
-    setLoading(false);
     knownTasks.current.clear();
     return () => {
       generation.current++;

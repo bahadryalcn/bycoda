@@ -13,7 +13,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { serializeChatCitation } from "../model/chatCitation";
 import styles from "./TranscriptSelectionMenu.module.css";
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { Popover } from "../../../shared/ui/Popover";
 import {
   FloatingButtonGroup,
@@ -43,6 +43,53 @@ type Operations = {
   pending: Record<string, boolean>;
   errors: Record<string, string>;
 };
+
+function useSelectionOperationRunner(
+  operationEpoch: number,
+  setOperations: React.Dispatch<React.SetStateAction<Operations>>,
+  onSuccess: () => void,
+) {
+  const running = useRef(new Set<string>());
+  const epoch = useRef(operationEpoch);
+  useLayoutEffect(() => {
+    epoch.current = operationEpoch;
+    running.current.clear();
+  }, [operationEpoch]);
+
+  const run = useCallback(
+    async (id: string, onSelect: () => void | Promise<void>, dismiss = true) => {
+      if (running.current.has(id)) return;
+      running.current.add(id);
+      const owner = epoch.current;
+      const update = (patch: (current: Operations) => Operations) =>
+        setOperations((current) => (current.epoch === owner ? patch(current) : current));
+      update((current) => ({
+        ...current,
+        pending: { ...current.pending, [id]: true },
+        errors: { ...current.errors, [id]: "" },
+      }));
+      try {
+        const result = onSelect();
+        if (result) await result;
+        if (owner !== epoch.current) return;
+        if (dismiss) {
+          onSuccess();
+        }
+      } catch (error) {
+        if (owner !== epoch.current) return;
+        const message = error instanceof Error ? error.message : String(error);
+        update((current) => ({ ...current, errors: { ...current.errors, [id]: message } }));
+      } finally {
+        if (owner === epoch.current) {
+          running.current.delete(id);
+          update((current) => ({ ...current, pending: { ...current.pending, [id]: false } }));
+        }
+      }
+    },
+    [onSuccess, setOperations],
+  );
+  return run;
+}
 
 export function TranscriptSelectionMenu({
   selection: liveSelection,
@@ -130,46 +177,13 @@ export function TranscriptSelectionMenu({
     setOperations({ text: selectionText, epoch: operations.epoch + 1, pending: {}, errors: {} });
   }
   const { pending, errors } = operations;
-  const running = useRef(new Set<string>());
-  const epoch = useRef(operations.epoch);
-  useLayoutEffect(() => {
-    epoch.current = operations.epoch;
-    running.current.clear();
-  }, [operations.epoch]);
-
+  const run = useSelectionOperationRunner(operations.epoch, setOperations, () => {
+    setCitationDraft((current) => current && { ...current, open: false });
+    window.getSelection()?.removeAllRanges();
+    onDismiss();
+  });
   if (!selection) return null;
 
-  const run = async (id: string, onSelect: () => void | Promise<void>, dismiss = true) => {
-    if (running.current.has(id)) return;
-    running.current.add(id);
-    const owner = epoch.current;
-    const update = (patch: (current: Operations) => Operations) =>
-      setOperations((current) => (current.epoch === owner ? patch(current) : current));
-    update((current) => ({
-      ...current,
-      pending: { ...current.pending, [id]: true },
-      errors: { ...current.errors, [id]: "" },
-    }));
-    try {
-      const result = onSelect();
-      if (result) await result;
-      if (owner !== epoch.current) return;
-      if (dismiss) {
-        setCitationDraft((current) => current && { ...current, open: false });
-        window.getSelection()?.removeAllRanges();
-        onDismiss();
-      }
-    } catch (error) {
-      if (owner !== epoch.current) return;
-      const message = error instanceof Error ? error.message : String(error);
-      update((current) => ({ ...current, errors: { ...current.errors, [id]: message } }));
-    } finally {
-      if (owner === epoch.current) {
-        running.current.delete(id);
-        update((current) => ({ ...current, pending: { ...current.pending, [id]: false } }));
-      }
-    }
-  };
   const action = (
     id: string,
     label: string,

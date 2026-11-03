@@ -24,21 +24,28 @@ export function useGlobalRecentSessions(
   const refresh = useCallback(() => setTick((value) => value + 1), []);
   useEffect(() => {
     if (!enabled) return;
-    setClock(Date.now());
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setClock(Date.now());
+    });
     const timer = window.setInterval(() => {
       setClock(Date.now());
       refresh();
     }, 60_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [enabled, refresh]);
   useEffect(() => {
-    if (!enabled) {
-      setLoading(false);
-      return;
-    }
+    if (!enabled) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setLoading(true);
+        setError(null);
+      }
+    });
     const timer = window.setTimeout(
       () =>
         listRecentSessionsSince(Date.now() - GLOBAL_RECENT_WINDOW_MS).then(
@@ -68,7 +75,7 @@ export function useGlobalRecentSessions(
   );
   return {
     rows,
-    loading,
+    loading: enabled && loading,
     error,
     remoteHistoryLimited: [...allowedProjectKeys].some(isRemoteProjectPath),
     refresh,

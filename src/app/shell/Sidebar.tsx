@@ -996,12 +996,11 @@ function SidebarComponent({
     lastSessionsOpen ? "7d" : "all",
   );
   const [newSessionProjectOpen, setNewSessionProjectOpen] = useState(false);
-  const handledNewSessionRequest = useRef(newListedSessionRequest);
-  useEffect(() => {
-    if (newListedSessionRequest === handledNewSessionRequest.current) return;
-    handledNewSessionRequest.current = newListedSessionRequest;
+  const [handledNewSessionRequest, setHandledNewSessionRequest] = useState(newListedSessionRequest);
+  if (newListedSessionRequest !== handledNewSessionRequest) {
+    setHandledNewSessionRequest(newListedSessionRequest);
     if (newListedSessionRequest > 0) setNewSessionProjectOpen(true);
-  }, [newListedSessionRequest]);
+  }
   const [openingSessionId, setOpeningSessionId] = useState<string | null>(null);
   // Once the opened session is the active one, its card stops spinning.
   if (openingSessionId && openingSessionId === activeListedSessionId) setOpeningSessionId(null);
@@ -2359,9 +2358,7 @@ function SidebarComponent({
   // its icon, bulk select and the filter popover. The global search stays the top-left Search.
   const showSessionTools =
     tab === "sessions" && (lastSessionsOpen || (Boolean(cwd) && cwd !== "~"));
-  useEffect(() => {
-    if (!showSessionTools) setSessionSearchExpanded(false);
-  }, [showSessionTools]);
+  if (!showSessionTools && sessionSearchExpanded) setSessionSearchExpanded(false);
   const sessionToolbar = showSessionTools ? (
     <div
       data-session-selection-keep
@@ -5712,7 +5709,7 @@ const SessionCard = memo(function SessionCard({
     }
     detailFromFocus.current = false;
     setDetailOpen(false);
-  }, []);
+  }, [setDetailOpen]);
   useEffect(() => {
     const root = detailRootRef.current;
     if (!root) return;

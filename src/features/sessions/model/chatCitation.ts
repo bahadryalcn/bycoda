@@ -47,7 +47,7 @@ function citationValue(value: unknown): ChatCitation | null {
 export function serializeChatCitation(citation: ChatCitation): string {
   const value = citationValue(citation);
   if (!value) throw new Error("Invalid chat citation.");
-  const label = (value.comment.trim() || value.text).replace(/[\[\]\\\r\n]/g, " ").slice(0, 100);
+  const label = (value.comment.trim() || value.text).replace(/[[\]\\\r\n]/g, " ").slice(0, 100);
   const payload = encodeURIComponent(JSON.stringify(value)).replace(
     /[!'()*]/g,
     (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,

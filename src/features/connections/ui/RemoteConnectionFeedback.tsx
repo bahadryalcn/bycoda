@@ -5,7 +5,6 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -71,7 +70,7 @@ export function useRemoteConnectionFeedback(
   const feedback = useContext(FeedbackContext);
   const register = feedback?.register;
   const environmentId = environmentOf(cwdOrEnvironmentId);
-  const key = useRef(Symbol("remote-connection-consumer")).current;
+  const [key] = useState(() => Symbol("remote-connection-consumer"));
   const kind = failure && isConnectionFailure(failure) ? failure.kind : undefined;
   const message = kind ? failure?.message : undefined;
   useEffect(() => {
@@ -88,7 +87,7 @@ export function useRemoteConnectionFeedback(
 /** Place once in the workspace shell; mounted consumers determine the relevant machines. */
 export function RemoteConnectionNotices() {
   const feedback = useContext(FeedbackContext);
-  const ownerKey = useRef(Symbol("remote-connection-notices")).current;
+  const [ownerKey] = useState(() => Symbol("remote-connection-notices"));
   const registerOwner = feedback?.registerOwner;
   useLayoutEffect(() => {
     if (!registerOwner) return;
@@ -143,17 +142,16 @@ function MachineConnectionNotice({
   );
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
-    setFirstFailureAt((previous) => (active ? (previous ?? Date.now()) : undefined));
+    const timer = setTimeout(() => {
+      setFirstFailureAt((previous) => (active ? (previous ?? Date.now()) : undefined));
+    }, 0);
+    return () => clearTimeout(timer);
   }, [active]);
   useEffect(() => {
     if (!active || !transient || !autoReconnect || reconnecting || firstFailureAt === undefined)
       return;
     const remaining = firstFailureAt + TRANSIENT_NOTICE_DELAY_MS - Date.now();
-    if (remaining <= 0) {
-      setNow(Date.now());
-      return;
-    }
-    const timer = setTimeout(() => setNow(Date.now()), remaining);
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, remaining));
     return () => clearTimeout(timer);
   }, [active, transient, autoReconnect, reconnecting, firstFailureAt]);
   if (

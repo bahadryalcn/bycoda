@@ -53,12 +53,12 @@ export function AssistantSettings({
     ...snapshot.profile,
   }));
   const version = useRef(snapshot.profile.version);
-  const savedDraft = useRef(JSON.stringify(snapshot.profile));
+  const [savedDraft, setSavedDraft] = useState(() => JSON.stringify(snapshot.profile));
   const [projectState, setProjectState] = useState({ dirty: false, pending: false });
   const [computerState, setComputerState] = useState({ dirty: false, pending: false });
   const [leave, setLeave] = useState<"close" | "setup" | null>(null);
   const [retention, setRetention] = useState(snapshot.conversationRetentionDays ?? 0);
-  const savedRetention = useRef(snapshot.conversationRetentionDays ?? 0);
+  const [savedRetention, setSavedRetention] = useState(snapshot.conversationRetentionDays ?? 0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [savedNotice, setSavedNotice] = useState(false);
@@ -74,8 +74,7 @@ export function AssistantSettings({
     ["advanced", "Advanced", "Review scheduling limits, conversation history and measured usage."],
   ] as const;
   const currentPage = pages.find(([id]) => id === page)!;
-  const profileDirty =
-    JSON.stringify(draft) !== savedDraft.current || retention !== savedRetention.current;
+  const profileDirty = JSON.stringify(draft) !== savedDraft || retention !== savedRetention;
   const busy = pending || projectState.pending || computerState.pending;
   function requestLeave(target: "close" | "setup") {
     if (busy) return;
@@ -170,15 +169,15 @@ export function AssistantSettings({
       if (!saved.profile)
         throw new Error(t("The settings save was not confirmed. Check before retrying."));
       version.current = saved.profile.version;
-      savedDraft.current = JSON.stringify(draft);
-      if (retention !== savedRetention.current) {
+      setSavedDraft(JSON.stringify(draft));
+      if (retention !== savedRetention) {
         const result = await assistantRequest({
           op: "conversations.retention",
           days: retention as 0 | 30 | 90 | 365,
         });
         if (result.ok !== true)
           throw new Error(t("The retention change was not confirmed. Check before retrying."));
-        savedRetention.current = retention;
+        setSavedRetention(retention);
       }
       setSavedNotice(true);
     } catch (cause) {

@@ -3718,7 +3718,7 @@ export const Composer = memo(function Composer({
         >
           <ComposerCitations
             citations={citations}
-            disabled={!canMutateDraft() || !!submission}
+            disabled={parentClosed || !!submission}
             onChange={(next) => {
               if (!canMutateDraft()) return;
               parentChanged();

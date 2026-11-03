@@ -557,6 +557,8 @@ pub struct SessionRecord {
 }
 
 #[tauri::command]
+// App/window are injected natively; preserve the established flat session-save IPC fields.
+#[allow(clippy::too_many_arguments)]
 pub async fn session_upsert(
     app: tauri::AppHandle,
     window: tauri::Window,

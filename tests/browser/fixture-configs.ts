@@ -55,8 +55,14 @@ import c51 from "./playwright.global-voice.config.ts";
 import assistantRoom from "./playwright.assistant-room.config.ts";
 import assistantSettings from "./playwright.assistant-settings.config.ts";
 import generatedFileLinks from "./generated-file-links.playwright.config.ts";
+import inlineVisuals from "./playwright.inline-visuals.config.ts";
+import chatCitations from "./playwright.chat-citations.config.ts";
+import workingProjectSummary from "./working-project-summary.playwright.config.ts";
 
 export const fixtureConfigs = {
+  "tests/browser/playwright.inline-visuals.config.ts": inlineVisuals,
+  "tests/browser/playwright.chat-citations.config.ts": chatCitations,
+  "tests/browser/working-project-summary.playwright.config.ts": workingProjectSummary,
   "tests/browser/attachment-cards.playwright.config.ts": attachmentCards,
   "tests/browser/session-row-layout.playwright.config.ts": sessionRowLayout,
   "tests/browser/generated-file-links.playwright.config.ts": generatedFileLinks,

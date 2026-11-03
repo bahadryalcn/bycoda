@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement } from "react";
+import { act, createElement, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SessionSummary } from "../data/sessionStore";
@@ -13,7 +13,10 @@ let enabled = true;
 let allowed = new Set(["/visible"]);
 let result: ReturnType<typeof useGlobalRecentSessions>;
 function Probe() {
-  result = useGlobalRecentSessions(history, sessions, enabled, allowed);
+  const current = useGlobalRecentSessions(history, sessions, enabled, allowed);
+  useLayoutEffect(() => {
+    result = current;
+  });
   return null;
 }
 const row: SessionSummary = {

@@ -1,5 +1,12 @@
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { Session } from "../../sessions/model/session";
 import { sessionsRef as liveSessions, useSession } from "../../sessions/model/sessionsStore";
 import { Button } from "../../../shared/ui/Button";
@@ -817,9 +824,14 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   }, [settings.turnEndSilence, settings.allowBargeIn, settings.manualTurnEnd]);
   const detectedPresence = useVoicePresence(open, settings.idleSleepMinutes);
   const [lastAdmittedSpeechAt, setLastAdmittedSpeechAt] = useState<number | null>(null);
+  const markAdmittedSpeech = useCallback(() => {
+    setLastAdmittedSpeechAt(Date.now());
+  }, []);
   const lastDeliveredAssistant = useRef("");
   const playbackRef = useRef(playback);
-  playbackRef.current = playback;
+  useLayoutEffect(() => {
+    playbackRef.current = playback;
+  }, [playback]);
   const briefingDeliveries = useRef(
     new Map<string, "playing" | "delivered" | "interrupted" | "unknown">(),
   );
@@ -904,13 +916,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     if (briefingDeliveries.current.size > 64)
       briefingDeliveries.current.delete(briefingDeliveries.current.keys().next().value!);
     const invitation = t("Press Talk when you want to answer.");
-    setMessage(`${briefing.text}\n${invitation}`);
     void previewVoice(
       loadVoiceSettings(),
       profile.language,
       profile.name,
       abort.signal,
-      () => {},
+      () => setMessage(`${briefing.text}\n${invitation}`),
       `${briefing.text}\n${invitation}`,
       (active) => {
         if (!abort.signal.aborted) setPlayback(active);
@@ -969,7 +980,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       captureLocalVoiceHistory,
     );
   function rememberTurn(role: "user" | "assistant", text: string, append = false) {
-    if (role === "user") setLastAdmittedSpeechAt(Date.now());
+    if (role === "user") markAdmittedSpeech();
     transcriptStore.current?.record(
       role,
       text,
@@ -1321,7 +1332,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   function interceptSpeech(text: string) {
     if (!voiceDisclosureCurrent()) return true;
     if (shouldWaitForVoice(text)) {
-      setLastAdmittedSpeechAt(Date.now());
+      markAdmittedSpeech();
       if (!pendingChoice.current && !pendingJobs.current) {
         sequence.current++;
         sideRequest.current?.abort();
@@ -1342,7 +1353,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         speaking: playbackRef.current,
       })
     ) {
-      setLastAdmittedSpeechAt(Date.now());
+      markAdmittedSpeech();
       setTranscript(text);
       return true;
     }

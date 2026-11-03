@@ -80,7 +80,12 @@
     {
       "id": "assistant-room",
       "config": "tests/browser/playwright.assistant-room.config.ts",
-      "files": ["assistant-room.e2e.ts"],
+      "files": [
+        "assistant-room.e2e.ts",
+        "assistant-history.e2e.ts",
+        "assistant-memory.e2e.ts",
+        "assistant-room-dialogs.e2e.ts"
+      ],
       "fixture": {
         "config": "tests/browser/vite.assistant-room.config.ts",
         "mode": "preview",
@@ -90,7 +95,29 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["assistant-room.e2e.ts"]
+          "files": [
+            "assistant-room.e2e.ts",
+            "assistant-history.e2e.ts",
+            "assistant-memory.e2e.ts",
+            "assistant-room-dialogs.e2e.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "working-project-summary",
+      "config": "tests/browser/working-project-summary.playwright.config.ts",
+      "files": ["working-project-summary.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/working-project-summary.vite.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/working-project-summary.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["working-project-summary.spec.ts"]
         }
       ]
     },

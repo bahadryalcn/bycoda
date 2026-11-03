@@ -3529,7 +3529,7 @@ describe("task verification", () => {
   it.each(["runtime failure", "owner stop"])(
     "does not auto-repair a goal review with %s",
     async (failure) => {
-      const { tasks, reviewing, task, turns, finish, settled, advance } = await setup();
+      const { tasks, reviewing, task, turns, settled, advance } = await setup();
       const original = await reviewing({ goalId: "goal" });
       if (failure === "owner stop") {
         await tasks.move("main", "blocked");
@@ -3629,7 +3629,7 @@ describe("task verification", () => {
     const { tasks, store, reviewing, legacyFailedReview, task } = await setup();
     await reviewing();
     await legacyFailedReview("file.ts:42 skips Friday.\nVERDICT: FAIL - Friday is missing.");
-    const { reviewNotes, ...legacy } = await task();
+    const { reviewNotes: _reviewNotes, ...legacy } = await task();
     await store.db
       .prepare("UPDATE tasks SET value=? WHERE id=?")
       .run(JSON.stringify(legacy), "main");
