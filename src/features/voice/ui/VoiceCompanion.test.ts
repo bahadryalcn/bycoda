@@ -139,6 +139,7 @@ const mock = vi.hoisted(() => ({
   localConstructed: vi.fn(),
   finishTurn: vi.fn(),
   configureConversation: vi.fn(),
+  mute: vi.fn(),
   assistant: vi.fn(async (_request: VoiceAssistantInput) => ({
     action: "reply",
     reply: "Done reading.",
@@ -165,7 +166,7 @@ vi.mock("../model/realtimeVoice", () => ({
     close = mock.close;
     speak = mock.speak;
     addImage = mock.image;
-    mute() {}
+    mute = mock.mute;
     silence() {}
     configureConversation = mock.configureConversation;
     finishTurn = mock.finishTurn;
@@ -190,7 +191,7 @@ vi.mock("../model/localVoice", () => ({
     connect = mock.connect;
     close = mock.close;
     speak = mock.speak;
-    mute() {}
+    mute = mock.mute;
     silence() {}
     configureConversation = mock.configureConversation;
     finishTurn = mock.finishTurn;
@@ -365,6 +366,14 @@ async function click(label: string) {
     container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click(),
   );
 }
+async function chooseManualEnding() {
+  await click("Automatic replies");
+  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(
+    (button) => button.textContent === "Wait until I finish",
+  )!;
+  expect(option).toBeDefined();
+  await act(async () => option.click());
+}
 /** Floating is an item of the voice options menu. */
 async function floatOut() {
   await click("Voice options");
@@ -388,11 +397,7 @@ async function speech(text: string, binding?: any) {
 }
 it("lets the owner select manual ending live without submitting or reconnecting", async () => {
   const { onSubmit } = await setup();
-  const choose = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Wait until I finish",
-  )!;
-  expect(choose).toBeDefined();
-  await act(async () => choose.click());
+  await chooseManualEnding();
   expect(JSON.parse(localStorage.getItem("bycoda.voice")!)).toMatchObject({
     manualTurnEnd: true,
     manualTurnEndRevision: 1,
@@ -426,12 +431,8 @@ it("keeps the automatic runtime reachable if saving the owner turn choice fails"
   const storage = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
     throw new Error("quota");
   });
-  const choose = () =>
-    [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Wait until I finish",
-    )!;
   try {
-    await act(async () => choose().click());
+    await chooseManualEnding();
     expect(container.textContent).toContain(
       "Turn ending preference could not be saved. Try again.",
     );
@@ -440,7 +441,7 @@ it("keeps the automatic runtime reachable if saving the owner turn choice fails"
   } finally {
     storage.mockRestore();
   }
-  await act(async () => choose().click());
+  await chooseManualEnding();
   expect(container.textContent).not.toContain(
     "Turn ending preference could not be saved. Try again.",
   );
@@ -918,6 +919,25 @@ it("keeps voice running through compact mode, live appearance updates and expans
   expect(mock.close).not.toHaveBeenCalled();
   expect(onStop).not.toHaveBeenCalled();
 });
+it("retires the expanded turn menu on collapse and keeps the real mode selected after expansion", async () => {
+  await setup();
+  await click("Automatic replies");
+  expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  await click("Compact voice companion");
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  expect(container.querySelectorAll('[data-split-part="menu"]')).toHaveLength(1);
+  await click("Automatic replies");
+  let options = [...document.querySelectorAll('[role="menuitemradio"]')];
+  expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
+  await click("Expand voice companion");
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  await click("Automatic replies");
+  options = [...document.querySelectorAll('[role="menuitemradio"]')];
+  expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
+  expect(mock.finishTurn).not.toHaveBeenCalled();
+  expect(mock.connect).toHaveBeenCalledOnce();
+  expect(mock.close).not.toHaveBeenCalled();
+});
 it("compact mode shows the latest spoken line beside a borderless orb", async () => {
   mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Tests are passing." });
   await setup();
@@ -965,7 +985,14 @@ it("keeps the panel in the app when the floating window cannot open", async () =
     await setup();
     await floatOut();
     expect(container.querySelector("section")).not.toBeNull();
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Window creation failed");
+    const feedback = container.querySelector<HTMLDetailsElement>('details[role="alert"]')!;
+    expect(feedback.open).toBe(false);
+    expect(feedback.querySelector("summary")?.textContent).toBe("Voice needs attention");
+    await act(() => {
+      feedback.querySelector("summary")!.click();
+    });
+    expect(feedback.open).toBe(true);
+    expect(feedback.querySelector("p")?.textContent).toBe("Window creation failed");
     expect(mock.close).not.toHaveBeenCalled();
   } finally {
     overlay.native = false;
@@ -1061,8 +1088,10 @@ it("ends a live connection when the conversation changes and keeps the panel ope
 async function setupGlobal(
   activeId: string | null = "a",
   mode: "local" | "openai" | "grok" = "openai",
+  savedScope: "global" | "project" | null = "global",
 ) {
-  localStorage.setItem("bycoda.voice.scope", "global");
+  if (savedScope) localStorage.setItem("bycoda.voice.scope", savedScope);
+  else localStorage.removeItem("bycoda.voice.scope");
   localStorage.setItem("bycoda.voice", JSON.stringify({ enabled: true, mode }));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
@@ -1086,6 +1115,7 @@ async function setupGlobal(
     selected: string | undefined,
     nextSessions = sessions,
     projectPath = "/a",
+    assistantId = "assistant-config",
   ) =>
     act(async () =>
       root.render(
@@ -1098,7 +1128,7 @@ async function setupGlobal(
           projects: [{ path: "/a" }, { path: "/b" }],
           projectPath,
           ensureToolSession,
-          assistantSession: { ...a, id: "assistant-config", busy: false },
+          assistantSession: { ...a, id: assistantId, busy: false },
         }),
       ),
     );
@@ -1111,6 +1141,104 @@ async function setupGlobal(
   });
   return { render, workspace, onSubmit, onStop, ensureToolSession };
 }
+it("offers Global for a fresh workspace and keeps both scope choices discoverable", async () => {
+  await setupGlobal("a", "openai", null);
+  const choices = [...container.querySelectorAll('[role="radio"]')];
+  expect(
+    choices.find((choice) => choice.textContent?.includes("Global"))?.getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(choices.find((choice) => choice.textContent?.includes("Project"))).toBeDefined();
+  expect(localStorage.getItem("bycoda.voice.scope")).toBe("global");
+  expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+  expect(mock.close).not.toHaveBeenCalled();
+});
+it("keeps saved Project local audio through project/config navigation and binds each utterance at onset", async () => {
+  const { render, onSubmit } = await setupGlobal("a", "local", "project");
+  expect(localStorage.getItem("bycoda.voice.scope")).toBe("project");
+  const onset = { ...mock.callbacks.start() };
+  await render("b", [a, b], "/b", "new-project-assistant-config");
+  expect(mock.close).not.toHaveBeenCalled();
+  expect(mock.connect).toHaveBeenCalledOnce();
+  await speech("Finish my Alpha request", onset);
+  const original = mock.assistant.mock.lastCall![0];
+  await original.execute("submit_work", { text: "Alpha work" });
+  expect(onSubmit).toHaveBeenLastCalledWith("a", "Alpha work");
+  await speech("Now read Beta");
+  await mock.assistant.mock.lastCall![0].execute("submit_work", { text: "Beta work" });
+  expect(onSubmit).toHaveBeenLastCalledWith("b", "Beta work");
+  const writes = assistantHost.request.mock.calls
+    .map(([input]) => input)
+    .filter((input) => input.op === "threads.append" && input.role === "user");
+  expect(writes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ threadId: "pa", text: "Finish my Alpha request" }),
+      expect.objectContaining({ threadId: "pb", text: "Now read Beta" }),
+    ]),
+  );
+  expect(mock.close).not.toHaveBeenCalled();
+});
+it("keeps an explicitly pinned Project target while navigating without reconnecting", async () => {
+  const { render, onSubmit } = await setupGlobal("a", "local", "project");
+  await act(() =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Voice session"]')!.click(),
+  );
+  const alpha = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (option) =>
+      option.textContent?.startsWith("Alpha") &&
+      !option.textContent.includes("Follow active session"),
+  )!;
+  await act(() => alpha.click());
+  await render("b", [a, b], "/b", "new-project-assistant-config");
+  await speech("Keep working on pinned Alpha");
+  await mock.assistant.mock.lastCall![0].execute("submit_work", { text: "Pinned Alpha work" });
+  expect(onSubmit).toHaveBeenLastCalledWith("a", "Pinned Alpha work");
+  expect(mock.connect).toHaveBeenCalledOnce();
+  expect(mock.close).not.toHaveBeenCalled();
+});
+it("keeps cloud audio/transcript through project and scope changes without widening its captured turn", async () => {
+  const { render } = await setupGlobal("a", "openai", "project");
+  const accept = mock.realtime.captureTurn();
+  await render("b", [a, b], "/b", "new-project-assistant-config");
+  await act(() => accept());
+  await act(() => mock.realtime.transcript("Original Alpha speech"));
+  const global = [...container.querySelectorAll<HTMLElement>('[role="radio"]')].find((choice) =>
+    choice.textContent?.includes("Global"),
+  )!;
+  await act(() => global.click());
+  expect(mock.close).not.toHaveBeenCalled();
+  expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+  expect(mock.realtimeSecret).toHaveBeenCalledOnce();
+  expect(container.textContent).toContain("Original Alpha speech");
+  expect(await mock.realtime.tool("app_context", {})).toMatchObject({
+    scope: "project",
+    projectPath: "/a",
+    sessionId: "a",
+  });
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("New Beta speech");
+  });
+  expect(await mock.realtime.tool("app_context", {})).toMatchObject({
+    scope: "global",
+    projectPath: "/b",
+    sessionId: "b",
+  });
+  await mock.realtime.tool("app_tool_call", {
+    family: "conversation",
+    action: "files.read",
+    input: { path: "README.md" },
+    requestId: "new-beta-request",
+  });
+  expect(mock.toolCall).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      cwd: "/b",
+      sessionId: "b",
+      threadId: "global",
+      causalContext: expect.objectContaining({ id: expect.any(String) }),
+    }),
+    expect.objectContaining({ requestId: "new-beta-request" }),
+  );
+});
 
 it("starts global cloud voice without an active coding session and exposes workspace discovery", async () => {
   const { workspace, onSubmit } = await setupGlobal(null);
@@ -1463,6 +1591,116 @@ it("cancels a pending reconnect when the owner disconnects", async () => {
   await click("Cancel");
   await act(async () => vi.advanceTimersByTimeAsync(30_000));
   expect(mock.realtimeSecret).toHaveBeenCalledOnce();
+});
+it("recovers unconfirmed provider cleanup with fresh credentials while retaining mute/history and no tool replay", async () => {
+  const { onSubmit } = await setupGlobal("a", "openai", "project");
+  const retired = mock.realtime;
+  await act(() => mock.realtime.transcript("Keep my accepted request"));
+  await click("Pause mic");
+  vi.useFakeTimers();
+  await act(() =>
+    mock.realtime.error("Voice input cleanup was not confirmed. Start voice again.", true, {
+      recoverable: true,
+      code: "input_cleanup_unconfirmed",
+    }),
+  );
+  expect(container.textContent).toContain("Reconnecting...");
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(mock.realtimeSecret).toHaveBeenCalledTimes(2);
+  expect(mock.realtimeConnect).toHaveBeenCalledTimes(2);
+  expect(mock.realtimeConnect.mock.lastCall?.[1]).toContainEqual({
+    role: "user",
+    text: "Keep my accepted request",
+  });
+  expect(mock.mute).toHaveBeenLastCalledWith(true);
+  expect(container.querySelector('[aria-label="Resume"]')?.getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  expect(mock.toolCall).not.toHaveBeenCalled();
+  await act(() => retired.reply("Retired provider reply"));
+  expect(container.textContent).not.toContain("Retired provider reply");
+  await expect(
+    retired.tool("submit_work", { text: "Retired provider work" }),
+  ).resolves.toMatchObject({ error: "The voice connection is no longer active." });
+  expect(onSubmit).not.toHaveBeenCalled();
+});
+it.each(["cancel", "sleep", "privacy", "unmount"])(
+  "cancels cleanup recovery after %s without reopening capture",
+  async (reason) => {
+    const { render } = await setupGlobal("a", "openai", "project");
+    vi.useFakeTimers();
+    await act(() =>
+      mock.realtime.error("Voice input cleanup was not confirmed. Start voice again.", true, {
+        recoverable: true,
+        code: "input_cleanup_unconfirmed",
+      }),
+    );
+    let locked: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      if (reason === "cancel") await click("Cancel");
+      if (reason === "sleep") {
+        presence.value = "away";
+        await render("a");
+        presence.value = "active";
+        await render("a");
+        expect(container.textContent).toContain("Ready. Microphone is off.");
+      }
+      if (reason === "privacy") {
+        locked = vi.spyOn(groupLock, "isProjectLocked").mockImplementation((path) => path === "/a");
+        await render("b", [a, b], "/b");
+      }
+      if (reason === "unmount") {
+        await act(() => root.unmount());
+        root = null as unknown as Root;
+      }
+      await act(async () => vi.advanceTimersByTimeAsync(30_000));
+      expect(mock.realtimeSecret).toHaveBeenCalledOnce();
+      expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+      expect(mock.toolCall).not.toHaveBeenCalled();
+    } finally {
+      locked?.mockRestore();
+    }
+  },
+);
+it("keeps an exact pending job review on cleanup recovery but explicit Disconnect cancels it without creating work", async () => {
+  await setupGlobal();
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Please review an Alpha job");
+  });
+  await act(async () => {
+    void mock.realtime.tool("give_jobs", {
+      jobs: [
+        { title: "Keep original review", request: "Original owner request", projectPath: "/a" },
+      ],
+    });
+  });
+  expect(container.textContent).toContain("Review jobs before starting");
+  const originalCreateCount = assistantHost.request.mock.calls.filter(
+    ([input]) => input.op === "jobs.create",
+  ).length;
+  vi.useFakeTimers();
+  await act(() =>
+    mock.realtime.error("Voice input cleanup was not confirmed. Start voice again.", true, {
+      recoverable: true,
+      code: "input_cleanup_unconfirmed",
+    }),
+  );
+  expect(
+    [...container.querySelectorAll("input")].some(
+      (input) => input.value === "Keep original review",
+    ),
+  ).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(container.textContent).toContain("Review jobs before starting");
+  expect(
+    assistantHost.request.mock.calls.filter(([input]) => input.op === "jobs.create"),
+  ).toHaveLength(originalCreateCount);
+  await click("Disconnect voice");
+  expect(container.textContent).not.toContain("Review jobs before starting");
+  expect(
+    assistantHost.request.mock.calls.filter(([input]) => input.op === "jobs.create"),
+  ).toHaveLength(originalCreateCount);
 });
 
 it("keeps cloud voice connected when local setup paths are saved", async () => {
@@ -2014,6 +2252,9 @@ it("applies only accepted owner availability and requires a fresh explicit nativ
     });
     expect(mock.realtimeConnect).toHaveBeenCalledTimes(before);
     expect(container.textContent).toContain("Current computer presence could not be verified");
+    const presenceHint = container.querySelector('[role="alert"]')!;
+    expect(presenceHint.closest("details")).toBeNull();
+    expect(presenceHint.textContent).toContain("Mark yourself here before talking.");
     presence.native = "active";
     await act(async () => {
       [...container.querySelectorAll("button")]

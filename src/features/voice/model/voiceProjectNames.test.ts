@@ -35,3 +35,34 @@ it("keeps duplicate aliases ambiguous and does not import a hidden label or anot
   });
   expect(voiceProjectNames([{ path: second, name: "Host display" }])[0].path).toBe(second);
 });
+
+it("normalizes spoken Turkish names and returns partial candidates without choosing a project", () => {
+  const projects = voiceProjectNames([
+    { path: "/portal", name: "FİRİSBE Portal" },
+    { path: "/admin", name: "Firisbe Admin" },
+    { path: "/other", name: "Unrelated" },
+  ]);
+  expect(resolveVoiceProjects(projects, "firisbe   portal")).toMatchObject({
+    match: "exact",
+    requiresConfirmation: false,
+    projects: [{ path: "/portal" }],
+  });
+  expect(resolveVoiceProjects(projects, "firisbe")).toMatchObject({
+    match: "partial",
+    requiresConfirmation: true,
+    ambiguous: true,
+    total: 2,
+  });
+  expect(resolveVoiceProjects(projects, "İSBE Portal")).toMatchObject({
+    match: "partial",
+    requiresConfirmation: true,
+    ambiguous: false,
+    projects: [{ path: "/portal" }],
+  });
+  expect(resolveVoiceProjects(projects, "f").projects).toEqual([]);
+  expect(resolveVoiceProjects(projects, "/admin")).toMatchObject({
+    match: "exact",
+    projects: [{ path: "/admin" }],
+    requiresConfirmation: false,
+  });
+});

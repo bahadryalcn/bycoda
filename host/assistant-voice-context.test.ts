@@ -27,6 +27,105 @@ const drafts = [
     options: [{ label: "First result" }, { label: "Second result" }],
   },
 ];
+it.each(["desktop.status", "desktop.snapshot", "browser.open"])(
+  "authenticates %s operation identity without certifying its content as project history",
+  async (action) => {
+    const f = await fixture(),
+      owner = await f.user(),
+      context = await f.open(owner.id),
+      ticket = await f.service.beginVoiceToolDisclosure({
+        contextId: context.id,
+        requestId: `actual-${action}`,
+      });
+    const proof = await f.service.finishVoiceToolDisclosure(ticket.id, {
+      threadId: f.thread.id,
+      projectId: f.project.id,
+      family: "conversation",
+      action,
+      result: { state: "unknown", text: "Unattributed desktop content" },
+    });
+    expect(proof.voiceDisclosure).toEqual({
+      id: ticket.id,
+      contextId: context.id,
+      requestId: `actual-${action}`,
+      verified: false,
+      source: {
+        environmentId: context.environmentId,
+        threadId: f.thread.id,
+        projectId: f.project.id,
+        family: "conversation",
+        action,
+      },
+    });
+    expect(proof.voiceContext.status).toBe("unknown");
+    expect(proof.voiceContext.projectIds).toBeUndefined();
+    expect((await f.speech(proof.voiceContext)).projectIds).toBeUndefined();
+    await expect(f.present(proof.voiceContext, owner.id)).rejects.toThrow();
+    await f.restart();
+    expect((await f.owner({ op: "voice.context.get", id: context.id })).voiceContext?.status).toBe(
+      "unknown",
+    );
+    await expect(
+      f.service.beginVoiceToolDisclosure({ contextId: context.id, requestId: `actual-${action}` }),
+    ).rejects.toThrow("instead of replaying");
+  },
+);
+it("keeps legacy verified content wire unchanged and refuses to launder failed canonical provenance through operation metadata", async () => {
+  const f = await fixture(),
+    owner = await f.user(),
+    context = await f.open(owner.id),
+    known = await f.service.beginVoiceToolDisclosure({
+      contextId: context.id,
+      requestId: "known-note",
+    }),
+    proof = await f.service.finishVoiceToolDisclosure(known.id, {
+      threadId: f.thread.id,
+      projectId: f.project.id,
+      family: "conversation",
+      action: "notes.read",
+      result: { title: "Real note", body: "Canonical content" },
+    });
+  expect(proof.voiceDisclosure.verified).toBe(true);
+  expect(proof.voiceDisclosure).not.toHaveProperty("source");
+  const malformed = await f.service.beginVoiceToolDisclosure({
+      contextId: context.id,
+      requestId: "malformed-tasks",
+    }),
+    missing = await f.service.finishVoiceToolDisclosure(malformed.id, {
+      threadId: f.thread.id,
+      projectId: f.project.id,
+      family: "conversation",
+      action: "tasks.get",
+      result: { id: "missing-task", projectId: "forged" },
+    });
+  expect(missing.voiceDisclosure).toMatchObject({ verified: false });
+  expect(missing.voiceDisclosure).not.toHaveProperty("source");
+});
+it("does not attest an unscoped operation with a foreign thread, missing project or foreign session", async () => {
+  const f = await fixture(),
+    owner = await f.user(),
+    context = await f.open(owner.id),
+    foreign = (await f.owner({ op: "threads.open", projectId: f.other.id })).thread!;
+  for (const [index, source] of [
+    { threadId: foreign.id, projectId: f.project.id },
+    { threadId: f.thread.id, projectId: "missing-project" },
+    { threadId: f.thread.id, projectId: f.project.id, sessionId: "unknown-session" },
+  ].entries()) {
+    const ticket = await f.service.beginVoiceToolDisclosure({
+      contextId: context.id,
+      requestId: `invalid-source-${index}`,
+    });
+    await expect(
+      f.service.finishVoiceToolDisclosure(ticket.id, {
+        ...source,
+        family: "conversation",
+        action: "desktop.status",
+        result: { state: "ready" },
+      }),
+    ).rejects.toThrow();
+    await f.service.failVoiceToolDisclosure(ticket.id);
+  }
+});
 it("retains only actual captured action metadata across restart and old immutable speech versions, then hides it when a source is cleared", async () => {
   const f = await fixture(),
     owner = await f.user(),

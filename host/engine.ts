@@ -6,6 +6,7 @@ import {
 import { hostQuestionToken } from "./question-source";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SessionMessageAuthor } from "../src/features/sessions/model/session";
+import { executionUserIndex } from "../src/features/sessions/model/executionTurn";
 import { HostRunWriters } from "./run-writers";
 import type { HostRunHandle } from "../src/integrations/harness/core/hostRun";
 import { HostAuthorityFenceError } from "./storage/authority-fence";
@@ -2877,6 +2878,7 @@ export class HostEngine {
                 if (!active || active.cancelled || active.ending)
                   throw new Error("This turn was stopped");
                 const attachments = resolveAttachments(this.store, command.attachments ?? []);
+                const owner = value.session.blocks[executionUserIndex(value.session.blocks)];
                 value = {
                   ...value,
                   session: {
@@ -2886,6 +2888,7 @@ export class HostEngine {
                       {
                         id: command.commandId,
                         role: "user",
+                        ...(owner ? { continuationOf: owner.id } : {}),
                         ...(this.messageAuthors.getStore()
                           ? { author: this.messageAuthors.getStore() }
                           : {}),

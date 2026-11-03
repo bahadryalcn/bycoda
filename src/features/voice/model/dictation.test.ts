@@ -75,7 +75,8 @@ it("starts recognition only and inserts phrases in spoken order with the app lan
   pause();
   speak();
   pause();
-  expect(backend.transcribe).toHaveBeenCalledTimes(2);
+  // Both phrases are recognized concurrently; the first still arrives first.
+  await vi.waitFor(() => expect(backend.transcribe).toHaveBeenCalledTimes(2));
   expect(backend.transcribe).toHaveBeenCalledWith("dictation", expect.any(String), "tr");
   finishFirst({ text: " Merhaba dünya ", language: "tr", inferenceMs: 120 });
   await vi.waitFor(() => expect(events.text).toHaveBeenCalledTimes(2));
@@ -102,7 +103,66 @@ it("reports a start failure and leaves nothing running", async () => {
   await new Dictation(events, "tr").start();
   expect(events.error).toHaveBeenCalledWith("Voice setup is incomplete: Whisper model.");
   expect(events.state).toHaveBeenLastCalledWith("idle");
+  expect(events.error).toHaveBeenCalledOnce();
   expect(backend.release).not.toHaveBeenCalled();
+  // The microphone opened alongside the recognizer is closed again.
+  expect(track.stop).toHaveBeenCalled();
+});
+
+it("listens while the recognizer loads and recognizes buffered phrases once it is ready", async () => {
+  const events = setup();
+  let ready!: (value: { lease: string; model: string; device: string }) => void;
+  backend.start.mockImplementationOnce(() => new Promise((resolve) => (ready = resolve)));
+  backend.transcribe
+    .mockResolvedValueOnce({ text: "bir", language: "tr", inferenceMs: 90 })
+    .mockResolvedValueOnce({ text: "iki", language: "tr", inferenceMs: 90 })
+    .mockResolvedValueOnce({ text: "üç", language: "tr", inferenceMs: 90 });
+  const dictation = new Dictation(events, "tr");
+  await dictation.start();
+  expect(events.state).toHaveBeenLastCalledWith("listening");
+  for (let i = 0; i < 3; i++) {
+    speak();
+    pause();
+  }
+  await Promise.resolve();
+  expect(backend.transcribe).not.toHaveBeenCalled();
+  ready({ lease: "dictation", model: "large-v3-turbo", device: "cuda" });
+  await vi.waitFor(() => expect(events.text).toHaveBeenCalledTimes(3));
+  expect(events.text.mock.calls).toEqual([["bir"], ["iki"], ["üç"]]);
+  expect(events.error).not.toHaveBeenCalled();
+});
+
+it("keeps at most two recognitions in flight", async () => {
+  const events = setup();
+  const finish: ((value: unknown) => void)[] = [];
+  backend.transcribe.mockImplementation(() => new Promise((resolve) => finish.push(resolve)));
+  const dictation = new Dictation(events, "tr");
+  await dictation.start();
+  for (let i = 0; i < 3; i++) {
+    speak();
+    pause();
+  }
+  await vi.waitFor(() => expect(backend.transcribe).toHaveBeenCalledTimes(2));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(backend.transcribe).toHaveBeenCalledTimes(2);
+  finish[0]({ text: "bir", language: "tr", inferenceMs: 1 });
+  await vi.waitFor(() => expect(backend.transcribe).toHaveBeenCalledTimes(3));
+  backend.transcribe.mockReset();
+  dictation.cancel();
+});
+
+it("releases a lease that arrives after dictation was cancelled while loading", async () => {
+  const events = setup();
+  let ready!: (value: { lease: string; model: string; device: string }) => void;
+  backend.start.mockImplementationOnce(() => new Promise((resolve) => (ready = resolve)));
+  const dictation = new Dictation(events, "tr");
+  await dictation.start();
+  dictation.cancel();
+  expect(track.stop).toHaveBeenCalled();
+  ready({ lease: "late", model: "small", device: "cpu" });
+  await vi.waitFor(() => expect(backend.release).toHaveBeenCalledWith("late"));
+  expect(events.error).not.toHaveBeenCalled();
+  expect(events.state).toHaveBeenLastCalledWith("idle");
 });
 
 it("reports real microphone level, silence and zero on stop without accepting stale audio", async () => {

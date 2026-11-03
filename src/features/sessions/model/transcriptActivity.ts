@@ -69,7 +69,12 @@ export function toolCallState(block: Block): ToolCallState {
   if (isFailedStatus(status)) return "rejected";
   if (needsApproval(block)) return "pending";
   // Settled, and not red: what it did before the stop stays readable.
-  if (status === "completed" || status === "success" || status === "stopped") {
+  if (
+    status === "completed" ||
+    status === "success" ||
+    status === "stopped" ||
+    status === "interrupted"
+  ) {
     return "accepted";
   }
   if (block.streaming || status === "in_progress" || status === "pending" || status === "running") {
@@ -682,6 +687,7 @@ export function subagentReport(block: Block): string | undefined {
  */
 export function subagentStatusLine(block: Block, steps: AgentStep[]): string {
   if (toolCallState(block) === "rejected") return "failed";
+  if (block.tool?.status?.toLowerCase() === "interrupted") return "interrupted";
   const tools = steps.filter((step) => step.kind === "tool").length;
   if (isStoppedBlock(block)) {
     return tools === 0

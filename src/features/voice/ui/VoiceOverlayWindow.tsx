@@ -43,7 +43,19 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   useLocale();
   const settings = useVoiceSettings();
   const [state, setState] = useState<VoiceOverlayState | null>(null);
-  const compact = settings.compact && !state?.choice && !state?.jobReview;
+  const [menuError, setMenuError] = useState("");
+  const compact = settings.compact && !state?.choice && !state?.jobReview && !menuError;
+  function menuFailed() {
+    setMenuError(t("The turn mode menu could not be opened. Try again."));
+  }
+  function changeTurnMode(manual: boolean) {
+    setMenuError("");
+    send(manual ? "manualTurnEnd" : "automaticTurnEnd");
+  }
+  const actionableError =
+    state?.error === t("Conversation was not saved. Retry.") ||
+    state?.error ===
+      t("Current computer presence could not be verified. Mark yourself here before talking.");
   const level = useRef(0);
   const root = useRef<HTMLElement>(null);
 
@@ -176,9 +188,11 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         {compact && status === "live" && (
           <VoiceTurnControl
             compact
+            menuSurface="native"
+            onMenuError={menuFailed}
             manual={state?.manualTurnEnd === true}
             muted={muted}
-            onManualChange={(manual) => send(manual ? "manualTurnEnd" : "automaticTurnEnd")}
+            onManualChange={changeTurnMode}
             onFinish={() => send("finishTurn")}
           />
         )}
@@ -214,80 +228,98 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         </Button>
       </header>
       <div role="status" className={compact ? styles.srOnly : styles.status}>
-        {state?.error || statusText}
+        {compact && state?.error ? t("Voice needs attention") : statusText}
         {state?.working ? ` | ${t("Agent working")}` : ""}
       </div>
       {!compact && (
-        <div className={styles.body}>
-          {state?.choice ? (
-            <VoiceChoiceCard
-              choice={state.choice}
-              onRetry={() => {
-                void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
-                  id: state.choice!.id,
-                  action: "retry",
-                }).catch(() => undefined);
-              }}
-              onReply={(reply) => {
-                void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
-                  id: state.choice!.id,
-                  reply,
-                }).catch(() => undefined);
-              }}
-            />
-          ) : null}
-          {state?.jobReview ? (
-            <VoiceJobReview
-              key={state.jobReview.id}
-              review={state.jobReview}
-              onChange={(rows) => {
-                void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-                  id: state.jobReview!.id,
-                  action: "change",
-                  rows,
-                }).catch(() => undefined);
-              }}
-              onStart={(rows) => {
-                void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-                  id: state.jobReview!.id,
-                  action: "start",
-                  rows,
-                }).catch(() => undefined);
-              }}
-              onCancel={() => {
-                void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
-                  id: state.jobReview!.id,
-                  action: "cancel",
-                }).catch(() => undefined);
-              }}
-            />
-          ) : null}
+        <>
+          <div className={styles.body}>
+            {menuError && (
+              <div role="alert" className={styles.feedback}>
+                <p>{menuError}</p>
+                <Button onClick={() => setMenuError("")}>{t("Dismiss")}</Button>
+              </div>
+            )}
+            {state?.choice ? (
+              <VoiceChoiceCard
+                choice={state.choice}
+                onRetry={() => {
+                  void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
+                    id: state.choice!.id,
+                    action: "retry",
+                  }).catch(() => undefined);
+                }}
+                onReply={(reply) => {
+                  void emitTo(owner, VOICE_OVERLAY_CHOICE_EVENT, {
+                    id: state.choice!.id,
+                    reply,
+                  }).catch(() => undefined);
+                }}
+              />
+            ) : null}
+            {state?.jobReview ? (
+              <VoiceJobReview
+                key={state.jobReview.id}
+                review={state.jobReview}
+                onChange={(rows) => {
+                  void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
+                    id: state.jobReview!.id,
+                    action: "change",
+                    rows,
+                  }).catch(() => undefined);
+                }}
+                onStart={(rows) => {
+                  void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
+                    id: state.jobReview!.id,
+                    action: "start",
+                    rows,
+                  }).catch(() => undefined);
+                }}
+                onCancel={() => {
+                  void emitTo(owner, VOICE_OVERLAY_JOB_EVENT, {
+                    id: state.jobReview!.id,
+                    action: "cancel",
+                  }).catch(() => undefined);
+                }}
+              />
+            ) : null}
 
-          {status === "idle" && state?.privacy && <p className={styles.caption}>{state.privacy}</p>}
-          {state?.transcript && (
-            <div className={styles.turn}>
-              <span className={styles.caption}>{t("You")}</span>
-              <p className={styles.message}>{state.transcript}</p>
-            </div>
-          )}
-          {state?.message && (
-            <div className={styles.turn} aria-live="polite">
-              <span className={styles.caption}>{t("Reply")}</span>
-              <p className={styles.message}>{state.message}</p>
-            </div>
-          )}
-          {state?.error && <InlineError className={styles.error}>{state.error}</InlineError>}
-          {state?.notice && (
-            <p role="status" className={styles.caption}>
-              {state.notice}
-            </p>
-          )}
+            {status === "idle" && state?.privacy && (
+              <p className={styles.caption}>{state.privacy}</p>
+            )}
+            {state?.transcript && (
+              <div className={`${styles.turn} ${styles.heard}`} role="group" aria-label={t("You")}>
+                <p className={styles.message}>{state.transcript}</p>
+              </div>
+            )}
+            {state?.message && (
+              <div className={styles.turn} role="group" aria-live="polite" aria-label={t("Reply")}>
+                <p className={styles.message}>{state.message}</p>
+              </div>
+            )}
+            {state?.error &&
+              (actionableError ? (
+                <InlineError className={styles.caption}>{state.error}</InlineError>
+              ) : (
+                <details role="alert" className={styles.feedback}>
+                  <summary aria-label={t("Error details")}>{t("Voice needs attention")}</summary>
+                  <p>{state.error}</p>
+                </details>
+              ))}
+            {state?.notice && (
+              <p role="status" className={styles.caption}>
+                {state.notice}
+              </p>
+            )}
+          </div>
           <div className={styles.actions}>
             {status === "live" && (
               <VoiceTurnControl
+                menuSurface="native"
+                onMenuError={menuFailed}
                 manual={state?.manualTurnEnd === true}
                 muted={muted}
-                onManualChange={(manual) => send(manual ? "manualTurnEnd" : "automaticTurnEnd")}
+                onManualChange={changeTurnMode}
                 onFinish={() => send("finishTurn")}
               />
             )}
@@ -308,25 +340,26 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 )}
               </>
             ) : status === "connecting" || status === "reconnecting" ? (
-              <>
-                <Button loading disabled>
-                  {statusText}
-                </Button>
-                <Button iconOnly label={t("Cancel")} onClick={() => send("disconnect")}>
-                  <X className="icon-sm" />
-                </Button>
-              </>
+              <Button
+                label={t("Cancel")}
+                startIcon={<X className="icon-sm" />}
+                onClick={() => send("disconnect")}
+              >
+                {t("Cancel")}
+              </Button>
             ) : (
               <>
                 <Button
+                  iconOnly
+                  label={t(muted ? "Resume" : "Pause mic")}
+                  tooltip={t(muted ? "Resume" : "Pause mic")}
                   variant={muted ? "secondary" : "primary"}
                   tone={muted ? "danger" : undefined}
                   selected={muted}
                   aria-pressed={muted}
-                  startIcon={muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
                   onClick={() => send("toggleMute")}
                 >
-                  {t(muted ? "Resume" : "Pause mic")}
+                  {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
                 </Button>
                 <Button iconOnly label={t("Silence")} onClick={() => send("silence")}>
                   <VolumeX className="icon-sm" />
@@ -337,7 +370,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               </>
             )}
           </div>
-        </div>
+        </>
       )}
     </main>
   );

@@ -24,6 +24,9 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Parent reply completion does not prove delegated work finished. Keep the original
+  execution and child tracking alive until real terminal evidence arrives; follow-up
+  and Stop must still target that execution while the parent is idle.
 - Installed catalog, machine enable policy, invocation visibility, account entitlement and selected session model are different facts. Remote models.list/capabilities remain authoritative for remote sessions.
 - Retain bundled/useful old catalog data on discovery failure with truthful source/freshness/error; hidden providers and owner restrictions cannot be bypassed by toggles.
 - Model preference defaults/inheritance and explicit reset keep their storage keys and error recovery. The last enabled model remains on; all-off lookup falls back to the catalog. Changing this policy requires all consumers updated together.

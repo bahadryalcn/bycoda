@@ -237,6 +237,241 @@ it.each(["xai", "openai"] as const)(
   },
 );
 
+it.each(["xai", "openai"] as const)(
+  "%s gives an actually sent delete its full cleanup ACK lifetime",
+  async (provider) => {
+    vi.useFakeTimers();
+    try {
+      const events = callbacks(),
+        voice = await connectedWithFakeTimers(events, provider),
+        socket = sockets[0];
+      const inserted = new Set<string>();
+      socket.send.mockImplementation((raw: string) => {
+        const event = JSON.parse(raw);
+        if (event.type !== "conversation.item.delete") return;
+        expect(inserted.has(event.item_id)).toBe(true);
+        setTimeout(() => {
+          inserted.delete(event.item_id);
+          socket.emit({ type: "conversation.item.deleted", item_id: event.item_id });
+        }, 200);
+      });
+      candidateInput(socket, "delayed-insertion", false);
+      // No transcript: the ASR deadline moves this acknowledged commit into cleanup.
+      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.advanceTimersByTimeAsync(14_900);
+      expect(socket.sent().filter((event) => event.type === "conversation.item.delete")).toEqual(
+        [],
+      );
+      inserted.add("delayed-insertion");
+      socket.emit({
+        type: provider === "xai" ? "conversation.item.added" : "conversation.item.created",
+        item: { id: "delayed-insertion", type: "message", role: "user" },
+      });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(events.error).not.toHaveBeenCalled();
+      expect(socket.close).not.toHaveBeenCalled();
+      expect(inserted.size).toBe(0);
+      acceptInput(socket, "Keep my complete request", "next-accepted");
+      expect(events.transcript).toHaveBeenCalledExactlyOnceWith("Keep my complete request");
+      expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(1);
+      expect(events.tool).not.toHaveBeenCalled();
+      voice.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it.each(["xai", "openai"] as const)(
+  "%s cleans an empty final ASR item without requiring a separate added notification",
+  async (provider) => {
+    vi.useFakeTimers();
+    try {
+      const events = callbacks(),
+        voice = await connectedWithFakeTimers(events, provider),
+        socket = sockets[0];
+      const history = new Set(["empty-asr"]);
+      socket.send.mockImplementation((raw: string) => {
+        const event = JSON.parse(raw);
+        if (event.type !== "conversation.item.delete") return;
+        expect(history.delete(event.item_id)).toBe(true);
+        queueMicrotask(() =>
+          socket.emit({ type: "conversation.item.deleted", item_id: event.item_id }),
+        );
+      });
+      candidateInput(socket, "empty-asr", false);
+      socket.emit({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "empty-asr",
+        transcript: "",
+      });
+      expect(socket.sent().filter((event) => event.type === "conversation.item.delete")).toEqual([
+        { type: "conversation.item.delete", item_id: "empty-asr" },
+      ]);
+      expect(socket.sent().some((event) => event.type === "response.create")).toBe(false);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(events.error).not.toHaveBeenCalled();
+      acceptInput(socket, "Continue the complete request", "real-words");
+      expect(events.transcript).toHaveBeenCalledExactlyOnceWith("Continue the complete request");
+      expect(events.tool).not.toHaveBeenCalled();
+      voice.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it.each(["xai", "openai"] as const)(
+  "%s preserves a late genuine transcript before any deletion was sent",
+  async (provider) => {
+    vi.useFakeTimers();
+    try {
+      const activate = vi.fn(),
+        events = { ...callbacks(), captureTurn: () => activate };
+      const voice = await connectedWithFakeTimers(events, provider),
+        socket = sockets[0];
+      socket.send.mockImplementation(() => {});
+      candidateInput(socket, "late-words", false);
+      await vi.advanceTimersByTimeAsync(20_000);
+      socket.emit({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "late-words",
+        transcript: "Keep every part of my original request",
+      });
+      expect(activate).toHaveBeenCalledOnce();
+      expect(events.transcript).toHaveBeenCalledExactlyOnceWith(
+        "Keep every part of my original request",
+      );
+      expect(events.turnStart).toHaveBeenCalledExactlyOnceWith(
+        "Keep every part of my original request",
+      );
+      expect(socket.sent().some((event) => event.type === "conversation.item.delete")).toBe(false);
+      expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(events.error).not.toHaveBeenCalled();
+      expect(events.tool).not.toHaveBeenCalled();
+      voice.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it.each(["xai", "openai"] as const)(
+  "%s does not treat a cleared buffer or a foreign ASR item as deletion proof",
+  async (provider) => {
+    vi.useFakeTimers();
+    try {
+      const events = callbacks(),
+        voice = await connectedWithFakeTimers(events, provider),
+        socket = sockets[0];
+      socket.send.mockImplementation(() => {});
+      candidateInput(socket, "unknown-history", false);
+      socket.emit({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "foreign",
+        transcript: "Unrelated words",
+      });
+      socket.emit({ type: "input_audio_buffer.cleared" });
+      await vi.advanceTimersByTimeAsync(15_001);
+      voice.speak("Pending application status");
+      candidateAudio();
+      expect(
+        socket
+          .sent()
+          .some(
+            (event) =>
+              event.type === "conversation.item.delete" || event.type === "response.create",
+          ),
+      ).toBe(false);
+      expect(
+        socket.sent().filter((event) => event.type === "input_audio_buffer.commit"),
+      ).toHaveLength(1);
+      events.error.mockImplementation(() => {
+        expect(socket.close).toHaveBeenCalledOnce();
+        expect(track.stop).toHaveBeenCalledOnce();
+      });
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(events.error).toHaveBeenCalledExactlyOnceWith(
+        "Voice input cleanup was not confirmed. Start voice again.",
+        true,
+        { recoverable: true, code: "input_cleanup_unconfirmed" },
+      );
+      socket.emit({ type: "conversation.item.added", item: { id: "unknown-history" } });
+      socket.emit({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "unknown-history",
+        transcript: "Stale closed-socket words",
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(events.transcript).not.toHaveBeenCalled();
+      expect(events.tool).not.toHaveBeenCalled();
+      expect(sockets).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it.each(["xai", "openai"] as const)(
+  "%s retains known pending-item insertion across unrelated conversation history",
+  async (provider) => {
+    vi.useFakeTimers();
+    try {
+      const events = callbacks(),
+        voice = await connectedWithFakeTimers(events, provider),
+        socket = sockets[0];
+      candidateInput(socket, "pending-noise");
+      for (let index = 0; index < 70; index++)
+        socket.emit({
+          type: "conversation.item.added",
+          item: { id: `unrelated-${index}`, role: "assistant" },
+        });
+      await vi.advanceTimersByTimeAsync(15_001);
+      expect(socket.sent().filter((event) => event.type === "conversation.item.delete")).toEqual([
+        { type: "conversation.item.delete", item_id: "pending-noise" },
+      ]);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(events.error).not.toHaveBeenCalled();
+      expect(events.transcript).not.toHaveBeenCalled();
+      voice.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it.each(["xai", "openai"] as const)(
+  "%s never restores a timed-out utterance across an owner mute epoch",
+  async (provider) => {
+    vi.useFakeTimers();
+    try {
+      const events = callbacks(),
+        voice = await connectedWithFakeTimers(events, provider),
+        socket = sockets[0];
+      candidateInput(socket, "old-epoch", false);
+      await vi.advanceTimersByTimeAsync(20_000);
+      voice.mute(true);
+      voice.mute(false);
+      socket.emit({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "old-epoch",
+        transcript: "Cancelled words",
+      });
+      expect(events.transcript).not.toHaveBeenCalled();
+      expect(events.turnStart).not.toHaveBeenCalled();
+      expect(socket.sent().some((event) => event.type === "response.create")).toBe(false);
+      acceptInput(socket, "Current owner request", "current-epoch");
+      expect(events.transcript).toHaveBeenCalledExactlyOnceWith("Current owner request");
+      expect(events.error).not.toHaveBeenCalled();
+      voice.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
 it.each([
   ["xai", "expire"],
   ["xai", "close"],
@@ -264,7 +499,7 @@ it.each([
         expect(events.error).toHaveBeenCalledExactlyOnceWith(
           "Voice input cleanup was not confirmed. Start voice again.",
           true,
-          { recoverable: false, code: "input_cleanup_unconfirmed" },
+          { recoverable: true, code: "input_cleanup_unconfirmed" },
         );
       else expect(events.error).not.toHaveBeenCalled();
       expect(socket.close).toHaveBeenCalledOnce();

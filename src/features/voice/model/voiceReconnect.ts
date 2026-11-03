@@ -4,7 +4,9 @@ export const VOICE_ROTATION_MS = 55 * 60_000;
 
 export type VoiceFailure = { recoverable: boolean; code?: string };
 
-/** Authentication, billing and capture permission failures require owner action. */
+/** Authentication, billing and capture permission failures require owner action.
+ * A cleanup delivery timeout is transient only after the runtime closes its
+ * uncertain provider session; recovery must use a fresh session, never replay it. */
 export function classifyVoiceFailure(error: unknown, code?: string): VoiceFailure {
   const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
   const fatal =

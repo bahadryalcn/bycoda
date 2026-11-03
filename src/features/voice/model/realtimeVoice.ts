@@ -335,7 +335,16 @@ export class RealtimeVoice {
   private closed = false;
   private ready = false;
   private createdItems = new Set<string>();
-  private discardedInput?: { id: string; sent: boolean; timer: ReturnType<typeof setTimeout> };
+  private discardedInput?: {
+    id: string;
+    sent: boolean;
+    timer: ReturnType<typeof setTimeout>;
+    awaitingTranscript?: {
+      epoch: number;
+      activate?: () => void;
+      timer: ReturnType<typeof setTimeout>;
+    };
+  };
   private muted = false;
   private suppressed = new Set<string>();
   private responseId?: string;
@@ -699,9 +708,7 @@ export class RealtimeVoice {
       case "conversation.item.added": {
         const id = (event.item as { id?: unknown } | undefined)?.id ?? event.item_id;
         if (typeof id !== "string" || !id) return;
-        this.createdItems.add(id);
-        if (this.createdItems.size > 64)
-          this.createdItems.delete(this.createdItems.values().next().value!);
+        this.rememberCreatedItem(id);
         this.deleteDiscardedInput();
         break;
       }
@@ -821,6 +828,16 @@ export class RealtimeVoice {
     return typeof id === "string" && this.responseTools.has(id) && !this.suppressed.has(id);
   }
 
+  private rememberCreatedItem(id: string) {
+    this.createdItems.add(id);
+    if (this.createdItems.size > 64) {
+      const oldest = [...this.createdItems].find(
+        (item) => item !== this.pendingInput?.itemId && item !== this.discardedInput?.id,
+      );
+      if (oldest) this.createdItems.delete(oldest);
+    }
+  }
+
   private commitCandidate() {
     // One committed candidate may await ASR. An already-created response keeps
     // playing; every NEW response waits for ASR to accept or delete this item.
@@ -830,9 +847,10 @@ export class RealtimeVoice {
     const expire = () => {
       const pending = this.pendingInput;
       if (!pending) return;
-      // A provider that never transcribes a committed item (common for noise)
-      // must not end the conversation; the item is dropped as unconfirmed.
-      if (pending.itemId) return this.rejectPending();
+      // Quarantine untranscribed audio (often noise). A late final transcript
+      // can still be accepted until a delete was actually sent; otherwise only
+      // confirmed deletion or a fresh provider session can release the fence.
+      if (pending.itemId) return this.rejectPending(true);
       // The wait includes the upload: a long utterance on a slow link is still
       // being sent, so wait again while the backlog keeps shrinking.
       const buffered = this.socket?.bufferedAmount ?? 0;
@@ -854,12 +872,12 @@ export class RealtimeVoice {
   }
 
   /** Drops the pending candidate as unconfirmed speech and continues. */
-  private rejectPending() {
+  private rejectPending(awaitingTranscript = false) {
     const pending = this.pendingInput;
     if (!pending) return;
     clearTimeout(pending.timer);
     this.pendingInput = undefined;
-    if (pending.itemId) this.discardInput(pending.itemId);
+    if (pending.itemId) this.discardInput(pending.itemId, awaitingTranscript ? pending : undefined);
     this.commitCandidate();
     this.continueResponse();
     this.flushUpdates();
@@ -867,32 +885,58 @@ export class RealtimeVoice {
 
   /** A commit ACK is not an item-insertion ACK. Never delete an item before
    * insertion, or let a new response consume rejected audio before deletion. */
-  private discardInput(id: string) {
+  private discardInput(
+    id: string,
+    awaitingTranscript?: {
+      epoch: number;
+      activate?: () => void;
+      timer: ReturnType<typeof setTimeout>;
+    },
+  ) {
     if (this.closed) return;
-    this.discardedInput = {
-      id,
-      sent: false,
-      timer: setTimeout(() => {
-        if (this.discardedInput?.id === id)
-          this.fail(
-            "Voice input cleanup was not confirmed. Start voice again.",
-            "input_cleanup_unconfirmed",
-          );
-      }, TRANSCRIPT_TIMEOUT),
-    };
+    this.discardedInput = { id, sent: false, awaitingTranscript, timer: this.cleanupDeadline(id) };
     this.deleteDiscardedInput();
+  }
+
+  private cleanupDeadline(id: string) {
+    return setTimeout(() => {
+      if (this.discardedInput?.id === id)
+        this.fail(
+          "Voice input cleanup was not confirmed. Start voice again.",
+          "input_cleanup_unconfirmed",
+        );
+    }, TRANSCRIPT_TIMEOUT);
   }
 
   private deleteDiscardedInput() {
     const pending = this.discardedInput;
     if (!pending || pending.sent || !this.createdItems.has(pending.id)) return;
     pending.sent = true;
+    // Item insertion and delete delivery are separate provider operations. Give
+    // the delete its full ACK window, rather than the remainder of insertion's.
+    clearTimeout(pending.timer);
+    pending.timer = this.cleanupDeadline(pending.id);
     this.send({ type: "conversation.item.delete", item_id: pending.id });
   }
 
   private acceptTranscript(event: VoiceEvent) {
     const id = typeof event.item_id === "string" ? event.item_id : "";
+    if (this.closed) return;
+    const cleanup = this.discardedInput;
+    if (id && cleanup?.id === id && !cleanup.sent && cleanup.awaitingTranscript) {
+      // An ASR timeout is not evidence of non-speech. Before any delete was
+      // sent, the same committed candidate can still yield genuine late words.
+      clearTimeout(cleanup.timer);
+      this.discardedInput = undefined;
+      this.pendingInput = { ...cleanup.awaitingTranscript, itemId: id };
+    }
     if (!id || id !== this.pendingInput?.itemId) return;
+    if (event.type === "conversation.item.input_audio_transcription.completed") {
+      // A matching final transcript refers to the committed user item itself;
+      // it is stronger evidence than a commit ACK, even without a separate
+      // created/added notification. A buffer-cleared ACK proves no such thing.
+      this.rememberCreatedItem(id);
+    }
     const { epoch, timer, activate } = this.pendingInput;
     clearTimeout(timer);
     this.pendingInput = undefined;
@@ -1126,13 +1170,7 @@ export class RealtimeVoice {
   private fail(message: string, code?: string) {
     if (!this.closed) {
       this.close();
-      this.callbacks.error(
-        message,
-        true,
-        code === "input_cleanup_unconfirmed"
-          ? { recoverable: false, code }
-          : classifyVoiceFailure(message, code),
-      );
+      this.callbacks.error(message, true, classifyVoiceFailure(message, code));
     }
   }
 

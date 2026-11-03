@@ -5,7 +5,9 @@ this device. When disabled, no voice launcher or companion is shown in chat.
 Disabling it unmounts the companion, cancels pending speech and side replies,
 and releases the microphone and local engines without stopping coding work.
 
-Open the speech bubble at the bottom right. Before the first conversation,
+Use the microphone button at the bottom right to set up voice. After setup,
+the speech bubble in the same position opens the companion. These controls float
+over the workspace without adding a header row. Before the first conversation,
 complete the assistant setup: choose its name, spoken language, provider and
 voice, verify playback and a microphone sentence, and review the autonomy budget.
 Existing device settings prefill setup; the assistant has no default name.
@@ -65,12 +67,13 @@ choose **Finish turn** to transcribe and send the captured turn. Silence and Sma
 Turn cannot finish it automatically. Long silent intervals are omitted from the
 capture buffer. At its two-minute audio limit, capture waits for Finish turn and
 shows a notice rather than answering automatically. While voice is connected,
-the full companion and floating window expose **Wait until I finish** in automatic
-mode; the compact companion labels it **Wait for me**. Choose it to keep listening
-until you decide to respond. It then becomes **Finish turn**, which submits the
-captured speech.
-The adjacent **Turn ending** menu offers **Wait until I finish** and **Automatic
-replies**. The same choice remains available as **I decide when my turn ends**
+the companion and floating window show the current **Automatic replies** mode
+(**Automatic** when compact). Click it or the adjacent **Turn ending** arrow to
+choose **Wait until I finish**. The main action then becomes **Finish turn**
+(**Finish** when compact), which submits the captured speech only when clicked.
+The menu checks the current mode and also offers **Automatic replies**. Floating
+windows use a native menu so both choices remain reachable in the compact pill.
+The same choice remains available as **I decide when my turn ends**
 in Voice settings, independently of the saved rule.
 Pause length, barge-in and progress announcements remain separate settings.
 
@@ -323,7 +326,8 @@ transcribe it, 2.5–4 s until the provider's first sentence and about 0.5–0.8
 synthesize it. The provider's response time dominates and varies.
 
 The recognizer stays warm during a voice connection. Closing its last connection
-unloads it; abandoned connections expire after 90 seconds. Audio is held in memory
+unloads it; after dictation it stays loaded for five more minutes so the next
+dictation starts at once. Abandoned connections expire after 90 seconds. Audio is held in memory
 for transcription and is not written to recordings or logs.
 
 ## Dictation in the message box
@@ -338,8 +342,10 @@ first.
 Dictation uses only speech recognition from your voice installation. It does not
 load the natural reply voice and does not ask a provider, so it can run while the
 voice companion is open. The first use after starting the app waits for the
-recognizer to load (a few seconds; longer on the first run). Select the button
-while it is preparing to cancel. Errors, such as a missing installation or a
+recognizer to load (a few seconds; longer on the first run). The microphone
+opens right away, so you can start speaking while it loads: those phrases are
+inserted, in order, as soon as the recognizer is ready. Dictating again within
+five minutes skips the wait. Select the button while it is preparing to cancel. Errors, such as a missing installation or a
 blocked microphone, appear above the message box.
 
 The button shows a rotating ring while preparing, microphone-level bars while
@@ -420,7 +426,10 @@ Choose **Global** in the floating companion to manage visible, unlocked projects
 and their sessions. The companion can start without an active coding session.
 The existing session picker still supplies the default target for phrases such
 as "this session". Choose **Project** to keep tool targets within the captured
-project. Changing tabs does not retarget a spoken turn already being processed.
+project. New voice configurations start in Global; saved explicit choices remain.
+Changing projects, tabs or scope keeps the voice connection open. It does not
+retarget a spoken turn already being processed; the next utterance uses the
+current selection unless pinned.
 
 The assistant discovers the existing Conversation Tools, social tools and runtime
 log tools. You can ask it to take a note, create or start a task, inspect a goal
@@ -432,8 +441,9 @@ accounts, permissions and existing operation support. A newer Host with
 it does not claim an unconnected service is ready.
 
 Supported project tools use the verified assistant thread without creating a coding
-session. Working-copy and focused desktop operations still require an actual selected
-session. Remote Host tools use an actual session on that Host until environment-bound
+session. Working-copy operations still require an actual selected session.
+Desktop operations can use the real assistant thread and existing native approvals.
+Remote Host tools use an actual session on that Host until environment-bound
 assistant threads are available. Opening, creating, renaming, closing, archiving or deleting a coding session
 uses the normal workspace lifecycle. A background pane close preserves sibling
 panes. Historical remote sessions may need opening before a lifecycle change.
@@ -450,7 +460,9 @@ Optional native computer use exposes `desktop.status`, `desktop.snapshot` and
 **Computer use** settings. Observations and element refs belong to the captured
 conversation and expire after five minutes. App content remains untrusted data.
 When the owner is present, every input requires the native approval dialog for the
-exact app, window, element, action and text. This needs a real focused session.
+exact app, window, element, action and text.
+The native approval identifies either the real coding session or the real
+assistant thread; no artificial coding session is created for global voice.
 Headless actions can run while the owner is away; locked or unknown desktop state
 blocks input. Physical pointer/keyboard input additionally needs the owner's presence,
 the physical-input setting and exact operation approval. **Stop computer use** stays

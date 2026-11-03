@@ -4,6 +4,9 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { createVoiceToolSessionOwner, registerVoiceToolSessionSource } from "./useVoiceAppBridge";
 import { useVoiceAppBridge } from "./useVoiceAppBridge";
+import { voiceRailProjects } from "./useVoiceAppBridge";
+import { NOTHING_LOCKED } from "../../../features/group-lock/model/lockState";
+import { pathKey } from "../../../shared/lib/paths";
 import type { Session } from "../../../features/sessions/model/session";
 import { saveTabGroupLabel } from "../../../features/workspace/model/tabGroups";
 import { projectKey } from "../../../shared/lib/paths";
@@ -17,6 +20,21 @@ const session = (id: string, cwd = "/project") =>
   ({ id, cwd, harness: "codex", model: "test", title: "Voice", blocks: [] }) as Session;
 
 describe("voice management source ownership", () => {
+  it("matches the visible rail directory including the current unremembered folder without exposing locked projects", () => {
+    const recents = [{ path: "/project", openedAt: 1 }];
+    expect(voiceRailProjects(recents, "/current", NOTHING_LOCKED).map((item) => item.path)).toEqual(
+      ["/project", "/current"],
+    );
+    const locked = {
+      lockedGroupIds: new Set(["private"]),
+      lockedProjectKeys: new Set([pathKey("/current")]),
+    };
+    expect(voiceRailProjects(recents, "/current", locked).map((item) => item.path)).toEqual([
+      "/project",
+    ]);
+    expect(voiceRailProjects(recents, "~", NOTHING_LOCKED)).toEqual(recents);
+    expect(recents).toEqual([{ path: "/project", openedAt: 1 }]);
+  });
   it("publishes renamed display metadata to live context and workspace listing without creating a session", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     localStorage.clear();

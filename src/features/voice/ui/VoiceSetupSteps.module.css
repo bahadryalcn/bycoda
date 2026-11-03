@@ -1,0 +1,59 @@
+.step {
+  display: grid;
+  gap: 16px;
+  min-inline-size: 0;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hint {
+  color: var(--ui-text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.confirmed {
+  color: var(--ui-tone-success-fg);
+  font-size: var(--ui-font-caption);
+}
+
+.level {
+  flex: 1;
+  min-inline-size: 80px;
+  max-inline-size: 160px;
+}
+
+.details {
+  border-block-start: 1px solid var(--ui-tone-neutral-border);
+  padding-block-start: 12px;
+  min-inline-size: 0;
+}
+
+.details > summary {
+  color: var(--ui-text-secondary);
+  cursor: pointer;
+}
+
+.details > div {
+  padding-block-start: 16px;
+}
+
+.transcript {
+  margin: 0;
+  padding: 12px;
+  background: var(--ui-surface);
+  border-inline-start: 2px solid var(--ui-tone-success-border);
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.error {
+  margin: 0;
+  color: var(--ui-tone-danger-fg);
+  overflow-wrap: anywhere;
+}

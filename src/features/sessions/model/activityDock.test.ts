@@ -8,7 +8,9 @@ import {
   nextUnseenDone,
   type ActivityDockInput,
 } from "./activityDock";
-import type { Block } from "./session";
+import type { Block, Session } from "./session";
+import { newSession } from "./session";
+import { appendSteerUser, applyHarnessEvent } from "../../../integrations/harness/core/apply";
 
 const user: Block = { id: "u1", role: "user", text: "go", startedAt: 1_000 };
 
@@ -255,6 +257,16 @@ describe("deriveActivityDock", () => {
     expect(blockLifecycle(agent("a1", "in_progress"), true)).toBe("running");
   });
 
+  it("keeps an explicitly interrupted child terminal while its siblings still run", () => {
+    const dock = derive({
+      busy: true,
+      blocks: [user, agent("interrupted", "interrupted"), agent("running", "in_progress")],
+    });
+    expect(dock.agents.map((entry) => entry.status)).toEqual(["interrupted", "running"]);
+    expect(dock).toMatchObject({ running: 1, interrupted: 1, finished: 0, stopped: 0 });
+    expect(dock.agents[0].detail).toBe("Interrupted");
+  });
+
   it("only looks at the latest turn", () => {
     const next: Block = { id: "u2", role: "user", text: "again", startedAt: 9 };
     const dock = derive({
@@ -263,6 +275,92 @@ describe("deriveActivityDock", () => {
     });
     expect(dock.agents).toEqual([]);
     expect(dock.startedAt).toBe(9);
+  });
+
+  it("keeps running agents, commands and their original clock across repeated steers", () => {
+    let session: Session = {
+      ...newSession("codex", "/repo"),
+      busy: true,
+      blocks: [user, agent("a1", "in_progress"), background("b1", "in_progress")],
+    };
+    session = appendSteerUser(session, "Also check the API");
+    session = appendSteerUser(session, "Keep the background command running");
+    const dock = derive({ busy: session.busy, blocks: session.blocks });
+    expect(dock.agents.map((entry) => [entry.callId, entry.status])).toEqual([
+      ["a1", "running"],
+      ["b1", "running"],
+    ]);
+    expect(dock.startedAt).toBe(user.startedAt);
+    expect(dockCountLabel(dock)).toBe("2 running");
+
+    session = applyHarnessEvent(session, {
+      type: "tool.updated",
+      callId: "a1",
+      kind: "agent",
+      status: "completed",
+    });
+    const updated = derive({ busy: session.busy, blocks: session.blocks });
+    expect(updated.agents.map((entry) => entry.status)).toEqual(["done", "running"]);
+    expect(updated.startedAt).toBe(user.startedAt);
+  });
+
+  it("follows chained continuations without including earlier executions", () => {
+    const root: Block = { id: "root", role: "user", text: "start", startedAt: 2000 };
+    const first: Block = { id: "first", role: "user", text: "follow up", continuationOf: "root" };
+    const second: Block = { id: "second", role: "user", text: "again", continuationOf: "first" };
+    const dock = derive({
+      busy: true,
+      blocks: [
+        user,
+        agent("old", "completed"),
+        root,
+        agent("current", "in_progress"),
+        first,
+        second,
+      ],
+    });
+    expect(dock.agents.map((entry) => entry.blockId)).toEqual(["current"]);
+    expect(dock.startedAt).toBe(2000);
+  });
+
+  it("keeps internal work hidden and respects handoff boundaries", () => {
+    const blocks: Block[] = [
+      user,
+      agent("old", "in_progress"),
+      { id: "handoff", role: "handoff", text: "Switch provider" },
+      agent("hidden", "in_progress", { internal: true }),
+      agent("current", "in_progress"),
+      { id: "steer", role: "user", text: "Continue", continuationOf: user.id },
+    ];
+    const dock = derive({ busy: true, blocks });
+    expect(dock.agents.map((entry) => entry.blockId)).toEqual(["current"]);
+    expect(dock.startedAt).toBeUndefined();
+  });
+
+  it("does not pull earlier runs into a continuation with a missing owner", () => {
+    const dock = derive({
+      busy: true,
+      blocks: [
+        user,
+        agent("old", "completed"),
+        { id: "steer", role: "user", text: "Continue", continuationOf: "missing" },
+        agent("current", "in_progress"),
+      ],
+    });
+    expect(dock.agents.map((entry) => entry.blockId)).toEqual(["current"]);
+  });
+
+  it("does not let internal user messages replace the visible execution", () => {
+    const dock = derive({
+      busy: true,
+      blocks: [
+        user,
+        agent("current", "in_progress"),
+        { id: "internal", role: "user", text: "Internal work", internal: true },
+      ],
+    });
+    expect(dock.agents.map((entry) => entry.blockId)).toEqual(["current"]);
+    expect(dock.startedAt).toBe(user.startedAt);
   });
 
   it("has only the working line for a provider with no background tasks", () => {

@@ -7,4 +7,56 @@
 .roleToggle {
   display: flex;
   justify-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fields {
+  gap: 12px;
+}
+.presetControls {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.unit {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-micro);
+  white-space: nowrap;
+}
+.hourRange {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+  align-content: start;
+}
+.hourPair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-inline-size: 0;
+}
+.schedulePair {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+.inlineField {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 6px;
+}
+.inlineControls,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.actions {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
 }

@@ -1328,6 +1328,78 @@ it("preserves explicit assistant role providers and nullable inheritance in sett
     "room-fixture",
   );
 });
+it("submits every existing policy field from Settings without forwarding profile authority metadata", async () => {
+  const policy = {
+    idleMinutes: 7,
+    awayMinutes: 83,
+    activeStart: 22,
+    activeEnd: 6,
+    notificationPresent: "none" as const,
+    notificationAway: "all" as const,
+    notificationDnd: "none" as const,
+    chiefWakeLimit: 11,
+    nudgeLimit: 0,
+    summaryRefreshMessages: 37,
+  };
+  Object.assign(mock.snapshot!.profile, policy);
+  await render({ initialTab: "settings" });
+  expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
+  await click("Save");
+  const [input, environment] = mock.request.mock.calls.find(
+    ([input]) => input.op === "profile.update",
+  )!;
+  expect(environment).toBe("room-fixture");
+  expect(input.expectedVersion).toBe(3);
+  expect(input.patch).toMatchObject({
+    ...policy,
+    name: "Arif",
+    quietStart: 22,
+    quietEnd: 8,
+    dailyTokenBudget: 200000,
+    perWakeTokenCap: 8000,
+  });
+  for (const key of ["enabled", "setupComplete", "voiceSetupComplete", "version", "updatedAt"])
+    expect(input.patch).not.toHaveProperty(key);
+  AssistantRequestSchema.parse(input);
+});
+it("saves edited overnight hours to the bound Host and shows that exact range after reopening", async () => {
+  mock.snapshot!.profile.activeStart = 0;
+  mock.snapshot!.profile.activeEnd = 0;
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementation(async (input, environment) => {
+    if (input.op !== "profile.update") return base(input, environment);
+    AssistantRequestSchema.parse(input);
+    expect(environment).toBe("room-fixture");
+    mock.snapshot!.profile = {
+      ...mock.snapshot!.profile,
+      ...input.patch,
+      version: input.expectedVersion + 1,
+    };
+    return { profile: mock.snapshot!.profile };
+  });
+  await render({ initialTab: "settings" });
+  await click("Work all day");
+  for (const [label, hour] of [
+    ["Work hours start: 09:00", "22:00"],
+    ["Work hours end: 17:00", "06:00"],
+  ]) {
+    await click(label);
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (element) => element.textContent === hour,
+    )!;
+    expect(option).toBeTruthy();
+    await act(async () => option.click());
+  }
+  expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
+  await click("Save");
+  expect(mock.snapshot!.profile).toMatchObject({ activeStart: 22, activeEnd: 6, version: 4 });
+  await click("Settings");
+  expect(document.querySelector('button[aria-label="Work hours start: 22:00"]')).toBeTruthy();
+  expect(document.querySelector('button[aria-label="Work hours end: 06:00"]')).toBeTruthy();
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "profile.update")).toHaveLength(
+    1,
+  );
+});
 it("reviews a project-scoped automation with an explicit model, then opens only its actual original Host row", async () => {
   const text = "Schedule the morning summary";
   localStorage.setItem("bycoda.assistant.job-draft", text);
@@ -1649,7 +1721,7 @@ it("marks the owner returned and prepares the current daily briefing without sta
   expect(container.textContent).toContain("Nothing new to report.");
 });
 
-it("requires an explicit positive budget in core setup and saves rules before enabling", async () => {
+it("offers the unconfigured setup budget without saving and saves rules before enabling", async () => {
   mock.snapshot!.profile.setupComplete = false;
   localStorage.setItem(
     "bycoda.assistant.setup-draft",
@@ -1666,7 +1738,9 @@ it("requires an explicit positive budget in core setup and saves rules before en
   const start = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === "Start",
   )!;
-  expect(start.disabled).toBe(true);
+  expect(start.disabled).toBe(false);
+  expect(document.body.textContent).toContain((1_000_000).toLocaleString());
+  expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
   await act(async () => root!.unmount());
   root = undefined;
   container.remove();

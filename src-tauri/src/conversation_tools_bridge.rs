@@ -183,6 +183,11 @@ fn execute_desktop_request_inner(
         return Err("Desktop request expired".into());
     }
     let action = request["action"].as_str().ok_or("Invalid desktop action")?;
+    // Assistant threads may request this exact native approval only. They are
+    // never a substitute session for the other desktop/native UI routes.
+    if request.get("threadId").is_some() {
+        DesktopApprovalSubject::parse(request)?;
+    }
     let input = &request["input"];
     if action.starts_with("servers.") {
         return servers::call(app, action, input);
@@ -524,6 +529,45 @@ struct DesktopActionApproval {
     message: String,
 }
 
+enum DesktopApprovalSubject {
+    Session(String),
+    AssistantThread {
+        thread_id: String,
+        project_id: String,
+    },
+}
+
+fn desktop_approval_field(request: &Value, key: &str, max: usize) -> Result<String, String> {
+    let value = request[key]
+        .as_str()
+        .ok_or("Original desktop approval identity required")?;
+    if value.trim().is_empty() || value.chars().count() > max || value.chars().any(char::is_control)
+    {
+        return Err("Invalid original desktop approval identity".into());
+    }
+    Ok(value.to_string())
+}
+
+impl DesktopApprovalSubject {
+    fn parse(request: &Value) -> Result<Self, String> {
+        if request["action"].as_str() != Some("desktop.act.authorize") {
+            return Err("Assistant threads may request only exact desktop approval".into());
+        }
+        match (request.get("sessionId"), request.get("threadId")) {
+            (Some(_), None) => Ok(Self::Session(desktop_approval_field(
+                request,
+                "sessionId",
+                200,
+            )?)),
+            (None, Some(_)) => Ok(Self::AssistantThread {
+                thread_id: desktop_approval_field(request, "threadId", 200)?,
+                project_id: desktop_approval_field(request, "projectId", 200)?,
+            }),
+            _ => Err("Exactly one original session or assistant thread is required".into()),
+        }
+    }
+}
+
 impl DesktopActionApproval {
     fn result(&self, approved: bool) -> Value {
         // Only the actual native dialog result is passed here. No input boolean
@@ -547,21 +591,10 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
     if request["action"].as_str() != Some("desktop.act.authorize") {
         return Err("Invalid desktop approval action".into());
     }
-    let field = |key: &str, max: usize| -> Result<String, String> {
-        let value = request[key]
-            .as_str()
-            .ok_or("Original desktop approval identity required")?;
-        if value.trim().is_empty()
-            || value.chars().count() > max
-            || value.chars().any(char::is_control)
-        {
-            return Err("Invalid original desktop approval identity".into());
-        }
-        Ok(value.to_string())
-    };
+    let field = |key: &str, max: usize| desktop_approval_field(request, key, max);
     let relay_id = field("id", 200)?;
     uuid::Uuid::parse_str(&relay_id).map_err(|_| "Invalid original desktop request identity")?;
-    let session_id = field("sessionId", 200)?;
+    let subject = DesktopApprovalSubject::parse(request)?;
     let cwd = field("cwd", 4096)?;
     let environment_id = field("environmentId", 200)?;
     let deadline = request["deadline"]
@@ -696,20 +729,33 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
             })
             .collect::<String>()
     };
+    let subject_context = match &subject {
+        DesktopApprovalSubject::Session(session_id) => {
+            format!("Agent session: {}", literal(session_id))
+        }
+        DesktopApprovalSubject::AssistantThread {
+            thread_id,
+            project_id,
+        } => format!(
+            "Assistant thread: {}\nProject ID: {}",
+            literal(thread_id),
+            literal(project_id)
+        ),
+    };
     let message = match operation {
       DesktopApprovalOperation::Ref(operation) => format!(
-        "Review this exact desktop action. Approval applies once to this operation only.\n\nHost: {}\nAgent session: {}\nProject: {}\nApplication: {}\nWindow: {}\nSnapshot: {}\nTarget ref: {}\nAction: {}\nInput mode: {}\nRequest: {}\nText (JSON literal): {}\n\nOperation SHA-256: {}",
-        literal(&environment_id), literal(&session_id), literal(&cwd), literal(&operation.app), literal(&operation.window_id), literal(&operation.snapshot_id), literal(&operation.target_ref), literal(&operation.action),
+        "Review this exact desktop action. Approval applies once to this operation only.\n\nHost: {}\n{}\nProject: {}\nApplication: {}\nWindow: {}\nSnapshot: {}\nTarget ref: {}\nAction: {}\nInput mode: {}\nRequest: {}\nText (JSON literal): {}\n\nOperation SHA-256: {}",
+        literal(&environment_id), subject_context, literal(&cwd), literal(&operation.app), literal(&operation.window_id), literal(&operation.snapshot_id), literal(&operation.target_ref), literal(&operation.action),
         if operation.headed { "PHYSICAL — may move the pointer or change focus" } else { "HEADLESS — no physical input grant" },
         literal(&operation.request_id), operation.text.as_ref().map(|text| literal(text)).unwrap_or_else(|| "(none)".into()), input.operation_hash,
     ),
       DesktopApprovalOperation::Launch(operation) => format!(
-        "Review this exact application launch. Approval applies once to this operation only.\n\nHost: {}\nAgent session: {}\nProject: {}\nApplication: {}\nAction: LAUNCH OR ATTACH — headless, no activation, arguments, environment or CDP access\nRequest: {}\n\nOperation SHA-256: {}",
-        literal(&environment_id), literal(&session_id), literal(&cwd), literal(&operation.app), literal(&operation.request_id), input.operation_hash,
+        "Review this exact application launch. Approval applies once to this operation only.\n\nHost: {}\n{}\nProject: {}\nApplication: {}\nAction: LAUNCH OR ATTACH — headless, no activation, arguments, environment or CDP access\nRequest: {}\n\nOperation SHA-256: {}",
+        literal(&environment_id), subject_context, literal(&cwd), literal(&operation.app), literal(&operation.request_id), input.operation_hash,
       ),
       DesktopApprovalOperation::Clipboard(operation) => format!(
-        "Review this exact GLOBAL clipboard operation. Approval applies once to this operation only.\n\nHost: {}\nAgent session: {}\nProject: {}\nTarget: GLOBAL SYSTEM CLIPBOARD — shared by all applications\nAction: {}\nConsequence: {}\nRequest: {}\nText (JSON literal): {}\n\nOperation SHA-256: {}",
-        literal(&environment_id), literal(&session_id), literal(&cwd), literal(&operation.action),
+        "Review this exact GLOBAL clipboard operation. Approval applies once to this operation only.\n\nHost: {}\n{}\nProject: {}\nTarget: GLOBAL SYSTEM CLIPBOARD — shared by all applications\nAction: {}\nConsequence: {}\nRequest: {}\nText (JSON literal): {}\n\nOperation SHA-256: {}",
+        literal(&environment_id), subject_context, literal(&cwd), literal(&operation.action),
         match operation.action.as_str() { "get" => "Read up to 10000 plain-text characters and disclose them to this agent conversation. The clipboard may contain sensitive information.", "set" => "Replace the global clipboard with exactly the reviewed plain text.", _ => "Clear the global clipboard, removing its current contents." },
         literal(&operation.request_id), operation.text.as_ref().map(|text| literal(text)).unwrap_or_else(|| "(none)".into()), input.operation_hash,
       ),
@@ -1048,6 +1094,130 @@ mod tests {
         json!({"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","action":"desktop.act.authorize","sessionId":"session-one","cwd":"C:\\project","environmentId":"host-one","deadline":1000,
           "input":{"operation":{"requestId":"operation-one","snapshotId":"snapshot-one","app":"Editor","windowId":"window-one","ref":"@snapshot-one:field","action":"set-value","text":"Ayşe: \"tam metin\"\nikinci satır","headed":false},
             "operationHash":"cda2228a143366523aa9ee7b26f5c6fc160dea48fb37689770ae5f6f7efd0682"}})
+    }
+    fn desktop_thread_approval_fixture() -> Value {
+        let mut request = desktop_approval_fixture();
+        request.as_object_mut().unwrap().remove("sessionId");
+        request["threadId"] = json!("thread-one");
+        request["projectId"] = json!("project-one");
+        request
+    }
+    #[test]
+    fn desktop_approval_thread_subject_preserves_all_exact_operation_hashes() {
+        let request = desktop_thread_approval_fixture();
+        let mut inputs = vec![request["input"].clone()];
+        inputs.push(
+            json!({"operation":{"kind":"launch","requestId":"launch-one","app":"Notepad"},
+            "operationHash":"f13425b74660e9303b9f74aa4957d4fdf0d73d52d781814f7994ad9f108259d4"}),
+        );
+        inputs.push(json!({"operation":{"kind":"clipboard","requestId":"clipboard-read","target":"global-clipboard","action":"get"},
+            "operationHash":"832e8caa64b06b39daf6b52d33a41d724604355672aed7828aa0279098792e41"}));
+        for input in inputs {
+            let mut request = request.clone();
+            request["input"] = input;
+            let approval = desktop_action_approval(&request, 10).unwrap();
+            assert!(approval
+                .message
+                .contains("Assistant thread: \"thread-one\""));
+            assert!(approval.message.contains("Project ID: \"project-one\""));
+            assert!(approval.message.contains("C:\\\\project"));
+            assert!(approval.message.contains("Host: \"host-one\""));
+            assert!(!approval.message.contains("Agent session:"));
+            assert_eq!(
+                approval.result(false),
+                json!({"approved":false,"operationHash":request["input"]["operationHash"]})
+            );
+            request["input"]["operation"]["requestId"] = json!("changed");
+            assert!(desktop_action_approval(&request, 10).is_err());
+        }
+    }
+    #[test]
+    fn desktop_approval_thread_subject_rejects_ambiguous_missing_and_nonapproval_routes() {
+        let request = desktop_thread_approval_fixture();
+        for (field, value) in [
+            ("sessionId", json!("session-one")),
+            ("sessionId", Value::Null),
+            ("threadId", Value::Null),
+            ("threadId", json!("")),
+            ("threadId", json!("t".repeat(201))),
+            ("projectId", Value::Null),
+            ("projectId", json!(" ")),
+            ("projectId", json!("project\ninjected")),
+            ("projectId", json!("p".repeat(201))),
+            ("cwd", json!("")),
+            ("environmentId", json!("")),
+        ] {
+            let mut invalid = request.clone();
+            invalid[field] = value;
+            assert!(
+                desktop_action_approval(&invalid, 10).is_err(),
+                "Accepted invalid {field}"
+            );
+        }
+        for field in ["threadId", "projectId"] {
+            let mut invalid = request.clone();
+            invalid.as_object_mut().unwrap().remove(field);
+            assert!(desktop_action_approval(&invalid, 10).is_err());
+        }
+        for action in [
+            "servers.list",
+            "ui.open",
+            "sessions.read",
+            "desktop.act",
+            "desktop.launch",
+            "desktop.clipboard",
+            "tasks.write.authorize",
+        ] {
+            let mut invalid = request.clone();
+            invalid["action"] = json!(action);
+            // The same parser is called before routing any thread-bearing request.
+            assert!(DesktopApprovalSubject::parse(&invalid).is_err());
+            assert!(desktop_action_approval(&invalid, 10).is_err());
+        }
+        assert!(desktop_action_approval(&request, 1000).is_err());
+    }
+    #[test]
+    fn desktop_approval_thread_keeps_native_decision_and_pre_post_revocation_fences() {
+        use std::cell::Cell;
+        let mut request = desktop_thread_approval_fixture();
+        request["threadId"] = json!("thread\u{202e}one");
+        let approval = desktop_action_approval(&request, 10).unwrap();
+        assert!(approval.message.contains("thread\\u202eone"));
+        assert!(!approval.message.contains('\u{202e}'));
+        let shown = Cell::new(false);
+        let denied = desktop_approval_decision(
+            &approval,
+            || Err("original thread revoked".into()),
+            || {
+                shown.set(true);
+                true
+            },
+        );
+        assert!(denied.is_err());
+        assert!(!shown.get());
+        let checks = Cell::new(0);
+        let denied = desktop_approval_decision(
+            &approval,
+            || {
+                checks.set(checks.get() + 1);
+                if checks.get() == 2 {
+                    Err("original thread changed while dialog open".into())
+                } else {
+                    Ok(())
+                }
+            },
+            || true,
+        );
+        assert!(denied.is_err());
+        assert_eq!(checks.get(), 2);
+        assert_eq!(
+            desktop_approval_decision(&approval, || Ok(()), || false).unwrap()["approved"],
+            false
+        );
+        assert_eq!(
+            desktop_approval_decision(&approval, || Ok(()), || true).unwrap()["approved"],
+            true
+        );
     }
     #[test]
     fn desktop_approval_shows_exact_context_and_matches_javascript_hash() {

@@ -66,6 +66,15 @@ export const AssistantVoiceContextSchema = z
         message: "Only a verified voice context may carry contributor scope.",
       });
   });
+/** Authenticated operation subject; this never certifies the returned content's project provenance. */
+export const AssistantVoiceDisclosureSourceSchema = z.strictObject({
+  environmentId: id,
+  projectId: id,
+  threadId: id,
+  sessionId: id.optional(),
+  family: z.enum(["conversation", "social", "runtime-logs"]),
+  action: id,
+});
 export const AssistantVoiceDisclosureSchema = z
   .strictObject({
     id,
@@ -73,6 +82,7 @@ export const AssistantVoiceDisclosureSchema = z
     requestId: id,
     verified: z.boolean(),
     projectIds: z.array(id).max(1000).optional(),
+    source: AssistantVoiceDisclosureSourceSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.verified !== (value.projectIds !== undefined))
@@ -86,3 +96,4 @@ export type AssistantVoiceContextOpen = z.infer<typeof AssistantVoiceContextOpen
 export type AssistantVoiceContextInvalidate = z.infer<typeof AssistantVoiceContextInvalidateSchema>;
 export type AssistantVoiceContextReason = z.infer<typeof AssistantVoiceContextReasonSchema>;
 export type AssistantVoiceDisclosure = z.infer<typeof AssistantVoiceDisclosureSchema>;
+export type AssistantVoiceDisclosureSource = z.infer<typeof AssistantVoiceDisclosureSourceSchema>;

@@ -2,8 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const request = vi.hoisted(() => vi.fn());
 const remoteId = vi.hoisted(() => vi.fn());
-vi.mock("../../connections/model/connections", () => ({ remoteSessionFor: remoteId }));
-vi.mock("../../connections/model/hostFeatureClient", () => ({ hostFeatureRequest: request }));
+const rpc = vi.hoisted(() => vi.fn());
+const captureHost = vi.hoisted(() => vi.fn());
+vi.mock("../../connections/model/connections", () => ({
+  remoteSessionFor: remoteId,
+  remoteRequest: rpc,
+}));
+vi.mock("../../connections/model/hostFeatureClient", () => ({
+  hostFeatureRequest: request,
+  featureHost: captureHost,
+}));
 import { callVoiceTool, discoverVoiceTools } from "./voiceToolClient";
 
 const target = { cwd: "remote://paired/repo", sessionId: "voice-controller" };
@@ -19,7 +27,97 @@ describe("voice tool client", () => {
   beforeEach(() => {
     request.mockReset();
     remoteId.mockReset();
+    rpc.mockReset();
+    captureHost.mockReset();
+    captureHost.mockResolvedValue({
+      machine: { id: "local-host", environmentId: "host" },
+      projectId: "project",
+    });
   });
+  it("returns authenticated unscoped desktop data without retrying or inventing content provenance", async () => {
+    const receive = vi.fn(),
+      captured = {
+        cwd: "C:/project",
+        threadId: "thread",
+        causalContext: { id: "context", receive },
+      },
+      call = {
+        family: "conversation" as const,
+        action: "desktop.launch",
+        input: { app: "Chrome" },
+        requestId: "launch-once",
+      };
+    const source = {
+        environmentId: "host",
+        projectId: "project",
+        threadId: "thread",
+        family: "conversation" as const,
+        action: "desktop.launch",
+      },
+      disclosure = {
+        id: "ticket",
+        contextId: "context",
+        requestId: call.requestId,
+        verified: false,
+        source,
+      },
+      value = { state: "unknown", retrySafe: false };
+    rpc.mockResolvedValue({
+      value,
+      voiceContext: { id: "context", status: "unknown" },
+      voiceDisclosure: disclosure,
+    });
+    expect(await callVoiceTool(captured, call)).toBe(value);
+    expect(receive).toHaveBeenCalledWith(
+      { id: "context", status: "unknown" },
+      disclosure,
+      call.requestId,
+      source,
+    );
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(request).not.toHaveBeenCalled();
+  });
+  it.each(["environmentId", "projectId", "threadId", "sessionId", "family", "action", "missing"])(
+    "refuses an unscoped disclosure with mismatched %s without replaying its effect",
+    async (field) => {
+      const receive = vi.fn(),
+        captured = {
+          cwd: "C:/project",
+          sessionId: "session",
+          threadId: "thread",
+          causalContext: { id: "context", receive },
+        },
+        call = {
+          family: "conversation" as const,
+          action: "desktop.act",
+          input: {},
+          requestId: "effect-once",
+        };
+      const source: Record<string, string> = {
+        environmentId: "host",
+        projectId: "project",
+        threadId: "thread",
+        sessionId: "session",
+        family: "conversation",
+        action: "desktop.act",
+      };
+      if (field !== "missing") source[field] = field === "family" ? "social" : "foreign";
+      rpc.mockResolvedValue({
+        value: { state: "completed" },
+        voiceContext: { id: "context", status: "unknown" },
+        voiceDisclosure: {
+          id: "ticket",
+          contextId: "context",
+          requestId: call.requestId,
+          verified: false,
+          ...(field !== "missing" ? { source } : {}),
+        },
+      });
+      await expect(callVoiceTool(captured, call)).rejects.toThrow("could not be verified");
+      expect(receive).not.toHaveBeenCalled();
+      expect(rpc).toHaveBeenCalledTimes(1);
+    },
+  );
   it("unwraps data only after the exact captured causal disclosure guard accepts every contributor", async () => {
     const receive = vi.fn(),
       captured = {
@@ -33,18 +131,37 @@ describe("voice tool client", () => {
         input: {},
         requestId: "exact-tool-request",
       };
-    request.mockResolvedValue({
+    rpc.mockResolvedValue({
       value: { notes: ["canonical-data"] },
       voiceContext: { id: "captured-context" },
-      voiceDisclosure: { projectIds: ["visible"] },
+      voiceDisclosure: {
+        id: "disclosure",
+        contextId: "captured-context",
+        requestId: "exact-tool-request",
+        verified: true,
+        projectIds: ["visible"],
+      },
     });
     expect(await callVoiceTool(captured, call)).toEqual({ notes: ["canonical-data"] });
     expect(receive).toHaveBeenCalledWith(
       { id: "captured-context" },
-      { projectIds: ["visible"] },
+      {
+        id: "disclosure",
+        contextId: "captured-context",
+        requestId: "exact-tool-request",
+        verified: true,
+        projectIds: ["visible"],
+      },
       "exact-tool-request",
+      {
+        environmentId: "host",
+        projectId: "project",
+        threadId: "canonical-thread",
+        family: "conversation",
+        action: "notes.list",
+      },
     );
-    expect(request.mock.calls[0][3]).toMatchObject({
+    expect(rpc.mock.calls[0][2]).toMatchObject({
       causalContextId: "captured-context",
       threadId: "canonical-thread",
       requestId: "exact-tool-request",
@@ -53,12 +170,14 @@ describe("voice tool client", () => {
       throw new Error("private contributor");
     });
     await expect(callVoiceTool(captured, call)).rejects.toThrow("private contributor");
-    request.mockResolvedValue({ notes: ["unwrapped legacy data"] });
+    rpc.mockResolvedValue({ notes: ["unwrapped legacy data"] });
     await expect(callVoiceTool(captured, call)).rejects.toThrow("could not be verified");
     request.mockClear();
+    rpc.mockClear();
     await expect(callVoiceTool({ ...captured, cwd: target.cwd }, call)).rejects.toThrow();
     await expect(callVoiceTool(captured, { ...call, requestId: undefined })).rejects.toThrow();
     expect(request).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("resolves an adopted remote shell to its owning Host session", async () => {

@@ -10,6 +10,10 @@ import type { AssistantThreadSummaryProof } from "../src/shared/model/assistantT
 import { assistantJobProjectIds } from "../src/shared/model/assistantProjects";
 import { RUNTIME_LOG_TOOLS } from "./runtime-log-tools";
 import {
+  AssistantVoiceDisclosureSourceSchema,
+  type AssistantVoiceDisclosureSource,
+} from "../src/shared/model/assistantVoiceContext";
+import {
   AssistantVoiceContextOpenSchema,
   AssistantVoiceContextInvalidateSchema,
   type AssistantVoiceContext,
@@ -698,6 +702,31 @@ export class HostAssistantVoiceContexts {
     }
     return { projectIds: [...projects].sort(), resultHash: digest.digest("hex") };
   }
+  private async operationSource(
+    source: AssistantVoiceToolSource,
+    context: Context,
+  ): Promise<AssistantVoiceDisclosureSource> {
+    if (source.threadId !== context.threadId)
+      throw new Error("The voice tool operation belongs to another conversation.");
+    const subject = AssistantVoiceDisclosureSourceSchema.parse({
+      environmentId: context.environmentId,
+      projectId: source.projectId,
+      threadId: source.threadId,
+      ...(source.sessionId ? { sessionId: source.sessionId } : {}),
+      family: source.family,
+      action: source.action,
+    });
+    await this.store.project(subject.projectId);
+    const thread = await this.ports.thread(subject.threadId);
+    if (!thread || (thread.projectId && thread.projectId !== subject.projectId))
+      throw new Error("The voice tool operation belongs to another project.");
+    if (
+      subject.sessionId &&
+      (await this.store.session(subject.sessionId)).projectId !== subject.projectId
+    )
+      throw new Error("The voice tool operation belongs to another session project.");
+    return subject;
+  }
   async finish(id: string, source: AssistantVoiceToolSource): Promise<AssistantVoiceToolReceipt> {
     await this.ready;
     return this.store.transaction(async () => {
@@ -743,6 +772,12 @@ export class HostAssistantVoiceContexts {
       if (unknown) await this.setGeneration(next, { ...generation, unknown });
       const output = head.id === original.id ? next : settled(original);
       if (head.id !== original.id) await this.save(output);
+      const unattributed =
+        !scope &&
+        !(
+          (source.family === "conversation" && supportedConversation.has(source.action)) ||
+          (source.family === "runtime-logs" && supportedLogs.has(source.action))
+        );
       return {
         voiceContext: await this.output(output),
         voiceDisclosure: {
@@ -750,7 +785,11 @@ export class HostAssistantVoiceContexts {
           contextId: ticket.contextId,
           requestId: ticket.requestId,
           verified: !!scope,
-          ...(scope ? { projectIds: scope.projectIds } : {}),
+          ...(scope
+            ? { projectIds: scope.projectIds }
+            : unattributed
+              ? { source: await this.operationSource(source, original) }
+              : {}),
         },
       };
     }, "critical");

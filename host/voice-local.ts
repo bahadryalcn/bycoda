@@ -33,6 +33,12 @@ export function validateVoiceAudio(audio: unknown, language: unknown) {
   return { audio, language };
 }
 
+/**
+ * After the last dictation ends, the recognizer stays loaded this long so the
+ * next dictation starts at once instead of reloading Whisper.
+ */
+export const DICTATION_WARM_MS = 5 * 60_000;
+
 /** One on-demand recognizer per host. Leases keep other desktop windows independent. */
 export class LocalVoiceService {
   private speech: VoiceSpeechService;
@@ -51,15 +57,27 @@ export class LocalVoiceService {
   >();
   private idle?: ReturnType<typeof setInterval>;
   private starting = 0;
+  /** Leases opened by dictation (recognition only). */
+  private dictation = new Set<string>();
+  /** Set while an unused recognizer is kept loaded for the next dictation. */
+  private warm?: ReturnType<typeof setTimeout>;
 
   /** `cloudKey` (Host vault) enables the ElevenLabs reply voice; omitted, it reports no key. */
   constructor(private readonly dependencies: VoiceSpeechDependencies = {}) {
     this.speech = new VoiceSpeechService(dependencies);
   }
 
-  /** Includes asynchronous preflight so setup cannot race a new voice connection. */
+  /**
+   * Includes asynchronous preflight so setup cannot race a new voice connection.
+   * A recognizer kept warm without connections is not active; `close` unloads it.
+   */
   get isActive(): boolean {
-    return this.starting > 0 || Boolean(this.loading || this.child) || this.leases.size > 0;
+    return (
+      this.starting > 0 ||
+      this.leases.size > 0 ||
+      this.requests.size > 0 ||
+      (!this.warm && Boolean(this.loading || this.child))
+    );
   }
 
   /** `recognitionOnly` (dictation) shares the recognizer without loading natural speech. */
@@ -75,6 +93,12 @@ export class LocalVoiceService {
   private async startRuntime(value: unknown, recognitionOnly: boolean): Promise<LocalVoiceInfo> {
     const config = voiceRuntimeConfig(value);
     const key = JSON.stringify(config);
+    if (this.warm) {
+      clearTimeout(this.warm);
+      this.warm = undefined;
+      // A recognizer kept warm for other settings has no users; reload it.
+      if (this.runtimeKey !== key && !this.leases.size) this.close();
+    }
     if (this.loading && this.runtimeKey !== key)
       throw new Error(
         "Voice settings changed. Disconnect voice in other windows before reconnecting.",
@@ -113,11 +137,13 @@ export class LocalVoiceService {
     }
     const lease = randomUUID();
     this.leases.set(lease, Date.now());
+    if (recognitionOnly) this.dictation.add(lease);
     if (!this.idle) {
       this.idle = setInterval(() => {
         for (const [id, used] of this.leases)
           if (Date.now() - used > 90_000) {
             this.leases.delete(id);
+            this.dictation.delete(id);
             this.speech.release(id);
           }
         if (!this.leases.size && !this.requests.size) this.close();
@@ -133,10 +159,25 @@ export class LocalVoiceService {
   }
 
   release(lease: unknown) {
+    const known = typeof lease === "string" && this.leases.has(lease);
+    const dictation = typeof lease === "string" && this.dictation.delete(lease);
     if (typeof lease === "string") this.speech.release(lease);
     if (typeof lease === "string") this.leases.delete(lease);
-    if (!this.leases.size) this.close();
+    if (this.leases.size || this.warm) return { released: true };
+    // Ending dictation keeps a loaded recognizer briefly; the companion unloads.
+    if (known && dictation && this.child && !this.requests.size) this.keepWarm();
+    else this.close();
     return { released: true };
+  }
+
+  private keepWarm() {
+    if (this.idle) clearInterval(this.idle);
+    this.idle = undefined;
+    this.warm = setTimeout(() => {
+      this.warm = undefined;
+      if (!this.leases.size && !this.requests.size) this.close();
+    }, DICTATION_WARM_MS);
+    this.warm.unref();
   }
 
   speak(lease: unknown, text: unknown, language?: unknown) {
@@ -274,8 +315,11 @@ export class LocalVoiceService {
     this.child = undefined;
     this.loading = undefined;
     this.leases.clear();
+    this.dictation.clear();
     if (this.idle) clearInterval(this.idle);
     this.idle = undefined;
+    if (this.warm) clearTimeout(this.warm);
+    this.warm = undefined;
     for (const pending of this.requests.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error("Local voice disconnected."));

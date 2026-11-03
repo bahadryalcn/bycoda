@@ -28,6 +28,19 @@ describe("voice reconnection admission", () => {
     expect(VOICE_RECONNECT_DELAYS).toEqual([1_000, 2_000, 5_000, 10_000, 30_000]);
   });
 
+  it("permits fresh-session recovery from a cleanup delivery timeout without weakening credential failures", () => {
+    expect(
+      classifyVoiceFailure(
+        "Voice input cleanup was not confirmed. Start voice again.",
+        "input_cleanup_unconfirmed",
+      ),
+    ).toEqual({ recoverable: true, code: "input_cleanup_unconfirmed" });
+    expect(
+      classifyVoiceFailure("Authentication rejected (401)", "input_cleanup_unconfirmed")
+        .recoverable,
+    ).toBe(false);
+  });
+
   it("re-seeds only bounded text without authorizing a response or repeating a tool", () => {
     const events = recentVoiceContext(
       Array.from({ length: 10 }, (_, i) => ({

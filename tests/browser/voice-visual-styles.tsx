@@ -1,4 +1,6 @@
 import { createRoot } from "react-dom/client";
+import { useState } from "react";
+import { Button } from "../../src/shared/ui/Button";
 import { VoiceCompanion } from "../../src/features/voice/ui/VoiceCompanion";
 import { VoiceSettings } from "../../src/features/voice/ui/VoiceSettings";
 import {
@@ -34,7 +36,8 @@ const session = {
   model: "fixture-model",
   busy: params.get("state") === "working" || params.has("working"),
 } as unknown as Session;
-const global = params.has("global");
+const navigation = params.has("navigation");
+const global = params.has("global") || navigation;
 if (params.has("control"))
   fixtureVoice.jobs.push({
     id: "control-job",
@@ -43,7 +46,12 @@ if (params.has("control"))
     version: 1,
     status: "running",
   });
-localStorage.setItem("bycoda.voice.scope", global ? "global" : "project");
+if (params.has("fresh-scope")) localStorage.removeItem("bycoda.voice.scope");
+else
+  localStorage.setItem(
+    "bycoda.voice.scope",
+    params.get("scope") === "project" ? "project" : global ? "global" : "project",
+  );
 if (global)
   registerVoiceDraftReader(session.id, () => ({
     text: "Please review this unsent request before I send it.",
@@ -73,6 +81,53 @@ const workspace = global
       },
     }
   : undefined;
+function FixtureCompanion() {
+  const [next, setNext] = useState(false);
+  const second = {
+    ...session,
+    id: "fixture-next",
+    title: "Second fixture project",
+    cwd: "/fixture-next",
+  };
+  const current = next ? second : session;
+  return (
+    <main style={{ padding: 24, maxInlineSize: 720 }}>
+      <p>Fixture evidence · synthetic audio and session state</p>
+      <VoiceSettings />
+      {navigation && (
+        <Button onClick={() => setNext((value) => !value)}>Switch fixture project</Button>
+      )}
+      <VoiceCompanion
+        activeId={params.has("no-active") ? undefined : current.id}
+        sessions={navigation ? [session, second] : [session]}
+        onSubmit={() => {
+          fixtureVoice.submits++;
+          return false;
+        }}
+        onStop={() => {
+          fixtureVoice.stops++;
+        }}
+        workspace={workspace}
+        projects={
+          global
+            ? [
+                { path: session.cwd, name: "Fixture project" },
+                ...(navigation ? [{ path: second.cwd, name: second.title }] : []),
+              ]
+            : undefined
+        }
+        projectPath={global ? current.cwd : undefined}
+        assistantSession={
+          global
+            ? navigation
+              ? { ...current, id: `assistant-${current.id}` }
+              : current
+            : undefined
+        }
+      />
+    </main>
+  );
+}
 createRoot(document.getElementById("root")!).render(
   params.has("setup-step") ? (
     <main style={{ padding: 24, maxInlineSize: 560 }}>
@@ -86,25 +141,7 @@ createRoot(document.getElementById("root")!).render(
       />
     </main>
   ) : (
-    <main style={{ padding: 24, maxInlineSize: 720 }}>
-      <p>Fixture evidence · synthetic audio and session state</p>
-      <VoiceSettings />
-      <VoiceCompanion
-        activeId={params.has("no-active") ? undefined : session.id}
-        sessions={[session]}
-        onSubmit={() => {
-          fixtureVoice.submits++;
-          return false;
-        }}
-        onStop={() => {
-          fixtureVoice.stops++;
-        }}
-        workspace={workspace}
-        projects={global ? [{ path: session.cwd, name: "Fixture project" }] : undefined}
-        projectPath={global ? session.cwd : undefined}
-        assistantSession={global ? session : undefined}
-      />
-    </main>
+    <FixtureCompanion />
   ),
 );
 Object.assign(window, { fixtureVoice });

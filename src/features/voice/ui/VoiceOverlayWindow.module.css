@@ -71,6 +71,21 @@
   padding: 2px 14px 12px;
   user-select: text;
 }
+.heard {
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--ui-tone-neutral-border);
+}
+.feedback {
+  margin-block-start: 12px;
+  color: var(--ui-text-secondary);
+}
+.feedback > summary {
+  cursor: pointer;
+}
+.feedback > p {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
 .caption {
   margin: 0;
   color: var(--ui-text-secondary);
@@ -95,9 +110,16 @@
 .actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
-  margin-top: 10px;
+  padding: 10px 14px;
+  border-block-start: 1px solid var(--ui-tone-neutral-border);
+}
+.actions > :first-child {
+  margin-inline-end: auto;
+}
+.actions > * {
+  flex-shrink: 0;
 }
 .srOnly {
   position: absolute;

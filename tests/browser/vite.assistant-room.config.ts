@@ -3,7 +3,9 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 const mock = fileURLToPath(new URL("./assistant-room-mocks.tsx", import.meta.url));
+const controls = fileURLToPath(new URL("./assistant-setup-controls-mocks.ts", import.meta.url));
 export default defineConfig({
+  optimizeDeps: { entries: ["tests/browser/assistant-room.html"] },
   plugins: [
     react(),
     {
@@ -14,7 +16,7 @@ export default defineConfig({
           return code
             .replace(
               '@import "tailwindcss";',
-              '@import "tailwindcss" source(none);\n@source "../shared/ui";\n@source "../features/assistant";\n@source "../features/sessions/ui/SessionFiltersMenu.tsx";\n@source "../features/sessions/ui/AssistantSessionControl.tsx";\n@source "../features/tasks/ui/AssistantTaskBadge.tsx";\n@source "../features/settings/ui/ShortcutSettings.tsx";',
+              '@import "tailwindcss" source(none);\n@source "../shared/ui";\n@source "../features/assistant";\n@source "../features/voice";\n@source "../features/sessions/ui";\n@source "../features/tasks/ui/AssistantTaskBadge.tsx";\n@source "../features/settings/ui/ShortcutSettings.tsx";',
             )
             .replaceAll(/@source "\.\.\/\.\.\/node_modules[^;]+;/g, "");
       },
@@ -23,13 +25,22 @@ export default defineConfig({
   ],
   resolve: {
     alias: [
-      "hostFeatureClient",
-      "ModelPicker",
-      "VoiceSetupSteps",
-      "assistantBriefingSpeech",
-      "assistantHostRead",
-      "assistantSessionDetach",
-    ].map((name) => ({ find: new RegExp(`(?:.*\\/)${name}$`), replacement: mock })),
+      ...[
+        "localVoiceClient",
+        "localVoice",
+        "realtimeVoiceClient",
+        "realtimeVoice",
+        "voicePreview",
+      ].map((name) => ({ find: new RegExp(`(?:.*\\/)${name}$`), replacement: controls })),
+      ...[
+        "hostFeatureClient",
+        "ModelPicker",
+        "VoiceSetupSteps",
+        "assistantBriefingSpeech",
+        "assistantHostRead",
+        "assistantSessionDetach",
+      ].map((name) => ({ find: new RegExp(`(?:.*\\/)${name}$`), replacement: mock })),
+    ],
   },
   build: {
     outDir: "temp/build/assistant-room",

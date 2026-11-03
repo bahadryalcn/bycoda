@@ -1,6 +1,346 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+
+const setupTitles = [
+  "Identity",
+  "Language",
+  "Voice provider",
+  "Voice",
+  "Microphone test",
+  "Conversation behavior",
+  "Autonomy",
+  "Presence and hours",
+  "First rules",
+  "Review",
+];
+test("an untouched discovered worker becomes explicit only when setup advances", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/assistant-room.html?real-controls&setup=core&fresh");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toHaveAccessibleName("Identity");
+  expect((await setupDraft(page)).patch.execution).toBeNull();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(dialog).toHaveAccessibleName("Autonomy");
+  await expect(dialog.getByRole("group", { name: "Worker model", exact: true })).toContainText(
+    "Fixture worker",
+  );
+  expect((await setupDraft(page)).patch.execution).toBeNull();
+  await dialog.getByRole("button", { name: "Next", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toHaveAccessibleName("First rules");
+  expect((await setupDraft(page)).patch.execution).toMatchObject({
+    harness: "codex",
+    model: "codex:fixture-worker",
+    modelSettings: { reasoningEffort: "low" },
+  });
+  expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(dialog).toHaveAccessibleName("Review");
+  await expect(dialog).toContainText("Fixture worker");
+  await dialog.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__setupProfile.execution)).toMatchObject({
+    harness: "codex",
+    model: "codex:fixture-worker",
+    modelSettings: { reasoningEffort: "low" },
+  });
+});
+async function setupDraft(page: Page) {
+  return page.evaluate(() => JSON.parse(localStorage.getItem("bycoda.assistant.setup-draft")!));
+}
+async function chooseSetupValue(page: Page, label: string, option: string) {
+  await page.getByRole("button", { name: new RegExp(`^${label}:`) }).click();
+  await page.getByRole("option", { name: option, exact: true }).click();
+}
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`compact setup journey ${theme} ${width}`, async ({ page }) => {
+      const output = "temp/verification/assistant-setup-compact-2026-11-03/captures";
+      await mkdir(output, { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&real-controls&setup`);
+      const frames: Array<{
+        step: number;
+        title: string;
+        width: number;
+        height: number;
+        x: number;
+        y: number;
+      }> = [];
+      const dialog = page.getByRole("dialog");
+      const capture = async (index: number) => {
+        await expect(dialog).toHaveAccessibleName(setupTitles[index]);
+        await expect(dialog.getByRole("progressbar")).toHaveAccessibleName(
+          `Step ${index + 1} of 10`,
+        );
+        const box = (await dialog.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.y + box.height).toBeLessThanOrEqual(901);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+        await expect(
+          dialog.getByRole("button", { name: index === 9 ? "Start" : "Next", exact: true }),
+        ).toBeVisible();
+        await page.screenshot({
+          animations: "disabled",
+          path: join(output, `setup-${theme}-${width}-${String(index + 1).padStart(2, "0")}.png`),
+        });
+        frames.push({
+          step: index + 1,
+          title: setupTitles[index],
+          width: box.width,
+          height: box.height,
+          x: box.x,
+          y: box.y,
+        });
+      };
+      const next = async () => {
+        const button = dialog.getByRole("button", { name: "Next", exact: true });
+        await expect(button).toBeEnabled();
+        await button.focus();
+        await button.press("Enter");
+      };
+      await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Setup fixture");
+      await capture(0);
+      await next();
+      await chooseSetupValue(page, "Language", "English");
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await page.getByRole("button", { name: "Reopen setup", exact: true }).focus();
+      await page.keyboard.press("Enter");
+      await expect(dialog).toHaveAccessibleName("Language");
+      await page.reload();
+      await expect(dialog).toHaveAccessibleName("Language");
+      expect((await setupDraft(page)).patch.name).toBe("Setup fixture");
+      await expect(
+        dialog.getByRole("button", { name: "Language: English", exact: true }),
+      ).toBeVisible();
+      await capture(1);
+      await next();
+      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+      expect(await page.evaluate(() => (window as any).setupVoice.microphoneStarts)).toBe(0);
+      await dialog.getByRole("radio", { name: "On this computer", exact: true }).click();
+      await dialog.getByRole("button", { name: "Check connection", exact: true }).click();
+      await expect(dialog.getByRole("status")).toContainText("Ready");
+      await capture(2);
+      await next();
+      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+      await dialog.getByRole("button", { name: "Listen", exact: true }).click();
+      await expect(dialog.getByRole("status")).toContainText("Ready");
+      await dialog.getByRole("button", { name: "Stop", exact: true }).click();
+      await capture(3);
+      await next();
+      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+      await dialog.getByRole("button", { name: "Test microphone", exact: true }).click();
+      await expect
+        .poll(() => page.evaluate(() => (window as any).setupVoice.microphoneStarts))
+        .toBe(1);
+      await expect(
+        dialog.getByRole("meter", { name: "Microphone level", exact: true }),
+      ).toHaveAttribute("value", "0.35");
+      await page.evaluate(() => (window as any).setupVoice.transcript());
+      await expect(dialog.getByRole("status")).toContainText(
+        "This is a synthetic microphone sentence.",
+      );
+      await capture(4);
+      await next();
+      await capture(5);
+      await next();
+      const worker = dialog.getByRole("group", { name: "Worker model", exact: true });
+      await worker.getByRole("button").first().click();
+      await page.getByRole("menuitem", { name: /Reasoning/ }).click();
+      await page.getByRole("menuitemradio", { name: "High", exact: true }).click();
+      expect((await setupDraft(page)).patch.execution).toMatchObject({
+        harness: "codex",
+        model: "codex:fixture-worker",
+        modelSettings: { reasoningEffort: "high" },
+      });
+      expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
+      for (const amount of ["100k", "500k", "1m", "5m"])
+        await chooseSetupValue(page, "Daily token budget", `${amount} tokens/day`);
+      await chooseSetupValue(page, "Daily token budget", "Custom");
+      await dialog
+        .getByRole("spinbutton", { name: "Custom Daily token budget", exact: true })
+        .fill("0");
+      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+      await dialog
+        .getByRole("spinbutton", { name: "Custom Daily token budget", exact: true })
+        .fill("123456");
+      expect((await setupDraft(page)).patch.dailyTokenBudget).toBe(123456);
+      await dialog.getByRole("button", { name: /^Autonomy:/ }).scrollIntoViewIfNeeded();
+      await capture(6);
+      await next();
+      const allDay = dialog.getByRole("switch", { name: "Work all day", exact: true });
+      if (await allDay.isChecked()) await allDay.click();
+      await chooseSetupValue(page, "Work hours start", "00:00");
+      await chooseSetupValue(page, "Work hours end", "06:00");
+      await chooseSetupValue(page, "Work hours start", "22:00");
+      await allDay.click();
+      await expect(dialog.getByRole("button", { name: /^Work hours start:/ })).toHaveCount(0);
+      const allDayPatch = (await setupDraft(page)).patch;
+      expect(allDayPatch.activeStart).toBe(allDayPatch.activeEnd);
+      await allDay.click();
+      await expect(
+        dialog.getByRole("button", { name: "Work hours start: 22:00", exact: true }),
+      ).toBeVisible();
+      const quiet = dialog.getByRole("switch", { name: "Quiet hours", exact: true });
+      if (await quiet.isChecked()) await quiet.click();
+      const quietPatch = (await setupDraft(page)).patch;
+      expect(quietPatch.quietStart).toBe(quietPatch.quietEnd);
+      await quiet.click();
+      await capture(7);
+      await next();
+      await dialog
+        .getByRole("textbox", { name: "Anything I should know?", exact: true })
+        .fill("Keep my drafts intact.");
+      await capture(8);
+      await next();
+      await expect(dialog).toContainText("123,456");
+      await capture(9);
+      expect(
+        await page.evaluate(() =>
+          (window as any).__setupRequests.filter(
+            (request: any) => request.input.op === "profile.update",
+          ),
+        ),
+      ).toEqual([]);
+      await dialog.getByRole("button", { name: "Start", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      expect(await page.evaluate(() => (window as any).__setupProfile)).toMatchObject({
+        name: "Setup fixture",
+        setupComplete: true,
+        voiceSetupComplete: true,
+        dailyTokenBudget: 123456,
+        execution: { model: "codex:fixture-worker", modelSettings: { reasoningEffort: "high" } },
+        activeStart: 22,
+        activeEnd: 6,
+      });
+      expect(await page.evaluate(() => (window as any).setupVoice)).toMatchObject({
+        inspections: 1,
+        previews: 1,
+        microphoneStarts: 1,
+        forbiddenMediaRequests: 0,
+      });
+      expect(
+        await page.evaluate(
+          () =>
+            (window as any).__setupRequests.filter(
+              (request: any) => request.input.op === "profile.update",
+            ).length,
+        ),
+      ).toBe(1);
+      await writeFile(
+        join(output, `setup-${theme}-${width}-geometry.json`),
+        JSON.stringify(frames, null, 2),
+      );
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`compact profile controls preserve effort budget and hours ${theme} ${width}`, async ({
+      page,
+    }) => {
+      const output = "temp/verification/assistant-setup-compact-2026-11-03/captures";
+      await mkdir(output, { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&real-controls`);
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      const showGroup = async (label: string) => {
+        for (const group of await dialog.locator("form > details[open]").all())
+          if ((await group.locator("summary").first().innerText()) !== label)
+            await group.locator("summary").first().click();
+        return openSettingsGroup(page, label);
+      };
+      const identity = await showGroup("Identity");
+      await identity.getByRole("textbox", { name: "Name", exact: true }).fill("Settings fixture");
+      await identity
+        .getByRole("textbox", { name: "How should I address you?", exact: true })
+        .fill("Owner fixture");
+      await identity.screenshot({
+        animations: "disabled",
+        path: join(output, `settings-${theme}-${width}-identity.png`),
+      });
+      const language = await showGroup("Language");
+      await chooseSetupValue(page, "Language", "English");
+      await language.screenshot({
+        animations: "disabled",
+        path: join(output, `settings-${theme}-${width}-language.png`),
+      });
+      const behavior = await showGroup("Conversation behavior");
+      await chooseSetupValue(page, "Start a conversation", "Only when I return");
+      await behavior.screenshot({
+        animations: "disabled",
+        path: join(output, `settings-${theme}-${width}-behavior.png`),
+      });
+      const autonomy = await showGroup("Autonomy");
+      const worker = autonomy.getByRole("group", { name: "Worker model", exact: true });
+      await worker.getByRole("button").first().click();
+      await page.getByRole("menuitem", { name: /Reasoning/ }).click();
+      await page.getByRole("menuitemradio", { name: "High", exact: true }).click();
+      expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
+      await chooseSetupValue(page, "Daily token budget", "500k tokens/day");
+      await autonomy.screenshot({
+        animations: "disabled",
+        path: join(output, `settings-${theme}-${width}-autonomy.png`),
+      });
+      const presence = await showGroup("Presence and hours");
+      const allDay = presence.getByRole("switch", { name: "Work all day", exact: true });
+      if (await allDay.isChecked()) await allDay.click();
+      await chooseSetupValue(page, "Work hours start", "22:00");
+      await chooseSetupValue(page, "Work hours end", "06:00");
+      await presence.screenshot({
+        animations: "disabled",
+        path: join(output, `settings-${theme}-${width}-presence.png`),
+      });
+      const cost = await showGroup("Cost and context");
+      await cost
+        .getByRole("spinbutton", { name: "Token reservation per review", exact: true })
+        .fill("9000");
+      await cost
+        .getByRole("spinbutton", { name: "Conversation summary interval (messages)", exact: true })
+        .fill("25");
+      await cost.screenshot({
+        animations: "disabled",
+        path: join(output, `settings-${theme}-${width}-cost.png`),
+      });
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      expect(await page.evaluate(() => (window as any).__setupProfile)).toMatchObject({
+        name: "Settings fixture",
+        addressAs: "Owner fixture",
+        language: "en-US",
+        proactiveSpeech: "return",
+        dailyTokenBudget: 500000,
+        activeStart: 22,
+        activeEnd: 6,
+        perWakeTokenCap: 9000,
+        summaryRefreshMessages: 25,
+        execution: { model: "codex:fixture-worker", modelSettings: { reasoningEffort: "high" } },
+      });
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      const reopened = await openSettingsGroup(page, "Autonomy");
+      await expect(
+        reopened.getByRole("button", { name: "Daily token budget: 500k tokens/day", exact: true }),
+      ).toBeVisible();
+      await reopened
+        .getByRole("group", { name: "Worker model", exact: true })
+        .getByRole("button")
+        .first()
+        .click();
+      await page.getByRole("menuitem", { name: /Reasoning/ }).click();
+      await expect(page.getByRole("menuitemradio", { name: "High", exact: true })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+    });
 
 async function openSettingsGroup(page: Page, name: string) {
   const summary = page
@@ -236,11 +576,11 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       const presence = await openSettingsGroup(page, "Presence and hours");
       await expect(
-        presence.getByRole("spinbutton", { name: "Work hours start", exact: true }),
-      ).toHaveValue("22");
+        presence.getByRole("button", { name: "Work hours start: 22:00", exact: true }),
+      ).toBeVisible();
       await expect(
-        presence.getByRole("spinbutton", { name: "Work hours end", exact: true }),
-      ).toHaveValue("6");
+        presence.getByRole("button", { name: "Work hours end: 06:00", exact: true }),
+      ).toBeVisible();
       await presence.screenshot({
         animations: "disabled",
         path: join(output, `policy-presence-${theme}-${width}.png`),
@@ -534,7 +874,13 @@ for (const theme of ["light", "dark"])
       const dialog = page.getByRole("dialog");
       const cost = await openSettingsGroup(page, "Cost and context");
       await cost.scrollIntoViewIfNeeded();
-      await expect(cost.getByText(/Claude utility requests include/)).toBeVisible();
+      await cost.getByRole("button", { name: "About cost and context", exact: true }).click();
+      await expect(page.getByText(/Claude utility requests include/)).toBeVisible();
+      await page.screenshot({
+        animations: "disabled",
+        path: join(output, `output-context-help-${theme}-${width}.png`),
+      });
+      await page.keyboard.press("Escape");
       await cost.screenshot({
         animations: "disabled",
         path: join(output, `output-context-compact-${theme}-${width}.png`),
@@ -945,6 +1291,7 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/assistant-room.html?theme=${theme}`);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Cost and context");
+      await page.getByRole("button", { name: "About cost and context", exact: true }).click();
       const explanation = page.getByText(
         "These limits estimate retained text. Summaries, daily renewal, review reservations and a 1 MB safety limit can shorten it earlier. They do not guarantee the provider's context window or charges.",
         { exact: true },

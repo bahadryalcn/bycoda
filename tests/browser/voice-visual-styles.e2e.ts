@@ -7,8 +7,13 @@ for (const theme of ["light", "dark"])
     test(`explicit turn ending is discoverable without reconnecting ${theme} ${width}`, async ({
       page,
     }) => {
-      const output = join(process.cwd(), "temp/verification/voice-turn-ending");
+      const output = join(process.cwd(), "temp/verification/voice-turn-menu-2026-11-03/legacy");
       await mkdir(output, { recursive: true });
+      const menuOutput = join(
+        process.cwd(),
+        "temp/verification/voice-turn-menu-2026-11-03/captures",
+      );
+      await mkdir(menuOutput, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/voice-visual-styles.html?theme=${theme}&global`);
       await page.getByRole("button", { name: "Voice companion", exact: true }).click();
@@ -16,7 +21,11 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect(panel).toHaveAttribute("data-voice-state", "listening");
       await panel.screenshot({ path: join(output, `${theme}-${width}-full-automatic.png`) });
-      await panel.getByRole("button", { name: "Wait until I finish", exact: true }).click();
+      await panel.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await expect(
+        page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+      ).toBeChecked();
+      await page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }).click();
       await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
       const selected = await page.evaluate(() => ({
         settings: JSON.parse(localStorage.getItem("bycoda.voice")!),
@@ -29,12 +38,46 @@ for (const theme of ["light", "dark"])
       expect(selected.runtime.turnPolicies.at(-1)).toMatchObject({ manualTurnEnd: true });
       await panel.screenshot({ path: join(output, `${theme}-${width}-full-manual.png`) });
       await panel.getByRole("button", { name: "Turn ending", exact: true }).click();
-      await page.screenshot({ path: join(output, `${theme}-${width}-policy-menu.png`) });
+      await expect(
+        page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }),
+      ).toBeChecked();
+      await expect(
+        page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+      ).not.toBeChecked();
+      await page.screenshot({
+        path: join(output, `${theme}-${width}-policy-menu.png`),
+        animations: "disabled",
+      });
+      await page.screenshot({
+        path: join(menuOutput, `${theme}-${width}-in-app-expanded-manual-menu.png`),
+        animations: "disabled",
+      });
       await page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }).click();
       await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
-      await expect(panel.getByRole("button", { name: "Wait for me", exact: true })).toBeVisible();
+      await expect(
+        panel.getByRole("button", { name: "Automatic replies", exact: true }),
+      ).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-compact-automatic.png`) });
-      await panel.getByRole("button", { name: "Wait for me", exact: true }).click();
+      await panel.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await expect(
+        page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+      ).toBeChecked();
+      await page.screenshot({
+        path: join(menuOutput, `${theme}-${width}-in-app-compact-auto-menu.png`),
+        animations: "disabled",
+      });
+      await page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }).click();
+      await panel.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await expect(
+        page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }),
+      ).toBeChecked();
+      await page.screenshot({
+        path: join(menuOutput, `${theme}-${width}-in-app-compact-manual-menu.png`),
+        animations: "disabled",
+      });
+      await page
+        .getByRole("menuitemradio", { name: "Wait until I finish", exact: true })
+        .press("Escape");
       await panel.getByRole("button", { name: "Finish turn", exact: true }).click();
       expect(await page.evaluate(() => (window as any).fixtureVoice.finishes)).toBe(1);
       expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
@@ -44,7 +87,18 @@ for (const theme of ["light", "dark"])
         .locator("#root")
         .evaluate((node) => ((node as HTMLElement).style.maxWidth = "380px"));
       const floating = page.locator("main[aria-label]");
-      await floating.getByRole("button", { name: "Wait until I finish", exact: true }).click();
+      await floating.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as any).fixtureOverlay
+                .nativeMenu()
+                ?.items.find((item: any) => item.id === "automatic")?.checked,
+          ),
+        )
+        .toBe(true);
+      await page.evaluate(() => (window as any).fixtureOverlay.pickNativeMenu("manual"));
       expect(
         await page.evaluate(() =>
           (window as any).fixtureOverlay.calls.some(
@@ -63,13 +117,40 @@ for (const theme of ["light", "dark"])
       ).toBe(true);
       await floating.screenshot({ path: join(output, `${theme}-${width}-floating-manual.png`) });
       await floating.getByRole("button", { name: "Compact voice companion", exact: true }).click();
-      // Native compact WebView is 380x56. Keep that component size inside this fixture viewport.
-      await floating.evaluate((node) => ((node as HTMLElement).style.height = "56px"));
+      // Apply the component's actual native fit request to this synthetic document.
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as any).fixtureOverlay.calls
+                .filter((call: any) => call.cmd === "voice_overlay_fit")
+                .at(-1)?.args.height,
+          ),
+        )
+        .toBe(56);
+      const fit = await page.evaluate(
+        () =>
+          (window as any).fixtureOverlay.calls
+            .filter((call: any) => call.cmd === "voice_overlay_fit")
+            .at(-1).args,
+      );
+      await page.setViewportSize({ width: fit.width, height: fit.height });
       await page.evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: false }));
       await floating.screenshot({
         path: join(output, `${theme}-${width}-floating-compact-automatic.png`),
       });
-      await floating.getByRole("button", { name: "Wait for me", exact: true }).click();
+      await floating.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as any).fixtureOverlay
+                .nativeMenu()
+                ?.items.find((item: any) => item.id === "automatic")?.checked,
+          ),
+        )
+        .toBe(true);
+      await page.evaluate(() => (window as any).fixtureOverlay.pickNativeMenu("manual"));
       expect(
         await page.evaluate(
           () =>

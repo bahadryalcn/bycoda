@@ -2847,6 +2847,14 @@ describe("codex subagents", () => {
     }
     usage("child_b", 24_000, 400_000);
     usage("child_a", 6_000);
+    notify("turn/completed", {
+      threadId: "child_a",
+      turn: { id: "child_turn", status: "completed" },
+    });
+    notify("turn/completed", {
+      threadId: "child_b",
+      turn: { id: "child_turn", status: "completed" },
+    });
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
     expect(events.filter((event) => event.type === "agent.context")).toEqual([
@@ -2860,6 +2868,7 @@ describe("codex subagents", () => {
     sent.length = 0;
     onLine = undefined;
     writeChild.mockClear();
+    killChild.mockClear();
   });
 
   afterEach(async () => {
@@ -2897,6 +2906,10 @@ describe("codex subagents", () => {
         type: "agentMessage",
         text: "No regressions found.",
       },
+    });
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
     });
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
@@ -2939,6 +2952,10 @@ describe("codex subagents", () => {
         result: "aW1hZ2U=",
       },
     });
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
+    });
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
 
@@ -2979,6 +2996,10 @@ describe("codex subagents", () => {
         agentPath: "/root/explore-auth",
         agentThreadId: "thr_child",
       },
+    });
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
     });
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
@@ -3021,6 +3042,10 @@ describe("codex subagents", () => {
         agentThreadId: "thr_child",
       },
     });
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
+    });
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
 
@@ -3053,6 +3078,10 @@ describe("codex subagents", () => {
         kind: "interrupted",
         agentThreadId: "thr_child",
       },
+    });
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
     });
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
@@ -3111,7 +3140,7 @@ describe("codex subagents", () => {
     expect(last).toMatchObject({ kind: "agent", status: "completed" });
   });
 
-  it("never leaves an agent row running once the turn is over", async () => {
+  it("keeps the execution pending after the parent yields until the child actually completes", async () => {
     const { events, turn } = await startTurn("s1");
     notify("item/started", {
       threadId: "thr_1",
@@ -3123,8 +3152,25 @@ describe("codex subagents", () => {
         agentsStates: { thr_child: { status: "running" } },
       },
     });
-    // Codex never reports a closing state for this child.
+    let settled = false;
+    void turn.then(() => {
+      settled = true;
+    });
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === "tool.updated" &&
+          event.callId === "collab_1" &&
+          event.status === "completed",
+      ),
+    ).toEqual([]);
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
+    });
     await turn;
 
     const last = events
@@ -3141,6 +3187,444 @@ describe("codex subagents", () => {
     });
   });
 
+  it("continues an idle parent on the same execution while preserving its working child", async () => {
+    const { events, turn } = await startTurn("s1");
+    notify("item/started", {
+      threadId: "thr_1",
+      item: {
+        id: "collab_1",
+        type: "collabAgentToolCall",
+        tool: "spawnAgent",
+        prompt: "Research",
+        agentsStates: { thr_child: { status: "running" } },
+      },
+    });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    let settled = false;
+    void turn.then(() => {
+      settled = true;
+    });
+    expect(events.filter((event) => event.type === "background.updated").at(-1)).toMatchObject({
+      tasks: ["Research"],
+      agents: 1,
+    });
+    const followup = steerCodexTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "codex:gpt-5.4",
+      text: "Also check this",
+    });
+    await waitFor(
+      () => parse().filter((frame) => frame.method === "turn/start").length === 2,
+      "follow-up parent start",
+    );
+    const request = parse().filter((frame) => frame.method === "turn/start")[1];
+    expect((request.params as Record<string, unknown>).threadId).toBe("thr_1");
+    reply(request.id as number, { turn: { id: "turn_2", status: "inProgress" } });
+    await followup;
+    expect(events.filter((event) => event.type === "background.updated").at(-1)).toMatchObject({
+      tasks: [],
+      agents: 0,
+    });
+    // An old parent's late lifecycle event must not settle its successor.
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "collab_1").at(-1),
+    ).toMatchObject({ status: "completed" });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_2", status: "completed" } });
+    await turn;
+    expect(killChild).not.toHaveBeenCalled();
+  });
+
+  it.each(["failed", "interrupted"] as const)(
+    "reports the real %s child outcome after its parent yields",
+    async (status) => {
+      const { events, turn } = await startTurn("s1");
+      notify("item/started", {
+        threadId: "thr_1",
+        item: {
+          id: "collab_1",
+          type: "collabAgentToolCall",
+          tool: "spawnAgent",
+          agentsStates: { thr_child: { status: "running" } },
+        },
+      });
+      notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+      notify("turn/completed", {
+        threadId: "thr_child",
+        turn: { id: "child_turn", status, error: { message: "Child stopped" } },
+      });
+      await turn;
+      expect(
+        events
+          .filter((event) => event.type === "tool.updated" && event.callId === "collab_1")
+          .at(-1),
+      ).toMatchObject({ status });
+    },
+  );
+
+  it("replays a child's early terminal notification after learning its owner", async () => {
+    const { events, turn } = await startTurn("s1");
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
+    });
+    notify("item/started", {
+      threadId: "thr_1",
+      item: {
+        id: "collab_1",
+        type: "collabAgentToolCall",
+        tool: "spawnAgent",
+        agentsStates: { thr_child: { status: "running" } },
+      },
+    });
+    // The spawn reply can still carry the state it observed before the child
+    // finished. It must not undo the authoritative child completion.
+    notify("item/completed", {
+      threadId: "thr_1",
+      item: {
+        id: "collab_1",
+        type: "collabAgentToolCall",
+        tool: "spawnAgent",
+        status: "completed",
+        agentsStates: { thr_child: { status: "running" } },
+      },
+    });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await turn;
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "collab_1").at(-1),
+    ).toMatchObject({ status: "completed" });
+  });
+
+  it.each([false, true])(
+    "stops the owned child process when the parent has yielded: %s",
+    async (parentYielded) => {
+      const { events, turn } = await startTurn("s1");
+      notify("item/started", {
+        threadId: "thr_1",
+        item: {
+          id: "collab_1",
+          type: "collabAgentToolCall",
+          tool: "spawnAgent",
+          agentsStates: { thr_child: { status: "running" } },
+        },
+      });
+      if (parentYielded)
+        notify("turn/completed", {
+          threadId: "thr_1",
+          turn: { id: "turn_1", status: "completed" },
+        });
+      await cancelCodexTurn("s1");
+      await turn;
+      expect(killChild).toHaveBeenCalledOnce();
+      expect(
+        events
+          .filter((event) => event.type === "tool.updated" && event.callId === "collab_1")
+          .at(-1),
+      ).toMatchObject({ status: "interrupted" });
+    },
+  );
+
+  it("does not send a continuation after its last child finishes during skill preparation", async () => {
+    const { turn } = await startTurn("s1");
+    notify("item/started", {
+      threadId: "thr_1",
+      item: {
+        id: "collab_1",
+        type: "collabAgentToolCall",
+        tool: "spawnAgent",
+        agentsStates: { thr_child: { status: "running" } },
+      },
+    });
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    const followup = steerCodexTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "codex:gpt-5.4",
+      text: "$review also this",
+    });
+    const outcome = followup.catch((error: Error) => error.message);
+    await waitFor(
+      () => parse().some((frame) => frame.method === "skills/list"),
+      "skill preparation",
+    );
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
+    });
+    await turn;
+    reply(parse().find((frame) => frame.method === "skills/list")!.id as number, { data: [] });
+    expect(await outcome).toContain("previous turn changed");
+    expect(parse().filter((frame) => frame.method === "turn/start")).toHaveLength(1);
+  });
+
+  it("reopens an original child row when it starts another turn and ignores its stale terminal event", async () => {
+    const { events, turn } = await startTurn("s1");
+    notify("item/started", {
+      threadId: "thr_1",
+      item: {
+        id: "collab_1",
+        type: "collabAgentToolCall",
+        tool: "spawnAgent",
+        prompt: "Research",
+        agentsStates: { thr_child: { status: "running" } },
+      },
+    });
+    notify("turn/started", {
+      threadId: "thr_child",
+      turn: { id: "child_a", status: "inProgress" },
+    });
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_a", status: "completed" },
+    });
+    notify("turn/started", {
+      threadId: "thr_child",
+      turn: { id: "child_b", status: "inProgress" },
+    });
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_a", status: "completed" },
+    });
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "collab_1").at(-1),
+    ).toMatchObject({ status: "in_progress" });
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    let settled = false;
+    void turn.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_b", status: "completed" },
+    });
+    await turn;
+  });
+
+  it("retains live children when all async questions are skipped", async () => {
+    const { events, turn } = await startTurn("s1");
+    notify("item/started", {
+      threadId: "thr_1",
+      item: {
+        id: "collab_1",
+        type: "collabAgentToolCall",
+        tool: "spawnAgent",
+        agentsStates: { thr_child: { status: "running" } },
+      },
+    });
+    notifyAsyncQuestion("async_question");
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    const question = events.find((event) => event.type === "question.asked");
+    expect(question?.type).toBe("question.asked");
+    if (question?.type !== "question.asked") throw new Error("Missing question");
+    respondCodexQuestion("s1", question.requestId, { kind: "skipped" });
+    let settled = false;
+    void turn.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
+    });
+    await turn;
+    expect(parse().filter((frame) => frame.method === "turn/start")).toHaveLength(1);
+  });
+
+  it("retains the running row and root latch when physical Stop fails, then allows retry", async () => {
+    const { events, turn } = await startTurn("s1");
+    notify("item/started", {
+      threadId: "thr_1",
+      item: {
+        id: "collab_1",
+        type: "collabAgentToolCall",
+        tool: "spawnAgent",
+        agentsStates: { thr_child: { status: "running" } },
+      },
+    });
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    let settled = false;
+    void turn.then(() => {
+      settled = true;
+    });
+    killChild.mockRejectedValueOnce(new Error("Busy child process"));
+    await expect(cancelCodexTurn("s1")).rejects.toThrow();
+    expect(settled).toBe(false);
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "collab_1"),
+    ).toEqual([]);
+    await cancelCodexTurn("s1");
+    await turn;
+    expect(killChild).toHaveBeenCalledTimes(2);
+  });
+
+  it("settles the original child owner from a separate completed activity item", async () => {
+    const { events, turn } = await startTurn("s1");
+    notify("item/started", {
+      threadId: "thr_1",
+      item: {
+        id: "collab_1",
+        type: "collabAgentToolCall",
+        tool: "spawnAgent",
+        agentsStates: { thr_child: { status: "running" } },
+      },
+    });
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    notify("item/completed", {
+      threadId: "thr_1",
+      turnId: "turn_1",
+      item: {
+        id: "activity_end",
+        type: "subAgentActivity",
+        kind: "completed",
+        agentThreadId: "thr_child",
+      },
+    });
+    await turn;
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "collab_1").at(-1),
+    ).toMatchObject({ status: "completed" });
+  });
+
+  it("keeps the original execution usable after a definitive follow-up rejection", async () => {
+    const { turn } = await startTurn("s1");
+    notify("item/started", {
+      threadId: "thr_1",
+      item: {
+        id: "collab_1",
+        type: "collabAgentToolCall",
+        tool: "spawnAgent",
+        agentsStates: { thr_child: { status: "running" } },
+      },
+    });
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    const steer = () =>
+      steerCodexTurn({ sessionId: "s1", cwd: "/repo", model: "codex:gpt-5.4", text: "Follow up" });
+    const rejected = steer();
+    const result = rejected.catch((error: Error) => error.message);
+    await waitFor(
+      () => parse().filter((frame) => frame.method === "turn/start").length === 2,
+      "rejected continuation",
+    );
+    const second = parse().filter((frame) => frame.method === "turn/start")[1];
+    onLine!(
+      JSON.stringify({ id: second.id, error: { code: -32602, message: "Rejected follow-up" } }),
+    );
+    expect(await result).toBe("Rejected follow-up");
+    const retry = steer();
+    await waitFor(
+      () => parse().filter((frame) => frame.method === "turn/start").length === 3,
+      "explicit continuation retry",
+    );
+    const third = parse().filter((frame) => frame.method === "turn/start")[2];
+    reply(third.id as number, { turn: { id: "turn_3", status: "inProgress" } });
+    await retry;
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
+    });
+    notify("turn/completed", { turn: { id: "turn_3", status: "completed" } });
+    await turn;
+    expect(parse().filter((frame) => frame.method === "initialize")).toHaveLength(1);
+  });
+
+  it("does not call an unknown child terminal state completed", async () => {
+    const { events, turn } = await startTurn("s1");
+    notify("item/started", {
+      threadId: "thr_1",
+      item: {
+        id: "collab_1",
+        type: "collabAgentToolCall",
+        tool: "spawnAgent",
+        agentsStates: { thr_child: { status: "running" } },
+      },
+    });
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "unrecognized" },
+    });
+    let settled = false;
+    void turn.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(
+      events.filter((event) => event.type === "tool.updated" && event.callId === "collab_1"),
+    ).toEqual([]);
+    await cancelCodexTurn("s1");
+    await turn;
+  });
+
+  it.each(["failed", "interrupted"] as const)(
+    "keeps running children owned after a %s parent",
+    async (status) => {
+      const { events, turn } = await startTurn("s1");
+      notify("item/started", {
+        threadId: "thr_1",
+        item: {
+          id: "collab_1",
+          type: "collabAgentToolCall",
+          tool: "spawnAgent",
+          prompt: "Research",
+          agentsStates: { thr_child: { status: "running" } },
+        },
+      });
+      if (status === "failed")
+        notify("error", {
+          threadId: "thr_1",
+          error: { message: "Parent failed" },
+          willRetry: false,
+        });
+      notify("turn/completed", {
+        threadId: "thr_1",
+        turn: {
+          id: "turn_1",
+          status,
+          ...(status === "failed" ? { error: { message: "Parent failed" } } : {}),
+        },
+      });
+      let settled = false;
+      void turn.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(events.some((event) => event.type === "session.error")).toBe(false);
+      const session = events.reduce(applyHarnessEvent, {
+        ...newSession("codex", "/repo"),
+        busy: true,
+      });
+      expect(session.busy).toBe(true);
+      expect(events.filter((event) => event.type === "background.updated").at(-1)).toMatchObject({
+        tasks: ["Research"],
+        agents: 1,
+      });
+      notify("turn/completed", {
+        threadId: "thr_child",
+        turn: { id: "child_turn", status: "completed" },
+      });
+      await turn;
+      expect(events.filter((event) => event.type === "background.updated").at(-1)).toMatchObject({
+        tasks: [],
+        agents: 0,
+      });
+      if (status === "failed")
+        expect(events).toContainEqual({ type: "session.error", message: "Parent failed" });
+    },
+  );
+
   it("keeps a child thread out of the parent's own transcript", async () => {
     const { events, turn } = await startTurn("s1");
     notify("item/completed", {
@@ -3156,6 +3640,10 @@ describe("codex subagents", () => {
     notify("item/completed", {
       threadId: "thr_child",
       item: { id: "child_msg", type: "agentMessage", text: "Child talking." },
+    });
+    notify("turn/completed", {
+      threadId: "thr_child",
+      turn: { id: "child_turn", status: "completed" },
     });
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;

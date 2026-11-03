@@ -5,6 +5,9 @@ import type {
 import { Button } from "../../src/shared/ui/Button";
 import { saveOwnerQuestionPresentation } from "../../src/features/assistant/model/assistantOwnerQuestionPresentations";
 import { DEFAULT_ASSISTANT_POLICY } from "../../src/shared/model/assistantPolicy";
+import { ModelPicker as ActualModelPicker } from "../../src/features/sessions/ui/ModelPicker.tsx";
+import { VoiceSetupSteps as ActualVoiceSetupSteps } from "../../src/features/voice/ui/VoiceSetupSteps.tsx";
+const realControls = new URLSearchParams(location.search).has("real-controls");
 const now = Date.now();
 let questionAckLost = false;
 let questionMutationCount = 0;
@@ -26,7 +29,7 @@ export const snapshot: AssistantSnapshot = {
     dailyTokenBudget: 2000000,
     perWakeTokenCap: 8000,
     enabled: true,
-    setupComplete: true,
+    setupComplete: !new URLSearchParams(location.search).has("fresh"),
     voiceSetupComplete: false,
     proactiveSpeech: "never",
     keepAwakeWhileWorking: false,
@@ -557,6 +560,8 @@ export async function hostToolRequest(
   _method: string,
   input: any,
 ) {
+  if (realControls)
+    ((window as any).__setupRequests ??= []).push(structuredClone({ method: _method, input }));
   if (_method === "environment.describe") return { environmentId: "fixture-local-host" };
   if (_method === "goals.list")
     return briefingFixture
@@ -1089,6 +1094,7 @@ export async function hostToolRequest(
       Object.assign(snapshot.profile, input.patch, {
         version: snapshot.profile.version + 1,
       });
+      if (realControls) (window as any).__setupProfile = structuredClone(snapshot.profile);
       return { profile: snapshot.profile };
     case "memory.save": {
       const entry = snapshot.memory.find((entry) => entry.id === input.id);
@@ -1132,13 +1138,18 @@ export async function captureAssistantHostRead(expectedEnvironmentId?: string) {
       hostToolRequest("", "", "sessions.get", { sessionId, preview: true, summary: true }),
   };
 }
-export function ModelPicker(props: {
-  model: string;
-  values: Record<string, string>;
-  inheritChoice?: { label: string; selected: boolean; onSelect: () => void };
-  onChange: (harness: string, model: string) => void;
-  onSettingsChange: (value: Record<string, string>) => void;
-}) {
+export function ModelPicker(props: Parameters<typeof ActualModelPicker>[0]) {
+  if (realControls)
+    return (
+      <ActualModelPicker
+        {...(props as any)}
+        onChange={(...args) => {
+          (window as any).__setupModelSelections =
+            ((window as any).__setupModelSelections ?? 0) + 1;
+          props.onChange(...args);
+        }}
+      />
+    );
   // Synthetic picker port: these labels never contact a provider or choose a
   // production model. Production retains the existing ModelPicker adapter.
   return (
@@ -1179,7 +1190,8 @@ export async function listenAssistantBriefing(
   });
   playback(false);
 }
-export function VoiceSetupSteps() {
+export function VoiceSetupSteps(props: Parameters<typeof ActualVoiceSetupSteps>[0]) {
+  if (realControls) return <ActualVoiceSetupSteps {...props} />;
   return <p>Voice provider checks are outside this Room fixture. The microphone remains closed.</p>;
 }
 

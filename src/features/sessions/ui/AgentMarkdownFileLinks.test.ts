@@ -17,6 +17,10 @@ const existingPaths = new Set([
   "G:/Projects/app/output/previews/pacing-character.html",
   "remote://mac/Users/me/My Project/özet.htm",
   "G:/My Project/Türkçe/özet.md",
+  ...["html", "pdf", "docx"].map(
+    (extension) =>
+      `G:/Projects/Firisbe/UI DEVELOPMENTS/ui-tests/investor-deck/Firisbe-Observer-Yatirimci-Sunumu.${extension}`,
+  ),
 ]);
 vi.mock("../../../platform/tauri/fs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../platform/tauri/fs")>()),
@@ -74,6 +78,35 @@ describe("markdown file navigation", () => {
     await act(async () => container.querySelector<HTMLAnchorElement>("a")!.click());
     expect(onOpenFile).toHaveBeenCalledWith("/repo/missing-verification-file.ts", undefined);
   });
+
+  it.each(["html", "pdf", "docx"])(
+    "opens a generated %s under the folder named in the reply",
+    async (extension) => {
+      const cwd = "G:/Projects/Firisbe/UI DEVELOPMENTS/ui-tests";
+      const name = `Firisbe-Observer-Yatirimci-Sunumu.${extension}`;
+      await render(
+        `Sunumu hazırladım; hepsi \`ui-tests/investor-deck/\` klasöründe:\n\n- \`${name}\``,
+        cwd,
+      );
+      const link = Array.from(container.querySelectorAll<HTMLElement>('code[role="link"]')).find(
+        (node) => node.textContent === name,
+      );
+      expect(link).toBeDefined();
+      await act(async () => link!.click());
+      expect(onOpenFile).toHaveBeenCalledWith(`${cwd}/investor-deck/${name}`, undefined);
+    },
+  );
+
+  it.each(["html", "pdf", "docx"])(
+    "opens an explicit generated %s link under the folder named in the reply",
+    async (extension) => {
+      const cwd = "G:/Projects/Firisbe/UI DEVELOPMENTS/ui-tests";
+      const name = `Firisbe-Observer-Yatirimci-Sunumu.${extension}`;
+      await render(`Hepsi \`ui-tests/investor-deck/\` klasöründe:\n\n[${name}](${name})`, cwd);
+      await act(async () => container.querySelector<HTMLAnchorElement>("a")!.click());
+      expect(onOpenFile).toHaveBeenCalledWith(`${cwd}/investor-deck/${name}`, undefined);
+    },
+  );
 
   it("hides a prior folder action while the replacement path is unverified", async () => {
     await render("[Existing](<G:/My Projects/ayşe/özet.md>)");

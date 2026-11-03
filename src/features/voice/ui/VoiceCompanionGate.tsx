@@ -7,6 +7,7 @@ import { migrateVoiceOwnerMemory } from "../model/voiceHostMemory";
 import { AssistantSetup } from "../../assistant/ui/AssistantSetup";
 import { useVoiceSettings } from "../model/voiceSettings";
 import type { VoiceCompanionProps } from "./VoiceCompanion";
+import styles from "./VoiceCompanion.module.css";
 
 const Companion = lazy(() =>
   import("./VoiceCompanion").then((module) => ({ default: module.VoiceCompanion })),
@@ -27,22 +28,23 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
   if (!snapshot || !snapshot.profile.setupComplete || !snapshot.profile.voiceSetupComplete)
     return (
       <>
-        <Button
-          iconOnly
-          label={t(error ? "Retry" : "Set up voice")}
-          tooltip={error || t("Set up voice")}
-          loading={loading}
-          onClick={() => (snapshot ? setSetup(true) : void refresh())}
-        >
-          <Mic className="icon-lg" />
-        </Button>
+        <div className={styles.launcher}>
+          <Button
+            iconOnly
+            label={t(error ? "Retry" : "Set up voice")}
+            tooltip={error || t("Set up voice")}
+            loading={loading}
+            onClick={() => (snapshot ? setSetup(true) : void refresh())}
+          >
+            <Mic className="icon-lg" />
+          </Button>
+        </div>
         {setup && snapshot ? <AssistantSetup voice onClose={() => setSetup(false)} /> : null}
       </>
     );
   return settings.enabled ? (
     <Suspense fallback={null}>
-      {/* The companion ends its own connection when the conversation or voice
-          changes, so the panel stays open for choices made inside it. */}
+      {/* Navigation updates future speech targets without remounting the audio owner. */}
       <Companion {...props} />
     </Suspense>
   ) : null;

@@ -159,6 +159,63 @@ it("routes real owner voice RPCs through scoped tools without leaking or retaini
       input: {},
     });
     expect(missingContext.error).toMatch(/explicit verified project and session/);
+    // Real owner HTTP route, true assistant-thread grant and no coding session.
+    // Status reads isolated configuration; it never launches a desktop process.
+    const opened = await call("assistant.request", { op: "threads.open" }),
+      thread = opened.result.thread;
+    const ownerTurn = await call("assistant.request", {
+      op: "threads.append",
+      threadId: thread.id,
+      role: "user",
+      via: "voice",
+      text: "Check computer control status",
+      idempotencyKey: "desktop-status-owner",
+    });
+    const causal = await call("assistant.request", {
+      op: "voice.context.open",
+      threadId: thread.id,
+      ownerMessageId: ownerTurn.result.message.id,
+      requestId: "desktop-status-context",
+      generationKey: "actual-owner-http",
+      seedMessageIds: [],
+      contextProjectIds: [project.id],
+      summaryUsed: false,
+    });
+    const computer = await call("voice.tools.call", {
+      projectId: project.id,
+      threadId: thread.id,
+      causalContextId: causal.result.voiceContext.id,
+      family: "conversation",
+      action: "desktop.status",
+      input: {},
+      requestId: "desktop-status-once",
+    });
+    expect(computer.error).toBeUndefined();
+    expect(computer.result.value).toBeDefined();
+    expect(computer.result.voiceContext.status).toBe("unknown");
+    expect(computer.result.voiceDisclosure).toMatchObject({
+      verified: false,
+      requestId: "desktop-status-once",
+      source: {
+        environmentId: store.environmentId,
+        projectId: project.id,
+        threadId: thread.id,
+        family: "conversation",
+        action: "desktop.status",
+      },
+    });
+    expect(computer.result.voiceDisclosure.source).not.toHaveProperty("sessionId");
+    expect(computer.result.voiceDisclosure).not.toHaveProperty("projectIds");
+    const replay = await call("voice.tools.call", {
+      projectId: project.id,
+      threadId: thread.id,
+      causalContextId: causal.result.voiceContext.id,
+      family: "conversation",
+      action: "desktop.status",
+      input: {},
+      requestId: "desktop-status-once",
+    });
+    expect(replay.error).toMatch(/instead of replaying/);
     await store.revokeToken(owner.token);
     expect((await call("voice.tools.list", { projectId: project.id })).error).toMatch(
       /invalid or revoked/,

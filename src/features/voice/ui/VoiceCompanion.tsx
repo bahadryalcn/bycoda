@@ -207,9 +207,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const [pinned, setPinned] = useState<string | null>(null);
   const [globalScope, setGlobalScope] = useState(() => {
     try {
-      return localStorage.getItem("bycoda.voice.scope") === "global";
+      const saved = localStorage.getItem("bycoda.voice.scope");
+      if (saved === "global") return true;
+      if (saved === "project" || saved === "session") return false;
+      return Boolean(props.workspace);
     } catch {
-      return false;
+      return Boolean(props.workspace);
     }
   });
   useEffect(() => {
@@ -960,7 +963,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const controller = useRef<ReturnType<typeof createVoiceController> | null>(null);
   if (!controller.current)
     controller.current = createVoiceController(() => ({
-      getScope: () => (scopeRef.current ? "global" : "project"),
+      getScope: () =>
+        (turnCaptured.current ? turnGlobalScope.current && scopeRef.current : scopeRef.current)
+          ? "global"
+          : "project",
       getProjects: () =>
         (latest.current.projects ?? []).filter(
           (project) =>
@@ -1192,15 +1198,14 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     setTranscript("");
     setPhase("listening");
   }
-  // Choosing another conversation or voice ends a live connection; the panel stays
-  // open and Start voice connects with the new choice.
+  // Audio configuration owns the connection. Workspace navigation and scope only
+  // change the target of future speech; an in-progress utterance retains its capture.
   const connection = JSON.stringify({
     ...(settings.mode === "local" ? voiceRuntimeSettings(settings) : {}),
     mode: settings.mode,
     speaker: settings.mode === "local" ? undefined : settings.speakers[settings.mode],
     language: languageLock,
     microphoneId: settings.microphoneId,
-    scope: globalScope ? "global" : props.projectPath,
   });
   const connected = useRef(connection);
   useEffect(() => {
@@ -1926,7 +1931,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       return;
     }
     const delay = rotation ? 0 : VOICE_RECONNECT_DELAYS[retryCount.current++];
-    stopCapture("reconnecting");
+    stopCapture("reconnecting", true);
     setMuted(wasMuted);
     setError("");
     if (delay === undefined) {
@@ -2407,6 +2412,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   const shownTranscript = bodyVisible ? transcript : "",
     shownMessage = bodyVisible ? message : "",
     shownError = bodyVisible ? error : "";
+  const actionableError =
+    shownError === t("Conversation was not saved. Retry.") ||
+    shownError ===
+      t("Current computer presence could not be verified. Mark yourself here before talking.");
   const scopeTitle =
     props.workspace && globalScope
       ? t("Global")
@@ -2657,35 +2666,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               </span>
             </OverflowTooltip>
           </div>
-        ) : props.workspace ? (
-          // Scope first: Global manages the whole app; Session picks its target below.
-          <div className={styles.session}>
-            <SegmentedControl
-              label={t("Voice scope")}
-              value={globalScope ? "global" : "session"}
-              onValueChange={(value) => {
-                setGlobalScope(value === "global");
-              }}
-              options={[
-                { value: "global", label: t("Global"), icon: <Globe className="icon-sm" /> },
-                {
-                  value: "session",
-                  label: t("Project"),
-                  icon: <MessageMultiple className="icon-sm" />,
-                },
-              ]}
-            />
-          </div>
-        ) : (
-          <div className={styles.session}>
-            <VoiceSessionPicker
-              sessions={props.sessions}
-              activeId={props.activeId}
-              pinned={pinned}
-              onPin={setPinned}
-            />
-          </div>
-        )}
+        ) : null}
         {compact ? (
           <>
             {status === "live" && (
@@ -2740,6 +2721,26 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         </div>
       )}
       <div className={styles.body} hidden={compact}>
+        {props.workspace && (
+          <div className={styles.scope}>
+            <SegmentedControl
+              label={t("Voice scope")}
+              value={globalScope ? "global" : "session"}
+              onValueChange={(value) => {
+                scopeRef.current = value === "global";
+                setGlobalScope(scopeRef.current);
+              }}
+              options={[
+                { value: "global", label: t("Global"), icon: <Globe className="icon-sm" /> },
+                {
+                  value: "session",
+                  label: t("Project"),
+                  icon: <MessageMultiple className="icon-sm" />,
+                },
+              ]}
+            />
+          </div>
+        )}
         {choice && !detached && bodyVisible ? (
           <VoiceChoiceCard
             choice={choice}
@@ -2791,7 +2792,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             {t("Save conversation")}
           </Button>
         ) : null}
-        {props.workspace && !globalScope && (
+        {(!props.workspace || !globalScope) && (
           <div className={styles.target}>
             <VoiceSessionPicker
               sessions={props.sessions}
@@ -2828,18 +2829,24 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           )}
         </div>
         {shownTranscript && (
-          <div className={styles.turn}>
-            <span className={styles.caption}>{t("You")}</span>
+          <div className={`${styles.turn} ${styles.heard}`} role="group" aria-label={t("You")}>
             <p className={styles.message}>{shownTranscript}</p>
           </div>
         )}
         {shownMessage && (
-          <div className={styles.turn} aria-live="polite">
-            <span className={styles.caption}>{t("Reply")}</span>
+          <div className={styles.turn} role="group" aria-live="polite" aria-label={t("Reply")}>
             <p className={styles.message}>{shownMessage}</p>
           </div>
         )}
-        {shownError && <InlineError className={styles.error}>{shownError}</InlineError>}
+        {shownError &&
+          (actionableError ? (
+            <InlineError className={styles.caption}>{shownError}</InlineError>
+          ) : (
+            <details role="alert" className={styles.feedback}>
+              <summary aria-label={t("Error details")}>{t("Voice needs attention")}</summary>
+              <p>{shownError}</p>
+            </details>
+          ))}
         {shownError && isMacMicrophoneBlocked(shownError) ? (
           <Button onClick={() => void openPrivacySettings("microphone").catch(() => {})}>
             {t("Open Privacy Settings")}
@@ -2860,74 +2867,71 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             {t("Retry rule save")}
           </Button>
         )}
-        <div className={styles.actions}>
-          {status === "live" && (
-            <VoiceTurnControl
-              manual={settings.manualTurnEnd === true}
-              muted={muted}
-              onManualChange={setManualTurnEnd}
-              onFinish={() => client.current?.finishTurn()}
-            />
-          )}
-          {canTalk ? (
-            <>
-              <Button
-                variant="primary"
-                data-voice-start
-                disabled={!target && !props.workspace}
-                onClick={() => void start()}
-                startIcon={<Mic className="icon-sm" />}
-              >
-                {t(status === "idle" ? "Start voice" : "Talk")}
-              </Button>
-              {status !== "idle" && (
-                <Button iconOnly label={t("Disconnect voice")} onClick={close}>
-                  <Square className="icon-sm" />
-                </Button>
-              )}
-            </>
-          ) : status === "connecting" || status === "reconnecting" ? (
-            <>
-              <Button loading disabled>
-                {statusText}
-              </Button>
-              <Button iconOnly label={t("Cancel")} tooltip={t("Cancel")} onClick={close}>
-                <X className="icon-sm" />
-              </Button>
-            </>
-          ) : (
-            <>
-              {/* The mic toggle is the main live action; the rest stay icons. */}
-              <Button
-                variant={muted ? "secondary" : "primary"}
-                tone={muted ? "danger" : undefined}
-                disabled={status !== "live"}
-                selected={muted}
-                aria-pressed={muted}
-                startIcon={muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
-                onClick={toggleMute}
-              >
-                {t(muted ? "Resume" : "Pause mic")}
-              </Button>
-              <Button
-                iconOnly
-                label={t("Silence")}
-                tooltip={t("Silence")}
-                onClick={() => client.current?.silence()}
-              >
-                <VolumeX className="icon-sm" />
-              </Button>
-              <Button
-                iconOnly
-                label={t("Disconnect voice")}
-                tooltip={t("Disconnect voice")}
-                onClick={close}
-              >
+      </div>
+      <div className={styles.actions} hidden={compact}>
+        {status === "live" && !compact && (
+          <VoiceTurnControl
+            manual={settings.manualTurnEnd === true}
+            muted={muted}
+            onManualChange={setManualTurnEnd}
+            onFinish={() => client.current?.finishTurn()}
+          />
+        )}
+        {canTalk ? (
+          <>
+            <Button
+              variant="primary"
+              data-voice-start
+              disabled={!target && !props.workspace}
+              onClick={() => void start()}
+              startIcon={<Mic className="icon-sm" />}
+            >
+              {t(status === "idle" ? "Start voice" : "Talk")}
+            </Button>
+            {status !== "idle" && (
+              <Button iconOnly label={t("Disconnect voice")} onClick={close}>
                 <Square className="icon-sm" />
               </Button>
-            </>
-          )}
-        </div>
+            )}
+          </>
+        ) : status === "connecting" || status === "reconnecting" ? (
+          <Button label={t("Cancel")} startIcon={<X className="icon-sm" />} onClick={close}>
+            {t("Cancel")}
+          </Button>
+        ) : (
+          <>
+            {/* The mic toggle is the main live action; the rest stay icons. */}
+            <Button
+              iconOnly
+              label={t(muted ? "Resume" : "Pause mic")}
+              tooltip={t(muted ? "Resume" : "Pause mic")}
+              variant={muted ? "secondary" : "primary"}
+              tone={muted ? "danger" : undefined}
+              disabled={status !== "live"}
+              selected={muted}
+              aria-pressed={muted}
+              onClick={toggleMute}
+            >
+              {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
+            </Button>
+            <Button
+              iconOnly
+              label={t("Silence")}
+              tooltip={t("Silence")}
+              onClick={() => client.current?.silence()}
+            >
+              <VolumeX className="icon-sm" />
+            </Button>
+            <Button
+              iconOnly
+              label={t("Disconnect voice")}
+              tooltip={t("Disconnect voice")}
+              onClick={close}
+            >
+              <Square className="icon-sm" />
+            </Button>
+          </>
+        )}
       </div>
     </section>
   );

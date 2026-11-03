@@ -126,13 +126,11 @@
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
 }
-/* Suggestions: unverified candidates on their own surface, apart from the verified list. */
+/* Suggestions: unverified candidates in their own section, apart from the verified list.
+   Spacing and hairlines separate them; the fields keep the only frames. */
 .social-fact-suggestions {
   display: grid;
   gap: 0.75rem;
-  padding: 0.875rem 1rem;
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-surface-panel);
 }
 .social-fact-suggestions-header {
   display: grid;
@@ -155,7 +153,7 @@
 }
 .social-fact-suggestions-list {
   display: grid;
-  gap: 0.5rem;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -164,9 +162,8 @@
   display: grid;
   gap: 0.5rem;
   min-inline-size: 0;
-  padding: 0.625rem 0.75rem;
-  border-radius: var(--ui-radius-card);
-  border: 1px solid var(--ui-pane-border);
+  padding-block: 0.75rem;
+  border-block-start: 1px solid var(--ui-pane-border);
 }
 .social-fact-suggestions-head {
   display: flex;

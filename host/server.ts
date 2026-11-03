@@ -4422,8 +4422,11 @@ export async function createHostServer(
                     )
                   )
                     throw new Error("Voice installation is available only on this computer.");
-                  if (input.method === "voice.local.setup" && localVoice.isActive)
-                    throw new Error("Disconnect voice before installing.");
+                  if (input.method === "voice.local.setup") {
+                    if (localVoice.isActive) throw new Error("Disconnect voice before installing.");
+                    // Unload a recognizer kept warm after dictation before replacing it.
+                    localVoice.close();
+                  }
                   result =
                     input.method === "voice.local.setup"
                       ? voiceSetup.start(params.config)

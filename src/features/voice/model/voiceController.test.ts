@@ -66,6 +66,22 @@ beforeEach(() => {
     attachments: [],
   }));
 });
+it("reports a not-ready conversation before dispatch instead of claiming a failed result", async () => {
+  const f = setup();
+  f.ports.getThreadId = () => "thread";
+  f.ports.causalContext = async () => undefined;
+  f.controller.captureTurn();
+  await expect(
+    f.controller.execute("app_tool_call", {
+      family: "conversation",
+      action: "desktop.launch",
+      input: { app: "Chrome" },
+      requestId: "not-dispatched",
+    }),
+  ).rejects.toThrow("No operation was dispatched");
+  expect(mock.call).not.toHaveBeenCalled();
+  expect(f.source).not.toHaveBeenCalled();
+});
 it("invalidates before renderer data or image disclosure and captures causal context only for actual Host calls", async () => {
   const f = setup(),
     invalidate = vi.fn(async () => {}),
@@ -238,6 +254,59 @@ it("discovers workspace tools before a project or session needs to exist", async
     tools: [{ family: "workspace", action: "workspace.sessions.create" }],
   });
   expect(mock.discover).not.toHaveBeenCalled();
+});
+
+it("retains global workspace discovery when no project/session or Host catalog is available", async () => {
+  const f = setup();
+  f.state.projects = [];
+  f.state.sessions = [];
+  f.state.active = undefined;
+  expect(await f.controller.execute("app_tools_list", {})).toMatchObject({
+    tools: [],
+    workspaceTools: [{ action: "workspace.sessions.create" }],
+    hostToolsError: expect.any(String),
+  });
+  expect(mock.discover).not.toHaveBeenCalled();
+});
+
+it.each(["desktop.launch", "desktop.clipboard", "desktop.act", "desktop.click"])(
+  "uses a verified assistant thread for %s without creating a coding session",
+  async (action) => {
+    const f = setup();
+    f.state.active = undefined;
+    f.ports.getThreadId = () => "thread";
+    f.controller.captureTurn();
+    mock.call.mockResolvedValue({ operation: { state: "unknown", retry: "unsafe" } });
+    const args = {
+      family: "conversation",
+      action,
+      input: { requestId: "native-one" },
+      requestId: "same-owner-request",
+    };
+    expect(await f.controller.execute("app_tool_call", args)).toEqual({
+      operation: { state: "unknown", retry: "unsafe" },
+    });
+    await f.controller.execute("app_tool_call", args);
+    expect(mock.call).toHaveBeenCalledExactlyOnceWith(
+      { cwd: "/a", threadId: "thread" },
+      expect.objectContaining({ action, requestId: "same-owner-request" }),
+    );
+    expect(f.source).not.toHaveBeenCalled();
+  },
+);
+
+it("prefers the actual captured session for global desktop input and never follows a later tab", async () => {
+  const f = setup();
+  f.ports.getThreadId = () => "thread";
+  f.controller.captureTurn();
+  f.state.active = "b";
+  await f.controller.execute("app_tool_call", {
+    family: "conversation",
+    action: "desktop.launch",
+    input: { app: "Chrome" },
+    requestId: "launch-original",
+  });
+  expect(mock.call.mock.calls[0][0]).toEqual({ cwd: "/a", sessionId: "a", threadId: "thread" });
 });
 
 it("uses an independent management session and preserves queued receipts", async () => {

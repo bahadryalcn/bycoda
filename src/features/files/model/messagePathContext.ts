@@ -27,9 +27,27 @@ export function messageReferenceFolders(text: string, cwd: string): string[] {
     if (!/[\\/]/.test(reference)) continue;
     const path = resolveWorkspacePath(reference, cwd);
     if (!path) continue;
-    // Extensionless references may name a folder or a file.
-    if (!/[\\/]$/.test(reference)) add(parentPath(path));
-    add(path);
+    const paths = [path];
+    // Replies sometimes include the project folder in a relative path, e.g.
+    // `ui-tests/investor-deck/` while cwd already ends in `ui-tests`.
+    // Keep the ordinary cwd-relative interpretation first; the alternate is
+    // used only if metadata confirms that a requested file actually exists.
+    const relative = reference.replace(/\\/g, "/");
+    const projectFolder = slash(cwd).replace(/\/+$/, "").split("/").pop();
+    const prefix = relative.split("/")[0];
+    if (
+      projectFolder &&
+      pathKey(joinPath(cwd, prefix)) === pathKey(joinPath(cwd, projectFolder)) &&
+      relative.includes("/")
+    ) {
+      const projectRelative = resolveWorkspacePath(reference, parentPath(cwd));
+      if (projectRelative) paths.push(projectRelative);
+    }
+    for (const folder of paths) {
+      // Extensionless references may name a folder or a file.
+      if (!/[\\/]$/.test(reference)) add(parentPath(folder));
+      add(folder);
+    }
   }
   return [...folders.values()].slice(0, MAX_MESSAGE_FOLDERS);
 }

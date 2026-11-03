@@ -19,6 +19,7 @@ import { LocalVoice } from "../model/localVoice";
 import { voiceLanguageCode } from "../model/voiceLanguage";
 import { VoiceSettings } from "./VoiceSettings";
 import { InlineError } from "../../../shared/ui/InlineError";
+import styles from "./VoiceSetupSteps.module.css";
 
 export function VoiceSetupSteps({
   step,
@@ -41,6 +42,7 @@ export function VoiceSetupSteps({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [transcript, setTranscript] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const level = useRef(0);
@@ -59,6 +61,7 @@ export function VoiceSetupSteps({
   useEffect(() => {
     epoch.current++;
     callbacks.current.onValidChange(false);
+    setConfirmed(false);
     setError("");
     setBusy(false);
     setTranscript("");
@@ -70,12 +73,15 @@ export function VoiceSetupSteps({
     };
   }, [config]);
   const valid = (e: Parameters<NonNullable<typeof onEvidence>>[0]) => {
+    setConfirmed(true);
     callbacks.current.onValidChange(true);
     callbacks.current.onEvidence?.(e);
   };
   async function check() {
     if (busy) return;
     const attempt = epoch.current;
+    setConfirmed(false);
+    callbacks.current.onValidChange(false);
     setBusy(true);
     setError("");
     try {
@@ -96,6 +102,8 @@ export function VoiceSetupSteps({
     const controller = new AbortController();
     playback.current = controller;
     const attempt = epoch.current;
+    setConfirmed(false);
+    callbacks.current.onValidChange(false);
     setBusy(true);
     setError("");
     try {
@@ -115,6 +123,8 @@ export function VoiceSetupSteps({
   async function testMicrophone() {
     if (busy) return;
     const attempt = epoch.current;
+    setConfirmed(false);
+    callbacks.current.onValidChange(false);
     setBusy(true);
     setError("");
     setTranscript("");
@@ -187,7 +197,7 @@ export function VoiceSetupSteps({
   }
   const engine = speakerEngine(settings);
   return (
-    <div>
+    <div className={styles.step}>
       {step === "provider" ? (
         <>
           <SegmentedControl
@@ -202,13 +212,27 @@ export function VoiceSetupSteps({
             ]}
             label={t("Voice provider")}
           />
-          <Button onClick={() => void check()} loading={busy}>
-            {t("Check connection")}
-          </Button>
-          <Button variant="ghost" onClick={() => setAdvanced(!advanced)}>
-            {t("Voice settings")}
-          </Button>
-          {advanced ? <VoiceSettings /> : null}
+          <div className={styles.actions}>
+            <Button onClick={() => void check()} loading={busy}>
+              {t("Check connection")}
+            </Button>
+            {confirmed ? (
+              <span role="status" className={styles.confirmed}>
+                {t("Ready")}
+              </span>
+            ) : null}
+          </div>
+          <details
+            className={styles.details}
+            onToggle={(event) => setAdvanced(event.currentTarget.open)}
+          >
+            <summary>{t("Voice settings")}</summary>
+            {advanced ? (
+              <div>
+                <VoiceSettings />
+              </div>
+            ) : null}
+          </details>
         </>
       ) : null}
       {step === "voice" ? (
@@ -226,18 +250,25 @@ export function VoiceSetupSteps({
               }
             />
           ) : null}
-          <Button onClick={() => void listen()} loading={busy}>
-            {t("Listen")}
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              playback.current?.abort();
-              setBusy(false);
-            }}
-          >
-            {t("Stop")}
-          </Button>
+          <div className={styles.actions}>
+            <Button onClick={() => void listen()} loading={busy}>
+              {t("Listen")}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                playback.current?.abort();
+                setBusy(false);
+              }}
+            >
+              {t("Stop")}
+            </Button>
+            {confirmed ? (
+              <span role="status" className={styles.confirmed}>
+                {t("Ready")}
+              </span>
+            ) : null}
+          </div>
         </>
       ) : null}
       {step === "microphone" ? (
@@ -254,24 +285,36 @@ export function VoiceSetupSteps({
             ]}
             onChange={(microphoneId) => saveVoiceSettings({ ...loadVoiceSettings(), microphoneId })}
           />
-          <meter min={0} max={1} value={volume} aria-label={t("Microphone level")} />
-          <p>{t("Start the microphone test, then say one sentence.")}</p>
-          <Button onClick={() => void testMicrophone()} loading={busy}>
-            {t("Test microphone")}
-          </Button>
-          {busy ? (
-            <Button
-              onClick={() => {
-                epoch.current++;
-                mic.current?.close();
-                mic.current = null;
-                setBusy(false);
-              }}
-            >
-              {t("Stop")}
+          <p className={styles.hint}>{t("Start the microphone test, then say one sentence.")}</p>
+          <div className={styles.actions}>
+            <Button onClick={() => void testMicrophone()} loading={busy}>
+              {t("Test microphone")}
             </Button>
+            {busy ? (
+              <Button
+                onClick={() => {
+                  epoch.current++;
+                  mic.current?.close();
+                  mic.current = null;
+                  setBusy(false);
+                }}
+              >
+                {t("Stop")}
+              </Button>
+            ) : null}
+            <meter
+              className={styles.level}
+              min={0}
+              max={1}
+              value={volume}
+              aria-label={t("Microphone level")}
+            />
+          </div>
+          {transcript ? (
+            <p className={styles.transcript} role="status">
+              {transcript}
+            </p>
           ) : null}
-          {transcript ? <p role="status">{transcript}</p> : null}
         </>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}

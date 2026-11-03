@@ -1,6 +1,9 @@
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import { AssistantView } from "../../src/features/assistant/ui/AssistantView";
+import { AssistantSetup } from "../../src/features/assistant/ui/AssistantSetup";
+import { ModelSourceContext, LOCAL_MODEL_SOURCE } from "../../src/features/sessions/ui/modelSource";
+import { setupModelSource } from "./assistant-setup-controls-mocks";
 import { setLanguagePreference } from "../../src/shared/i18n";
 import "../../src/styles/index.css";
 import { DesktopControlStrip } from "../../src/features/host-tools/DesktopControlStrip";
@@ -26,6 +29,18 @@ import voiceStyles from "../../src/features/voice/ui/VoiceCompanion.module.css";
 import { AssistantSessionControl } from "../../src/features/sessions/ui/AssistantSessionControl";
 import { AssistantTaskBadge } from "../../src/features/tasks/ui/AssistantTaskBadge";
 const params = new URLSearchParams(location.search);
+if (params.has("real-controls")) {
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      enumerateDevices: async () => [],
+      getUserMedia: async () => {
+        (window as any).setupVoice.forbiddenMediaRequests++;
+        throw new Error("Real device access is forbidden in this fixture.");
+      },
+    },
+  });
+}
 const indicatorListeners = new Set<(value: DesktopIndicatorView) => void>();
 let indicator: DesktopIndicatorView = {
   revision: 1,
@@ -63,20 +78,40 @@ document.documentElement.classList.toggle("theme-light", params.get("theme") ===
 await setLanguagePreference(params.get("lang") === "tr" ? "tr" : "en");
 document.body.style.margin = "0";
 createRoot(document.getElementById("root")!).render(
-  params.has("session-controls") ? (
-    <SessionControlsFixture />
-  ) : params.has("keybindings") ? (
-    <KeybindingsPage />
-  ) : params.has("session-filter") ? (
-    <ManagedSessionFilterFixture />
-  ) : params.has("voice-delete") ? (
-    <VoiceDeleteReviewFixture />
-  ) : params.has("voice-jobs") ? (
-    <VoiceJobReviewFixture />
-  ) : (
-    <AssistantRoomFixture />
-  ),
+  <ModelSourceContext.Provider
+    value={params.has("real-controls") ? setupModelSource : LOCAL_MODEL_SOURCE}
+  >
+    {params.has("setup") ? (
+      <AssistantSetupFixture />
+    ) : params.has("session-controls") ? (
+      <SessionControlsFixture />
+    ) : params.has("keybindings") ? (
+      <KeybindingsPage />
+    ) : params.has("session-filter") ? (
+      <ManagedSessionFilterFixture />
+    ) : params.has("voice-delete") ? (
+      <VoiceDeleteReviewFixture />
+    ) : params.has("voice-jobs") ? (
+      <VoiceJobReviewFixture />
+    ) : (
+      <AssistantRoomFixture />
+    )}
+  </ModelSourceContext.Provider>,
 );
+function AssistantSetupFixture() {
+  const [open, setOpen] = useState(true);
+  return (
+    <main>
+      <p>
+        Fixture evidence · real setup controls with synthetic Host, provider and microphone ports.
+      </p>
+      <Button onClick={() => setOpen(true)}>Reopen setup</Button>
+      {open && (
+        <AssistantSetup voice={params.get("setup") !== "core"} onClose={() => setOpen(false)} />
+      )}
+    </main>
+  );
+}
 function VoiceDeleteReviewFixture() {
   const [answer, setAnswer] = useState("");
   const [choice] = useState(() =>

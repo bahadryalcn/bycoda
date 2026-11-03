@@ -6,7 +6,10 @@ import { callVoiceTool, discoverVoiceTools, type VoiceToolTarget } from "./voice
 import { isVoiceToolFamily, type VoiceToolSelection } from "./voiceToolCatalog";
 import type { VoiceWorkspaceProject } from "./voiceWorkspaceActions";
 import { resolveVoiceProjects } from "./voiceProjectNames";
-import { voiceThreadToolAllowed } from "../../../shared/model/voiceToolScope";
+import {
+  voiceThreadToolAllowed,
+  voiceDesktopInputAction,
+} from "../../../shared/model/voiceToolScope";
 
 export type VoiceControllerPorts = {
   getScope?(): "global" | "project" | "session";
@@ -103,7 +106,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       throw new Error("Session and project targets do not match.");
     return { cwd: path, sessionId: id };
   }
-  async function source(args: Record<string, unknown>, useTarget = false) {
+  async function source(args: Record<string, unknown>, useTarget = false, preferTarget = false) {
     const selected = target(args);
     if (read().getThreadId) {
       if (selected.cwd.startsWith("remote://")) {
@@ -115,7 +118,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       if (!threadId) throw new Error("Open a verified assistant conversation before using tools.");
       project(selected.cwd);
       if (selected.sessionId) session(selected.sessionId);
-      if (useTarget) {
+      if (useTarget || (preferTarget && selected.sessionId)) {
         if (!selected.sessionId)
           throw new Error("This voice tool requires a real focused session.");
         return { ...selected, threadId };
@@ -124,7 +127,8 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
     }
     // Working-copy and focused desktop tools retain their original session,
     // worktree, lease and active-conversation gates. Scheduling uses its own source.
-    if (useTarget && selected.sessionId) return selected;
+    if ((useTarget || preferTarget) && selected.sessionId) return selected;
+    if (preferTarget) throw new Error("Open a verified assistant conversation before using tools.");
     if (!read().ensureToolSession) {
       if (selected.sessionId) return selected;
       throw new Error("Choose a session for project tools.");
@@ -278,7 +282,11 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
         return read().workspace.execute(action, { ...input, requestId });
       }
       if (!isVoiceToolFamily(args.family)) throw new Error("Unknown tool family.");
-      const selected = await source(args, !voiceThreadToolAllowed(args.family, action));
+      const selected = await source(
+        args,
+        !voiceThreadToolAllowed(args.family, action),
+        args.family === "conversation" && voiceDesktopInputAction(action),
+      );
       assertActive();
       const causalContext = selected.cwd.startsWith("remote://")
         ? undefined
@@ -286,7 +294,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       assertActive();
       if (read().causalContext && !selected.cwd.startsWith("remote://") && !causalContext)
         throw new Error(
-          "The voice tool result could not be verified. Check its original operation.",
+          "The assistant conversation context is not ready. Wait until connected before trying this tool. No operation was dispatched.",
         );
       const result = await callVoiceTool(
         { ...selected, ...(causalContext ? { causalContext } : {}) },

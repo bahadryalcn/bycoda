@@ -1,20 +1,33 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { AssistantProfilePatch } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Progress } from "../../../shared/ui/Progress";
 import { loadVoicePersona } from "../../voice/model/voicePersona";
 import { VoiceSetupSteps } from "../../voice/ui/VoiceSetupSteps";
 import { assistantRequest, useAssistantSnapshot } from "../model/assistantClient";
+import { assistantSetupDefaults } from "../model/assistantSetupDefaults";
+import { useModelSource } from "../../sessions/ui/modelSource";
+import {
+  defaultModelSettings,
+  getModelSnapshot,
+  subscribeModels,
+} from "../../sessions/model/models";
+import { isRemoteProvider } from "../../connections/model/protocol";
+import {
+  getHarnessAvailabilitySnapshot,
+  subscribeHarnessAvailability,
+} from "../../../integrations/harness/core/availability";
 import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
 import { AssistantProfileFields } from "./AssistantProfileFields";
-import styles from "./AssistantView.module.css";
+import styles from "./AssistantSetup.module.css";
 
 const DRAFT_KEY = "bycoda.assistant.setup-draft";
 const labels = [
-  "Name",
+  "Identity",
   "Language",
   "Voice provider",
   "Voice",
@@ -36,7 +49,7 @@ function readDraft(): Draft | null {
       typeof value.rules === "string" &&
       value.patch &&
       typeof value.patch === "object"
-      ? value
+      ? { ...value, patch: assistantSetupDefaults(value.patch) }
       : null;
   } catch {
     return null;
@@ -53,6 +66,13 @@ export function AssistantSetup({
   voice?: boolean;
 }) {
   const { snapshot, environmentId, error: loadError, loading, refresh } = useAssistantSnapshot();
+  const modelSource = useModelSource();
+  useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
+  useSyncExternalStore(
+    subscribeHarnessAvailability,
+    getHarnessAvailabilitySnapshot,
+    getHarnessAvailabilitySnapshot,
+  );
   const [draft, setDraft] = useState<Draft | null>(readDraft);
   const [pending, setPending] = useState(false);
   const busy = useRef(false),
@@ -67,11 +87,11 @@ export function AssistantSetup({
       setDraft({
         step: 0,
         environmentId,
-        patch: {
+        patch: assistantSetupDefaults({
           ...snapshot.profile,
           name: snapshot.profile.name || legacy.name,
           addressAs: snapshot.profile.addressAs || legacy.userName,
-        },
+        }),
         rules: snapshot.profile.setupComplete ? "" : legacy.rules,
       });
     } else if (draft && !draft.environmentId && snapshot && environmentId) {
@@ -89,6 +109,55 @@ export function AssistantSetup({
   const index = draft ? Math.max(0, steps.indexOf(draft.step)) : 0;
   const step = steps[index];
   const patch = draft?.patch ?? {};
+  const displayedDefaultWorker = modelSource.resolve("codex", "");
+  const proposedWorker =
+    !snapshot?.profile.setupComplete &&
+    !patch.setupComplete &&
+    !patch.execution &&
+    (patch.autonomy === "jobs" || patch.autonomy === "chief")
+      ? displayedDefaultWorker
+      : undefined;
+  const defaultWorkerAvailable =
+    proposedWorker &&
+    isRemoteProvider(proposedWorker.harness) &&
+    proposedWorker.id.trim() &&
+    modelSource.available(proposedWorker.harness) &&
+    modelSource
+      .modelsFor(proposedWorker.harness)
+      .some((model) => model.harness === proposedWorker.harness && model.id === proposedWorker.id);
+  const workerModel = patch.execution
+    ? (modelSource
+        .modelsFor(patch.execution.harness)
+        .find((model) => model.id === patch.execution?.model)?.name ?? patch.execution.model)
+    : defaultWorkerAvailable
+      ? proposedWorker.name
+      : undefined;
+  function assertSource() {
+    if (!draft?.environmentId || liveEnvironment.current !== draft.environmentId)
+      throw new Error(t("The original setup Host is unavailable. Your draft is kept."));
+  }
+  function reviewedExecution() {
+    if (!proposedWorker) return patch.execution;
+    if (!isRemoteProvider(proposedWorker.harness) || !defaultWorkerAvailable)
+      throw new Error(t("Choose a provider and model"));
+    return {
+      harness: proposedWorker.harness,
+      model: proposedWorker.id,
+      modelSettings: defaultModelSettings(proposedWorker),
+      runtimeMode: "supervised" as const,
+      maxRunMinutes: 60,
+    };
+  }
+  function next() {
+    if (!draft) return;
+    try {
+      const execution = step === 6 ? (assertSource(), reviewedExecution()) : patch.execution;
+      setError("");
+      setDraft({ ...draft, patch: { ...draft.patch, execution }, step: steps[index + 1] });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
   function update(next: AssistantProfilePatch) {
     if (next.language !== undefined) setVerified({});
     setDraft((current) =>
@@ -110,12 +179,12 @@ export function AssistantSetup({
   async function finish() {
     if (!snapshot || !draft || busy.current) return;
     const expectedEnvironmentId = draft.environmentId;
-    const assertSource = () => {
-      if (!expectedEnvironmentId || liveEnvironment.current !== expectedEnvironmentId)
-        throw new Error(t("The original setup Host is unavailable. Your draft is kept."));
-    };
+    let execution = patch.execution;
     try {
       assertSource();
+      execution = reviewedExecution();
+      if (execution !== patch.execution)
+        setDraft({ ...draft, patch: { ...draft.patch, execution } });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       return;
@@ -154,7 +223,7 @@ export function AssistantSetup({
             avatar: patch.avatar,
             addressAs: patch.addressAs,
             language: patch.language,
-            execution: patch.execution,
+            execution,
             chiefExecution: patch.chiefExecution,
             replyExecution: patch.replyExecution,
             planningExecution: patch.planningExecution,
@@ -200,8 +269,15 @@ export function AssistantSetup({
   }
   return (
     <Modal
-      title={t("Set up")}
-      context={patch.name?.trim() || undefined}
+      title={draft ? t(labels[step]) : t("Set up")}
+      context={
+        draft ? (
+          <span className={styles.context}>
+            <span>{t("Set up")}</span>
+            <span>{t("Step {p0} of {p1}", { p0: index + 1, p1: steps.length })}</span>
+          </span>
+        ) : undefined
+      }
       onClose={() => {
         if (!pending) onClose();
       }}
@@ -230,11 +306,7 @@ export function AssistantSetup({
                 {t("Start")}
               </Button>
             ) : (
-              <Button
-                variant="primary"
-                disabled={!valid()}
-                onClick={() => setDraft({ ...draft, step: steps[index + 1] })}
-              >
+              <Button variant="primary" disabled={!valid()} onClick={next}>
                 {t("Next")}
               </Button>
             )}
@@ -255,86 +327,114 @@ export function AssistantSetup({
           <p role="status">{t("Loading...")}</p>
         ) : (
           <>
-            <p className={styles.muted}>
-              {t("Step {p0} of {p1}", {
-                p0: index + 1,
-                p1: steps.length,
-              })}
-            </p>
-            <h2 className={styles.sectionTitle}>{t(labels[step])}</h2>
-            {step === 0 && (
-              <AssistantProfileFields section="identity" value={patch} onChange={update} />
-            )}
-            {step === 1 && (
-              <AssistantProfileFields section="language" value={patch} onChange={update} />
-            )}
-            {(step === 2 || step === 3 || step === 4) && (
-              <VoiceSetupSteps
-                key={step}
-                step={step === 2 ? "provider" : step === 3 ? "voice" : "microphone"}
-                language={patch.language}
-                name={patch.name}
-                onValidChange={(valid) =>
-                  setVerified((current) =>
-                    current[String(step)] === valid
-                      ? current
-                      : { ...current, [String(step)]: valid },
-                  )
-                }
-              />
-            )}
-            {step === 5 && (
-              <AssistantProfileFields section="behavior" value={patch} onChange={update} />
-            )}
-            {step === 6 && (
-              <AssistantProfileFields section="autonomy" value={patch} onChange={update} />
-            )}
-            {step === 7 && (
-              <AssistantProfileFields section="presence" value={patch} onChange={update} />
-            )}
-            {step === 7 && <AssistantKeepAwakeStatus state={snapshot?.keepAwake} />}
-            {step === 8 && (
-              <TextareaField
-                label={t("Anything I should know?")}
-                value={draft.rules}
-                maxLength={4000}
-                minRows={4}
-                description={t("One rule per line. You can edit or remove rules in Memory.")}
-                onChange={(event) => setDraft({ ...draft, rules: event.currentTarget.value })}
-              />
-            )}
-            {step === 9 && (
-              <div className={styles.stack}>
-                <p>{t("Assistant {p0}", { p0: patch.name ?? "" })}</p>
-                <p>
-                  {t(
-                    patch.autonomy === "report"
-                      ? "Report only"
-                      : patch.autonomy === "chief"
-                        ? "Supervise assigned jobs"
-                        : "Run jobs",
-                  )}
-                </p>
-                <p>
-                  {t("Daily token budget")}: {patch.dailyTokenBudget?.toLocaleString()}
-                </p>
-                <p className={styles.muted}>
-                  {t("The microphone opens only when you choose to talk.")}
-                </p>
-              </div>
-            )}
-            {step === 9 && voice && ![2, 3, 4].every((value) => verified[String(value)]) && (
-              <Button
-                onClick={() =>
-                  setDraft({
-                    ...draft,
-                    step: [2, 3, 4].find((value) => !verified[String(value)])!,
-                  })
-                }
-              >
-                {t("Set up voice")}
-              </Button>
-            )}
+            <Progress
+              value={index + 1}
+              max={steps.length}
+              compact
+              tone="neutral"
+              aria-label={t("Step {p0} of {p1}", { p0: index + 1, p1: steps.length })}
+            />
+            <div className={styles.content}>
+              {step === 0 && (
+                <AssistantProfileFields section="identity" value={patch} onChange={update} />
+              )}
+              {step === 1 && (
+                <AssistantProfileFields section="language" value={patch} onChange={update} />
+              )}
+              {(step === 2 || step === 3 || step === 4) && (
+                <VoiceSetupSteps
+                  key={step}
+                  step={step === 2 ? "provider" : step === 3 ? "voice" : "microphone"}
+                  language={patch.language}
+                  name={patch.name}
+                  onValidChange={(valid) =>
+                    setVerified((current) =>
+                      current[String(step)] === valid
+                        ? current
+                        : { ...current, [String(step)]: valid },
+                    )
+                  }
+                />
+              )}
+              {step === 5 && (
+                <AssistantProfileFields section="behavior" value={patch} onChange={update} />
+              )}
+              {step === 6 && (
+                <AssistantProfileFields section="autonomy" value={patch} onChange={update} />
+              )}
+              {step === 7 && (
+                <AssistantProfileFields section="presence" value={patch} onChange={update} />
+              )}
+              {step === 7 && (
+                <AssistantKeepAwakeStatus
+                  state={snapshot?.keepAwake}
+                  compact={Boolean(snapshot?.keepAwake)}
+                />
+              )}
+              {step === 8 && (
+                <TextareaField
+                  label={t("Anything I should know?")}
+                  value={draft.rules}
+                  maxLength={4000}
+                  minRows={4}
+                  description={t("One rule per line. You can edit or remove rules in Memory.")}
+                  onChange={(event) => setDraft({ ...draft, rules: event.currentTarget.value })}
+                />
+              )}
+              {step === 9 && (
+                <div className={styles.review}>
+                  <dl className={styles.summary}>
+                    <div>
+                      <dt>{t("Name")}</dt>
+                      <dd>{patch.name}</dd>
+                    </div>
+                    <div>
+                      <dt>{t("Autonomy")}</dt>
+                      <dd>
+                        {t(
+                          patch.autonomy === "report"
+                            ? "Report only"
+                            : patch.autonomy === "chief"
+                              ? "Supervise assigned jobs"
+                              : "Run jobs",
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{t("Daily token budget")}</dt>
+                      <dd>{patch.dailyTokenBudget?.toLocaleString()}</dd>
+                    </div>
+                    {(workerModel || proposedWorker) && (
+                      <div>
+                        <dt>{t("Worker model")}</dt>
+                        <dd>{workerModel || t("Choose a provider and model")}</dd>
+                      </div>
+                    )}
+                    {draft.rules.trim() && (
+                      <div className={styles.rules}>
+                        <dt>{t("First rules")}</dt>
+                        <dd>{draft.rules}</dd>
+                      </div>
+                    )}
+                  </dl>
+                  <p className={styles.muted}>
+                    {t("The microphone opens only when you choose to talk.")}
+                  </p>
+                </div>
+              )}
+              {step === 9 && voice && ![2, 3, 4].every((value) => verified[String(value)]) && (
+                <Button
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      step: [2, 3, 4].find((value) => !verified[String(value)])!,
+                    })
+                  }
+                >
+                  {t("Set up voice")}
+                </Button>
+              )}
+            </div>
           </>
         )}
       </div>

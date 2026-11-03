@@ -1,5 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
-import { TextareaField } from "../../../shared/ui/TextareaField";
+import { PromptField } from "../../../shared/ui/PromptField";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import {
@@ -429,42 +429,38 @@ function QueueEditContent({
           void collect(() => attachmentsFromFiles(files));
         }}
       >
-        <div
-          ref={dropBox}
-          className="rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
-        >
-          {draft.attachments.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
-              {draft.attachments.map((file, index) => (
-                <AttachmentChip
-                  key={file.id}
-                  attachment={file}
-                  token={tokens[index]}
-                  onRemove={() => remove(file.id)}
-                />
-              ))}
-            </div>
-          ) : null}
-          <TextareaField
-            readOnly={parentClosed}
-            hideLabel
-            label=""
-            ref={field}
-            aria-label={t("Queued message text")}
-            value={draft.text}
-            rows={5}
-            spellCheck={false}
-            placeholder={t("Message")}
-            onChange={(event) =>
-              change(event.target.value, event.target.selectionStart ?? event.target.value.length)
-            }
-            onKeyDown={onKeyDown}
-            onPaste={onPaste}
-            fieldClassName="block w-full"
-            className="resize-none"
-          />
-          {canAttach ? (
-            <div className="flex px-2 pb-2">
+        {/* One field frame like the composer: attachments on top, the attach action below. */}
+        <PromptField
+          ref={field}
+          label={t("Queued message text")}
+          readOnly={parentClosed}
+          value={draft.text}
+          minRows={5}
+          maxRows={14}
+          spellCheck={false}
+          placeholder={t("Message")}
+          onChange={(event) =>
+            change(event.target.value, event.target.selectionStart ?? event.target.value.length)
+          }
+          onKeyDown={onKeyDown}
+          onPaste={onPaste}
+          frameProps={{ ref: dropBox }}
+          header={
+            draft.attachments.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+                {draft.attachments.map((file, index) => (
+                  <AttachmentChip
+                    key={file.id}
+                    attachment={file}
+                    token={tokens[index]}
+                    onRemove={() => remove(file.id)}
+                  />
+                ))}
+              </div>
+            ) : null
+          }
+          toolbarLeading={
+            canAttach ? (
               <Button
                 iconOnly
                 label={t("Add files or images")}
@@ -477,9 +473,9 @@ function QueueEditContent({
               >
                 <FilePlus className="icon-sm" />
               </Button>
-            </div>
-          ) : null}
-        </div>
+            ) : undefined
+          }
+        />
 
         {loadingAttachments > 0 ? <p role="status">{t("Loading…")}</p> : null}
 

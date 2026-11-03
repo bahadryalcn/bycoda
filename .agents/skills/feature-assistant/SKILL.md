@@ -19,7 +19,8 @@ Voice, jobs, presence and memory; source is not native acceptance.
 
 ## Source map
 
-Read [source owners](references/sources.md) for the affected lane.
+Read [source owners](references/sources.md).
+Setup: [controls](references/setup.md).
 
 ## Preserve
 

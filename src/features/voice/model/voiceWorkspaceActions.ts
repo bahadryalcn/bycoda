@@ -13,6 +13,8 @@ export type VoiceWorkspaceSession = {
   harness: string;
   model: string;
   busy?: boolean;
+  archived?: boolean;
+  updatedAt?: number;
   historyLoading?: boolean;
   historyLoadError?: string;
   worktreeRemoved?: boolean;
@@ -73,7 +75,7 @@ export const voiceWorkspaceTools = [
   ],
   [
     "workspace.projects.resolve",
-    "Find visible project candidates by exact display name, folder alias or canonical path. Multiple matches are ambiguous: ask which path, never choose the first. Names confer no authority.",
+    "Find visible project candidates by display name, folder alias or canonical path. Normalized exact matches take priority. Partial or multiple matches require clarification before choosing a path; never choose the first. Names confer no authority.",
     { query: text },
     ["query"],
   ],
@@ -85,11 +87,13 @@ export const voiceWorkspaceTools = [
   ],
   [
     "workspace.sessions.list",
-    "List loaded or stored sessions in a visible project. Returns bounded metadata, not transcript contents.",
+    "Find loaded and historical sessions in a visible project, optionally by title/model/provider query or running/archived state. Returns paged metadata with loaded/active/archived status, not transcript contents. Use returned exact IDs for lifecycle actions.",
     {
       projectPath: text,
       offset: { type: "integer", minimum: 0 },
       limit: { type: "integer", minimum: 1, maximum: 100 },
+      query: { type: "string", minLength: 1, maxLength: 200 },
+      state: { type: "string", enum: ["all", "running", "archived"] },
     },
     ["projectPath"],
   ],
