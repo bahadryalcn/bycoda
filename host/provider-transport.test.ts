@@ -41,6 +41,7 @@ for (let index = 2; index < process.argv.length; index++) {
   overrides[value.slice(0, equal)] = JSON.parse(value.slice(equal + 1));
 }
 if (!process.argv.includes('app-server')) record({claudeArgs: process.argv.slice(2)});
+let turnCounter = 0;
 readline.createInterface({input: process.stdin}).on('line', line => {
   const request = JSON.parse(line);
   if (request.type) record({piType: request.type});
@@ -75,12 +76,14 @@ readline.createInterface({input: process.stdin}).on('line', line => {
     send({id: request.id, result: {thread: {id: 'fixture-thread', turns}}});
   }
   if (request.method === 'turn/start') {
+    // Real Codex issues a distinct id for every turn; the provider ignores late events of completed ones.
+    const turnId = 'fixture-turn-' + (++turnCounter);
     record({codexEffort: request.params.effort ?? null, fixtureTurn: request.params.input?.some(item => typeof item.text === 'string' && item.text.trimEnd().endsWith('hello'))});
-    send({id: request.id, result: {turn: {id: 'fixture-turn'}}});
+    send({id: request.id, result: {turn: {id: turnId}}});
     setTimeout(() => {
-      if (JSON.stringify(request.params.input).includes('generate-fixture-image')) send({method: 'item/completed', params: {threadId: 'fixture-thread', turnId: 'fixture-turn', item: {id: 'generated-image', type: 'imageGeneration', result: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6lX8AAAAASUVORK5CYII='}}});
-      send({method: 'item/agentMessage/delta', params: {threadId: 'fixture-thread', turnId: 'fixture-turn', itemId: 'message', delta: 'Headless Codex completed'}});
-      send({method: 'turn/completed', params: {threadId: 'fixture-thread', turn: {id: 'fixture-turn', status: 'completed'}}});
+      if (JSON.stringify(request.params.input).includes('generate-fixture-image')) send({method: 'item/completed', params: {threadId: 'fixture-thread', turnId: turnId, item: {id: 'generated-image', type: 'imageGeneration', result: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6lX8AAAAASUVORK5CYII='}}});
+      send({method: 'item/agentMessage/delta', params: {threadId: 'fixture-thread', turnId: turnId, itemId: 'message', delta: 'Headless Codex completed'}});
+      send({method: 'turn/completed', params: {threadId: 'fixture-thread', turn: {id: turnId, status: 'completed'}}});
     }, 30);
   }
   if (request.type === 'control_request' && request.request.subtype === 'initialize') {
