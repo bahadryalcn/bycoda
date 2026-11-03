@@ -105,6 +105,22 @@ with a short purpose/origin/reuse README. Preserve useful retired files under
 Update dependent paths when moving maintained files and run
 `node scripts/checks/check-repository-hygiene.mjs` before committing.
 
+# Code invariants
+
+`docs/reference/code-invariants.md` lists enforced rules with their sanctioned
+helpers; `pnpm check:invariants` and `pnpm check:ui-drift` are ratchets whose
+baselines may only fall. In short: listen for native events with `listenWindow`
+and emit them with `emit_to`; write state files with `writeFileAtomic` and read
+them with `readStateFile`; decode child-process output lossily per line; give
+every discarded promise a rejection handler and every external command a
+deadline; truncate with `truncateGraphemes`; measure durations with
+`elapsedSince`, not `Date.now()`; format dates, numbers, bytes and durations
+with the shared `src/shared/i18n` helpers; open links with `openExternal`; use
+the shared feedback, dialog and form controls instead of native elements or
+hand-written `role`/`aria-live`. Suppress one line only, with `-- <reason>`.
+Rules, messages and documentation are written in English. A new fix for one
+of these defect classes adds a regression test.
+
 # Shared UI and component reuse
 
 Read `docs/reference/DESIGN.md` for the product design language, then

@@ -1,0 +1,19 @@
+id: ts-lc-all-c
+language: tsx
+severity: error
+message: '`LC_ALL=C` makes git and grep treat input as single-byte text, so case-insensitive matching of non-ASCII letters (ş, İ, ç, ö) never succeeds and binary detection changes. Use `LC_ALL: "C.UTF-8"` (predictable messages, UTF-8 aware matching).'
+note: Rule K-LOCALE in docs/reference/code-invariants.md
+files:
+  - "src/**"
+  - "host/**"
+ignores:
+  - "**/*.test.ts"
+rule:
+  kind: pair
+  all:
+    - has:
+        field: key
+        regex: '^"?LC_ALL"?$'
+    - has:
+        field: value
+        regex: '^"C"$|^''C''$'

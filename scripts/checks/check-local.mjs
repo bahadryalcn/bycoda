@@ -98,6 +98,17 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
         ...ui,
       ]),
     );
+  const invariants = files.filter((file) =>
+    /^(?:src|host|packages|src-tauri\/src)\/.*\.(?:[cm]?[jt]sx?|rs)$/.test(file),
+  );
+  if (invariants.length)
+    steps.push(
+      node("Changed-file code invariants ratchet", [
+        path.join(root, "scripts/checks/check-invariants.mjs"),
+        "--files",
+        ...invariants,
+      ]),
+    );
   const hooks = code.filter((file) => file.startsWith("src/"));
   if (hooks.length)
     steps.push(

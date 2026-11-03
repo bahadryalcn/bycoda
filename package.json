@@ -45,6 +45,7 @@
     "lint:baseline": "node scripts/checks/check-lint-baseline.mjs",
     "check:colors": "node scripts/checks/check-theme-colors.mjs",
     "check:ui-drift": "node scripts/checks/check-ui-drift.mjs",
+    "check:invariants": "node scripts/checks/check-invariants.mjs",
     "check:host-contracts": "node scripts/checks/check-host-contracts.mjs",
     "check:host-contracts:write": "node scripts/checks/check-host-contracts.mjs --write",
     "check:host-boundaries": "node scripts/checks/check-host-runtime-boundaries.mjs",
@@ -61,8 +62,8 @@
     "pretest:host": "pnpm run host:build",
     "test:host": "vitest run --config host/vitest.config.ts",
     "check": "pnpm run check:web && pnpm run check:rust",
-    "check:web": "pnpm check:host-contracts && pnpm check:host-boundaries && pnpm check:host-headless && vitest run && tsc-rs --noEmit",
-    "check:web:fast": "pnpm check:host-contracts && pnpm check:host-boundaries && pnpm check:host-headless && vitest run && tsc-rs --noEmit --fast",
+    "check:web": "pnpm check:host-contracts && pnpm check:host-boundaries && pnpm check:host-headless && pnpm check:invariants && vitest run && tsc-rs --noEmit",
+    "check:web:fast": "pnpm check:host-contracts && pnpm check:host-boundaries && pnpm check:host-headless && pnpm check:invariants && vitest run && tsc-rs --noEmit --fast",
     "check:types:rust": "tsc-rs --noEmit && tsc-rs --noEmit -p host/tsconfig.json",
     "check:types:rust:fast": "tsc-rs --noEmit --fast && tsc-rs --noEmit --fast -p host/tsconfig.json",
     "check:rust": "cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test",
@@ -150,6 +151,7 @@
     "zustand": "^5.0.16"
   },
   "devDependencies": {
+    "@ast-grep/cli": "0.51.1",
     "@babel/core": "^7.29.7",
     "@playwright/test": "1.64.1",
     "@rolldown/plugin-babel": "^0.2.4",

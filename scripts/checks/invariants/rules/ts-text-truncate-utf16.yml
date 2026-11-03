@@ -1,0 +1,26 @@
+id: ts-text-truncate-utf16
+language: tsx
+severity: error
+message: "`slice(0, n)` cuts UTF-16 code units and can leave half of an emoji; native (Rust) JSON parsing then rejects the string. Use `truncateGraphemes(text, n)` from src/shared/lib/text/truncate.ts for user-visible or IPC-bound text."
+note: Rule K-TEXT in docs/reference/code-invariants.md
+files:
+  - "src/**"
+  - "host/**"
+ignores:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "src/shared/lib/text/**"
+rule:
+  any:
+    - pattern: $TEXT.slice(0, $N) + "…"
+    - pattern: $TEXT.slice(0, $N) + '…'
+    - pattern: $TEXT.slice(0, $N) + "..."
+    - pattern: $TEXT.slice(0, $N) + '...'
+    - pattern: $TEXT.slice(0, $N).trim() + "…"
+    - pattern: $TEXT.slice(0, $N).trimEnd() + "…"
+    - kind: template_string
+      has:
+        kind: template_substitution
+        has:
+          pattern: $TEXT.slice(0, $N)
+      regex: "[…]|\\.\\.\\.`$"

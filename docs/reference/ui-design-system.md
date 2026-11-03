@@ -188,13 +188,13 @@ into a row of action Buttons.
 
 Hierarchy and semantic color are independent:
 
-| Property                 | Values                                                                                                       | Meaning                                                                             |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| `variant`                | `primary`, `secondary`, `ghost`, `link`                                                                      | Solid emphasis, outlined action, quiet action, text action                          |
-| `tone`                   | `neutral`, `accent`, `info`, `success`, `warning`, `danger`                                                  | Intent, independent of hierarchy                                                    |
-| Compatibility            | `variant="danger"`; `tone="error"`                                                                           | Normalize to secondary/danger and danger respectively; one style implementation     |
-| Structural compatibility | `item`, `tab`                                                                                                | Existing stable direct-child rendering; interaction owner retains ARIA/roving focus |
-| `size`                   | `sm`, `md`, `lg`                                                                                             | Shared token dimensions, never a local height/padding override                      |
+| Property                 | Values                                                                                                                                                                      | Meaning                                                                             |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `variant`                | `primary`, `secondary`, `ghost`, `link`                                                                                                                                     | Solid emphasis, outlined action, quiet action, text action                          |
+| `tone`                   | `neutral`, `accent`, `info`, `success`, `warning`, `danger`                                                                                                                 | Intent, independent of hierarchy                                                    |
+| Compatibility            | `variant="danger"`; `tone="error"`                                                                                                                                          | Normalize to secondary/danger and danger respectively; one style implementation     |
+| Structural compatibility | `item`, `tab`                                                                                                                                                               | Existing stable direct-child rendering; interaction owner retains ARIA/roving focus |
+| `size`                   | `sm`, `md`, `lg`                                                                                                                                                            | Shared token dimensions, never a local height/padding override                      |
 | Other existing props     | `shape`, `iconOnly`, `label`, `tooltip`, `tooltipDetails`, `tooltipSide`, `shortcut`, `disabledReason`, `selected`, `loading`, `loadingLabel`, icons, `fullWidth`, `motion` | Preserve current contracts                                                          |
 
 The shared Button implements the independent tone prop. Existing seven variants
@@ -293,13 +293,13 @@ A tab, list row, tree row or card that holds small actions (close, remove, more)
 one item with one highlight. Do not place a separate ghost Button over or beside the
 primary control; use `ActionHost` and `InlineAction` from `src/shared/ui/ActionHost.tsx`.
 
-| Part                                | Contract                                                                                                                                                                                                                                                                                                                                          |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ActionHost` (`selected?`)          | Paints hover, keyboard focus (`:has(:focus-visible)`) and selection for the whole item. Renders `data-action-host`; `className` sets placement, gap, padding and radius only.                                                                                                                                                                     |
-| Primary control                     | A direct child Button (or one with `data-action-primary`) or `TreeRow` drops its own fills inside a host, keeping its text, focus ring and selected-tab indicator. Feature controllers keep roles, selection, drag and keyboard navigation.                                                                                                       |
-| `InlineAction` (`label`, `reveal?`) | Shared Button `inset`: about 20px, small radius, transparent at rest, `--color-selection` hover and `--color-selection-strong` press/open, secondary ink to foreground. It never paints an opaque square over a hovered or selected host.                                                                                                         |
-| Reveal                              | `reveal="interaction"` (default) shows the action while its host is hovered, focused or selected; keyboard focus, an open menu and pending always show it, and touch input (`hover: none` / `pointer: coarse`) shows it permanently. Use `reveal="always"` for field adornments and chips. Counts, warnings and status are never hidden this way. |
-| Isolation                           | Pointer down, click, middle click, Enter/Space and drag start on an `InlineAction` do not reach the host, so closing never also selects or drags the item. Middle-click close belongs on the host.                                                                                                                                                |
+| Part                                                | Contract                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ActionHost` (`selected?`)                          | Paints hover, keyboard focus (`:has(:focus-visible)`) and selection for the whole item. Renders `data-action-host`; `className` sets placement, gap, padding and radius only.                                                                                                                                                                                                                               |
+| Primary control                                     | A direct child Button (or one with `data-action-primary`) or `TreeRow` drops its own fills inside a host, keeping its text, focus ring and selected-tab indicator. Feature controllers keep roles, selection, drag and keyboard navigation.                                                                                                                                                                 |
+| `InlineAction` (`label`, `reveal?`)                 | Shared Button `inset`: about 20px, small radius, transparent at rest, `--color-selection` hover and `--color-selection-strong` press/open, secondary ink to foreground. It never paints an opaque square over a hovered or selected host.                                                                                                                                                                   |
+| Reveal                                              | `reveal="interaction"` (default) shows the action while its host is hovered, focused or selected; keyboard focus, an open menu and pending always show it, and touch input (`hover: none` / `pointer: coarse`) shows it permanently. Use `reveal="always"` for field adornments and chips. Counts, warnings and status are never hidden this way.                                                           |
+| Isolation                                           | Pointer down, click, middle click, Enter/Space and drag start on an `InlineAction` do not reach the host, so closing never also selects or drags the item. Middle-click close belongs on the host.                                                                                                                                                                                                          |
 | `InlineMoreAction` (`label`, `onOpen`, `expanded?`) | The row's overflow entry: an `InlineAction` with the More glyph, `aria-haspopup="menu"` and optional `aria-expanded`. `onOpen(anchor)` opens the same menu (same target, same permission gates) as right-click and the context-menu key, so touch and pointer users reach it. Use it for secondary actions only; keep frequent actions direct and keep status (counts, Git, connection) visible in the row. |
 
 ```tsx
@@ -343,7 +343,7 @@ rows migrate in their owning lines.
 | A few visible exclusive choices         | RadioGroup; RadioCards only when descriptions materially help                                         |
 | Short stable exclusive list             | Select when scanning is easy; Combobox for long or searchable lists                                   |
 | Several selected options                | MultiSelect, with discoverable removal and reset                                                      |
-| Same data in a different view           | SegmentedControl for an exclusive filter/display mode; `Tabs` for views or panels of one context    |
+| Same data in a different view           | SegmentedControl for an exclusive filter/display mode; `Tabs` for views or panels of one context      |
 | Number, password, tags, file, date/time | Specialized shared adapter; preserve parsing, validation, timezone and native file behavior           |
 | One independently saved value           | InlineEdit with explicit pending, failure and recovery                                                |
 
@@ -497,8 +497,8 @@ readable text on every surface.
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Hover and press      | Transient feedback uses shared surface or tone hover/pressed roles; it does not represent a saved choice.                                                                                                                                                                                       |
 | Selected and checked | Use selection roles for selected content and the control's on/mixed semantics for membership. Checkbox, switch, radio and segmented controls retain their distinct native or ARIA state.                                                                                                        |
-| Keyboard focus       | One contract (see "Global tokens"): fields turn the border to `--ui-field-border-focus` and add the 2px accent `--ui-focus-ring`; other controls use the shared outline. Independent of hover and selection. Preserve visible focus in forced-colors mode.                                                                                                                                      |
-| Disabled and pending | One disabled model (see "Global tokens"); disabled roles communicate unavailable actions; pending retains the operation's label and state and prevents duplicate submission where appropriate. Do not treat either as selection.                                                                                                          |
+| Keyboard focus       | One contract (see "Global tokens"): fields turn the border to `--ui-field-border-focus` and add the 2px accent `--ui-focus-ring`; other controls use the shared outline. Independent of hover and selection. Preserve visible focus in forced-colors mode.                                      |
+| Disabled and pending | One disabled model (see "Global tokens"); disabled roles communicate unavailable actions; pending retains the operation's label and state and prevents duplicate submission where appropriate. Do not treat either as selection.                                                                |
 | Accent               | Opt into the accent tone for intended actions; neutral primary actions remain neutral. Message and composer selection styling are separate consumers. Changing the accent must not recolor status, diff or running meaning.                                                                     |
 | Text selection       | General document, composer, editor, PDF and terminal selections have different owners. Preserve the composer's transparent text/highlight layer and the PDF text layer when changing shared selection roles; verify actual rendered selection rather than assuming all consumers use one token. |
 
@@ -858,9 +858,19 @@ and `bycoda.css`. The rules cover:
 - loaders without reduced-motion handling;
 - base-hue colour utilities;
 - native `title=` on actions;
-- `<p role="alert">`;
+- hand-written `role="alert"` and `aria-live` on DOM elements, and `role=` passed to `<Alert>`;
 - feature `createPortal` and `Popover role=menu`;
-- `hover:bg-*` recipes, opacity used as the disabled state, and fixed control heights.
+- `hover:bg-*` recipes, opacity used as the disabled state, and fixed control heights;
+- raw `<button>`, `<input>`, `<select>`, `<textarea>`, `<a href>` and `target="_blank"` in
+  feature code, native date/time inputs, and `Loader*` glyphs used as spinners;
+- weights above 500, arbitrary spacing values, literal layout numbers in `style={{}}`, and
+  removed focus outlines;
+- English prose left outside `t()` in JSX text or label/placeholder/tooltip props.
+
+Native dialogs (`alert`, `confirm`, `prompt`), `dangerouslySetInnerHTML`, direct motion-library
+imports, `console.log` in UI files and the `jsx-a11y` keyboard/ARIA rules are enforced by
+`.oxlint-invariants.json` through `pnpm check:invariants`. The complete convention table with
+the sanctioned component for each rule is in [code invariants](code-invariants.md).
 
 Existing findings are counted per file and rule in `scripts/checks/ui-drift-baseline.json` (1,964
 findings when created on 2026-11-01, 243 after the wave-2 migrations). A new
@@ -876,11 +886,12 @@ lower counts pass and are reported as improvements.
 Wiring: `scripts/checks/check-staged.mjs` runs the ratchet over the staged text of `src/**`
 `.ts`/`.tsx`/`.css` files (the working tree supplies variable definitions), and
 `scripts/checks/check-local.mjs` (`pnpm check:changed`) runs it over changed `src` files with
-`--files`. The preflight CI step is requested but not added yet: append
-`node scripts/checks/check-ui-drift.mjs` and `node scripts/checks/check-theme-colors.mjs` to the
-"Verify shared Host contracts and headless boundaries" step of `.github/workflows/ci.yml`
-(web jobs; the check reads `node_modules/tailwindcss/theme.css`, so dependencies must be
-installed). Until then the ratchet is a local and pre-commit gate only.
+`--files`. The `web` CI job runs `pnpm run check:invariants` after the package boundary check,
+and `check:web` includes it. The whole-tree `check:ui-drift` gate is not in CI yet: the current
+tree already exceeds the baseline for older rules in the voice and assistant features (numeric
+icon sizes, literal font sizes, motion literals), so wiring it needs either those lines fixed or
+an owner-approved `--ratchet`/`--update-baseline` first. The check reads
+`node_modules/tailwindcss/theme.css`, so dependencies must be installed when it runs in CI.
 
 Use `node scripts/checks/inventory-ui.mjs` (or `--json`) to measure remaining source
 sites. It is an advisory inventory, not a conformance gate. Review native semantics

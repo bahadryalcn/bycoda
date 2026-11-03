@@ -42,6 +42,31 @@ export const rules = {
   "fixed-control-size": "fixed h-7/h-8/size-7/size-8 on Button/ActionHost (breaks density)",
   "motion-literal":
     "literal cubic-bezier( or Nms transition/animation outside :root tokens (use var(--motion-duration-*) / var(--motion-ease-*))",
+  // Component-usage conventions (docs/reference/ui-component-catalog.md, code-invariants.md).
+  "raw-native-control":
+    "raw <button>/<input>/<select>/<textarea> outside src/shared/ui (use Button, TextField, TextareaField, Select/SearchableSelect, Checkbox)",
+  "raw-anchor":
+    "raw <a href> in feature code (use Button variant=link, or openExternal() for external URLs)",
+  "target-blank":
+    'target="_blank" (the desktop webview does not route it; use openExternal() from src/platform/tauri/openExternal.ts)',
+  "native-date-input":
+    'type="date|time|datetime-local" input (use DateTimePicker / DateRangePicker from src/shared/ui)',
+  "alert-role-prop": "role= passed to <Alert> (Alert sets alert/status from its tone)",
+  "raw-aria-live":
+    "aria-live= on a DOM element in feature code (use InlineMessage live=, LoadingText, Toast or Alert)",
+  "loader-icon-spinner":
+    "Loader/Loader2/LoaderCircle icon used as a spinner (use Spinner from src/shared/ui)",
+  "font-weight":
+    "font-semibold/font-bold or CSS font-weight above 500 (the type scale uses 400 and 500 only)",
+  "arbitrary-spacing":
+    "arbitrary spacing value (p-/m-/gap-/inset-/top-…[Npx]); use the spacing scale or --space-* tokens",
+  "inline-style-layout":
+    "literal layout number in style={{ width/height/margin/padding/top… }} (use classes or tokens)",
+  "focus-outline-removed":
+    "outline-none / outline: none in feature code (the focus ring contract lives in arc.css; use data-ui-focus attributes)",
+  "untranslated-jsx-text": "English sentence as raw JSX text (wrap user-visible copy in t())",
+  "untranslated-prop":
+    "English sentence as a literal label/placeholder/tooltip/aria-label prop (wrap in t())",
 };
 
 /** Variables set at runtime with computed names, or by third-party code. */
@@ -319,7 +344,23 @@ const twRules = [
     ),
   ],
   ["hover-bg", /(?<![\w\-:])[\w\-[\]&@*=:]*hover:bg-[\w\-[(]/g],
+  ["font-weight", tw(String.raw`font-(?:semibold|bold|extrabold|black)` + end)],
+  [
+    "arbitrary-spacing",
+    tw(
+      String.raw`(?:p|px|py|ps|pe|pt|pb|pl|pr|m|mx|my|ms|me|mt|mb|ml|mr|gap|gap-x|gap-y|space-x|space-y|top|left|right|bottom|inset|inset-x|inset-y|translate-x|translate-y)-\[\d+(?:\.\d+)?(?:px|rem|em)\]`,
+    ),
+  ],
+  ["focus-outline-removed", tw(String.raw`outline-none` + end)],
 ];
+
+const translatableProps =
+  /\s(?:label|placeholder|aria-label|tooltip|description|confirmLabel|cancelLabel|loadingLabel|pendingLabel|emptyLabel|title)=["']([A-Z][a-z]+(?: [a-z]+){2,}[.…!?]?)["']/g;
+// A capitalized word followed by at least two lowercase words between tags: prose, not an
+// identifier, code sample or a single product name.
+const jsxProse = />\s*([A-Z][a-z]+(?: [a-z]+){2,}[.…!?]?)\s*</g;
+const inlineStyleLayout =
+  /style=\{\{[^}]*\b(?:width|height|minWidth|maxWidth|minHeight|maxHeight|margin\w*|padding\w*|top|left|right|bottom|gap|inset\w*)\s*:\s*-?\d/g;
 
 const varUse = /var\(\s*(--[\w-]+)(?![\w-]|\$\{)/g;
 const twVarUse = /-\((?:[a-z-]+:)?(--[\w-]+)\)/g;
@@ -378,6 +419,10 @@ export function scanFile(file, text, definitions) {
           /var\(\s*--color-(?:accent|danger|warning|success)(?![\w-])/g,
         ))
           add("color-base-hue", valueOffset + match.index);
+        if (property === "font-weight" && /\b(?:[6-9]\d\d|bold|bolder)\b/.test(value))
+          add("font-weight", valueOffset);
+        if (property === "outline" && /^\s*none\b/.test(value))
+          add("focus-outline-removed", valueOffset);
       }
       if (property === "z-index" && Number.parseInt(value, 10) > 10) add("layer", valueOffset);
       // Reduced-motion overrides (0ms/1ms) are the accessible fallback, not drift.
@@ -453,8 +498,23 @@ export function scanFile(file, text, definitions) {
     const title = attributes.search(/\stitle=(?!""|'')/);
     if ((control || ["button", "a", "input"].includes(tag.name)) && title >= 0)
       add("native-title", tag.start + title + 1);
-    if ((tag.name === "p" || tag.name === "span") && /\srole=\{?["']alert["']/.test(tag.span))
+    if (
+      ["p", "span", "div", "small", "li", "section"].includes(tag.name) &&
+      /\srole=\{?["']alert["']/.test(tag.span)
+    )
       add("role-alert-text", tag.start);
+    if (["button", "input", "select", "textarea"].includes(tag.name))
+      add("raw-native-control", tag.start);
+    if (tag.name === "a" && /\shref=/.test(attributes)) add("raw-anchor", tag.start);
+    if (/\starget=\{?["']_blank["']/.test(attributes)) add("target-blank", tag.start);
+    if (tag.name === "input" && /\stype=["'](?:date|time|datetime-local)["']/.test(attributes))
+      add("native-date-input", tag.start);
+    if (tag.name === "Alert" && /\srole=/.test(attributes)) add("alert-role-prop", tag.start);
+    if (/^[a-z]/.test(tag.name) && /\saria-live=/.test(attributes)) add("raw-aria-live", tag.start);
+    if (/^(?:Loader|Loader2|LoaderCircle)$/.test(tag.name) && icons.has(tag.name))
+      add("loader-icon-spinner", tag.start);
+    for (const match of attributes.matchAll(translatableProps))
+      add("untranslated-prop", tag.start + match.index + 1);
     if (
       tag.name === "Popover" &&
       (/\srole=\{?["'](?:menu|listbox)["']/.test(attributes) ||
@@ -464,6 +524,13 @@ export function scanFile(file, text, definitions) {
     if ((tag.name === "Button" || tag.name === "ActionHost") && fixedControlSize.test(tag.span))
       add("fixed-control-size", tag.start);
   }
+  for (const match of source.matchAll(jsxProse)) {
+    // Text inside code samples and keyboard hints is literal by design.
+    const before = source.lastIndexOf("<", match.index);
+    if (/^<(?:code|kbd|pre|samp)\b/.test(source.slice(before, before + 6))) continue;
+    add("untranslated-jsx-text", match.index + 1);
+  }
+  for (const match of source.matchAll(inlineStyleLayout)) add("inline-style-layout", match.index);
   return findings;
 }
 

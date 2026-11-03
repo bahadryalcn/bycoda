@@ -1,0 +1,18 @@
+id: ts-i18n-concat
+language: tsx
+severity: error
+message: 'Concatenating a translated string with a literal breaks word order in other languages. Put the variable part into the message with a placeholder: t("Saved {p0} files", { p0: count }).'
+note: Rule K-I18N in docs/reference/code-invariants.md
+files:
+  - "src/**"
+ignores:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+rule:
+  any:
+    - pattern: t($MSG) + $STR
+    - pattern: $STR + t($MSG)
+    - pattern: t($MSG, $VALUES) + $STR
+constraints:
+  STR:
+    kind: string
