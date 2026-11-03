@@ -3,6 +3,20 @@
 ## User guides
 
 - [Getting started](guides/onboarding.md): initial setup and provider accounts.
+- [Personal assistant](guides/assistant.md): name, language, provider, permissions and daily budget.
+- [Voice companion](guides/voice.md): opt-in voice launcher and speech controls.
+- [Workbench navigation](guides/workbench.md): labels, tooltips and narrow-pane behavior.
+- [Explorer and file content](guides/explorer-and-file-content.md): viewers for files opened beside a conversation.
+- [Editor draft copies](guides/editor-draft-recovery.md): bounded local recovery copies of edited text.
+- [Search and recovered sessions](guides/search-and-recovery.md): search scopes, filters and recovery.
+- [Links to local conversations](guides/local-session-references.md): copy session links and references.
+- [Terminal appearance and reading tools](guides/terminal.md): fonts, zoom and reading aids.
+- [Source control review](guides/source-control.md): the Git panel, review target and checkouts.
+- [Coding workspaces and delivery](guides/managed-workspaces.md): current checkout, worktrees and handoff.
+- [MCP connections](guides/mcp.md): per-provider global and project MCP servers.
+- [Working with bycoda tools](guides/agent-tools.md): tool discovery for the assistant.
+- [Crews](guides/crews.md): coordinator, specialist and reviewer conversations.
+- [Usage budgets](guides/usage-budgets.md): budget rules for projects, sessions and workspaces.
 - [Diagnostics and reports](guides/diagnostics.md): runtime identity, redacted evidence and safe recovery.
 - [Remote access](guides/remote-access.md): connect to projects on another machine.
 - [Remote folder explorer](guides/remote-folder-explorer.md): browse connected machines.
@@ -20,6 +34,9 @@
 - [Conversation agent tools](integrations/conversation-agent-tools.md): MCP/CLI access, remote devices, terminals and task recovery.
 - [Host devices](integrations/devices.md): host integrations.
 - [Task corrections](integrations/task-corrections.md): recovery and review workflows.
+- [External tunnels](integrations/external-tunnels.md): ngrok and Cloudflare Quick Tunnels.
+- [Social Media integration](integrations/social.md): accounts, campaigns and conversations.
+- [AI campaign programs](integrations/social-programs.md): campaign variants and jobs on the Social service.
 
 ## Technical reference
 
@@ -43,6 +60,14 @@
 - [Localization](reference/localization.md): maintain application translation catalogs.
 - [Remote session protocol](reference/remote-session-protocol.md): identity, authority, and recovery.
 - [Repository hygiene](reference/repository-hygiene.md): tracked files and local artifacts.
+- [Host runtime](reference/host-runtime.md): Host input path and WebSocket migration.
+- [Managed workspaces](reference/managed-workspaces.md): registry, policy, delivery and retention contracts.
+- [Shared theme colors](reference/theme-colors.md): palette source and color rules.
+- [Agent tool management](reference/agent-tools.md): tool discovery and workflow metadata.
+- [Development server tools](reference/dev-servers.md): listener discovery and sharing.
+- [Runtime logs](reference/runtime-logs.md): browser, server and terminal output.
+- [Skill policy](reference/skill-policy.md): skill availability and owner preferences.
+- [Performance measurement](reference/performance-measurement.md): read-only measurement tool.
 
 ## Local operations
 

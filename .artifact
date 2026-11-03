@@ -14,7 +14,7 @@ and contributors. Preserve existing work and use the established locations.
 | Platform bridges | `src/platform/` |
 | Provider adapters and integration contracts | `src/integrations/` |
 | Host runtime and its tests | `host/` |
-| Expo mobile routes, feature code, shared UI, tests and package tooling | `mobile/` |
+| Expo mobile routes, feature code, shared UI, tests and package tooling (separate nested Git repository; ignored here) | `mobile/` |
 | Native application and Tauri configuration | `src-tauri/` |
 | Browser scenarios, fixtures, servers, and fixture configurations | `tests/browser/` |
 | Offline model behavior cases, deterministic graders and harness | `evals/` |

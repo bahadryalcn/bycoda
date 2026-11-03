@@ -7,7 +7,7 @@ to start a discussion. This guide applies to the
 
 ## Development environment
 
-Install Node.js, the pnpm version pinned in [package.json](package.json), Rust,
+Install Node.js 22.12 or newer (`.nvmrc` selects 22), the pnpm version pinned in [package.json](package.json), Rust,
 and Tauri's platform build prerequisites. To run agent sessions, install and
 authenticate a supported provider CLI.
 

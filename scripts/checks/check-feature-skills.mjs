@@ -13,6 +13,10 @@ const entries = (await readdir(skillsRoot, { withFileTypes: true }))
   .sort((a, b) => a.name.localeCompare(b.name));
 let documents = 0;
 let sourcePointers = 0;
+let mobilePointers = 0;
+// `mobile/` is a separate Expo Git repository (docs/reference/repository-layout.md).
+// Its pointers are validated only when that repository is checked out here.
+const mobileCheckedOut = await exists(path.join(root, "mobile"));
 let links = 0;
 
 async function exists(target) {
@@ -52,11 +56,14 @@ for (const entry of entries) {
   if (!frontmatter?.match(/^description:\s*\S/m)) {
     errors.push(`${entry.name}: missing description`);
   }
-  if (text.length > 6000) warnings.push(`${entry.name}: entry is ${text.length} chars (default read page: 6000)`);
+  if (text.length > 6000)
+    warnings.push(`${entry.name}: entry is ${text.length} chars (default read page: 6000)`);
   if (/^##.*\b20\d{2}-\d{2}-\d{2}/m.test(text)) {
     warnings.push(`${entry.name}: dated entry heading; check for task-log accumulation`);
   }
-  if (/authorized tonight|frozen checkout has no mobile|product migration not started/i.test(text)) {
+  if (
+    /authorized tonight|frozen checkout has no mobile|product migration not started/i.test(text)
+  ) {
     errors.push(`${entry.name}: stale session/snapshot wording in active entry`);
   }
   for (const paragraph of text.slice(text.indexOf("\n---", 4) + 4).split(/\r?\n\s*\r?\n/)) {
@@ -87,9 +94,15 @@ for (const entry of entries) {
     edges.set(file, targets);
     // Only literal, complete repository-root pointers. Globs, command strings and
     // abbreviated adjacent filenames require human review instead of guessing.
-    for (const match of body.matchAll(/`((?:src|src-tauri|host|mobile|apps|packages|scripts|tests|docs|evals|public|vendor|\.github)\/[^`\s*?{}|]+)`/g)) {
+    for (const match of body.matchAll(
+      /`((?:src|src-tauri|host|mobile|apps|packages|scripts|tests|docs|evals|public|vendor|\.github)\/[^`\s*?{}|]+)`/g,
+    )) {
       const pointer = match[1].replace(/:\d+(?:-\d+)?$/, "");
       sourcePointers++;
+      if (pointer.startsWith("mobile/") && !mobileCheckedOut) {
+        mobilePointers++;
+        continue;
+      }
       if (!(await exists(path.join(root, pointer)))) {
         errors.push(`${relative(file)}: missing source pointer ${pointer}`);
       }
@@ -109,9 +122,19 @@ for (const entry of entries) {
 }
 
 for (const owners of entryParagraphs.values()) {
-  if (owners.size >= 3) warnings.push(`Repeated entry paragraph in ${[...owners].join(", ")}; consider one canonical reference`);
+  if (owners.size >= 3)
+    warnings.push(
+      `Repeated entry paragraph in ${[...owners].join(", ")}; consider one canonical reference`,
+    );
+}
+if (mobilePointers) {
+  console.log(
+    `Skipped existence check for ${mobilePointers} mobile/ pointers: the separate mobile repository is not checked out at mobile/.`,
+  );
 }
 for (const warning of warnings) console.warn(`WARNING ${warning}`);
 for (const error of errors) console.error(`ERROR ${error}`);
-console.log(`Feature skills: ${entries.length} entries, ${documents} documents, ${links} relative links, ${sourcePointers} literal source pointers; ${errors.length} errors, ${warnings.length} warnings.`);
+console.log(
+  `Feature skills: ${entries.length} entries, ${documents} documents, ${links} relative links, ${sourcePointers} literal source pointers; ${errors.length} errors, ${warnings.length} warnings.`,
+);
 if (errors.length) process.exitCode = 1;

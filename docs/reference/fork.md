@@ -35,17 +35,13 @@ Installed `com.bycoda.desktop` apps check
 every 30 minutes and offer signed updates. Development identities never check.
 Failed automatic checks stay quiet; manual checks report the error.
 
-To publish a release:
-
-1. Run `pnpm run set-version <x.y.z>` with a version greater than every installed
-   version, and add a `## [<x.y.z>]` section to `CHANGELOG.md`.
-2. Commit, then push a `v<x.y.z>` tag. `.github/workflows/release.yml` checks the
-   tag against `package.json` and the changelog, builds the Windows NSIS installer
-   and the Apple Silicon app/DMG, and uploads signed updater artifacts and
-   `latest.json` to a **draft** release.
-3. Review the draft: `latest.json` must list both `windows-x86_64` and
-   `darwin-aarch64` with signatures. Then publish it. Installed apps see the
-   update only after publishing.
+Releases are not published by pushing a tag. The owner prepares an exact-source
+candidate and then explicitly dispatches **Prepare or publish reviewed candidate**
+(`.github/workflows/release-publish.yml`), which publishes only after revalidating
+the candidate, packages and updater signatures. Version bumps use
+`pnpm run set-version <x.y.z>` plus a `## [<x.y.z>]` changelog section. Channels,
+required evidence and the publish procedure are in
+[release operations](releases.md#packages-and-owner-publication).
 
 The updater public key is in the Tauri configuration. The private key and its
 password exist only in the maintainer's `~/.tauri/bycoda-updater.key*` files and
