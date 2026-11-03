@@ -11,7 +11,11 @@ export const WEBGL_IDLE_DROP_MS = 10_000;
  * live contexts, and a context loss falls back to the DOM renderer. Disposing
  * this adapter only releases render resources, never the PTY.
  */
-export function createTerminalWebgl(term: Terminal, canRender: () => boolean) {
+export function createTerminalWebgl(
+  term: Terminal,
+  canRender: () => boolean,
+  onRendererChange: () => void = () => {},
+) {
   let webgl: IDisposable | null = null;
   let context: WebGL2RenderingContext | null = null;
   let loading = false;
@@ -62,16 +66,21 @@ export function createTerminalWebgl(term: Terminal, canRender: () => boolean) {
       const addon = new WebglAddon();
       created = addon;
       addon.onContextLoss(() => {
-        if (webgl === addon) {
+        const current = webgl === addon;
+        if (current) {
           webgl = null;
           context = null;
         }
         addon.dispose();
+        if (current && !disposed && canRender()) onRendererChange();
       });
       const before = new Set(term.element?.querySelectorAll("canvas") ?? []);
       term.loadAddon(addon);
       webgl = addon;
       context = rendererContext(term, before);
+      // DOM and WebGL round character metrics differently. A retained PTY must
+      // be fitted to the new renderer even when its host size did not change.
+      onRendererChange();
       // A new renderer has no previous frame, even when the grid size is unchanged.
       term.refresh(0, term.rows - 1);
     } catch {

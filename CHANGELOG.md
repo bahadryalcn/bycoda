@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Interface
 
+- Refit running terminals after renderer changes so returning from a hidden panel uses the current cell size without restarting the shell.
 - Add missing translations, translate remaining English messages and keep keyboard focus in translated menus.
 - Follow the light theme during startup, keep SSH jump host order and focus when reordering, and show errors when a link cannot be opened.
 - Use shared icons, errors, tooltips and typography across the assistant, voice and desktop-control screens.

@@ -34,6 +34,7 @@ vi.mock("@xterm/addon-webgl", () => ({
 }));
 
 import { createTerminalWebgl, WEBGL_IDLE_DROP_MS } from "./terminalWebgl";
+import { fitTerminal } from "../model/terminalLayout";
 
 // Everything a PTY bridge hangs off the terminal. The renderer adapter must
 // never touch any of it: it only loads/drops render resources.
@@ -65,6 +66,55 @@ beforeEach(() => {
 });
 
 describe("terminal WebGL renderer adapter", () => {
+  it("refits the same terminal after renderer cell metrics change without a host resize", async () => {
+    const { term, loadAddon, refresh } = fakeTerminal();
+    let cell = { width: 8, height: 12 };
+    Object.assign(term, {
+      options: { lineHeight: 1, letterSpacing: 0 },
+      _core: {
+        _renderService: {
+          dimensions: {
+            css: {
+              get cell() {
+                return cell;
+              },
+            },
+          },
+        },
+      },
+      resize(cols: number, rows: number) {
+        this.cols = cols;
+        this.rows = rows;
+      },
+    });
+    const host = { clientWidth: 114, clientHeight: 100 } as HTMLElement;
+    const fit = () => fitTerminal(term, host, "shell");
+    fit();
+    expect([term.cols, term.rows]).toEqual([12, 8]);
+    loadAddon.mockImplementation(() => {
+      cell = { width: 10, height: 15 };
+    });
+    const adapter = createTerminalWebgl(
+      term,
+      () => true,
+      () => {
+        fit();
+      },
+    );
+
+    await adapter.load();
+    expect([term.cols, term.rows]).toEqual([10, 6]);
+    expect(refresh).toHaveBeenLastCalledWith(0, 5);
+
+    // Losing WebGL switches back to DOM metrics on the same running terminal.
+    webgl.addons[0].dispose.mockImplementation(() => {
+      cell = { width: 8, height: 12 };
+    });
+    webgl.addons[0].lose();
+    expect([term.cols, term.rows]).toEqual([12, 8]);
+    adapter.dispose();
+  });
+
   it("loads one addon, refreshes the full grid, and ignores repeat or concurrent loads", async () => {
     const { term, loadAddon, refresh, pty } = fakeTerminal();
     const adapter = createTerminalWebgl(term, () => true);

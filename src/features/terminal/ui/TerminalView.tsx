@@ -408,7 +408,7 @@ export function TerminalView({
     });
     applySizeRef.current = fitting.applySize;
 
-    const webgl = createTerminalWebgl(term, canRender);
+    const webgl = createTerminalWebgl(term, canRender, fitting.applySize);
     visibility = createTerminalVisibility({
       term,
       host,

@@ -28,6 +28,7 @@ Code paths below are repository-root relative.
 - Typography and effective canvas/contrast are separate policies; an optional line-height prop must not silently change transparency.
 - Keep saved terminal font/size/weight/lineHeight, stored migration and scoped Ctrl+wheel behavior. Reset returns to saved preference without respawn.
 - Preserve wide glyphs, TUI grid fitting, shell spacing restoration, flow/visibility/resize, keyboard/IME, drag/tab/split focus and native approval/history restrictions.
+- Refit the retained terminal after a renderer transition: DOM and WebGL can use different cell metrics even when the host dimensions stay unchanged.
 - Search and ghost suggestions are not executed output; no PTY input until explicit supported acceptance. Reduced motion disables unnecessary cursor motion.
 - Unknown image/filter/opacity backdrops remain unresolved; modeled contrast and xterm minimumContrastRatio do not prove every actual glyph or selected colored cell.
 
