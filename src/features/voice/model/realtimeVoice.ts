@@ -13,6 +13,7 @@ import {
   type VoiceRecentTurn,
 } from "./voiceReconnect";
 import { openMicrophone } from "./microphoneAccess";
+import { t } from "../../../shared/i18n";
 
 export type VoiceEvent = {
   type: string;
@@ -475,7 +476,7 @@ export class RealtimeVoice {
       if (options.microphone !== false) {
         if (!navigator.mediaDevices?.getUserMedia)
           throw new Error(
-            "Microphone access requires the desktop app or a secure browser context.",
+            t("Microphone access requires the desktop app or a secure browser context."),
           );
         this.stream = await openMicrophone({
           audio: {
@@ -843,6 +844,17 @@ export class RealtimeVoice {
     // playing; every NEW response waits for ASR to accept or delete this item.
     if (this.closed || this.pendingInput || this.discardedInput || !this.candidates.length) return;
     const candidate = this.candidates.shift()!;
+    this.pendingInput = {
+      epoch: candidate.epoch,
+      activate: candidate.activate,
+      timer: this.transcriptDeadline(),
+    };
+    this.send({ type: "input_audio_buffer.append", audio: pcmBase64(candidate.audio) });
+    this.send({ type: "input_audio_buffer.commit" });
+  }
+
+  /** Starts the wait for a committed candidate's transcript. Re-armed on restore. */
+  private transcriptDeadline(): ReturnType<typeof setTimeout> {
     let uploading = Number.POSITIVE_INFINITY;
     const expire = () => {
       const pending = this.pendingInput;
@@ -862,13 +874,7 @@ export class RealtimeVoice {
       // Without even a commit acknowledgement the connection is unresponsive.
       this.fail("Voice connection is too slow. Start voice again.");
     };
-    this.pendingInput = {
-      epoch: candidate.epoch,
-      activate: candidate.activate,
-      timer: setTimeout(expire, TRANSCRIPT_TIMEOUT),
-    };
-    this.send({ type: "input_audio_buffer.append", audio: pcmBase64(candidate.audio) });
-    this.send({ type: "input_audio_buffer.commit" });
+    return setTimeout(expire, TRANSCRIPT_TIMEOUT);
   }
 
   /** Drops the pending candidate as unconfirmed speech and continues. */
@@ -928,7 +934,11 @@ export class RealtimeVoice {
       // sent, the same committed candidate can still yield genuine late words.
       clearTimeout(cleanup.timer);
       this.discardedInput = undefined;
-      this.pendingInput = { ...cleanup.awaitingTranscript, itemId: id };
+      this.pendingInput = {
+        ...cleanup.awaitingTranscript,
+        itemId: id,
+        timer: this.transcriptDeadline(),
+      };
     }
     if (!id || id !== this.pendingInput?.itemId) return;
     if (event.type === "conversation.item.input_audio_transcription.completed") {

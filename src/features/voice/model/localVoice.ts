@@ -9,6 +9,7 @@ import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
 import { speechTranscript } from "./voiceTranscript";
 import { openMicrophone } from "./microphoneAccess";
+import { t } from "../../../shared/i18n";
 
 export type SpeechBinding = { sessionId?: string; sequence: number };
 type Callbacks = {
@@ -73,7 +74,9 @@ export class LocalVoice {
   async connect() {
     try {
       if (!navigator.mediaDevices?.getUserMedia)
-        throw new Error("Microphone access requires the desktop app or a secure browser context.");
+        throw new Error(
+          t("Microphone access requires the desktop app or a secure browser context."),
+        );
       this.info = await localVoiceBackend.start(this.config);
       if (this.closed) {
         await localVoiceBackend.release(this.info.lease);

@@ -351,7 +351,10 @@ it.each(["xai", "openai"] as const)(
       await vi.advanceTimersByTimeAsync(30_000);
       expect(events.error).not.toHaveBeenCalled();
       expect(events.tool).not.toHaveBeenCalled();
+      // The restore re-armed a fresh deadline and the accepted transcript cleared it.
+      const timers = vi.getTimerCount();
       voice.close();
+      expect(vi.getTimerCount()).toBeLessThanOrEqual(timers);
     } finally {
       vi.useRealTimers();
     }
