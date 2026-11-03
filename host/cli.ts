@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { REMOTE_PROVIDERS, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { version } from "../package.json";
 import { readHostBuildIdentity } from "./build-identity";
@@ -43,18 +43,53 @@ const statePath = join(directory, "running.json");
 type Running = { pid: number; port: number; secret: string };
 const readRunning = (): Running | undefined => {
   if (!existsSync(statePath)) return;
-  return JSON.parse(readFileSync(statePath, "utf8")) as Running;
+  try {
+    const state = JSON.parse(readFileSync(statePath, "utf8")) as Partial<Running> | null;
+    if (
+      !state ||
+      !Number.isInteger(state.pid) ||
+      !Number.isInteger(state.port) ||
+      typeof state.secret !== "string"
+    )
+      return;
+    return state as Running;
+  } catch {
+    // Corrupt or half-written running.json: treat as not running.
+    return;
+  }
+};
+class HostUnreachableError extends Error {}
+const safeEqual = (a: string, b: string): boolean => {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+};
+const readStdinText = async (limit?: number, message = "Input is too large."): Promise<string> => {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of process.stdin) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    bytes += buffer.length;
+    if (limit !== undefined && bytes > limit) throw new Error(message);
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 };
 const lifecycle = async (state: Running, action: "status" | "stop") => {
-  const response = await fetch(`http://127.0.0.1:${state.port}/lifecycle`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${state.secret}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ action }),
-    signal: AbortSignal.timeout(5_000),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`http://127.0.0.1:${state.port}/lifecycle`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${state.secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action }),
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    throw new HostUnreachableError("Host is unreachable");
+  }
   if (!response.ok) throw new Error("Could not verify the running host");
 };
 
@@ -228,20 +263,26 @@ Connect another computer using an SSH forward to the loopback port.`);
       console.log("Host is stopped");
       return;
     }
-    if (command === "stop")
-      await stopHostWithServicePolicy(state.pid, async () => {
-        await lifecycle(state, "stop");
-        if (process.platform !== "darwin") return;
-        // cleanup removes this state only after all provider work has drained.
-        for (let i = 0; i < 200; i++) {
-          if (readRunning()?.pid !== state.pid) return;
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-        throw new Error(
-          "The host is still draining work; its service was not unloaded. Retry stop shortly.",
-        );
-      });
-    else await lifecycle(state, command);
+    try {
+      if (command === "stop")
+        await stopHostWithServicePolicy(state.pid, async () => {
+          await lifecycle(state, "stop");
+          if (process.platform !== "darwin") return;
+          // cleanup removes this state only after all provider work has drained.
+          for (let i = 0; i < 200; i++) {
+            if (readRunning()?.pid !== state.pid) return;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          throw new Error(
+            "The host is still draining work; its service was not unloaded. Retry stop shortly.",
+          );
+        });
+      else await lifecycle(state, command);
+    } catch (error) {
+      if (!(error instanceof HostUnreachableError)) throw error;
+      console.log("Host is stopped");
+      return;
+    }
     console.log(
       command === "stop"
         ? "Host is stopping"
@@ -381,19 +422,21 @@ Connect another computer using an SSH forward to the loopback port.`);
           if (
             request.method !== "POST" ||
             request.headers.origin ||
-            request.headers.authorization !== `Bearer ${secret}`
+            !safeEqual(request.headers.authorization ?? "", `Bearer ${secret}`)
           ) {
             response.writeHead(403).end();
             return;
           }
-          let body = "";
-          request.on("data", (chunk) => {
-            body += String(chunk);
-            if (body.length > 128) request.destroy();
+          const bodyChunks: Buffer[] = [];
+          let bodyBytes = 0;
+          request.on("data", (chunk: Buffer) => {
+            bodyBytes += chunk.length;
+            if (bodyBytes > 128) request.destroy();
+            else bodyChunks.push(chunk);
           });
           request.on("end", () => {
             try {
-              const action = JSON.parse(body).action;
+              const action = JSON.parse(Buffer.concat(bodyChunks).toString("utf8")).action;
               if (action !== "status" && action !== "stop") {
                 response.writeHead(400).end();
                 return;
@@ -524,14 +567,10 @@ async function entry() {
     try {
       if (args.includes("--input") && option("input", "-") !== "-")
         throw new Error("Conversation CLI accepts JSON on stdin only.");
-      let raw = "";
-      let inputBytes = 0;
-      for await (const chunk of process.stdin) {
-        inputBytes += Buffer.byteLength(chunk);
-        if (inputBytes > CONVERSATION_MAX_INPUT_BYTES)
-          throw new Error("Conversation input too large.");
-        raw += String(chunk);
-      }
+      const raw = await readStdinText(
+        CONVERSATION_MAX_INPUT_BYTES,
+        "Conversation input too large.",
+      );
       console.log(
         JSON.stringify({
           ok: true,
@@ -565,11 +604,7 @@ async function entry() {
     try {
       if (args.includes("--input") && option("input", "-") !== "-")
         throw new Error("Runtime logs CLI accepts JSON on stdin only.");
-      let raw = "";
-      for await (const chunk of process.stdin) {
-        raw += String(chunk);
-        if (raw.length > 64 * 1024) throw new Error("Runtime log input is too large.");
-      }
+      const raw = await readStdinText(64 * 1024, "Runtime log input is too large.");
       const input: unknown = JSON.parse(raw || "{}");
       if (!input || typeof input !== "object" || Array.isArray(input))
         throw new Error("Runtime log input must be an object.");
@@ -606,11 +641,7 @@ async function entry() {
     }
     if (args.includes("--input") && option("input", "-") !== "-")
       throw new Error("Social CLI accepts JSON on stdin only.");
-    let raw = "";
-    for await (const chunk of process.stdin) {
-      raw += String(chunk);
-      if (raw.length > 1024 * 1024) throw new Error("Social input is too large.");
-    }
+    const raw = await readStdinText(1024 * 1024, "Social input is too large.");
     const input: unknown = JSON.parse(raw || "{}");
     if (!input || typeof input !== "object" || Array.isArray(input))
       throw new Error("Social input must be an object.");
