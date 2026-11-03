@@ -682,9 +682,13 @@ export async function writeHostFile(
       // The path was resolved earlier; refuse if the final component became a symlink,
       // and have the kernel refuse to follow one where O_NOFOLLOW exists.
       if ((await lstat(path)).isSymbolicLink()) throw new Error("Path changed on the host");
+      // Windows has no O_NOFOLLOW and rejects these numeric flags with EINVAL; the lstat
+      // check above is the guard there.
       const handle = await open(
         path,
-        fsConstants.O_WRONLY | fsConstants.O_TRUNC | (fsConstants.O_NOFOLLOW ?? 0),
+        fsConstants.O_NOFOLLOW === undefined
+          ? "w"
+          : fsConstants.O_WRONLY | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW,
       );
       try {
         await handle.writeFile(content, "utf8");
