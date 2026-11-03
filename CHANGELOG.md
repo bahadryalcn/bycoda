@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refuse hidden files such as `.env` in HTML previews and stop previews from sending data to other sites.
 - Reject invalid social webhook signatures instead of accepting them, and keep the Host running when an asynchronous error is not handled.
 - Keep Turkish and other non-ASCII text intact in large formatter and CLI inputs, and refuse to save files that are not UTF-8 or that became symlinks.
-- Retry a failed mobile LAN configuration load, use a free port when the saved one is taken, and start background services independently.
+- Retry a failed LAN gateway configuration load, use a free port when the saved one is taken, and start background services independently.
 - Rate-limit MCP requests per token and report rate limiting clearly.
 - Give secondary windows only the permissions they use.
 - Enable the microphone on Linux and bundle the correct Host on Intel Macs.

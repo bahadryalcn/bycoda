@@ -42,7 +42,7 @@ System Settings > Privacy & Security:
 - **Files & Folders** and **Full Disk Access**: projects in Desktop, Documents,
   Downloads, removable or network volumes. Grant Full Disk Access if a terminal
   or agent tool keeps hitting prompts.
-- **Local Network**: phone pairing over the LAN and local dev servers.
+- **Local Network**: devices and development servers on your local network.
 - **Automation**: tools that script other apps with AppleScript.
 - **Notifications**: System Settings > Notifications > bycoda.
 
