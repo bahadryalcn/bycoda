@@ -17,7 +17,7 @@
 	<key>NSNetworkVolumesUsageDescription</key>
 	<string>bycoda opens project folders you choose, including folders on network volumes.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>bycoda connects to devices on your local network, such as your phone, and to development servers you run.</string>
+	<string>bycoda connects to devices and development servers on your local network.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Commands that you or an agent run in a bycoda terminal may ask to control other apps, for example through AppleScript.</string>
 	<key>NSCameraUsageDescription</key>
