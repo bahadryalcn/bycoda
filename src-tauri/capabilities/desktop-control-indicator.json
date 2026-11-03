@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-control-indicator",
+  "description": "Desktop-control indicator (desktop-control.html): no plugin, process, updater or window-creation access.",
+  "windows": ["desktop-control-indicator"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme",
+    "core:webview:allow-set-webview-zoom"
+  ]
+}
