@@ -5,6 +5,7 @@ import {
   type AssistantVoiceContextInvalidate,
   type AssistantVoiceContextReason,
   AssistantVoiceDisclosureSchema,
+  type AssistantVoiceDisclosureSource,
 } from "../../../shared/model/assistantVoiceContext";
 import type { VoiceHistoryBinding } from "./voiceHistory";
 import type { VoiceThreadTranscript } from "./voiceThreads";
@@ -84,7 +85,9 @@ export class VoiceCausalGeneration {
               ownerMessageId: owner.message.id,
               contextProjectIds: [...scope.projectIds],
               summaryUsed: this.summaryUsed,
-              ...(this.summaryUsed&&this.summaryProofId?{summaryProofId:this.summaryProofId}:{}),
+              ...(this.summaryUsed && this.summaryProofId
+                ? { summaryProofId: this.summaryProofId }
+                : {}),
               ...(this.head ? { previousContextId: this.head.id } : {}),
             })
           ).voiceContext,
@@ -124,23 +127,51 @@ export class VoiceCausalGeneration {
     if (!head || !this.active()) return;
     return {
       id: head.id,
-      receive: (value: unknown, rawDisclosure: unknown, requestId: string) => {
+      receive: (
+        value: unknown,
+        rawDisclosure: unknown,
+        requestId: string,
+        expectedSource?: AssistantVoiceDisclosureSource,
+      ) => {
         try {
           const receipt = AssistantVoiceContextSchema.parse(value),
             disclosure = AssistantVoiceDisclosureSchema.parse(rawDisclosure);
           if (
+            !this.active() ||
             receipt.id !== head.id ||
             receipt.ownerMessageId !== head.ownerMessageId ||
             disclosure.contextId !== head.id ||
             disclosure.requestId !== requestId ||
-            !disclosure.verified ||
-            !Array.isArray(disclosure.projectIds) ||
-            !this.visible?.(disclosure.projectIds)
+            receipt.environmentId !== this.environmentId ||
+            receipt.threadId !== this.initialThread ||
+            receipt.generationKey !== this.generationKey ||
+            (disclosure.verified &&
+              (!Array.isArray(disclosure.projectIds) || !this.visible?.(disclosure.projectIds))) ||
+            (!disclosure.verified &&
+              (receipt.status !== "unknown" ||
+                !expectedSource ||
+                !disclosure.source ||
+                Object.keys(expectedSource).some(
+                  (key) =>
+                    disclosure.source?.[key as keyof AssistantVoiceDisclosureSource] !==
+                    expectedSource[key as keyof AssistantVoiceDisclosureSource],
+                ) ||
+                disclosure.source.sessionId !== expectedSource.sessionId ||
+                disclosure.source.environmentId !== receipt.environmentId ||
+                disclosure.source.threadId !== head.threadId ||
+                !this.visible?.([disclosure.source.projectId])))
           )
             throw new Error(
               "The voice tool result could not be verified. Check its original operation.",
             );
-          this.observe(receipt);
+          // Authenticated data can be usable while it lacks retained-history
+          // provenance. Unknown is monotonic and can never become a save grant.
+          if (!disclosure.verified || receipt.status === "unknown") this.unknown = true;
+          // Tool responses may arrive after a newer owner turn or a later
+          // completion. Their exact operation result remains valid, but their
+          // context snapshot must never roll the current head backward.
+          if (this.head?.id === receipt.id && receipt.version >= this.head.version)
+            this.observe(receipt);
         } catch (error) {
           this.unknown = true;
           if (this.active()) this.failed(error);

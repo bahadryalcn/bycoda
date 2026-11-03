@@ -1,5 +1,9 @@
-import { hostFeatureRequest } from "../../connections/model/hostFeatureClient";
-import { remoteSessionFor } from "../../connections/model/connections";
+import { featureHost, hostFeatureRequest } from "../../connections/model/hostFeatureClient";
+import { remoteRequest, remoteSessionFor } from "../../connections/model/connections";
+import {
+  AssistantVoiceDisclosureSchema,
+  type AssistantVoiceDisclosureSource,
+} from "../../../shared/model/assistantVoiceContext";
 import {
   isVoiceToolFamily,
   readVoiceToolCatalog,
@@ -16,7 +20,12 @@ export type VoiceToolTarget = {
   threadId?: string;
   causalContext?: {
     id: string;
-    receive: (context: unknown, disclosure: unknown, requestId: string) => void;
+    receive: (
+      context: unknown,
+      disclosure: unknown,
+      requestId: string,
+      expectedSource?: AssistantVoiceDisclosureSource,
+    ) => void;
   };
 };
 export type VoiceToolCall = {
@@ -89,19 +98,39 @@ export async function callVoiceTool(
     (target.causalContext && !call.requestId)
   )
     throw new Error("The voice tool request is invalid.");
-  const result = await hostFeatureRequest<unknown>(
-    target.cwd,
-    VOICE_TOOLS_CAPABILITY,
-    "voice.tools.call",
-    {
-      ...context,
-      family: call.family,
-      action: call.action,
-      input: call.input,
-      ...(call.requestId === undefined ? {} : { requestId: call.requestId }),
-      ...(target.causalContext ? { causalContextId: target.causalContext.id } : {}),
-    },
-  );
+  const params = {
+    ...context,
+    family: call.family,
+    action: call.action,
+    input: call.input,
+    ...(call.requestId === undefined ? {} : { requestId: call.requestId }),
+    ...(target.causalContext ? { causalContextId: target.causalContext.id } : {}),
+  };
+  // Capture the exact transport subject once; a later cache refresh must not
+  // route this operation to a replacement Host/project while proof is pending.
+  let expectedSource: AssistantVoiceDisclosureSource | undefined;
+  const result = target.causalContext
+    ? await (async () => {
+        const bound = await featureHost(target.cwd, VOICE_TOOLS_CAPABILITY);
+        expectedSource = {
+          environmentId: bound.machine.environmentId,
+          projectId: bound.projectId,
+          threadId: context.threadId!,
+          ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+          family: call.family,
+          action: call.action,
+        };
+        return remoteRequest<unknown>(bound.machine.id, "voice.tools.call", {
+          ...params,
+          projectId: bound.projectId,
+        });
+      })()
+    : await hostFeatureRequest<unknown>(
+        target.cwd,
+        VOICE_TOOLS_CAPABILITY,
+        "voice.tools.call",
+        params,
+      );
   if (!target.causalContext) return result;
   if (
     !result ||
@@ -114,10 +143,28 @@ export async function callVoiceTool(
   )
     throw new Error("The voice tool result could not be verified. Check its original operation.");
   const envelope = result as { value: unknown; voiceContext?: unknown; voiceDisclosure?: unknown };
+  const disclosure = AssistantVoiceDisclosureSchema.parse(envelope.voiceDisclosure);
+  if (disclosure.source) {
+    if (
+      !expectedSource ||
+      Object.keys(expectedSource).some(
+        (key) =>
+          disclosure.source?.[key as keyof AssistantVoiceDisclosureSource] !==
+          expectedSource?.[key as keyof AssistantVoiceDisclosureSource],
+      ) ||
+      disclosure.source.sessionId !== expectedSource.sessionId
+    )
+      throw new Error("The voice tool result could not be verified. Check its original operation.");
+  } else if (!disclosure.verified) {
+    // Older Hosts cannot authenticate previously unsupported tool output. Never
+    // replay a possibly applied operation to obtain a different receipt.
+    throw new Error("The voice tool result could not be verified. Check its original operation.");
+  }
   target.causalContext.receive(
     envelope.voiceContext,
     envelope.voiceDisclosure,
     call.requestId ?? "",
+    expectedSource,
   );
   return envelope.value;
 }

@@ -93,14 +93,30 @@ function fixture() {
     },
   };
 }
-it("retains the immutable summary proof actually seeded across accepted turns",async()=>{
-  const f=fixture();let requestId=0;
-  const generation=new VoiceCausalGeneration([],true,()=>true,f.failed,()=>`summary-request-${++requestId}`,"original-summary-proof");
-  await generation.accept(f.binding,f.source(),"Owner text");
-  await generation.accept(f.binding,f.source("later-owner","Continue"),"Continue");
-  expect(f.request.mock.calls.filter(([input])=>input.op==="voice.context.open").map(([input])=>input)).toEqual([
-    expect.objectContaining({summaryUsed:true,summaryProofId:"original-summary-proof"}),
-    expect.objectContaining({summaryUsed:true,summaryProofId:"original-summary-proof",previousContextId:expect.any(String)}),
+it("retains the immutable summary proof actually seeded across accepted turns", async () => {
+  const f = fixture();
+  let requestId = 0;
+  const generation = new VoiceCausalGeneration(
+    [],
+    true,
+    () => true,
+    f.failed,
+    () => `summary-request-${++requestId}`,
+    "original-summary-proof",
+  );
+  await generation.accept(f.binding, f.source(), "Owner text");
+  await generation.accept(f.binding, f.source("later-owner", "Continue"), "Continue");
+  expect(
+    f.request.mock.calls
+      .filter(([input]) => input.op === "voice.context.open")
+      .map(([input]) => input),
+  ).toEqual([
+    expect.objectContaining({ summaryUsed: true, summaryProofId: "original-summary-proof" }),
+    expect.objectContaining({
+      summaryUsed: true,
+      summaryProofId: "original-summary-proof",
+      previousContextId: expect.any(String),
+    }),
   ]);
 });
 it("chains the exact initial canonical seeds and accepted owner receipts in one actual generation", async () => {
@@ -203,6 +219,129 @@ it("holds proof while tools are pending and accepts only the current exact resul
     ),
   ).toThrow();
   expect(await generation.proof()).toBeUndefined();
+});
+
+it("keeps the newest context when an exact earlier tool response arrives out of order", async () => {
+  const f = fixture(),
+    generation = f.generation();
+  await generation.accept(f.binding, f.source(), "Owner text");
+  const tool = (await generation.tool())!,
+    head = f.head;
+  const disclosure = (requestId: string) => ({
+    id: "proof-" + requestId,
+    contextId: head.id,
+    requestId,
+    verified: true,
+    projectIds: ["p"],
+  });
+  tool.receive({ ...head, version: 5 }, disclosure("second"), "second");
+  expect(() =>
+    tool.receive(
+      { ...head, version: 4, status: "pending", projectIds: undefined },
+      disclosure("first"),
+      "first",
+    ),
+  ).not.toThrow();
+  expect(await generation.context()).toMatchObject({ id: head.id, version: 5, status: "known" });
+  expect(await generation.proof()).toBe(head.id);
+});
+
+it("does not replace a new owner turn's head with the result of its captured earlier turn", async () => {
+  const f = fixture(),
+    generation = f.generation();
+  await generation.accept(f.binding, f.source("first-owner"), "Owner text");
+  const tool = (await generation.tool())!,
+    old = f.head;
+  await generation.accept(f.binding, f.source("second-owner"), "Owner text");
+  const current = f.head;
+  tool.receive(
+    { ...old, version: 4 },
+    { id: "proof", contextId: old.id, requestId: "earlier", verified: true, projectIds: ["p"] },
+    "earlier",
+  );
+  expect(await generation.context()).toMatchObject({
+    id: current.id,
+    ownerMessageId: "second-owner",
+  });
+  expect(await generation.proof()).toBe(current.id);
+});
+
+it.each(["desktop.status", "desktop.snapshot", "browser.open"])(
+  "accepts authenticated %s output without certifying it for retained history",
+  async (action) => {
+    const f = fixture(),
+      generation = f.generation();
+    await generation.accept(f.binding, f.source(), "Owner text");
+    const head = f.head,
+      tool = (await generation.tool())!;
+    const source = {
+      environmentId: "host",
+      projectId: "p",
+      threadId: "thread",
+      family: "conversation" as const,
+      action,
+    };
+    expect(() =>
+      tool.receive(
+        {
+          ...head,
+          version: 2,
+          status: "unknown",
+          projectIds: undefined,
+          reason: "unverified-tool",
+        },
+        { id: "operation-proof", contextId: head.id, requestId: "tool", verified: false, source },
+        "tool",
+        source,
+      ),
+    ).not.toThrow();
+    expect(await generation.proof()).toBeUndefined();
+    expect((await generation.context())?.status).toBe("unknown");
+    expect(f.failed).not.toHaveBeenCalled();
+    await generation.accept(f.binding, f.source("next-owner"), "Owner text");
+    expect(await generation.proof()).toBeUndefined();
+  },
+);
+
+it("refuses unscoped results without authenticated exact source metadata or with a hidden source project", async () => {
+  for (const bad of ["missing", "foreign-host", "foreign-project", "hidden"]) {
+    const f = fixture(),
+      generation = f.generation();
+    await generation.accept(f.binding, f.source(), "Owner text");
+    const head = f.head,
+      tool = (await generation.tool())!;
+    const source = {
+      environmentId: "host",
+      projectId: "p",
+      threadId: "thread",
+      family: "conversation" as const,
+      action: "desktop.status",
+    };
+    const received = {
+      ...source,
+      ...(bad === "foreign-host"
+        ? { environmentId: "other" }
+        : bad === "foreign-project"
+          ? { projectId: "different" }
+          : {}),
+    };
+    if (bad === "hidden") f.visible = false;
+    expect(() =>
+      tool.receive(
+        { ...head, version: 2, status: "unknown", projectIds: undefined },
+        {
+          id: "proof",
+          contextId: head.id,
+          requestId: "tool",
+          verified: false,
+          ...(bad === "missing" ? {} : { source: received }),
+        },
+        "tool",
+        source,
+      ),
+    ).toThrow();
+    expect(await generation.proof()).toBeUndefined();
+  }
 });
 it("rejects a foreign captured source or truncated owner text before context admission", async () => {
   const f = fixture();

@@ -14,12 +14,29 @@
   },
   "suites": [
     {
+      "id": "generated-file-links",
+      "config": "tests/browser/generated-file-links.playwright.config.ts",
+      "files": ["generated-file-links.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/generated-file-links.vite.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/generated-file-links.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["generated-file-links.spec.ts"]
+        }
+      ]
+    },
+    {
       "id": "assistant-room",
       "config": "tests/browser/playwright.assistant-room.config.ts",
       "files": ["assistant-room.e2e.ts"],
       "fixture": {
         "config": "tests/browser/vite.assistant-room.config.ts",
-        "mode": "dev",
+        "mode": "preview",
         "path": "/tests/browser/assistant-room.html"
       },
       "projects": [
@@ -1690,6 +1707,11 @@
     {
       "config": "tests/browser/update-footer.playwright.config.ts",
       "files": ["update-footer.spec.ts"],
+      "browsers": ["chromium"]
+    },
+    {
+      "config": "tests/browser/generated-file-links.playwright.config.ts",
+      "files": ["generated-file-links.spec.ts"],
       "browsers": ["chromium"]
     }
   ]

@@ -13,6 +13,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { PromptField } from "../../../shared/ui/PromptField";
 import { SocialModelField } from "./SocialModelField";
 import {
   defaultProgram,
@@ -227,14 +228,15 @@ export function ProgramSetupForm({
         <div className="social-program-step" data-program-step="0" hidden={setupStep !== 0}>
           <details className="social-program-advanced social-program-assistant">
             <summary>{t("Describe the campaign to AI")}</summary>
-            <TextareaField
+            <PromptField
               disabled={socialLocked}
               label={t("Campaign instructions")}
-              rows={3}
+              placeholder={t("Campaign instructions")}
+              minRows={3}
+              maxRows={10}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-            />
-            <Button
+              toolbarTrailing={<Button
               variant="secondary"
               loading={pendingUi.is("programs.fill-settings-with-ai")}
               type="button"
@@ -252,7 +254,8 @@ export function ProgramSetupForm({
               }
             >
               {t("Fill settings with AI")}
-            </Button>
+            </Button>}
+            />
             {questions.map((q, i) => (
               <p key={i}>{q}</p>
             ))}

@@ -271,6 +271,60 @@ describe("model picker with a remote Host catalog", () => {
 });
 
 describe("model picker catalog states", () => {
+  it.each(["before mount", "after mount"])(
+    "edits a persisted model's reasoning without selecting it again when its catalog arrives %s",
+    async (arrival) => {
+      const model: AgentModel = {
+        id: "codex:owner-private-v42",
+        harness: "codex",
+        name: "Owner private model",
+        settings: [{ ...effort("low"), id: "reasoningEffort" }],
+      };
+      setHarnessModels("codex", arrival === "before mount" ? [model] : []);
+      const onChange = vi.fn();
+      const onSettingsChange = vi.fn();
+      const values = {
+        reasoningEffort: "low",
+        accountId: "owner-account",
+        customPolicy: "keep-this-setting",
+      };
+      await act(async () =>
+        root.render(
+          createElement(ModelPicker, {
+            harness: "codex",
+            model: model.id,
+            values,
+            presentation: "field",
+            showExtras: true,
+            onChange,
+            onSettingsChange,
+          }),
+        ),
+      );
+      if (arrival === "after mount") {
+        expect(trigger().textContent).not.toContain("Owner private model");
+        await act(async () => setHarnessModels("codex", [model]));
+      }
+      expect(trigger().textContent).toContain("Owner private model");
+      await act(async () => trigger().click());
+      const reasoning = [
+        ...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+      ].find((item) => item.textContent?.includes("Reasoning"));
+      expect(reasoning).toBeTruthy();
+      await act(async () => reasoning!.click());
+      const high = [
+        ...container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+      ].find((item) => item.textContent?.trim() === "High");
+      expect(high).toBeTruthy();
+      await act(async () => high!.click());
+      expect(onSettingsChange).toHaveBeenCalledExactlyOnceWith({
+        ...values,
+        reasoningEffort: "high",
+      });
+      expect(onChange).not.toHaveBeenCalled();
+    },
+  );
+
   it("keeps a saved model that the catalog no longer lists visible and selectable elsewhere", async () => {
     const listed: AgentModel = { id: "cursor:listed", harness: "cursor", name: "Listed" };
     const source = hostSource([listed], {

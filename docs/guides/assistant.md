@@ -6,6 +6,32 @@ also appears in its Room and on messages it writes. Voice setup checks the
 provider, microphone and selected voice separately. Talking always requires an
 explicit microphone action.
 
+Setup offers a daily token budget of one million for an unconfigured assistant.
+Choose a preset or enter an exact custom limit; existing chosen values are kept.
+This limits local scheduling, not your provider's bill. Work and quiet hours use
+24-hour clock selections. **Work all day** keeps scheduling available throughout
+the day; quiet hours hold notifications. The model's effort can be changed directly
+without selecting the same model again. Additional explanations are available from
+the information controls beside each group.
+
+When you enable job execution without a chosen worker, the available default
+model becomes the worker selection. If no model is available, choose one before
+enabling job execution. Opening setup alone does not save a worker or start work.
+
+Voice has **Global** and **Project** scope. New voice configurations start in
+Global; an existing explicit scope is retained. Moving between projects or app
+views keeps an authorized voice connection open. Each utterance retains its
+original target; the next utterance follows the current selection unless pinned.
+Disconnect, screen-lock sleep and permission revocation still stop capture.
+
+Global voice can discover displayed project names and historical session
+metadata, then use exact project/session identities for navigation and lifecycle
+actions. Partial or duplicate project names need clarification. Desktop operations
+can use a real assistant conversation without opening a coding session, while
+retaining the configured app allowlist and existing native approval flow. A tool's
+authentic response can be usable even when its contents cannot be attributed to a
+project; that content does not become a saved personal rule or trusted memory.
+
 ## Give and follow work
 
 The Room opens on **Today**, with a request field and current work. Use its tabs

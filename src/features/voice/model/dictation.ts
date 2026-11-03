@@ -3,6 +3,8 @@ import { localVoiceBackend, type VoiceRuntimeConfig } from "./localVoiceClient";
 import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
 
+const noop = () => {};
+
 export type DictationState = "idle" | "starting" | "listening" | "finishing";
 type Callbacks = {
   /** One recognized phrase, in spoken order. */
@@ -26,6 +28,10 @@ export class Dictation {
   private capture?: AudioWorkletNode;
   private vad?: VoiceVad;
   private heartbeat?: ReturnType<typeof setInterval>;
+  /** Resolves to the recognizer lease; capture does not wait for it. */
+  private backend?: Promise<string>;
+  /** Completion of the latest recognition requests, bounding concurrency. */
+  private inflight: Promise<void>[] = [];
   /** Keeps phrases in spoken order even when recognition overlaps. */
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
@@ -42,26 +48,39 @@ export class Dictation {
     try {
       if (!navigator.mediaDevices?.getUserMedia)
         throw new Error("Microphone access requires the desktop app or a secure browser context.");
-      const { lease } = await localVoiceBackend.start(this.config, true);
-      this.lease = lease;
-      if (this.closed) return this.release();
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      // The microphone opens while the recognizer loads (seconds when it is cold):
+      // phrases spoken meanwhile wait for it instead of being lost or delayed.
+      const backend = localVoiceBackend.start(this.config, true).then(({ lease }) => {
+        if (this.closed) {
+          void localVoiceBackend.release(lease).catch(() => {});
+          throw new Error("Dictation was cancelled.");
+        }
+        this.lease = lease;
+        this.heartbeat = setInterval(() => {
+          if (this.lease) void localVoiceBackend.keepAlive(this.lease).catch(() => this.cancel());
+        }, 30_000);
+        return lease;
+      });
+      this.backend = backend;
+      backend.catch((cause) => this.fail(cause));
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: false,
       });
-      if (this.closed) return this.release();
-      this.audio = new AudioContext({ sampleRate: 16000 });
-      await this.audio.resume();
-      await this.audio.audioWorklet.addModule(captureUrl);
-      if (this.closed) return this.release();
-      const rate = this.audio.sampleRate;
+      this.stream = stream;
+      if (this.closed) return this.stopCapture();
+      const audio = (this.audio = new AudioContext({ sampleRate: 16000 }));
+      await audio.resume();
+      await audio.audioWorklet.addModule(captureUrl);
+      if (this.closed) return this.stopCapture();
+      const rate = audio.sampleRate;
       this.vad = new VoiceVad(
         rate,
         () => {},
         (audio) => this.transcribe(audio, rate),
       );
-      this.source = this.audio.createMediaStreamSource(this.stream);
-      this.capture = new AudioWorkletNode(this.audio, "bycoda-voice-capture");
+      this.source = audio.createMediaStreamSource(stream);
+      this.capture = new AudioWorkletNode(audio, "bycoda-voice-capture");
       this.capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
         if (this.closed) return;
         const frame = new Int16Array(event.data);
@@ -71,23 +90,31 @@ export class Dictation {
         this.vad?.push(frame);
       };
       this.source.connect(this.capture);
-      this.capture.connect(this.audio.destination);
-      this.heartbeat = setInterval(() => {
-        if (this.lease) void localVoiceBackend.keepAlive(this.lease).catch(() => this.cancel());
-      }, 30_000);
+      this.capture.connect(audio.destination);
       this.callbacks.state("listening");
     } catch (cause) {
-      this.cancel();
-      this.callbacks.error(errorText(cause).trim() || "Dictation could not start.");
+      this.fail(cause);
     }
   }
 
+  private fail(cause: unknown) {
+    if (this.closed) return;
+    this.cancel();
+    this.callbacks.error(errorText(cause).trim() || "Dictation could not start.");
+  }
+
   private transcribe(audio: Int16Array, rate: number) {
-    const lease = this.lease;
-    if (!lease) return;
+    const backend = this.backend;
+    if (!backend || this.closed) return;
     const pcm = pcmBase64(resamplePcm(audio, rate));
     const hint = /^[a-z]{2}$/.test(this.language) ? this.language : undefined;
-    const pending = localVoiceBackend.transcribe(lease, pcm, hint);
+    // At most two recognitions in flight (the Host's limit), so phrases buffered
+    // while the recognizer loaded do not overrun it once it is ready.
+    const slot = this.inflight.length >= 2 ? this.inflight[0] : undefined;
+    const pending = Promise.all([backend, slot]).then(([lease]) =>
+      localVoiceBackend.transcribe(lease, pcm, hint),
+    );
+    this.inflight = [...this.inflight, pending.then(noop, noop)].slice(-2);
     this.queue = this.queue.then(async () => {
       try {
         const text = (await pending).text.trim();
@@ -125,7 +152,10 @@ export class Dictation {
     this.source?.disconnect();
     this.capture?.disconnect();
     if (this.capture) this.capture.port.onmessage = null;
-    if (this.audio && this.audio.state !== "closed") void this.audio.close();
+    if (this.audio && this.audio.state !== "closed") void this.audio.close().catch(noop);
+    // Start may still be resuming after a cancel and call this again.
+    this.stream = undefined;
+    this.audio = undefined;
   }
 
   private release() {

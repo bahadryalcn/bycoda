@@ -33,6 +33,17 @@ import {
   workSummaryLine,
 } from "./transcriptActivity";
 
+it("does not keep a provider-interrupted subagent running or attribute it to the user", () => {
+  const block: Block = { id: "interrupted", role: "tool", text: "Research",
+    tool: { callId: "child", kind: "agent", status: "interrupted" },
+    agentRun: { name: "Research", steps: [] },
+  };
+  expect(toolCallState(block)).toBe("accepted");
+  expect(hasRunningSubagent([block])).toBe(false);
+  expect(isStoppedBlock(block)).toBe(false);
+  expect(subagentStatusLine(block, [])).toBe("interrupted");
+});
+
 function shell(id: string, status = "completed", approval?: Block["approval"]): Block {
   return {
     id,

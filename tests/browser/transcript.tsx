@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentTranscript } from "../../src/features/sessions/ui/AgentTranscript";
 import { ActivityDock } from "../../src/features/sessions/ui/ActivityDock";
-import type { Block } from "../../src/features/sessions/model/session";
+import { newSession, type Block } from "../../src/features/sessions/model/session";
+import { appendSteerUser, applyHarnessEvent, stopStreaming } from "../../src/integrations/harness/core/apply";
+import { Button } from "../../src/shared/ui/Button";
 import {
   saveTranscriptAnchor,
   saveTranscriptLayout,
@@ -38,6 +40,7 @@ if (
   new URLSearchParams(window.location.search).has("rewind") ||
   new URLSearchParams(location.search).has("streaming") ||
   new URLSearchParams(location.search).has("chat-layout") ||
+  new URLSearchParams(location.search).has("working-followup") ||
   new URLSearchParams(location.search).has("message-bubbles")
 ) {
   root.style.width = "100%";
@@ -262,6 +265,45 @@ function ChatLayoutFixture() {
   );
 }
 
+function WorkingFollowupFixture() {
+  const [session, setSession] = useState(() => {
+    let initial = newSession("codex", "/fixture");
+    initial = {
+      ...initial,
+      busy: true,
+      blocks: [{ id: "working-owner", role: "user", text: "Research the feature and keep the development server running.", startedAt: Date.now() - 30_000 }],
+    };
+    initial = applyHarnessEvent(initial, {
+      type: "tool.started", callId: "research-agent", title: "Product research", kind: "agent", status: "in_progress",
+    });
+    initial = applyHarnessEvent(initial, {
+      type: "tool.started", callId: "development-server", title: "Run pnpm dev", kind: "execute", status: "in_progress", background: true,
+    });
+    return initial;
+  });
+  return (
+    <div className="flex h-dvh min-w-0 flex-col bg-background-base text-content">
+      <div className="min-h-0 min-w-0 flex-1">
+        <AgentTranscript blocks={session.blocks} busy={session.busy} liveStatusInDock harness="codex" model="gpt-6.1" />
+      </div>
+      <div data-composer className="mx-auto w-full max-w-4xl px-4 py-2">
+        <ActivityDock
+          sessionId={session.id}
+          blocks={session.blocks}
+          busy={session.busy}
+          pendingQuestion={false}
+          atEnd
+          onOpenAgent={() => {}}
+          onStopAll={async () => setSession((current) => stopStreaming(current))}
+        />
+        <Button onClick={() => setSession((current) => appendSteerUser(current, "Also check the API behavior."))}>
+          Send follow-up
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function MessageBubblesFixture() {
   return (
     <div className="h-full min-w-0">
@@ -284,7 +326,9 @@ function MessageBubblesFixture() {
 }
 
 createRoot(host).render(
-  new URLSearchParams(location.search).has("message-bubbles") ? (
+  new URLSearchParams(location.search).has("working-followup") ? (
+    <WorkingFollowupFixture />
+  ) : new URLSearchParams(location.search).has("message-bubbles") ? (
     <MessageBubblesFixture />
   ) : new URLSearchParams(location.search).has("chat-layout") ? (
     <ChatLayoutFixture />

@@ -10865,5 +10865,20 @@
   "Turn ending preference could not be saved. Try again.": "No se pudo guardar la preferencia de fin de turno. Inténtalo de nuevo.",
   "Assistant status": "Estado del asistente",
   "Read briefing": "Leer el resumen",
-  "Related work": "Trabajo relacionado"
+  "Related work": "Trabajo relacionado",
+  "tokens/day": "tokens/día",
+  "Custom {p0}": "Personalizado {p0}",
+  "Work all day": "Trabajar todo el día",
+  "Quiet hours": "Horas de silencio",
+  "About language": "Acerca del idioma",
+  "About autonomy": "Acerca de la autonomía",
+  "About availability": "Acerca de la disponibilidad",
+  "About cost and context": "Acerca del presupuesto y el contexto",
+  "Local scheduling limits, not a provider billing cap.": "Límites de planificación local, no un límite de facturación del proveedor.",
+  "Choose a worker model before enabling job execution.": "Elige un modelo de trabajo antes de activar la ejecución de tareas.",
+  "Choose an available model before changing its settings.": "Elige un modelo disponible antes de cambiar sus ajustes.",
+  "Voice needs attention": "Revisar la conexión de voz",
+  "The assistant conversation context is not ready. Wait until connected before trying this tool. No operation was dispatched.": "El contexto de conversación del asistente aún no está listo. Espera a que se conecte antes de usar esta herramienta. No se inició ninguna operación.",
+  "Exact owner approval is unavailable for this captured conversation.": "La aprobación explícita del propietario no está disponible para esta conversación.",
+  "The turn mode menu could not be opened. Try again.": "No se pudo abrir el menú del modo de conversación. Inténtalo de nuevo."
 }

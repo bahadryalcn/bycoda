@@ -6,6 +6,361 @@ import { expect, test } from "@playwright/test";
 // always-on-top and dragging across applications need the desktop app.
 const captures = join(process.cwd(), "temp/verification/voice-overlay");
 for (const theme of ["light", "dark"])
+  test(`Turkish compact native turn menu ${theme}`, async ({ page }) => {
+    const output = join(process.cwd(), "temp/verification/voice-turn-menu-2026-11-03/captures");
+    await mkdir(output, { recursive: true });
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.goto(`/tests/browser/voice-native-menu.html?theme=${theme}&compact=1&lang=tr`);
+    const frame = page.frameLocator('iframe[title="Synthetic native voice window"]'),
+      proof = page.locator("[data-native-menu-proof]");
+    await expect(page.locator("[data-native-window-size]")).toHaveText("380 × 56 webview");
+    const automatic = frame.getByRole("button", { name: "Otomatik yanıtlar", exact: true });
+    await expect(automatic).toHaveText("Otomatik");
+    const inside = () =>
+      frame.locator("main").evaluate(
+        (element) =>
+          element.scrollWidth <= window.innerWidth &&
+          [...element.querySelectorAll("button")].every((button) => {
+            const rect = button.getBoundingClientRect();
+            return (
+              rect.left >= 0 &&
+              rect.right <= window.innerWidth &&
+              rect.top >= 0 &&
+              rect.bottom <= window.innerHeight
+            );
+          }),
+      );
+    expect(await inside()).toBe(true);
+    await automatic.click();
+    const menu = page.getByRole("menu", { name: "Synthetic turn ending menu", exact: true });
+    await expect(
+      menu.getByRole("menuitemradio", { name: "Otomatik yanıtlar", exact: true }),
+    ).toBeChecked();
+    await expect(
+      menu.getByRole("menuitemradio", { name: "Bitirmemi bekle", exact: true }),
+    ).not.toBeChecked();
+    await proof.screenshot({ path: join(output, `${theme}-800-tr-native-auto-menu.png`) });
+    await menu.getByRole("menuitemradio", { name: "Bitirmemi bekle", exact: true }).click();
+    await expect(automatic).toBeVisible();
+    await frame
+      .locator("body")
+      .evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
+    const finish = frame.getByRole("button", { name: "Konuşmamı bitir", exact: true });
+    await expect(finish).toHaveText("Bitir");
+    expect(await inside()).toBe(true);
+    await frame.getByRole("button", { name: "Konuşmayı bitirme", exact: true }).click();
+    await expect(
+      menu.getByRole("menuitemradio", { name: "Bitirmemi bekle", exact: true }),
+    ).toBeChecked();
+    await expect(
+      menu.getByRole("menuitemradio", { name: "Otomatik yanıtlar", exact: true }),
+    ).not.toBeChecked();
+    await proof.screenshot({ path: join(output, `${theme}-800-tr-native-manual-menu.png`) });
+    const finishes = () =>
+      frame
+        .locator("body")
+        .evaluate(
+          () =>
+            (window as any).fixtureOverlay.calls.filter(
+              (call: any) => call.args?.payload === "finishTurn",
+            ).length,
+        );
+    expect(await finishes()).toBe(0);
+    await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
+    await finish.click();
+    await expect.poll(finishes).toBe(1);
+    await proof.screenshot({ path: join(output, `${theme}-800-tr-native-finish.png`) });
+  });
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`native turn menu outside bounded webview ${theme} ${width}`, async ({ page }) => {
+      const output = join(process.cwd(), "temp/verification/voice-turn-menu-2026-11-03/captures");
+      await mkdir(output, { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/voice-visual-styles.html?theme=${theme}&global`);
+      await page.getByRole("button", { name: "Voice companion", exact: true }).click();
+      const panel = page.locator("section[data-voice-state]");
+      await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await panel.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await expect(
+        page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+      ).toBeChecked();
+      await expect(
+        page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }),
+      ).not.toBeChecked();
+      expect(await page.evaluate(() => (window as any).fixtureVoice.finishes)).toBe(0);
+      await page.screenshot({
+        path: join(output, `${theme}-${width}-in-app-auto-menu.png`),
+        animations: "disabled",
+      });
+      await page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }).click();
+      await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
+      expect(await page.evaluate(() => (window as any).fixtureVoice.finishes)).toBe(0);
+      await page.goto(`/tests/browser/voice-native-menu.html?theme=${theme}&compact=1`);
+      const frame = page.frameLocator('iframe[title="Synthetic native voice window"]');
+      const proof = page.locator("[data-native-menu-proof]");
+      const commands = () =>
+        frame
+          .locator("body")
+          .evaluate(() =>
+            (window as any).fixtureOverlay.calls
+              .filter((call: any) => call.cmd === "plugin:event|emit_to")
+              .map((call: any) => call.args.payload),
+          );
+      await expect(page.locator("[data-native-window-size]")).toHaveText("380 × 56 webview");
+      await frame.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      const menu = page.getByRole("menu", { name: "Synthetic turn ending menu", exact: true });
+      await expect(
+        menu.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+      ).toBeChecked();
+      await expect(
+        menu.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }),
+      ).not.toBeChecked();
+      await expect(frame.getByRole("menu")).toHaveCount(0);
+      expect(
+        (await commands()).filter((command: string) =>
+          ["finishTurn", "manualTurnEnd", "automaticTurnEnd"].includes(command),
+        ),
+      ).toEqual([]);
+      await proof.screenshot({
+        path: join(output, `${theme}-${width}-native-compact-auto-menu.png`),
+      });
+      await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
+      await expect(menu).toHaveCount(0);
+      expect(
+        (await commands()).filter((command: string) =>
+          ["finishTurn", "manualTurnEnd", "automaticTurnEnd"].includes(command),
+        ),
+      ).toEqual([]);
+      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await menu.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }).click();
+      await expect
+        .poll(
+          async () =>
+            (await commands()).filter((command: string) => command === "manualTurnEnd").length,
+        )
+        .toBe(1);
+      await expect(
+        frame.getByRole("button", { name: "Automatic replies", exact: true }),
+      ).toBeVisible(); // no optimistic owner ACK
+      await frame
+        .locator("body")
+        .evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
+      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await expect(
+        menu.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }),
+      ).toBeChecked();
+      await expect(
+        menu.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+      ).not.toBeChecked();
+      await proof.screenshot({
+        path: join(output, `${theme}-${width}-native-compact-manual-menu.png`),
+      });
+      await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
+      expect((await commands()).filter((command: string) => command === "finishTurn")).toHaveLength(
+        0,
+      );
+      await frame.getByRole("button", { name: "Finish turn", exact: true }).click();
+      await expect
+        .poll(
+          async () =>
+            (await commands()).filter((command: string) => command === "finishTurn").length,
+        )
+        .toBe(1);
+      await frame.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await expect(frame.locator("main")).not.toHaveAttribute("data-compact");
+      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await expect(
+        menu.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }),
+      ).toBeChecked();
+      await proof.screenshot({
+        path: join(output, `${theme}-${width}-native-expanded-manual-menu.png`),
+      });
+      await menu.getByRole("menuitemradio", { name: "Automatic replies", exact: true }).click();
+      await expect
+        .poll(
+          async () =>
+            (await commands()).filter((command: string) => command === "automaticTurnEnd").length,
+        )
+        .toBe(1);
+      await expect(frame.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
+      await frame
+        .locator("body")
+        .evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: false }));
+      await frame.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await expect(
+        menu.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+      ).toBeChecked();
+      await proof.screenshot({
+        path: join(output, `${theme}-${width}-native-expanded-auto-menu.png`),
+      });
+      await page.goto(
+        `/tests/browser/voice-native-menu.html?theme=${theme}&compact=1&native-menu-fail`,
+      );
+      await frame.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await expect(
+        frame.getByText("The turn mode menu could not be opened. Try again.", { exact: true }),
+      ).toBeVisible();
+      expect(
+        await frame
+          .locator("body")
+          .evaluate(() => JSON.parse(localStorage.getItem("bycoda.voice")!).compact),
+      ).toBe(true);
+      await expect(frame.locator("main")).not.toHaveAttribute("data-compact");
+      await expect(frame.locator("main")).toHaveAttribute("data-voice-state", "assistant");
+      expect(
+        (await commands()).filter((command: string) =>
+          ["finishTurn", "manualTurnEnd", "automaticTurnEnd"].includes(command),
+        ),
+      ).toEqual([]);
+      await proof.screenshot({ path: join(output, `${theme}-${width}-native-failure.png`) });
+      await frame.getByRole("button", { name: "Dismiss", exact: true }).click();
+      await expect(page.locator("[data-native-window-size]")).toHaveText("380 × 56 webview");
+      await frame.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await expect(
+        menu.getByRole("menuitemradio", { name: "Automatic replies", exact: true }),
+      ).toBeChecked();
+      await proof.screenshot({ path: join(output, `${theme}-${width}-native-retry-menu.png`) });
+      await menu.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }).click();
+      await expect
+        .poll(
+          async () =>
+            (await commands()).filter((command: string) => command === "manualTurnEnd").length,
+        )
+        .toBe(1);
+      await expect(
+        frame.getByRole("button", { name: "Automatic replies", exact: true }),
+      ).toBeVisible();
+      await frame
+        .locator("body")
+        .evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
+      await expect(frame.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
+    });
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`voice navigation and recovery controls ${theme} ${width}`, async ({ page }) => {
+      const output = join(process.cwd(), "temp/verification/voice-turn-menu-2026-11-03/continuity");
+      await mkdir(output, { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/voice-visual-styles.html?theme=${theme}&navigation&fresh-scope`,
+      );
+      await page.getByRole("button", { name: "Voice companion", exact: true }).click();
+      const panel = page.locator("section[data-voice-state]");
+      await expect(panel.getByRole("radio", { name: "Global", exact: true })).toBeChecked();
+      await expect(panel.getByRole("radio", { name: "Project", exact: true })).toBeVisible();
+      await panel.screenshot({ path: join(output, `${theme}-${width}-ready.png`) });
+      await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await expect.poll(() => page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(1);
+      await page.evaluate(() =>
+        (window as any).fixtureVoice.speech("Keep my full request together."),
+      );
+      await expect(panel.getByRole("group", { name: "You", exact: true })).toContainText(
+        "Keep my full request together.",
+      );
+      await expect(panel.getByRole("group", { name: "Reply", exact: true })).toBeVisible();
+      await panel.screenshot({ path: join(output, `${theme}-${width}-listening.png`) });
+      const controls = ["Pause mic", "Silence", "Disconnect voice"];
+      const actionBoxes = await Promise.all(
+        controls.map((name) => panel.getByRole("button", { name, exact: true }).boundingBox()),
+      );
+      expect(
+        Math.max(...actionBoxes.map((box) => box!.y)) -
+          Math.min(...actionBoxes.map((box) => box!.y)),
+      ).toBeLessThanOrEqual(1);
+      await panel.getByRole("radio", { name: "Project", exact: true }).click();
+      await expect(panel.getByRole("button", { name: /^Voice session/ })).toBeVisible();
+      await panel.screenshot({ path: join(output, `${theme}-${width}-project.png`) });
+      await page.evaluate(() => {
+        const fixture = (window as any).fixtureVoice;
+        (window as any).heldVoiceOnset = fixture.callbacks.start();
+      });
+      await page.getByRole("button", { name: "Switch fixture project", exact: true }).click();
+      await page.evaluate(() => {
+        const fixture = (window as any).fixtureVoice;
+        const binding = fixture.callbacks.accept((window as any).heldVoiceOnset);
+        fixture.callbacks.transcript({ text: "Finish the original project request." }, binding);
+      });
+      await expect(panel.getByRole("group", { name: "You", exact: true })).toContainText(
+        "Finish the original project request.",
+      );
+      expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(1);
+      expect(await page.evaluate(() => (window as any).fixtureVoice.closes)).toBe(0);
+      await panel.getByRole("button", { name: "Automatic replies", exact: true }).click();
+      await page.getByRole("menuitemradio", { name: "Wait until I finish", exact: true }).click();
+      await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
+      await panel.screenshot({ path: join(output, `${theme}-${width}-manual.png`) });
+      await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
+      await panel.screenshot({ path: join(output, `${theme}-${width}-compact.png`) });
+      await panel.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await page.evaluate(() =>
+        (window as any).fixtureVoice.callbacks.error(
+          "Voice input cleanup was not confirmed. Start voice again.",
+          true,
+        ),
+      );
+      await expect(panel.locator('details[role="alert"]')).not.toHaveAttribute("open", "");
+      await expect(panel.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
+      await panel.screenshot({ path: join(output, `${theme}-${width}-attention.png`) });
+      await panel.locator('summary[aria-label="Error details"]').click();
+      await expect(
+        panel.getByText("Voice input cleanup was not confirmed. Start voice again.", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await panel.screenshot({ path: join(output, `${theme}-${width}-error-details.png`) });
+      await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await expect.poll(() => page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(2);
+      expect(await page.evaluate(() => (window as any).fixtureVoice.closes)).toBe(1);
+      await page.goto(`/tests/browser/voice-overlay.html?theme=${theme}&compact=0&manual`);
+      const mirror = page.locator("main[data-voice-state]");
+      await expect(mirror.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
+      await mirror.screenshot({ path: join(output, `${theme}-${width}-floating-listening.png`) });
+      await mirror.getByRole("button", { name: "Compact voice companion", exact: true }).click();
+      // The fake native IPC records the real component's requested window size;
+      // apply that size to this synthetic native document before inspecting 100vh.
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as any).fixtureOverlay.calls
+                .filter((call: any) => call.cmd === "voice_overlay_fit")
+                .at(-1)?.args.height,
+          ),
+        )
+        .toBe(56);
+      const compactSize = await page.evaluate(
+        () =>
+          (window as any).fixtureOverlay.calls
+            .filter((call: any) => call.cmd === "voice_overlay_fit")
+            .at(-1).args,
+      );
+      await page.setViewportSize({ width: compactSize.width, height: compactSize.height });
+      await mirror.screenshot({ path: join(output, `${theme}-${width}-floating-compact.png`) });
+      await mirror.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(() =>
+        (window as any).fixtureOverlay.emit({
+          status: "idle",
+          statusText: "Ready to connect",
+          visualState: "off",
+          error: "Voice input cleanup was not confirmed. Start voice again.",
+        }),
+      );
+      await expect(mirror.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
+      await mirror.screenshot({ path: join(output, `${theme}-${width}-floating-attention.png`) });
+      await mirror.locator('summary[aria-label="Error details"]').click();
+      await expect(
+        mirror.getByText("Voice input cleanup was not confirmed. Start voice again.", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await mirror.screenshot({ path: join(output, `${theme}-${width}-floating-details.png`) });
+      expect(await mirror.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+    });
+for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
     test(`manual Away keeps explicit Talk closed without certified native presence ${theme} ${width}`, async ({
       page,

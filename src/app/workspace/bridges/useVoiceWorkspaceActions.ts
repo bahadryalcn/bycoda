@@ -1,6 +1,9 @@
 import { useRef } from "react";
 import { sameProjectPath } from "../../../features/projects/model/recents";
-import { resolveVoiceProjects } from "../../../features/voice/model/voiceProjectNames";
+import {
+  resolveVoiceProjects,
+  voiceNameKey,
+} from "../../../features/voice/model/voiceProjectNames";
 import {
   voiceWorkspaceTools,
   type VoiceWorkspaceActionsDeps,
@@ -51,7 +54,12 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
       const projects = read()
         .getProjects()
         .slice(0, 200)
-        .map(({ path, name, folderName, aliases }) => ({ path, name, ...(folderName ? {folderName} : {}), ...(aliases ? {aliases} : {}) }));
+        .map(({ path, name, folderName, aliases }) => ({
+          path,
+          name,
+          ...(folderName ? { folderName } : {}),
+          ...(aliases ? { aliases } : {}),
+        }));
       return {
         action,
         status: "completed",
@@ -62,11 +70,19 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
       };
     }
     if (action === "workspace.projects.resolve")
-      return { action, status: "completed", ...resolveVoiceProjects(read().getProjects(), clean(args.query, "query")) };
+      return {
+        action,
+        status: "completed",
+        ...resolveVoiceProjects(read().getProjects(), clean(args.query, "query")),
+      };
     const path = project(clean(args.projectPath, "projectPath"));
     if (action === "workspace.sessions.list") {
       const rawLimit = args.limit ?? 50;
       const rawOffset = args.offset ?? 0;
+      const state = args.state ?? "all";
+      const query = args.query === undefined ? "" : voiceNameKey(clean(args.query, "query", 200));
+      if (typeof state !== "string" || !["all", "running", "archived"].includes(state))
+        throw new Error("Invalid session state.");
       if (
         !Number.isInteger(rawLimit) ||
         Number(rawLimit) < 1 ||
@@ -78,19 +94,34 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
       const stored = (await read().listSessions?.(path)) ?? [];
       project(path);
       const byId = new Map<string, VoiceWorkspaceSession>();
-      for (const item of [...stored, ...read().getSessions()])
-        if (visible(item) && sameProjectPath(item.cwd, path)) byId.set(item.id, item);
-      const all = [...byId.values()];
+      const loaded = read().getSessions();
+      const loadedIds = new Set(loaded.map((item) => item.id));
+      for (const item of [...stored, ...loaded])
+        if (visible(item) && sameProjectPath(item.cwd, path))
+          byId.set(item.id, { ...byId.get(item.id), ...item });
+      const all = [...byId.values()].filter(
+        (item) =>
+          (state !== "running" || item.busy === true) &&
+          (state !== "archived" || item.archived === true) &&
+          (!query ||
+            [item.title, item.model, item.harness].some((value) =>
+              voiceNameKey(value).includes(query),
+            )),
+      );
       const offset = Number(rawOffset);
       const items = all
         .slice(offset, offset + Number(rawLimit))
-        .map(({ id, title, cwd, harness, model, busy }) => ({
+        .map(({ id, title, cwd, harness, model, busy, archived, updatedAt }) => ({
           id,
           title,
           projectPath: cwd,
           harness,
           model,
           busy: Boolean(busy),
+          loaded: loadedIds.has(id),
+          active: read().getActiveSessionId() === id,
+          archived: Boolean(archived),
+          ...(typeof updatedAt === "number" ? { updatedAt } : {}),
         }));
       return {
         action,
@@ -199,7 +230,8 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         if (!(key in tool.parameters.properties)) throw new Error(`Unknown argument: ${key}.`);
       for (const key of tool.parameters.required)
         if (args[key] === undefined) throw new Error(`Missing ${key}.`);
-      if (action.endsWith(".list") || action === "workspace.projects.resolve") return await perform(action, args);
+      if (action.endsWith(".list") || action === "workspace.projects.resolve")
+        return await perform(action, args);
       const requestId = clean(args.requestId, "requestId");
       const signature = JSON.stringify([
         action,

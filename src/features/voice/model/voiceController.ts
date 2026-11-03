@@ -2,11 +2,14 @@ import type { Session } from "../../sessions/model/session";
 import { sameProjectPath } from "../../projects/model/recents";
 import { voiceContext } from "./voiceSession";
 import { readVoiceDraftAttachment, readVoiceDraftContext } from "./voiceDraftContext";
-import { callVoiceTool, discoverVoiceTools,type VoiceToolTarget } from "./voiceToolClient";
+import { callVoiceTool, discoverVoiceTools, type VoiceToolTarget } from "./voiceToolClient";
 import { isVoiceToolFamily, type VoiceToolSelection } from "./voiceToolCatalog";
 import type { VoiceWorkspaceProject } from "./voiceWorkspaceActions";
 import { resolveVoiceProjects } from "./voiceProjectNames";
-import {voiceThreadToolAllowed} from "../../../shared/model/voiceToolScope";
+import {
+  voiceThreadToolAllowed,
+  voiceDesktopInputAction,
+} from "../../../shared/model/voiceToolScope";
 
 export type VoiceControllerPorts = {
   getScope?(): "global" | "project" | "session";
@@ -14,9 +17,9 @@ export type VoiceControllerPorts = {
   getSessions(): readonly Session[];
   getProjectPath(): string;
   getTargetId(): string | undefined;
-  getThreadId?(): string|undefined|Promise<string|undefined>;
-  causalContext?():Promise<VoiceToolTarget["causalContext"]>;
-  invalidateCausalContext?():Promise<void>;
+  getThreadId?(): string | undefined | Promise<string | undefined>;
+  causalContext?(): Promise<VoiceToolTarget["causalContext"]>;
+  invalidateCausalContext?(): Promise<void>;
   workspace: {
     tools: readonly { name: string; description: string; parameters: Record<string, unknown> }[];
     execute(action: string, input: Record<string, unknown>): Promise<unknown>;
@@ -35,8 +38,18 @@ function text(value: unknown, name: string, optional = false): string | undefine
 
 /** Tools are executed against captured identities, never a later selected tab. */
 export function createVoiceController(read: () => VoiceControllerPorts) {
-  let bound: { sessionId?: string; projectPath: string;threadId?:string|Promise<string|undefined>;scope?:"global"|"project"|"session" } | undefined;
-  const requests = new Map<string, { signature: string; result: Promise<unknown>; settled?: boolean }>();
+  let bound:
+    | {
+        sessionId?: string;
+        projectPath: string;
+        threadId?: string | Promise<string | undefined>;
+        scope?: "global" | "project" | "session";
+      }
+    | undefined;
+  const requests = new Map<
+    string,
+    { signature: string; result: Promise<unknown>; settled?: boolean }
+  >();
   const contexts = new Map<string, Promise<string>>();
   function project(path: string) {
     if (
@@ -56,10 +69,15 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
     project(value.cwd);
     return value;
   }
-  function captureTurn(scope=read().getScope?.()) {
+  function captureTurn(scope = read().getScope?.()) {
     const id = read().getTargetId();
     const value = id ? session(id) : undefined;
-    bound = { sessionId: value?.id, projectPath: value?.cwd ?? read().getProjectPath(),scope,...(read().getThreadId?{threadId:read().getThreadId?.()}: {}) };
+    bound = {
+      sessionId: value?.id,
+      projectPath: value?.cwd ?? read().getProjectPath(),
+      scope,
+      ...(read().getThreadId ? { threadId: read().getThreadId?.() } : {}),
+    };
   }
   function target(args: Record<string, unknown>) {
     const explicitPath = text(args.projectPath, "projectPath", true);
@@ -73,36 +91,44 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       (id ? session(id).cwd : (bound?.projectPath ?? read().getProjectPath()));
     project(path);
     if (
-      (bound?.scope==="session"||read().getScope?.()==="session") &&
+      (bound?.scope === "session" || read().getScope?.() === "session") &&
       bound &&
       (!sameProjectPath(path, bound.projectPath) || (id && id !== bound.sessionId))
     )
       throw new Error("Choose Global voice scope to manage another session or project.");
-    if((bound?.scope==="project"||read().getScope?.()==="project")&&bound&&!sameProjectPath(path,bound.projectPath))throw new Error("Choose Global voice scope to manage another project.");
+    if (
+      (bound?.scope === "project" || read().getScope?.() === "project") &&
+      bound &&
+      !sameProjectPath(path, bound.projectPath)
+    )
+      throw new Error("Choose Global voice scope to manage another project.");
     if (id && !sameProjectPath(session(id).cwd, path))
       throw new Error("Session and project targets do not match.");
     return { cwd: path, sessionId: id };
   }
-  async function source(args: Record<string, unknown>, useTarget = false) {
+  async function source(args: Record<string, unknown>, useTarget = false, preferTarget = false) {
     const selected = target(args);
-    if(read().getThreadId) {
-      if(selected.cwd.startsWith("remote://")){
-        if(!selected.sessionId)throw new Error("Open a session on this Host before using project tools.");
+    if (read().getThreadId) {
+      if (selected.cwd.startsWith("remote://")) {
+        if (!selected.sessionId)
+          throw new Error("Open a session on this Host before using project tools.");
         return selected; // A local thread cannot mint authority on another Host.
       }
-      const threadId=await (bound ? bound.threadId : read().getThreadId?.());
-      if(!threadId)throw new Error("Open a verified assistant conversation before using tools.");
+      const threadId = await (bound ? bound.threadId : read().getThreadId?.());
+      if (!threadId) throw new Error("Open a verified assistant conversation before using tools.");
       project(selected.cwd);
-      if(selected.sessionId)session(selected.sessionId);
-      if(useTarget){
-        if(!selected.sessionId)throw new Error("This voice tool requires a real focused session.");
-        return {...selected,threadId};
+      if (selected.sessionId) session(selected.sessionId);
+      if (useTarget || (preferTarget && selected.sessionId)) {
+        if (!selected.sessionId)
+          throw new Error("This voice tool requires a real focused session.");
+        return { ...selected, threadId };
       }
-      return {cwd:selected.cwd,threadId};
+      return { cwd: selected.cwd, threadId };
     }
     // Working-copy and focused desktop tools retain their original session,
     // worktree, lease and active-conversation gates. Scheduling uses its own source.
-    if (useTarget && selected.sessionId) return selected;
+    if ((useTarget || preferTarget) && selected.sessionId) return selected;
+    if (preferTarget) throw new Error("Open a verified assistant conversation before using tools.");
     if (!read().ensureToolSession) {
       if (selected.sessionId) return selected;
       throw new Error("Choose a session for project tools.");
@@ -140,7 +166,8 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       if (!authorized()) throw new Error("The spoken request is no longer active.");
     };
     assertActive();
-    if(["app_context","composer_context","composer_attachment"].includes(name))await read().invalidateCausalContext?.();
+    if (["app_context", "composer_context", "composer_attachment"].includes(name))
+      await read().invalidateCausalContext?.();
     assertActive();
     if (name === "app_context") return context();
     if (name === "composer_context") {
@@ -234,11 +261,15 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       // rejected calls may still have effects, so retaining them prevents replay.
       const oldest = [...requests].find(([, request]) => request.settled);
       if (oldest) requests.delete(oldest[0]);
-      else throw new Error("Voice operations are awaiting confirmation. Check their status before continuing.");
+      else
+        throw new Error(
+          "Voice operations are awaiting confirmation. Check their status before continuing.",
+        );
     }
     const result = (async () => {
       if (args.family === "workspace") {
-        await read().invalidateCausalContext?.();assertActive();
+        await read().invalidateCausalContext?.();
+        assertActive();
         if (read().getScope?.() === "session" || read().getScope?.() === "project") {
           if (action === "workspace.projects.list")
             return { projects: read().getProjects(), scope: read().getScope?.() };
@@ -253,26 +284,40 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       if (!isVoiceToolFamily(args.family)) throw new Error("Unknown tool family.");
       const selected = await source(
         args,
-        !voiceThreadToolAllowed(args.family,action),
+        !voiceThreadToolAllowed(args.family, action),
+        args.family === "conversation" && voiceDesktopInputAction(action),
       );
       assertActive();
-      const causalContext=selected.cwd.startsWith("remote://")?undefined:await read().causalContext?.();
+      const causalContext = selected.cwd.startsWith("remote://")
+        ? undefined
+        : await read().causalContext?.();
       assertActive();
-      if(read().causalContext&&!selected.cwd.startsWith("remote://")&&!causalContext)throw new Error("The voice tool result could not be verified. Check its original operation.");
-      const result = await callVoiceTool({...selected,...(causalContext?{causalContext}:{})}, {
-        family: args.family,
-        action,
-        input,
-        requestId,
-      });
+      if (read().causalContext && !selected.cwd.startsWith("remote://") && !causalContext)
+        throw new Error(
+          "The assistant conversation context is not ready. Wait until connected before trying this tool. No operation was dispatched.",
+        );
+      const result = await callVoiceTool(
+        { ...selected, ...(causalContext ? { causalContext } : {}) },
+        {
+          family: args.family,
+          action,
+          input,
+          requestId,
+        },
+      );
       project(selected.cwd);
       return result;
     })();
     const request = { signature, result, settled: false };
     requests.set(requestId, request);
-    void result.then(() => { request.settled = true; }, () => {
-      // A rejected transport promise does not prove the operation had no effect.
-    });
+    void result.then(
+      () => {
+        request.settled = true;
+      },
+      () => {
+        // A rejected transport promise does not prove the operation had no effect.
+      },
+    );
     return result;
   }
   return { captureTurn, context, execute };

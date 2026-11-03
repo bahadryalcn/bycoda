@@ -4,6 +4,19 @@ Tool rows keep the conversation compact. Use **Changes** beside an edit or the o
 
 These details describe the tool call at that point in the conversation. They do not reread the current file and present it as historical output. New code details are bounded to keep long conversations responsive; subagent history has a shared retention budget. When only an older shortened preview remains, the viewer says so.
 
+## Working and follow-up messages
+
+Sending a follow-up while the agent is working keeps the current execution's
+subagents and background commands in **Working**, including their progress and
+original elapsed time. It does not start a separate activity list. Their rows
+continue to reflect provider updates; a genuinely new execution starts its own list.
+
+The lead agent finishing its reply does not finish the session while its subagents
+are still running. **Working** keeps their rows and progress visible and shows the
+remaining work. You can send another message to the same conversation or use
+**Stop all**. A child is finished only when its provider reports a terminal outcome;
+an interrupted or failed child is not shown as successfully completed.
+
 ## Earlier conversation after a provider or model change
 
 When a switch needs a conversation handoff, bycoda saves the earlier messages on

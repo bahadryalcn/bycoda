@@ -15,7 +15,7 @@ import { callConversationAppRead } from "./conversation-app-read";
 import { APP_UI_NAVIGATION_VIEWS, APP_UI_SETTINGS } from "../src/app/model/appUiControl";
 import { createInterface } from "node:readline";
 import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protocol";
-import type { RuntimeLogPrincipal } from "./runtime-log-tools";
+import type { RuntimeLogSubjectPrincipal } from "./runtime-log-tools";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
 import { CONVERSATION_CREW_READ_TOOLS } from "./conversation-crew-tools";
 import {
@@ -883,9 +883,11 @@ export class ConversationDesktopRelay {
     action: string,
     input: Record<string, unknown>,
     cwd: string,
-    principal: RuntimeLogPrincipal,
+    principal: RuntimeLogSubjectPrincipal,
     authorized: () => boolean | Promise<boolean> = () => true,
   ): Promise<unknown> {
+    if (principal.kind === "assistant-thread" && action !== "desktop.act.authorize")
+      throw new Error("This desktop relay action requires a coding session.");
     if (Date.now() - this.lastSeen > 10000)
       throw new Error(
         "Desktop relay is offline. Open the updated bycoda desktop connected to this host.",
@@ -908,7 +910,9 @@ export class ConversationDesktopRelay {
           action,
           input,
           cwd,
-          sessionId: principal.sessionId,
+          ...(principal.kind === "session"
+            ? { sessionId: principal.sessionId }
+            : { threadId: principal.threadId, projectId: principal.projectId }),
           environmentId: this.environmentId,
           deadline,
         },

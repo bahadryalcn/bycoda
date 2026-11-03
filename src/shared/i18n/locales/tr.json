@@ -10867,5 +10867,20 @@
   "Editor actions": "Editör işlemleri",
   "Assistant status": "Asistan durumu",
   "Read briefing": "Özeti oku",
-  "Related work": "İlgili çalışmalar"
+  "Related work": "İlgili çalışmalar",
+  "tokens/day": "token/gün",
+  "Custom {p0}": "Özel {p0}",
+  "Work all day": "Gün boyu çalış",
+  "Quiet hours": "Sessiz saatler",
+  "About language": "Sohbet dili hakkında",
+  "About autonomy": "Çalışma şekli hakkında",
+  "About availability": "Durum ve saatler hakkında",
+  "About cost and context": "Bütçe ve bağlam hakkında",
+  "Local scheduling limits, not a provider billing cap.": "Yerel iş takibi sınırıdır; sağlayıcı faturasını sınırlamaz.",
+  "Choose a worker model before enabling job execution.": "İşleri çalıştırmadan önce bir çalışan modeli seçin.",
+  "Choose an available model before changing its settings.": "Ayarlarını değiştirmeden önce kullanılabilir bir model seçin.",
+  "Voice needs attention": "Ses bağlantısını kontrol edin",
+  "The assistant conversation context is not ready. Wait until connected before trying this tool. No operation was dispatched.": "Asistanın konuşma bağlamı henüz hazır değil. Bu aracı kullanmadan önce bağlantının kurulmasını bekleyin. Hiçbir işlem başlatılmadı.",
+  "Exact owner approval is unavailable for this captured conversation.": "Bu konuşmaya bağlı işlem için sahibinin açık onayı alınamıyor.",
+  "The turn mode menu could not be opened. Try again.": "Konuşma modu menüsü açılamadı. Tekrar deneyin."
 }

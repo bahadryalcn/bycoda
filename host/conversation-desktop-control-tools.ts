@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { HostDesktopControl, DesktopControlPrincipal } from "./desktop-control-host";
-import type { RuntimeLogPrincipal, RuntimeLogSubjectPrincipal } from "./runtime-log-tools";
+import type { RuntimeLogSubjectPrincipal } from "./runtime-log-tools";
 import {
   DesktopControlRequestValidationSchema,
   isForbiddenDesktopShortcut,
@@ -119,9 +119,9 @@ export const isDesktopControlConversationTool = (
   Object.hasOwn(DESKTOP_CONTROL_CONVERSATION_TOOLS, action);
 export function describeDesktopControlConversationTool(action: string): string | undefined {
   if (action === "desktop.launch")
-    return "Launch or attach to one exact owner-allowlisted application, headless only. No arguments, environment, cwd, activation, CDP or force controls. Present owner requires exact native approval in a real focused conversation; certified-away policy stays scoped. Reuse requestId with identical payload after an uncertain result; never blindly repeat.";
+    return "Launch or attach to one exact owner-allowlisted application, headless only. No arguments, environment, cwd, activation, CDP or force controls. Present owner requires exact native approval in the verified coding session or assistant thread; certified-away policy stays scoped. Approval is not proof of launch completion: inspect the actual operation receipt. Reuse requestId with identical payload after an uncertain result; never blindly repeat.";
   if (action === "desktop.clipboard")
-    return "Read, replace or clear the GLOBAL plain-text clipboard, bounded to 10000 characters. Every operation needs owner-present exact native approval in a real focused conversation; an app allowlist is not clipboard permission. Set requires exact text, get/clear forbid text. Reuse requestId after uncertainty: retries return receipt metadata only, never old clipboard contents. No images, files or arbitrary formats.";
+    return "Read, replace or clear the GLOBAL plain-text clipboard, bounded to 10000 characters. Every operation needs owner-present exact native approval in the verified coding session or assistant thread; an app allowlist is not clipboard permission. Set requires exact text, get/clear forbid text. Reuse requestId after uncertainty: retries return receipt metadata only, never old clipboard contents. No images, files or arbitrary formats.";
   if (action === "desktop.status")
     return "Read optional native desktop helper readiness and owner-allowed app names. Does not install, configure, enable or resume control. Disabled or unavailable is not ready.";
   if (action === "desktop.snapshot")
@@ -135,7 +135,7 @@ export function describeDesktopControlConversationTool(action: string): string |
   if (action === "desktop.wait")
     return "Wait at most 10 seconds for an existing same-conversation snapshot ref to exist, be visible or enabled. Observation only; no polling messages or input. Stale refs require a fresh snapshot.";
   if (["desktop.act", "desktop.click", "desktop.setValue", "desktop.press"].includes(action))
-    return "Act on a fresh desktop.snapshot ref in the same captured conversation. Headless by default. When the owner is present, requires exact native owner approval and a real focused conversation; the model cannot approve. Physical input remains separately gated. Reuse requestId with identical payload after uncertain delivery; never blindly repeat with a new id. No configure/stop/resume authority.";
+    return "Act on a fresh desktop.snapshot ref in the same verified coding session or assistant thread. Headless by default. When the owner is present, requires exact native owner approval; the model cannot approve. Physical input remains separately gated. Approval is not proof of delivery: inspect the actual operation receipt. Reuse requestId with identical payload after uncertain delivery; never blindly repeat with a new id. No configure/stop/resume authority.";
 }
 
 export type DesktopRefApprovalOperation = {
@@ -167,7 +167,7 @@ export interface ConversationDesktopControlPorts {
     input: {
       operation: DesktopApprovalOperation;
       operationHash: string;
-      principal: RuntimeLogPrincipal;
+      principal: RuntimeLogSubjectPrincipal;
       cwd: string;
     },
     authorized: DesktopToolAuthorization,
@@ -328,10 +328,8 @@ export class ConversationDesktopControlTools {
       );
     let approved = false;
     if (before.ownerPresent !== false || headed || clipboard) {
-      if (principal.kind !== "session" || !this.ports.approveOperation)
-        throw new Error(
-          "Exact owner approval requires a real focused conversation. Select one before this desktop action.",
-        );
+      if (!this.ports.approveOperation)
+        throw new Error("Exact owner approval is unavailable for this captured conversation.");
       const response = await this.ports.approveOperation(
         { operation, operationHash, principal, cwd },
         authorized,

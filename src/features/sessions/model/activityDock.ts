@@ -1,5 +1,6 @@
 import { t } from "../../../shared/i18n";
 import { hasPendingApproval, type Block } from "./session";
+import { executionUserIndex } from "./executionTurn";
 import {
   lastTurn,
   isHiddenTool,
@@ -54,6 +55,7 @@ export type DockAgentStatus = "running" | "done" | "failed" | "stopped" | "inter
  */
 export function blockLifecycle(block: Block, busy: boolean): DockAgentStatus {
   if (isStoppedBlock(block)) return "stopped";
+  if (block.tool?.status?.toLowerCase() === "interrupted") return "interrupted";
   const state = toolCallState(block);
   if (state === "rejected") return "failed";
   if (state === "pending") return busy ? "running" : "interrupted";
@@ -116,7 +118,17 @@ export function deriveActivityDock({
   backgroundAgents,
   unseenDone,
 }: ActivityDockInput): ActivityDock {
-  const turn = lastTurn(blocks);
+  // A steer is another user message in the same execution. Keep the original
+  // run's rows and clock visible until a genuinely new execution starts.
+  const visibleBlocks = blocks.filter((block) => !block.internal);
+  const ownerIndex = executionUserIndex(visibleBlocks);
+  const execution = ownerIndex < 0 ? lastTurn(visibleBlocks) : visibleBlocks.slice(ownerIndex);
+  // Provider handoffs still fence activity, including imported/recovered data.
+  let handoff = execution.length - 1;
+  while (handoff >= 0 && execution[handoff].role !== "handoff") handoff--;
+  const turn = handoff < 0
+    ? execution
+    : execution.slice(handoff === execution.length - 1 ? handoff : handoff + 1);
   const agents = turn.flatMap((block) => dockAgent(block, busy));
   const running = agents.filter((agent) => agent.status === "running").length;
   const failed = agents.filter((agent) => agent.status === "failed").length;
@@ -169,13 +181,13 @@ function dockAgent(block: Block, busy: boolean): DockAgent[] {
       kind: agent ? "agent" : "command",
       status,
       model: agent ? subagentModelName(block) : undefined,
-      detail: agent
+      detail: status === "interrupted"
+        ? t("Interrupted")
+        : agent
         ? subagentStatusLine(block, block.agentRun?.steps ?? [])
         : status === "stopped"
           ? STOPPED_BY_YOU
-          : status === "interrupted"
-            ? t("Interrupted")
-            : "",
+          : "",
       ...(agent && block.agentRun?.startedAt !== undefined
         ? { startedAt: block.agentRun.startedAt }
         : {}),

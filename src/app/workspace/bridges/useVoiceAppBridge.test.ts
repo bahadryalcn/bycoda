@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
-import {act,createElement} from "react";
-import {createRoot} from "react-dom/client";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { createVoiceToolSessionOwner, registerVoiceToolSessionSource } from "./useVoiceAppBridge";
-import {useVoiceAppBridge} from "./useVoiceAppBridge";
+import { useVoiceAppBridge } from "./useVoiceAppBridge";
+import { voiceRailProjects } from "./useVoiceAppBridge";
+import { NOTHING_LOCKED } from "../../../features/group-lock/model/lockState";
+import { pathKey } from "../../../shared/lib/paths";
 import type { Session } from "../../../features/sessions/model/session";
 import { saveTabGroupLabel } from "../../../features/workspace/model/tabGroups";
 import { projectKey } from "../../../shared/lib/paths";
@@ -17,34 +20,91 @@ const session = (id: string, cwd = "/project") =>
   ({ id, cwd, harness: "codex", model: "test", title: "Voice", blocks: [] }) as Session;
 
 describe("voice management source ownership", () => {
-  it("publishes renamed display metadata to live context and workspace listing without creating a session",async()=>{
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
-    localStorage.clear();
-    const path="G:/Projects/my_projects/monocode",launch=vi.fn(async()=>{}),appendEmpty=vi.fn();
-    let bridge:ReturnType<typeof useVoiceAppBridge>|undefined;
-    function Probe(){bridge=useVoiceAppBridge({projects:[{path}],sessions:[],projectPath:path,launch,appendEmpty});return null;}
-    const element=document.createElement("div"),root=createRoot(element);
-    try{
-      await act(async()=>root.render(createElement(Probe)));
-      await act(async()=>saveTabGroupLabel(projectKey(path),"bycoda"));
-      expect(bridge!.projects).toEqual([{path,name:"bycoda",folderName:"monocode",aliases:["bycoda","monocode"]}]);
-      expect(await bridge!.workspace.execute("workspace.projects.resolve",{query:"bycoda"})).toMatchObject({ambiguous:false,projects:[{path,name:"bycoda"}]});
-      expect(await bridge!.workspace.execute("workspace.projects.list",{})).toMatchObject({projects:bridge!.projects});
-      expect(launch).not.toHaveBeenCalled();expect(appendEmpty).not.toHaveBeenCalled();
-    }finally{await act(async()=>root.unmount());localStorage.clear();}
+  it("matches the visible rail directory including the current unremembered folder without exposing locked projects", () => {
+    const recents = [{ path: "/project", openedAt: 1 }];
+    expect(voiceRailProjects(recents, "/current", NOTHING_LOCKED).map((item) => item.path)).toEqual(
+      ["/project", "/current"],
+    );
+    const locked = {
+      lockedGroupIds: new Set(["private"]),
+      lockedProjectKeys: new Set([pathKey("/current")]),
+    };
+    expect(voiceRailProjects(recents, "/current", locked).map((item) => item.path)).toEqual([
+      "/project",
+    ]);
+    expect(voiceRailProjects(recents, "~", NOTHING_LOCKED)).toEqual(recents);
+    expect(recents).toEqual([{ path: "/project", openedAt: 1 }]);
   });
-  it("the active app bridge lists projects without creating a management session",async()=>{
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
-    const coding=session("coding");resetSessionsStore([coding]);const launch=vi.fn(async()=>{});const appendEmpty=vi.fn();
-    let bridge:ReturnType<typeof useVoiceAppBridge>|undefined;
-    function Probe(){bridge=useVoiceAppBridge({projects:[{path:"/project",name:"Project"}],sessions:[coding],projectPath:"/project",launch,appendEmpty});return null;}
-    const element=document.createElement("div");document.body.append(element);const root=createRoot(element);
-    try{
-      await act(async()=>root.render(createElement(Probe)));
+  it("publishes renamed display metadata to live context and workspace listing without creating a session", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    localStorage.clear();
+    const path = "G:/Projects/my_projects/monocode",
+      launch = vi.fn(async () => {}),
+      appendEmpty = vi.fn();
+    let bridge: ReturnType<typeof useVoiceAppBridge> | undefined;
+    function Probe() {
+      bridge = useVoiceAppBridge({
+        projects: [{ path }],
+        sessions: [],
+        projectPath: path,
+        launch,
+        appendEmpty,
+      });
+      return null;
+    }
+    const element = document.createElement("div"),
+      root = createRoot(element);
+    try {
+      await act(async () => root.render(createElement(Probe)));
+      await act(async () => saveTabGroupLabel(projectKey(path), "bycoda"));
+      expect(bridge!.projects).toEqual([
+        { path, name: "bycoda", folderName: "monocode", aliases: ["bycoda", "monocode"] },
+      ]);
+      expect(
+        await bridge!.workspace.execute("workspace.projects.resolve", { query: "bycoda" }),
+      ).toMatchObject({ ambiguous: false, projects: [{ path, name: "bycoda" }] });
+      expect(await bridge!.workspace.execute("workspace.projects.list", {})).toMatchObject({
+        projects: bridge!.projects,
+      });
+      expect(launch).not.toHaveBeenCalled();
+      expect(appendEmpty).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+      localStorage.clear();
+    }
+  });
+  it("the active app bridge lists projects without creating a management session", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const coding = session("coding");
+    resetSessionsStore([coding]);
+    const launch = vi.fn(async () => {});
+    const appendEmpty = vi.fn();
+    let bridge: ReturnType<typeof useVoiceAppBridge> | undefined;
+    function Probe() {
+      bridge = useVoiceAppBridge({
+        projects: [{ path: "/project", name: "Project" }],
+        sessions: [coding],
+        projectPath: "/project",
+        launch,
+        appendEmpty,
+      });
+      return null;
+    }
+    const element = document.createElement("div");
+    document.body.append(element);
+    const root = createRoot(element);
+    try {
+      await act(async () => root.render(createElement(Probe)));
       expect(bridge).not.toHaveProperty("ensureToolSession");
-      await bridge!.workspace.execute("workspace.projects.list",{});
-      expect(getSessions()).toEqual([coding]);expect(launch).not.toHaveBeenCalled();expect(appendEmpty).not.toHaveBeenCalled();
-    }finally{await act(async()=>root.unmount());element.remove();resetSessionsStore([]);}
+      await bridge!.workspace.execute("workspace.projects.list", {});
+      expect(getSessions()).toEqual([coding]);
+      expect(launch).not.toHaveBeenCalled();
+      expect(appendEmpty).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+      element.remove();
+      resetSessionsStore([]);
+    }
   });
   it("registers the persisted management source in the actual desktop relay session store", async () => {
     const coding = session("coding");

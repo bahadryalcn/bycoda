@@ -153,6 +153,17 @@ type Live = {
   cancelled: boolean;
   muteUpdates: boolean;
   activeTurnId: string | null;
+  /** The parent ended while its children still own this run. */
+  parentCompleted: boolean;
+  pendingParentErrors: HarnessEvent[];
+  backgroundKey: string;
+  completedParentTurns: Set<string>;
+  turnInput: SendTurnInput | null;
+  childTurns: Map<string, string>;
+  terminalChildren: Set<string>;
+  completedChildTurns: Set<string>;
+  childOutcomes: Map<string, string>;
+  agentTitles: Map<string, string>;
   /** A successful provider turn ended, but its async questions still need replies. */
   awaitingAsyncAnswers: boolean;
   asyncAnswerTexts: string[];
@@ -441,7 +452,9 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
     throw new Error("Provider operation replaced before steer");
   const turnId = live.activeTurnId;
-  if (!turnId) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  const originalLatch = live.turnDone;
+  const continueParent = !turnId && live.parentCompleted && !live.awaitingAsyncAnswers && live.turnDone && live.openAgentRows.size > 0;
+  if (!turnId && !continueParent) throw new Error("The previous turn has finished. Send this follow-up as a new message.");
 
   const rpc = await rpcTurnWriter(
     live.handle,
@@ -451,10 +464,26 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
   );
   if (/(?:^|\s)\$[A-Za-z0-9]/.test(input.text)) await loadCodexSkills(live, input.sessionId, rpc);
   if (live.cancelled) throw new Error("Follow-up cancelled because the turn was stopped");
+  if (live.turnDone !== originalLatch || !originalLatch ||
+    (continueParent ? !live.parentCompleted || !!live.activeTurnId || live.pendingTurnStart : live.activeTurnId !== turnId))
+    throw new Error("The previous turn changed before this follow-up was sent. Send it as a new message.");
+
+  if (continueParent) {
+    const previous = live.turnInput;
+    if (!previous) throw new Error("No original Codex turn for this follow-up");
+    await startParentTurn(live, {
+      ...previous,
+      ...input,
+      onEvent: previous.onEvent,
+      runtimeInstructions: undefined,
+      onAccepted: undefined,
+    }, rpc);
+    return;
+  }
 
   const params = buildTurnSteerParams({
     threadId: live.threadId,
-    expectedTurnId: turnId,
+    expectedTurnId: turnId!,
     prompt: input.text.trim() || undefined,
     attachments: input.attachments,
     skills: live.skills,
@@ -464,7 +493,7 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
   }
 
   await rpc.requestWithNativeOutput("turn/steer", params, (result, work) => {
-    nativeOutputSink(work, () => live.onEvent({ type: "turn.started", providerTurnId: turnId }))();
+    nativeOutputSink(work, () => live.onEvent({ type: "turn.started", providerTurnId: turnId! }))();
     return result;
   });
 }
@@ -602,6 +631,11 @@ function settleAsyncAnswers(live: Live): void {
     live.turnEndPending = false;
     live.activeTurnId = null;
     live.awaitingAsyncAnswers = false;
+    if (!live.asyncAnswerTexts.length && live.openAgentRows.size > 0) {
+      maybeFinishBackgroundTurn(live);
+      return;
+    }
+    live.parentCompleted = false;
     TurnLatch.finish(live);
   }
 }
@@ -659,6 +693,29 @@ export async function cancelCodexTurn(
     return;
   }
   if (!ownsOperation(context, live.handle, live.operation)) return;
+  if (live.openAgentRows.size > 0) {
+    // Keep the root latch and rows until physical retirement is confirmed.
+    // A failed stop remains observable and can be retried against this owner.
+    live.cancelled = true;
+    live.muteUpdates = true;
+    try {
+      await retirements.retire([live.handle]);
+    } catch (error) {
+      if (liveByThread.get(sessionId) === live) {
+        live.cancelled = false;
+        live.muteUpdates = false;
+        live.onEvent({ type: "status", text: "Could not confirm that the subagents stopped. Retry Stop to verify their outcome." });
+      }
+      throw error;
+    }
+    closeOpenAgentRows(live);
+    if (live.backgroundKey) {
+      live.backgroundKey = "";
+      live.onEvent({ type: "background.updated", tasks: [], agents: 0 });
+    }
+    await stopCodexSession(sessionId, live.handle);
+    return;
+  }
   live.cancelled = true;
   live.muteUpdates = true;
   clearServerRequests(live);
@@ -1065,6 +1122,16 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       cancelled: false,
       muteUpdates: didResume,
       activeTurnId: null,
+      parentCompleted: false,
+      pendingParentErrors: [],
+      backgroundKey: "",
+      completedParentTurns: new Set(),
+      turnInput: null,
+      childTurns: new Map(),
+      terminalChildren: new Set(),
+      completedChildTurns: new Set(),
+      childOutcomes: new Map(),
+      agentTitles: new Map(),
       awaitingAsyncAnswers: false,
       asyncAnswerTexts: [],
       queuedAsyncAnswers: new Map(),
@@ -1164,6 +1231,52 @@ async function runTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView)
   // so skills created or edited in this session are available immediately.
   if (/(?:^|\s)\$[A-Za-z0-9]/.test(input.text)) await loadCodexSkills(live, input.sessionId, rpc);
   if (live.cancelled) return;
+  live.turnInput = input;
+  live.parentCompleted = false;
+  const turnPromise = new Promise<void>((resolve, reject) => {
+    live.turnDone = resolve;
+    live.turnFailed = reject;
+  });
+  turnPromise.catch(() => undefined);
+  settlePendingTurn(live);
+
+  try {
+    await startParentTurn(live, input, rpc);
+    await turnPromise;
+  } catch (error) {
+    if (live.cancelled) return;
+    // These answers have not crossed the continuation's acceptance boundary.
+    for (const [requestId, { pending }] of live.queuedAsyncAnswers) {
+      if (live.questions.get(requestId) !== pending) continue;
+      live.onEvent({
+        type: "question.updated", requestId, delivery: "unknown",
+        error: "Answer delivery could not be confirmed. Check the connection before continuing.",
+      });
+    }
+    live.onEvent({ type: "session.error", message: error instanceof Error ? error.message : String(error) });
+    throw error;
+  } finally {
+    live.pendingTurnStart = false;
+    live.turnDone = null;
+    live.turnFailed = null;
+  }
+  if (!live.cancelled && !live.muteUpdates && live.asyncAnswerTexts.length) {
+    const text = live.asyncAnswerTexts.join("\n\n");
+    const queued = new Map(live.queuedAsyncAnswers);
+    await runTurn(live, {
+      ...input, text, attachments: [], runtimeInstructions: undefined,
+      onAccepted: () => {
+        for (const [id, { pending, reply }] of queued) {
+          if (live.questions.get(id) === pending) pending.resolve(reply);
+          live.queuedAsyncAnswers.delete(id);
+        }
+      },
+    }, rpc);
+  }
+}
+
+/** Starts a provider parent turn without replacing the execution's latch or children. */
+async function startParentTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView): Promise<void> {
   const model = nativeModelId(input.model) || live.model;
   const effort = input.modelSettings?.reasoningEffort;
   const serviceTier = input.modelSettings?.serviceTier;
@@ -1184,25 +1297,26 @@ async function runTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView)
   });
 
   if (Array.isArray(params.input) && params.input.length === 0) {
+    if (!live.openAgentRows.size) TurnLatch.finish(live);
     return;
   }
 
-  live.emittedAssistantByItem.clear();
+  const previous = {
+    emittedAssistantByItem: live.emittedAssistantByItem,
+    emittedReasoningByItem: live.emittedReasoningByItem,
+    emittedAsyncQuestions: live.emittedAsyncQuestions,
+    asyncAnswerTexts: live.asyncAnswerTexts,
+    turnUsage: live.turnUsage,
+    commandOutput: live.commandOutput,
+  };
+  live.emittedAssistantByItem = new Map();
   live.asyncAnswerTexts = [];
   live.turnUsage = {};
-  live.commandOutput.clear();
-  live.emittedReasoningByItem.clear();
-  live.emittedGeneratedImages.clear();
-  live.emittedAsyncQuestions.clear();
-  live.turnGeneration += 1;
-
-  const turnPromise = new Promise<void>((resolve, reject) => {
-    live.turnDone = resolve;
-    live.turnFailed = reject;
-  });
-  turnPromise.catch(() => undefined);
-  settlePendingTurn(live);
-
+  live.commandOutput = new Map();
+  live.emittedReasoningByItem = new Map();
+  live.emittedAsyncQuestions = new Set();
+  const previousCompleted = live.parentCompleted;
+  live.parentCompleted = false;
   try {
     live.pendingTurnStart = true;
     await rpc.requestWithNativeOutput<{ turn?: { id?: string } }>(
@@ -1218,7 +1332,7 @@ async function runTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView)
           const turnId = response.turn?.id ?? live.activeTurnId;
           // turn/completed can arrive before turn/start returns; don't resurrect a
           // finished turn's id after finishActiveTurn cleared activeTurnId.
-          if (turnId && live.turnDone && !live.awaitingAsyncAnswers) {
+          if (turnId && live.turnDone && !live.awaitingAsyncAnswers && !live.completedParentTurns.has(turnId)) {
             live.activeTurnId = live.activeTurnId ?? turnId;
             live.onEvent({ type: "turn.started", providerTurnId: turnId });
           }
@@ -1226,49 +1340,18 @@ async function runTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView)
           return response;
         })(),
     );
-    await turnPromise;
   } catch (error) {
-    if (live.cancelled) return;
-    // Preserve submitted answers before the session error settles the host run.
-    // These have not crossed the continuation's turn/start acceptance boundary.
-    for (const [requestId, { pending }] of live.queuedAsyncAnswers) {
-      if (live.questions.get(requestId) !== pending) continue;
-      live.onEvent({
-        type: "question.updated",
-        requestId,
-        delivery: "unknown",
-        error: "Answer delivery could not be confirmed. Check the connection before continuing.",
-      });
+    // A protocol rejection is known not to have started a new parent. A lost
+    // response is uncertain: keep the run owned and observable until recovery.
+    if (error instanceof JsonRpcResponseError && !live.activeTurnId) {
+      live.parentCompleted = previousCompleted;
+      Object.assign(live, previous);
     }
-    live.onEvent({
-      type: "session.error",
-      message: error instanceof Error ? error.message : String(error),
-    });
     throw error;
   } finally {
     live.pendingTurnStart = false;
-    live.turnDone = null;
-    live.turnFailed = null;
-  }
-  if (!live.cancelled && !live.muteUpdates && live.asyncAnswerTexts.length) {
-    const text = live.asyncAnswerTexts.join("\n\n");
-    const queued = new Map(live.queuedAsyncAnswers);
-    await runTurn(
-      live,
-      {
-        ...input,
-        text,
-        attachments: [],
-        runtimeInstructions: undefined,
-        onAccepted: () => {
-          for (const [id, { pending, reply }] of queued) {
-            if (live.questions.get(id) === pending) pending.resolve(reply);
-            live.queuedAsyncAnswers.delete(id);
-          }
-        },
-      },
-      rpc,
-    );
+    syncBackgroundWait(live);
+    maybeFinishBackgroundTurn(live);
   }
 }
 
@@ -1326,6 +1409,15 @@ function handleNotification(
   if (threadId && threadId !== live.threadId) {
     return handleSubagentNotification(live, threadId, method, params);
   }
+  const notifiedTurnId = stringField(asRecord(rec?.turn), "id") ?? stringField(rec, "turnId");
+  const activityItem = asRecord(rec?.item);
+  const childActivity = (method === "item/started" || method === "item/completed") &&
+    (activityItem?.type === "subAgentActivity" || activityItem?.type === "collabAgentToolCall");
+  // Child state may still be reported against the parent turn that spawned it.
+  // Stale parent text/lifecycle must not interfere with its newer continuation.
+  if (notifiedTurnId && live.completedParentTurns.has(notifiedTurnId) && !childActivity) return;
+  if ((method === "turn/completed" || method === "turn/aborted") &&
+    live.activeTurnId && notifiedTurnId && live.activeTurnId !== notifiedTurnId) return;
   // A Codex turn is a sequence of items. Completing an agentMessage does not
   // mean the turn is over — more tools and messages can still arrive. Only
   // turn/completed (and turn/aborted) settle sendCodexTurn, which is what the
@@ -1342,7 +1434,29 @@ function handleNotification(
   const itemId = snapshot ? stringField(asRecord(rec?.item), "id") : stringField(rec, "itemId");
   let pending: Promise<void> | undefined;
   for (const event of mapped.events) {
-    if (duplicate && duplicateAgentRow(event)) continue;
+    if (event.type === "session.error" && live.openAgentRows.size > 0) {
+      // session.error seals UI streaming. Report the failure immediately, but
+      // retain execution ownership until its independently running children end.
+      if (!live.pendingParentErrors.some((pending) => pending.type === "session.error" && pending.message === event.message))
+        live.pendingParentErrors.push(event);
+      live.onEvent({ type: "status", key: "codex-parent-error", text: event.message });
+      continue;
+    }
+    // A fast child may finish before its spawn call returns. That call's
+    // stale running snapshot cannot reopen the child's settled row.
+    if ((event.type === "tool.started" || event.type === "tool.updated") && event.kind === "agent" &&
+      ["pending", "in_progress", "running"].includes(event.status ?? "")) {
+      const children = [...live.subagentThreads].filter(([, owner]) => owner === event.callId);
+      if (children.length && children.every(([id]) => live.terminalChildren.has(id))) continue;
+    }
+    if (duplicate && event.type === "tool.updated" && event.kind === "agent" &&
+      event.status && !["pending", "in_progress", "running"].includes(event.status)) {
+      for (const childId of codexSubagentThreadIds(asRecord(rec?.item) ?? {}))
+        settleChild(live, childId, event.status);
+    }
+    if (duplicate && duplicateAgentRow(event)) {
+      continue;
+    }
     if (event.type === "image.generated") {
       if (live.emittedGeneratedImages.has(event.itemId)) continue;
       live.emittedGeneratedImages.add(event.itemId);
@@ -1377,7 +1491,7 @@ function handleNotification(
       const emit = () => {
         try {
           const actual = nativeOutputSink(pendingStep.work, () =>
-            emitSubagentSteps(live, owner, pendingStep.method, pendingStep.params),
+            emitSubagentNotification(live, childId, owner, pendingStep.method, pendingStep.params),
           )();
           if (actual) return trackNativeOutputWork(actual, pendingStep.work);
           pendingStep.work?.finish();
@@ -1415,14 +1529,19 @@ function handleNotification(
         !live.usageLimited &&
         Array.from(live.questions.values()).some((question) => question.rpcId === null);
       live.usageLimited = false;
+      if (notifiedTurnId) live.completedParentTurns.add(notifiedTurnId);
+      live.parentCompleted = true;
+      syncBackgroundWait(live);
       if (keepQuestions) {
         live.awaitingAsyncAnswers = true;
         live.activeTurnId = null;
-        clearServerRequests(live, true);
-        closeOpenAgentRows(live);
+        if (!live.openAgentRows.size) clearServerRequests(live, true);
         return;
       }
+      if (live.openAgentRows.size > 0) return;
       finishActiveTurn(live);
+    } else {
+      maybeFinishBackgroundTurn(live);
     }
   });
   const afterImages = nativeOutputSink(outputWork, () => {
@@ -1588,6 +1707,12 @@ function bindSubagentThreads(
   for (const childId of children) {
     const owner = live.subagentThreads.get(childId);
     if (owner) {
+      if (live.terminalChildren.has(childId) &&
+        (item.tool === "resumeAgent" || (itemType === "subAgentActivity" && item.kind === "started"))) {
+        live.terminalChildren.delete(childId);
+        live.subagentThreads.set(childId, callId);
+        continue;
+      }
       const model = stringField(item, "model");
       if (model && item.tool === "spawnAgent")
         live.onEvent({
@@ -1628,14 +1753,18 @@ function handleSubagentNotification(
 ): void | Promise<void> {
   const callId = live.subagentThreads.get(threadId);
   if (callId) {
-    return emitSubagentSteps(live, callId, method, params);
+    return emitSubagentNotification(live, threadId, callId, method, params);
   }
-  if (!live.activeTurnId) return;
+  if (!live.turnDone && !live.pendingTurnStart) return;
   if (
     method !== "item/started" &&
     method !== "item/completed" &&
     method !== "thread/started" &&
-    method !== "thread/tokenUsage/updated"
+    method !== "thread/tokenUsage/updated" &&
+    method !== "turn/started" &&
+    method !== "turn/completed" &&
+    method !== "turn/aborted" &&
+    method !== "thread/closed"
   )
     return;
   const backlog = live.pendingSubagent.get(threadId) ?? [];
@@ -1645,6 +1774,37 @@ function handleSubagentNotification(
   }
   backlog.push({ method, params, work: captureNativeOutputWork() });
   live.pendingSubagent.set(threadId, backlog);
+}
+
+function emitSubagentNotification(live: Live, threadId: string, callId: string,
+  method: string, params: unknown): void | Promise<void> {
+  const rec = asRecord(params);
+  const turn = asRecord(rec?.turn);
+  const turnId = stringField(turn, "id") ?? stringField(rec, "turnId");
+  const key = turnId ? `${threadId}:${turnId}` : undefined;
+  if (key && live.completedChildTurns.has(key)) return;
+  if (method === "turn/started" && turnId) {
+    live.childTurns.set(threadId, turnId);
+    if (live.terminalChildren.delete(threadId)) {
+      live.childOutcomes.delete(callId);
+      const title = live.agentTitles.get(callId) ?? "Subagent";
+      live.openAgentRows.set(callId, title);
+      live.onEvent({ type: "tool.updated", callId, title, kind: "agent", status: "in_progress" });
+      syncBackgroundWait(live);
+    }
+  }
+  if (method === "turn/completed" || method === "turn/aborted" || method === "thread/closed") {
+    const current = live.childTurns.get(threadId);
+    if (turnId && current && current !== turnId) return;
+    const status = stringField(turn, "status") ?? (method === "thread/closed" ? "interrupted" : method === "turn/aborted" ? "interrupted" : undefined);
+    // Unknown/missing completion state is not proof of success.
+    if (status && ["completed", "failed", "interrupted", "cancelled"].includes(status)) {
+      if (key) live.completedChildTurns.add(key);
+      settleChild(live, threadId, status === "completed" ? "completed" : status === "failed" ? "failed" : "interrupted",
+        stringField(asRecord(turn?.error), "message"));
+    }
+  }
+  return emitSubagentSteps(live, callId, method, params);
 }
 
 function emitSubagentSteps(
@@ -1684,6 +1844,7 @@ function emitSubagentSteps(
 function trackAgentRow(live: Live, event: HarnessEvent): void {
   if (event.type !== "tool.started" && event.type !== "tool.updated") return;
   if (event.kind !== "agent") return;
+  if (event.title) live.agentTitles.set(event.callId, event.title);
   if (event.status === "in_progress" || event.status === "pending") {
     live.openAgentRows.set(event.callId, event.title ?? "Subagent");
     return;
@@ -1700,25 +1861,34 @@ function settleSubagentRows(live: Live, rec: Record<string, unknown> | null): vo
   const item = asRecord(rec?.item);
   if (!item) return;
   for (const state of codexSubagentStates(item)) {
-    const callId = live.subagentThreads.get(state.threadId);
-    const title = callId ? live.openAgentRows.get(callId) : undefined;
-    if (!callId || !title) continue;
-    live.openAgentRows.delete(callId);
+    settleChild(live, state.threadId, state.status, state.message);
+  }
+}
+
+function settleChild(live: Live, threadId: string, status: string, message?: string): void {
+  live.terminalChildren.add(threadId);
+  const callId = live.subagentThreads.get(threadId);
+  const title = callId ? live.openAgentRows.get(callId) : undefined;
+  if (!callId || !title) return;
+  const previous = live.childOutcomes.get(callId);
+  const severity = (value: string) => value === "failed" ? 3 : value === "interrupted" || value === "stopped" ? 2 : 1;
+  if (!previous || severity(status) > severity(previous)) live.childOutcomes.set(callId, status);
+  // An activity row may represent more than one child.
+  if ([...live.subagentThreads].some(([id, owner]) => owner === callId && !live.terminalChildren.has(id))) return;
+  live.openAgentRows.delete(callId);
     live.onEvent({
       type: "tool.updated",
       callId,
       title,
       kind: "agent",
-      status: state.status,
-      ...(state.message ? { detail: state.message } : {}),
+      status: live.childOutcomes.get(callId) ?? status,
+      ...(message ? { detail: message } : {}),
     });
-  }
+  syncBackgroundWait(live);
+  maybeFinishBackgroundTurn(live);
 }
 
-/**
- * A turn cannot end with an agent still working. Codex does not always report
- * a closing state for every child, and a row left running would hop forever.
- */
+/** Closing a parent never proves its unfinished children succeeded. */
 function closeOpenAgentRows(live: Live): void {
   for (const [callId, title] of live.openAgentRows) {
     live.onEvent({
@@ -1726,10 +1896,27 @@ function closeOpenAgentRows(live: Live): void {
       callId,
       title,
       kind: "agent",
-      status: "completed",
+      status: "interrupted",
     });
   }
   live.openAgentRows.clear();
+}
+
+function maybeFinishBackgroundTurn(live: Live): void {
+  if (!live.parentCompleted || live.pendingTurnStart || live.awaitingAsyncAnswers ||
+    live.activeTurnId || live.openAgentRows.size || !live.turnDone) return;
+  finishActiveTurn(live);
+}
+
+function syncBackgroundWait(live: Live): void {
+  // Before turn/start ACK the previous waiting state remains truthful. A
+  // definitive rejection must not briefly erase it or its remaining children.
+  if (live.pendingTurnStart || live.muteUpdates) return;
+  const tasks = live.parentCompleted && !live.cancelled ? [...live.openAgentRows.values()] : [];
+  const key = JSON.stringify(tasks);
+  if (key === live.backgroundKey || (!tasks.length && !live.backgroundKey)) return;
+  live.backgroundKey = tasks.length ? key : "";
+  live.onEvent({ type: "background.updated", tasks, agents: tasks.length });
 }
 
 function publishCodexText(
@@ -1757,6 +1944,9 @@ function publishCodexText(
 
 function finishActiveTurn(live: Live, extraEvents: HarnessEvent[] = []): void {
   live.awaitingAsyncAnswers = false;
+  live.parentCompleted = false;
+  syncBackgroundWait(live);
+  live.turnInput = null;
   clearServerRequests(live);
   closeOpenAgentRows(live);
   live.turnEndPending = false;
@@ -1767,10 +1957,17 @@ function finishActiveTurn(live: Live, extraEvents: HarnessEvent[] = []): void {
   live.emittedGeneratedImages.clear();
   live.emittedAsyncQuestions.clear();
   live.subagentThreads.clear();
+  live.childTurns.clear();
+  live.terminalChildren.clear();
+  live.completedChildTurns.clear();
+  live.childOutcomes.clear();
+  live.agentTitles.clear();
   for (const backlog of live.pendingSubagent.values())
     for (const step of backlog) step.work?.fail("codex-backlog-retired");
   live.pendingSubagent.clear();
-  TurnLatch.finish(live, extraEvents);
+  const errors = live.pendingParentErrors;
+  live.pendingParentErrors = [];
+  TurnLatch.finish(live, [...extraEvents, ...errors]);
 }
 
 function settlePendingTurn(live: Live): void {

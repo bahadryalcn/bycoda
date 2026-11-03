@@ -1,5 +1,8 @@
 import { useMemo, useRef, useSyncExternalStore } from "react";
-import { loadTabGroupLabels, subscribeTabGroupLabels } from "../../../features/workspace/model/tabGroups";
+import {
+  loadTabGroupLabels,
+  subscribeTabGroupLabels,
+} from "../../../features/workspace/model/tabGroups";
 import { voiceProjectNames } from "../../../features/voice/model/voiceProjectNames";
 import { useVoiceWorkspaceActions } from "./useVoiceWorkspaceActions";
 import type {
@@ -13,11 +16,14 @@ import {
   HARNESSES,
   type Session,
 } from "../../../features/sessions/model/session";
+import { getSession, listSessionsByProject } from "../../../features/sessions/data/sessionStore";
 import {
-  getSession,
-  listSessionsByProject,
-} from "../../../features/sessions/data/sessionStore";
-import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
+  collectRailProjects,
+  isRemoteProjectPath,
+  sameProjectPath,
+  type RecentProject,
+} from "../../../features/projects/model/recents";
+import { visibleProjects, type LockSnapshot } from "../../../features/group-lock/model/lockState";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
 import type { QuickLaunch } from "../../../features/quick-composer/model/quickComposer";
 import { featureHost } from "../../../features/connections/model/hostFeatureClient";
@@ -51,6 +57,15 @@ type Deps = {
   | "onSubmit"
   | "onStop"
 >;
+
+/** Match the rail's project directory, including a not-yet-remembered current folder. */
+export function voiceRailProjects(recents: RecentProject[], current: string, locks: LockSnapshot) {
+  return visibleProjects(
+    locks,
+    [...collectRailProjects(recents, current).values()],
+    (item) => item.path,
+  );
+}
 
 /** Register the persisted source for native desktop relays without opening or focusing a tab. */
 export function registerVoiceToolSessionSource(source: Session): void {
@@ -97,13 +112,16 @@ export function createVoiceToolSessionOwner(ports: {
     }
     return entry.result!;
   };
-
 }
 
 const projectLabelSnapshot = () => JSON.stringify(loadTabGroupLabels());
 
 export function useVoiceAppBridge(deps: Deps) {
-  const labelSnapshot = useSyncExternalStore(subscribeTabGroupLabels, projectLabelSnapshot, projectLabelSnapshot);
+  const labelSnapshot = useSyncExternalStore(
+    subscribeTabGroupLabels,
+    projectLabelSnapshot,
+    projectLabelSnapshot,
+  );
   const projects = useMemo(() => voiceProjectNames(deps.projects), [deps.projects, labelSnapshot]);
   const latest = useRef(deps);
   latest.current = deps;
@@ -166,6 +184,8 @@ export function useVoiceAppBridge(deps: Deps) {
       harness: entry.harness,
       model: entry.model ?? "",
       busy: entry.status === "running",
+      archived: entry.archived,
+      updatedAt: entry.updatedAt,
     }));
     for (const row of rows) listedSessions.current.set(row.id, row);
     return rows;

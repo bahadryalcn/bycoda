@@ -8,6 +8,12 @@ draft remain available. Opening a file beside the conversation again reuses its
 pane. File opens outside the conversation continue to follow the saved file-tab
 preference.
 
+When a reply names an output folder and then lists filenames, file links also
+check that folder. A project-prefixed folder such as `ui-tests/investor-deck/`
+works when the conversation already runs inside `ui-tests`. Existing direct
+paths take precedence; fallback paths must exist on the conversation's owning
+computer. This applies to HTML, PDF and Word links as well as other files.
+
 The Explorer header identifies the current tree root, which may be a worktree
 branch rather than the project name. Its full path remains available separately
 from workspace switching. Use the root control to collapse or expand the tree;

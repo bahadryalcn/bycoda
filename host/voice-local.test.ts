@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { LocalVoiceService, validateVoiceAudio } from "./voice-local";
+import { DICTATION_WARM_MS, LocalVoiceService, validateVoiceAudio } from "./voice-local";
 import * as runtime from "./voice-runtime";
 it("validates bounded PCM16 and language before starting any worker", () => {
   const audio = Buffer.alloc(6400).toString("base64");
@@ -64,6 +64,99 @@ it("shares the recognizer for dictation without loading natural speech", async (
     expect(dictation.lease).not.toBe(companion.lease);
   } finally {
     inspect.mockRestore();
+    service.close();
+  }
+});
+
+it("keeps the recognizer warm after dictation, reuses it and unloads after the grace period", async () => {
+  vi.useFakeTimers();
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const internals = service as unknown as {
+    ensureWorker: () => Promise<unknown>;
+    child?: unknown;
+  };
+  const worker = vi
+    .spyOn(internals, "ensureWorker")
+    .mockImplementation(async () => {
+      internals.child = { kill: () => {} };
+      (service as unknown as { loading: Promise<unknown> }).loading = Promise.resolve();
+      return { model: "small", device: "cuda" };
+    });
+  const close = vi.spyOn(service, "close");
+  try {
+    const first = await service.start({ natural: false }, true);
+    service.release(first.lease);
+    expect(close).not.toHaveBeenCalled();
+    // Kept warm without users: setup is not blocked by it.
+    expect(service.isActive).toBe(false);
+    const second = await service.start({ natural: false }, true);
+    // The loaded recognizer is reused without probing the installation again.
+    expect(inspect).toHaveBeenCalledOnce();
+    expect(worker).toHaveBeenCalledTimes(2);
+    expect(service.isActive).toBe(true);
+    service.release(second.lease);
+    vi.advanceTimersByTime(DICTATION_WARM_MS - 1);
+    expect(close).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(close).toHaveBeenCalledOnce();
+  } finally {
+    inspect.mockRestore();
+    close.mockRestore();
+    (internals as { child?: unknown }).child = undefined;
+    service.close();
+    vi.useRealTimers();
+  }
+});
+
+it("unloads at once when the voice companion releases the last connection", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const internals = service as unknown as { ensureWorker: () => Promise<unknown>; child?: unknown };
+  vi.spyOn(internals, "ensureWorker").mockImplementation(async () => {
+    internals.child = { kill: () => {} };
+    return { model: "small", device: "cuda" };
+  });
+  const close = vi.spyOn(service, "close");
+  try {
+    const companion = await service.start({ natural: false });
+    service.release(companion.lease);
+    expect(close).toHaveBeenCalledOnce();
+  } finally {
+    inspect.mockRestore();
+    close.mockRestore();
+    internals.child = undefined;
+    service.close();
+  }
+});
+
+it("reloads a warm recognizer when dictation starts with other settings", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const internals = service as unknown as { ensureWorker: () => Promise<unknown>; child?: unknown };
+  vi.spyOn(internals, "ensureWorker").mockImplementation(async () => {
+    internals.child = { kill: () => {} };
+    (service as unknown as { loading: Promise<unknown> }).loading = Promise.resolve();
+    return { model: "small", device: "cuda" };
+  });
+  const close = vi.spyOn(service, "close");
+  try {
+    const first = await service.start({ natural: false, device: "gpu" }, true);
+    service.release(first.lease);
+    expect(close).not.toHaveBeenCalled();
+    await service.start({ natural: false, device: "cpu" }, true);
+    expect(close).toHaveBeenCalledOnce();
+    expect(inspect).toHaveBeenCalledTimes(2);
+  } finally {
+    inspect.mockRestore();
+    close.mockRestore();
+    internals.child = undefined;
     service.close();
   }
 });

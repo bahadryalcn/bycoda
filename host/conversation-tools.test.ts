@@ -509,6 +509,76 @@ describe("Conversation Tools boundary", () => {
     });
     relay.close();
   });
+  it("binds exact desktop approval to a real assistant thread without inventing a session", async () => {
+    const relay = new ConversationDesktopRelay("host-one");
+    const thread = {
+      kind: "assistant-thread" as const,
+      threadId: "voice-thread",
+      projectId: "project-one",
+    };
+    await relay.take("native-owner");
+    const operation = { kind: "launch", requestId: "launch-one", app: "Chrome" };
+    const pending = relay.call(
+      "desktop.act.authorize",
+      { operation, operationHash: "a".repeat(64) },
+      "/p",
+      thread,
+    );
+    const [request] = await relay.take("native-owner");
+    expect(request).toMatchObject({
+      action: "desktop.act.authorize",
+      cwd: "/p",
+      threadId: "voice-thread",
+      projectId: "project-one",
+      environmentId: "host-one",
+      input: { operation },
+    });
+    expect(request).not.toHaveProperty("sessionId");
+    expect(
+      await relay.authorize(String(request.id), "desktop.act.authorize", "native-owner"),
+    ).toEqual({ authorized: true });
+    expect(
+      await relay.authorize(String(request.id), "desktop.act.authorize", "other-owner"),
+    ).toEqual({ authorized: false });
+    const approval = { approved: true, operationHash: "a".repeat(64) };
+    await relay.finish(String(request.id), approval, undefined, "native-owner");
+    expect(await pending).toEqual(approval);
+    expect(() => relay.call("terminals.write", { data: "pwd" }, "/p", thread)).toThrow(
+      "requires a coding session",
+    );
+    relay.close();
+  });
+
+  it("rechecks assistant-thread authority after a pending native approval and rejects its retired result", async () => {
+    const relay = new ConversationDesktopRelay("host-one");
+    await relay.take("native-owner");
+    let authorized = true;
+    const pending = relay.call(
+      "desktop.act.authorize",
+      {
+        operation: { kind: "launch", requestId: "launch-two", app: "Chrome" },
+        operationHash: "b".repeat(64),
+      },
+      "/p",
+      { kind: "assistant-thread", threadId: "thread-original", projectId: "project-one" },
+      () => authorized,
+    );
+    const rejection = expect(pending).rejects.toThrow("revoked");
+    const [request] = await relay.take("native-owner");
+    authorized = false;
+    expect(
+      await relay.authorize(String(request.id), "desktop.act.authorize", "native-owner"),
+    ).toEqual({ authorized: false });
+    await relay.finish(
+      String(request.id),
+      { approved: true, operationHash: "b".repeat(64) },
+      undefined,
+      "native-owner",
+    );
+    await rejection;
+    relay.close();
+  });
+
   it("does not deliver revoked or expired queued authority to the desktop", async () => {
     const relay = new ConversationDesktopRelay();
     await relay.take();

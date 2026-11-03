@@ -2074,6 +2074,16 @@ function AssistantSettings({
       workerCompactPercent,
       workerHandoffPercent,
       stallMinutes,
+      idleMinutes,
+      awayMinutes,
+      chiefWakeLimit,
+      nudgeLimit,
+      activeStart,
+      activeEnd,
+      notificationPresent,
+      notificationAway,
+      notificationDnd,
+      summaryRefreshMessages,
     } = draft;
     try {
       const saved=await assistantRequest({
@@ -2105,6 +2115,16 @@ function AssistantSettings({
           workerCompactPercent,
           workerHandoffPercent,
           stallMinutes,
+          idleMinutes,
+          awayMinutes,
+          chiefWakeLimit,
+          nudgeLimit,
+          activeStart,
+          activeEnd,
+          notificationPresent,
+          notificationAway,
+          notificationDnd,
+          summaryRefreshMessages,
         },
       });
       if(!saved.profile)throw new Error(t("The settings save was not confirmed. Check before retrying."));

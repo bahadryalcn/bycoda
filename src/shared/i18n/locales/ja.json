@@ -10865,5 +10865,20 @@
   "Turn ending preference could not be saved. Try again.": "発話終了の設定を保存できませんでした。もう一度お試しください。",
   "Assistant status": "アシスタントの状態",
   "Read briefing": "報告を読む",
-  "Related work": "関連する作業"
+  "Related work": "関連する作業",
+  "tokens/day": "トークン/日",
+  "Custom {p0}": "カスタム {p0}",
+  "Work all day": "終日稼働",
+  "Quiet hours": "通知を控える時間",
+  "About language": "言語について",
+  "About autonomy": "自律動作について",
+  "About availability": "在席状況について",
+  "About cost and context": "予算とコンテキストについて",
+  "Local scheduling limits, not a provider billing cap.": "ローカルの実行計画の上限であり、プロバイダーの請求上限ではありません。",
+  "Choose a worker model before enabling job execution.": "ジョブの実行を有効にする前にワーカーモデルを選択してください。",
+  "Choose an available model before changing its settings.": "設定を変更する前に利用可能なモデルを選択してください。",
+  "Voice needs attention": "音声接続を確認してください",
+  "The assistant conversation context is not ready. Wait until connected before trying this tool. No operation was dispatched.": "アシスタントの会話コンテキストはまだ準備できていません。このツールを使う前に接続を待ってください。操作は実行されていません。",
+  "Exact owner approval is unavailable for this captured conversation.": "この会話に対する所有者の明示的な承認を取得できません。",
+  "The turn mode menu could not be opened. Try again.": "会話モードのメニューを開けませんでした。もう一度お試しください。"
 }

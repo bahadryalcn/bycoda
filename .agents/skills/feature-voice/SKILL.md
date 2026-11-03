@@ -47,6 +47,7 @@ owns application actions; composer owns draft/caret/send. Paths are repository-r
   pin/follow behavior and the existing permission gates.
 - Dictation inserts through the composer draft/selection owner, preserving IME,
   attachments and cancellation. It does not implicitly submit a message.
+  Fast start (mic during load, warm recognizer): [source map](references/surfaces.md).
 - Visuals start on actual playback. Muted/closed mic RMS is zero; stale playback
   cannot reactivate after silence.
 - Style/compact/movement changes do not reconnect voice. Preserve overlay/focus,

@@ -6,6 +6,7 @@ import {
   codexCommandText,
   codexSkillMentions,
   codexSkillsFromList,
+  codexSubagentStates,
   isRecoverableThreadResumeError,
   mapApprovalRequest,
   mapCodexNotification,
@@ -805,6 +806,32 @@ describe("mapCodexNotification", () => {
       status: "failed",
       detail: "Subagent interrupted.",
     });
+  });
+
+  it("maps an explicit subagent completion independently of the parent turn", () => {
+    const mapped = mapCodexNotification("item/completed", {
+      threadId: "parent",
+      item: { id: "child-result", type: "subAgentActivity", kind: "completed",
+        agentPath: "/root/research", agentThreadId: "child" },
+    });
+    expect(mapped.events).toEqual([{
+      type: "tool.updated", callId: "child-result", title: "Research subagent",
+      kind: "agent", status: "completed",
+    }]);
+    expect(mapped.turnCompleted).toBeUndefined();
+  });
+
+  it("keeps running and unknown child states open and distinguishes shutdown from success", () => {
+    expect(codexSubagentStates({ agentsStates: {
+      running: { status: "running" }, pending: { status: "pendingInit" },
+      unknown: { status: "futureState" }, done: { status: "completed", message: "Result" },
+      failed: { status: "errored", message: "Disconnected" },
+      stopped: { status: "shutdown" },
+    } })).toEqual([
+      { threadId: "done", status: "completed", message: "Result" },
+      { threadId: "failed", status: "failed", message: "Disconnected" },
+      { threadId: "stopped", status: "interrupted" },
+    ]);
   });
 
   it("retains the explicitly selected spawn model", () => {

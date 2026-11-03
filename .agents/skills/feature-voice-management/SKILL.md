@@ -43,6 +43,7 @@ Source paths below are repository-relative.
 
 ## Conditional references and checks
 
+- Navigation and tool-result provenance: [continuity contracts](references/continuity.md).
 - Tool/source/attachment bounds: [source map](references/surfaces.md).
 - Scope provenance: [historical owner decisions](references/decisions.md).
 - User behavior: [voice guide](../../../docs/guides/voice.md).

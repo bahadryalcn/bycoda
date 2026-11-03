@@ -378,6 +378,11 @@ FileTree keeps selection, virtualization, rename and native drop authority.
 primary action is disabled (Commit/Amend). Loading and group aria-disabled gate
 both. Its default still derives the menu gate from primary disabled. Menu method
 selection never implies execution or bypasses a confirmation.
+`menuSurface="native"` routes flat choices through the existing Tauri menu API
+for short native webviews; the default remains the shared DOM Popover.
+`onMenuError` lets the owner show recovery. Display acceptance is not selection
+or dismissal: only the native item callback invokes an enabled action, and
+`aria-expanded` is omitted when the OS menu lifecycle cannot be observed.
 
 Additional field and choice APIs: `SearchInputGroup size` / `SearchInput fieldSize`
 (`sm` toolbar default, `md` form height); `Select` option `disabled` (skipped by

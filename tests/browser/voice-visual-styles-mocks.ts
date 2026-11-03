@@ -19,6 +19,7 @@ export const fixtureVoice = {
   turnPolicies: [] as unknown[],
   ruleAckLost: new URLSearchParams(location.search).has("rule-ack-lost"),
   memories: [] as any[],
+  projectLists: 0,
   speech(text: string) {
     const onset = this.callbacks.start();
     const binding = this.callbacks.accept?.(onset) ?? onset;
@@ -166,7 +167,9 @@ export async function converseWithAssistant(input: {
     family: "workspace",
     action: "workspace.projects.list",
     input: {},
-    requestId: "fixture-project-list",
+    requestId: new URLSearchParams(location.search).has("navigation")
+      ? `fixture-project-list-${fixtureVoice.projectLists++}`
+      : "fixture-project-list",
   });
   fixtureVoice.observations.push(result);
   return { action: "reply", reply: "The fixture project is available." };
@@ -238,14 +241,147 @@ export async function captureAssistantHostRead(expectedEnvironmentId?: string) {
       (await assistantRequest({ op: "snapshot", limit: 100 }, environmentId)).snapshot,
   });
 }
+// Finite synthetic storage for the navigation fixture. The production transcript
+// and causal-context validators consume these exact receipts without bypasses.
+const navigationThreads = new Map<string, any>(),
+  navigationMessages = new Map<string, { input: string; message: any }>(),
+  navigationContexts = new Map<string, any>();
+function navigationHistoryRequest(input: any): any | undefined {
+  const now = Date.now();
+  const knownProjects = ["fixture-project", "fixture-next-project"];
+  if (input.op === "threads.open") {
+    if (input.projectId && !knownProjects.includes(input.projectId))
+      throw new Error("Unknown synthetic project");
+    const id = `fixture-thread-${input.projectId ?? "global"}`;
+    if (!navigationThreads.has(id))
+      navigationThreads.set(id, {
+        id,
+        version: 1,
+        title: "Voice",
+        projectId: input.projectId ?? null,
+        summary: "",
+        createdAt: now,
+        updatedAt: now,
+      });
+    return {
+      thread: structuredClone(navigationThreads.get(id)),
+      messages: [...navigationMessages.values()]
+        .map((entry) => entry.message)
+        .filter((message) => message.threadId === id),
+    };
+  }
+  if (input.op === "threads.messages") {
+    const thread = navigationThreads.get(input.threadId);
+    if (!thread) throw new Error("Unknown synthetic thread");
+    return {
+      thread: structuredClone(thread),
+      messages: [...navigationMessages.values()]
+        .map((entry) => structuredClone(entry.message))
+        .filter((message) => message.threadId === input.threadId)
+        .slice(-input.limit),
+    };
+  }
+  if (input.op === "threads.append") {
+    const thread = navigationThreads.get(input.threadId);
+    if (!thread) throw new Error("Unknown synthetic thread");
+    const encoded = JSON.stringify(input),
+      existing = navigationMessages.get(input.idempotencyKey);
+    if (existing) {
+      if (existing.input !== encoded) throw new Error("Synthetic transcript retry changed");
+      return { message: structuredClone(existing.message) };
+    }
+    const causal = input.causalContextId
+      ? navigationContexts.get(input.causalContextId)
+      : undefined;
+    const scope =
+      input.role === "user"
+        ? thread.projectId
+          ? [thread.projectId]
+          : []
+        : causal?.status === "known"
+          ? causal.projectIds
+          : undefined;
+    const message = {
+      id: input.idempotencyKey,
+      version: 1,
+      threadId: input.threadId,
+      role: input.role,
+      via: input.via,
+      text: input.text,
+      jobIds: input.jobIds ?? [],
+      createdAt: now,
+      updatedAt: now,
+      ...(scope ? { projectIds: scope } : {}),
+    };
+    navigationMessages.set(input.idempotencyKey, { input: encoded, message });
+    fixtureVoice.transcripts.push(input);
+    return { message: structuredClone(message) };
+  }
+  if (input.op === "voice.context.open") {
+    const previous = navigationContexts.get(input.previousContextId),
+      owner = [...navigationMessages.values()]
+        .map((entry) => entry.message)
+        .find((message) => message.id === input.ownerMessageId);
+    if (
+      !owner ||
+      owner.threadId !== input.threadId ||
+      owner.role !== "user" ||
+      input.contextProjectIds.some((id: string) => !knownProjects.includes(id))
+    )
+      throw new Error("Synthetic voice source changed");
+    const id = `context-${input.requestId}`,
+      existing = navigationContexts.get(id);
+    if (existing) return { voiceContext: structuredClone(existing) };
+    const unknown = previous?.status === "unknown";
+    const context = {
+      id,
+      version: 1,
+      environmentId: "fixture-host",
+      threadId: input.threadId,
+      generationKey: input.generationKey,
+      ownerMessageId: input.ownerMessageId,
+      status: unknown ? "unknown" : "known",
+      ...(unknown ? {} : { projectIds: input.contextProjectIds }),
+      createdAt: now,
+      updatedAt: now,
+    };
+    navigationContexts.set(id, context);
+    return { voiceContext: structuredClone(context) };
+  }
+  if (input.op === "voice.context.invalidate") {
+    const current = navigationContexts.get(input.id);
+    if (!current) throw new Error("Unknown synthetic voice context");
+    const context = {
+      ...current,
+      status: "unknown",
+      reason: input.reason,
+      version: current.version + 1,
+      updatedAt: now,
+    };
+    delete context.projectIds;
+    navigationContexts.set(input.id, context);
+    return { voiceContext: structuredClone(context) };
+  }
+}
 export async function assistantRequest(input: any, expectedEnvironmentId?: string): Promise<any> {
   if (expectedEnvironmentId && expectedEnvironmentId !== "fixture-host")
     throw new Error("Synthetic captured Host changed");
   fixtureVoice.ownerRequests.push({ input: structuredClone(input), expectedEnvironmentId });
+  if (new URLSearchParams(location.search).has("navigation")) {
+    const result = navigationHistoryRequest(input);
+    if (result !== undefined) return result;
+  }
   if (input.op === "snapshot")
     return { snapshot: { ...fixtureAssistant, jobs: fixtureVoice.jobs } };
   if (input.op === "projects.list")
-    return { projects: [{ id: "fixture-project", path: "/fixture", name: "Fixture project" }] };
+    return {
+      projects: [
+        { id: "fixture-project", path: "/fixture", name: "Fixture project" },
+        ...(new URLSearchParams(location.search).has("navigation")
+          ? [{ id: "fixture-next-project", path: "/fixture-next", name: "Second fixture project" }]
+          : []),
+      ],
+    };
   if (input.op === "threads.open") return { thread: { id: "fixture-thread", summary: "" } };
   if (input.op === "threads.messages") return { messages: [] };
   if (input.op === "threads.append") {

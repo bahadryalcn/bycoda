@@ -1064,6 +1064,15 @@ function mapSubAgentActivity(
   const path = stringField(item, "agentPath") ?? stringField(item, "agent_path");
   const leaf = path?.split(/[/\\]/).filter(Boolean).pop();
   const title = leaf ? `${formatAgentType(leaf)} subagent` : "Subagent";
+  if (kind === "completed") {
+    return {
+      type: "tool.updated",
+      callId,
+      title,
+      kind: "agent",
+      status: "completed",
+    };
+  }
   if (kind === "interrupted") {
     return {
       type: "tool.updated",
@@ -1158,6 +1167,7 @@ const TERMINAL_AGENT_STATES = new Set([
   "notfound",
   "not_found",
   "closed",
+  "shutdown",
   "interrupted",
   "stopped",
   "cancelled",
@@ -1172,6 +1182,8 @@ const FAILED_AGENT_STATES = new Set([
   "not_found",
   "interrupted",
 ]);
+
+const INTERRUPTED_AGENT_STATES = new Set(["shutdown", "closed", "stopped", "cancelled", "canceled"]);
 
 /**
  * Per-agent state a collab item reports, keyed by child thread. This is what
@@ -1190,7 +1202,9 @@ export function codexSubagentStates(
     return [
       {
         threadId,
-        status: FAILED_AGENT_STATES.has(status) ? "failed" : "completed",
+        status: FAILED_AGENT_STATES.has(status)
+          ? "failed"
+          : INTERRUPTED_AGENT_STATES.has(status) ? "interrupted" : "completed",
         ...(message ? { message } : {}),
       },
     ];

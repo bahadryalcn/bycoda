@@ -15,6 +15,7 @@ import {
   type RemoteProvider,
 } from "../src/features/connections/model/protocol";
 import { sessionIssue } from "../src/features/sessions/model/sessionIssue";
+import { deriveActivityDock } from "../src/features/sessions/model/activityDock";
 import { isActivityBlock, isNoticeBlock } from "../src/features/sessions/model/transcriptActivity";
 import { conversationHead } from "../src/features/sync/model/conversationDigest";
 import { mergeAdoptedSession } from "../src/features/connections/model/adoptedSessions";
@@ -442,6 +443,131 @@ it("steers the active host turn without replacing it, and deduplicates retries",
     (await store.session(id)).session.blocks.filter((block) => block.id === "redirect"),
   ).toHaveLength(1);
   await expect(engine.command({ ...command, commandId: "stale", runId: "old" })).rejects.toThrow();
+});
+
+it.each(["reasoning", "subagent", "background command"] as const)(
+  "keeps host steering messages attached to the execution owner during %s",
+  async (activity) => {
+    const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+    provider.steer = vi.fn(async () => {});
+    const receipt = await engine.command({
+      type: "send", commandId: "execution-owner", sessionId: id, text: "Work",
+    });
+    await waitForTurnStart();
+    turns[0].input.onAccepted?.();
+    turns[0].input.onEvent({ type: "reasoning.delta", text: "Planning the work" });
+    if (activity !== "reasoning") {
+      turns[0].input.onEvent({
+        type: "tool.started",
+        callId: "ongoing-work",
+        title: activity === "subagent" ? "Research" : "dev server",
+        kind: activity === "subagent" ? "agent" : "execute",
+        status: "in_progress",
+        ...(activity === "background command" ? { background: true } : {}),
+      });
+    }
+    for (const [index, commandId] of ["first-steer", "second-steer"].entries()) {
+      await engine.command({
+        type: "steer", commandId, sessionId: id, runId: receipt.runId!, text: "Also check this",
+      });
+      await vi.waitFor(() => expect(provider.steer).toHaveBeenCalledTimes(index + 1));
+      const current = await store.session(id);
+      expect(current.session.blocks.find((block) => block.id === commandId)).toMatchObject({
+        continuationOf: "execution-owner",
+      });
+      expect(current.runId).toBe(receipt.runId);
+    }
+    expect(provider.send).toHaveBeenCalledOnce();
+    expect(provider.cancel).not.toHaveBeenCalled();
+    expect(provider.stop).not.toHaveBeenCalled();
+    turns[0].finish();
+    await engine.waitForRun(id, receipt.runId);
+  },
+);
+
+describe("child-only host run lifetime", () => {
+  async function startChildOnlyRun() {
+    const context = await setup();
+    const { engine, id, turns, store, waitForTurnStart } = context;
+    const receipt = await engine.command({
+      type: "send", commandId: "child-owner", sessionId: id, text: "Research and run the checks",
+    });
+    await waitForTurnStart();
+    const { input } = turns[0];
+    input.onAccepted?.();
+    input.onEvent({ type: "reasoning.delta", text: "Delegate the research" });
+    input.onEvent({ type: "tool.started", callId: "research", title: "Product research", kind: "agent", status: "in_progress" });
+    input.onEvent({ type: "tool.started", callId: "checks", title: "Run checks", kind: "execute", status: "in_progress", background: true });
+    input.onEvent({ type: "message.delta", text: "The delegated work is still running." });
+    input.onEvent({ type: "message.completed" });
+    input.onEvent({ type: "reasoning.completed" });
+    input.onEvent({ type: "background.updated", tasks: ["Product research", "Run checks"], agents: 1 });
+    await vi.waitFor(async () => expect((await store.session(id)).session.backgroundAgents).toBe(1));
+    return { ...context, receipt };
+  }
+
+  it("keeps a child-only run busy and steerable until every child and the provider finish", async () => {
+    const { engine, store, id, provider, turns, receipt, waitForTurnStart } = await startChildOnlyRun();
+    provider.steer = vi.fn(async () => {});
+    const dock = async () => {
+      const { session } = await store.session(id);
+      return deriveActivityDock({
+        blocks: session.blocks, busy: session.busy, backgroundTasks: session.backgroundTasks,
+        backgroundAgents: session.backgroundAgents, pendingQuestion: false, unseenDone: false,
+      });
+    };
+    let current = await store.session(id);
+    expect(current).toMatchObject({ status: "running", runId: receipt.runId, session: { busy: true } });
+    expect(current.session.blocks.find((block) => block.role === "assistant")?.streaming).toBe(false);
+    expect(await dock()).toMatchObject({ state: "waiting", running: 2, backgroundAgents: 1 });
+    await expect(engine.command({
+      type: "send", commandId: "premature-next", sessionId: id, text: "Next request",
+    })).rejects.toThrow("already running");
+    await engine.command({
+      type: "steer", commandId: "child-followup", sessionId: id, runId: receipt.runId!, text: "Also check the API",
+    });
+    await vi.waitFor(() => expect(provider.steer).toHaveBeenCalledOnce());
+    current = await store.session(id);
+    expect(current).toMatchObject({ status: "running", runId: receipt.runId, session: { busy: true } });
+    expect(current.session.blocks.find((block) => block.id === "child-followup")).toMatchObject({ continuationOf: "child-owner" });
+    expect(await dock()).toMatchObject({ state: "waiting", running: 2 });
+    expect(provider.send).toHaveBeenCalledOnce();
+    expect(provider.stop).not.toHaveBeenCalled();
+
+    turns[0].input.onEvent({ type: "tool.updated", callId: "research", status: "completed" });
+    turns[0].input.onEvent({ type: "background.updated", tasks: ["Run checks"], agents: 0 });
+    await vi.waitFor(async () => expect(await dock()).toMatchObject({ state: "background", running: 1, finished: 1 }));
+    expect((await store.session(id)).status).toBe("running");
+    turns[0].input.onEvent({ type: "tool.updated", callId: "checks", status: "completed" });
+    turns[0].input.onEvent({ type: "background.updated", tasks: [], agents: 0 });
+    await vi.waitFor(async () => expect((await store.session(id)).session.backgroundTasks).toBeUndefined());
+    expect((await store.session(id)).session.busy).toBe(true);
+    expect(provider.stop).not.toHaveBeenCalled();
+    turns[0].finish();
+    await engine.waitForRun(id, receipt.runId);
+    expect(await store.session(id)).toMatchObject({ status: "idle", session: { busy: false } });
+    expect(await dock()).toMatchObject({ state: "idle", running: 0, finished: 2 });
+    // A successful current-checkout run retains its warm provider after all work settles.
+    expect(provider.stop).not.toHaveBeenCalled();
+    const next = await engine.command({ type: "send", commandId: "after-children", sessionId: id, text: "Next request" });
+    await waitForTurnStart(2);
+    expect(provider.send).toHaveBeenCalledTimes(2);
+    turns[1].finish();
+    await engine.waitForRun(id, next.runId);
+  });
+
+  it("keeps Stop effective after parent prose finishes while child work remains", async () => {
+    const { engine, store, id, provider, receipt } = await startChildOnlyRun();
+    expect(provider.cancel).not.toHaveBeenCalled();
+    await engine.command({ type: "cancel", commandId: "stop-children", sessionId: id, runId: receipt.runId! });
+    await engine.waitForRun(id, receipt.runId);
+    const current = await store.session(id);
+    expect(provider.cancel).toHaveBeenCalledOnce();
+    expect(provider.send).toHaveBeenCalledOnce();
+    expect(current).toMatchObject({ status: "idle", session: { busy: false } });
+    expect(current.session.backgroundTasks).toBeUndefined();
+    expect(current.session.blocks.find((block) => block.id === "child-owner")?.turnOutcome).toBe("stopped");
+  });
 });
 
 describe("assistant command delivery evidence", () => {

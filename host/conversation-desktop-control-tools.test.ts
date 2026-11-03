@@ -157,7 +157,7 @@ describe("desktop conversation tool authority", () => {
     expect(await f.request.mock.calls[0][2]!()).toBe(false);
   });
   it.each(["get", "set", "clear"])(
-    "requires present owner and real focused session for global clipboard %s",
+    "requires present owner and exact native review for thread clipboard %s",
     async (action) => {
       const input = { requestId: action, action, ...(action === "set" ? { text: "exact" } : {}) };
       for (const ownerPresent of [false, undefined]) {
@@ -168,10 +168,15 @@ describe("desktop conversation tool authority", () => {
         expect(f.request).not.toHaveBeenCalled();
       }
       const f = fixture();
-      await expect(f.call("desktop.clipboard", input, thread)).rejects.toThrow(
-        "real focused conversation",
-      );
-      expect(f.request).not.toHaveBeenCalled();
+      await f.call("desktop.clipboard", input, thread);
+      expect(f.approved).toHaveBeenCalledOnce();
+      expect(f.approved.mock.calls[0][0].principal).toEqual(thread);
+      expect(f.request).toHaveBeenCalledOnce();
+      expect(await f.request.mock.calls[0][4]!()).toBe(true);
+      const denied = fixture();
+      denied.approved.mockResolvedValue({ approved: false });
+      await expect(denied.call("desktop.clipboard", input, thread)).rejects.toThrow("not approved");
+      expect(denied.request).not.toHaveBeenCalled();
     },
   );
   it("binds clipboard text/hash/global target and grants only internal sensitive authority for this request", async () => {
@@ -283,7 +288,7 @@ describe("desktop conversation tool authority", () => {
         headed: false,
       }),
     ).toThrow();
-    expect(voiceThreadToolAllowed("conversation", "desktop.click")).toBe(false);
+    expect(voiceThreadToolAllowed("conversation", "desktop.click")).toBe(true);
   });
   it("discovers only strict bounded tools, with observations marked read-only", () => {
     for (const action of [
@@ -305,7 +310,7 @@ describe("desktop conversation tool authority", () => {
       validateConversationTool("desktop.act", { ...act, text: "x".repeat(10001) }),
     ).toThrow();
     expect(voiceThreadToolAllowed("conversation", "desktop.snapshot")).toBe(true);
-    expect(voiceThreadToolAllowed("conversation", "desktop.act")).toBe(false);
+    expect(voiceThreadToolAllowed("conversation", "desktop.act")).toBe(true);
     expect(voiceThreadToolAllowed("conversation", "desktop.wait")).toBe(true);
     const managed = createManagedToolCatalog(
       "conversation",
@@ -420,11 +425,13 @@ describe("desktop conversation tool authority", () => {
       expect(f.request).toHaveBeenCalledTimes(1);
     },
   );
-  it("requires a real focused session for owner-present thread-only input", async () => {
+  it("requires exact native approval for owner-present thread input without fabricating a session", async () => {
     const f = fixture();
     await f.observe(thread);
-    await expect(f.call("desktop.act", act, thread)).rejects.toThrow("real focused conversation");
-    expect(f.approved).not.toHaveBeenCalled();
+    await f.call("desktop.act", act, thread);
+    expect(f.approved).toHaveBeenCalledOnce();
+    expect(f.approved.mock.calls[0][0].principal).toEqual(thread);
+    expect(f.request).toHaveBeenCalledTimes(2);
   });
   it("allows away headless thread input under adapter allowlist/ref/presence checks", async () => {
     const f = fixture();
@@ -439,9 +446,9 @@ describe("desktop conversation tool authority", () => {
     const f = fixture();
     await f.observe(thread);
     f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: undefined });
-    await expect(f.call("desktop.act", act, thread)).rejects.toThrow("real focused conversation");
-    await f.call("desktop.act", act);
+    await f.call("desktop.act", act, thread);
     expect(f.approved).toHaveBeenCalledOnce();
+    expect(f.approved.mock.calls[0][0].principal).toEqual(thread);
   });
   it.each([
     { supported: false, locked: false, ownerPresent: false },

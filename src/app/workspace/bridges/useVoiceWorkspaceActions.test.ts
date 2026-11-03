@@ -24,20 +24,51 @@ function setup(overrides: Partial<VoiceWorkspaceActionsDeps> = {}) {
 const args = { sessionId: "first", projectPath: "/project", requestId: "request-1" };
 
 describe("voice workspace owner actions", () => {
-  it("resolves the display/folder aliases but creates only at the exact listed cwd, preserving ambiguity and access",async()=>{
-    const path="G:/Projects/my_projects/monocode",onCreate=vi.fn(async()=>"exact-session");
-    const {deps,execute}=setup({getProjects:()=>voiceProjectNames([{path,name:"bycoda"}]),onCreate});
-    const resolved=await execute("workspace.projects.resolve",{query:"bycoda"});
-    expect(resolved).toMatchObject({ambiguous:false,projects:[{path,name:"bycoda",folderName:"monocode"}]});
-    expect(await execute("workspace.sessions.create",{projectPath:"bycoda",requestId:"bad-alias"})).toMatchObject({status:"rejected"});
+  it("resolves the display/folder aliases but creates only at the exact listed cwd, preserving ambiguity and access", async () => {
+    const path = "G:/Projects/my_projects/monocode",
+      onCreate = vi.fn(async () => "exact-session");
+    const { deps, execute } = setup({
+      getProjects: () => voiceProjectNames([{ path, name: "bycoda" }]),
+      onCreate,
+    });
+    const resolved = await execute("workspace.projects.resolve", { query: "bycoda" });
+    expect(resolved).toMatchObject({
+      ambiguous: false,
+      projects: [{ path, name: "bycoda", folderName: "monocode" }],
+    });
+    expect(
+      await execute("workspace.sessions.create", { projectPath: "bycoda", requestId: "bad-alias" }),
+    ).toMatchObject({ status: "rejected" });
     expect(onCreate).not.toHaveBeenCalled();
-    expect(await execute("workspace.sessions.create",{projectPath:path,requestId:"original-create"})).toMatchObject({sessionId:"exact-session",projectPath:path,submitted:false});
-    expect(onCreate).toHaveBeenCalledWith({projectPath:path,requestId:"original-create",prompt:"",submit:false});
-    deps.getProjects=()=>voiceProjectNames([{path,name:"bycoda"},{path:"remote://other/work/monocode",name:"bycoda"}]);
-    expect(await execute("workspace.projects.resolve",{query:"bycoda"})).toMatchObject({ambiguous:true,total:2});
-    deps.getProjects=()=>[];
-    expect(await execute("workspace.projects.resolve",{query:"bycoda"})).toMatchObject({projects:[],total:0});
-    expect(await execute("workspace.sessions.create",{projectPath:path,requestId:"after-lock"})).toMatchObject({status:"rejected"});
+    expect(
+      await execute("workspace.sessions.create", {
+        projectPath: path,
+        requestId: "original-create",
+      }),
+    ).toMatchObject({ sessionId: "exact-session", projectPath: path, submitted: false });
+    expect(onCreate).toHaveBeenCalledWith({
+      projectPath: path,
+      requestId: "original-create",
+      prompt: "",
+      submit: false,
+    });
+    deps.getProjects = () =>
+      voiceProjectNames([
+        { path, name: "bycoda" },
+        { path: "remote://other/work/monocode", name: "bycoda" },
+      ]);
+    expect(await execute("workspace.projects.resolve", { query: "bycoda" })).toMatchObject({
+      ambiguous: true,
+      total: 2,
+    });
+    deps.getProjects = () => [];
+    expect(await execute("workspace.projects.resolve", { query: "bycoda" })).toMatchObject({
+      projects: [],
+      total: 0,
+    });
+    expect(
+      await execute("workspace.sessions.create", { projectPath: path, requestId: "after-lock" }),
+    ).toMatchObject({ status: "rejected" });
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
   it("merges stored and loaded metadata without exposing hidden workers or another project's sessions", async () => {
@@ -69,6 +100,79 @@ describe("voice workspace owner actions", () => {
   it("does not label a loaded-only list as complete stored history", async () => {
     const result = await setup().execute("workspace.sessions.list", { projectPath: "/project" });
     expect(result.coverage).toBe("loaded-only");
+  });
+
+  it("searches stored history with paging and returns exact lifecycle identity and archive/loading metadata", async () => {
+    const onOpen = vi.fn();
+    const { execute } = setup({
+      listSessions: async () => [
+        entry("history", "/project", { title: "FİRİSBE release", archived: true, updatedAt: 10 }),
+        entry("history-two", "/project", {
+          title: "Firisbe old review",
+          archived: true,
+          updatedAt: 9,
+        }),
+        entry("foreign", "/other", { title: "Firisbe private", archived: true }),
+      ],
+      getSessions: () => [entry("first", "/project", { busy: true, title: "Current work" })],
+      onOpen,
+    });
+    expect(
+      await execute("workspace.sessions.list", {
+        projectPath: "/project",
+        query: "firisbe",
+        state: "archived",
+        limit: 1,
+      }),
+    ).toMatchObject({
+      total: 2,
+      nextOffset: 1,
+      coverage: "stored-and-loaded",
+      sessions: [
+        {
+          id: "history",
+          projectPath: "/project",
+          archived: true,
+          loaded: false,
+          active: false,
+          updatedAt: 10,
+        },
+      ],
+    });
+    expect(
+      await execute("workspace.sessions.list", {
+        projectPath: "/project",
+        query: "firisbe",
+        state: "archived",
+        limit: 1,
+        offset: 1,
+      }),
+    ).toMatchObject({
+      nextOffset: null,
+      sessions: [{ id: "history-two" }],
+    });
+    expect(
+      await execute("workspace.sessions.list", { projectPath: "/project", state: "running" }),
+    ).toMatchObject({
+      total: 1,
+      sessions: [{ id: "first", loaded: true, active: true, busy: true }],
+    });
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed history filters before reading or changing sessions", async () => {
+    const listSessions = vi.fn(async () => []);
+    const { execute } = setup({ listSessions });
+    for (const filter of [
+      { state: ["all"] },
+      { state: "unknown" },
+      { query: " " },
+      { query: "x".repeat(201) },
+    ])
+      expect(
+        await execute("workspace.sessions.list", { projectPath: "/project", ...filter }),
+      ).toMatchObject({ status: "rejected" });
+    expect(listSessions).not.toHaveBeenCalled();
   });
 
   it("refuses a target in a different project without invoking its callback", async () => {

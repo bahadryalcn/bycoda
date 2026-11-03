@@ -196,12 +196,10 @@
   flex: 2 1 30rem;
   order: 0;
 }
+/* The brief field is its own framed prompt; the disclosure adds no second frame around it. */
 .social-program-assistant {
   flex: 1 1 18rem;
   order: 1;
-  border: 1px solid var(--ui-pane-border);
-  padding: 1rem;
-  border-radius: var(--ui-radius-card);
 }
 .social-program-step[data-program-step="0"]
   > .social-program-advanced:not(.social-program-assistant) {
