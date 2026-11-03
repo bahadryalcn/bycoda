@@ -534,12 +534,16 @@ mod tests {
     #[test]
     fn dynamic_indicator_inherits_only_the_actual_main_windows_browser_args() {
         let main_args = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required --remote-debugging-port=19771";
-        let mut auxiliary = tauri::utils::config::WindowConfig::default();
-        auxiliary.label = "other-window".into();
-        auxiliary.additional_browser_args = Some("--another-window-option".into());
-        let mut main = tauri::utils::config::WindowConfig::default();
-        main.label = "main".into();
-        main.additional_browser_args = Some(main_args.into());
+        let auxiliary = tauri::utils::config::WindowConfig {
+            label: "other-window".into(),
+            additional_browser_args: Some("--another-window-option".into()),
+            ..Default::default()
+        };
+        let main = tauri::utils::config::WindowConfig {
+            label: "main".into(),
+            additional_browser_args: Some(main_args.into()),
+            ..Default::default()
+        };
         let windows = [auxiliary, main];
         assert_eq!(configured_main_browser_args(&windows), Some(main_args));
         assert_eq!(configured_main_browser_args(&windows[..1]), None);

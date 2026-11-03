@@ -127,6 +127,15 @@ function badge() {
   return container.querySelector("[data-workspace-working-count]");
 }
 
+it("caps the displayed working count without losing the real accessible total or live mark",async()=>{
+  props.sessions=Array.from({length:128},(_,index)=>({id:`working-${index}`,cwd:props.cwd,harness:"codex" as const,model:"",runtimeMode:"supervised" as const,title:`Working ${index}`,createdAt:1,updatedAt:1}));
+  props.busySessionIds=new Set(props.sessions.map(session=>session.id));
+  await render();
+  expect(badge()?.textContent).toBe("99+");
+  expect(badge()?.getAttribute("aria-label")).toBe("128 working sessions");
+  expect(badge()?.querySelector('[data-size="xs"][aria-hidden="true"]')).not.toBeNull();
+});
+
 it("collapses and reopens Working in the workspace when the project rail is closed", async () => {
   props.projectRailOpen = false;
   props.onSelectAgent = vi.fn();
@@ -182,6 +191,9 @@ it("counts each working conversation once in this workspace and clears on comple
   expect(badge()?.getAttribute("aria-label")).toMatch(/^3 working session/);
   expect(badge()?.closest('[role="tab"]')?.textContent).toContain("Sessions");
   expect(container.querySelectorAll("[data-workspace-working-count]")).toHaveLength(1);
+  expect(badge()?.getAttribute("data-variant")).toBe("count");
+  expect(badge()?.textContent).toBe("3");
+  expect(badge()?.querySelector('[data-size="xs"][aria-hidden="true"]')).not.toBeNull();
 
   props.busySessionIds = new Set(["first"]);
   await render();

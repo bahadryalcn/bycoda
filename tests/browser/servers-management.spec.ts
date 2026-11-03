@@ -24,28 +24,25 @@ test.describe("touch selection", () => {
       // Only Chromium exposes CDP touch input. Other engines get the same touch pointer
       // sequence the row's long-press handler listens to, followed by the click a
       // browser may still synthesize after the release.
-      await first.evaluate(
-        async (row, point) => {
-          const init = {
-            bubbles: true,
-            cancelable: true,
-            composed: true,
-            clientX: point.x,
-            clientY: point.y,
-            pointerId: 7,
-            pointerType: "touch",
-            isPrimary: true,
-            button: 0,
-          };
-          row.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
-          await new Promise((resolve) => setTimeout(resolve, 650));
-          row.dispatchEvent(new PointerEvent("pointerup", { ...init, buttons: 0 }));
-          row.dispatchEvent(
-            new MouseEvent("click", { ...init, detail: 1, view: window, buttons: 0 }),
-          );
-        },
-        touch,
-      );
+      await first.evaluate(async (row, point) => {
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clientX: point.x,
+          clientY: point.y,
+          pointerId: 7,
+          pointerType: "touch",
+          isPrimary: true,
+          button: 0,
+        };
+        row.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
+        await new Promise((resolve) => setTimeout(resolve, 650));
+        row.dispatchEvent(new PointerEvent("pointerup", { ...init, buttons: 0 }));
+        row.dispatchEvent(
+          new MouseEvent("click", { ...init, detail: 1, view: window, buttons: 0 }),
+        );
+      }, touch);
     }
     await expect(
       page.getByRole("checkbox", { name: "Select Server 00", exact: true }),
@@ -112,10 +109,9 @@ for (const theme of ["light", "dark"]) {
       );
       const rows = page.getByRole("list", { name: "Servers", exact: true });
       await expect(rows.locator("[data-server-row]")).toHaveCount(36);
-      const saved = page
-        .locator("details:not(:has(details))")
-        .filter({ has: page.locator("summary", { hasText: /Saved SSH tabs.*Not connected/ }) });
-      await expect(saved).not.toHaveAttribute("open");
+      const saved = page.getByRole("region", { name: "Saved SSH tabs", exact: true });
+      const savedToggle = saved.getByRole("button", { name: /^Saved SSH tabs/ });
+      await expect(savedToggle).toHaveAttribute("aria-expanded", "true");
       expect(await page.getByText("Remember saved SSH tabs", { exact: true }).count()).toBe(1);
       await expect(rows.getByRole("checkbox")).toHaveCount(0);
       await page.locator('[data-server-row="fixture-0"]').click({ button: "right" });
@@ -138,7 +134,6 @@ for (const theme of ["light", "dark"]) {
       await page.getByRole("button", { name: "Clear selection", exact: true }).click();
       await expect(rows.getByRole("checkbox")).toHaveCount(0);
       await page.getByRole("textbox", { name: "Search servers" }).fill("");
-      await saved.locator("summary").click();
       await expect(saved.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
       await saved.getByRole("checkbox", { name: "Select saved SSH tabs", exact: true }).check();
       await saved.getByRole("button", { name: "Remove selected", exact: true }).click();
@@ -148,7 +143,8 @@ for (const theme of ["light", "dark"]) {
       await expect(
         saved.getByRole("checkbox", { name: "Select saved SSH tabs", exact: true }),
       ).toBeChecked();
-      await saved.locator("summary").click();
+      await savedToggle.click();
+      await expect(savedToggle).toHaveAttribute("aria-expanded", "false");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -183,17 +179,23 @@ test("confirmed mixed bulk removal removes only selected records", async ({ page
 
 test("removing saved tabs keeps the server and never launches a connection", async ({ page }) => {
   await page.goto("/tests/browser/servers.html?terminalWorkspace&sshFixture&serverRestoreFixture");
-  const saved = page
-    .locator("details:not(:has(details))")
-    .filter({ has: page.locator("summary", { hasText: /Saved SSH tabs.*Not connected/ }) });
-  await saved.locator("summary").click();
+  const saved = page.getByRole("region", { name: "Saved SSH tabs", exact: true });
+  await expect(saved.getByRole("button", { name: /^Saved SSH tabs/ })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
   await saved.getByRole("checkbox", { name: "Select saved SSH tabs", exact: true }).check();
   await saved.getByRole("button", { name: "Remove selected", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Remove selected", exact: true })
     .click();
-  await expect(saved).toHaveCount(0);
+  await expect(
+    saved.getByRole("checkbox", { name: "Select saved SSH tabs", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    saved.getByRole("switch", { name: "Remember saved SSH tabs", exact: true }),
+  ).toBeChecked();
   await expect(page.locator('[data-server-row="ssh-duplicate"]')).toHaveCount(1);
   expect(
     await page.evaluate(() =>

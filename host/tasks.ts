@@ -36,7 +36,7 @@ import {
   type TaskVerification,
 } from "../src/features/tasks/model/hostTasks";
 import { DEFAULT_MAX_RUNNING_TASKS } from "../src/features/tasks/model/hostSettings";
-import { hasPendingApproval } from "../src/features/sessions/model/session";
+import { hasPendingApproval, type SessionMessageAuthor } from "../src/features/sessions/model/session";
 import { blockedHandoff, taskContract } from "./task-handoff";
 import type { HostEngine } from "./engine";
 import { buildDeterministicHandoff } from "../src/features/sessions/model/handoff";
@@ -489,10 +489,15 @@ export class HostTasks {
   private readonly retainedDeletionWriter?:HostEngine["hasRetainedProviderWriter"];
   /** Only the canonical running worker may receive supervisor sends/compaction.
    * Its accepted run and budget ledger move in the engine's same transaction. */
-  async managedSessionCommand(input:{jobId:string;sessionId:string;source:{projectId:string;executionCwd:string;authorityGeneration?:number;runId?:string};questionToken?:string;signal:AbortSignal;recheck:()=>Promise<void>},command:unknown) {
+  async managedSessionCommand(input:{jobId:string;sessionId:string;source:{projectId:string;executionCwd:string;authorityGeneration?:number;runId?:string};requestId?:string;author?:SessionMessageAuthor;questionToken?:string;signal:AbortSignal;recheck:()=>Promise<void>},command:unknown) {
+    // A committed steer temporarily owns one draft while provider delivery is
+    // pending. Capture its Host-stamped operation, never a general draft bypass.
+    const author=input.author?structuredClone(input.author):undefined;
+    const ownCommand=command&&typeof command==="object"&&!Array.isArray(command)?command as {type?:unknown;commandId?:unknown;sessionId?:unknown}:undefined;
+    const ownSteerId=ownCommand?.type==="steer"&&ownCommand.sessionId===input.sessionId&&input.requestId&&author?.kind==="assistant"&&author.jobId===input.jobId&&author.operationId===input.requestId&&ownCommand.commandId===`assistant-message-${createHash("sha256").update(input.requestId).digest("hex")}`?ownCommand.commandId:undefined;
     await this.ready;
     if(!this.admitCommand||!input.source.runId)throw new Error("Guarded worker commands require the original engine run.");
-    const matches=(await this.list(input.source.projectId)).filter(task=>task.goalId===`assistant-${input.jobId}`&&task.sessionId===input.sessionId&&task.runId===input.source.runId);
+    const matches=(await this.list(input.source.projectId,false)).filter(task=>task.goalId===`assistant-${input.jobId}`&&task.sessionId===input.sessionId&&task.runId===input.source.runId);
     if(matches.length!==1)throw new Error("Supervisor writes support only the job's current worker. Planner repair uses goal replanning; independent review remains with its review owner.");
     let task=matches[0],expected=await this.taskValue(task.id);
     const answering=!!input.questionToken&&!!command&&typeof command==="object"&&(command as {type?:string}).type==="answer";
@@ -506,7 +511,7 @@ export class HostTasks {
       const budget=await this.budgetReason(task,stage.phase==="command");if(budget)throw new Error(budget);
       const current=await this.store.session(input.sessionId),session=current.session;
       const cwd=task.worktreeCwd??(await this.store.project(task.projectId)).cwd;
-      if(current.projectId!==input.source.projectId||(session.worktreeCwd??session.cwd)!==input.source.executionCwd||cwd!==input.source.executionCwd||current.authorityGeneration!==input.source.authorityGeneration||current.runId!==(stage.phase==="command"?input.source.runId:stage.runId)||current.runId!==task.runId||session.harness!==task.harness||session.model!==task.model||session.runtimeMode!==task.runtimeMode||(session.providerAccountId??"default")!==(task.providerAccountId??"default")||JSON.stringify(session.modelSettings)!==JSON.stringify(task.modelSettings)||(answering?hostQuestionToken(current)!==input.questionToken:!!session.pendingQuestion)||session.pendingSwitch||session.blocks.some(block=>!!block.approval&&!block.approval.decided)||!!session.queuedMessages?.length||session.blocks.some(block=>!!block.draft))throw new Error("The managed worker's original source or pending owner input changed.");
+      if(current.projectId!==input.source.projectId||(session.worktreeCwd??session.cwd)!==input.source.executionCwd||cwd!==input.source.executionCwd||current.authorityGeneration!==input.source.authorityGeneration||current.runId!==(stage.phase==="command"?input.source.runId:stage.runId)||current.runId!==task.runId||session.harness!==task.harness||session.model!==task.model||session.runtimeMode!==task.runtimeMode||(session.providerAccountId??"default")!==(task.providerAccountId??"default")||JSON.stringify(session.modelSettings)!==JSON.stringify(task.modelSettings)||(answering?hostQuestionToken(current)!==input.questionToken:!!session.pendingQuestion)||session.pendingSwitch||session.blocks.some(block=>!!block.approval&&!block.approval.decided)||!!session.queuedMessages?.length||session.blocks.some(block=>!!block.draft&&!(stage.phase==="provider"&&ownSteerId&&block.id===ownSteerId&&block.role==="user"&&(block.followUpDelivery==="pending"||block.followUpDelivery==="uncertain")&&isDeepStrictEqual(block.author,author))))throw new Error("The managed worker's original source or pending owner input changed.");
       input.signal.throwIfAborted();
     };
     try {
@@ -528,7 +533,7 @@ export class HostTasks {
     input.signal.throwIfAborted();
     if (!input.source.runId) throw new Error("The managed worker's original run identity is missing.");
     if (!this.continueHistory) throw new Error("Worker history continuation is unavailable.");
-    const matches = (await this.list(input.source.projectId)).filter(task =>
+    const matches = (await this.list(input.source.projectId,false)).filter(task =>
       task.goalId === `assistant-${input.jobId}` && task.sessionId === input.sessionId && task.runId === input.source.runId);
     if (matches.length !== 1) throw new Error("The original managed worker attempt is no longer owned by this job.");
     let task = matches[0];

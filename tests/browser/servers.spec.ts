@@ -971,16 +971,13 @@ for (const theme of ["light", "dark"]) {
       `/tests/browser/servers.html?sshFixture=1&terminalWorkspace=1&serverRestoreFixture=1&theme=${theme}`,
     );
     await expect(page.getByRole("switch", { name: "Remember saved SSH tabs" })).toBeChecked();
-    const preview = page
-      .locator("details:not(:has(details))")
-      .filter({ hasText: "Restored tabs reconnect only when you choose Connect." });
-    // At 390px the saved-tabs section and its pending list start collapsed.
-    const savedSection = page.locator(
-      'details:has(> summary:has-text("Saved SSH tabs")):has(details)',
+    const preview = page.getByRole("region", { name: "Saved SSH tabs", exact: true });
+    // With no active terminal, the shared section disclosure exposes the saved
+    // preview directly. Only an explicit Connect may start its fresh shell.
+    await expect(preview.getByRole("button", { name: /^Saved SSH tabs/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
     );
-    if (!(await savedSection.evaluate((node) => (node as HTMLDetailsElement).open)))
-      await savedSection.locator(":scope > summary").click();
-    await preview.locator(":scope > summary").click();
     await expect(
       preview.getByText("fixture@duplicate.example.invalid:22", { exact: true }),
     ).toBeVisible();

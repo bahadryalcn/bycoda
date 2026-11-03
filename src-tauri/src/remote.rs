@@ -2654,6 +2654,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "environment.describe"
             | "mobile.access.status"
             | "mobile.access.enable"
+            | "mobile.access.disable"
             | "tunnels.status"
             | "tunnels.start"
             | "tunnels.stop"
@@ -4047,6 +4048,7 @@ mod tests {
             "devices.action",
             "mobile.access.status",
             "mobile.access.enable",
+            "mobile.access.disable",
             "tunnels.status",
             "tunnels.start",
             "tunnels.stop",

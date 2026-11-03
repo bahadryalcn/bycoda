@@ -312,6 +312,7 @@ it("advertises every supported provider when checking a host", async () => {
     machineId: machine.id,
     method: "environment.describe",
     params: { supportedProviders: REMOTE_PROVIDERS },
+    expectedEnvironmentId: machine.environmentId,
   });
 });
 

@@ -1,6 +1,13 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function openSettingsGroup(page: Page, name: string) {
+ const summary = page.getByRole("dialog").locator("summary").filter({hasText: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}$`)});
+ const group = summary.locator("..");
+ if (await group.getAttribute("open") === null) await summary.click();
+ return group;
+}
 
 for(const theme of ["light","dark"])for(const width of [1280,800])
  test(`quiet Room redesign preserves every section ${theme} ${width}`,async({page})=>{
@@ -62,11 +69,11 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
 for(const theme of ["light","dark"])for(const width of [1280,800])
  test(`saved assistant policy ${theme} ${width}`,async({page})=>{
   const output="temp/verification/arif-assistant-room";await mkdir(output,{recursive:true});await page.setViewportSize({width,height:900});await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&policy=1`);
-  await page.getByRole("button",{name:"Settings",exact:true}).click();const dialog=page.getByRole("dialog");
-  const presence=dialog.locator("section").filter({has:page.getByRole("heading",{name:"Presence and hours",exact:true})});
+  await page.getByRole("button",{name:"Settings",exact:true}).click();
+  const presence=await openSettingsGroup(page,"Presence and hours");
   await expect(presence.getByRole("spinbutton",{name:"Work hours start",exact:true})).toHaveValue("22");await expect(presence.getByRole("spinbutton",{name:"Work hours end",exact:true})).toHaveValue("6");
   await presence.screenshot({animations:"disabled",path:join(output,`policy-presence-${theme}-${width}.png`)});
-  const cost=dialog.locator("section").filter({has:page.getByRole("heading",{name:"Cost and context",exact:true})});
+  const cost=await openSettingsGroup(page,"Cost and context");
   await expect(cost.getByRole("spinbutton",{name:"Follow-ups before worker recovery",exact:true})).toHaveValue("0");
   await cost.screenshot({animations:"disabled",path:join(output,`policy-cost-${theme}-${width}.png`)});
  });
@@ -118,13 +125,13 @@ for(const theme of ["light","dark"])for(const width of [1280,800]){
   await review.getByText("This creates a scheduled automation. It does not run it now.",{exact:true}).scrollIntoViewIfNeeded();await page.screenshot({animations:"disabled",path:join(output,`automation-schedule-${theme}-${width}.png`)});
   await review.getByRole("button",{name:"Create automations",exact:true}).click();await expect(review.getByRole("alert")).toContainText("Automation receipt lost after commit");await expect(page.locator("body")).toHaveAttribute("data-automation-creates","1");
   await review.getByRole("button",{name:"Check and retry",exact:true}).scrollIntoViewIfNeeded();await page.screenshot({animations:"disabled",path:join(output,`automation-uncertain-${theme}-${width}.png`)});await review.getByRole("button",{name:"Check and retry",exact:true}).click();await expect(review).toHaveCount(0);await expect(page.locator("body")).toHaveAttribute("data-automation-creates","1");
-  await page.getByRole("tab",{name:/^Jobs(?: \d+)?$/}).click();await page.getByRole("button",{name:"Create a scheduled morning review",exact:true}).click();const detail=page.getByRole("dialog",{name:"Create a scheduled morning review",exact:true});await expect(detail).toContainText("Automation created");await expect(detail.getByRole("spinbutton",{name:"Run time limit (minutes)",exact:true})).toHaveValue("45");await detail.getByRole("button",{name:"Open automation",exact:true}).click();await expect(page.locator("body")).toHaveAttribute("data-automation-environment","fixture-local-host");
-  await detail.getByText("Automation created",{exact:true}).scrollIntoViewIfNeeded();await page.screenshot({animations:"disabled",path:join(output,`automation-details-${theme}-${width}.png`)});
+  await page.getByRole("tab",{name:/^Jobs(?: \d+)?$/}).click();await page.getByRole("button",{name:"Create a scheduled morning review",exact:true}).click();const detail=page.getByRole("dialog",{name:"Create a scheduled morning review",exact:true});await expect(detail).toContainText("Automation created");await expect(detail.getByRole("spinbutton",{name:"Run time limit (minutes)",exact:true})).toHaveValue("45");await detail.getByText("Automation created",{exact:true}).scrollIntoViewIfNeeded();await page.screenshot({animations:"disabled",path:join(output,`automation-details-${theme}-${width}.png`)});
+  await detail.getByRole("button",{name:"Open automation",exact:true}).click();await expect(page.locator("body")).toHaveAttribute("data-automation-environment","fixture-local-host");await expect(detail).toHaveCount(0);
  });
  test(`scheduled automation Voice review ${theme} ${width}`,async({page})=>{
   const output="temp/verification/arif-assistant-room";await mkdir(output,{recursive:true});await page.setViewportSize({width,height:900});await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&voice-jobs=1`);
   await page.getByRole("button",{name:"Job type: Project work",exact:true}).click();await page.getByRole("option",{name:"Create scheduled automation",exact:true}).click();await expect(page.getByRole("button",{name:"Create automations",exact:true})).toBeDisabled();await page.getByRole("button",{name:"Choose a provider and model",exact:true}).click();
-  await page.screenshot({animations:"disabled",path:join(output,`automation-voice-review-${theme}-${width}.png`)});await page.getByText("This creates a scheduled automation. It does not run it now.",{exact:true}).scrollIntoViewIfNeeded();await page.screenshot({animations:"disabled",path:join(output,`automation-voice-schedule-${theme}-${width}.png`)});
+  await page.screenshot({animations:"disabled",path:join(output,`automation-voice-review-${theme}-${width}.png`)});await page.getByRole("switch",{name:"Enable this automation",exact:true}).scrollIntoViewIfNeeded();await expect(page.getByRole("switch",{name:"Enable this automation",exact:true})).not.toBeChecked();await expect(page.getByRole("group",{name:"Automation schedule",exact:true})).toBeVisible();await page.screenshot({animations:"disabled",path:join(output,`automation-voice-schedule-${theme}-${width}.png`)});
   await page.getByRole("button",{name:"Create automations",exact:true}).click();await expect(page.getByRole("alert")).toContainText("Job status is unknown");await expect(page.getByRole("textbox",{name:"Automation prompt",exact:true})).toBeDisabled();await page.getByRole("button",{name:"Check and retry",exact:true}).scrollIntoViewIfNeeded();await page.screenshot({animations:"disabled",path:join(output,`automation-voice-uncertain-${theme}-${width}.png`)});
  });
 }
@@ -134,7 +141,7 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
   const output=join(process.cwd(),"temp/verification/arif-assistant-room");await mkdir(output,{recursive:true});
   await page.setViewportSize({width,height:900});await page.goto(`/tests/browser/assistant-room.html?theme=${theme}`);
   await page.getByRole("button",{name:"Settings",exact:true}).click();const dialog=page.getByRole("dialog");
-  const cost=dialog.locator("section").filter({has:page.getByRole("heading",{name:"Cost and context",exact:true})});
+  const cost=await openSettingsGroup(page,"Cost and context");
   await cost.scrollIntoViewIfNeeded();await expect(cost.getByText(/Claude utility requests include/)).toBeVisible();
   await cost.screenshot({animations:"disabled",path:join(output,`output-context-compact-${theme}-${width}.png`)});
   await cost.getByRole("button",{name:"Advanced worker context limits",exact:true}).click();
@@ -143,7 +150,7 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
   await soft.fill("160000");await soft.blur();
   await cost.screenshot({animations:"disabled",path:join(output,`output-context-advanced-${theme}-${width}.png`)});
   await dialog.getByRole("button",{name:"Save",exact:true}).click();await expect(dialog).toHaveCount(0);
-  await page.getByRole("button",{name:"Settings",exact:true}).click();await dialog.getByRole("button",{name:"Advanced worker context limits",exact:true}).click();
+  await page.getByRole("button",{name:"Settings",exact:true}).click();await openSettingsGroup(page,"Cost and context");await dialog.getByRole("button",{name:"Advanced worker context limits",exact:true}).click();
   await expect(dialog.getByRole("spinbutton",{name:"Compact worker context at (tokens)",exact:true})).toHaveValue("160000");
   await expect(dialog.getByRole("spinbutton",{name:"Compact context at",exact:true})).toHaveValue("150000");
  });
@@ -234,7 +241,7 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
   await section.getByRole("button",{name:"Turn off supervision",exact:true}).click();
   await expect(section.getByText("Manual session supervision is off.",{exact:true})).toBeVisible();
   await section.getByRole("button",{name:"Choose projects in Settings",exact:true}).click();
-  const dialog=page.getByRole("dialog");const manual=dialog.getByRole("region",{name:"Manual session supervision",exact:true});
+  const dialog=page.getByRole("dialog");await openSettingsGroup(page,"Manual session supervision");const manual=dialog.getByRole("region",{name:"Manual session supervision",exact:true});
   await manual.getByRole("switch",{name:"Allow manual session supervision",exact:true}).scrollIntoViewIfNeeded();
   await expect(manual.getByRole("switch",{name:"Allow manual session supervision",exact:true})).toHaveAttribute("aria-checked","false");
   await expect(manual.getByRole("checkbox",{name:"MonoCode",exact:true})).toBeChecked();
@@ -251,6 +258,7 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
   await expect(card.getByText("Speak once or choose a language before listening.",{exact:true})).toBeVisible();
   await page.screenshot({animations:"disabled",path:join(output,`unknown-language-${theme}-${width}.png`)});
   await card.getByRole("button",{name:"Choose language",exact:true}).click();await expect(page.getByRole("dialog")).toBeVisible();
+  await openSettingsGroup(page,"Language");
   await expect(page.getByRole("button",{name:"Language: Auto",exact:true})).toBeVisible();
  });
 
@@ -258,7 +266,7 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
  test(`briefing and retention ${theme} ${width}`,async({page})=>{
   const output=join(process.cwd(),"temp/verification/arif-assistant-room");await mkdir(output,{recursive:true});
   await page.setViewportSize({width,height:900});await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&briefing=1&presence=unknown`);
-  await expect(page.getByText("Current availability: Unknown",{exact:true})).toBeVisible();
+  await expect(page.getByRole("status",{name:"Current availability: Unknown",exact:true})).toBeVisible();
   const card=page.getByRole("region",{name:"While you were away",exact:true});
   await card.getByRole("button",{name:"Listen",exact:true}).click();await expect(card.getByText("Reading the briefing. This does not open the microphone.",{exact:true})).toBeVisible();
   await page.screenshot({animations:"disabled",path:join(output,`briefing-playing-${theme}-${width}.png`)});
@@ -273,6 +281,7 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
   await page.screenshot({animations:"disabled",path:join(output,`clear-conversation-${theme}-${width}.png`)});
   await confirm.getByRole("button",{name:"Clear all messages",exact:true}).click();await expect(draft).toHaveValue("Keep this unsent draft");
   await page.getByRole("button",{name:"Settings",exact:true}).click();
+  await openSettingsGroup(page,"Conversation retention");
   const retention=page.getByRole("button",{name:"Keep conversation messages: Forever",exact:true});await retention.scrollIntoViewIfNeeded();await retention.click();await page.getByRole("option",{name:"30 days",exact:true}).click();
   await expect(page.getByRole("button",{name:"Keep conversation messages: 30 days",exact:true})).toBeVisible();
   await page.screenshot({animations:"disabled",path:join(output,`retention-${theme}-${width}.png`)});
@@ -320,6 +329,7 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
     const output=join(process.cwd(),"temp/verification/arif-assistant-room");await mkdir(output,{recursive:true});
     await page.setViewportSize({width,height:900});await page.goto(`/tests/browser/assistant-room.html?theme=${theme}`);
     await page.getByRole("button",{name:"Settings",exact:true}).click();
+    await openSettingsGroup(page,"Cost and context");
     const explanation=page.getByText("These limits estimate retained text. Summaries, daily renewal, review reservations and a 1 MB safety limit can shorten it earlier. They do not guarantee the provider's context window or charges.",{exact:true});
     await explanation.scrollIntoViewIfNeeded();await expect(explanation).toBeVisible();
     await page.screenshot({animations:"disabled",path:join(output,`${theme}-${width}-chief-context.png`)});
@@ -381,12 +391,12 @@ test("uses the chosen name and Turkish suffix in the rendered room", async ({
     "/tests/browser/assistant-room.html?theme=light&lang=tr&name=Ay%C5%9Fe",
   );
   await expect(
-    page.getByRole("heading", { name: "Asistan Ayşe", exact: true }),
+    page.getByRole("heading", { name: "Ayşe", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Ayşe'nin odası", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main", { name: "Ayşe'nin odası", exact: true })).toBeVisible();
   await expect(
-    page.getByText("Çalışıyor · 2 iş", { exact: true }),
-  ).toBeVisible();
+    page.getByRole("button",{name:"Asistan durumu",exact:true}),
+  ).toHaveText("Çalışıyor");
   await page.screenshot({
     animations: "disabled",
     path: join(output, "tr-light-800-ayse.png"),
@@ -408,7 +418,7 @@ for (const theme of ["light", "dark"] as const)
       await page.goto(`/tests/browser/assistant-room.html?theme=${theme}`);
       const room = page.getByRole("main");
       await expect(
-        room.getByRole("heading", { name: "Assistant Arif", exact: true }),
+        room.getByRole("heading", { name: "Arif", exact: true }),
       ).toBeVisible();
       for (const tab of [
         "Today",
@@ -460,6 +470,7 @@ for (const theme of ["light", "dark"] as const)
         animations: "disabled",
         path: join(output, `${theme}-${width}-settings.png`),
       });
+      await openSettingsGroup(page,"Presence and hours");
       await page
         .getByText("Sleep prevention is off", { exact: true })
         .scrollIntoViewIfNeeded();
@@ -470,6 +481,7 @@ for (const theme of ["light", "dark"] as const)
         animations: "disabled",
         path: join(output, `${theme}-${width}-keep-awake.png`),
       });
+      await openSettingsGroup(page,"Computer use");
       await page
         .getByRole("button", { name: "Stop computer use", exact: true })
         .scrollIntoViewIfNeeded();
@@ -533,7 +545,7 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
   const output=join(process.cwd(),"temp/verification/arif-assistant-room");await mkdir(output,{recursive:true});
   await page.setViewportSize({width,height:900});await page.goto(`/tests/browser/assistant-room.html?theme=${theme}`);
   await page.getByRole("button",{name:"Settings",exact:true}).click();const dialog=page.getByRole("dialog");
-  const autonomy=dialog.locator("section").filter({has:page.getByRole("heading",{name:"Autonomy",exact:true})});
+  const autonomy=await openSettingsGroup(page,"Autonomy");
   await autonomy.getByRole("button",{name:"Fixture model",exact:true}).click();
   await expect(autonomy.getByText("Supervisor model",{exact:true})).toHaveCount(0);
   await autonomy.screenshot({animations:"disabled",path:join(output,`roles-compact-${theme}-${width}.png`)});
@@ -544,10 +556,10 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
   }
   await autonomy.screenshot({animations:"disabled",path:join(output,`roles-advanced-${theme}-${width}.png`)});
   await dialog.getByRole("button",{name:"Save",exact:true}).click();await expect(dialog).toHaveCount(0);
-  await page.getByRole("button",{name:"Settings",exact:true}).click();await dialog.getByRole("button",{name:"Advanced role models",exact:true}).click();
+  await page.getByRole("button",{name:"Settings",exact:true}).click();await openSettingsGroup(page,"Autonomy");await dialog.getByRole("button",{name:"Advanced role models",exact:true}).click();
   const planning=dialog.locator("fieldset").filter({has:page.getByText("Planning model",{exact:true})});
   await expect(planning.getByRole("button",{name:"fixture-role-model",exact:true})).toBeVisible();await planning.getByRole("button",{name:"Use worker model",exact:true}).click();
-  await dialog.getByRole("button",{name:"Save",exact:true}).click();await page.getByRole("button",{name:"Settings",exact:true}).click();await dialog.getByRole("button",{name:"Advanced role models",exact:true}).click();
+  await dialog.getByRole("button",{name:"Save",exact:true}).click();await page.getByRole("button",{name:"Settings",exact:true}).click();await openSettingsGroup(page,"Autonomy");await dialog.getByRole("button",{name:"Advanced role models",exact:true}).click();
   await expect(dialog.locator("fieldset").filter({has:page.getByText("Planning model",{exact:true})}).getByRole("button",{name:"Use worker model",exact:true})).toBeVisible();
   await expect(dialog.locator("fieldset").filter({has:page.getByText("Supervisor model",{exact:true})}).getByRole("button",{name:"fixture-role-model",exact:true})).toBeVisible();
  });
@@ -560,7 +572,7 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
   await dialog.getByRole("button",{name:/^Job type/}).click();await page.getByRole("option",{name:"Save personal note",exact:true}).click();await expect(dialog.getByRole("button",{name:/^Participating projects/})).toHaveCount(0);
   await dialog.getByRole("textbox",{name:"Note title",exact:true}).fill("Quoted commands are data");await dialog.getByRole("textbox",{name:"Note content",exact:true}).fill('The exact note says: stop everything.\nHepsini durdur diye bir not yaz.');
   await dialog.getByRole("button",{name:/^Job type/}).click();await page.getByRole("option",{name:"Project work",exact:true}).click();await expect(dialog.getByRole("button",{name:/^Participating projects/})).toContainText("2 selected");await dialog.getByRole("button",{name:/^Participating projects/}).click();await expect(page.getByRole("dialog",{name:"Participating projects options",exact:true}).getByRole("option",{name:/Backend/})).toHaveAttribute("aria-selected","true");await page.getByRole("dialog",{name:"Participating projects options",exact:true}).getByRole("button",{name:"Done",exact:true}).click();await dialog.getByRole("button",{name:/^Job type/}).click();await page.getByRole("option",{name:"Save personal note",exact:true}).click();await expect(dialog.getByRole("textbox",{name:"Note title",exact:true})).toHaveValue("Quoted commands are data");
-  await dialog.getByRole("textbox",{name:"Note title",exact:true}).fill("");await expect(dialog).toBeVisible();await expect(dialog.getByRole("button",{name:"Save notes",exact:true})).toBeDisabled();await dialog.getByRole("textbox",{name:"Note title",exact:true}).fill("Quoted commands are data");
+  await dialog.getByRole("textbox",{name:"Note title",exact:true}).fill("");await expect(dialog).toBeVisible();await expect(dialog.getByText("Saved title: Untitled",{exact:true})).toBeVisible();await expect(dialog.getByRole("button",{name:"Save notes",exact:true})).toBeEnabled();await dialog.getByRole("textbox",{name:"Note title",exact:true}).fill("Quoted commands are data");
   await page.screenshot({animations:"disabled",path:join(output,`quick-review-${theme}-${width}.png`)});await dialog.getByRole("button",{name:"Save notes",exact:true}).click();await expect(dialog.getByRole("alert")).toContainText("Quick receipt lost");await expect(dialog.getByRole("textbox",{name:"Note content",exact:true})).toBeDisabled();await page.screenshot({animations:"disabled",path:join(output,`quick-unknown-${theme}-${width}.png`)});
   await dialog.getByRole("button",{name:"Cancel",exact:true}).click();await page.getByRole("button",{name:"Review jobs",exact:true}).click();await expect(dialog.getByRole("textbox",{name:"Note content",exact:true})).toBeDisabled();await dialog.getByRole("button",{name:"Check and retry",exact:true}).click();await expect(dialog).toHaveCount(0);expect(await page.locator("body").getAttribute("data-quick-creates")).toBe("1");
   await page.getByRole("tab",{name:/^Jobs(?: \d+)?$/}).click();await page.getByRole("button",{name:request,exact:true}).click();const details=page.getByRole("dialog",{name:request,exact:true});await expect(details).toContainText("Note saved");await expect(details).not.toContainText("Lead project");await page.screenshot({animations:"disabled",path:join(output,`quick-details-${theme}-${width}.png`)});await details.getByRole("button",{name:"Open saved note",exact:true}).click();await expect(page.getByRole("dialog",{name:"Edit note",exact:true}).getByRole("textbox",{name:"Title",exact:true})).toHaveValue("Quoted commands are data");
@@ -585,7 +597,7 @@ for(const theme of ["light","dark"])for(const width of [1280,800])
   await page.getByRole("button",{name:"Job actions",exact:true}).click();await page.getByRole("menuitem",{name:"Replan",exact:true}).click();const replan=page.getByRole("dialog");await replan.getByRole("textbox",{name:"Replan feedback",exact:true}).fill("Keep the verified recovery path. Replan only the remaining checks.");await page.screenshot({animations:"disabled",path:join(output,`replan-draft-${theme}-${width}.png`)});await replan.getByRole("button",{name:"Replan",exact:true}).click();await expect(replan.getByRole("button",{name:"Check status",exact:true})).toBeVisible();await page.screenshot({animations:"disabled",path:join(output,`replan-unknown-${theme}-${width}.png`)});await replan.getByRole("button",{name:"Close",exact:true}).last().click();
   await page.getByRole("button",{name:"Filter",exact:true}).click();const filter=page.getByRole("dialog",{name:"Filter",exact:true});await filter.getByRole("button",{name:"Created: All dates",exact:true}).click();await page.getByRole("option",{name:"Today",exact:true}).click();await page.screenshot({animations:"disabled",path:join(output,`job-filters-${theme}-${width}.png`)});await page.keyboard.press("Escape");
   await page.getByRole("tab",{name:"Notes",exact:true}).click();await page.getByRole("button",{name:"Summarize today",exact:true}).click();await expect(page.getByText(/Today's saved fixture summary:/)).toBeVisible();await page.screenshot({animations:"disabled",path:join(output,`daily-summary-${theme}-${width}.png`)});
-  await page.getByRole("button",{name:"Settings",exact:true}).click();await page.getByRole("group",{name:"Worker cache usage",exact:true}).screenshot({animations:"disabled",path:join(output,`worker-cache-${theme}-${width}.png`)});
+  await page.getByRole("button",{name:"Settings",exact:true}).click();await openSettingsGroup(page,"Today's usage");await page.getByRole("group",{name:"Worker cache usage",exact:true}).screenshot({animations:"disabled",path:join(output,`worker-cache-${theme}-${width}.png`)});
   await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&session-controls=pending`);const control=page.getByRole("button",{name:"Take assistant off this session",exact:true});await control.focus();await page.screenshot({animations:"disabled",path:join(output,`session-controls-ready-${theme}-${width}.png`)});await page.keyboard.press("Enter");const detach=page.getByRole("dialog");await detach.getByRole("button",{name:"Remove supervision",exact:true}).focus();await page.keyboard.press("Enter");await expect(detach.getByRole("button",{name:/Remove supervision/})).toBeDisabled();await page.screenshot({animations:"disabled",path:join(output,`session-detach-pending-${theme}-${width}.png`)});await page.evaluate(()=>(window as any).__finishFixtureDetach());await expect(detach.getByText("Assistant supervision removed",{exact:true})).toBeVisible();await page.screenshot({animations:"disabled",path:join(output,`session-detach-removed-${theme}-${width}.png`)});
   await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&session-controls=unknown`);await page.getByRole("button",{name:"Take assistant off this session",exact:true}).click();await page.getByRole("button",{name:"Remove supervision",exact:true}).click();await expect(page.getByText("Supervision removal is unconfirmed. Check its status before continuing.",{exact:true})).toBeVisible();await page.screenshot({animations:"disabled",path:join(output,`session-detach-unknown-${theme}-${width}.png`)});expect(await page.evaluate(()=>(window as any).__fixtureDetachCalls)).toBe(1);await page.getByRole("button",{name:"Check status",exact:true}).click();await expect(page.getByText("Assistant supervision removed",{exact:true})).toBeVisible();expect(await page.evaluate(()=>(window as any).__fixtureDetachCalls)).toBe(1);
  });

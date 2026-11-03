@@ -10,6 +10,7 @@ import {
 import { MCP_GROUPS, type McpGrant } from "./mcp-tokens";
 import { runSocialMcp } from "./social-tools";
 import { describeManagedTools, searchManagedTools } from "./tool-management";
+import { DESKTOP_CONTROL_CONVERSATION_TOOLS } from "./conversation-desktop-control-tools";
 
 const grant: McpGrant = {
   id: "inventory-test",
@@ -21,17 +22,18 @@ const grant: McpGrant = {
 };
 
 describe("managed discovery across real tool catalogs", () => {
-  it("covers every declared operation and all 29 conversation families without inventing readiness", () => {
+  it("covers every declared operation and all 30 conversation families without inventing readiness", () => {
     const catalog = managedMcpCatalog();
     const rawCount = MCP_GROUPS.reduce((sum, group) => sum + mcpCatalog(group).length, 0);
     expect(catalog).toHaveLength(rawCount);
     expect(rawCount).toBeGreaterThanOrEqual(206);
     expect(catalog.filter((entry) => !entry.supported).map((entry) => entry.id)).toEqual([]);
-    expect(
-      new Set(
-        catalog.filter((entry) => entry.group === "conversation").map((entry) => entry.family),
-      ).size,
-    ).toBe(29);
+    const conversation = catalog.filter(entry => entry.group === "conversation");
+    const families = new Set(conversation.map(entry => entry.family));
+    expect(families.size).toBe(30);
+    expect(families.has("desktop")).toBe(true);
+    expect(conversation.filter(entry => entry.family === "desktop").map(entry => entry.action).sort())
+      .toEqual(Object.keys(DESKTOP_CONTROL_CONVERSATION_TOOLS).sort());
     expect(catalog.every((entry) => entry.capability.state === "unknown")).toBe(true);
     const ids = new Set(catalog.map((entry) => entry.id));
     expect(

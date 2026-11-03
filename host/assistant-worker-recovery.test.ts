@@ -36,11 +36,34 @@ async function fixture(){
  const managed=assistantSessionRuntime(store,engine,service,tasks);await managed.ready;ports.onPause=()=>managed.stop();ports.onResume=()=>managed.resume();ports.onJobPause=id=>managed.pauseJob(id);ports.onJobResume=id=>managed.resumeJob(id);ports.manageSession=async input=>{const result=await managed.request({op:"nudge",...input},{kind:"chief",id:"fixture-chief"});if(result.recovery)return result.recovery;if(result.operation?.delivery!=="delivered")throw new Error("Unknown fixture delivery");};
  closes.push(async()=>{for(const turn of turns)turn.finish();await managed.close();await service.close();await tasks.close();await engine.close();await store.close();rmSync(directory,{recursive:true,force:true,maxRetries:5});});
  const nudge=(requestId:string,id=sessionId)=>managed.request({op:"nudge",jobId:job.id,sessionId:id,requestId,text:"Continue the already authorized task",reason:"nudge"},{kind:"chief",id:"fixture-chief"});
- return{store,engine,tasks,goals,service,managed,provider,turns,notes,job,project,sessionId,first,clock,directory,nudge,twoNudges:async(id=sessionId)=>{for(let i=0;i<2;i++)expect((await nudge(`nudge-${id}-${i}`,id)).operation?.delivery).toBe("delivered");},source:async()=>{const record=await store.session(sessionId);return{projectId:project.id,executionCwd:directory,authorityGeneration:record.authorityGeneration,runId:record.runId};}};
+ return{store,engine,tasks,goals,service,managed,provider,turns,notes,job,project,sessionId,first,clock,directory,nudge,twoNudges:async(id=sessionId)=>{for(let i=0;i<2;i++){const result=await nudge(`nudge-${id}-${i}`,id);expect(result.operation?.delivery,JSON.stringify(result)).toBe("delivered");}},source:async()=>{const record=await store.session(sessionId);return{projectId:project.id,executionCwd:directory,authorityGeneration:record.authorityGeneration,runId:record.runId};}};
 }
 
+it.each(["owner draft","stale command ID","mismatched job stamp"] as const)("does not exempt %s while admitting the exact supervisor steer",async kind=>{
+ const f=await fixture(),original=f.tasks.managedSessionCommand.bind(f.tasks);let changed=false;
+ vi.spyOn(f.tasks,"managedSessionCommand").mockImplementation((input,command)=>original({...input,...(kind==="mismatched job stamp"&&input.author?.kind==="assistant"?{author:{...input.author,jobId:"different-job"}}:{}),recheck:async()=>{
+  await input.recheck();if(changed)return;const current=await f.store.session(f.sessionId),blocks=structuredClone(current.session.blocks);
+  const block=blocks.find(value=>value.draft&&value.author?.kind==="assistant"&&value.author.jobId===f.job.id);if(!block)return;changed=true;
+  if(kind==="owner draft")blocks.push({id:"unrelated-owner-draft",role:"user",text:"Keep the owner's unsent request",draft:true});
+  else if(kind==="stale command ID")block.id="stale-supervisor-command";
+  else return; // The real engine keeps its original immutable Host authorship.
+  await f.store.save({...current,revision:current.revision+1,session:{...current.session,blocks}},{type:"fixture.pendingInputRace"});
+ }},command));
+ const requestId=`draft-race-${kind}`,result=await f.nudge(requestId);
+ expect(changed).toBe(true);expect(result.operation).toMatchObject({state:"settled",delivery:"unknown"});expect(f.provider.steer).not.toHaveBeenCalled();
+ expect((await f.nudge(requestId)).operation).toEqual(result.operation);expect(f.provider.steer).not.toHaveBeenCalled();
+ const blocks=(await f.store.session(f.sessionId)).session.blocks;
+ if(kind==="owner draft")expect(blocks.find(block=>block.id==="unrelated-owner-draft")).toMatchObject({text:"Keep the owner's unsent request",draft:true});
+ else if(kind==="stale command ID")expect(blocks.some(block=>block.id==="stale-supervisor-command")).toBe(true);
+ else expect(blocks.some(block=>block.author?.kind==="assistant"&&block.author.jobId===f.job.id)).toBe(true);
+});
+
 it("retires the exact worker after two nudges, queues the same retained task once, launches through normal admission, then escalates without another cancellation",async()=>{
- const f=await fixture();await f.twoNudges();const result=await f.nudge("recover-once");expect(result.recovery,JSON.stringify(result)).toMatchObject({taskId:"canonical-task",state:"queued"});expect(f.provider.cancel).toHaveBeenCalledOnce();
+ const f=await fixture();await f.twoNudges();
+ const canonical=(await f.tasks.list(f.project.id,false))[0],projected=(await f.tasks.list(f.project.id))[0];
+ expect(projected.assistantFollowups).toEqual({delivered:2,unconfirmed:0});const {assistantFollowups:_,...withoutProjection}=projected;expect(withoutProjection).toEqual(canonical);
+ expect(JSON.parse(String((await f.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(canonical.id))!.value))).not.toHaveProperty("assistantFollowups");expect(f.provider.steer).toHaveBeenCalledTimes(2);
+ const result=await f.nudge("recover-once");expect(result.recovery,JSON.stringify(result)).toMatchObject({taskId:"canonical-task",state:"queued"});expect(f.provider.cancel).toHaveBeenCalledOnce();
  expect((await f.tasks.get("canonical-task"))?.status).toBe("queued");expect((await readAssistantRecovery(f.store,"canonical-task"))?.state).toBe("queued");expect(readFileSync(join(f.directory,"retained.txt"),"utf8")).toBe("Unmerged owner and worker edits must remain.");
  await f.tasks.tick();await vi.waitFor(()=>expect(f.turns).toHaveLength(2));const restarted=(await f.tasks.get("canonical-task"))!;expect(restarted.sessionId).not.toBe(f.sessionId);expect(restarted.goalId).toBe(`assistant-${f.job.id}`);expect(restarted.projectId).toBe(f.project.id);const receipt=await readAssistantRecovery(f.store,restarted.id);expect(restarted.ownerNotices?.some(notice=>notice.id===receipt?.operationId)).toBe(true);
  const run=await f.store.session(restarted.sessionId!);await f.store.save({...run,revision:run.revision+1,runActivity:{runId:run.runId!,lastActivityAt:f.clock.now-20*60000},session:{...run.session,context:{used:1000,window:1000000}}},{type:"fixture.newStall"});await f.service.tick();

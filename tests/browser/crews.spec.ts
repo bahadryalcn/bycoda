@@ -465,7 +465,7 @@ test("adds a new member when the library is empty and shows role problems in pla
 });
 test("opens ongoing work from the rail and keeps the delivery while editing the crew", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.goto("/tests/browser/crews.html");
   const row = page.getByRole("listitem").filter({ hasText: "Website Crew" });
   await row.getByRole("button", { name: /Website Crew, Needs decision/ }).click();
@@ -476,8 +476,43 @@ test("opens ongoing work from the rail and keeps the delivery while editing the 
   await row.hover();
   await row.getByRole("button", { name: "Start work with Website Crew" }).click();
   const start = page.getByRole("dialog", { name: "Start crew work" });
+  // Check the exposed roster, not BadgeList's inert, aria-hidden measurement probes.
+  const roster = start.locator("dl");
+  await expect(roster.locator("dt")).toHaveText(["Coordinator", "Specialist:", "Reviewer"]);
+  await expect(roster.locator("dd")).toHaveCount(3);
   // Members named like their responsibility are not repeated.
-  await expect(start.locator("dl")).toHaveText("CoordinatorSpecialist:UIReviewer");
+  await expect(roster.locator("dd").first()).toBeEmpty();
+  await expect(roster.locator("dd").last()).toBeEmpty();
+  const specialists = roster.getByRole("list", { name: "Specialist", exact: true });
+  await expect(specialists.getByRole("listitem")).toHaveText(["UI"]);
+  await expect(specialists.getByRole("button")).toHaveCount(0);
+  const originalClass = await page.evaluate(() => document.documentElement.className);
+  const originalViewport = page.viewportSize();
+  try {
+    for (const theme of ["light", "dark"])
+      for (const width of [1280, 800]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate(
+          (theme) => document.documentElement.classList.toggle("theme-light", theme === "light"),
+          theme,
+        );
+        await expect(specialists.getByRole("listitem")).toHaveText(["UI"]);
+        await expect(specialists.getByRole("button")).toHaveCount(0);
+        await expect(start).toBeVisible();
+        expect(await start.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+          true,
+        );
+        await start.screenshot({
+          path: `temp/verification/release-0.7.1/crew-start-roster-${testInfo.project.name}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      }
+  } finally {
+    await page.evaluate((value) => {
+      document.documentElement.className = value;
+    }, originalClass);
+    if (originalViewport) await page.setViewportSize(originalViewport);
+  }
   await start
     .getByRole("textbox", { name: "What should the crew deliver?" })
     .fill("Mobile sign-in");
@@ -836,9 +871,10 @@ test("wide windows keep the work list beside the selected work", async ({ page }
   await expect(management.locator('[data-crew-run="run"]')).toBeVisible();
   await expect(management.getByRole("button", { name: "Back to work list" })).toBeHidden();
   // The work opened from the sidebar is the selected row even when it sits far down the list.
-  await expect(
-    management.locator('[data-crew-work-choice="run"]'),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(management.locator('[data-crew-work-choice="run"]')).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
 
 test("model rules open on demand and the crew settings stay a draft until saved", async ({
@@ -870,7 +906,9 @@ test("model rules open on demand and the crew settings stay a draft until saved"
   ).toBeVisible();
   await expect(dialog.getByText("Off: members are told not to start helper agents.")).toBeVisible();
   // Nothing is saved until the owner saves; Discard returns to the stored policy.
-  await expect(dialog.getByText("Unsaved changes are kept until you save or discard them.")).toBeVisible();
+  await expect(
+    dialog.getByText("Unsaved changes are kept until you save or discard them."),
+  ).toBeVisible();
   await dialog.getByRole("button", { name: "Discard", exact: true }).click();
   await dialog.getByRole("radio", { name: "Working settings" }).click();
   await expect(dialog.getByText("Off: only you answer permission requests.")).toBeVisible();
@@ -886,11 +924,15 @@ test("a failed save stays visible, keeps the draft and starts nothing", async ({
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   await dialog.getByRole("textbox", { name: "Crew name", exact: true }).fill("Website Crew v2");
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(dialog.getByText("The Host rejected this crew: storage is read-only right now.")).toBeInViewport();
+  await expect(
+    dialog.getByText("The Host rejected this crew: storage is read-only right now."),
+  ).toBeInViewport();
   await expect(dialog.getByRole("textbox", { name: "Crew name", exact: true })).toHaveValue(
     "Website Crew v2",
   );
-  await expect(dialog.getByText("Unsaved changes are kept until you save or discard them.")).toBeVisible();
+  await expect(
+    dialog.getByText("Unsaved changes are kept until you save or discard them."),
+  ).toBeVisible();
   await expect(page.getByLabel("Started work")).toHaveText("0");
 });
 

@@ -75,6 +75,10 @@ it("supervises a secondary project's actual canonical worker and refuses array-o
  expect(f.source.projectId).not.toBe(f.project.id);
  const sending=s.managed.request({...s.command,requestId:"secondary-worker"},{kind:"chief",id:"chief"});await vi.waitFor(()=>expect(f.turns).toHaveLength(2));f.turns[1].input.onAccepted?.();expect((await sending).operation?.delivery).toBe("delivered");
  expect(f.turns[1].input.cwd).toBe(f.workerProject.cwd);expect((await f.store.markAssistantManagedSession(f.id,s.job.id)).managedBy?.jobId).toBe(s.job.id);
+ const canonical=(await f.tasks.list(f.workerProject.id,false))[0],projected=(await f.tasks.list(f.workerProject.id))[0];
+ expect(projected.assistantFollowups).toEqual({delivered:1,unconfirmed:0});const {assistantFollowups:_,...withoutProjection}=projected;expect(withoutProjection).toEqual(canonical);
+ expect(canonical).toMatchObject({projectId:f.workerProject.id,sessionId:f.id,status:"running",runId:(await f.store.session(f.id)).runId});
+ expect(JSON.parse(String((await f.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(canonical.id))!.value))).not.toHaveProperty("assistantFollowups");
  f.turns[1].finish();await f.engine.waitForRun(f.id,(await f.store.session(f.id)).runId);
  // Removing the secondary project from the real Goal cannot be compensated
  // by the saved AssistantJob.projectIds convenience array.

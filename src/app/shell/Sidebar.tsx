@@ -741,22 +741,23 @@ function SidebarComponent({
   ).size;
   const workingSessionsBadge =
     workingSessionCount > 0 ? (
-      // Same working pill as a running session row (info tone, live wave mark), so the
-      // count reads as "working now" rather than as a plain total.
+      // Shell totals use the compact accent count; the shared live mark preserves
+      // the distinction between working conversations and a plain total.
       <Badge
+        variant="count"
         size="sm"
-        tone="info"
+        tone="accent"
         appearance="subtle"
+        icon={<TerminalSpinner />}
         data-workspace-working-count
         aria-live="polite"
         aria-label={t(
           workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions",
           { p0: workingSessionCount },
         )}
-        className="ms-1 shrink-0 gap-1 tabular-nums"
+        className="ms-1 shrink-0"
       >
-        <TerminalSpinner />
-        {workingSessionCount > 99 ? "99+" : workingSessionCount}
+        {workingSessionCount}
       </Badge>
     ) : null;
   const remoteExecutionCwd =

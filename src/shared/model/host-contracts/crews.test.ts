@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { declaredTypeKeys } from "../../../../scripts/checks/host-rpc-source-fixture.mjs";
 import { exportWireSchema } from "./manifest";
 import * as dto from "./crews";
 import { HostCrews } from "../../../../host/crews";
@@ -137,6 +138,7 @@ const catalog = {
 };
 const question = {
   requestId: 8,
+  occurrenceId: "11111111-1111-4111-8111-111111111111",
   title: "Choose",
   questions: [
     {
@@ -242,14 +244,7 @@ const params = {
 };
 
 function declaredKeys(path: string, name: string): string[] {
-  const source = readFileSync(path, "utf8");
-  const body = source.match(
-    new RegExp(`export type ${name} = [^\\n]*\\{([\\s\\S]*?)^\\};`, "m"),
-  );
-  expect(body, name).not.toBeNull();
-  return [...body![1].matchAll(/^  ([a-zA-Z_]\w*)\??:/gm)]
-    .map((field) => field[1])
-    .sort();
+  return declaredTypeKeys(readFileSync(path, "utf8"), name);
 }
 it("inventories all declared Crew/candidate/policy/run and catalog/question fields with no whole-Crew JSON boundary", () => {
   const source = "src/features/crews/model/crew.ts";
@@ -289,7 +284,7 @@ it("inventories all declared Crew/candidate/policy/run and catalog/question fiel
     ["UserQuestionOption", dto.CrewUserQuestionOptionSchema],
   ] as const)
     expect(Object.keys(schema.shape).sort()).toEqual(
-      declaredKeys("src/features/sessions/model/userQuestion.ts", name),
+      declaredKeys("src/shared/model/userQuestion.ts", name),
     );
 });
 
@@ -468,6 +463,8 @@ it("preserves finite provider settings/candidate evidence and full approval/ques
   expect(dto.CrewPendingInputSchema.parse(pendingQuestion)).toStrictEqual(
     pendingQuestion,
   );
+  expect(dto.CrewUserQuestionPromptSchema.safeParse({ ...question, occurrenceId: "invented" }).success).toBe(false);
+  expect(dto.CrewUserQuestionPromptSchema.safeParse({ ...question, occurrenceId: undefined }).success).toBe(true);
   for (const value of [
     { ...candidate, future: true },
     { ...candidate, qualitySource: "benchmark" },

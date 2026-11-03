@@ -9036,6 +9036,10 @@
                           "type": "string"
                         },
                         "error": { "type": "string" },
+                        "occurrenceId": {
+                          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "providerTurnId": { "type": "string" },
                         "questions": {
                           "items": {
@@ -58833,5 +58837,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "03850065ce871789363a7b439f2b384b9de5ca8f7f9b3bbb2020bb8bcc3eba76"
+  "schemaHash": "1d1e7fb14f4a98b6cce2f37f9fa597383ad5052cbaa9e3b6fd84f44d6e41b76a"
 }

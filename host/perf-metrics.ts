@@ -154,6 +154,13 @@ export function mcpMetricName(route: string): string | undefined {
 
 // RPC_METHOD_NAMES is a code-owned allowlist, never learned from requests.
 const RPC_METHOD_NAMES: readonly string[] = [
+  "assistant.request",
+  "desktop.request",
+  "desktop.helper.request",
+  "native.services.assistant.presence.get",
+  "native.services.assistant.presence.set",
+  "native.services.desktop.status",
+  "native.services.desktop.stop",
   "attachments.claim",
   "attachments.claims",
   "attachments.read",

@@ -304,182 +304,187 @@ export async function collectAttachmentGarbage(
     }
     return [];
   };
-  return store.db.scope(async () => {
-    if (resume) resume.pending = false;
-    if (eligible?.size === 0) return abandon();
-    if (!Number.isFinite(graceMs) || graceMs < 24 * 60 * 60 * 1000)
-      throw new Error("Attachment grace period must be at least one day");
-    const entries = eligible
-      ? Array.from(eligible).slice(0, 200)
-      : await readdir(store.attachmentDir).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") return [];
-          throw error;
-        });
-    if (attachmentTouchOverflowUntil > now) return abandon();
-    if (entries.length > 10000) return abandon();
-    if (resume?.scan && Date.now() - resume.scan.startedAt > SCAN_PASS_MAX_MS) return abandon();
-    const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"';
-    const stamp = async () =>
-      `${store.changeVersion}:${store.db.admissionVersion}:${(await store.db.prepare("SELECT total_changes() AS changes").get())?.changes}:${(await store.db.prepare("PRAGMA data_version").get())?.data_version}`;
-    let startedStamp = "";
-    let scan = resume?.scan;
-    if (!scan) {
-      const external = await externalReferences();
-      if (!external) return abandon();
-      // Flush may fail: never delete if the authoritative durable scan cannot run.
-      await store.flushAll();
-      scan = {
-        candidates: new Set(entries.map((id) => id.toLowerCase())),
-        referenced: new Set(Array.from(external, (id) => id.toLowerCase())),
-        tables: (
-          await store.db
-            .prepare(
-              "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+  return store.db
+    .scope(async () => {
+      if (resume) resume.pending = false;
+      if (eligible?.size === 0) return abandon();
+      if (!Number.isFinite(graceMs) || graceMs < 24 * 60 * 60 * 1000)
+        throw new Error("Attachment grace period must be at least one day");
+      const entries = eligible
+        ? Array.from(eligible).slice(0, 200)
+        : await readdir(store.attachmentDir).catch((error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return [];
+            throw error;
+          });
+      if (attachmentTouchOverflowUntil > now) return abandon();
+      if (entries.length > 10000) return abandon();
+      if (resume?.scan && Date.now() - resume.scan.startedAt > SCAN_PASS_MAX_MS) return abandon();
+      const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"';
+      const stamp = async () =>
+        `${store.changeVersion}:${store.db.admissionVersion}:${(await store.db.prepare("SELECT total_changes() AS changes").get())?.changes}:${(await store.db.prepare("PRAGMA data_version").get())?.data_version}`;
+      let startedStamp = "";
+      let scan = resume?.scan;
+      if (!scan) {
+        const external = await externalReferences();
+        if (!external) return abandon();
+        // Flush may fail: never delete if the authoritative durable scan cannot run.
+        await store.flushAll();
+        scan = {
+          candidates: new Set(entries.map((id) => id.toLowerCase())),
+          referenced: new Set(Array.from(external, (id) => id.toLowerCase())),
+          tables: (await store.db.prepare("PRAGMA main.table_list").all())
+            // SQLite's FTS shadow blobs are derived index storage. Scan the
+            // virtual table's readable rows and canonical source tables instead;
+            // unrelated opaque application values must still stop collection.
+            .filter(
+              (table) =>
+                table.type !== "shadow" &&
+                table.type !== "view" &&
+                !String(table.name).startsWith("sqlite_"),
             )
-            .all()
-        )
-          .map((table) => String(table.name))
-          .filter(
-            (name) =>
-              !(
-                eligible &&
-                ["attachment_ownership_files", "attachment_ownership_claims"].includes(name)
-              ),
-          ),
-        table: 0,
-        rowid: 0,
-        startedAt: Date.now(),
-        dataVersion: (await store.db.prepare("PRAGMA data_version").get())?.data_version,
+            .map((table) => String(table.name))
+            .filter(
+              (name) =>
+                !(
+                  eligible &&
+                  ["attachment_ownership_files", "attachment_ownership_claims"].includes(name)
+                ),
+            ),
+          table: 0,
+          rowid: 0,
+          startedAt: Date.now(),
+          dataVersion: (await store.db.prepare("PRAGMA data_version").get())?.data_version,
+        };
+        if (resume) resume.scan = scan;
+      }
+      // In slices this guards only the slice that completes the pass and deletes.
+      startedStamp = await stamp();
+      const { candidates, referenced } = scan;
+      const scanStarted = performance.now();
+      let sliceStarted = scanStarted;
+      let sliceCharacters = 0;
+      /** False when the pass must stop: shutdown, or (one-shot mode) a write or timeout. */
+      const yielded = async (): Promise<boolean> => {
+        await new Promise<void>((done) => setImmediate(done));
+        sliceStarted = performance.now();
+        sliceCharacters = 0;
+        if (!(await shouldContinue())) return false;
+        if (resume) return true;
+        return (await stamp()) === startedStamp && performance.now() - scanStarted <= 120000;
       };
-      if (resume) resume.scan = scan;
-    }
-    // In slices this guards only the slice that completes the pass and deletes.
-    startedStamp = await stamp();
-    const { candidates, referenced } = scan;
-    const scanStarted = performance.now();
-    let sliceStarted = scanStarted;
-    let sliceCharacters = 0;
-    /** False when the pass must stop: shutdown, or (one-shot mode) a write or timeout. */
-    const yielded = async (): Promise<boolean> => {
-      await new Promise<void>((done) => setImmediate(done));
-      sliceStarted = performance.now();
-      sliceCharacters = 0;
-      if (!(await shouldContinue())) return false;
-      if (resume) return true;
-      return (await stamp()) === startedStamp && performance.now() - scanStarted <= 120000;
-    };
-    /** Collects candidate ids from one row. False: an opaque value or a stop, so nothing may be deleted. */
-    const inspect = async (row: Record<string, unknown>): Promise<boolean> => {
-      for (const value of Object.values(row)) {
-        if (value instanceof Uint8Array) return false;
-        if (typeof value !== "string") continue;
-        for (let at = 0; at < value.length; at += 256 * 1024) {
-          // A UUID split at a chunk boundary must still be seen exactly once or
-          // conservatively twice. Only candidate IDs are retained in memory.
-          const chunk = value.slice(Math.max(0, at - 35), at + 256 * 1024);
-          for (const match of chunk.matchAll(UUID_PATTERN)) {
-            const id = match[0].toLowerCase();
-            if (candidates.has(id)) referenced.add(id);
+      /** Collects candidate ids from one row. False: an opaque value or a stop, so nothing may be deleted. */
+      const inspect = async (row: Record<string, unknown>): Promise<boolean> => {
+        for (const value of Object.values(row)) {
+          if (value instanceof Uint8Array) return false;
+          if (typeof value !== "string") continue;
+          for (let at = 0; at < value.length; at += 256 * 1024) {
+            // A UUID split at a chunk boundary must still be seen exactly once or
+            // conservatively twice. Only candidate IDs are retained in memory.
+            const chunk = value.slice(Math.max(0, at - 35), at + 256 * 1024);
+            for (const match of chunk.matchAll(UUID_PATTERN)) {
+              const id = match[0].toLowerCase();
+              if (candidates.has(id)) referenced.add(id);
+            }
+            sliceCharacters += chunk.length;
+            if (sliceCharacters >= 256 * 1024 || performance.now() - sliceStarted >= 8)
+              if (!(await yielded())) return false;
           }
-          sliceCharacters += chunk.length;
-          if (sliceCharacters >= 256 * 1024 || performance.now() - sliceStarted >= 8)
-            if (!(await yielded())) return false;
         }
+        return true;
+      };
+      while (scan.table < scan.tables.length) {
+        const name = scan.tables[scan.table]!;
+        let rows: Record<string, unknown>[] | undefined;
+        if (resume) {
+          try {
+            rows = (await store.db
+              .prepare(
+                `SELECT rowid AS "__attachment_scan_rowid", * FROM ${quote(name)} WHERE rowid>? ORDER BY rowid LIMIT ${SCAN_ROWS_PER_QUERY}`,
+              )
+              .all(scan.rowid)) as Record<string, unknown>[];
+          } catch {
+            // A WITHOUT ROWID table cannot be paged by rowid: read it whole in this slice.
+            rows = undefined;
+          }
+        }
+        if (rows) {
+          for (const row of rows) {
+            const { __attachment_scan_rowid: rowid, ...values } = row;
+            if (!(await inspect(values))) return abandon();
+            scan.rowid = Number(rowid);
+          }
+          if (rows.length < SCAN_ROWS_PER_QUERY) {
+            scan.table++;
+            scan.rowid = 0;
+          }
+          if (performance.now() - scanStarted >= SCAN_SLICE_MS && scan.table < scan.tables.length) {
+            if (!(await shouldContinue())) return abandon();
+            resume!.pending = true;
+            return [];
+          }
+          continue;
+        }
+        for await (const row of store.db.prepare(`SELECT * FROM ${quote(name)}`).iterate()) {
+          if (!(await inspect(row))) return abandon();
+          if (performance.now() - sliceStarted >= 8 && !(await yielded())) return abandon();
+        }
+        scan.table++;
+        scan.rowid = 0;
       }
-      return true;
-    };
-    while (scan.table < scan.tables.length) {
-      const name = scan.tables[scan.table]!;
-      let rows: Record<string, unknown>[] | undefined;
-      if (resume) {
-        try {
-          rows = (await store.db
-            .prepare(
-              `SELECT rowid AS "__attachment_scan_rowid", * FROM ${quote(name)} WHERE rowid>? ORDER BY rowid LIMIT ${SCAN_ROWS_PER_QUERY}`,
-            )
-            .all(scan.rowid)) as Record<string, unknown>[];
-        } catch {
-          // A WITHOUT ROWID table cannot be paged by rowid: read it whole in this slice.
-          rows = undefined;
-        }
-      }
-      if (rows) {
-        for (const row of rows) {
-          const { __attachment_scan_rowid: rowid, ...values } = row;
-          if (!(await inspect(values))) return abandon();
-          scan.rowid = Number(rowid);
-        }
-        if (rows.length < SCAN_ROWS_PER_QUERY) {
-          scan.table++;
-          scan.rowid = 0;
-        }
-        if (performance.now() - scanStarted >= SCAN_SLICE_MS && scan.table < scan.tables.length) {
-          if (!(await shouldContinue())) return abandon();
-          resume!.pending = true;
-          return [];
-        }
-        continue;
-      }
-      for await (const row of store.db.prepare(`SELECT * FROM ${quote(name)}`).iterate()) {
-        if (!(await inspect(row))) return abandon();
-        if (performance.now() - sliceStarted >= 8 && !(await yielded())) return abandon();
-      }
-      scan.table++;
-      scan.rowid = 0;
-    }
-    // Flush newly pending session state before the final revision check. Refresh
-    // external ownership after all yields; nothing below this point awaits.
-    if (!(await shouldContinue())) return [];
-    await store.flushAll();
-    // Reserve the SQLite writer for the final check and unlink phase too: a
-    // different connection cannot publish a new reference between them. Ledger
-    // removals share this transaction rather than committing per file.
-    return await store.transaction(async () => {
-      if (resume) resume.scan = undefined;
-      if ((await stamp()) !== startedStamp) return [];
-      // A write by another connection at any point in a sliced pass.
-      if (
-        resume &&
-        (await store.db.prepare("PRAGMA data_version").get())?.data_version !== scan.dataVersion
-      )
-        return [];
-      const currentExternal = await externalReferences();
-      if (!currentExternal) return [];
-      for (const id of currentExternal) referenced.add(id.toLowerCase());
-      const directory = lstatSync(store.attachmentDir, { throwIfNoEntry: false });
-      if (directory && (!directory.isDirectory() || directory.isSymbolicLink())) return [];
-      const removed: string[] = [];
-      // No await between the reference scan, final lease/stat recheck and unlink:
-      // this process cannot accept a new reference or upload in that interval.
-      for (const id of entries) {
+      // Flush newly pending session state before the final revision check. Refresh
+      // external ownership after all yields; nothing below this point awaits.
+      if (!(await shouldContinue())) return [];
+      await store.flushAll();
+      // Reserve the SQLite writer for the final check and unlink phase too: a
+      // different connection cannot publish a new reference between them. Ledger
+      // removals share this transaction rather than committing per file.
+      return await store.transaction(async () => {
+        if (resume) resume.scan = undefined;
+        if ((await stamp()) !== startedStamp) return [];
+        // A write by another connection at any point in a sliced pass.
         if (
-          !UUID.test(id) ||
-          (eligible && !eligible.has(id.toLowerCase())) ||
-          referenced.has(id.toLowerCase())
+          resume &&
+          (await store.db.prepare("PRAGMA data_version").get())?.data_version !== scan.dataVersion
         )
-          continue;
-        const path = attachmentPath(store, id);
-        const key = join(dirname(resolve(path)), basename(path).toLowerCase());
-        if (attachmentOperations.has(key) || (attachmentTouches.get(key) ?? 0) > now - graceMs)
-          continue;
-        const info = lstatSync(path, { throwIfNoEntry: false });
-        if (!info) {
-          if (eligible) onRemoved?.(id.toLowerCase());
-          continue;
-        }
-        if (!info.isFile() || Math.max(info.mtimeMs, info.ctimeMs) > now - graceMs) continue;
-        unlinkSync(path);
-        attachmentTouches.delete(key);
-        removed.push(id);
-        await onRemoved?.(id.toLowerCase());
-      }
-      for (const [key, touched] of attachmentTouches)
-        if (touched < now - graceMs && !attachmentOperations.has(key))
+          return [];
+        const currentExternal = await externalReferences();
+        if (!currentExternal) return [];
+        for (const id of currentExternal) referenced.add(id.toLowerCase());
+        const directory = lstatSync(store.attachmentDir, { throwIfNoEntry: false });
+        if (directory && (!directory.isDirectory() || directory.isSymbolicLink())) return [];
+        const removed: string[] = [];
+        // No await between the reference scan, final lease/stat recheck and unlink:
+        // this process cannot accept a new reference or upload in that interval.
+        for (const id of entries) {
+          if (
+            !UUID.test(id) ||
+            (eligible && !eligible.has(id.toLowerCase())) ||
+            referenced.has(id.toLowerCase())
+          )
+            continue;
+          const path = attachmentPath(store, id);
+          const key = join(dirname(resolve(path)), basename(path).toLowerCase());
+          if (attachmentOperations.has(key) || (attachmentTouches.get(key) ?? 0) > now - graceMs)
+            continue;
+          const info = lstatSync(path, { throwIfNoEntry: false });
+          if (!info) {
+            if (eligible) onRemoved?.(id.toLowerCase());
+            continue;
+          }
+          if (!info.isFile() || Math.max(info.mtimeMs, info.ctimeMs) > now - graceMs) continue;
+          unlinkSync(path);
           attachmentTouches.delete(key);
-      return removed;
+          removed.push(id);
+          await onRemoved?.(id.toLowerCase());
+        }
+        for (const [key, touched] of attachmentTouches)
+          if (touched < now - graceMs && !attachmentOperations.has(key))
+            attachmentTouches.delete(key);
+        return removed;
+      });
+    })
+    .catch((error: unknown) => {
+      abandon();
+      throw error;
     });
-  }).catch((error: unknown) => {
-    abandon();
-    throw error;
-  });
 }

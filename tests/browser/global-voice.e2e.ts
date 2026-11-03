@@ -2,10 +2,13 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
-const captures = join(process.cwd(), "temp/verification/2026-11-01-global-voice");
+const captureRoot = join(process.cwd(), "temp/verification/2026-11-01-global-voice");
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
-    test(`global voice, unsent context and scope: ${theme} ${width}`, async ({ page }) => {
+    test(`global voice, unsent context and scope: ${theme} ${width}`, async ({
+      page,
+    }, testInfo) => {
+      const captures = join(captureRoot, testInfo.project.name);
       await mkdir(captures, { recursive: true });
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
@@ -16,6 +19,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Voice companion", exact: true }).click();
       const panel = page.locator("section[data-voice-state]");
       const scope = panel.getByRole("radiogroup", { name: "Voice scope" });
+      await expect(scope.getByRole("radio")).toHaveCount(2);
       await expect(scope.getByRole("radio", { name: "Global", exact: true })).toHaveAttribute(
         "aria-checked",
         "true",
@@ -26,15 +30,21 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
       });
       await scope.getByRole("radio", { name: "Global", exact: true }).press("ArrowRight");
-      await expect(scope.getByRole("radio", { name: "Session", exact: true })).toHaveAttribute(
+      await expect(scope.getByRole("radio", { name: "Project", exact: true })).toHaveAttribute(
         "aria-checked",
         "true",
       );
-      await scope.getByRole("radio", { name: "Session", exact: true }).press("ArrowLeft");
+      await expect
+        .poll(() => page.evaluate(() => localStorage.getItem("bycoda.voice.scope")))
+        .toBe("project");
+      await scope.getByRole("radio", { name: "Project", exact: true }).press("ArrowLeft");
       await expect(scope.getByRole("radio", { name: "Global", exact: true })).toHaveAttribute(
         "aria-checked",
         "true",
       );
+      await expect
+        .poll(() => page.evaluate(() => localStorage.getItem("bycoda.voice.scope")))
+        .toBe("global");
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect(panel).toHaveAttribute("data-voice-state", "listening");
       await page.evaluate(() => (window as any).fixtureVoice.speech("read draft"));

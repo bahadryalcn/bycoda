@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { rpcDispatchLiterals } from "../scripts/checks/host-rpc-source-fixture.mjs";
+import { getHostRpcMethod } from "../src/shared/model/host-contracts";
 import {
   PerfMetrics,
   MAX_METRICS,
@@ -141,9 +143,9 @@ it("monitors real event-loop delay in milliseconds and releases the monitor", as
 
 it("keeps the RPC allowlist aligned with the dispatch literals, including J2 token RPCs", () => {
   const source = readFileSync(new URL("./server.ts", import.meta.url), "utf8");
-  const methods = [...source.matchAll(/(?:case |input\.method [!=]== )"([\w.]+)"/g)].map(
-    (match) => match[1],
-  );
+  // Agent tool action names and legacy HTTP spellings are data, not canonical
+  // RPC registrations; they must not become metric labels by string matching.
+  const methods = rpcDispatchLiterals(source).filter(name => getHostRpcMethod(name));
   for (const name of new Set([
     ...methods,
     "mcp.tokens.create",
@@ -157,6 +159,15 @@ it("keeps the RPC allowlist aligned with the dispatch literals, including J2 tok
     ).toBe(true);
   }
   expect(measure("resources.read", () => 42)).toBe(42);
+});
+
+it("keeps arbitrary and noncanonical method strings out of the fixed metric inventory", () => {
+  const before = perfMetrics.snapshot().metrics.find(entry => entry.name === "other")?.count ?? 0;
+  for (const name of ["owner-secret-arbitrary-method", "desktop.status"]) recordDuration(name, 1);
+  const result = perfMetrics.snapshot();
+  expect(result.metrics.find(entry => entry.name === "other")?.count).toBe(before + 2);
+  expect(result.metrics.some(entry => ["owner-secret-arbitrary-method", "desktop.status"].includes(entry.name))).toBe(false);
+  expect(result.limits.registeredMetrics).toBeLessThanOrEqual(MAX_METRICS);
 });
 
 it("exposes completed dispatches and MCP scopes through authenticated resources.read", async () => {

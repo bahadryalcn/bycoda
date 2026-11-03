@@ -54,7 +54,7 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("machine snapshot", () => {
-  it("asks each machine once for describe and once for projects across a Tasks refresh", async () => {
+  it("shares Tasks and Goals metadata, then binds fresh automation reads to the original Host", async () => {
     // What TasksView does: three probes, then the task and goal lists.
     const [reach, goalHosts] = await Promise.all([
       probeTaskMachines(),
@@ -64,11 +64,19 @@ describe("machine snapshot", () => {
     await Promise.all([
       listBoardTasks(reach.capable),
       listBoardGoals(goalHosts),
-      listHostAutomations(reach.capable),
     ]);
     for (const machine of [mac, mini]) {
       expect(calls("environment.describe", machine.id)).toBe(1);
       expect(calls("projects.list", machine.id)).toBe(1);
+    }
+    // Automation reveal needs a fresh, paired project/list read on the captured
+    // environment; the shared Tasks/Goals cache cannot certify this source.
+    await listHostAutomations(reach.capable);
+    for(const machine of [mac,mini]){
+      expect(calls("environment.describe",machine.id)).toBe(1);
+      expect(calls("projects.list",machine.id)).toBe(2);
+      expect(request).toHaveBeenCalledWith(machine.id,"projects.list",{},false,false,machine.environmentId);
+      expect(request).toHaveBeenCalledWith(machine.id,"automations.list",{},false,false,machine.environmentId);
     }
   });
 

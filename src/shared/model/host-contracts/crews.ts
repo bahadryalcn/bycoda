@@ -203,6 +203,7 @@ export const CrewUserQuestionSchema = z.strictObject({
 });
 export const CrewUserQuestionPromptSchema = z.strictObject({
   requestId: SafeCounterSchema,
+  occurrenceId: z.string().regex(WIRE_UUID_V4_PATTERN).optional(),
   title: text.optional(),
   questions: z.array(CrewUserQuestionSchema),
   behavior: z.enum(["blocking", "nonBlocking"]).optional(),

@@ -33,6 +33,13 @@ const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
 // Records what each turn actually received, so tests can prove that settings
 // applied between turns reach the provider.
 const record = value => require('node:fs').appendFileSync(require('node:path').join(__dirname, 'calls.log'), JSON.stringify(value) + '\\n');
+// Echo effective per-process -c overrides; an absent isolation flag stays absent.
+const overrides = {};
+for (let index = 2; index < process.argv.length; index++) {
+  if (process.argv[index] !== '-c') continue;
+  const value = process.argv[++index], equal = value.indexOf('=');
+  overrides[value.slice(0, equal)] = JSON.parse(value.slice(equal + 1));
+}
 if (!process.argv.includes('app-server')) record({claudeArgs: process.argv.slice(2)});
 readline.createInterface({input: process.stdin}).on('line', line => {
   const request = JSON.parse(line);
@@ -49,7 +56,12 @@ readline.createInterface({input: process.stdin}).on('line', line => {
     return;
   }
   if (request.method === 'initialize') send({id: request.id, result: {}});
-  if (request.method === 'config/read') send({id: request.id, result: {config: {skills: {config: []}}}});
+  if (request.method === 'config/read') send({id: request.id, result: {config: {
+    skills: {config: []},
+    web_search: overrides.web_search,
+    features: Object.fromEntries(Object.entries(overrides).filter(([key]) => key.startsWith('features.')).map(([key, value]) => [key.slice(9), value])),
+  }}});
+  if (request.method === 'mcpServerStatus/list') send({id: request.id, result: {data: [], nextCursor: null}});
   if (request.method === 'skills/list') send({id: request.id, result: {data: []}});
   if (request.method === 'account/read') send({id: request.id, result: {account: {type: 'fixture'}, requiresOpenaiAuth: false}});
   if (request.method === 'model/list') send({id: request.id, result: {data: [{model: 'fixture-model', displayName: 'Fixture model', supportedReasoningEfforts: ['low', 'high']}], nextCursor: null}});
@@ -162,6 +174,14 @@ describe("existing providers over headless process I/O", () => {
         resumeThreadId: "fixture-thread",
         excludeTurns: true,
       });
+      const methods = calls.filter((call) => call.rpcMethod).map((call) => call.rpcMethod);
+      expect(methods.indexOf("config/read")).toBeGreaterThan(-1);
+      expect(methods.indexOf("mcpServerStatus/list")).toBeGreaterThan(
+        methods.indexOf("thread/resume"),
+      );
+      expect(methods.indexOf("turn/start")).toBeGreaterThan(
+        methods.indexOf("mcpServerStatus/list"),
+      );
     } finally {
       await stopCodexTextPrompt();
     }

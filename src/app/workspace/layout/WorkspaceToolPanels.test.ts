@@ -20,11 +20,16 @@ vi.mock("../../../features/terminal/ui/TerminalView", () => ({
     createElement("div", { "data-tool-terminal": "", "data-active": active }),
 }));
 vi.mock("../../shell/WindowControls", () => ({ WindowControls: () => null }));
+vi.mock("../../../features/assistant/model/assistantClient",async original=>({
+  ...(await original<typeof import("../../../features/assistant/model/assistantClient")>()),
+  useAssistantIdentity:()=>({title:"Assistant Arif",room:"Room · Arif"}),
+}));
 vi.mock("../surfaces/lazySurfaces", () => {
   const view = () => createElement(ToolHeader, null, "Tool header");
   return {
     preloadToolSurface: vi.fn(),
     AutomationsView: view,
+    AssistantView: view,
     InboxView: view,
     NotesView: view,
     SocialView: view,
@@ -44,7 +49,7 @@ it.each([false, true])(
     function Workspace() {
       const [state, setState] = useState({
         inboxViewOpen: true,
-        auxiliaryTool: null as "terminal" | "conversation-tools" | null,
+        auxiliaryTool: null as "terminal" | "conversation-tools" | "assistant" | null,
         notesViewOpen: false,
         serversViewOpen: false,
         automationsViewOpen: false,
@@ -85,6 +90,7 @@ it.each([false, true])(
         "Tasks",
         "Social Media",
         "Automations",
+        "Room · Arif",
         "Inbox",
         "Servers",
         "Conversation tools",

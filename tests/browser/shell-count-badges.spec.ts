@@ -29,7 +29,7 @@ async function compactAccentCounter(counter: Locator) {
 
 test("shell counts stay compact and follow custom accents in both rail presentations", async ({
   page,
-}) => {
+}, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -68,6 +68,9 @@ test("shell counts stay compact and follow custom accents in both rail presentat
       // The expanded rail shows the plain section count; label-less rails keep the corner badge.
       const recovery = page.locator(expanded ? ".recovery-rail-number" : ".recovery-rail-count");
       await expect(working).toHaveText(String(Math.min(count, 9)));
+      const workingCount = Math.min(count, 9);
+      await expect(working).toHaveAttribute("aria-label", `${workingCount} working ${workingCount === 1 ? "session" : "sessions"}`);
+      await expect(working.locator('[data-size="xs"][aria-hidden="true"]')).toBeVisible();
       await expect(recovery).toHaveText(count > 99 ? "99+" : String(count));
       for (const light of [false, true]) {
         await page.evaluate((light) => {
@@ -112,7 +115,7 @@ test("shell counts stay compact and follow custom accents in both rail presentat
           ).not.toBe(await working.evaluate((element) => getComputedStyle(element).color));
           if (count === 8) {
             await page.screenshot({
-              path: `temp/verification/2026-10-27-badges/${expanded ? "expanded" : "compact"}-${light ? "light" : "dark"}-${width}.png`,
+              path: `temp/verification/2026-10-27-badges/${testInfo.project.name}/${expanded ? "expanded" : "compact"}-${light ? "light" : "dark"}-${width}.png`,
             });
           }
         }

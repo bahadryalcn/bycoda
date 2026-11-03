@@ -58,6 +58,25 @@ it("automatically expires abandoned partial uploads, preserving complete offline
   expect(await ownership.collect()).toEqual([]);
   expect(existsSync(attachmentPath(store, ids[1]))).toBe(true);
 });
+it("scans readable FTS references without treating derived shadow blobs as opaque application data", async () => {
+  const { ownership, clock, upload, store } = setup();
+  await store.db.exec("CREATE VIRTUAL TABLE indexed_references USING fts5(body)");
+  await store.db.prepare("INSERT INTO indexed_references(body) VALUES(?)").run(ids[0]);
+  expect(
+    (await store.db.prepare("PRAGMA main.table_list").all()).some(
+      (table) => table.type === "shadow",
+    ),
+  ).toBe(true);
+  for (const id of ids.slice(0, 2)) {
+    await upload(id);
+    await ownership.release("device-A", { ids: [id], ownerId: "draft-A" });
+  }
+  clock.now += ATTACHMENT_GRACE_MS + 10000;
+  expect(await ownership.collect()).toEqual([ids[1]]);
+  expect(existsSync(attachmentPath(store, ids[0]))).toBe(true);
+  await store.db.exec("DELETE FROM indexed_references");
+  expect(await ownership.collect()).toEqual([ids[0]]);
+});
 it("requires exact authenticated draft ownership release and a fresh persisted grace", async () => {
   const { ownership, clock, upload, store } = setup();
   await upload();

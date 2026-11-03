@@ -396,7 +396,17 @@ it("offers local and saved machines only for host tools while keeping conversati
     { leaseId: undefined },
     { kind: "machine", machineId: "linux" },
   );
-  expect(container.textContent).toContain("Browser selections can be attached only");
+  await toolAct(()=>container.querySelector<HTMLButtonElement>('button[aria-label="Browser controls and setup"]')!.click());
+  const controls=document.querySelector<HTMLElement>('[role="dialog"][aria-label="Browser controls and setup"]')!;
+  expect(controls).not.toBeNull();
+  const help=controls.querySelector<HTMLDetailsElement>(".host-browser-disclosure")!;
+  expect(help.open).toBe(false);
+  await toolAct(()=>{help.open=true;help.dispatchEvent(new Event("toggle"));});
+  expect(help.textContent).toContain("Browser selections can be attached only on this conversation's project host.");
+  const annotate=container.querySelector<HTMLButtonElement>('button[aria-label="Select element and add to composer"]')!;
+  expect(annotate.disabled).toBe(true);
+  await toolAct(()=>annotate.click());
+  expect(vi.mocked(hostToolRequest).mock.calls.some(([, ,method])=>method==="browser.annotate.start")).toBe(false);
   await clickToolTab("Development servers");
   expect(container.querySelector(".host-tools-machine")).toBeNull();
 });

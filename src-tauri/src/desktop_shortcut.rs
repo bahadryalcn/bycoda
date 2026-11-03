@@ -71,6 +71,7 @@ pub(crate) fn init(app: &AppHandle) -> tauri::Result<()> {
                             ));
                         }
                     });
+                    #[cfg(target_os = "macos")]
                     return;
                 }
                 #[cfg(target_os = "macos")]
