@@ -16,6 +16,22 @@ import { dirname, join, resolve } from "node:path";
 
 const exec = promisify(execFile);
 
+// An exited Host stays a zombie until its reaper collects it. Minimal container
+// inits reap lazily (about 2s), and kill(pid, 0) still succeeds for a zombie.
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3) !== "Z";
+  } catch {
+    return true;
+  }
+}
+
 it(
   "starts detached, authenticates a device, revokes it, and stops independently of the launcher",
   async () => {
@@ -86,9 +102,7 @@ it(
       });
       expect((await run("stop")).stdout).toContain("Host is stopping");
       await vi.waitFor(() => expect(existsSync(join(directory, "running.json"))).toBe(false));
-      await vi.waitFor(() => {
-        expect(() => process.kill(before.pid, 0)).toThrow();
-      });
+      await vi.waitFor(() => expect(processIsAlive(before.pid)).toBe(false), { timeout: 5_000 });
       expect((await run("status")).stdout).toContain("Host is stopped");
     } finally {
       if (existsSync(join(directory, "running.json"))) {

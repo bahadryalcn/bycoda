@@ -123,7 +123,8 @@ describe("remote method allowlist", () => {
       }
     }
     expect([...missing].sort()).toEqual([]);
-  });
+    // Parses every source file under src/; CPU-bound under the parallel suite.
+  }, 30_000);
 
   it("keeps raw development-server relay operations behind their dedicated native gateway", () => {
     const allowed = allowlist();

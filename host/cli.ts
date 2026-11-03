@@ -1,3 +1,4 @@
+import "./suppress-sqlite-warning";
 import {
   chmodSync,
   closeSync,

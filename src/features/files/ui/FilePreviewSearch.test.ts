@@ -8,6 +8,10 @@ import { saveKeybindingOverride } from "../../settings/model/settings";
 import { evaluatePreviewSearch } from "./previewSearchEvaluation";
 import { Worker as NodeWorker } from "node:worker_threads";
 
+// These tests mount real React trees and worker threads. Under the parallel suite the default
+// 5s budget is not enough, so give the whole file the same 20s the Notes view uses.
+vi.setConfig({ testTimeout: 20_000 });
+
 // Execute the same evaluator in a real isolated thread under happy-dom.
 class SearchWorker {
   onmessage?: (event: { data: unknown }) => void;

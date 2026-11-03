@@ -30,6 +30,10 @@ import { OPEN_NOTE_LIBRARY_EVENT } from "../noteNavigation";
 import { TagInput } from "../../../shared/ui/TagInput";
 import { resetNoteInputWindowForTest } from "../testing/noteInputWindow.test-support";
 
+// These tests mount real CodeMirror/React trees. Under the parallel suite the default
+// 5s budget is not enough, so give the whole file the same 20s the Notes view uses.
+vi.setConfig({ testTimeout: 20_000 });
+
 const invoke = vi.hoisted(() => vi.fn());
 const openDialog = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: openDialog }));

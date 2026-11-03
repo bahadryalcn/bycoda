@@ -3569,7 +3569,8 @@ describe("shared queued messages", () => {
       } finally {
         vi.useRealTimers();
       }
-    });
+      // Real SQLite store and three provider turns; explicit budget for loaded hosts.
+    }, 30_000);
 
     it("keeps an older client's queue its own while it keeps asking, and drains it when it goes quiet", async () => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
