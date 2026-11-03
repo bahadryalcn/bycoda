@@ -93,8 +93,8 @@ marked included/excluded/unknown.
 Use `tsc-rs` for TypeScript compilation and checking. Normal mode is default;
 `:fast` commands explicitly enable `tsc-rs --fast`. Desktop commands are
 `pnpm build`, `pnpm host:build`, `pnpm check:web`, `pnpm check:types:rust`, each
-with a `:fast` variant. Mobile uses `pnpm typecheck` or `pnpm typecheck:fast`
-from `mobile/`. Preserve all other checks and name fast mode in reports.
+with a `:fast` variant. Mobile is a separate Expo Git repository; when checked out at `mobile/`, it
+uses `pnpm typecheck` or `pnpm typecheck:fast` from there. Preserve all other checks and name fast mode in reports.
 Compiler API consumers may retain their TypeScript packages.
 
 Read `.artifact` before creating or moving files. Project skills and feature

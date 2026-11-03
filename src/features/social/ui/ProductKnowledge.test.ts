@@ -30,7 +30,15 @@ const profiles: SocialProjectProfile[] = [
     projectId: "p",
     productName: "Demo",
     brandVoice: "Plain",
-    facts: [{ id: "f1", topic: "Pricing", text: "Free tier", source: "https://example.test", verifiedAt: 1 }],
+    facts: [
+      {
+        id: "f1",
+        topic: "Pricing",
+        text: "Free tier",
+        source: "https://example.test",
+        verifiedAt: 1,
+      },
+    ],
   },
   { projectId: "q", productName: "Other", brandVoice: "Plain", facts: [] },
 ];
@@ -65,13 +73,15 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   suggestImpl = async () => result();
   run.mockClear();
-  request.mockReset().mockImplementation(async (action: string, input: Record<string, unknown>, id: string) => {
-    if (action === "policy.get")
-      return { effective: { agent: { provider: "codex", model: "fixture-model" } } };
-    if (action === "facts.suggest") return suggestImpl(input, id);
-    if (action === "profiles.save") return {};
-    throw new Error(`Unexpected ${action}`);
-  });
+  request
+    .mockReset()
+    .mockImplementation(async (action: string, input: Record<string, unknown>, id: string) => {
+      if (action === "policy.get")
+        return { effective: { agent: { provider: "codex", model: "fixture-model" } } };
+      if (action === "facts.suggest") return suggestImpl(input, id);
+      if (action === "profiles.save") return {};
+      throw new Error(`Unexpected ${action}`);
+    });
   element = document.createElement("div");
   document.body.append(element);
   root = createRoot(element);
@@ -122,13 +132,16 @@ function control(label: string, scope: ParentNode = document.body) {
 async function type(label: string, value: string, scope: ParentNode = document.body) {
   const target = control(label, scope);
   const prototype =
-    target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    target instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
   await act(async () => {
     Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(target, value);
     target.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-const section = (label: string) => document.body.querySelector<HTMLElement>(`section[aria-label="${label}"]`);
+const section = (label: string) =>
+  document.body.querySelector<HTMLElement>(`section[aria-label="${label}"]`);
 const rows = () =>
   Array.from(section("Suggestions - not verified yet")?.querySelectorAll<HTMLElement>("li") ?? []);
 const row = (topic: string) => rows().find((item) => item.getAttribute("aria-label") === topic)!;
@@ -172,9 +185,11 @@ describe("product knowledge fact suggestions", () => {
     // The supporting quote is quoted text, never an editable control.
     const plans = row("Plans");
     expect(plans.querySelector("blockquote")?.textContent).toBe("Start for free");
-    expect(Array.from(plans.querySelectorAll<HTMLInputElement>("input,textarea")).map((item) => item.value)).not.toContain(
-      "Start for free",
-    );
+    expect(
+      Array.from(plans.querySelectorAll<HTMLInputElement>("input,textarea")).map(
+        (item) => item.value,
+      ),
+    ).not.toContain("Start for free");
     await type("Fact text", "There is a free plan for small teams.", plans);
     await click("Accept", plans);
     const added = section("Added - save to verify")!;
@@ -263,7 +278,9 @@ describe("product knowledge fact suggestions", () => {
     await mount();
     await openSuggest();
     await fillAndAsk();
-    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain("Model unavailable");
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
+      "Model unavailable",
+    );
     suggestImpl = async () => result();
     await click("Try again");
     const [first, second] = calls("facts.suggest");
@@ -349,7 +366,9 @@ describe("product knowledge fact suggestions", () => {
     await openSuggest();
     await fillAndAsk();
     await click("Accept", row("Support"));
-    await act(async () => document.body.querySelector<HTMLButtonElement>('button[aria-label="Close"]')?.click());
+    await act(async () =>
+      document.body.querySelector<HTMLButtonElement>('button[aria-label="Close"]')?.click(),
+    );
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     expect(element.textContent).toContain("2 suggestions to review");
     expect(element.textContent).toContain("Unsaved changes");

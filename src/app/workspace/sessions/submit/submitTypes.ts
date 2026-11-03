@@ -1,17 +1,28 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { ControlOutcome } from "../../../../features/orchestration/model/orchestration";
 import type { OrchestrationProposal } from "../../../../features/orchestration/model/orchestrationPlan";
-import type { EditedResendCoordinator, createEditedResendAttempt } from "../../../../features/sessions/model/editLastTurn";
+import type {
+  EditedResendCoordinator,
+  createEditedResendAttempt,
+} from "../../../../features/sessions/model/editLastTurn";
 import type { pendingHandoff } from "../../../../features/sessions/model/handoff";
 import type { consumeOperatorCommand } from "../../../../features/sessions/model/operatorCommand";
-import type { Attachment, PlanBuildTarget, QueuedMessage, Session } from "../../../../features/sessions/model/session";
+import type {
+  Attachment,
+  PlanBuildTarget,
+  QueuedMessage,
+  Session,
+} from "../../../../features/sessions/model/session";
 import type { HarnessEvent } from "../../../../integrations/harness";
 import type { beginSessionPerformanceTrace } from "../../../../shared/lib/performanceTrace";
 import type { useOwnedTimeout } from "../../../../shared/hooks/useOwnedTimeout";
 import type { SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import type { useWorkspaceNavigation } from "../../../hooks/useWorkspaceNavigation";
 import type { Submit, SubmitOptions } from "../../helpers/types";
-import type { useProjectLocationChange, useProjectLocationSyncs } from "../../projects/useProjectLocation";
+import type {
+  useProjectLocationChange,
+  useProjectLocationSyncs,
+} from "../../projects/useProjectLocation";
 import type { ProviderAccountRecovery } from "../../surfaces/useProviderSignInPrompts";
 import type { useSessionShell } from "../useSessionShell";
 
@@ -37,7 +48,9 @@ export interface SubmitDeps {
   /** Read lazily: the submit ref is declared after the hook call in `Workspace`. */
   getSubmitSessionRef: () => MutableRefObject<Submit>;
   workspaceNavigation: ReturnType<typeof useWorkspaceNavigation>;
-  applyProjectLocationChange: ReturnType<typeof useProjectLocationChange>["applyProjectLocationChange"];
+  applyProjectLocationChange: ReturnType<
+    typeof useProjectLocationChange
+  >["applyProjectLocationChange"];
   dismissNoticesForContinuedSession: (sessionId: string) => void;
   enqueueHarnessEvent: (sessionId: string, event: HarnessEvent) => void;
   flushHarnessEvents: () => void;

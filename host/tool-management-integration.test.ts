@@ -28,12 +28,16 @@ describe("managed discovery across real tool catalogs", () => {
     expect(catalog).toHaveLength(rawCount);
     expect(rawCount).toBeGreaterThanOrEqual(206);
     expect(catalog.filter((entry) => !entry.supported).map((entry) => entry.id)).toEqual([]);
-    const conversation = catalog.filter(entry => entry.group === "conversation");
-    const families = new Set(conversation.map(entry => entry.family));
+    const conversation = catalog.filter((entry) => entry.group === "conversation");
+    const families = new Set(conversation.map((entry) => entry.family));
     expect(families.size).toBe(30);
     expect(families.has("desktop")).toBe(true);
-    expect(conversation.filter(entry => entry.family === "desktop").map(entry => entry.action).sort())
-      .toEqual(Object.keys(DESKTOP_CONTROL_CONVERSATION_TOOLS).sort());
+    expect(
+      conversation
+        .filter((entry) => entry.family === "desktop")
+        .map((entry) => entry.action)
+        .sort(),
+    ).toEqual(Object.keys(DESKTOP_CONTROL_CONVERSATION_TOOLS).sort());
     expect(catalog.every((entry) => entry.capability.state === "unknown")).toBe(true);
     const ids = new Set(catalog.map((entry) => entry.id));
     expect(

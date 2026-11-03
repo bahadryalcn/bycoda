@@ -129,7 +129,8 @@ export function useAdoptedSessions(
               throw new Error("This conversation belongs to another project.");
             return host;
           },
-          local: () => (stopped ? [] : sessionsRef.current.filter((session) => !hostSessionBinding(session))),
+          local: () =>
+            stopped ? [] : sessionsRef.current.filter((session) => !hostSessionBinding(session)),
           mirrored,
           // Only an explicit refresh saves a separate copy, before it replaces
           // the local conversation. A failed backup leaves the original untouched.

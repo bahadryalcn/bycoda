@@ -94,7 +94,11 @@ it("does not carry a draft to another machine", async () => {
   await act(async () => type(hoursField(), "9"));
   await act(async () =>
     root.render(
-      createElement(CustomDailyLimit, { key: "remote", entry: limits(60, "remote"), onChange: save }),
+      createElement(CustomDailyLimit, {
+        key: "remote",
+        entry: limits(60, "remote"),
+        onChange: save,
+      }),
     ),
   );
   expect(hoursField().value).toBe("1");

@@ -121,7 +121,10 @@ export function validateLocalPackageManifest(manifest, root, { allowLocal = fals
     "Native resources contain another frozen Host archive",
   );
   assert.equal(
-    parseSha256Sum(readFileSync(path.join(root, `native/host/${archiveName}.sha256`), "utf8"), archiveName),
+    parseSha256Sum(
+      readFileSync(path.join(root, `native/host/${archiveName}.sha256`), "utf8"),
+      archiveName,
+    ),
     original.hostArchive.sha256,
     "Native Host checksum differs",
   );

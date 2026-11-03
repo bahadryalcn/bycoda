@@ -12,7 +12,11 @@ export interface InboxRepairListsDeps {
   sessions: Session[];
 }
 
-export function useInboxRepairLists({ storedLinkedSessions, history, sessions }: InboxRepairListsDeps) {
+export function useInboxRepairLists({
+  storedLinkedSessions,
+  history,
+  sessions,
+}: InboxRepairListsDeps) {
   // Both lists are rebuilt on every shell change; keeping equal results lets the
   // memoized tool panels skip those renders.
   const relatedSessions = useMemo(() => {

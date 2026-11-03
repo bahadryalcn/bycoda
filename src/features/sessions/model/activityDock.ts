@@ -126,9 +126,10 @@ export function deriveActivityDock({
   // Provider handoffs still fence activity, including imported/recovered data.
   let handoff = execution.length - 1;
   while (handoff >= 0 && execution[handoff].role !== "handoff") handoff--;
-  const turn = handoff < 0
-    ? execution
-    : execution.slice(handoff === execution.length - 1 ? handoff : handoff + 1);
+  const turn =
+    handoff < 0
+      ? execution
+      : execution.slice(handoff === execution.length - 1 ? handoff : handoff + 1);
   const agents = turn.flatMap((block) => dockAgent(block, busy));
   const running = agents.filter((agent) => agent.status === "running").length;
   const failed = agents.filter((agent) => agent.status === "failed").length;
@@ -181,13 +182,14 @@ function dockAgent(block: Block, busy: boolean): DockAgent[] {
       kind: agent ? "agent" : "command",
       status,
       model: agent ? subagentModelName(block) : undefined,
-      detail: status === "interrupted"
-        ? t("Interrupted")
-        : agent
-        ? subagentStatusLine(block, block.agentRun?.steps ?? [])
-        : status === "stopped"
-          ? STOPPED_BY_YOU
-          : "",
+      detail:
+        status === "interrupted"
+          ? t("Interrupted")
+          : agent
+            ? subagentStatusLine(block, block.agentRun?.steps ?? [])
+            : status === "stopped"
+              ? STOPPED_BY_YOU
+              : "",
       ...(agent && block.agentRun?.startedAt !== undefined
         ? { startedAt: block.agentRun.startedAt }
         : {}),

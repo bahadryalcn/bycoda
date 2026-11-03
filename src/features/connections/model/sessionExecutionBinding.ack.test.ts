@@ -150,8 +150,12 @@ describe("acknowledgedHostSessionBinding", () => {
   it("accepts an equal or newer generation without writing", () => {
     const fenced = shell(binding({ authorityGeneration: 5 }));
 
-    expect(acknowledgedHostSessionBinding(fenced, "host-session-1", 5)?.authorityGeneration).toBe(5);
-    expect(acknowledgedHostSessionBinding(fenced, "host-session-1", 6)?.authorityGeneration).toBe(6);
+    expect(acknowledgedHostSessionBinding(fenced, "host-session-1", 5)?.authorityGeneration).toBe(
+      5,
+    );
+    expect(acknowledgedHostSessionBinding(fenced, "host-session-1", 6)?.authorityGeneration).toBe(
+      6,
+    );
     expectNoWrites();
   });
 });
@@ -177,7 +181,6 @@ describe("acknowledgeHostSessionBinding", () => {
   });
 
   it("does not write when the receipt is rejected", () => {
-
     expect(() => acknowledgeHostSessionBinding(shell(binding()), "other-session", 1)).toThrow();
 
     expect(storage.writes).toEqual([]);
@@ -185,7 +188,6 @@ describe("acknowledgeHostSessionBinding", () => {
   });
 
   it("does not write when the shell has no Host binding", () => {
-
     acknowledgeHostSessionBinding(shell(), "host-session-1", 1);
 
     expect(storage.writes).toEqual([]);

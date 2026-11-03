@@ -153,7 +153,7 @@ it("retains commits while refreshing and after a failed refresh, then retries", 
   await click("Refresh commit graph");
   expect(container.textContent).not.toContain("Refreshing commit graph…");
   expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
-  expect(container.querySelector("button[aria-busy=\"true\"]")).not.toBeNull();
+  expect(container.querySelector('button[aria-busy="true"]')).not.toBeNull();
   expect(container.textContent).toContain("Existing commit");
   await act(async () => request.reject(new Error("Permission denied")));
   expect(container.textContent).toContain("Couldn’t load commit graph");

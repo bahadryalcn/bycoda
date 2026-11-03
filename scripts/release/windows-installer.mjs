@@ -46,7 +46,8 @@ export function installerSelection(listing, archive) {
       `Missing/ambiguous bounded installer member: ${name}`,
     );
     assert(
-      !/[\x00-\x1f\x7f:*?\[\]]/.test(matches[0].name) &&
+      // oxlint-disable-next-line no-control-regex -- reject control characters in file names
+      !/[\x00-\x1f\x7f:*?[\]]/.test(matches[0].name) &&
         !matches[0].name.startsWith("/") &&
         matches[0].name.split("/").every((part) => part && part !== "." && part !== ".."),
       "Unsafe installer member path",

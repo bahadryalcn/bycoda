@@ -8,7 +8,12 @@ import {
 import { importSessionRecord, importedSessionKeys } from "../data/sessionStore";
 import { sameProjectPath } from "../../projects/model/recents";
 import { isAlreadyImported, SESSION_HISTORY_IMPORTED_EVENT } from "./importModel";
-import { isUsableProjectFolder, runSessionImport, type ImportSummary, type ImportDeps } from "./importRunner";
+import {
+  isUsableProjectFolder,
+  runSessionImport,
+  type ImportSummary,
+  type ImportDeps,
+} from "./importRunner";
 
 export type HistoryImportContext = {
   environmentId: string;
@@ -116,7 +121,8 @@ export function createHistoryImportControl(overrides: Partial<Deps> = {}) {
   };
   const local = (report: DiscoveryReport, context: HistoryImportContext) =>
     report.candidates.filter(
-      (candidate) => isUsableProjectFolder(candidate) && sameProjectPath(candidate.cwd, context.projectCwd),
+      (candidate) =>
+        isUsableProjectFolder(candidate) && sameProjectPath(candidate.cwd, context.projectCwd),
     );
   return async (
     context: HistoryImportContext,
@@ -239,43 +245,45 @@ export function createHistoryImportControl(overrides: Partial<Deps> = {}) {
           if (operation.abort.signal.aborted) throw new Error("History import cancelled");
           if (review.preview.expiresAt <= deps.now()) throw new Error("History review expired");
         };
-        const summary: ImportSummary = await deps.run({
-          candidates: chosen as ImportCandidate[],
-          groupProjects: false,
-          signal: operation.abort.signal,
-          onProgress: (progress) => {
-            operation.status = {
-              state: "running",
-              progress: {
-                total: progress.total,
-                done: progress.done,
-                imported: progress.imported,
-                skipped: progress.skipped,
-                failed: progress.failed.length,
+        const summary: ImportSummary = await deps
+          .run({
+            candidates: chosen as ImportCandidate[],
+            groupProjects: false,
+            signal: operation.abort.signal,
+            onProgress: (progress) => {
+              operation.status = {
+                state: "running",
+                progress: {
+                  total: progress.total,
+                  done: progress.done,
+                  imported: progress.imported,
+                  skipped: progress.skipped,
+                  failed: progress.failed.length,
+                },
+              };
+            },
+            deps: {
+              storedKeys: async () => {
+                guarded();
+                return deps.storedKeys();
               },
-            };
-          },
-          deps: {
-            storedKeys: async () => {
-              guarded();
-              return deps.storedKeys();
+              readClaude: async (path, bytes) => {
+                guarded();
+                return deps.readClaude(path, bytes);
+              },
+              readCodex: async (path, bytes) => {
+                guarded();
+                return deps.readCodex(path, bytes);
+              },
+              persist: async (session, times) => {
+                guarded();
+                if (!sameProjectPath(session.cwd, context.projectCwd))
+                  throw new Error("Import destination changed");
+                return deps.persist(session, times);
+              },
             },
-            readClaude: async (path, bytes) => {
-              guarded();
-              return deps.readClaude(path, bytes);
-            },
-            readCodex: async (path, bytes) => {
-              guarded();
-              return deps.readCodex(path, bytes);
-            },
-            persist: async (session, times) => {
-              guarded();
-              if (!sameProjectPath(session.cwd, context.projectCwd))
-                throw new Error("Import destination changed");
-              return deps.persist(session, times);
-            },
-          },
-        }).finally(() => window.dispatchEvent(new Event(SESSION_HISTORY_IMPORTED_EVENT)));
+          })
+          .finally(() => window.dispatchEvent(new Event(SESSION_HISTORY_IMPORTED_EVENT)));
         operation.status = {
           state: "complete",
           result: {

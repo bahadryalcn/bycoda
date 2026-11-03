@@ -129,11 +129,7 @@ export function CrewWorkSessions({
       <h4 className="pb-2 pt-4 text-ui-caption font-medium text-(--ui-text-secondary)">
         {t("Sessions ({p0})", { p0: crewSessionCount(run) })}
       </h4>
-      <div
-        role="list"
-        aria-label={t("Sessions")}
-        className="flex min-w-0 flex-col gap-px"
-      >
+      <div role="list" aria-label={t("Sessions")} className="flex min-w-0 flex-col gap-px">
         <div role="listitem">
           <SessionRow
             role="coordinator"
@@ -192,7 +188,9 @@ export function CrewWorkSessions({
                 disabled={!ids.worker || !canOpen || pending}
                 loading={pendingAction === `open:worker:${task.id}`}
                 title={task.title}
-                details={[`${task.harness} · ${task.model}`, assignment?.reason].filter((value): value is string => !!value)}
+                details={[`${task.harness} · ${task.model}`, assignment?.reason].filter(
+                  (value): value is string => !!value,
+                )}
                 onClick={() => ids.worker && onOpen(ids.worker, `worker:${task.id}`)}
               />
               {ids.review ? (

@@ -13,11 +13,7 @@ import type { useTabGroupLogos } from "../../features/projects/hooks/useTabGroup
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
-import {
-  RAIL_SECTION_BLOCK,
-  RailSectionHeader,
-  type RailSectionDrag,
-} from "./useRailSections";
+import { RAIL_SECTION_BLOCK, RailSectionHeader, type RailSectionDrag } from "./useRailSections";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import { useRecentSessions } from "../../features/sessions/hooks/useRecentSessions";
 import { useUnsentComposerDraft } from "../../features/sessions/hooks/useUnsentComposerDraft";
@@ -451,10 +447,7 @@ function SessionRow({
             strokeWidth={1.75}
           />
         ) : null}
-        <HarnessIcon
-          harness={row.harness}
-          className="icon-xs shrink-0 @max-[200px]/rail:hidden"
-        />
+        <HarnessIcon harness={row.harness} className="icon-xs shrink-0 @max-[200px]/rail:hidden" />
         {status ? (
           <span
             role="img"

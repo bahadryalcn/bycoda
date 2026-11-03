@@ -16,7 +16,10 @@ export function saveVoiceTurnEndChoice(manual: boolean): VoiceSettings {
   const next = chooseVoiceTurnEnd(loadVoiceSettings(), manual);
   saveVoiceSettings(next);
   const saved = loadVoiceSettings();
-  if (saved.manualTurnEnd !== manual || saved.manualTurnEndRevision !== next.manualTurnEndRevision) {
+  if (
+    saved.manualTurnEnd !== manual ||
+    saved.manualTurnEndRevision !== next.manualTurnEndRevision
+  ) {
     throw new Error(VOICE_TURN_CHOICE_FAILED);
   }
   return saved;

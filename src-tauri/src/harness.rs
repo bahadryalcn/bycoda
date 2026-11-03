@@ -2183,11 +2183,38 @@ pub struct HarnessTextWorkspace {
     log_path: String,
 }
 
+/// Remove text workspaces left behind by earlier requests (best effort).
+fn prune_stale_text_workspaces(max_age: Duration) {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if !name
+            .to_string_lossy()
+            .starts_with("bycoda-antigravity-text-")
+        {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .ok()
+            .filter(|meta| meta.is_dir())
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|time| time.elapsed().ok())
+            .is_some_and(|age| age > max_age);
+        if stale {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 #[tauri::command]
 pub fn harness_prepare_text_workspace(content: String) -> Result<HarnessTextWorkspace, String> {
     if content.len() > 20_000 {
         return Err("Invalid text agent profile".into());
     }
+    prune_stale_text_workspaces(Duration::from_secs(24 * 60 * 60));
     let cwd =
         std::env::temp_dir().join(format!("bycoda-antigravity-text-{}", uuid::Uuid::new_v4()));
     let profile = cwd.join(".agents").join("agents");

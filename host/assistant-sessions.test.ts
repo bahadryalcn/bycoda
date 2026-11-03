@@ -1,4 +1,4 @@
-import { afterEach, expect, it,vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,63 +15,130 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 const chief = { kind: "chief" as const, id: "trusted-chief" };
-async function detachable(f:Awaited<ReturnType<typeof setup>>){
- const row=await f.store.db.prepare("SELECT value FROM assistant_jobs WHERE id=?").get(f.job.id);
- const job=JSON.parse(row!.value);
- await f.store.db.exec("CREATE TABLE IF NOT EXISTS goals(id TEXT PRIMARY KEY,value TEXT NOT NULL)");
- await f.store.db.prepare("INSERT OR REPLACE INTO goals(id,value) VALUES(?,?)").run(job.goalId,JSON.stringify({id:job.goalId,leadProjectId:"project",projectIds:["project"],taskIds:[],plannerSessionId:"owned"}));
- return job;
+async function detachable(f: Awaited<ReturnType<typeof setup>>) {
+  const row = await f.store.db.prepare("SELECT value FROM assistant_jobs WHERE id=?").get(f.job.id);
+  const job = JSON.parse(row!.value);
+  await f.store.db.exec(
+    "CREATE TABLE IF NOT EXISTS goals(id TEXT PRIMARY KEY,value TEXT NOT NULL)",
+  );
+  await f.store.db.prepare("INSERT OR REPLACE INTO goals(id,value) VALUES(?,?)").run(
+    job.goalId,
+    JSON.stringify({
+      id: job.goalId,
+      leadProjectId: "project",
+      projectIds: ["project"],
+      taskIds: [],
+      plannerSessionId: "owned",
+    }),
+  );
+  return job;
 }
-it("withdraws one canonical session durably without stopping its worker or replaying a lost acknowledgement",async()=>{
- const f=await setup();const before=await detachable(f);
- expect(await f.managed.detach(f.job.id,"owned",before.version)).toEqual({detached:true});
- const saved=JSON.parse((await f.store.db.prepare("SELECT value FROM assistant_jobs WHERE id=?").get(f.job.id))!.value);
- expect(saved).toMatchObject({status:before.status,taskIds:before.taskIds,sessionIds:before.sessionIds,detachedSessionIds:["owned"],version:before.version+1});
- await expect(f.nudge()).rejects.toThrow("detached");
- await f.managed.detach(f.job.id,"owned",before.version);
- expect(JSON.parse((await f.store.db.prepare("SELECT value FROM assistant_jobs WHERE id=?").get(f.job.id))!.value).version).toBe(saved.version);
- await f.restart();await expect(f.nudge("after-restart")).rejects.toThrow("detached");
- expect(f.sent).toHaveLength(0);expect(f.charges).toHaveLength(0);
+it("withdraws one canonical session durably without stopping its worker or replaying a lost acknowledgement", async () => {
+  const f = await setup();
+  const before = await detachable(f);
+  expect(await f.managed.detach(f.job.id, "owned", before.version)).toEqual({ detached: true });
+  const saved = JSON.parse(
+    (await f.store.db.prepare("SELECT value FROM assistant_jobs WHERE id=?").get(f.job.id))!.value,
+  );
+  expect(saved).toMatchObject({
+    status: before.status,
+    taskIds: before.taskIds,
+    sessionIds: before.sessionIds,
+    detachedSessionIds: ["owned"],
+    version: before.version + 1,
+  });
+  await expect(f.nudge()).rejects.toThrow("detached");
+  await f.managed.detach(f.job.id, "owned", before.version);
+  expect(
+    JSON.parse(
+      (await f.store.db.prepare("SELECT value FROM assistant_jobs WHERE id=?").get(f.job.id))!
+        .value,
+    ).version,
+  ).toBe(saved.version);
+  await f.restart();
+  await expect(f.nudge("after-restart")).rejects.toThrow("detached");
+  expect(f.sent).toHaveLength(0);
+  expect(f.charges).toHaveLength(0);
 });
-it("refuses stale or foreign withdrawals without fencing the current worker",async()=>{
- const f=await setup();const job=await detachable(f);
- await expect(f.managed.detach(job.id,"owned",job.version+1)).rejects.toThrow("changed");
- await expect(f.managed.detach(job.id,"foreign-session",job.version)).rejects.toThrow("not started");
- await f.store.db.prepare("DELETE FROM goals WHERE id=?").run(job.goalId);
- await expect(f.managed.detach(job.id,"owned",job.version)).rejects.toThrow("canonical");
- await f.nudge();expect(f.sent).toHaveLength(1);
+it("refuses stale or foreign withdrawals without fencing the current worker", async () => {
+  const f = await setup();
+  const job = await detachable(f);
+  await expect(f.managed.detach(job.id, "owned", job.version + 1)).rejects.toThrow("changed");
+  await expect(f.managed.detach(job.id, "foreign-session", job.version)).rejects.toThrow(
+    "not started",
+  );
+  await f.store.db.prepare("DELETE FROM goals WHERE id=?").run(job.goalId);
+  await expect(f.managed.detach(job.id, "owned", job.version)).rejects.toThrow("canonical");
+  await f.nudge();
+  expect(f.sent).toHaveLength(1);
 });
-it("fences a reserved follow-up before provider delivery when the owner detaches its session",async()=>{
- let entered!:()=>void,release!:()=>void;
- const waiting=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
- const f=await setup({reserveTokens:async()=>{entered();await gate;}});const job=await detachable(f);
- const pending=f.nudge();await waiting;
- await f.managed.detach(job.id,"owned",job.version);release();
- expect((await pending).operation?.delivery).toBe("unknown");expect(f.sent).toHaveLength(0);
+it("fences a reserved follow-up before provider delivery when the owner detaches its session", async () => {
+  let entered!: () => void, release!: () => void;
+  const waiting = new Promise<void>((resolve) => (entered = resolve)),
+    gate = new Promise<void>((resolve) => (release = resolve));
+  const f = await setup({
+    reserveTokens: async () => {
+      entered();
+      await gate;
+    },
+  });
+  const job = await detachable(f);
+  const pending = f.nudge();
+  await waiting;
+  await f.managed.detach(job.id, "owned", job.version);
+  release();
+  expect((await pending).operation?.delivery).toBe("unknown");
+  expect(f.sent).toHaveLength(0);
 });
-it("keeps accepted follow-up history when optional task-cache notification fails",async()=>{
- const onActivity=vi.fn(),onReceiptNotificationError=vi.fn(()=>{throw new Error("Diagnostic sink unavailable");});
- const f=await setup({onActivity,onReceiptNotificationError,onReceiptChanged:async()=>{throw new Error("Metadata cache unavailable");}});
- expect((await f.nudge()).operation).toMatchObject({state:"settled",delivery:"delivered"});
- expect(f.sent).toHaveLength(1);expect(onActivity).toHaveBeenCalledWith(expect.objectContaining({kind:"session.nudged",sessionId:"owned"}));
- expect(onReceiptNotificationError).toHaveBeenCalledOnce();
+it("keeps accepted follow-up history when optional task-cache notification fails", async () => {
+  const onActivity = vi.fn(),
+    onReceiptNotificationError = vi.fn(() => {
+      throw new Error("Diagnostic sink unavailable");
+    });
+  const f = await setup({
+    onActivity,
+    onReceiptNotificationError,
+    onReceiptChanged: async () => {
+      throw new Error("Metadata cache unavailable");
+    },
+  });
+  expect((await f.nudge()).operation).toMatchObject({ state: "settled", delivery: "delivered" });
+  expect(f.sent).toHaveLength(1);
+  expect(onActivity).toHaveBeenCalledWith(
+    expect.objectContaining({ kind: "session.nudged", sessionId: "owned" }),
+  );
+  expect(onReceiptNotificationError).toHaveBeenCalledOnce();
 });
-it("disables nudges without starting recovery when the saved limit is zero",async()=>{
- const recoverWorker=vi.fn();const f=await setup({nudgeLimit:async()=>0,recoverWorker});
- await expect(f.nudge()).rejects.toThrow("disabled");
- expect(f.sent).toHaveLength(0);expect(f.charges).toHaveLength(0);expect(recoverWorker).not.toHaveBeenCalled();
+it("disables nudges without starting recovery when the saved limit is zero", async () => {
+  const recoverWorker = vi.fn();
+  const f = await setup({ nudgeLimit: async () => 0, recoverWorker });
+  await expect(f.nudge()).rejects.toThrow("disabled");
+  expect(f.sent).toHaveLength(0);
+  expect(f.charges).toHaveLength(0);
+  expect(recoverWorker).not.toHaveBeenCalled();
 });
-it("allows one follow-up and then uses the canonical recovery port for a saved limit of one",async()=>{
- const recoverWorker=vi.fn(async input=>{await input.recheck();return{taskId:"task",state:"queued" as const,message:"Canonical recovery queued"};});
- const f=await setup({nudgeLimit:async()=>1,recoverWorker});
- await f.nudge("first");expect(f.sent).toHaveLength(1);
- expect((await f.nudge("second")).recovery?.state).toBe("queued");
- expect(f.sent).toHaveLength(1);expect(recoverWorker).toHaveBeenCalledOnce();
+it("allows one follow-up and then uses the canonical recovery port for a saved limit of one", async () => {
+  const recoverWorker = vi.fn(async (input) => {
+    await input.recheck();
+    return { taskId: "task", state: "queued" as const, message: "Canonical recovery queued" };
+  });
+  const f = await setup({ nudgeLimit: async () => 1, recoverWorker });
+  await f.nudge("first");
+  expect(f.sent).toHaveLength(1);
+  expect((await f.nudge("second")).recovery?.state).toBe("queued");
+  expect(f.sent).toHaveLength(1);
+  expect(recoverWorker).toHaveBeenCalledOnce();
 });
-it("rechecks a disabled nudge policy after reservation before any provider effect",async()=>{
- let limit=2;const f=await setup({nudgeLimit:async()=>limit,reserveTokens:async()=>{limit=0;}});
- expect((await f.nudge()).operation?.state).toBe("unknown");
- expect(f.sent).toHaveLength(0);
+it("rechecks a disabled nudge policy after reservation before any provider effect", async () => {
+  let limit = 2;
+  const f = await setup({
+    nudgeLimit: async () => limit,
+    reserveTokens: async () => {
+      limit = 0;
+    },
+  });
+  expect((await f.nudge()).operation?.state).toBe("unknown");
+  expect(f.sent).toHaveLength(0);
 });
 async function setup(overrides: Partial<AssistantSessionPorts> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "bycoda-managed-session-"));
@@ -227,26 +294,63 @@ it("grants status only for durable assistant-owned job sessions and captured sup
     ),
   ).rejects.toThrow();
 });
-it("uses persisted worker limits for status and the final nudge admission",async()=>{
- const f=await setup();
- const patch=async(value:Record<string,number>)=>{const row=await f.store.db.prepare("SELECT value FROM assistant_profile WHERE id='profile'").get();await f.store.db.prepare("UPDATE assistant_profile SET value=? WHERE id='profile'").run(JSON.stringify({...JSON.parse(row!.value),...value}));};
- await patch({workerSoftContext:10000,workerHardContext:30000});
- expect((await f.managed.request({op:"status",jobId:f.job.id,sessionId:"owned"},chief)).status?.contextAction).toBe("handoff");
- await expect(f.nudge()).rejects.toThrow("fresh-session handoff");expect(f.sent).toEqual([]);
- await patch({workerSoftContext:150000,workerHardContext:300000});
- let currentStore!:HostStore;
- const reserve=vi.fn(async()=>{const row=await currentStore.db.prepare("SELECT value FROM assistant_profile WHERE id='profile'").get();await currentStore.db.prepare("UPDATE assistant_profile SET value=? WHERE id='profile'").run(JSON.stringify({...JSON.parse(row!.value),workerSoftContext:10000,workerHardContext:30000}));});
- const g=await setup({reserveTokens:reserve});
- currentStore=g.store;
- expect((await g.nudge()).operation?.delivery).toBe("unknown");
- expect(reserve).toHaveBeenCalledTimes(1);expect(g.sent).toEqual([]);
+it("uses persisted worker limits for status and the final nudge admission", async () => {
+  const f = await setup();
+  const patch = async (value: Record<string, number>) => {
+    const row = await f.store.db
+      .prepare("SELECT value FROM assistant_profile WHERE id='profile'")
+      .get();
+    await f.store.db
+      .prepare("UPDATE assistant_profile SET value=? WHERE id='profile'")
+      .run(JSON.stringify({ ...JSON.parse(row!.value), ...value }));
+  };
+  await patch({ workerSoftContext: 10000, workerHardContext: 30000 });
+  expect(
+    (await f.managed.request({ op: "status", jobId: f.job.id, sessionId: "owned" }, chief)).status
+      ?.contextAction,
+  ).toBe("handoff");
+  await expect(f.nudge()).rejects.toThrow("fresh-session handoff");
+  expect(f.sent).toEqual([]);
+  await patch({ workerSoftContext: 150000, workerHardContext: 300000 });
+  let currentStore!: HostStore;
+  const reserve = vi.fn(async () => {
+    const row = await currentStore.db
+      .prepare("SELECT value FROM assistant_profile WHERE id='profile'")
+      .get();
+    await currentStore.db.prepare("UPDATE assistant_profile SET value=? WHERE id='profile'").run(
+      JSON.stringify({
+        ...JSON.parse(row!.value),
+        workerSoftContext: 10000,
+        workerHardContext: 30000,
+      }),
+    );
+  });
+  const g = await setup({ reserveTokens: reserve });
+  currentStore = g.store;
+  expect((await g.nudge()).operation?.delivery).toBe("unknown");
+  expect(reserve).toHaveBeenCalledTimes(1);
+  expect(g.sent).toEqual([]);
 });
-it("fallback status uses exact current-run output activity and never treats refreshed row timestamps as progress",async()=>{
- const f=await setup({status:undefined});const record={projectId:"project",runId:"current",status:"running",updatedAt:Date.now(),runActivity:{runId:"current",lastActivityAt:1000},session:{id:"owned",title:"Worker",cwd:f.dir,blocks:[]}} as any;
- vi.spyOn(f.store,"session").mockResolvedValue(record);
- const read=async()=>(await f.managed.request({op:"status",jobId:f.job.id,sessionId:"owned"},chief)).status!;
- expect((await read()).lastActivityAt).toBe(1000);record.updatedAt=Date.now()+1;expect((await read()).lastActivityAt).toBe(1000);
- record.runActivity.runId="old";expect(await read()).not.toHaveProperty("lastActivityAt");record.runActivity=undefined;expect(await read()).not.toHaveProperty("lastActivityAt");
+it("fallback status uses exact current-run output activity and never treats refreshed row timestamps as progress", async () => {
+  const f = await setup({ status: undefined });
+  const record = {
+    projectId: "project",
+    runId: "current",
+    status: "running",
+    updatedAt: Date.now(),
+    runActivity: { runId: "current", lastActivityAt: 1000 },
+    session: { id: "owned", title: "Worker", cwd: f.dir, blocks: [] },
+  } as any;
+  vi.spyOn(f.store, "session").mockResolvedValue(record);
+  const read = async () =>
+    (await f.managed.request({ op: "status", jobId: f.job.id, sessionId: "owned" }, chief)).status!;
+  expect((await read()).lastActivityAt).toBe(1000);
+  record.updatedAt = Date.now() + 1;
+  expect((await read()).lastActivityAt).toBe(1000);
+  record.runActivity.runId = "old";
+  expect(await read()).not.toHaveProperty("lastActivityAt");
+  record.runActivity = undefined;
+  expect(await read()).not.toHaveProperty("lastActivityAt");
 });
 it("books full context, stamps the Host author and limits attempts to two across restarts", async () => {
   const f = await setup();

@@ -343,7 +343,7 @@ export function createApprovalIntentRegistry(
   }
   const notify = () => {
     state.owner!.changed();
-    for (const listener of [...state.listeners]) {
+    for (const listener of Array.from(state.listeners)) {
       try {
         listener();
       } catch {
@@ -498,7 +498,7 @@ export function createApprovalIntentRegistry(
         notify();
       }
     }
-    for (const entry of [...state.records]) {
+    for (const entry of Array.from(state.records)) {
       if (entry.sessionId !== before.id || entry.represented) continue;
       if (entry.sourceFingerprint !== undefined) continue;
       const block = request(before, entry.requestId);
@@ -560,7 +560,7 @@ export function createApprovalIntentRegistry(
           entry.hostCursor = undefined;
       return;
     }
-    for (const entry of [...state.records]) {
+    for (const entry of Array.from(state.records)) {
       if (
         entry.sessionId !== shellId ||
         entry.represented ||

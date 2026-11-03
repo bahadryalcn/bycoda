@@ -166,6 +166,12 @@ export function toolAuthorizationScope(group: McpGroup, action: string): "read" 
 export class McpHttp {
   readonly tokens: McpTokens;
   private window = { start: 0, count: 0, active: 0 };
+  // Per-credential limits so one noisy client cannot starve the others; `window` stays
+  // as a generous global safety cap.
+  private readonly tokenWindows = new Map<
+    string,
+    { start: number; count: number; active: number }
+  >();
   constructor(
     private readonly options: Options,
     private readonly now = Date.now,
@@ -272,12 +278,6 @@ export class McpHttp {
       response.setHeader("X-Bycoda-Auth-Stage", "before-dispatch");
       return reject(401, "MCP credential is invalid, expired or outside this scope.");
     }
-    const now = this.now();
-    if (now - this.window.start >= 60_000) this.window = { ...this.window, start: now, count: 0 };
-    if (++this.window.count > 240 || this.window.active >= 16) {
-      response.setHeader("Retry-After", "60");
-      return reject(429, "MCP request limit exceeded.");
-    }
     if (request.method !== "POST") {
       response.setHeader("Allow", "POST");
       return reject(405, "MCP subscriptions and session deletion are not supported.");
@@ -296,7 +296,30 @@ export class McpHttp {
         : MAX_BYTES;
     if (Number(request.headers["content-length"] ?? 0) > maxBytes)
       return reject(413, "MCP request too large.");
+    // Count only requests that passed cheap validation, per authenticated credential.
+    const now = this.now();
+    if (now - this.window.start >= 60_000) this.window = { ...this.window, start: now, count: 0 };
+    for (const [key, entry] of this.tokenWindows)
+      if (entry.active === 0 && now - entry.start >= 60_000) this.tokenWindows.delete(key);
+    let tokenWindow = this.tokenWindows.get(token);
+    if (!tokenWindow)
+      this.tokenWindows.set(token, (tokenWindow = { start: now, count: 0, active: 0 }));
+    else if (now - tokenWindow.start >= 60_000) {
+      tokenWindow.start = now;
+      tokenWindow.count = 0;
+    }
+    if (
+      ++tokenWindow.count > 240 ||
+      tokenWindow.active >= 16 ||
+      ++this.window.count > 1200 ||
+      this.window.active >= 64
+    ) {
+      response.setHeader("Retry-After", "60");
+      return reject(429, "MCP request limit exceeded.");
+    }
+    const ownedWindow = tokenWindow;
     this.window.active++;
+    ownedWindow.active++;
     let id: string | number | null = null;
     try {
       const raw = await new Promise<Buffer | undefined>((resolve, rejectRead) => {
@@ -477,6 +500,7 @@ export class McpHttp {
         );
     } finally {
       this.window.active--;
+      ownedWindow.active--;
     }
     return true;
   }

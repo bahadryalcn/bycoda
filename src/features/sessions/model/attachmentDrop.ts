@@ -3,12 +3,7 @@ import type { ExternalDropVerdict } from "../../../shared/lib/externalDrop";
 import { MAX_ATTACHMENTS } from "./attachments";
 
 /** Why a surface cannot take dropped files right now. */
-export type AttachmentDropBlock =
-  | "unsupported"
-  | "remote"
-  | "unavailable"
-  | "reading"
-  | "full";
+export type AttachmentDropBlock = "unsupported" | "remote" | "unavailable" | "reading" | "full";
 
 export function attachmentDropBlockReason(block: AttachmentDropBlock): string {
   switch (block) {

@@ -4,16 +4,16 @@ Code paths are repository-relative. Verify current callers and platform gates fo
 
 ## Ownership
 
-| Area | Starting points |
-| --- | --- |
-| Preferences and preview | `src/features/settings/ui/AppearanceSettings.tsx`, `AppearanceSettings.css`, `AppearancePreviews.tsx`, `AppearancePreviews.css`, `useAppearanceSettings.tsx` |
-| Preference state and durable outcomes | `src/features/settings/model/appearance.ts`, `appearancePreferences.ts`, `appearancePersistence.ts`, `uiScale.ts`, `themePalettes.ts` |
-| Motion/session display | `src/features/settings/ui/AppearanceBehaviorSettings.tsx`, `SessionListSettings.tsx`; model `decorativeMotion.ts`; `src/features/sessions/model/sessionListDisplay.ts` |
-| Global image effects | `src/features/settings/model/newThreadBackgroundEffects.ts`, `newThreadBackgroundEffects.worker.ts`; follow image controls and SessionPane consumers |
-| Project image precedence | `src/features/projects/model/chatBackground.ts`, `projectChatBackground.ts`; `src/features/projects/ui/ProjectBackgroundDialog.tsx`, `useProjectBackgroundEffect.ts` |
-| Live scenes | `src/features/settings/ui/LiveBackgroundPicker.tsx`, `LiveBackgroundCanvas.tsx`, `live-background/`; `src/features/settings/model/liveBackground.ts` |
-| Shared theme | `src/shared/theme/palette.ts`, `src/styles/palette.css`, `index.css`, `arc.css`; use existing theme references |
-| Navigation/ambient consumers | `src/app/shell/Sidebar.tsx`, `ProjectRail.tsx`; `src/features/sessions/ui/CrewScene.tsx`, `CrewBackdrop.tsx`; follow current tab-motion consumer |
+| Area                                  | Starting points                                                                                                                                                        |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Preferences and preview               | `src/features/settings/ui/AppearanceSettings.tsx`, `AppearanceSettings.css`, `AppearancePreviews.tsx`, `AppearancePreviews.css`, `useAppearanceSettings.tsx`           |
+| Preference state and durable outcomes | `src/features/settings/model/appearance.ts`, `appearancePreferences.ts`, `appearancePersistence.ts`, `uiScale.ts`, `themePalettes.ts`                                  |
+| Motion/session display                | `src/features/settings/ui/AppearanceBehaviorSettings.tsx`, `SessionListSettings.tsx`; model `decorativeMotion.ts`; `src/features/sessions/model/sessionListDisplay.ts` |
+| Global image effects                  | `src/features/settings/model/newThreadBackgroundEffects.ts`, `newThreadBackgroundEffects.worker.ts`; follow image controls and SessionPane consumers                   |
+| Project image precedence              | `src/features/projects/model/chatBackground.ts`, `projectChatBackground.ts`; `src/features/projects/ui/ProjectBackgroundDialog.tsx`, `useProjectBackgroundEffect.ts`   |
+| Live scenes                           | `src/features/settings/ui/LiveBackgroundPicker.tsx`, `LiveBackgroundCanvas.tsx`, `live-background/`; `src/features/settings/model/liveBackground.ts`                   |
+| Shared theme                          | `src/shared/theme/palette.ts`, `src/styles/palette.css`, `index.css`, `arc.css`; use existing theme references                                                         |
+| Navigation/ambient consumers          | `src/app/shell/Sidebar.tsx`, `ProjectRail.tsx`; `src/features/sessions/ui/CrewScene.tsx`, `CrewBackdrop.tsx`; follow current tab-motion consumer                       |
 
 ## Persistence and platform boundaries
 

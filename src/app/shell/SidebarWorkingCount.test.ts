@@ -127,9 +127,18 @@ function badge() {
   return container.querySelector("[data-workspace-working-count]");
 }
 
-it("caps the displayed working count without losing the real accessible total or live mark",async()=>{
-  props.sessions=Array.from({length:128},(_,index)=>({id:`working-${index}`,cwd:props.cwd,harness:"codex" as const,model:"",runtimeMode:"supervised" as const,title:`Working ${index}`,createdAt:1,updatedAt:1}));
-  props.busySessionIds=new Set(props.sessions.map(session=>session.id));
+it("caps the displayed working count without losing the real accessible total or live mark", async () => {
+  props.sessions = Array.from({ length: 128 }, (_, index) => ({
+    id: `working-${index}`,
+    cwd: props.cwd,
+    harness: "codex" as const,
+    model: "",
+    runtimeMode: "supervised" as const,
+    title: `Working ${index}`,
+    createdAt: 1,
+    updatedAt: 1,
+  }));
+  props.busySessionIds = new Set(props.sessions.map((session) => session.id));
   await render();
   expect(badge()?.textContent).toBe("99+");
   expect(badge()?.getAttribute("aria-label")).toBe("128 working sessions");

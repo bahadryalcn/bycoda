@@ -305,7 +305,10 @@ async function containedFile(root: string, path: string): Promise<string | undef
 
 const SHIM_PATH = String.raw`"(?:%dp0%\\|%~dp0)([^"%]+)"`;
 /** `"%_prog%" | "<bundled node.exe>"`, then the target and `%*`, as written by npm's cmd-shim. */
-const SHIM_LAUNCH = new RegExp(String.raw`(?:("%_prog%")|${SHIM_PATH})?\s*${SHIM_PATH}\s+%\*`, "gi");
+const SHIM_LAUNCH = new RegExp(
+  String.raw`(?:("%_prog%")|${SHIM_PATH})?\s*${SHIM_PATH}\s+%\*`,
+  "gi",
+);
 
 /** Read the target of an npm/installer `.cmd` shim instead of running it through cmd.exe.
  * Only targets inside the shim's directory are accepted; nested shims are not followed. */

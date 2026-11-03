@@ -85,7 +85,10 @@ export function HtmlPreview({
         </Button>
       </div>
       {state.error ? (
-        <div role="alert" className="min-w-0 break-words p-6 text-ui-caption text-(--ui-tone-danger-fg)">
+        <div
+          role="alert"
+          className="min-w-0 break-words p-6 text-ui-caption text-(--ui-tone-danger-fg)"
+        >
           {state.error}
         </div>
       ) : state.url ? (

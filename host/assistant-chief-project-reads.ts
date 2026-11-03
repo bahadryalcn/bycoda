@@ -40,13 +40,9 @@ export const ChiefProjectReadRequestSchema = z.discriminatedUnion("op", [
     sourceToken: z.string().regex(/^[a-f0-9]{64}$/),
   }),
 ]);
-export type ChiefProjectReadRequest = z.infer<
-  typeof ChiefProjectReadRequestSchema
->;
-const hash = (value: unknown) =>
-  createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const cut = (text: string | undefined, max: number) =>
-  (text ?? "").slice(0, max);
+export type ChiefProjectReadRequest = z.infer<typeof ChiefProjectReadRequestSchema>;
+const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const cut = (text: string | undefined, max: number) => (text ?? "").slice(0, max);
 const EXTERNAL_INBOX = {
   available: false,
   reason:
@@ -68,12 +64,7 @@ export class AssistantChiefProjectReads {
     private readonly projectJob: (id: string) => Promise<JobSource>,
   ) {}
   private async row<T>(
-    table:
-      | "stewards"
-      | "automations"
-      | "assistant_jobs"
-      | "tasks"
-      | "assistant_quick_automations",
+    table: "stewards" | "automations" | "assistant_jobs" | "tasks" | "assistant_quick_automations",
     id: string,
   ): Promise<T | undefined> {
     const available = await this.store.db
@@ -131,9 +122,7 @@ export class AssistantChiefProjectReads {
       automation.projectId !== projectId ||
       automation.createdAt !== receipt.automationCreatedAt
     )
-      throw new Error(
-        "The exact automation creation receipt is unavailable or changed.",
-      );
+      throw new Error("The exact automation creation receipt is unavailable or changed.");
     return {
       job,
       projectId,
@@ -155,10 +144,7 @@ export class AssistantChiefProjectReads {
       ? [
           {
             value: JSON.stringify(
-              await this.row<HostAutomation>(
-                "automations",
-                source.automationId,
-              ),
+              await this.row<HostAutomation>("automations", source.automationId),
             ),
           },
         ]
@@ -258,8 +244,7 @@ export class AssistantChiefProjectReads {
   async resolve(request: ChiefProjectReadRequest) {
     const scope = await this.scope(request.jobId, request.projectId);
     if (request.op.startsWith("stewards.")) {
-      if (scope.automationId)
-        throw new Error("A quick automation cannot read project stewards.");
+      if (scope.automationId) throw new Error("A quick automation cannot read project stewards.");
       const list = await this.rows<HostSteward>("stewards", scope);
       if (request.op === "stewards.list")
         return {
@@ -270,10 +255,7 @@ export class AssistantChiefProjectReads {
             truncated: list.truncated,
           }),
         };
-      const target = request as Extract<
-          ChiefProjectReadRequest,
-          { op: "stewards.read" }
-        >,
+      const target = request as Extract<ChiefProjectReadRequest, { op: "stewards.read" }>,
         value = await this.row<HostSteward>("stewards", target.id);
       if (
         !value ||
@@ -311,15 +293,11 @@ export class AssistantChiefProjectReads {
       };
     }
     const inbox = await this.attention(scope, automations.items, automations);
-    if (request.op === "inbox.list")
-      return { source: inbox.source, data: () => inbox };
+    if (request.op === "inbox.list") return { source: inbox.source, data: () => inbox };
     if (request.op !== "inbox.read" || request.sourceToken !== inbox.source)
       throw new Error("The attention source changed; take fresh status.");
     const value = inbox.items.find((value) => value.id === request.id);
-    if (!value)
-      throw new Error(
-        "This attention item is not in the bounded canonical queue.",
-      );
+    if (!value) throw new Error("This attention item is not in the bounded canonical queue.");
     return {
       source: hash({ scope: scope.source, inboxSource: inbox.source, value }),
       data: () => ({
@@ -350,9 +328,7 @@ export class AssistantChiefProjectReads {
       },
       automations: {
         available: automations.available,
-        items: automations.items
-          .slice(0, 3)
-          .map((value) => this.automation(value)),
+        items: automations.items.slice(0, 3).map((value) => this.automation(value)),
         truncated: automations.truncated || automations.items.length > 3,
       },
       inbox: {

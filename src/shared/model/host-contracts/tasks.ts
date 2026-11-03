@@ -149,7 +149,14 @@ const metadataFields = {
   status: TaskStatusSchema.optional(),
   sessionId: z.string().optional(),
   runId: z.string().optional(),
-  runStall:z.strictObject({sessionId:z.string(),runId:z.string(),lastActivityAt:SafeCounterSchema,detectedAt:SafeCounterSchema}).optional(),
+  runStall: z
+    .strictObject({
+      sessionId: z.string(),
+      runId: z.string(),
+      lastActivityAt: SafeCounterSchema,
+      detectedAt: SafeCounterSchema,
+    })
+    .optional(),
   error: z.string().optional(),
   retryFeedback: z.string().optional(),
   repairAttempts: z.number().optional(),
@@ -258,7 +265,9 @@ export const TaskPayloadSchema = TaskConfigurationSchema.extend({
   expectedUpdatedAt: z.number().optional(),
 });
 export const HostTaskSchema = TaskConfigurationSchema.extend({
-  assistantFollowups:z.strictObject({delivered:SafeCounterSchema,unconfirmed:SafeCounterSchema}).optional(),
+  assistantFollowups: z
+    .strictObject({ delivered: SafeCounterSchema, unconfirmed: SafeCounterSchema })
+    .optional(),
   modelSettings: textMap,
   maxRunMinutes: z.number(),
   reviewerConfig: reviewerConfig.optional(),

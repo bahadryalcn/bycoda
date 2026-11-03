@@ -338,40 +338,37 @@ export function SshServerEditor({
                 aria-label={t("Endpoint preview")}
                 className="border-t border-stroke pbs-3 text-ui-caption"
               >
-                <p className="break-all font-medium">
-                  {sshEndpointPreview(endpoint)}
-                </p>
+                <p className="break-all font-medium">{sshEndpointPreview(endpoint)}</p>
                 {endpoint.jumpHosts?.length ? (
                   <p className="mbs-1 break-all text-(--ui-text-muted)">
                     {t("Jump chain")}: {endpoint.jumpHosts.join(" → ")}
                   </p>
-    
-            ) : null}
-              {endpoint.jumpPolicies?.length ? (
-                <p className="mbs-1 break-all text-(--ui-text-muted)">
-                  {t("Jump chain")}: {endpoint.jumpPolicies.map(sshEndpointPreview).join(" → ")}
-                </p>
-              ) : null}
-              {endpoint.httpProxy ? (
-                <p className="mbs-1 break-all text-(--ui-text-muted)">
-                  {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
-                  {sshEndpointPreview(endpoint.httpProxy)}
-                </p>
-              ) : null}
-              {endpoint.identityFile ? (
-                <p className="mbs-1 break-all text-(--ui-text-muted)">
-                  {t("Identity file")}: {endpoint.identityFile}
-                </p>
-              ) : null}
-              {endpoint.certificateFile ? (
-                <p className="mbs-1 break-all text-(--ui-text-muted)">
-                  {t("Public SSH certificate file")}: {endpoint.certificateFile}
-                </p>
-              ) : null}
-              {!endpoint.user ? (
-                <p className="mbs-1 text-(--ui-text-muted)">{t("Uses the default SSH user.")}</p>
-              ) : null}
-            </div>
+                ) : null}
+                {endpoint.jumpPolicies?.length ? (
+                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                    {t("Jump chain")}: {endpoint.jumpPolicies.map(sshEndpointPreview).join(" → ")}
+                  </p>
+                ) : null}
+                {endpoint.httpProxy ? (
+                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                    {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
+                    {sshEndpointPreview(endpoint.httpProxy)}
+                  </p>
+                ) : null}
+                {endpoint.identityFile ? (
+                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                    {t("Identity file")}: {endpoint.identityFile}
+                  </p>
+                ) : null}
+                {endpoint.certificateFile ? (
+                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                    {t("Public SSH certificate file")}: {endpoint.certificateFile}
+                  </p>
+                ) : null}
+                {!endpoint.user ? (
+                  <p className="mbs-1 text-(--ui-text-muted)">{t("Uses the default SSH user.")}</p>
+                ) : null}
+              </div>
             ) : null}
           </>
         ) : null}

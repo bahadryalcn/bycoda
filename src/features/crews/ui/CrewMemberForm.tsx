@@ -359,9 +359,7 @@ export function CrewMemberForm({
             </p>
           </>
         )}
-        {modelError ? (
-          <InlineError>{modelError}</InlineError>
-        ) : null}
+        {modelError ? <InlineError>{modelError}</InlineError> : null}
       </div>
       {advancedExtra ? (
         <div className="flex flex-col gap-2 pt-1">

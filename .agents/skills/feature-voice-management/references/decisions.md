@@ -10,4 +10,4 @@ Existing per-operation validators, approvals and source identity remain authorit
 
 Same owner session, implementation authorization:
 
-> chatte göndermedim bir mesaj resim dosya vs varsada bunlarıda görebilmesi gerekiyor.  Subagentlar ile 10 tane subagent ile bunları yapmaya başla lütfen
+> chatte göndermedim bir mesaj resim dosya vs varsada bunlarıda görebilmesi gerekiyor. Subagentlar ile 10 tane subagent ile bunları yapmaya başla lütfen

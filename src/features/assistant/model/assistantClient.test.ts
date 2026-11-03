@@ -40,10 +40,9 @@ it("uses setup navigation until a name exists, and keeps the chosen name unchang
     title: "Assistant Arif",
     room: "Room · Arif",
   });
-  expect(
-    assistantIdentity({ ...profile, showTitle: false }, "tr"),
-  ).toMatchObject({ title: "Arif", room: "Arif'in room" });
-  expect(assistantIdentity({ ...profile, name: "X" }, "tr").room).toBe(
-    "Room · X",
-  );
+  expect(assistantIdentity({ ...profile, showTitle: false }, "tr")).toMatchObject({
+    title: "Arif",
+    room: "Arif'in room",
+  });
+  expect(assistantIdentity({ ...profile, name: "X" }, "tr").room).toBe("Room · X");
 });

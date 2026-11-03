@@ -8,7 +8,10 @@ import {
   reconcileToolText,
 } from "./commandInspection";
 
-function command(tool: Partial<NonNullable<Block["tool"]>> = {}, patch: Partial<Block> = {}): Block {
+function command(
+  tool: Partial<NonNullable<Block["tool"]>> = {},
+  patch: Partial<Block> = {},
+): Block {
   return {
     id: "c1",
     role: "tool",
@@ -53,13 +56,21 @@ describe("commandText", () => {
 describe("inspectCommand", () => {
   it("keeps the fuller canonical output over a stale preview", () => {
     const block = command(
-      { status: "completed", output: "line 1\nline 2", preview: { kind: "shell", output: "line 2" } },
+      {
+        status: "completed",
+        output: "line 1\nline 2",
+        preview: { kind: "shell", output: "line 2" },
+      },
       {},
     );
     expect(inspectCommand(block, true).output).toBe("line 1\nline 2");
   });
   it("reports the failure once and keeps it out of the output", () => {
-    const block = command({ status: "failed", detail: "exit 1", preview: { kind: "shell", output: "exit 1" } });
+    const block = command({
+      status: "failed",
+      detail: "exit 1",
+      preview: { kind: "shell", output: "exit 1" },
+    });
     const result = inspectCommand(block, false);
     expect(result.error).toBe("exit 1");
     expect(result.output).toBe("");
@@ -81,7 +92,9 @@ describe("emptyOutputReason", () => {
     expect(emptyOutputReason(inspectCommand(command(), true))).toBe("running");
     expect(emptyOutputReason(inspectCommand(command(), false))).toBe("interrupted");
     expect(emptyOutputReason(inspectCommand(command({ status: "completed" }), false))).toBe("done");
-    expect(emptyOutputReason(inspectCommand(command({ status: "stopped" }), false))).toBe("stopped");
+    expect(emptyOutputReason(inspectCommand(command({ status: "stopped" }), false))).toBe(
+      "stopped",
+    );
     expect(emptyOutputReason(inspectCommand(command({ detail: "out" }), true))).toBeNull();
   });
   it("does not read the shell text to claim silence", () => {

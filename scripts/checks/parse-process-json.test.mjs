@@ -16,5 +16,8 @@ test("retains escaped quotes, backslashes, unicode and structural whitespace", (
 test("does not repair malformed process identities or JSON structure", () => {
   assert.throws(() => parseProcessJson('[{"pid":42,}]'), SyntaxError);
   assert.throws(() => parseProcessJson(`[{"pid":42}]${String.fromCharCode(7)}`), SyntaxError);
-  assert.throws(() => parseProcessJson(`{"command":"bad\\${String.fromCharCode(7)}"}`), SyntaxError);
+  assert.throws(
+    () => parseProcessJson(`{"command":"bad\\${String.fromCharCode(7)}"}`),
+    SyntaxError,
+  );
 });

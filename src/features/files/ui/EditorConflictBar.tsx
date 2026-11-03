@@ -62,10 +62,7 @@ export function EditorConflictBar({
           <div className="flex items-center gap-1">
             {fileNote ? (
               <OverflowTooltip label={fileNote}>
-                <span
-                  className="mr-1 truncate text-[var(--ui-text-secondary)]"
-                  role="status"
-                >
+                <span className="mr-1 truncate text-[var(--ui-text-secondary)]" role="status">
                   {fileNote}
                 </span>
               </OverflowTooltip>
@@ -108,9 +105,7 @@ export function EditorConflictBar({
           <OverflowTooltip label={error}>
             <span className="min-w-0 truncate text-[var(--ui-text-secondary)]" role="status">
               {error ? (
-                <span className="text-(--ui-tone-danger-fg)">
-                  {error}
-                </span>
+                <span className="text-(--ui-tone-danger-fg)">{error}</span>
               ) : (
                 t("All conflicts resolved")
               )}
@@ -119,10 +114,7 @@ export function EditorConflictBar({
           <div className="flex shrink-0 items-center gap-1">
             {fileNote ? (
               <OverflowTooltip label={fileNote}>
-                <span
-                  className="truncate text-[var(--ui-text-secondary)]"
-                  role="status"
-                >
+                <span className="truncate text-[var(--ui-text-secondary)]" role="status">
                   {fileNote}
                 </span>
               </OverflowTooltip>

@@ -98,8 +98,11 @@ export function filterSessionsByHarness(
 }
 
 /** Management is read from the Host stamp, never inferred from titles/authors. */
-export function filterAssistantManagedSessions(rows: SessionSummary[], managedOnly: boolean): SessionSummary[] {
-  return managedOnly ? rows.filter(row => row.managedBy?.assistant === true) : rows;
+export function filterAssistantManagedSessions(
+  rows: SessionSummary[],
+  managedOnly: boolean,
+): SessionSummary[] {
+  return managedOnly ? rows.filter((row) => row.managedBy?.assistant === true) : rows;
 }
 
 export function filterSessionsByTime(

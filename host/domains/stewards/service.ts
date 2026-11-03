@@ -4,10 +4,7 @@ import { assertDomainAuthority, type HostDomainContext } from "../context";
 
 export interface HostStewardsServicePorts {
   stewards: {
-    withAuthorization<T>(
-      authorized: () => Promise<boolean>,
-      work: () => Promise<T>,
-    ): Promise<T>;
+    withAuthorization<T>(authorized: () => Promise<boolean>, work: () => Promise<T>): Promise<T>;
     list(): Promise<dto.HostSteward[]>;
     save(raw: unknown): Promise<dto.HostSteward>;
     delete(id: string): Promise<void>;
@@ -34,8 +31,7 @@ export function createHostStewardsService(ports: HostStewardsServicePorts) {
       // V1 ignores outer extras and delegates the complete nested payload to the
       // old owner parser, coercing only the named ID routes as before.
       const legacy = { ...(raw as Record<string, unknown>) };
-      if ("stewardId" in schema.shape)
-        legacy.stewardId = String(legacy.stewardId ?? "");
+      if ("stewardId" in schema.shape) legacy.stewardId = String(legacy.stewardId ?? "");
       if ("taskId" in schema.shape) legacy.taskId = String(legacy.taskId ?? "");
       params = legacy as z.output<S>;
     } else params = schema.parse(raw) as z.output<S>;
@@ -62,22 +58,16 @@ export function createHostStewardsService(ports: HostStewardsServicePorts) {
   }
   return {
     list: (p: unknown, c: HostDomainContext, o: Options = {}) =>
-      execute(dto.StewardsEmptyParamsSchema, p, c, o, false, () =>
-        ports.stewards.list(),
-      ),
+      execute(dto.StewardsEmptyParamsSchema, p, c, o, false, () => ports.stewards.list()),
     save: (p: unknown, c: HostDomainContext, o: Options = {}) =>
-      execute(dto.StewardsSaveParamsSchema, p, c, o, true, (v) =>
-        ports.stewards.save(v.steward),
-      ),
+      execute(dto.StewardsSaveParamsSchema, p, c, o, true, (v) => ports.stewards.save(v.steward)),
     delete: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.StewardsIdParamsSchema, p, c, o, true, async (v) => {
         await ports.stewards.delete(v.stewardId);
         return { deleted: true as const };
       }),
     runNow: (p: unknown, c: HostDomainContext, o: Options = {}) =>
-      execute(dto.StewardsIdParamsSchema, p, c, o, true, (v) =>
-        ports.stewards.runNow(v.stewardId),
-      ),
+      execute(dto.StewardsIdParamsSchema, p, c, o, true, (v) => ports.stewards.runNow(v.stewardId)),
     decline: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.StewardsDeclineParamsSchema, p, c, o, true, async (v) => {
         await ports.stewards.decline(v.taskId);

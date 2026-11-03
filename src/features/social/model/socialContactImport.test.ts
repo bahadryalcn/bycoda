@@ -9,7 +9,9 @@ describe("previewContactImport", () => {
     expect(previewContactImport("nope", context).error).toBeTruthy();
     expect(previewContactImport("{}", context).error).toBeTruthy();
     expect(previewContactImport("[]", context).error).toBeTruthy();
-    expect(previewContactImport(JSON.stringify(Array(501).fill(good)), context).error).toContain("500");
+    expect(previewContactImport(JSON.stringify(Array(501).fill(good)), context).error).toContain(
+      "500",
+    );
   });
 
   it("keeps valid rows importable and reports each invalid row with its reason", () => {
@@ -32,7 +34,9 @@ describe("previewContactImport", () => {
 
   it("sends only fields the import reads and never carries consent or eligibility", () => {
     const { rows } = previewContactImport(
-      JSON.stringify([{ ...good, consent: { allowed: true }, replyEligible: true, optedOut: false, id: "x" }]),
+      JSON.stringify([
+        { ...good, consent: { allowed: true }, replyEligible: true, optedOut: false, id: "x" },
+      ]),
       context,
     );
     expect(rows[0].contact).toEqual(good);

@@ -163,7 +163,8 @@ export function clearProjectChatBackgroundSetting(project: string) {
   const next = read();
   if (!(project in next)) return;
   delete next[project];
-  if (!write(next)) throw new Error("Could not save project background settings. Retry removing the image.");
+  if (!write(next))
+    throw new Error("Could not save project background settings. Retry removing the image.");
   notifyProjectChatBackgroundChanged();
 }
 

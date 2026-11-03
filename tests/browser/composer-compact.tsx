@@ -59,15 +59,15 @@ const sessionId = "composer-reading-fixture";
 const DRAFTS: Record<string, string> = {
   none: "",
   short: "Summarise the failing tests",
-  multi: "Please check the three files below,\nthen explain the failure\nand propose the smallest safe fix.",
+  multi:
+    "Please check the three files below,\nthen explain the failure\nand propose the smallest safe fix.",
   long: Array.from(
     { length: 24 },
     (_, index) => `Line ${index + 1} of a very long draft that must scroll inside the field.`,
   ).join("\n"),
-  wrap:
-    "A single long paragraph that wraps over several lines in a narrow pane because it keeps going without any line break at all, which is what a pasted sentence looks like. ".repeat(
-      2,
-    ),
+  wrap: "A single long paragraph that wraps over several lines in a narrow pane because it keeps going without any line break at all, which is what a pasted sentence looks like. ".repeat(
+    2,
+  ),
 };
 const turns = Number(params.get("turns") ?? 40);
 const baseBlocks: Block[] = Array.from({ length: turns }, (_, index): Block[] => [

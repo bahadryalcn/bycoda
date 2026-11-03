@@ -1,14 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { runLimitBreach } from "../src/features/automations/model/automationLimits";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
-import { sessionNeedsInput, type RuntimeMode, type SessionMessageAuthor } from "../src/features/sessions/model/session";
+import {
+  sessionNeedsInput,
+  type RuntimeMode,
+  type SessionMessageAuthor,
+} from "../src/features/sessions/model/session";
 import type { HostEngine } from "./engine";
 import type { HostStore } from "./store";
 
 export const STOPPED_BY_USER = "Stopped by you.";
 export const HOST_INTERRUPTED = "The host stopped during this run.";
 
-export type SessionRunEngine = Pick<HostEngine, "command" | "updateSession"> & Partial<Pick<HostEngine,"withMessageAuthor"|"withCommandAdmission">>;
+export type SessionRunEngine = Pick<HostEngine, "command" | "updateSession"> &
+  Partial<Pick<HostEngine, "withMessageAuthor" | "withCommandAdmission">>;
 
 /** What an unattended run needs to start: one prompt in a fresh session. */
 export type SessionRunSpec = {
@@ -40,7 +45,7 @@ export type SessionRun = {
 };
 
 export type SessionRunState =
-  | { state: "running"; needsInput: boolean; lastActivityAt?:number }
+  | { state: "running"; needsInput: boolean; lastActivityAt?: number }
   /** Past its time limit: save `error`, then cancel the turn. */
   | { state: "overLimit"; error: string }
   | {
@@ -59,7 +64,7 @@ export async function launchSessionRun(
 ): Promise<{ sessionId?: string; runId?: string; error?: string; deferred?: boolean }> {
   let sessionId: string | undefined;
   try {
-    if (!await admitted()) return { deferred: true };
+    if (!(await admitted())) return { deferred: true };
     sessionId = (
       await engine.command({
         type: "create",
@@ -77,16 +82,17 @@ export async function launchSessionRun(
         runtimeMode: spec.runtimeMode,
       })
     ).sessionId;
-    if (!await admitted()) return { sessionId, deferred: true };
+    if (!(await admitted())) return { sessionId, deferred: true };
     await engine.updateSession(sessionId, { title: spec.title });
-    if (!await admitted()) return { sessionId, deferred: true };
-    const send = () => engine.command({
-      type: "send",
-      commandId: spec.requestId ? `${spec.requestId}:send` : randomUUID(),
-      sessionId,
-      text: spec.prompt,
-    });
-    if (spec.author && engine.withMessageAuthor) await engine.withMessageAuthor(spec.author,send);
+    if (!(await admitted())) return { sessionId, deferred: true };
+    const send = () =>
+      engine.command({
+        type: "send",
+        commandId: spec.requestId ? `${spec.requestId}:send` : randomUUID(),
+        sessionId,
+        text: spec.prompt,
+      });
+    if (spec.author && engine.withMessageAuthor) await engine.withMessageAuthor(spec.author, send);
     else await send();
     return { sessionId, runId: (await store.session(sessionId)).runId };
   } catch (error) {
@@ -115,11 +121,22 @@ export async function sessionRunState(
     const breach = run.error
       ? null
       : runLimitBreach({ maxRunMinutes, maxRunsPerDay: 0 }, { startedAt: run.startedAt, now });
-    const activity=session.runActivity;
-    const lastActivityAt=activity&&activity.runId===run.runId&&Number.isSafeInteger(activity.lastActivityAt)&&activity.lastActivityAt>=run.startedAt&&activity.lastActivityAt<=now?activity.lastActivityAt:undefined;
+    const activity = session.runActivity;
+    const lastActivityAt =
+      activity &&
+      activity.runId === run.runId &&
+      Number.isSafeInteger(activity.lastActivityAt) &&
+      activity.lastActivityAt >= run.startedAt &&
+      activity.lastActivityAt <= now
+        ? activity.lastActivityAt
+        : undefined;
     return breach
       ? { state: "overLimit", error: breach }
-      : { state: "running", needsInput: sessionNeedsInput(session.session),...(lastActivityAt===undefined?{}:{lastActivityAt}) };
+      : {
+          state: "running",
+          needsInput: sessionNeedsInput(session.session),
+          ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
+        };
   }
   if (run.error) return { state: "finished", status: "failed", error: run.error };
   if (session.status === "interrupted")

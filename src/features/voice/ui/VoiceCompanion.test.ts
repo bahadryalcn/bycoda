@@ -369,7 +369,7 @@ async function click(label: string) {
 async function chooseManualEnding() {
   await click("Automatic replies");
   const option = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(
-    button => button.textContent === "Wait until I finish",
+    (button) => button.textContent === "Wait until I finish",
   )!;
   expect(option).toBeDefined();
   await act(async () => option.click());
@@ -928,12 +928,12 @@ it("retires the expanded turn menu on collapse and keeps the real mode selected 
   expect(container.querySelectorAll('[data-split-part="menu"]')).toHaveLength(1);
   await click("Automatic replies");
   let options = [...document.querySelectorAll('[role="menuitemradio"]')];
-  expect(options.map(option => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
+  expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
   await click("Expand voice companion");
   expect(document.querySelector('[role="menu"]')).toBeNull();
   await click("Automatic replies");
   options = [...document.querySelectorAll('[role="menuitemradio"]')];
-  expect(options.map(option => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
+  expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
   expect(mock.finishTurn).not.toHaveBeenCalled();
   expect(mock.connect).toHaveBeenCalledOnce();
   expect(mock.close).not.toHaveBeenCalled();
@@ -985,9 +985,11 @@ it("keeps the panel in the app when the floating window cannot open", async () =
     await setup();
     await floatOut();
     expect(container.querySelector("section")).not.toBeNull();
-    const feedback = container.querySelector<HTMLDetailsElement>('details[role="alert"]')!;
+    const feedback = container.querySelector<HTMLDetailsElement>("details")!;
     expect(feedback.open).toBe(false);
-    expect(feedback.querySelector("summary")?.textContent).toBe("Voice needs attention");
+    expect(feedback.hasAttribute("role")).toBe(false);
+    expect(feedback.querySelector("summary")?.textContent).toBe("Error details");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Voice needs attention");
     await act(() => {
       feedback.querySelector("summary")!.click();
     });

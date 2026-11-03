@@ -12,13 +12,7 @@ import "./search.css";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
-import {
-  Folder,
-  MessageSquare,
-  Search,
-  Maximize2,
-  Minimize2,
-} from "../../../shared/ui/icons";
+import { Folder, MessageSquare, Search, Maximize2, Minimize2 } from "../../../shared/ui/icons";
 import {
   useDeferredValue,
   useEffect,
@@ -162,7 +156,8 @@ export function SearchView({
   const listId = useId();
   const scopeId = useId();
   const [selection, setSelection] = useRetainedState<{ context: string; id: string | null }>(
-    `${stateKey}:active`, { context: "", id: null },
+    `${stateKey}:active`,
+    { context: "", id: null },
   );
   const [fileIndex, setFileIndex] = useState(() => ({ cwd, files: peekProjectFiles(cwd) ?? [] }));
   const [fileIndexError, setFileIndexError] = useState<{ cwd: string; error: string } | null>(null);
@@ -339,8 +334,13 @@ export function SearchView({
   const fileMode = scope === "all" || scope === "files";
   const conversationMode = scope === "all" || scope === "conversations";
   const conversationError = conversationMode ? conversation.error : null;
-  const loading = (fileMode && projectSearch.loading) || (conversationMode && conversation.loading) || deferredTrimmed !== trimmed;
-  const truncated = (fileMode && projectSearch.result.truncated) || (conversationMode && conversation.result.truncated);
+  const loading =
+    (fileMode && projectSearch.loading) ||
+    (conversationMode && conversation.loading) ||
+    deferredTrimmed !== trimmed;
+  const truncated =
+    (fileMode && projectSearch.result.truncated) ||
+    (conversationMode && conversation.result.truncated);
   // "Everywhere" searches every stored conversation, so results from locked
   // groups are dropped here, and again if a group locks while they are shown.
   const lock = useLockSnapshot();
@@ -359,13 +359,39 @@ export function SearchView({
   const chatRows = useMemo(() => chatEntries(chatGroups), [chatGroups]);
 
   const grouped = useMemo(() => {
-    const eligible = trimmed ? mergeHits(titleHits, liveMessageHits, remoteHits, fileHits, contentHits, projectHits)
-      .filter((hit) => !isProjectLockedIn(lock, hit.kind === "conversation" || hit.kind === "message" ? hit.cwd : hit.kind === "project" ? hit.path : cwd)) : [];
-    return groupHitsWithCounts(
-      eligible,
-      scope,
-    );
-  }, [contentHits, fileHits, liveMessageHits, projectHits, remoteHits, scope, titleHits, trimmed, lock, cwd]);
+    const eligible = trimmed
+      ? mergeHits(
+          titleHits,
+          liveMessageHits,
+          remoteHits,
+          fileHits,
+          contentHits,
+          projectHits,
+        ).filter(
+          (hit) =>
+            !isProjectLockedIn(
+              lock,
+              hit.kind === "conversation" || hit.kind === "message"
+                ? hit.cwd
+                : hit.kind === "project"
+                  ? hit.path
+                  : cwd,
+            ),
+        )
+      : [];
+    return groupHitsWithCounts(eligible, scope);
+  }, [
+    contentHits,
+    fileHits,
+    liveMessageHits,
+    projectHits,
+    remoteHits,
+    scope,
+    titleHits,
+    trimmed,
+    lock,
+    cwd,
+  ]);
   const hits = useMemo(() => flattenGrouped(grouped.grouped), [grouped]);
 
   // The Conversations tab lists results by project, with its own rows to step
@@ -373,27 +399,45 @@ export function SearchView({
   const chatMode = scope === "conversations";
   const rowCount = chatMode ? chatRows.length : hits.length;
   const resultsCurrent = deferredTrimmed === trimmed;
-  const rowIds = useMemo(() => (chatMode ? chatRows : hits).map((row) => row.id), [chatMode, chatRows, hits]);
+  const rowIds = useMemo(
+    () => (chatMode ? chatRows : hits).map((row) => row.id),
+    [chatMode, chatRows, hits],
+  );
   const selectionContext = JSON.stringify([cwd, trimmed, scope, filters]);
-  const selectedIndex = selection.context === selectionContext && selection.id !== null
-    ? rowIds.indexOf(selection.id) : -1;
+  const selectedIndex =
+    selection.context === selectionContext && selection.id !== null
+      ? rowIds.indexOf(selection.id)
+      : -1;
   const active = selectedIndex >= 0 ? selectedIndex : 0;
-  const setActive = (index: number) => setSelection({ context: selectionContext, id: rowIds[index] ?? null });
+  const setActive = (index: number) =>
+    setSelection({ context: selectionContext, id: rowIds[index] ?? null });
   const optionId = (index: number) => `${listId}-option-${index}`;
-  const capacity = resultCapacity.context === selectionContext ? Math.max(resultCapacity.rows, rowCount) : rowCount;
+  const capacity =
+    resultCapacity.context === selectionContext
+      ? Math.max(resultCapacity.rows, rowCount)
+      : rowCount;
 
   // The list never shrinks within one search context, so the panel keeps its height.
-  if (deferredTrimmed === trimmed && !(resultCapacity.context === selectionContext && resultCapacity.rows >= rowCount)) {
+  if (
+    deferredTrimmed === trimmed &&
+    !(resultCapacity.context === selectionContext && resultCapacity.rows >= rowCount)
+  ) {
     setResultCapacity({
       context: selectionContext,
-      rows: resultCapacity.context === selectionContext ? Math.max(resultCapacity.rows, rowCount) : rowCount,
+      rows:
+        resultCapacity.context === selectionContext
+          ? Math.max(resultCapacity.rows, rowCount)
+          : rowCount,
     });
   }
 
   useEffect(() => {
     if (!resultsCurrent) return;
-    if (selection.context !== selectionContext || (selection.id !== null && !rowIds.includes(selection.id)) ||
-      (selection.id === null && rowIds.length > 0)) {
+    if (
+      selection.context !== selectionContext ||
+      (selection.id !== null && !rowIds.includes(selection.id)) ||
+      (selection.id === null && rowIds.length > 0)
+    ) {
       setSelection({ context: selectionContext, id: rowIds[0] ?? null });
     }
   }, [selection.context, selection.id, selectionContext, rowIds, setSelection, resultsCurrent]);
@@ -445,19 +489,28 @@ export function SearchView({
   const empty = !trimmed;
   const indexing = pendingIndex > 0 && (scope === "all" || chatMode);
   const noResults = !empty && rowCount === 0 && !loading && !error && !conversationError;
-  const projectScope = looksLikeProject(cwd) ? `${projectDisplayName(cwd)} · ${prettyCwd(cwd)}` : t("No project folder");
-  const scopeCopy = scope === "files" ? `${t("Files")}: ${projectScope}`
-    : scope === "projects" ? t("Recent projects")
-      : chatMode ? `${t(filters.scope === "everywhere" ? "Everywhere" : filters.scope === "group" ? "This group" : "This project")}${filters.scope === "everywhere" ? "" : ` · ${projectDisplayName(cwd)}`}`
-        : `${t("Files")}: ${projectScope} · ${t("Conversations")}: ${t("Everywhere")} · ${t("Recent projects")}`;
-  const limitNotice = !empty && (truncated || (!chatMode && grouped.omitted > 0)) ? (
-    <InfoPopover label={t("Search result limits")}>
-      <p>
-        {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
-        {!chatMode && grouped.omitted > 0 ? ` · ${grouped.omitted} ${t("more loaded matches")}` : ""}
-      </p>
-    </InfoPopover>
-  ) : null;
+  const projectScope = looksLikeProject(cwd)
+    ? `${projectDisplayName(cwd)} · ${prettyCwd(cwd)}`
+    : t("No project folder");
+  const scopeCopy =
+    scope === "files"
+      ? `${t("Files")}: ${projectScope}`
+      : scope === "projects"
+        ? t("Recent projects")
+        : chatMode
+          ? `${t(filters.scope === "everywhere" ? "Everywhere" : filters.scope === "group" ? "This group" : "This project")}${filters.scope === "everywhere" ? "" : ` · ${projectDisplayName(cwd)}`}`
+          : `${t("Files")}: ${projectScope} · ${t("Conversations")}: ${t("Everywhere")} · ${t("Recent projects")}`;
+  const limitNotice =
+    !empty && (truncated || (!chatMode && grouped.omitted > 0)) ? (
+      <InfoPopover label={t("Search result limits")}>
+        <p>
+          {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
+          {!chatMode && grouped.omitted > 0
+            ? ` · ${grouped.omitted} ${t("more loaded matches")}`
+            : ""}
+        </p>
+      </InfoPopover>
+    ) : null;
   const indexNotice =
     pendingIndex > 0 && !conversationError && conversationMode ? (
       <p className="px-2.5 py-1 text-ui-micro text-(--ui-text-muted)">
@@ -481,11 +534,15 @@ export function SearchView({
       <div className="flex shrink-0 flex-col">
         <PaneHeader
           dragRegion={presentation === "page"}
-          chromeInset={presentation === "page" ? (!besideRail ? true : compactRail ? "compact" : false) : false}
+          chromeInset={
+            presentation === "page" ? (!besideRail ? true : compactRail ? "compact" : false) : false
+          }
           className="select-none"
-          leading={presentation === "page" && !besideRail ? (
-            <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
-          ) : null}
+          leading={
+            presentation === "page" && !besideRail ? (
+              <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+            ) : null
+          }
           actions={
             presentation === "dialog" ? (
               <Button
@@ -527,7 +584,9 @@ export function SearchView({
                 aria-autocomplete="list"
                 aria-expanded={!empty && rowCount > 0}
                 aria-controls={!empty && rowCount > 0 ? listId : undefined}
-                aria-activedescendant={resultsCurrent && !empty && rowCount > 0 ? optionId(active) : undefined}
+                aria-activedescendant={
+                  resultsCurrent && !empty && rowCount > 0 ? optionId(active) : undefined
+                }
                 aria-describedby={scopeId}
                 spellCheck={false}
                 autoComplete="off"
@@ -536,7 +595,9 @@ export function SearchView({
                 data-tauri-drag-region="false"
                 className="min-w-0 flex-1 select-text"
               />
-              {loading ? <Spinner size="sm" className="shrink-0 text-(--ui-text-secondary)" /> : null}
+              {loading ? (
+                <Spinner size="sm" className="shrink-0 text-(--ui-text-secondary)" />
+              ) : null}
             </SearchInputGroup>
           </div>
         </PaneHeader>
@@ -566,7 +627,11 @@ export function SearchView({
       </div>
 
       {!empty && (error || conversationError) ? (
-        <Alert tone="danger" role="alert" className="mx-2 mt-2 max-h-40 shrink-0 overflow-auto break-words">
+        <Alert
+          tone="danger"
+          role="alert"
+          className="mx-2 mt-2 max-h-40 shrink-0 overflow-auto break-words"
+        >
           {error ? (
             <p>
               {t("File search failed: ")}
@@ -607,7 +672,9 @@ export function SearchView({
         }
       >
         {!empty && loading && rowCount === 0 ? (
-          <p role="status" className="px-2 py-1.5 text-ui-caption text-(--ui-text-secondary)">{t("Searching…")}</p>
+          <p role="status" className="px-2 py-1.5 text-ui-caption text-(--ui-text-secondary)">
+            {t("Searching…")}
+          </p>
         ) : null}
         {empty ? (
           <EmptyState
@@ -617,7 +684,9 @@ export function SearchView({
           />
         ) : noResults ? (
           <>
-            <p role="status" className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">{t(indexing ? "No indexed matches yet" : "No results")}</p>
+            <p role="status" className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">
+              {t(indexing ? "No indexed matches yet" : "No results")}
+            </p>
             {indexNotice}
           </>
         ) : chatMode ? (
@@ -628,7 +697,9 @@ export function SearchView({
               groups={chatGroups}
               entries={chatRows}
               active={resultsCurrent ? active : -1}
-              onActive={(index) => { if (resultsCurrent) setActive(index); }}
+              onActive={(index) => {
+                if (resultsCurrent) setActive(index);
+              }}
               onOpen={openChat}
             />
           </>
@@ -641,7 +712,9 @@ export function SearchView({
               hits={hits}
               active={resultsCurrent ? active : -1}
               query={trimmed}
-              onActive={(index) => { if (resultsCurrent) setActive(index); }}
+              onActive={(index) => {
+                if (resultsCurrent) setActive(index);
+              }}
               onOpen={openHit}
             />
           </>
@@ -723,57 +796,92 @@ function ResultList({
       {hits.map((hit, index) => {
         const highlighted = index === active;
         const row = rowCopy(hit, query);
-        const heading = hit.kind === "conversation" ? t("Conversations") : hit.kind === "message" ? t("Messages")
-          : hit.kind === "file" ? t("Files") : hit.kind === "content" ? t("File content") : t("Projects");
-        const count = counts[hit.kind === "conversation" ? "conversations" : hit.kind === "message" ? "messages" : hit.kind === "file" ? "files" : hit.kind === "project" ? "projects" : "content"];
-        const fullIdentity = hit.kind === "file" ? hit.path : hit.kind === "content" ? `${hit.path}:${hit.line}:${hit.column}`
-          : hit.kind === "project" ? hit.path : `${terminalText(hit.title).text}\n${hit.cwd}`;
+        const heading =
+          hit.kind === "conversation"
+            ? t("Conversations")
+            : hit.kind === "message"
+              ? t("Messages")
+              : hit.kind === "file"
+                ? t("Files")
+                : hit.kind === "content"
+                  ? t("File content")
+                  : t("Projects");
+        const count =
+          counts[
+            hit.kind === "conversation"
+              ? "conversations"
+              : hit.kind === "message"
+                ? "messages"
+                : hit.kind === "file"
+                  ? "files"
+                  : hit.kind === "project"
+                    ? "projects"
+                    : "content"
+          ];
+        const fullIdentity =
+          hit.kind === "file"
+            ? hit.path
+            : hit.kind === "content"
+              ? `${hit.path}:${hit.line}:${hit.column}`
+              : hit.kind === "project"
+                ? hit.path
+                : `${terminalText(hit.title).text}\n${hit.cwd}`;
         return (
           <div key={hit.id} role="presentation">
-          {index === 0 || hits[index - 1].kind !== hit.kind ? (
-            <div role="presentation" className="flex items-center gap-2 px-2.5 pb-1 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)">
-              <span>{heading}</span>
-              <span className="tabular-nums">{count.shown} {t("shown")}{count.omitted > 0 ? ` · ${count.omitted} ${t("more loaded matches")}` : ""}</span>
-            </div>
-          ) : null}
-          <Button
-            variant="item"
-            tone="accent"
-            motion="none"
-            fullWidth
-            selected={highlighted}
-            className="app-search-result"
-            id={`${listId}-option-${index}`}
-            ref={highlighted ? activeRef : undefined}
-            type="button"
-            role="option"
-            aria-selected={highlighted}
-            tabIndex={-1}
-            onMouseDown={(event) => event.preventDefault()}
-            onMouseEnter={() => onRowEnter(index)}
-            onClick={() => onOpen(hit)}
-          >
-            <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">{row.icon}</span>
-            <span className="app-search-result-copy">
-              <span className="app-search-result-title">{row.title}</span>
-              {row.preview ? (
-                <span className="app-search-result-preview">{row.preview}</span>
-              ) : null}
-              <span className="app-search-result-meta">{row.meta}</span>
-              {highlighted ? <span className="app-search-result-identity">{fullIdentity}</span> : null}
-            </span>
-            <span className="app-search-result-kind sr-only">
-              {t(
-                hit.kind === "conversation"
-                  ? "Conversation"
-                  : hit.kind === "message"
-                    ? "Message"
-                    : hit.kind === "project"
-                      ? "Project"
-                      : "File",
-              )}
-            </span>
-          </Button>
+            {index === 0 || hits[index - 1].kind !== hit.kind ? (
+              <div
+                role="presentation"
+                className="flex items-center gap-2 px-2.5 pb-1 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)"
+              >
+                <span>{heading}</span>
+                <span className="tabular-nums">
+                  {count.shown} {t("shown")}
+                  {count.omitted > 0 ? ` · ${count.omitted} ${t("more loaded matches")}` : ""}
+                </span>
+              </div>
+            ) : null}
+            <Button
+              variant="item"
+              tone="accent"
+              motion="none"
+              fullWidth
+              selected={highlighted}
+              className="app-search-result"
+              id={`${listId}-option-${index}`}
+              ref={highlighted ? activeRef : undefined}
+              type="button"
+              role="option"
+              aria-selected={highlighted}
+              tabIndex={-1}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => onRowEnter(index)}
+              onClick={() => onOpen(hit)}
+            >
+              <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
+                {row.icon}
+              </span>
+              <span className="app-search-result-copy">
+                <span className="app-search-result-title">{row.title}</span>
+                {row.preview ? (
+                  <span className="app-search-result-preview">{row.preview}</span>
+                ) : null}
+                <span className="app-search-result-meta">{row.meta}</span>
+                {highlighted ? (
+                  <span className="app-search-result-identity">{fullIdentity}</span>
+                ) : null}
+              </span>
+              <span className="app-search-result-kind sr-only">
+                {t(
+                  hit.kind === "conversation"
+                    ? "Conversation"
+                    : hit.kind === "message"
+                      ? "Message"
+                      : hit.kind === "project"
+                        ? "Project"
+                        : "File",
+                )}
+              </span>
+            </Button>
           </div>
         );
       })}

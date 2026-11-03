@@ -33,9 +33,7 @@ it("InlineMoreAction is a named menu button that opens the row menu at its own a
     ),
   );
   try {
-    const button = view.host.querySelector<HTMLButtonElement>(
-      "[data-action-inline]",
-    )!;
+    const button = view.host.querySelector<HTMLButtonElement>("[data-action-inline]")!;
     expect(button.getAttribute("aria-label")).toBe("Actions for server.ts");
     expect(button.getAttribute("aria-haspopup")).toBe("menu");
     // Unknown open state is not reported as closed.

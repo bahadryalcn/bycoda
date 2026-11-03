@@ -243,13 +243,15 @@ export function UnifiedDiffView({
         {/* Count and churn truncate first; the view and expand controls never wrap away. */}
         <span className="flex min-w-0 flex-1 items-center gap-2">
           <OverflowTooltip label={fileLabel}>
-            <span className="min-w-0 truncate text-(--ui-text-secondary)">
-              {fileLabel}
-            </span>
+            <span className="min-w-0 truncate text-(--ui-text-secondary)">{fileLabel}</span>
           </OverflowTooltip>
           <DiffCounts additions={additions} deletions={deletions} />
         </span>
-        <span role="group" aria-label={t("Diff view")} className="ml-auto flex shrink-0 items-center gap-0.5">
+        <span
+          role="group"
+          aria-label={t("Diff view")}
+          className="ml-auto flex shrink-0 items-center gap-0.5"
+        >
           <DiffLayoutToggle className="mr-0.5" />
           <Button
             size="sm"
@@ -459,7 +461,10 @@ const FileSection = memo(function FileSection({
         >
           <Chevron className="icon-sm shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
           <FileTypeIcon name={name} isDir={false} />
-          <MiddleTruncate mode="path" className="min-w-0 flex-1 font-mono text-ui-caption font-medium text-(--color-content)">
+          <MiddleTruncate
+            mode="path"
+            className="min-w-0 flex-1 font-mono text-ui-caption font-medium text-(--color-content)"
+          >
             {file.label}
           </MiddleTruncate>
           <DiffCounts additions={file.additions} deletions={file.deletions} />
@@ -719,14 +724,19 @@ function VirtualRows({
       const mark = (next: DiffHover | null) => {
         const syncActions = (node: HTMLElement) => {
           for (const action of node.querySelectorAll<HTMLElement>("[data-gutter-action]")) {
-            const pointerSelected = node.dataset.pointerRow === "true" &&
+            const pointerSelected =
+              node.dataset.pointerRow === "true" &&
               (action.dataset.gutterAction === "stage" || node.dataset.pointerHover === "true");
-            action.toggleAttribute("data-selected", action.dataset.retainedAction === "true" || pointerSelected);
+            action.toggleAttribute(
+              "data-selected",
+              action.dataset.retainedAction === "true" || pointerSelected,
+            );
           }
         };
         if (hover.current?.key === next?.key && hover.current?.side === next?.side) {
           // A comment draft may have closed since the last pointer movement.
-          for (const node of body?.querySelectorAll<HTMLElement>('[data-pointer-row="true"]') ?? []) syncActions(node);
+          for (const node of body?.querySelectorAll<HTMLElement>('[data-pointer-row="true"]') ?? [])
+            syncActions(node);
           return;
         }
         hover.current = next;
@@ -1322,20 +1332,20 @@ const DiffLineRow = memo(function DiffLineRow({
             data-retained-action={hovered || commenting ? "true" : "false"}
             className="absolute top-0.5 left-0.5 z-1"
           >
-          <InlineAction
-            label={`Comment on line ${number ?? ""}`.trim()}
-            motion="none"
-            type="button"
-            onClick={(event) =>
-              onComment(
-                side ? `${hoverKey}:${side}` : (hoverKey ?? ""),
-                line,
-                event.currentTarget.getBoundingClientRect(),
-              )
-            }
-          >
-            <MessageSquarePlus className="icon-xs" strokeWidth={1.75} />
-          </InlineAction>
+            <InlineAction
+              label={`Comment on line ${number ?? ""}`.trim()}
+              motion="none"
+              type="button"
+              onClick={(event) =>
+                onComment(
+                  side ? `${hoverKey}:${side}` : (hoverKey ?? ""),
+                  line,
+                  event.currentTarget.getBoundingClientRect(),
+                )
+              }
+            >
+              <MessageSquarePlus className="icon-xs" strokeWidth={1.75} />
+            </InlineAction>
           </ActionHost>
         ) : null}
         {onStage ? (
@@ -1345,16 +1355,16 @@ const DiffLineRow = memo(function DiffLineRow({
             data-retained-action={stageVisible ? "true" : "false"}
             className="absolute top-0.5 left-full z-1 ml-0.5"
           >
-          <InlineAction
-            label={t("Stage hunk")}
-            motion="none"
-            type="button"
-            onClick={() => {
-              if (fileId !== undefined && stagePos !== undefined) onStage(fileId, stagePos);
-            }}
-          >
-            <Plus className="icon-xs" strokeWidth={1.75} />
-          </InlineAction>
+            <InlineAction
+              label={t("Stage hunk")}
+              motion="none"
+              type="button"
+              onClick={() => {
+                if (fileId !== undefined && stagePos !== undefined) onStage(fileId, stagePos);
+              }}
+            >
+              <Plus className="icon-xs" strokeWidth={1.75} />
+            </InlineAction>
           </ActionHost>
         ) : null}
       </div>

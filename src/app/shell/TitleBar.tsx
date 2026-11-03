@@ -62,7 +62,7 @@ import {
 } from "../model/windowTransferPopout";
 import { beginWindowTabDrag } from "../model/windowDragPreview";
 import { WindowControls } from "./WindowControls";
-import {AssistantPresenceMenu} from "../../features/assistant/ui/AssistantPresenceMenu";
+import { AssistantPresenceMenu } from "../../features/assistant/ui/AssistantPresenceMenu";
 import { APP_MENU_TOGGLE_EVENT } from "./MenuBar";
 import { IS_MAC } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";

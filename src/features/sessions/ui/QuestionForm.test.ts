@@ -65,23 +65,61 @@ function keyDown(target: Element, key: string) {
 }
 
 describe("QuestionForm keyboard navigation", () => {
-  it("can postpone an entire retained prompt without sending a partial earlier answer",()=>{
-    const onReply=vi.fn(),typed=prompt();typed.questions.push({...typed.questions[0],id:"second",prompt:"Second choice"});
-    act(()=>root.render(createElement(QuestionForm,{prompt:typed,onReply,dismissLabel:"Later",dismissEntirePrompt:true})));
-    act(()=>container.querySelector<HTMLInputElement>('input[type="radio"]')!.click());
-    act(()=>container.querySelector("form")!.dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));
+  it("can postpone an entire retained prompt without sending a partial earlier answer", () => {
+    const onReply = vi.fn(),
+      typed = prompt();
+    typed.questions.push({ ...typed.questions[0], id: "second", prompt: "Second choice" });
+    act(() =>
+      root.render(
+        createElement(QuestionForm, {
+          prompt: typed,
+          onReply,
+          dismissLabel: "Later",
+          dismissEntirePrompt: true,
+        }),
+      ),
+    );
+    act(() => container.querySelector<HTMLInputElement>('input[type="radio"]')!.click());
+    act(() =>
+      container
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
     expect(container.textContent).toContain("Second choice");
-    const later=[...container.querySelectorAll("button")].find(button=>button.textContent?.trim()==="Later")!;
-    act(()=>later.click());expect(onReply).toHaveBeenCalledExactlyOnceWith(7,{kind:"skipped"});
+    const later = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Later",
+    )!;
+    act(() => later.click());
+    expect(onReply).toHaveBeenCalledExactlyOnceWith(7, { kind: "skipped" });
   });
-  it("can label a retained non-destructive skip as Later without changing cancellation semantics",()=>{
-    const onReply=vi.fn();
-    act(()=>root.render(createElement(QuestionForm,{prompt:prompt(),onReply,dismissLabel:"Later"})));
-    const later=[...container.querySelectorAll("button")].find(button=>button.textContent?.trim()==="Later");
-    expect(later).toBeTruthy();act(()=>later!.click());expect(onReply).toHaveBeenCalledWith(7,{kind:"skipped"});
-    act(()=>root.render(createElement(QuestionForm,{prompt:{...prompt(),requestId:8,dismissAction:"cancel"},onReply,dismissLabel:"Later"})));
+  it("can label a retained non-destructive skip as Later without changing cancellation semantics", () => {
+    const onReply = vi.fn();
+    act(() =>
+      root.render(
+        createElement(QuestionForm, { prompt: prompt(), onReply, dismissLabel: "Later" }),
+      ),
+    );
+    const later = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Later",
+    );
+    expect(later).toBeTruthy();
+    act(() => later!.click());
+    expect(onReply).toHaveBeenCalledWith(7, { kind: "skipped" });
+    act(() =>
+      root.render(
+        createElement(QuestionForm, {
+          prompt: { ...prompt(), requestId: 8, dismissAction: "cancel" },
+          onReply,
+          dismissLabel: "Later",
+        }),
+      ),
+    );
     expect(container.textContent).toContain("Cancel question");
-    expect([...container.querySelectorAll("button")].some(button=>button.textContent?.trim()==="Later")).toBe(false);
+    expect(
+      [...container.querySelectorAll("button")].some(
+        (button) => button.textContent?.trim() === "Later",
+      ),
+    ).toBe(false);
   });
   it("shows a provider's repeated question only once and names free-entry answers", () => {
     const typed = prompt();
@@ -265,9 +303,13 @@ describe("question delivery and ownership", () => {
         .querySelector<HTMLButtonElement>('button[type="submit"]')!
         .getAttribute("aria-disabled"),
     ).toBe("true");
-    expect(container.querySelector('button[type="submit"]')?.getAttribute("aria-busy")).toBe("true");
+    expect(container.querySelector('button[type="submit"]')?.getAttribute("aria-busy")).toBe(
+      "true",
+    );
     expect(container.querySelector('button[type="submit"]')?.textContent).toBe("Sending answer…");
-    expect(container.querySelector('button[type="button"]')?.getAttribute("aria-busy")).not.toBe("true");
+    expect(container.querySelector('button[type="button"]')?.getAttribute("aria-busy")).not.toBe(
+      "true",
+    );
     render({ ...typed, delivery: "failed" }, onReply);
     expect(container.querySelector<HTMLInputElement>('input[type="radio"]')!.checked).toBe(true);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Your answer is kept");
@@ -373,7 +415,9 @@ describe("question delivery and ownership", () => {
       expect(document.activeElement).toBe(dismiss());
       expect(dismiss().getAttribute("aria-busy")).toBe("true");
       expect(dismiss().getAttribute("aria-disabled")).toBe("true");
-      expect(container.querySelector('button[type="submit"]')?.getAttribute("aria-busy")).not.toBe("true");
+      expect(container.querySelector('button[type="submit"]')?.getAttribute("aria-busy")).not.toBe(
+        "true",
+      );
       expect(container.querySelector('[role="status"]')?.textContent).toBe(
         dismissAction === "cancel" ? "Cancelling…" : "Sending…",
       );

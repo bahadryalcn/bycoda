@@ -103,8 +103,12 @@ it("retains the exact active destination when asynchronous filename arrivals reo
   await render("/repo", true, { onOpenFile });
   await typeQuery("needle");
   const input = host.querySelector<HTMLInputElement>("input")!;
-  await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
-  expect(host.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain("needle-b.ts");
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
+  );
+  expect(host.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain(
+    "needle-b.ts",
+  );
   await act(async () => {
     index.files.set("/repo", [file("needle-0.ts"), file("needle-a.ts"), file("needle-b.ts")]);
     notifyIndex();
@@ -113,7 +117,9 @@ it("retains the exact active destination when asynchronous filename arrivals reo
   expect(selected.textContent).toContain("needle-b.ts");
   expect(input.getAttribute("aria-activedescendant")).toBe(selected.id);
   expect(input.getAttribute("aria-controls")).toBe(host.querySelector('[role="listbox"]')?.id);
-  await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
   expect(onOpenFile).toHaveBeenCalledWith("/repo/needle-b.ts", undefined, { exact: true });
 });
 
@@ -130,9 +136,13 @@ it("resets to the new query's first destination instead of retaining an old defe
   index.files.set("/repo", [file("needle-0.ts"), file("needle-a.ts")]);
   await render();
   await typeQuery("needle-a");
-  expect(host.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain("needle-a.ts");
+  expect(host.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain(
+    "needle-a.ts",
+  );
   await typeQuery("needle");
-  expect(host.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain("needle-0.ts");
+  expect(host.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain(
+    "needle-0.ts",
+  );
 });
 
 it("does not open a stale deferred result through pointer activation with a newer query", async () => {
@@ -144,7 +154,10 @@ it("does not open a stale deferred result through pointer activation with a newe
   act(() => {
     flushSync(() => {
       const input = host.querySelector<HTMLInputElement>("input")!;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "other");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "other",
+      );
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     const stale = host.querySelector<HTMLButtonElement>('[role="option"]')!;

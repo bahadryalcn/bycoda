@@ -128,12 +128,18 @@ function Harness() {
     activeSessionId: () => deps.tabsRef.current.find((tab) => tab.id === active)?.focusedId,
     showSessions,
     workspaceNavigation: deps.workspaceNavigation,
-    onOpenWorkerDetails: (session, isCurrent) => queueWorkerPanes([{
-      sessionId: session.id,
-      leadId: session.orchestrationLeadId!,
-      title: session.title,
-      harness: session.harness,
-    }], isCurrent),
+    onOpenWorkerDetails: (session, isCurrent) =>
+      queueWorkerPanes(
+        [
+          {
+            sessionId: session.id,
+            leadId: session.orchestrationLeadId!,
+            title: session.title,
+            harness: session.harness,
+          },
+        ],
+        isCurrent,
+      ),
   });
   return null;
 }
@@ -419,13 +425,20 @@ it("maps a canonical Host worker and lead to distinct local shells before using 
   expect(workerShell.id).not.toBe("host-target");
   expect(leadShell.id).not.toBe("canonical-lead");
   expect(workerShell.orchestrationLeadId).toBe(leadShell.id);
-  expect(leafIds(deps.tabsRef.current.find((tab) => tab.id === active)!.layout)).toContain(leadShell.id);
-  expect(deps.setInspectedWorkerId).toHaveBeenCalledWith(workerShell.id);
-  const workerFiles = () => deps.tabsRef.current.flatMap((tab) =>
-    tab.editorPanes.flatMap((pane) => pane.files.filter((file) => file.agent?.sessionId === workerShell.id)),
+  expect(leafIds(deps.tabsRef.current.find((tab) => tab.id === active)!.layout)).toContain(
+    leadShell.id,
   );
+  expect(deps.setInspectedWorkerId).toHaveBeenCalledWith(workerShell.id);
+  const workerFiles = () =>
+    deps.tabsRef.current.flatMap((tab) =>
+      tab.editorPanes.flatMap((pane) =>
+        pane.files.filter((file) => file.agent?.sessionId === workerShell.id),
+      ),
+    );
   expect(workerFiles()).toHaveLength(1);
-  expect(deps.tabsRef.current.find((tab) => tab.id === active)?.editorPanes[0].activeFileId).toBe(workerFiles()[0].id);
+  expect(deps.tabsRef.current.find((tab) => tab.id === active)?.editorPanes[0].activeFileId).toBe(
+    workerFiles()[0].id,
+  );
   expect(mocks.resolve).toHaveBeenCalledWith({
     locator: {
       kind: "host",
@@ -457,18 +470,21 @@ it("opens the Native worker's read-only editor and preserves the cited jump unti
   expect(deps.tabsRef.current[0].editorPanes.flatMap((pane) => pane.files)).toHaveLength(1);
 });
 
-it.each([false, true])("rechecks reference privacy during delegated tab loading (beside=%s)", async (beside) => {
-  vi.mocked(deps.ensureOpenSession)
-    .mockResolvedValueOnce(target)
-    .mockImplementation(async (id) => {
-      mocks.privacy = { lock: {} };
-      return getSessions().find((entry) => entry.id === id) ?? null;
-    });
-  await open(reference, { beside });
-  expect(deps.tabsRef.current).toHaveLength(1);
-  expect(deps.tabsRef.current[0].editorPanes).toEqual([]);
-  expect(active).toBe(deps.tabsRef.current[0].id);
-});
+it.each([false, true])(
+  "rechecks reference privacy during delegated tab loading (beside=%s)",
+  async (beside) => {
+    vi.mocked(deps.ensureOpenSession)
+      .mockResolvedValueOnce(target)
+      .mockImplementation(async (id) => {
+        mocks.privacy = { lock: {} };
+        return getSessions().find((entry) => entry.id === id) ?? null;
+      });
+    await open(reference, { beside });
+    expect(deps.tabsRef.current).toHaveLength(1);
+    expect(deps.tabsRef.current[0].editorPanes).toEqual([]);
+    expect(active).toBe(deps.tabsRef.current[0].id);
+  },
+);
 
 it("does not publish worker panes or a jump after the target is locked during worker loading", async () => {
   target.orchestrationLeadId = source.id;
@@ -487,12 +503,16 @@ it("does not publish worker panes or a jump after the target is locked during wo
 it("refreshes only Host shell archive presentation from the verified owner when reusing a shell", async () => {
   mocks.resolve.mockResolvedValue(hostTarget());
   await open({ locator: hostTarget().locator });
-  expect(hostSessionShellSummaries().find((entry) => entry.title === "Host target")?.archived).toBe(true);
+  expect(hostSessionShellSummaries().find((entry) => entry.title === "Host target")?.archived).toBe(
+    true,
+  );
   const unarchived = hostTarget();
   unarchived.archived = false;
   mocks.resolve.mockResolvedValue(unarchived);
   await open({ locator: unarchived.locator });
-  expect(hostSessionShellSummaries().find((entry) => entry.title === "Host target")?.archived).toBe(false);
+  expect(hostSessionShellSummaries().find((entry) => entry.title === "Host target")?.archived).toBe(
+    false,
+  );
   expect(mocks.loadRemoteBlock).not.toHaveBeenCalled();
   expect(deps.tabsRef.current).toHaveLength(2);
 });

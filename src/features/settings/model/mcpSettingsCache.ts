@@ -83,7 +83,8 @@ export function loadMcpSettings(
   return discovery.then((snapshot) => {
     if (options.claudeHealth !== false && !snapshot.error && requests.get(cwd) === discovery) {
       loadClaudeHealth(cwd, discovery);
-      if (snapshot.servers.some((server) => server.provider === "codex")) loadCodexAuth(cwd, discovery);
+      if (snapshot.servers.some((server) => server.provider === "codex"))
+        loadCodexAuth(cwd, discovery);
     }
     return snapshots.get(cwd) ?? snapshot;
   });
@@ -99,7 +100,11 @@ async function fetchMcpSettings(cwd: string): Promise<McpSettingsSnapshot> {
     return { servers, error: "", claudeError: "" };
   } catch (cause) {
     const previous = snapshots.get(cwd);
-    return { servers: previous?.servers ?? [], error: String(cause), claudeError: previous?.claudeError ?? "" };
+    return {
+      servers: previous?.servers ?? [],
+      error: String(cause),
+      claudeError: previous?.claudeError ?? "",
+    };
   }
 }
 
@@ -169,7 +174,10 @@ function loadCodexAuth(cwd: string, discovery: Promise<McpSettingsSnapshot>) {
       publish(cwd, {
         ...snapshot,
         servers: snapshot.servers.map((server) => {
-          const known = server.provider === "codex" && server.enabled !== false ? auth.get(server.name) : undefined;
+          const known =
+            server.provider === "codex" && server.enabled !== false
+              ? auth.get(server.name)
+              : undefined;
           return known ? { ...server, ...known } : server;
         }),
       });

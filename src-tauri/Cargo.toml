@@ -40,7 +40,11 @@ rusqlite = { version = "0.40.2", features = ["bundled", "hooks", "blob"], defaul
 ureq = { version = "2.12.1", default-features = false, features = ["tls", "gzip"] }
 webpki-roots = "=1.0.9"
 tokio = { version = "=1.54.1", features = ["rt", "net", "sync", "time", "macros"] }
-tokio-tungstenite = { version = "=0.30.0", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "=0.30.0", default-features = false, features = [
+  "connect",
+  "handshake",
+  "rustls-tls-webpki-roots",
+] }
 futures-util = { version = "=0.3.34", features = ["sink"] }
 jsonschema = { version = "=0.60.2", default-features = false }
 url = "2.5"
@@ -128,6 +132,7 @@ raw-window-handle = "0.6"
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = "4.18"
 zbus = "5"
+webkit2gtk = "=2.0.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

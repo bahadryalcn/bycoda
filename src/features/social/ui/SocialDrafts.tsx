@@ -45,7 +45,14 @@ export function DraftList({
   return (
     <div>
       {drafts.map((draft) => (
-        <Draft key={draft.id} draft={draft} client={client} run={run} snapshot={snapshot} recipientInParent={recipientInParent} />
+        <Draft
+          key={draft.id}
+          draft={draft}
+          client={client}
+          run={run}
+          snapshot={snapshot}
+          recipientInParent={recipientInParent}
+        />
       ))}
     </div>
   );
@@ -192,7 +199,11 @@ function Draft({
   return (
     <article className="social-preview">
       <div className="social-record-heading">
-        {!recipientInParent ? <strong className="min-w-0 break-words text-ui-secondary font-medium">{contact?.name || t("Contact in the conversation")}</strong> : null}
+        {!recipientInParent ? (
+          <strong className="min-w-0 break-words text-ui-secondary font-medium">
+            {contact?.name || t("Contact in the conversation")}
+          </strong>
+        ) : null}
         <StatusBadge
           status={job?.status ?? (generating ? "running" : draft.reviewReason ? "review" : "draft")}
           label={
@@ -214,7 +225,10 @@ function Draft({
             : draft.kind === "comment"
               ? t("Comment draft")
               : t("Reply draft")}
-        </span>        <span>{t("Created")}: {time(draft.createdAt)}</span>
+        </span>{" "}
+        <span>
+          {t("Created")}: {time(draft.createdAt)}
+        </span>
       </div>
 
       {(editing ? media : draft.media)?.length ? (
@@ -424,18 +438,21 @@ function Draft({
         </a>
       ) : null}
       {draft.generation ? (
-        <details className="text-ui-caption text-(--ui-text-secondary)"><summary>{t("Generation details")}</summary><p>
-          {t("Agent: {p0} · {p1} · {p2}", {
-            p0: HARNESS_TITLE[draft.generation.agent.provider],
-            p1: draft.generation.agent.model || t("default model"),
-            p2: {
-              queued: t("Waiting to generate"),
-              running: t("Generating"),
-              completed: t("Generated"),
-              review: t("Review required"),
-            }[draft.generation.status],
-          })}
-        </p></details>
+        <details className="text-ui-caption text-(--ui-text-secondary)">
+          <summary>{t("Generation details")}</summary>
+          <p>
+            {t("Agent: {p0} · {p1} · {p2}", {
+              p0: HARNESS_TITLE[draft.generation.agent.provider],
+              p1: draft.generation.agent.model || t("default model"),
+              p2: {
+                queued: t("Waiting to generate"),
+                running: t("Generating"),
+                completed: t("Generated"),
+                review: t("Review required"),
+              }[draft.generation.status],
+            })}
+          </p>
+        </details>
       ) : null}
       {!editing ? (
         <div className="social-approval">

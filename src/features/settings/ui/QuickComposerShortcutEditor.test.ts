@@ -60,17 +60,34 @@ async function render() {
   await act(async () => root.render(createElement(QuickComposerShortcutEditor)));
 }
 
-it("keeps the previous emergency global shortcut when the OS rejects its replacement",async()=>{
- await act(async()=>root.render(createElement(KeybindingsPage)));
- vi.mocked(invoke).mockRejectedValueOnce(new Error("OS shortcut conflict"));
- const input=container.querySelector<HTMLButtonElement>('[aria-label="Change App: Stop computer use shortcut"]')!;
- expect(input).not.toBeNull();
- await act(async()=>input.click());
- await act(async()=>document.body.dispatchEvent(new KeyboardEvent("keydown",{key:"x",code:"KeyX",ctrlKey:true,altKey:true,bubbles:true,cancelable:true})));
- expect(invoke).toHaveBeenCalledWith("desktop_shortcut_configure",{shortcut:"Control+Option+KeyX"});
- expect(invoke).toHaveBeenCalledWith("desktop_shortcut_configure",{shortcut:"Control+Option+Escape"});
- expect(loadKeybindingOverrides()["App: Stop computer use"]).toBeUndefined();
- expect(container.querySelector('[role="alert"]')?.textContent).toContain("OS shortcut conflict");
+it("keeps the previous emergency global shortcut when the OS rejects its replacement", async () => {
+  await act(async () => root.render(createElement(KeybindingsPage)));
+  vi.mocked(invoke).mockRejectedValueOnce(new Error("OS shortcut conflict"));
+  const input = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Change App: Stop computer use shortcut"]',
+  )!;
+  expect(input).not.toBeNull();
+  await act(async () => input.click());
+  await act(async () =>
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "x",
+        code: "KeyX",
+        ctrlKey: true,
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  expect(invoke).toHaveBeenCalledWith("desktop_shortcut_configure", {
+    shortcut: "Control+Option+KeyX",
+  });
+  expect(invoke).toHaveBeenCalledWith("desktop_shortcut_configure", {
+    shortcut: "Control+Option+Escape",
+  });
+  expect(loadKeybindingOverrides()["App: Stop computer use"]).toBeUndefined();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("OS shortcut conflict");
 });
 
 it("keeps a sibling-disabled global shortcut disabled while recording a new chord", async () => {
@@ -389,10 +406,17 @@ it("shows pressed keys without an error and Escape cancels recording", async () 
 
 it("updates an externally changed chord without remounting the editor", async () => {
   await render();
-  const input = container.querySelector<HTMLButtonElement>('[aria-label="Change Quick composer shortcut"]')!;
+  const input = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Change Quick composer shortcut"]',
+  )!;
   await act(async () => {
     data.set("bycoda.quickComposerShortcut", "Control+KeyY");
-    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.quickComposerShortcut", newValue: "Control+KeyY" }));
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: "bycoda.quickComposerShortcut",
+        newValue: "Control+KeyY",
+      }),
+    );
   });
   expect(container.querySelector('[aria-label="Change Quick composer shortcut"]')).toBe(input);
   expect(input.querySelector("[data-shortcut-display]")?.textContent).toContain("Y");
@@ -405,15 +429,28 @@ it("does not report a global chord saved when persistence rejects it and restore
     if (key === "bycoda.quickComposerShortcut") throw new Error("Quota exceeded");
     write(key, value);
   };
-  const input = container.querySelector<HTMLButtonElement>('[aria-label="Change Quick composer shortcut"]')!;
+  const input = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Change Quick composer shortcut"]',
+  )!;
   await act(async () => input.click());
-  await act(async () => document.body.dispatchEvent(new KeyboardEvent("keydown", {
-    code: "KeyY", key: "y", ctrlKey: true, bubbles: true, cancelable: true,
-  })));
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not save changes");
+  await act(async () =>
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        code: "KeyY",
+        key: "y",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not save changes",
+  );
   expect(container.textContent).not.toContain("Saved");
   expect(input.querySelector("[data-shortcut-display]")?.textContent).toBe("⌘⇧Space");
   expect(invoke).toHaveBeenLastCalledWith("quick_composer_set_enabled", {
-    enabled: true, shortcut: "Command+Shift+Space",
+    enabled: true,
+    shortcut: "Command+Shift+Space",
   });
 });

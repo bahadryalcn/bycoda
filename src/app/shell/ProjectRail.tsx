@@ -364,7 +364,8 @@ export function ProjectRail({
         list.querySelector<HTMLElement>("[data-project-path] button[aria-current]") ??
         list.querySelector<HTMLElement>("[data-project-path] button");
       target?.focus();
-      if (document.activeElement !== target && ++attempts < 12) frame = requestAnimationFrame(focusRow);
+      if (document.activeElement !== target && ++attempts < 12)
+        frame = requestAnimationFrame(focusRow);
     };
     frame = requestAnimationFrame(focusRow);
     return () => cancelAnimationFrame(frame);
@@ -1400,11 +1401,7 @@ function ProjectSection({
 }) {
   useLocale();
   return (
-    <div
-      ref={drag.setRef}
-      className={RAIL_SECTION_BLOCK}
-      data-collapsed={collapsed || undefined}
-    >
+    <div ref={drag.setRef} className={RAIL_SECTION_BLOCK} data-collapsed={collapsed || undefined}>
       <ProjectSectionHeader
         label={label}
         onAdd={onAdd}
@@ -1921,7 +1918,9 @@ function ProjectGroupSection({
                     : t("Linked to {p0}", { p0: group.workspaceFile })
                 }
                 className={`grid size-4 shrink-0 place-items-center ${
-                  linkStatus ? "text-warning" : "text-(--ui-text-secondary) opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-data-[selected]:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100"
+                  linkStatus
+                    ? "text-warning"
+                    : "text-(--ui-text-secondary) opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-data-[selected]:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100"
                 } @max-[140px]/rail:hidden`}
               >
                 {linkStatus ? (

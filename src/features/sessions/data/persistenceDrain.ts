@@ -488,7 +488,7 @@ export class PersistenceDrainRegistry {
   }
 
   private forgetFailures(producer: ProducerState, sessionIds: readonly string[]): void {
-    for (const [key, failure] of [...producer.failures]) {
+    for (const [key, failure] of Array.from(producer.failures)) {
       const { scope } = failure;
       if (scope !== "profile" && scope.length && scope.every((id) => sessionIds.includes(id)))
         producer.failures.delete(key);

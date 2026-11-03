@@ -33,16 +33,15 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
     // Running work stays calm: one muted line, no alarm.
     return status.detail ? <TaskStatusText status={status} className="text-ui-caption" /> : null;
   }
-  const nextStep =
-    taskRequiresInstructions(task)
-      ? t(TASK_INPUT_REQUIRED)
-      : status.kind === "takeover" && task.status === "blocked"
-        ? t(
-            "A fresh AI session will inspect the previous attempts and continue the retained work automatically when capacity is available.",
-          )
-        : status.kind === "takeover"
-          ? t("The recovery agent must pass the original checks and review before delivery.")
-          : undefined;
+  const nextStep = taskRequiresInstructions(task)
+    ? t(TASK_INPUT_REQUIRED)
+    : status.kind === "takeover" && task.status === "blocked"
+      ? t(
+          "A fresh AI session will inspect the previous attempts and continue the retained work automatically when capacity is available.",
+        )
+      : status.kind === "takeover"
+        ? t("The recovery agent must pass the original checks and review before delivery.")
+        : undefined;
   const failures = taskReviewFailureCount(task);
   const facts: ReactNode[] = [];
   const fact = (key: string, label: string, value: ReactNode | undefined) => {

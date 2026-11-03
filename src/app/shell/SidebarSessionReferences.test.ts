@@ -27,7 +27,12 @@ vi.mock("../../features/projects/model/projectData", () => ({
   projectSessionCount: vi.fn(async () => 0),
 }));
 
-const locator = { kind: "native" as const, sourceStoreId: "store", sourceProfileId: "profile", sessionId: "target" };
+const locator = {
+  kind: "native" as const,
+  sourceStoreId: "store",
+  sourceProfileId: "profile",
+  sessionId: "target",
+};
 let container: HTMLDivElement;
 let root: Root;
 let props: ComponentProps<typeof Sidebar>;
@@ -38,19 +43,46 @@ beforeEach(async () => {
   vi.mocked(copyText).mockReset().mockResolvedValue(undefined);
   localStorage.clear();
   props = {
-    cwd: "/workspace/project", open: true,
-    sessions: [{ id: "target", cwd: "/workspace/project", harness: "codex", model: "", runtimeMode: "supervised", title: "Title [with] *format*", createdAt: 1, updatedAt: 1 }],
-    busySessionIds: new Set(), approvalSessionIds: new Set(), activeSessionId: "target",
-    status: "idle", pending: false, tab: "sessions", filesSearchOpen: false,
-    onSelectSession: vi.fn(), onRenameSession: vi.fn(), onOpenFile: vi.fn(), onTabChange: vi.fn(), onFilesSearchOpenChange: vi.fn(),
+    cwd: "/workspace/project",
+    open: true,
+    sessions: [
+      {
+        id: "target",
+        cwd: "/workspace/project",
+        harness: "codex",
+        model: "",
+        runtimeMode: "supervised",
+        title: "Title [with] *format*",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
+    busySessionIds: new Set(),
+    approvalSessionIds: new Set(),
+    activeSessionId: "target",
+    status: "idle",
+    pending: false,
+    tab: "sessions",
+    filesSearchOpen: false,
+    onSelectSession: vi.fn(),
+    onRenameSession: vi.fn(),
+    onOpenFile: vi.fn(),
+    onTabChange: vi.fn(),
+    onFilesSearchOpenChange: vi.fn(),
   };
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root.render(createElement(Sidebar, props)));
   const card = container.querySelector<HTMLElement>('[data-session-card="target"]')!;
-  await act(async () => card.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })));
-  expect(document.querySelector('[role="menuitem"][aria-haspopup="menu"]')?.textContent).toBe("Copy");
+  await act(async () =>
+    card.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }),
+    ),
+  );
+  expect(document.querySelector('[role="menuitem"][aria-haspopup="menu"]')?.textContent).toBe(
+    "Copy",
+  );
   await act(async () => action("Copy").click());
 });
 
@@ -62,21 +94,28 @@ afterEach(() => {
 });
 
 function action(label: string) {
-  const result = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find((button) => button.textContent?.includes(label));
+  const result = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+    (button) => button.textContent?.includes(label),
+  );
   expect(result, label).toBeTruthy();
   return result!;
 }
 
 describe("Sidebar session references", () => {
-  it.each(["Copy session link", "Copy Markdown reference"])("copies %s through the proven owner and retains existing ID copy", async (label) => {
-    expect(action("Harness session ID").disabled).toBe(true);
-    expect(action("bycoda session ID").disabled).toBe(false);
-    await act(async () => action(label).click());
-    const expected = localSessionLinkFields(locator, props.sessions[0].title);
-    expect(copyText).toHaveBeenCalledExactlyOnceWith(label === "Copy session link" ? expected.link : expected.markdownReference);
-    expect(action(label).textContent).toContain("Copied");
-    expect(props.onSelectSession).not.toHaveBeenCalled();
-  });
+  it.each(["Copy session link", "Copy Markdown reference"])(
+    "copies %s through the proven owner and retains existing ID copy",
+    async (label) => {
+      expect(action("Harness session ID").disabled).toBe(true);
+      expect(action("bycoda session ID").disabled).toBe(false);
+      await act(async () => action(label).click());
+      const expected = localSessionLinkFields(locator, props.sessions[0].title);
+      expect(copyText).toHaveBeenCalledExactlyOnceWith(
+        label === "Copy session link" ? expected.link : expected.markdownReference,
+      );
+      expect(action(label).textContent).toContain("Copied");
+      expect(props.onSelectSession).not.toHaveBeenCalled();
+    },
+  );
 
   it("shows clipboard failure at the copy action and permits retry", async () => {
     vi.mocked(copyText).mockRejectedValueOnce(new Error("Clipboard unavailable"));
@@ -89,7 +128,11 @@ describe("Sidebar session references", () => {
 
   it("blocks duplicate copy while identity resolution is pending", async () => {
     let resolve!: (value: typeof locator) => void;
-    vi.mocked(localReferenceForSession).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    vi.mocked(localReferenceForSession).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
     await act(async () => action("Copy session link").click());
     expect(action("Copy session link").disabled).toBe(true);
     expect(action("Copy Markdown reference").disabled).toBe(true);

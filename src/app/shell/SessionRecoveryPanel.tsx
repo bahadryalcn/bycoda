@@ -434,12 +434,8 @@ export function SessionRecoveryPanel({
                   />
                   <HarnessIcon harness={stub.harness} className="size-4 shrink-0" />
                   <div className="min-w-0 basis-48 flex-1">
-                    <div className="break-words text-ui-secondary font-medium">
-                      {title}
-                    </div>
-                    <details
-                      className="break-words text-ui-caption text-(--ui-text-secondary)"
-                    >
+                    <div className="break-words text-ui-secondary font-medium">{title}</div>
+                    <details className="break-words text-ui-caption text-(--ui-text-secondary)">
                       <summary className="cursor-pointer">
                         {projectDisplayName(stub.cwd)} · {machine}
                       </summary>
@@ -453,7 +449,9 @@ export function SessionRecoveryPanel({
                         className={
                           status === "failed"
                             ? "font-medium text-danger"
-                            : status === "interrupted" || status === "input" || status === "retrying"
+                            : status === "interrupted" ||
+                                status === "input" ||
+                                status === "retrying"
                               ? "font-medium text-warning"
                               : status === "working"
                                 ? "font-medium text-(--ui-tone-info-fg)"

@@ -82,9 +82,7 @@ it("releases a genuinely late capture after its peer rejects without hiding acce
       }),
   );
   captures.editor.mockRejectedValue(new Error("actual editor is busy"));
-  await expect(captureNativeProducerInputs("session")).rejects.toThrow(
-    "actual editor is busy",
-  );
+  await expect(captureNativeProducerInputs("session")).rejects.toThrow("actual editor is busy");
   const late = lease();
   resolve(late);
   await vi.waitFor(() => expect(late.release).toHaveBeenCalledOnce());
@@ -147,9 +145,9 @@ it("rolls back the first gate when the second cannot close, without taking a sna
   captures.beginEditor.mockImplementation(() => {
     throw new Error("IME busy");
   });
-  expect(() =>
-    beginNativeProducerInputClosure("session", { owner: {}, timeoutMs: 1000 }),
-  ).toThrow("IME busy");
+  expect(() => beginNativeProducerInputClosure("session", { owner: {}, timeoutMs: 1000 })).toThrow(
+    "IME busy",
+  );
   expect(parent.release).toHaveBeenCalledOnce();
   expect(parent.capture).not.toHaveBeenCalled();
 });
@@ -180,9 +178,9 @@ it("reopens both earlier gates if a Notes IME cannot close without capturing any
   captures.beginNotes.mockImplementation(() => {
     throw new Error("actual Notes composition is active");
   });
-  expect(() =>
-    beginNativeProducerInputClosure("session", { owner: {}, timeoutMs: 1000 }),
-  ).toThrow("actual Notes composition is active");
+  expect(() => beginNativeProducerInputClosure("session", { owner: {}, timeoutMs: 1000 })).toThrow(
+    "actual Notes composition is active",
+  );
   expect(parent.release).toHaveBeenCalledOnce();
   expect(editor.release).toHaveBeenCalledOnce();
   expect(parent.capture).not.toHaveBeenCalled();

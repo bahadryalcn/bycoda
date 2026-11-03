@@ -12,7 +12,12 @@ import { SocialPrograms } from "./SocialPrograms";
 import { SocialAssistant } from "./SocialAssistant";
 import { ProductKnowledge } from "./ProductKnowledge";
 import { CampaignComposer } from "./CampaignComposer";
-import { CampaignDetail, CampaignListTools, campaignState, campaignStateLabel } from "./CampaignBrowser";
+import {
+  CampaignDetail,
+  CampaignListTools,
+  campaignState,
+  campaignStateLabel,
+} from "./CampaignBrowser";
 import { useQuery } from "@tanstack/react-query";
 import type { SocialProgram } from "../model/socialProgram";
 import { socialQueryScope } from "../model/socialQuery";
@@ -60,7 +65,11 @@ export function Campaigns({
   }
   const programsQuery = useQuery({
     queryKey: [...socialQueryScope(client), "programs", snapshot.programProjectId ?? ""],
-    queryFn: () => client.request<SocialProgram[]>("programs.list", snapshot.programProjectId ? { projectId: snapshot.programProjectId } : {}),
+    queryFn: () =>
+      client.request<SocialProgram[]>(
+        "programs.list",
+        snapshot.programProjectId ? { projectId: snapshot.programProjectId } : {},
+      ),
     enabled: !!snapshot.programsSupported && active && visible,
     staleTime: 5_000,
     refetchInterval: active && visible ? 5_000 : false,
@@ -132,39 +141,57 @@ export function Campaigns({
   return (
     <div className="social-page social-campaign-page social-content-page">
       <header className="social-content-head">
-      <SearchableSelect
-        label={t("Loaded content")}
-        value={view === "ai" && programIntent ? `program:${programIntent.id}` : selectedId ? `campaign:${selectedId}` : ""}
-        placeholder={t("Choose content to open")}
-        options={[
-          ...visibleCampaigns.map((campaign) => ({ value: `campaign:${campaign.id}`, label: campaign.name, description: `${t("One-time content")} · ${campaignStateLabel(campaign, snapshot) ?? t(({ draft: "Draft", queued: "Scheduled", running: "Sending", succeeded: "Sent", partial: "Partially sent", failed: "Failed", review: "Needs review", paused: "Paused", cancelled: "Cancelled" } as Record<string, string>)[campaignState(campaign, snapshot.jobs, snapshot.campaignStates)] ?? "Draft")} · ${t("{p0} projects · {p1} accounts", { p0: campaign.projectIds.length, p1: campaign.variants.length })}` })),
-          ...(programsQuery.data ?? []).map((program) => ({ value: `program:${program.id}`, label: program.name, description: `${t("Recurring content")} · ${program.enabled ? t("Active") : program.cancelled ? t("Cancelled") : t("Paused")}` })),
-        ]}
-        onChange={(value) => {
-          if (value.startsWith("program:")) {
-            setProgramIntent({ id: value.slice(8), token: ++programIntentToken.current });
-            setView("ai");
-          } else {
-            setSelectedId(value.slice(9));
-            setDetailEpoch((current) => current + 1);
-            setView("manual");
+        <SearchableSelect
+          label={t("Loaded content")}
+          value={
+            view === "ai" && programIntent
+              ? `program:${programIntent.id}`
+              : selectedId
+                ? `campaign:${selectedId}`
+                : ""
           }
-        }}
-        searchLocale={getLocale()}
-      />
-      <SegmentedControl
-        label={t("Content entry")}
-        selectionRole="pressed"
-        value={entry}
-        onValueChange={chooseEntry}
-        options={[
-          { value: "write", label: t("Write"), disabled: !!parkedEdit },
-          ...(snapshot.programsSupported
-            ? [{ value: "brief", label: t("Generate from a brief") }]
-            : []),
-          { value: "edit", label: t("Edit existing"), disabled: socialLocked || !canEditExisting },
-        ]}
-      />
+          placeholder={t("Choose content to open")}
+          options={[
+            ...visibleCampaigns.map((campaign) => ({
+              value: `campaign:${campaign.id}`,
+              label: campaign.name,
+              description: `${t("One-time content")} · ${campaignStateLabel(campaign, snapshot) ?? t(({ draft: "Draft", queued: "Scheduled", running: "Sending", succeeded: "Sent", partial: "Partially sent", failed: "Failed", review: "Needs review", paused: "Paused", cancelled: "Cancelled" } as Record<string, string>)[campaignState(campaign, snapshot.jobs, snapshot.campaignStates)] ?? "Draft")} · ${t("{p0} projects · {p1} accounts", { p0: campaign.projectIds.length, p1: campaign.variants.length })}`,
+            })),
+            ...(programsQuery.data ?? []).map((program) => ({
+              value: `program:${program.id}`,
+              label: program.name,
+              description: `${t("Recurring content")} · ${program.enabled ? t("Active") : program.cancelled ? t("Cancelled") : t("Paused")}`,
+            })),
+          ]}
+          onChange={(value) => {
+            if (value.startsWith("program:")) {
+              setProgramIntent({ id: value.slice(8), token: ++programIntentToken.current });
+              setView("ai");
+            } else {
+              setSelectedId(value.slice(9));
+              setDetailEpoch((current) => current + 1);
+              setView("manual");
+            }
+          }}
+          searchLocale={getLocale()}
+        />
+        <SegmentedControl
+          label={t("Content entry")}
+          selectionRole="pressed"
+          value={entry}
+          onValueChange={chooseEntry}
+          options={[
+            { value: "write", label: t("Write"), disabled: !!parkedEdit },
+            ...(snapshot.programsSupported
+              ? [{ value: "brief", label: t("Generate from a brief") }]
+              : []),
+            {
+              value: "edit",
+              label: t("Edit existing"),
+              disabled: socialLocked || !canEditExisting,
+            },
+          ]}
+        />
       </header>
       <div className="social-content-context" data-entry={entry}>
         <div className="social-content-context-main">
@@ -251,9 +278,32 @@ export function Campaigns({
           />
         </div>
       </div>
-      {snapshot.pages?.campaigns?.total !== undefined && snapshot.pages.campaigns.total > snapshot.campaigns.length ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("{p0} of {p1} one-time items loaded. Search or filter to find more content.", { p0: snapshot.campaigns.length, p1: snapshot.pages.campaigns.total })}</p> : null}
-      {programsQuery.isLoading ? <p role="status" className="text-ui-caption">{t("Loading recurring content…")}</p> : null}
-      {programsQuery.isError ? <Notice kind="error">{t("Recurring content could not be loaded. One-time content remains available.")} <Button variant="link" onClick={() => void programsQuery.refetch()} loading={programsQuery.isFetching}>{t("Retry")}</Button></Notice> : null}
+      {snapshot.pages?.campaigns?.total !== undefined &&
+      snapshot.pages.campaigns.total > snapshot.campaigns.length ? (
+        <p className="text-ui-caption text-(--ui-text-secondary)">
+          {t("{p0} of {p1} one-time items loaded. Search or filter to find more content.", {
+            p0: snapshot.campaigns.length,
+            p1: snapshot.pages.campaigns.total,
+          })}
+        </p>
+      ) : null}
+      {programsQuery.isLoading ? (
+        <p role="status" className="text-ui-caption">
+          {t("Loading recurring content…")}
+        </p>
+      ) : null}
+      {programsQuery.isError ? (
+        <Notice kind="error">
+          {t("Recurring content could not be loaded. One-time content remains available.")}{" "}
+          <Button
+            variant="link"
+            onClick={() => void programsQuery.refetch()}
+            loading={programsQuery.isFetching}
+          >
+            {t("Retry")}
+          </Button>
+        </Notice>
+      ) : null}
       {snapshot.programsSupported ? (
         <SocialAssistant
           key={selectedProgram?.id ?? "new"}
@@ -275,41 +325,53 @@ export function Campaigns({
       ) : null}
       <div hidden={view !== "ai"}>
         <SocialPanelActiveContext.Provider value={active && view === "ai"}>
-          <SocialPrograms {...{ client, snapshot, projects, initialProject, run }} collectionManaged selectionIntent={programIntent} onSelectionChange={(id) => setProgramIntent((current) => current?.id === id ? current : { id, token: ++programIntentToken.current })} />
+          <SocialPrograms
+            {...{ client, snapshot, projects, initialProject, run }}
+            collectionManaged
+            selectionIntent={programIntent}
+            onSelectionChange={(id) =>
+              setProgramIntent((current) =>
+                current?.id === id ? current : { id, token: ++programIntentToken.current },
+              )
+            }
+          />
         </SocialPanelActiveContext.Provider>
       </div>
       <div className="social-campaign-manual" hidden={view !== "manual"}>
-        {snapshot.campaigns.length ? <div className="social-stats" aria-label={t("Campaign summary")}>
-          <span>
-            <strong>{snapshot.pages?.campaigns?.total ?? snapshot.campaigns.length}</strong>{" "}
-            {t("campaigns")}
-          </span>
-          <span>
-            <strong>
-              {snapshot.campaignJobCounts?.queued ??
-                snapshot.jobs.filter((job) => job.campaignId && job.status === "queued").length}
-            </strong>{" "}
-            {t("scheduled posts")}
-          </span>
-          <span>
-            <strong>
-              {snapshot.campaignJobCounts?.succeeded ??
-                snapshot.jobs.filter((job) => job.campaignId && job.status === "succeeded").length}
-            </strong>{" "}
-            {t("sent posts")}
-          </span>
-          <span>
-            <strong>
-              {snapshot.campaignJobCounts
-                ? (snapshot.campaignJobCounts.review ?? 0) +
-                  (snapshot.campaignJobCounts.failed ?? 0)
-                : snapshot.jobs.filter(
-                    (job) => job.campaignId && ["review", "failed"].includes(job.status),
-                  ).length}
-            </strong>{" "}
-            {t("need your attention")}
-          </span>
-        </div> : null}
+        {snapshot.campaigns.length ? (
+          <div className="social-stats" aria-label={t("Campaign summary")}>
+            <span>
+              <strong>{snapshot.pages?.campaigns?.total ?? snapshot.campaigns.length}</strong>{" "}
+              {t("campaigns")}
+            </span>
+            <span>
+              <strong>
+                {snapshot.campaignJobCounts?.queued ??
+                  snapshot.jobs.filter((job) => job.campaignId && job.status === "queued").length}
+              </strong>{" "}
+              {t("scheduled posts")}
+            </span>
+            <span>
+              <strong>
+                {snapshot.campaignJobCounts?.succeeded ??
+                  snapshot.jobs.filter((job) => job.campaignId && job.status === "succeeded")
+                    .length}
+              </strong>{" "}
+              {t("sent posts")}
+            </span>
+            <span>
+              <strong>
+                {snapshot.campaignJobCounts
+                  ? (snapshot.campaignJobCounts.review ?? 0) +
+                    (snapshot.campaignJobCounts.failed ?? 0)
+                  : snapshot.jobs.filter(
+                      (job) => job.campaignId && ["review", "failed"].includes(job.status),
+                    ).length}
+              </strong>{" "}
+              {t("need your attention")}
+            </span>
+          </div>
+        ) : null}
         <div className="flex min-w-0 flex-col gap-3">
           <CampaignListTools
             search={search}

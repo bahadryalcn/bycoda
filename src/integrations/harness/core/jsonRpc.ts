@@ -46,7 +46,10 @@ const WRITE_TIMEOUT_MAX_MS = 120_000;
 /** Control frames keep the short bound. A frame carrying attachments can fill the
  * stdin pipe and legitimately wait for a slow-starting CLI to begin reading. */
 function writeTimeoutMs(bytes: number): number {
-  return Math.min(WRITE_TIMEOUT_MAX_MS, WRITE_TIMEOUT_MS + Math.max(0, Math.ceil(bytes / 65_536) - 1) * 1_000);
+  return Math.min(
+    WRITE_TIMEOUT_MAX_MS,
+    WRITE_TIMEOUT_MS + Math.max(0, Math.ceil(bytes / 65_536) - 1) * 1_000,
+  );
 }
 
 export type JsonRpcHandlers = {
@@ -159,10 +162,10 @@ export class JsonRpcClient {
 
   withWriter(writer: ChildTurnWriter): JsonRpcWriterView {
     assertChildTurnWriter(this.child, writer);
-    const client = this;
+    const isClosed = () => this.isClosed;
     return Object.freeze({
       get isClosed() {
-        return client.isClosed;
+        return isClosed();
       },
       request: <T>(
         method: string,

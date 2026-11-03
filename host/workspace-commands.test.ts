@@ -293,29 +293,57 @@ it("admits a registered junction project and its worktree by physical root while
   await writeFile(join(physical, "read.txt"), "project");
   await writeFile(join(outside, "private.txt"), "private");
   vi.mocked(hostWorktrees).mockResolvedValue({
-    defaultRoot: registered, worktrees: [{ path: registered }, { path: linkedTree }],
+    defaultRoot: registered,
+    worktrees: [{ path: registered }, { path: linkedTree }],
   } as never);
   const withIdle = vi.fn(async (_id: string, action: () => Promise<unknown>) => await action());
   const commands = new WorkspaceCommands(
-    { projects: () => [{ id: "linked", cwd: registered }, { id: "nested", cwd: linkedNested }], attachmentDir: join(root, "attachments") } as never,
+    {
+      projects: () => [
+        { id: "linked", cwd: registered },
+        { id: "nested", cwd: linkedNested },
+      ],
+      attachmentDir: join(root, "attachments"),
+    } as never,
     withIdle as never,
   );
-  expect(await commands.run("read_text_file", { path: join(registered, "read.txt") })).toBe("project");
+  expect(await commands.run("read_text_file", { path: join(registered, "read.txt") })).toBe(
+    "project",
+  );
   await commands.run("write_text_file", { path: join(registered, "new.txt"), content: "new" });
   expect(await readFile(join(physical, "new.txt"), "utf8")).toBe("new");
-  await commands.run("write_text_file", { path: join(linkedTree, "worktree.txt"), content: "tree" });
+  await commands.run("write_text_file", {
+    path: join(linkedTree, "worktree.txt"),
+    content: "tree",
+  });
   expect(await readFile(join(tree, "worktree.txt"), "utf8")).toBe("tree");
   for (const path of [join(physical, "escape", "private.txt"), join(outside, "new.txt")])
-    await expect(commands.run("write_text_file", { path, content: "blocked" })).rejects.toThrow("Path is outside this machine’s projects");
+    await expect(commands.run("write_text_file", { path, content: "blocked" })).rejects.toThrow(
+      "Path is outside this machine’s projects",
+    );
   expect(await readFile(join(outside, "private.txt"), "utf8")).toBe("private");
-  await expect(commands.run("delete_path", { path: join(registered, "nested") })).rejects.toThrow("Path is outside the workspace");
+  await expect(commands.run("delete_path", { path: join(registered, "nested") })).rejects.toThrow(
+    "Path is outside the workspace",
+  );
   expect((await stat(nested)).isDirectory()).toBe(true);
 
   // Project-level permission/idle gates retain the registered project identity.
-  const git = (...args: string[]) => execFileSync("git", args, { cwd: physical, windowsHide: true, encoding: "utf8" });
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: physical, windowsHide: true, encoding: "utf8" });
   git("init", "-q", "-b", "main");
   await writeFile(join(physical, ".git", "info", "exclude"), "*\n");
-  git("-c", "user.name=Test", "-c", "user.email=test@example.test", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "base");
+  git(
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.test",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "--allow-empty",
+    "-qm",
+    "base",
+  );
   await commands.run("git_create_branch", { cwd: registered, name: "linked-branch" });
   expect(withIdle).toHaveBeenCalledWith("linked", expect.any(Function));
 });

@@ -36,24 +36,21 @@ export async function fileDrag(
 
 /** A plain-text drag, which none of the file receivers may react to. */
 export async function textDrag(target: Locator, type: DragType) {
-  await target.evaluate(
-    (element, type) => {
-      const data = new DataTransfer();
-      data.setData("text/plain", "some text");
-      const rect = element.getBoundingClientRect();
-      element.dispatchEvent(
-        new DragEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          dataTransfer: data,
-          clientX: rect.left + rect.width / 2,
-          clientY: rect.top + rect.height / 2,
-        }),
-      );
-    },
-    type,
-  );
+  await target.evaluate((element, type) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", "some text");
+    const rect = element.getBoundingClientRect();
+    element.dispatchEvent(
+      new DragEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        dataTransfer: data,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      }),
+    );
+  }, type);
 }
 
 export const dropBadge = (page: Page) => page.locator(".pointer-drop-hint");

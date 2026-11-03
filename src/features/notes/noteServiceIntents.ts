@@ -101,10 +101,7 @@ function available(): Keeper {
     throw new NoteServiceIntentError("registry-unavailable");
   return keeper;
 }
-function snapshot(
-  state: Keeper,
-  rows = [...state.records.values()],
-): NativeInputRead {
+function snapshot(state: Keeper, rows = [...state.records.values()]): NativeInputRead {
   const pending = rows.some((row) => row.pending);
   return {
     snapshot: {
@@ -252,19 +249,15 @@ function admitNoteServiceIntent(
   let state!: Keeper;
   try {
     state = available();
-    if (!state.registration)
-      throw new NoteServiceIntentError("registry-unavailable");
+    if (!state.registration) throw new NoteServiceIntentError("registry-unavailable");
     if (!commands.has(command) || !isNativeCaptureObject(exactArgs))
       throw new NoteServiceIntentError("invalid-request");
-    if (state.nextId >= Number.MAX_SAFE_INTEGER)
-      throw new NoteServiceIntentError("capacity");
+    if (state.nextId >= Number.MAX_SAFE_INTEGER) throw new NoteServiceIntentError("capacity");
     let args: Record<string, unknown>, requestBytes: number;
     try {
       args = copyNativeCaptureData(exactArgs);
       const encoded = createNativeCaptureSnapshotEncoder()({ command, args });
-      requestBytes = encoder.encode(
-        stringifyNativeCaptureJson(encoded),
-      ).byteLength;
+      requestBytes = encoder.encode(stringifyNativeCaptureJson(encoded)).byteLength;
     } catch {
       throw new NoteServiceIntentError("invalid-request");
     }
@@ -293,12 +286,8 @@ function admitNoteServiceIntent(
         return false;
       try {
         const rows = [...state.records.values(), row];
-        const aggregate = createNativeCaptureSnapshotEncoder()(
-          snapshot(state, rows).snapshot,
-        );
-        const bytes = encoder.encode(
-          stringifyNativeCaptureJson(aggregate),
-        ).byteLength;
+        const aggregate = createNativeCaptureSnapshotEncoder()(snapshot(state, rows).snapshot);
+        const bytes = encoder.encode(stringifyNativeCaptureJson(aggregate)).byteLength;
         // Generated undefined-path metadata shares the aggregate budget too.
         // Reserve the bounded future diagnostic before invoking Native.
         return bytes <= NOTE_SERVICE_INTENT_LIMITS.bytes - rows.length * OVERHEAD;
@@ -306,9 +295,7 @@ function admitNoteServiceIntent(
         return false;
       }
     };
-    while (!fits())
-      if (!evictOldestUnverified(state))
-        throw new NoteServiceIntentError("capacity");
+    while (!fits()) if (!evictOldestUnverified(state)) throw new NoteServiceIntentError("capacity");
     work.apply(() => {
       state.records.set(row.data.id, row);
       state.bytes += weight;
@@ -395,8 +382,7 @@ function admitNoteServiceIntent(
       native: () => Promise<T>,
       bookkeeping?: (result: T) => void | Promise<void>,
     ): Promise<T> {
-      if (executed)
-        return Promise.reject(new NoteServiceIntentError("already-executed"));
+      if (executed) return Promise.reject(new NoteServiceIntentError("already-executed"));
       executed = true;
       if (noteWorkOwner(work) !== owner) {
         // Ownership moved before Native ran: the original call must not run for

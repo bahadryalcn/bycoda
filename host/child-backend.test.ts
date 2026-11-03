@@ -48,7 +48,7 @@ setInterval(()=>{},1000);`,
   const exits: Array<{ sessionId: string; constructionId: string; pid: number }> = [];
   const stateWaiters = new Set<() => void>();
   const changed = () => {
-    for (const check of [...stateWaiters]) check();
+    for (const check of Array.from(stateWaiters)) check();
   };
   const waitForState = (ready: () => boolean) =>
     new Promise<void>((resolve) => {

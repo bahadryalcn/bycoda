@@ -10,10 +10,23 @@ import {
 
 it("uses a remote tab's linked checkout for Git even when the file cwd points elsewhere", () => {
   const project = { environmentId: "mac", cwd: "/repo" };
-  expect(remoteSessionGitCwd(project, "remote://mac/repo", "remote://mac/repo", "/worktrees/fix")).toBe("remote://mac/worktrees/fix");
-  expect(remoteSessionGitCwd(project, "/worktrees/fix", "remote://mac/repo")).toBe("remote://mac/worktrees/fix");
-  expect(remoteSessionGitCwd(project, "remote://mac/other", "remote://mac/repo", "remote://mac/worktrees/fix")).toBe("remote://mac/worktrees/fix");
-  expect(remoteSessionGitCwd(project, "remote://mac/repo", "remote://mac/repo")).toBe("remote://mac/repo");
+  expect(
+    remoteSessionGitCwd(project, "remote://mac/repo", "remote://mac/repo", "/worktrees/fix"),
+  ).toBe("remote://mac/worktrees/fix");
+  expect(remoteSessionGitCwd(project, "/worktrees/fix", "remote://mac/repo")).toBe(
+    "remote://mac/worktrees/fix",
+  );
+  expect(
+    remoteSessionGitCwd(
+      project,
+      "remote://mac/other",
+      "remote://mac/repo",
+      "remote://mac/worktrees/fix",
+    ),
+  ).toBe("remote://mac/worktrees/fix");
+  expect(remoteSessionGitCwd(project, "remote://mac/repo", "remote://mac/repo")).toBe(
+    "remote://mac/repo",
+  );
 });
 
 const binding = {

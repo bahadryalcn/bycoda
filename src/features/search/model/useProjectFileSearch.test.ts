@@ -85,9 +85,11 @@ it("keeps failure recoverable through Retry", async () => {
 
 it("retains same-query matches during retry and after a retry failure", async () => {
   let rejectRetry!: (cause: unknown) => void;
-  bridge.searchProject
-    .mockResolvedValueOnce(result)
-    .mockReturnValueOnce(new Promise((_, reject) => { rejectRetry = reject; }));
+  bridge.searchProject.mockResolvedValueOnce(result).mockReturnValueOnce(
+    new Promise((_, reject) => {
+      rejectRetry = reject;
+    }),
+  );
   await render("/old", "old");
   await advance();
   act(() => view.retry());

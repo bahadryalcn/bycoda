@@ -1,5 +1,7 @@
 import type { Readable, Writable } from "node:stream";
 
+class McpRateLimited extends Error {}
+
 export type McpScope = "conversation" | "runtime-logs" | "social";
 
 // Code-owned read operations only. Unknown tools remain ordering barriers; never
@@ -111,17 +113,32 @@ export async function runMcpProxy(
   const forward = async (message: Message | null) => {
     let heldBytes = 0;
     try {
-      const response = await fetcher(endpoint, {
-        method: "POST",
-        redirect: "error",
-        signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(250_000)]),
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-        },
-        body: JSON.stringify(message),
-      });
+      const send = () =>
+        fetcher(endpoint, {
+          method: "POST",
+          redirect: "error",
+          signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(250_000)]),
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify(message),
+        });
+      let response = await send();
+      if (response.status === 429) {
+        // Honor a short Retry-After once; longer waits surface as a clear error.
+        const seconds = Number(response.headers.get("retry-after"));
+        await response.body?.cancel();
+        if (Number.isFinite(seconds) && seconds >= 0 && seconds <= 2) {
+          await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+          response = await send();
+        }
+        if (response.status === 429) {
+          await response.body?.cancel();
+          throw new McpRateLimited();
+        }
+      }
       if (!response.ok) {
         await response.body?.cancel();
         throw new Error();
@@ -143,12 +160,18 @@ export async function runMcpProxy(
       // Only protocol responses reach stdout; never print HTTP diagnostics or credentials.
       const result = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (message && Object.hasOwn(message, "id")) await emit(result);
-    } catch {
+    } catch (error) {
       if (message && Object.hasOwn(message, "id"))
         await emit({
           jsonrpc: "2.0",
           id: message.id,
-          error: { code: -32603, message: "MCP host request failed." },
+          error: {
+            code: -32603,
+            message:
+              error instanceof McpRateLimited
+                ? "MCP host rate limit exceeded. Retry shortly."
+                : "MCP host request failed.",
+          },
         });
     } finally {
       bufferedResponseBytes -= heldBytes;

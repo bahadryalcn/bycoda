@@ -161,7 +161,11 @@ export function ServersConnectionTools({
                     disabled={busy}
                   />
                   <div className="flex justify-end gap-2">
-                    <Button variant="ghost" disabled={busy} onClick={() => setEditingIdentity(false)}>
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setEditingIdentity(false)}
+                    >
                       {t("Cancel")}
                     </Button>
                     <Button
@@ -192,7 +196,12 @@ export function ServersConnectionTools({
         </TabPanel>
         {canAssignKey ? (
           <TabPanel value="forwards" keepMounted>
-            <ServerForwards key={server.id} server={server} expanded active={panel === "forwards"} />
+            <ServerForwards
+              key={server.id}
+              server={server}
+              expanded
+              active={panel === "forwards"}
+            />
           </TabPanel>
         ) : null}
         <TabPanel value="automation" keepMounted>

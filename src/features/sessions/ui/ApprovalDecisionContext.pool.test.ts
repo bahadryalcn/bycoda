@@ -21,9 +21,17 @@ it("keeps context consumers stable while reads follow the current original sessi
     context = useApprovalDecisionContext();
     return null;
   });
-  const render = () => act(() => root.render(createElement(ApprovalDecisionProvider, {
-    session, getSession, dispatch, children: createElement(Consumer),
-  })));
+  const render = () =>
+    act(() =>
+      root.render(
+        createElement(ApprovalDecisionProvider, {
+          session,
+          getSession,
+          dispatch,
+          children: createElement(Consumer),
+        }),
+      ),
+    );
   try {
     render();
     const original = context;

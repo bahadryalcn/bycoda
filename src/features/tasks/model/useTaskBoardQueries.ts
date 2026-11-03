@@ -282,7 +282,7 @@ export function useTaskBoardQueries() {
    * confirmed mutation are cancelled first, so an older host answer cannot put
    * the previous state back; the query cache stays the only collection owner. */
   const patchMachine = useCallback(
-    <T,>(machineId: string, kind: string, patch: (current: T) => T) => {
+    <T>(machineId: string, kind: string, patch: (current: T) => T) => {
       const machine = machines.find((entry) => entry.id === machineId);
       if (!machine) return;
       const scope = ["task-board", ...identity(machine), kind];

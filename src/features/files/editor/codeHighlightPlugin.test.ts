@@ -31,13 +31,25 @@ function text(result: HighlightResult): string {
 describe("bounded code highlight plugin", () => {
   it("reuses complete lines and preserves grammar, offsets, CRLF and middle-edit correctness", async () => {
     const plugin = createBoundedCodePlugin();
-    const reference = await shiki.createHighlighter({ themes: plugin.getThemes(), langs: ["typescript"], engine: createJavaScriptRegexEngine({ forgiving: true }) });
-    const sources = ['const text = `first\nsecond', 'const text = `first\nsecond\nthird`;', 'const text = `changed\nsecond\nthird`;', '/* first\r\nsecond\r\n*/ const n = 1;'];
+    const reference = await shiki.createHighlighter({
+      themes: plugin.getThemes(),
+      langs: ["typescript"],
+      engine: createJavaScriptRegexEngine({ forgiving: true }),
+    });
+    const sources = [
+      "const text = `first\nsecond",
+      "const text = `first\nsecond\nthird`;",
+      "const text = `changed\nsecond\nthird`;",
+      "/* first\r\nsecond\r\n*/ const n = 1;",
+    ];
     let previous: HighlightResult | undefined;
     try {
       for (const source of sources) {
         const result = await highlight(plugin, source);
-        const complete = reference.codeToTokens(source, { lang: "typescript", themes: { light: "github-light", dark: "github-dark" } });
+        const complete = reference.codeToTokens(source, {
+          lang: "typescript",
+          themes: { light: "github-light", dark: "github-dark" },
+        });
         expect(result.tokens).toEqual(complete.tokens);
         if (previous && source === sources[1]) expect(result.tokens[0]).toBe(previous.tokens[0]);
         previous = result;
@@ -45,12 +57,22 @@ describe("bounded code highlight plugin", () => {
       const python = await highlight(plugin, sources[0], "python");
       expect(python.tokens).not.toEqual((await highlight(plugin, sources[0])).tokens);
       await reference.loadTheme("nord");
-      const changedTheme = await new Promise<HighlightResult>(resolve => {
-        const cached = plugin.highlight({ code: sources[0], language: "typescript", themes: ["nord", "github-dark"] }, resolve);
+      const changedTheme = await new Promise<HighlightResult>((resolve) => {
+        const cached = plugin.highlight(
+          { code: sources[0], language: "typescript", themes: ["nord", "github-dark"] },
+          resolve,
+        );
         if (cached) resolve(cached);
       });
-      expect(changedTheme.tokens).toEqual(reference.codeToTokens(sources[0], { lang: "typescript", themes: { light: "nord", dark: "github-dark" } }).tokens);
-    } finally { reference.dispose(); }
+      expect(changedTheme.tokens).toEqual(
+        reference.codeToTokens(sources[0], {
+          lang: "typescript",
+          themes: { light: "nord", dark: "github-dark" },
+        }).tokens,
+      );
+    } finally {
+      reference.dispose();
+    }
   }, 20_000);
   it("shares one highlight run across concurrent requests and notifies every callback", async () => {
     const plugin = createBoundedCodePlugin();

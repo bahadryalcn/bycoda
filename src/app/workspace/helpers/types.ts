@@ -3,7 +3,13 @@ import { type NoteComposerCard } from "../../../features/notes";
 import { type ControlOutcome } from "../../../features/orchestration/model/orchestration";
 import { type OrchestrationProposal } from "../../../features/orchestration/model/orchestrationPlan";
 import { type HandoffComposerCard } from "../../../features/sessions/model/handoff";
-import { type Attachment, type ComposerTurnOptions, type LinkedWorkItem, type PlanBuildTarget, type SecondOpinionMeta } from "../../../features/sessions/model/session";
+import {
+  type Attachment,
+  type ComposerTurnOptions,
+  type LinkedWorkItem,
+  type PlanBuildTarget,
+  type SecondOpinionMeta,
+} from "../../../features/sessions/model/session";
 import { type FollowUpBehavior } from "../../../features/settings/model/settings";
 import { type SubmissionAcceptance } from "../../model/submissionAcceptance";
 

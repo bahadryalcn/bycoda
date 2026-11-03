@@ -43,7 +43,14 @@ export const HostGoalInputSchema = z.strictObject({
   providerAccountId: z.string().optional(),
   model: z.string(),
   modelSettings: z.record(z.string(), z.string()).optional(),
-  plannerExecution:z.strictObject({harness:SessionProviderSchema,providerAccountId:z.string().optional(),model:z.string(),modelSettings:z.record(z.string(),z.string()).optional()}).optional(),
+  plannerExecution: z
+    .strictObject({
+      harness: SessionProviderSchema,
+      providerAccountId: z.string().optional(),
+      model: z.string(),
+      modelSettings: z.record(z.string(), z.string()).optional(),
+    })
+    .optional(),
   runtimeMode: SessionRuntimeModeSchema,
   maxRunMinutes: z.number().optional(),
   isolate: z.boolean().optional(),
@@ -113,7 +120,7 @@ export const GoalFinalAcceptanceSchema = z.strictObject({
   acceptance: GoalAcceptanceReportSchema.optional(),
 });
 export const HostGoalSchema = HostGoalInputSchema.extend({
-  awaitingOwnerRestart:z.boolean().optional(),
+  awaitingOwnerRestart: z.boolean().optional(),
   modelSettings: z.record(z.string(), z.string()),
   maxRunMinutes: z.number(),
   verifyDefaults: GoalVerifyDefaultsSchema.extend({ review: z.boolean() }),

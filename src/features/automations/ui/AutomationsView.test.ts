@@ -20,65 +20,261 @@ import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { focusManager } from "@tanstack/react-query";
 const AutomationsView = withQueryClient(RawAutomationsView);
 
-it("keeps an unfocused assistant reveal paused, then opens its exact Host row when normal focus loading resumes",async()=>{
- const row:Automation={...newAutomationDraft("/work/controls","codex","model"),id:"requested",name:"Focused canonical automation",prompt:"Do not run",createdAt:1,updatedAt:2,nextRunAt:0,host:{machineId:"machine",machineName:"Host",environmentId:"original",projectId:"project"}};
- const lists=vi.spyOn(hostAutomationClient,"listHostAutomationResults").mockResolvedValue([{machineId:"machine",machineName:"Host",status:"ok",stale:false,data:[row]}]);
- const history=vi.spyOn(hostAutomationClient,"listHostAutomationRuns").mockResolvedValue([]);
- invoke.mockResolvedValue([]);focusManager.setFocused(false);
- const props={recents:[{path:row.cwd}] as any,onClose:vi.fn(),onLaunch:vi.fn(),onOpenSession:vi.fn(),onOpenBackgroundSession:vi.fn(),revealAutomation:{id:row.id,projectId:"project",environmentId:"original",machineId:"machine",token:10}};
- try{
-  await act(async()=>root.render(createElement(AutomationsView,props)));
-  expect(container.textContent).toContain("Focus this window to load automations.");expect(container.textContent).not.toContain("Create your first automation");
-  expect(lists).not.toHaveBeenCalled();expect(invoke).not.toHaveBeenCalled();
-  await act(async()=>focusManager.setFocused(true));
-  await vi.waitFor(()=>expect(container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')?.value).toBe(row.name));
-  expect(props.onLaunch).not.toHaveBeenCalled();expect(invoke.mock.calls.some(([command])=>command==="automation_run"||command==="automations_upsert")).toBe(false);
- }finally{lists.mockRestore();history.mockRestore();}
+it("keeps an unfocused assistant reveal paused, then opens its exact Host row when normal focus loading resumes", async () => {
+  const row: Automation = {
+    ...newAutomationDraft("/work/controls", "codex", "model"),
+    id: "requested",
+    name: "Focused canonical automation",
+    prompt: "Do not run",
+    createdAt: 1,
+    updatedAt: 2,
+    nextRunAt: 0,
+    host: {
+      machineId: "machine",
+      machineName: "Host",
+      environmentId: "original",
+      projectId: "project",
+    },
+  };
+  const lists = vi
+    .spyOn(hostAutomationClient, "listHostAutomationResults")
+    .mockResolvedValue([
+      { machineId: "machine", machineName: "Host", status: "ok", stale: false, data: [row] },
+    ]);
+  const history = vi.spyOn(hostAutomationClient, "listHostAutomationRuns").mockResolvedValue([]);
+  invoke.mockResolvedValue([]);
+  focusManager.setFocused(false);
+  const props = {
+    recents: [{ path: row.cwd }] as any,
+    onClose: vi.fn(),
+    onLaunch: vi.fn(),
+    onOpenSession: vi.fn(),
+    onOpenBackgroundSession: vi.fn(),
+    revealAutomation: {
+      id: row.id,
+      projectId: "project",
+      environmentId: "original",
+      machineId: "machine",
+      token: 10,
+    },
+  };
+  try {
+    await act(async () => root.render(createElement(AutomationsView, props)));
+    expect(container.textContent).toContain("Focus this window to load automations.");
+    expect(container.textContent).not.toContain("Create your first automation");
+    expect(lists).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+    await act(async () => focusManager.setFocused(true));
+    await vi.waitFor(() =>
+      expect(
+        container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')?.value,
+      ).toBe(row.name),
+    );
+    expect(props.onLaunch).not.toHaveBeenCalled();
+    expect(
+      invoke.mock.calls.some(
+        ([command]) => command === "automation_run" || command === "automations_upsert",
+      ),
+    ).toBe(false);
+  } finally {
+    lists.mockRestore();
+    history.mockRestore();
+  }
 });
 
-it("retries the same reveal after refreshed rows arrive without selecting a same-id automation on another Host",async()=>{
- const row:Automation={...newAutomationDraft("/work/controls","codex","model"),id:"requested",name:"Late canonical automation",prompt:"Do not run",createdAt:1,updatedAt:2,nextRunAt:0,host:{machineId:"machine",machineName:"Host",environmentId:"original",projectId:"project"}};
- let finish!:(value:any)=>void;const late=new Promise<any>(resolve=>finish=resolve);
- const lists=vi.spyOn(hostAutomationClient,"listHostAutomationResults").mockResolvedValueOnce([]).mockReturnValueOnce(late);
- const history=vi.spyOn(hostAutomationClient,"listHostAutomationRuns").mockResolvedValue([]);
- invoke.mockResolvedValue([]);
- const props={recents:[{path:row.cwd}] as any,onClose:vi.fn(),onLaunch:vi.fn(),onOpenSession:vi.fn(),onOpenBackgroundSession:vi.fn(),revealAutomation:{id:row.id,projectId:"project",environmentId:"original",machineId:"machine",token:11}};
- try{
-  await act(async()=>root.render(createElement(AutomationsView,props)));
-  await vi.waitFor(()=>expect(lists).toHaveBeenCalledTimes(2));expect(container.textContent).toContain("unavailable on its original computer");
-  const decoy={...row,name:"Wrong Host",host:{...row.host!,machineId:"other",environmentId:"other"}};
-  await act(async()=>finish([{machineId:"machine",machineName:"Host",status:"ok",stale:false,data:[decoy,row]}]));
-  expect(container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')?.value).toBe(row.name);expect(lists).toHaveBeenCalledTimes(2);
-  expect(props.onLaunch).not.toHaveBeenCalled();
- }finally{lists.mockRestore();history.mockRestore();}
+it("retries the same reveal after refreshed rows arrive without selecting a same-id automation on another Host", async () => {
+  const row: Automation = {
+    ...newAutomationDraft("/work/controls", "codex", "model"),
+    id: "requested",
+    name: "Late canonical automation",
+    prompt: "Do not run",
+    createdAt: 1,
+    updatedAt: 2,
+    nextRunAt: 0,
+    host: {
+      machineId: "machine",
+      machineName: "Host",
+      environmentId: "original",
+      projectId: "project",
+    },
+  };
+  let finish!: (value: any) => void;
+  const late = new Promise<any>((resolve) => (finish = resolve));
+  const lists = vi
+    .spyOn(hostAutomationClient, "listHostAutomationResults")
+    .mockResolvedValueOnce([])
+    .mockReturnValueOnce(late);
+  const history = vi.spyOn(hostAutomationClient, "listHostAutomationRuns").mockResolvedValue([]);
+  invoke.mockResolvedValue([]);
+  const props = {
+    recents: [{ path: row.cwd }] as any,
+    onClose: vi.fn(),
+    onLaunch: vi.fn(),
+    onOpenSession: vi.fn(),
+    onOpenBackgroundSession: vi.fn(),
+    revealAutomation: {
+      id: row.id,
+      projectId: "project",
+      environmentId: "original",
+      machineId: "machine",
+      token: 11,
+    },
+  };
+  try {
+    await act(async () => root.render(createElement(AutomationsView, props)));
+    await vi.waitFor(() => expect(lists).toHaveBeenCalledTimes(2));
+    expect(container.textContent).toContain("unavailable on its original computer");
+    const decoy = {
+      ...row,
+      name: "Wrong Host",
+      host: { ...row.host!, machineId: "other", environmentId: "other" },
+    };
+    await act(async () =>
+      finish([
+        {
+          machineId: "machine",
+          machineName: "Host",
+          status: "ok",
+          stale: false,
+          data: [decoy, row],
+        },
+      ]),
+    );
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')?.value).toBe(
+      row.name,
+    );
+    expect(lists).toHaveBeenCalledTimes(2);
+    expect(props.onLaunch).not.toHaveBeenCalled();
+  } finally {
+    lists.mockRestore();
+    history.mockRestore();
+  }
 });
 
-it("shows an initial Host-read failure instead of claiming there are no automations",async()=>{
- invoke.mockImplementation(async(command)=>{if(command==="remote_machines")throw new Error("Host read failed");return [];});
- await act(async()=>root.render(createElement(AutomationsView,{recents:[],onClose:vi.fn(),onLaunch:vi.fn(),onOpenSession:vi.fn(),onOpenBackgroundSession:vi.fn()})));
- await vi.waitFor(()=>expect(container.textContent).toContain("Host read failed"));
- expect(container.textContent).toContain("Automations unavailable");expect(container.textContent).not.toContain("Create your first automation");
+it("shows an initial Host-read failure instead of claiming there are no automations", async () => {
+  invoke.mockImplementation(async (command) => {
+    if (command === "remote_machines") throw new Error("Host read failed");
+    return [];
+  });
+  await act(async () =>
+    root.render(
+      createElement(AutomationsView, {
+        recents: [],
+        onClose: vi.fn(),
+        onLaunch: vi.fn(),
+        onOpenSession: vi.fn(),
+        onOpenBackgroundSession: vi.fn(),
+      }),
+    ),
+  );
+  await vi.waitFor(() => expect(container.textContent).toContain("Host read failed"));
+  expect(container.textContent).toContain("Automations unavailable");
+  expect(container.textContent).not.toContain("Create your first automation");
 });
 
-it("parks assistant navigation behind an unsaved draft and owner filters, then reveals the exact fresh Host row without saving or running",async()=>{
- const hostRow:Automation={...newAutomationDraft("/work/controls","codex","model"),id:"requested",name:"Requested Host automation",prompt:"Historical prompt",createdAt:1,updatedAt:2,nextRunAt:0,host:{machineId:"machine",machineName:"Host",environmentId:"original",projectId:"project"}};
- const lists=vi.spyOn(hostAutomationClient,"listHostAutomationResults").mockResolvedValue([{machineId:"machine",machineName:"Host",status:"ok",stale:false,data:[hostRow]}]);
- const history=vi.spyOn(hostAutomationClient,"listHostAutomationRuns").mockResolvedValue([]);
- const props={cwd:"/work/controls",recents:[{path:"/work/controls"}] as any,onClose:vi.fn(),onLaunch:vi.fn(),onOpenSession:vi.fn(),onOpenBackgroundSession:vi.fn()};
- const target={id:hostRow.id,projectId:"project",environmentId:"original",machineId:"machine",token:1};
- try{
-  await renderControlEditor();let name=container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;await changeInput(name,"Owner unsaved draft");
-  await act(async()=>root.render(createElement(AutomationsView,{...props,revealAutomation:target})));
-  expect(name.value).toBe("Owner unsaved draft");expect(container.textContent).toContain("Keep or close your current automation draft");const retry=()=>Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button=>button.textContent?.trim()==="Retry")!;expect(retry().disabled).toBe(true);
-  await act(async()=>Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button=>button.textContent?.trim()==="Reset")!.click());await act(async()=>retry().click());
-  name=container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;expect(name.value).toBe("Requested Host automation");
-  await act(async()=>container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click());const search=document.querySelector<HTMLInputElement>('[role="dialog"][aria-label="Filter automations"] input')!;await changeInput(search,"owner-filter-kept");
-  await act(async()=>container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click());await act(async()=>root.render(createElement(AutomationsView,{...props,revealAutomation:{...target,token:2}})));
-  expect(container.textContent).toContain("requested automation is hidden by your filters");expect(name.value).toBe("Requested Host automation");
-  await act(async()=>container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click());expect(document.querySelector<HTMLInputElement>('[role="dialog"][aria-label="Filter automations"] input')?.value).toBe("owner-filter-kept");
-  await act(async()=>container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click());await act(async()=>Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button=>button.textContent?.trim()==="Reset filters")!.click());expect(container.textContent).not.toContain("requested automation is hidden by your filters");
-  expect(invoke.mock.calls.some(([command])=>command==="automations_upsert"||command==="automation_run")).toBe(false);expect(props.onLaunch).not.toHaveBeenCalled();
- }finally{lists.mockRestore();history.mockRestore();}
+it("parks assistant navigation behind an unsaved draft and owner filters, then reveals the exact fresh Host row without saving or running", async () => {
+  const hostRow: Automation = {
+    ...newAutomationDraft("/work/controls", "codex", "model"),
+    id: "requested",
+    name: "Requested Host automation",
+    prompt: "Historical prompt",
+    createdAt: 1,
+    updatedAt: 2,
+    nextRunAt: 0,
+    host: {
+      machineId: "machine",
+      machineName: "Host",
+      environmentId: "original",
+      projectId: "project",
+    },
+  };
+  const lists = vi
+    .spyOn(hostAutomationClient, "listHostAutomationResults")
+    .mockResolvedValue([
+      { machineId: "machine", machineName: "Host", status: "ok", stale: false, data: [hostRow] },
+    ]);
+  const history = vi.spyOn(hostAutomationClient, "listHostAutomationRuns").mockResolvedValue([]);
+  const props = {
+    cwd: "/work/controls",
+    recents: [{ path: "/work/controls" }] as any,
+    onClose: vi.fn(),
+    onLaunch: vi.fn(),
+    onOpenSession: vi.fn(),
+    onOpenBackgroundSession: vi.fn(),
+  };
+  const target = {
+    id: hostRow.id,
+    projectId: "project",
+    environmentId: "original",
+    machineId: "machine",
+    token: 1,
+  };
+  try {
+    await renderControlEditor();
+    let name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
+    await changeInput(name, "Owner unsaved draft");
+    await act(async () =>
+      root.render(createElement(AutomationsView, { ...props, revealAutomation: target })),
+    );
+    expect(name.value).toBe("Owner unsaved draft");
+    expect(container.textContent).toContain("Keep or close your current automation draft");
+    const retry = () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) => button.textContent?.trim() === "Retry",
+      )!;
+    expect(retry().disabled).toBe(true);
+    await act(async () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent?.trim() === "Reset")!
+        .click(),
+    );
+    await act(async () => retry().click());
+    name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
+    expect(name.value).toBe("Requested Host automation");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click(),
+    );
+    const search = document.querySelector<HTMLInputElement>(
+      '[role="dialog"][aria-label="Filter automations"] input',
+    )!;
+    await changeInput(search, "owner-filter-kept");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click(),
+    );
+    await act(async () =>
+      root.render(
+        createElement(AutomationsView, { ...props, revealAutomation: { ...target, token: 2 } }),
+      ),
+    );
+    expect(container.textContent).toContain("requested automation is hidden by your filters");
+    expect(name.value).toBe("Requested Host automation");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click(),
+    );
+    expect(
+      document.querySelector<HTMLInputElement>(
+        '[role="dialog"][aria-label="Filter automations"] input',
+      )?.value,
+    ).toBe("owner-filter-kept");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Filter automations"]')!.click(),
+    );
+    await act(async () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent?.trim() === "Reset filters")!
+        .click(),
+    );
+    expect(container.textContent).not.toContain("requested automation is hidden by your filters");
+    expect(
+      invoke.mock.calls.some(
+        ([command]) => command === "automations_upsert" || command === "automation_run",
+      ),
+    ).toBe(false);
+    expect(props.onLaunch).not.toHaveBeenCalled();
+  } finally {
+    lists.mockRestore();
+    history.mockRestore();
+  }
 });
 
 const invoke = vi.hoisted(() => vi.fn());

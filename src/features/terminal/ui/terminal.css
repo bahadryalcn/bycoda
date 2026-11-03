@@ -67,8 +67,7 @@
     max-inline-size: 0;
     overflow: hidden;
   }
-  .terminal-list-row:is(:hover, :focus-within, [data-selected])
-    .terminal-row-actions {
+  .terminal-list-row:is(:hover, :focus-within, [data-selected]) .terminal-row-actions {
     max-inline-size: none;
     overflow: visible;
   }

@@ -45,11 +45,16 @@ test("tools share a compact responsive top bar", async ({ page }) => {
     } else {
       // Narrow panes swap it for one named selector that shows the current tool.
       await expect(tabs.getByRole("tab")).toHaveCount(0);
-      const selector = bar.getByRole("button", { name: "Conversation tool selection", exact: true });
+      const selector = bar.getByRole("button", {
+        name: "Conversation tool selection",
+        exact: true,
+      });
       await expect(selector).toContainText("Host browser");
       await selector.click();
       await expect(page.getByRole("menuitemradio")).toHaveCount(5);
-      await expect(page.getByRole("menuitemradio", { name: "Host browser", exact: true })).toBeChecked();
+      await expect(
+        page.getByRole("menuitemradio", { name: "Host browser", exact: true }),
+      ).toBeChecked();
       await page.keyboard.press("Escape");
       await expect(selector).toBeFocused();
     }
@@ -830,9 +835,7 @@ test("finds servers by port and name and retains list scroll across updates and 
   await refresh();
   await expect(list.getByRole("listitem")).toHaveCount(26);
   await expect(page.locator('.dev-servers-panel[aria-busy="true"]')).toHaveCount(0);
-  await expect
-    .poll(anchorTop)
-    .toBeCloseTo(anchoredAt, 0);
+  await expect.poll(anchorTop).toBeCloseTo(anchoredAt, 0);
   await page.evaluate(() => {
     (
       window as unknown as { hostToolFixture: { scanFailure: boolean } }
@@ -843,9 +846,7 @@ test("finds servers by port and name and retains list scroll across updates and 
     page.getByText("Showing the last successful scan. Retry to update.", { exact: true }),
   ).toBeAttached();
   await expect(list.getByRole("listitem")).toHaveCount(26);
-  await expect
-    .poll(anchorTop)
-    .toBeCloseTo(anchoredAt, 0);
+  await expect.poll(anchorTop).toBeCloseTo(anchoredAt, 0);
   await page.evaluate(() => {
     const fixture = (
       window as unknown as { hostToolFixture: { scanFailure: boolean; updateServer: () => void } }
@@ -859,9 +860,7 @@ test("finds servers by port and name and retains list scroll across updates and 
   await expect(
     list.getByRole("listitem", { name: "Updated preview server", exact: true }),
   ).toBeAttached();
-  await expect
-    .poll(anchorTop)
-    .toBeCloseTo(anchoredAt, 0);
+  await expect.poll(anchorTop).toBeCloseTo(anchoredAt, 0);
 });
 
 test("compact browser keeps preview and keyboard controls usable at all panel widths", async ({

@@ -202,7 +202,9 @@ export function WorkspaceDirectoryRemoval({
               </div>
             )}
             {plan.expiresAt <= now && (
-              <InlineError>{t("This preview expired. Refresh preview before deleting.")}</InlineError>
+              <InlineError>
+                {t("This preview expired. Refresh preview before deleting.")}
+              </InlineError>
             )}
           </>
         )}

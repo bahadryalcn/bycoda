@@ -26,9 +26,10 @@ export async function uploadRemoteAttachments(
     onProgress?: (id: string, offset: number, size: number) => void;
   } = {},
 ): Promise<RemoteAttachment[]> {
-  const remoteRequest = <T>(id: string, method: string, params: unknown): Promise<T> => options.environmentId
-    ? requestHost<T>(id, method, params, false, false, options.environmentId)
-    : requestHost<T>(id, method, params);
+  const remoteRequest = <T>(id: string, method: string, params: unknown): Promise<T> =>
+    options.environmentId
+      ? requestHost<T>(id, method, params, false, false, options.environmentId)
+      : requestHost<T>(id, method, params);
   if (attachments.length > 20) throw new Error("Too many attachments");
   if (options.ownership) {
     if (!options.ownershipSource) throw new Error("Missing attachment ownership source");

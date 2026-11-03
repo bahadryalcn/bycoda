@@ -10882,5 +10882,20 @@
   "Voice needs attention": "Voice needs attention",
   "The assistant conversation context is not ready. Wait until connected before trying this tool. No operation was dispatched.": "The assistant conversation context is not ready. Wait until connected before trying this tool. No operation was dispatched.",
   "Exact owner approval is unavailable for this captured conversation.": "Exact owner approval is unavailable for this captured conversation.",
-  "The turn mode menu could not be opened. Try again.": "The turn mode menu could not be opened. Try again."
+  "The turn mode menu could not be opened. Try again.": "The turn mode menu could not be opened. Try again.",
+  "Could not save group visibility. Please try again.": "Could not save group visibility. Please try again.",
+  "Refresh and review the pull request before merging.": "Refresh and review the pull request before merging.",
+  "Failed at {p0}": "Failed at {p0}",
+  "took {p0}": "took {p0}",
+  "Supervision recorded": "Supervision recorded",
+  "Attachments cannot be added while this conversation changes. Try again.": "Attachments cannot be added while this conversation changes. Try again.",
+  "Could not copy the path to the clipboard.": "Could not copy the path to the clipboard.",
+  "Could not open the link": "Could not open the link",
+  "Unconfirmed": "Unconfirmed",
+  "Open Privacy Settings": "Open Privacy Settings",
+  "Microphone access is blocked. Allow bycoda in System Settings > Privacy & Security > Microphone, then try again.": "Microphone access is blocked. Allow bycoda in System Settings > Privacy & Security > Microphone, then try again.",
+  "Microphone access is blocked. Allow it in your system or browser settings, then try again.": "Microphone access is blocked. Allow it in your system or browser settings, then try again.",
+  "Screenshots need Screen Recording access. Allow bycoda in System Settings > Privacy & Security > Screen & System Audio Recording, then restart bycoda and try again.": "Screenshots need Screen Recording access. Allow bycoda in System Settings > Privacy & Security > Screen & System Audio Recording, then restart bycoda and try again.",
+  "Custom": "Custom",
+  "minutes": "minutes"
 }

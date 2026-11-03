@@ -17,8 +17,10 @@ const agents = settingSnapshot(loadLiveAgentsEnabled, subscribeLiveAgentsEnabled
 export function useSettingsBackedFlags() {
   const notesEnabled = useSyncExternalStore(notes.subscribe, notes.getSnapshot, () => true);
   const liveAgentsEnabled = useSyncExternalStore(agents.subscribe, agents.getSnapshot, () => true);
-  const [collapsedProjectRailMode, setCollapsedProjectRailMode] =
-    useStoredPreferenceState(loadCollapsedProjectRailMode, subscribeCollapsedProjectRailMode);
+  const [collapsedProjectRailMode, setCollapsedProjectRailMode] = useStoredPreferenceState(
+    loadCollapsedProjectRailMode,
+    subscribeCollapsedProjectRailMode,
+  );
   return {
     notesEnabled,
     liveAgentsEnabled,

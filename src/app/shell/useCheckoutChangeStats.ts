@@ -43,7 +43,10 @@ export function useCheckoutChangeStats({
     }
     return trees.length > 1 ? trees : null;
   }, [checkoutTrees]);
-  const checkoutPaths = useMemo(() => checkoutScope?.map((tree) => tree.path) ?? [], [checkoutScope]);
+  const checkoutPaths = useMemo(
+    () => checkoutScope?.map((tree) => tree.path) ?? [],
+    [checkoutScope],
+  );
   const checkoutSelectionKey = checkoutSelectionScope(gitRoot, checkoutPaths);
   const [storedCheckout] = useRetainedState<string | null>(
     `source-control:checkouts:${checkoutSelectionKey}:selected`,

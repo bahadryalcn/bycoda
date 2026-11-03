@@ -34,9 +34,7 @@ export function AccountStatusLabel({
 }) {
   useLocale();
   return (
-    <span
-      className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}
-    >
+    <span className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}>
       <Badge tone={STATUS_TONE[status.tone]} size="sm">
         {status.label}
       </Badge>

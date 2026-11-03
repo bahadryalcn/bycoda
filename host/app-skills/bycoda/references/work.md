@@ -1,6 +1,7 @@
 # Sessions, tasks, goals, crews, notes, automations, stewards
 
 ## Sessions
+
 - A session is one conversation with a provider (Claude, Codex, Cursor, OpenCode, Grok
   and others) in a project. Sessions run on the host and survive closing the app.
 - `sessions.list` / `sessions.read` read other conversations in this project, a few
@@ -15,6 +16,7 @@
   compact, account switching.
 
 ## Tasks
+
 - Tasks are tracked work units with a worker and, by default, a reviewer. They appear
   in the Tasks view.
 - `tasks.create` (`taskId`, `title`, `prompt`; optional `dependsOn`, `verifyCommand`,
@@ -35,10 +37,12 @@
   Note resolution changes one note's acknowledgement, not review/check results.
 
 ## Goals
+
 - A goal is a planned outcome that is split into tasks. `goals.create` makes a plan;
   the owner approves it and starts its tasks. Read with `goals.list` / `goals.get`.
 
 ## Crews
+
 - A crew is a team definition: a coordinator plus member agents with roles, models and
   file scopes. Users manage them in Settings > Crews.
 - Flow:
@@ -52,22 +56,25 @@
 - Acceptance never authorizes commits, pushes or publishing.
 
 ## Notes
+
 - Project notes live in the Notes view. Use them for findings, decisions and handoff
   context that other sessions should see.
 - `notes.create` (your own unique `id`, `body`, optional `title`/`tags`). Pass
   `expectedUpdatedAt` from a read to `notes.update` and `notes.delete`.
 
 ## Automations
+
 - Scheduled agent runs. `automations.create` needs `automationId`, `name`, `prompt`
   and `scheduleKind`:
   - `hourly` takes a `minute`.
   - `daily` and `weekdays` take a `time` ("HH:MM").
   - `weekly` takes `time` and `dayOfWeek` (0-6).
-  Times are in the host's local time. There are no cron strings or event triggers.
+    Times are in the host's local time. There are no cron strings or event triggers.
 - `automations.runNow` to test; verify with `automations.runs`. Pause stops future runs
   only; `stopRun` stops an active run.
 
 ## Stewards
+
 - A steward is a scheduled project caretaker that proposes tasks. It never auto-starts
   or auto-merges them when created from a conversation. Use `stewards.*` with
   `expectedUpdatedAt`.

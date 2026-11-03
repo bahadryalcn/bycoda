@@ -12,10 +12,7 @@ import { DesktopSessions } from "./desktopSessions";
 import { ModelCatalogCache } from "./model-catalog-cache";
 import * as images from "./social-images";
 import { createHostServer } from "./server";
-import {
-  BulkDescriptorSchema,
-  WS_SUBPROTOCOL,
-} from "../src/shared/model/host-contracts";
+import { BulkDescriptorSchema, WS_SUBPROTOCOL } from "../src/shared/model/host-contracts";
 import {
   CrewDefinitionSchema,
   CrewRunSchema,
@@ -36,11 +33,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
-function agent(
-  id: string,
-  role: "coordinator" | "specialist" | "reviewer",
-  large = false,
-) {
+function agent(id: string, role: "coordinator" | "specialist" | "reviewer", large = false) {
   return parseCrewAgent({
     id,
     name: id,
@@ -97,11 +90,7 @@ function profile(id: string, projectId?: string) {
     updatedAt: 1,
   });
 }
-function run(
-  id: string,
-  projectId: string,
-  snapshot: ReturnType<typeof definition>,
-) {
+function run(id: string, projectId: string, snapshot: ReturnType<typeof definition>) {
   return CrewRunSchema.parse({
     id,
     projectId,
@@ -186,10 +175,7 @@ async function setup() {
     await engine.close();
     await store.close();
     const target = resolve(directory);
-    if (
-      dirname(target) !== resolve(tmpdir()) ||
-      !basename(target).startsWith("bycoda-crew-bulk-")
-    )
+    if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith("bycoda-crew-bulk-"))
       throw new Error("Unexpected fixture cleanup path.");
     rmSync(target, { recursive: true, force: true });
   });
@@ -220,11 +206,7 @@ async function setup() {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const device = await store.issueDevice("Crew bulk fixture");
   const headers = { Authorization: `Bearer ${device.token}` };
-  const socket = new WebSocket(
-    `${base.replace("http:", "ws:")}/ws`,
-    WS_SUBPROTOCOL,
-    { headers },
-  );
+  const socket = new WebSocket(`${base.replace("http:", "ws:")}/ws`, WS_SUBPROTOCOL, { headers });
   sockets.push(socket);
   await once(socket, "open");
   let sequence = 0;
@@ -260,11 +242,8 @@ async function setup() {
     });
     return { status: response.status, ...(await response.json()) };
   };
-  const call = (
-    transport: Transport,
-    method: string,
-    params: Record<string, unknown>,
-  ) => (transport === "HTTP" ? http(method, params) : ws(method, params));
+  const call = (transport: Transport, method: string, params: Record<string, unknown>) =>
+    transport === "HTTP" ? http(method, params) : ws(method, params);
   expect(
     (
       await ws("connection.hello", {
@@ -282,21 +261,16 @@ async function setup() {
     const descriptor = BulkDescriptorSchema.parse(reply.result.$bulk);
     expect(descriptor.totalBytes).toBeGreaterThan(1024 * 1024);
     const status = async () => {
-      const response = await fetch(
-        `${base}/ws-bulk/${descriptor.transferId}?offset=0`,
-        { headers },
-      );
+      const response = await fetch(`${base}/ws-bulk/${descriptor.transferId}?offset=0`, {
+        headers,
+      });
       await response.arrayBuffer();
       return response.status;
     };
     expect(await status()).toBe(200);
     return { descriptor, status };
   };
-  const tasks = async (
-    projectId: string,
-    crewRunId?: string,
-    prefix = "task",
-  ) => {
+  const tasks = async (projectId: string, crewRunId?: string, prefix = "task") => {
     const saved = [];
     for (let i = 0; i < 5; i++)
       saved.push(
@@ -338,10 +312,7 @@ it.each(["HTTP", "WS"] as const)(
   async (transport) => {
     for (const global of [false, true]) {
       const f = await setup();
-      const target = definition(
-        "target-definition",
-        global ? undefined : f.projectA.id,
-      );
+      const target = definition("target-definition", global ? undefined : f.projectA.id);
       const other = definition("other-definition", f.projectB.id);
       const snapshot = run("retained-snapshot", f.projectA.id, target);
       await f.seed({ definitions: [target, other], runs: [snapshot] });
@@ -411,10 +382,7 @@ it.each(["HTTP", "WS"] as const)(
   async (transport) => {
     for (const global of [false, true]) {
       const f = await setup();
-      const target = profile(
-        "target-profile",
-        global ? undefined : f.projectA.id,
-      );
+      const target = profile("target-profile", global ? undefined : f.projectA.id);
       const other = profile("other-profile", f.projectB.id);
       const snapshot = run(
         "copied-members",
@@ -476,16 +444,8 @@ it.each(["HTTP", "WS"] as const)(
   "purges run read/raw/project-list copies after committed %s deletion and preserves failed/missing revisions",
   async (transport) => {
     const f = await setup();
-    const aRun = run(
-      "run-a",
-      f.projectA.id,
-      definition("snapshot-a", f.projectA.id),
-    );
-    const bRun = run(
-      "run-b",
-      f.projectB.id,
-      definition("snapshot-b", f.projectB.id),
-    );
+    const aRun = run("run-a", f.projectA.id, definition("snapshot-a", f.projectA.id));
+    const bRun = run("run-b", f.projectB.id, definition("snapshot-b", f.projectB.id));
     await f.seed({ runs: [aRun, bRun] });
     const raw = await f.retain("crews.pause", {
       projectId: f.projectA.id,
@@ -552,16 +512,8 @@ it.each(["HTTP", "WS"] as const)(
   "invalidates Crew get/list Task copies after actual %s Task deletion without touching another project",
   async (transport) => {
     const f = await setup();
-    const aRun = run(
-      "run-a",
-      f.projectA.id,
-      definition("small-a", f.projectA.id, false),
-    );
-    const bRun = run(
-      "run-b",
-      f.projectB.id,
-      definition("small-b", f.projectB.id, false),
-    );
+    const aRun = run("run-a", f.projectA.id, definition("small-a", f.projectA.id, false));
+    const bRun = run("run-b", f.projectB.id, definition("small-b", f.projectB.id, false));
     await f.seed({ runs: [aRun, bRun] });
     const [task] = await f.tasks(f.projectA.id, aRun.id, "task-a");
     await f.tasks(f.projectB.id, bRun.id, "task-b");
@@ -600,9 +552,7 @@ it.each(["HTTP", "WS"] as const)(
       runId: aRun.id,
     });
     expect(fresh.error).toBeUndefined();
-    expect(
-      fresh.result.tasks.some((row: { id: string }) => row.id === task.id),
-    ).toBe(false);
+    expect(fresh.result.tasks.some((row: { id: string }) => row.id === task.id)).toBe(false);
     expect(f.provider.send).not.toHaveBeenCalled();
   },
 );
@@ -616,10 +566,7 @@ it.each(["definition", "agent", "run"] as const)(
     const savedRun = run("target-run", f.projectA.id, target);
     await f.seed({
       definitions: kind === "definition" ? [target] : [],
-      agents:
-        kind === "agent"
-          ? [savedAgent, profile("filler-agent", f.projectA.id)]
-          : [],
+      agents: kind === "agent" ? [savedAgent, profile("filler-agent", f.projectA.id)] : [],
       runs: kind === "run" ? [savedRun] : [],
     });
     const original = HostCrews.prototype.list;
@@ -666,32 +613,17 @@ it.each(["definition", "agent", "run"] as const)(
     expect(late.result).toBeUndefined();
     const current = await f.http("crews.list", { projectId: f.projectA.id });
     expect(current.error).toBeUndefined();
-    const field =
-      kind === "definition"
-        ? "definitions"
-        : kind === "agent"
-          ? "agents"
-          : "runs";
+    const field = kind === "definition" ? "definitions" : kind === "agent" ? "agents" : "runs";
     const deletedId =
-      kind === "definition"
-        ? target.id
-        : kind === "agent"
-          ? savedAgent.id
-          : savedRun.id;
-    expect(
-      current.result[field].some((row: { id: string }) => row.id === deletedId),
-    ).toBe(false);
+      kind === "definition" ? target.id : kind === "agent" ? savedAgent.id : savedRun.id;
+    expect(current.result[field].some((row: { id: string }) => row.id === deletedId)).toBe(false);
     expect(f.provider.send).not.toHaveBeenCalled();
   },
 );
 
 it("fences a captured Crew detail before Task deletion so a late read cannot publish an old transfer", async () => {
   const f = await setup();
-  const aRun = run(
-    "run-a",
-    f.projectA.id,
-    definition("small-a", f.projectA.id, false),
-  );
+  const aRun = run("run-a", f.projectA.id, definition("small-a", f.projectA.id, false));
   await f.seed({ runs: [aRun] });
   const [task] = await f.tasks(f.projectA.id, aRun.id, "task-a");
   const original = HostCrews.prototype.list;
@@ -732,7 +664,5 @@ it("fences a captured Crew detail before Task deletion so a late read cannot pub
     runId: aRun.id,
   });
   expect(current.error).toBeUndefined();
-  expect(
-    current.result.tasks.some((row: { id: string }) => row.id === task.id),
-  ).toBe(false);
+  expect(current.result.tasks.some((row: { id: string }) => row.id === task.id)).toBe(false);
 });

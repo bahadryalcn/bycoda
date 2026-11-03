@@ -254,12 +254,14 @@ it("committed deletion aborts in-flight hydration and an old result cannot reviv
 it("collection deletion invalidation retires old replay and in-flight reads without closing the project", async () => {
   const held = deferred<{ revision: number; data: { sessions: string[] } }>();
   let reads = 0;
-  const { hub } = fixture({ load: async () => {
-    reads++;
-    if (reads === 1) return { revision: 1, data: { sessions: ["deleted"] } };
-    if (reads === 2) return held.promise;
-    return { revision: 2, data: { sessions: [] } };
-  } });
+  const { hub } = fixture({
+    load: async () => {
+      reads++;
+      if (reads === 1) return { revision: 1, data: { sessions: ["deleted"] } };
+      if (reads === 2) return held.promise;
+      return { revision: 2, data: { sessions: [] } };
+    },
+  });
   const watcher = client("one");
   const project = { kind: "project", projectId: "p" } as const;
   subscribe(hub, watcher.owner, "first", project);
@@ -439,10 +441,10 @@ it("makes progress during unrelated commits instead of repeatedly discarding pen
   expect(load).toHaveBeenCalledTimes(2);
 });
 
-
 it("coalesces targeted invalidations for at least 250ms without loading another stream", async () => {
   const { hub, load } = fixture();
-  const a = client("coalesced"), b = client("unrelated");
+  const a = client("coalesced"),
+    b = client("unrelated");
   subscribe(hub, a.owner);
   subscribe(hub, b.owner, "other", { kind: "session", sessionId: "other" });
   await expectSnapshots(a.events, 1);

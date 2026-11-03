@@ -40,7 +40,16 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   const code = nativeConnectionFailureCode(error);
   if (code === "RPC_WS_IDENTITY") return { kind: "identity", message };
   if (code === "RPC_WS_UNSUPPORTED") return { kind: "outdated", message };
-  if (code && ["RPC_WS_BLOCKED", "RPC_WS_SCHEMA", "RPC_WS_TLS", "RPC_WS_UNAVAILABLE", "RPC_WS_INTERRUPTED"].includes(code))
+  if (
+    code &&
+    [
+      "RPC_WS_BLOCKED",
+      "RPC_WS_SCHEMA",
+      "RPC_WS_TLS",
+      "RPC_WS_UNAVAILABLE",
+      "RPC_WS_INTERRUPTED",
+    ].includes(code)
+  )
     return { kind: "unreachable", message };
   if (/Host identity changed\. Add this machine again before continuing\./i.test(text))
     return { kind: "identity", message };

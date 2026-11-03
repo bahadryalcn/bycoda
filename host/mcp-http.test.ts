@@ -179,12 +179,10 @@ it("composes a scoped mobile preview and mounted project panel through the real 
           : {}),
       };
     });
-  const ui = vi
-    .spyOn(ConversationDesktopRelay.prototype, "call")
-    .mockResolvedValue({
-      open: true,
-      panels: [{ id: "panel", tab: "browser", machine: "project", mounted: true }],
-    });
+  const ui = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockResolvedValue({
+    open: true,
+    panels: [{ id: "panel", tab: "browser", machine: "project", mounted: true }],
+  });
   const args = {
     requestId: "same-preview",
     url: "http://127.0.0.1:3000/",
@@ -776,6 +774,23 @@ describe("Streamable HTTP MCP", () => {
     expect(notification.status).toBe(202);
     for (let i = 0; i < 239; i++) expect((await s.send(token, "ping")).status).toBe(200);
     expect((await s.send(token, "ping")).status).toBe(429);
+  });
+
+  it("limits requests per credential and does not count rejected probes", async () => {
+    const s = await setup();
+    const { token } = await s.grant({ "runtime-logs": ["read"] });
+    const other = await s.grant({ "runtime-logs": ["read"] });
+    for (let i = 0; i < 300; i++) {
+      const probe = await fetch(s.url + "/mcp", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(probe.status).toBe(405);
+    }
+    for (let i = 0; i < 240; i++) expect((await s.send(token, "ping")).status).toBe(200);
+    const limited = await s.send(token, "ping");
+    expect(limited.status).toBe(429);
+    expect((await s.send(other.token, "ping")).status).toBe(200);
   });
 
   it("preserves social account grants and rejects protected identity and owner sends", async () => {

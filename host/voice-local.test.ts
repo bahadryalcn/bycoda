@@ -78,13 +78,11 @@ it("keeps the recognizer warm after dictation, reuses it and unloads after the g
     ensureWorker: () => Promise<unknown>;
     child?: unknown;
   };
-  const worker = vi
-    .spyOn(internals, "ensureWorker")
-    .mockImplementation(async () => {
-      internals.child = { kill: () => {} };
-      (service as unknown as { loading: Promise<unknown> }).loading = Promise.resolve();
-      return { model: "small", device: "cuda" };
-    });
+  const worker = vi.spyOn(internals, "ensureWorker").mockImplementation(async () => {
+    internals.child = { kill: () => {} };
+    (service as unknown as { loading: Promise<unknown> }).loading = Promise.resolve();
+    return { model: "small", device: "cuda" };
+  });
   const close = vi.spyOn(service, "close");
   try {
     const first = await service.start({ natural: false }, true);

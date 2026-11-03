@@ -413,7 +413,9 @@ function implement<Kind extends string>(
           (watchdog as { unref?: () => void }).unref?.();
           return;
         }
-        console.warn(`[closure] ${configuration.subject} closure was never released; reopening input`);
+        console.warn(
+          `[closure] ${configuration.subject} closure was never released; reopening input`,
+        );
         closure.release();
       };
       watchdog = setTimeout(check, watchdogDelay);

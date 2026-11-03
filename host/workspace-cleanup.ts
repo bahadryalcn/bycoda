@@ -431,7 +431,7 @@ export function createExecutionActivityReservations(deps: {
       await ready;
       const released: string[] = [];
       const blocked: { activityId: string; reason: string }[] = [];
-      for (const id of [...previousActivityIds]) {
+      for (const id of Array.from(previousActivityIds)) {
         const activity = activities.get(id);
         if (!activity || (request.workspaceId && activity.workspaceId !== request.workspaceId))
           continue;

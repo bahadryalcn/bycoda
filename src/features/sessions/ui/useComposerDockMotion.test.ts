@@ -137,8 +137,7 @@ describe("useComposerReadingMotion", () => {
   function renderReading(reading: boolean) {
     act(() => root.render(createElement(ReadingHarness, { reading })));
   }
-  const targets = () =>
-    animate.mock.contexts.map((target) => (target as HTMLElement).dataset.slot);
+  const targets = () => animate.mock.contexts.map((target) => (target as HTMLElement).dataset.slot);
   beforeEach(() => {
     heights = { field: 70, row: 40 };
     attention = false;

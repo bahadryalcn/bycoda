@@ -19,9 +19,7 @@ assert.ok(
 );
 const native = loadPhysicalStoreAdmission(artifact),
   entry = native.sqliteExtensionEntryPoint();
-const evidence = path.resolve(
-  "temp/verification/2026-10-30-host-notes-writer/node-port",
-);
+const evidence = path.resolve("temp/verification/2026-10-30-host-notes-writer/node-port");
 mkdirSync(evidence, { recursive: true });
 const root = mkdtempSync(path.join(evidence, "sqlite-api2-"));
 function fixture(name) {
@@ -43,10 +41,7 @@ function open(file, readOnly = false) {
   return database;
 }
 function identity(database) {
-  return JSON.parse(
-    database.prepare("SELECT bycoda_connection_identity() AS value").get()
-      .value,
-  );
+  return JSON.parse(database.prepare("SELECT bycoda_connection_identity() AS value").get().value);
 }
 function windowsOnly() {
   return native.connectionAttestationSupported();
@@ -82,11 +77,7 @@ test("same trusted Node image attests actual main connection without SQL mutatio
   const db = open(f.file);
   try {
     const result = identity(db);
-    assert.deepEqual(Object.keys(result).sort(), [
-      "links",
-      "physicalFileId",
-      "version",
-    ]);
+    assert.deepEqual(Object.keys(result).sort(), ["links", "physicalFileId", "version"]);
     assert.equal(result.version, 1);
     assert.equal(result.physicalFileId, f.store.identity().nativeFormat);
     assert.equal(BigInt(result.links), f.store.identity().links);
@@ -94,9 +85,7 @@ test("same trusted Node image attests actual main connection without SQL mutatio
     assert.equal(db.prepare("SELECT count(*) AS n FROM effects").get().n, 0);
     assert.equal(db.prepare("SELECT total_changes() AS n").get().n, 0);
     assert.throws(() => db.loadExtension(artifact, entry));
-    assert.throws(() =>
-      db.prepare("SELECT load_extension(?,?)").get(artifact, entry),
-    );
+    assert.throws(() => db.prepare("SELECT load_extension(?,?)").get(artifact, entry));
     assert.equal(identity(db).physicalFileId, result.physicalFileId);
   } finally {
     db.close();
@@ -110,22 +99,11 @@ test("two real connections and close/destructor preserve independent actual iden
     first = open(a.file),
     second = open(b.file);
   try {
-    const prepared = first.prepare(
-      "SELECT bycoda_connection_identity() AS value",
-    );
-    assert.equal(
-      identity(second).physicalFileId,
-      b.store.identity().nativeFormat,
-    );
-    assert.notEqual(
-      identity(second).physicalFileId,
-      a.store.identity().nativeFormat,
-    );
+    const prepared = first.prepare("SELECT bycoda_connection_identity() AS value");
+    assert.equal(identity(second).physicalFileId, b.store.identity().nativeFormat);
+    assert.notEqual(identity(second).physicalFileId, a.store.identity().nativeFormat);
     second.close();
-    assert.equal(
-      JSON.parse(prepared.get().value).physicalFileId,
-      a.store.identity().nativeFormat,
-    );
+    assert.equal(JSON.parse(prepared.get().value).physicalFileId, a.store.identity().nativeFormat);
     assert.equal(first.prepare("SELECT count(*) AS n FROM effects").get().n, 0);
   } finally {
     first.close();
@@ -144,13 +122,8 @@ test("readonly identity remains available under mechanical closure while fresh w
     assert.ok(closed);
     try {
       assert.equal(f.store.tryWriter(), null);
-      assert.equal(
-        identity(db).physicalFileId,
-        f.store.identity().nativeFormat,
-      );
-      assert.throws(() =>
-        db.exec("INSERT INTO effects VALUES('blocked readonly write')"),
-      );
+      assert.equal(identity(db).physicalFileId, f.store.identity().nativeFormat);
+      assert.throws(() => db.exec("INSERT INTO effects VALUES('blocked readonly write')"));
       assert.equal(db.prepare("SELECT count(*) AS n FROM effects").get().n, 0);
     } finally {
       f.store.releaseClosed(closed);
@@ -200,13 +173,10 @@ test("fresh real Worker SQL registration/close survives its environment exit wit
   const f = fixture("worker"),
     db = open(f.file);
   try {
-    const worker = new Worker(
-      new URL("./support/sqlite-worker.mjs", import.meta.url),
-      {
-        execArgv: [],
-        workerData: { file: f.file, artifact, entryPoint: entry },
-      },
-    );
+    const worker = new Worker(new URL("./support/sqlite-worker.mjs", import.meta.url), {
+      execArgv: [],
+      workerData: { file: f.file, artifact, entryPoint: entry },
+    });
     const exited = once(worker, "exit"),
       [value] = await once(worker, "message");
     assert.equal(value.physicalFileId, f.store.identity().nativeFormat);

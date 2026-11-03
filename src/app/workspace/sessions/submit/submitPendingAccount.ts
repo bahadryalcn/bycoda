@@ -86,7 +86,9 @@ export function applyPendingAccount(
       modelTarget: queuedModelTarget(options?.buildTarget ?? latest),
     };
     setSessions((prev) =>
-      prev.map((entry) => (entry.id === sessionId ? holdUndeliveredFollowUp(entry, recovery) : entry)),
+      prev.map((entry) =>
+        entry.id === sessionId ? holdUndeliveredFollowUp(entry, recovery) : entry,
+      ),
     );
   };
   return (async () => {

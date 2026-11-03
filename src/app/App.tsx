@@ -4,10 +4,7 @@ import { LocalSessionReferenceProvider } from "../features/sessions/ui/LocalSess
 import { VoiceCompanionGate } from "../features/voice/ui/VoiceCompanionGate";
 import { DesktopControlStrip } from "../features/host-tools/DesktopControlStrip";
 import { AssistantNotifications } from "../features/assistant/ui/AssistantNotifications";
-import {
-  useVoiceAppBridge,
-  voiceRailProjects,
-} from "./workspace/bridges/useVoiceAppBridge";
+import { useVoiceAppBridge, voiceRailProjects } from "./workspace/bridges/useVoiceAppBridge";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
 import {
   createConversationTerminalControl,

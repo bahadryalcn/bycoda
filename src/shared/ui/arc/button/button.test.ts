@@ -20,7 +20,9 @@ it("replaces action labels immediately and preserves the focused pending action"
       expect(button.textContent).toBe(label);
       expect(document.activeElement).toBe(button);
     }
-    await act(async () => root.render(createElement(Button, { loading: true, onClick: click }, "İşlemi yeniden dene")));
+    await act(async () =>
+      root.render(createElement(Button, { loading: true, onClick: click }, "İşlemi yeniden dene")),
+    );
     expect(document.activeElement).toBe(button);
     expect(button.getAttribute("aria-busy")).toBe("true");
     expect(button.getAttribute("aria-disabled")).toBe("true");

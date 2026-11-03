@@ -7,7 +7,7 @@ const phases = new Map<HarnessId, { phase: HandoffPhase; count: number }>();
 const listeners = new Set<() => void>();
 
 function notify() {
-  for (const listener of [...listeners]) listener();
+  for (const listener of Array.from(listeners)) listener();
 }
 
 /**
@@ -15,10 +15,7 @@ function notify() {
  * that ends the phase. Keyed by the outgoing provider, which is what the handoff
  * divider knows; two handoffs from the same provider share the label.
  */
-export function beginHandoffPhase(
-  harness: HarnessId,
-  phase: HandoffPhase,
-): () => void {
+export function beginHandoffPhase(harness: HarnessId, phase: HandoffPhase): () => void {
   const current = phases.get(harness);
   phases.set(harness, { phase, count: (current?.count ?? 0) + 1 });
   notify();
@@ -28,8 +25,7 @@ export function beginHandoffPhase(
     ended = true;
     const entry = phases.get(harness);
     if (!entry) return;
-    if (entry.count > 1)
-      phases.set(harness, { ...entry, count: entry.count - 1 });
+    if (entry.count > 1) phases.set(harness, { ...entry, count: entry.count - 1 });
     else phases.delete(harness);
     notify();
   };

@@ -92,12 +92,18 @@ export function useTurnScrollAnchor(
     };
     let liveTurn = inner.querySelector(".transcript-turn-live");
     const mutations = new MutationObserver((records) => {
-      if (!liveTurn || !liveTurn.classList.contains("transcript-turn-live") ||
-        records.some((record) => record.target === inner))
+      if (
+        !liveTurn ||
+        !liveTurn.classList.contains("transcript-turn-live") ||
+        records.some((record) => record.target === inner)
+      )
         liveTurn = inner.querySelector(".transcript-turn-live");
-      const relevant = records.filter((record) =>
-        !liveTurn?.contains(record.target) ||
-        (record.target === liveTurn && record.type === "attributes" && record.attributeName === "class"),
+      const relevant = records.filter(
+        (record) =>
+          !liveTurn?.contains(record.target) ||
+          (record.target === liveTurn &&
+            record.type === "attributes" &&
+            record.attributeName === "class"),
       );
       if (!relevant.length) return;
       const listChanged = relevant.some(

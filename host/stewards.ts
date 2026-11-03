@@ -125,7 +125,7 @@ export class HostStewards {
     // A manual request's grant follows preparation/effects, never the saved
     // steward or a future system-owned tick.
     this.engine = {
-      withMessageAuthor:engine.withMessageAuthor?.bind(engine),
+      withMessageAuthor: engine.withMessageAuthor?.bind(engine),
       command: async (command) => {
         await store.db.checkAuthorization();
         return engine.command(command);
@@ -181,7 +181,7 @@ export class HostStewards {
     this.stop();
     this.disposal = (async () => {
       await this.ready;
-      await Promise.allSettled([...this.manualRuns]);
+      await Promise.allSettled(this.manualRuns);
       await this.idle();
     })();
     return this.disposal;
@@ -488,7 +488,9 @@ export class HostStewards {
             workspaceId: workspace.id,
           };
           owned = await this.retainOwnedRun(steward, owned, {
-            worktreeCwd: workspace.path, branch: workspace.branchRef, workspaceId: workspace.id,
+            worktreeCwd: workspace.path,
+            branch: workspace.branchRef,
+            workspaceId: workspace.id,
           });
           await this.store.db.checkAuthorization();
           const activity = await this.workspaces.activity.start({
@@ -496,7 +498,11 @@ export class HostStewards {
             kind: "provider",
             ownerId,
           });
-          if (activity.workspaceId !== workspace.id || activity.ownerId !== ownerId || activity.kind !== "provider")
+          if (
+            activity.workspaceId !== workspace.id ||
+            activity.ownerId !== ownerId ||
+            activity.kind !== "provider"
+          )
             throw new Error("The managed activity does not belong to this steward run.");
           worktree.activityId = activity.id;
           owned = await this.retainOwnedRun(steward, owned, { activityId: activity.id });
@@ -537,7 +543,8 @@ export class HostStewards {
             await this.assertOwnedRun(steward, owned!);
             const receipt = await this.engine.command(command);
             const type = (command as { type?: unknown }).type;
-            if (type === "create") owned = await this.retainOwnedRun(steward, owned!, { sessionId: receipt.sessionId });
+            if (type === "create")
+              owned = await this.retainOwnedRun(steward, owned!, { sessionId: receipt.sessionId });
             if (type === "send") accepted = { sessionId: receipt.sessionId, runId: receipt.runId };
             return receipt;
           },
@@ -545,12 +552,12 @@ export class HostStewards {
             await this.assertOwnedRun(steward, owned!);
             return this.engine.updateSession(...args);
           },
-          withMessageAuthor:this.engine.withMessageAuthor?.bind(this.engine),
+          withMessageAuthor: this.engine.withMessageAuthor?.bind(this.engine),
         },
         {
           projectId: steward.projectId,
           harness: steward.harness,
-          author:{kind:"steward",id:steward.id,name:project.name,reason:"kickoff"},
+          author: { kind: "steward", id: steward.id, name: project.name, reason: "kickoff" },
           model: steward.model,
           modelSettings: steward.modelSettings,
           runtimeMode: steward.runtimeMode,
@@ -607,20 +614,45 @@ export class HostStewards {
     }
   }
 
-  private reserveOwnedRun(steward: HostSteward, run: ManagedStewardRun): Promise<ManagedStewardRun> {
+  private reserveOwnedRun(
+    steward: HostSteward,
+    run: ManagedStewardRun,
+  ): Promise<ManagedStewardRun> {
     return this.store.db.scope(async () => {
       const current = await this.find(steward.id);
-      if (!current || current.createdAt !== steward.createdAt || current.projectId !== steward.projectId || current.run)
+      if (
+        !current ||
+        current.createdAt !== steward.createdAt ||
+        current.projectId !== steward.projectId ||
+        current.run
+      )
         throw new Error("The steward changed before its run could be reserved.");
       await this.write({ ...current, run });
       return run;
     });
   }
 
-  private sameOwnedRun(current: HostSteward, steward: HostSteward, run: ManagedStewardRun): boolean {
-    return current.createdAt === steward.createdAt && current.projectId === steward.projectId && !!current.run &&
-      (["startedAt", "workspaceId", "activityId", "worktreeCwd", "branch", "sessionId", "runId"] as const)
-        .every((key) => current.run![key] === run[key]);
+  private sameOwnedRun(
+    current: HostSteward,
+    steward: HostSteward,
+    run: ManagedStewardRun,
+  ): boolean {
+    return (
+      current.createdAt === steward.createdAt &&
+      current.projectId === steward.projectId &&
+      !!current.run &&
+      (
+        [
+          "startedAt",
+          "workspaceId",
+          "activityId",
+          "worktreeCwd",
+          "branch",
+          "sessionId",
+          "runId",
+        ] as const
+      ).every((key) => current.run![key] === run[key])
+    );
   }
 
   private async assertOwnedRun(steward: HostSteward, owned: ManagedStewardRun): Promise<void> {
@@ -640,23 +672,41 @@ export class HostStewards {
     accepted = false,
     failed = false,
   ): Promise<ManagedStewardRun> {
-    return this.store.db.runRecoveryBookkeeping(() => this.store.db.scope(async () => {
-      const row = await this.store.db.prepare("SELECT value FROM stewards WHERE id=?").get(steward.id);
-      const current = row ? JSON.parse(String(row.value)) as HostSteward : undefined;
-      if (!current || !this.sameOwnedRun(current, steward, owned))
-        throw new Error("The steward run was removed or replaced during preparation.");
-      const run = { ...current.run!, ...patch };
-      const retained: HostSteward = {
-        ...current,
-        run,
-        ...(accepted ? { lastRunStatus: "running", lastRunError: undefined, lastSessionId: run.sessionId ?? current.lastSessionId } : {}),
-        ...(failed ? { lastRunStatus: "failed", lastRunError: run.error, lastSessionId: run.sessionId ?? current.lastSessionId } : {}),
-      };
-      const updated = await this.store.db.prepare("UPDATE stewards SET value=? WHERE id=? AND value=?")
-        .run(JSON.stringify(retained), steward.id, String(row!.value));
-      if (Number(updated.changes) !== 1) throw new Error("The steward changed during run bookkeeping.");
-      return run;
-    }));
+    return this.store.db.runRecoveryBookkeeping(() =>
+      this.store.db.scope(async () => {
+        const row = await this.store.db
+          .prepare("SELECT value FROM stewards WHERE id=?")
+          .get(steward.id);
+        const current = row ? (JSON.parse(String(row.value)) as HostSteward) : undefined;
+        if (!current || !this.sameOwnedRun(current, steward, owned))
+          throw new Error("The steward run was removed or replaced during preparation.");
+        const run = { ...current.run!, ...patch };
+        const retained: HostSteward = {
+          ...current,
+          run,
+          ...(accepted
+            ? {
+                lastRunStatus: "running",
+                lastRunError: undefined,
+                lastSessionId: run.sessionId ?? current.lastSessionId,
+              }
+            : {}),
+          ...(failed
+            ? {
+                lastRunStatus: "failed",
+                lastRunError: run.error,
+                lastSessionId: run.sessionId ?? current.lastSessionId,
+              }
+            : {}),
+        };
+        const updated = await this.store.db
+          .prepare("UPDATE stewards SET value=? WHERE id=? AND value=?")
+          .run(JSON.stringify(retained), steward.id, String(row!.value));
+        if (Number(updated.changes) !== 1)
+          throw new Error("The steward changed during run bookkeeping.");
+        return run;
+      }),
+    );
   }
 
   private async settle(steward: HostSteward, now: number): Promise<void> {
@@ -757,7 +807,11 @@ export class HostStewards {
     await this.store.db.checkAuthorization();
     const workspace = await this.workspaces.registry.get({ workspaceId: run.workspaceId });
     if (!workspace) return;
-    if (workspace.id !== run.workspaceId || workspace.projectId !== projectId || workspace.owner.kind !== "stewardRun")
+    if (
+      workspace.id !== run.workspaceId ||
+      workspace.projectId !== projectId ||
+      workspace.owner.kind !== "stewardRun"
+    )
       throw new Error("The managed workspace no longer belongs to this steward run.");
     await this.store.db.checkAuthorization();
     if (run.activityId) await this.workspaces.activity.stop(run.activityId);

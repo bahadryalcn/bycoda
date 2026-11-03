@@ -149,7 +149,12 @@ export function OnboardingAppearance() {
     { value: "dark", label: t("Dark") },
     { value: "system", label: t("System") },
   ];
-  const crewChoices: { value: CrewTheme | "none"; title: string; caption: string; detail?: string }[] = [
+  const crewChoices: {
+    value: CrewTheme | "none";
+    title: string;
+    caption: string;
+    detail?: string;
+  }[] = [
     {
       value: "classic",
       title: t("Uncles"),

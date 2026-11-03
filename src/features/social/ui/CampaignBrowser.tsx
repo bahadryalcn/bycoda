@@ -232,7 +232,9 @@ export function CampaignDetail({
       })
     : [];
   const stateLabel = (campaign: SocialCampaign) => campaignStateLabel(campaign, snapshot);
-  const state = selected ? campaignState(selected, snapshot.jobs, snapshot.campaignStates) : "draft";
+  const state = selected
+    ? campaignState(selected, snapshot.jobs, snapshot.campaignStates)
+    : "draft";
   // Existing target outcomes lead only when something was already dispatched or needs recovery;
   // for content still being prepared the preview and the next step come first.
   const leadWithResults =
@@ -345,7 +347,11 @@ export function CampaignDetail({
                   kind: "item",
                   id: "pause",
                   label: selected.paused ? t("Resume campaign") : t("Pause campaign"),
-                  icon: selected.paused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />,
+                  icon: selected.paused ? (
+                    <Play aria-hidden="true" />
+                  ) : (
+                    <Pause aria-hidden="true" />
+                  ),
                 },
               ]}
               onPick={() => {
@@ -406,7 +412,9 @@ export function CampaignDetail({
                     ) : null}
                     {!(media.kind === "image" && media.uploadId && !media.url) ? (
                       <p className="text-ui-caption text-(--ui-text-secondary)">
-                        {t("Preview unavailable for this media. Review its exact properties before approval.")}
+                        {t(
+                          "Preview unavailable for this media. Review its exact properties before approval.",
+                        )}
                       </p>
                     ) : null}
                     <p>
@@ -500,7 +508,9 @@ export function CampaignDetail({
           <ul className="social-content-checks">
             {currentPreview.targets.map((target) => (
               <li key={target.accountId}>
-                <span className="social-content-check-account">{accountName(target.accountId)}</span>
+                <span className="social-content-check-account">
+                  {accountName(target.accountId)}
+                </span>
                 <StatusBadge
                   status={target.contentError ? "failed" : target.capability.status}
                   label={target.contentError ? t("Content issue") : undefined}
@@ -565,7 +575,9 @@ export function CampaignDetail({
           <strong>{next.label}</strong>
         </p>
         {scheduleReason && ["fix", "wait", "resume"].includes(next.id) ? (
-          <Notice kind={currentPreview && !canApprove ? "warning" : "info"}>{scheduleReason}</Notice>
+          <Notice kind={currentPreview && !canApprove ? "warning" : "info"}>
+            {scheduleReason}
+          </Notice>
         ) : null}
         <div className="social-actions">
           {next.id === "fix" ? (

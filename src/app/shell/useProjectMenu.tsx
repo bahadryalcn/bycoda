@@ -1,5 +1,8 @@
 import { Alert } from "../../shared/ui/Alert";
-import { NEW_LOCAL_HOST_SESSION, newLocalHostSession } from "../../features/connections/model/newLocalHostSession";
+import {
+  NEW_LOCAL_HOST_SESSION,
+  newLocalHostSession,
+} from "../../features/connections/model/newLocalHostSession";
 import { t, useT } from "../../shared/i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -406,9 +409,9 @@ export function useProjectMenu({
       )
     );
   };
-  const [groupMenu, setGroupMenu] = useState<(Point & { id: string; move?: ProjectMenuMove }) | null>(
-    null,
-  );
+  const [groupMenu, setGroupMenu] = useState<
+    (Point & { id: string; move?: ProjectMenuMove }) | null
+  >(null);
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [fetchAll, setFetchAll] = useState<(Point & { id: string; paths: string[] }) | null>(null);
   const [notificationMenu, setNotificationMenu] = useState<
@@ -573,13 +576,16 @@ export function useProjectMenu({
       if (localHostCreationPending.current) return false;
       localHostCreationPending.current = true;
       setLocalHostCreating(true);
-      void newLocalHostSession(path).then((session) => {
-        window.dispatchEvent(new CustomEvent(NEW_LOCAL_HOST_SESSION, { detail: session }));
-        setProjectMenu(null);
-      }).catch((error) => setMenuError(String(error))).finally(() => {
-        localHostCreationPending.current = false;
-        setLocalHostCreating(false);
-      });
+      void newLocalHostSession(path)
+        .then((session) => {
+          window.dispatchEvent(new CustomEvent(NEW_LOCAL_HOST_SESSION, { detail: session }));
+          setProjectMenu(null);
+        })
+        .catch((error) => setMenuError(String(error)))
+        .finally(() => {
+          localHostCreationPending.current = false;
+          setLocalHostCreating(false);
+        });
       return false;
     }
     if (action === "rename-folder") {
@@ -613,7 +619,7 @@ export function useProjectMenu({
           mutedUntil,
         });
       } catch {
-        setMenuError("Could not save notification preferences. Please try again.");
+        setMenuError(t("Could not save notification preferences. Please try again."));
         return false;
       }
     } else if (action.startsWith("external-editor:")) {
@@ -728,14 +734,28 @@ export function useProjectMenu({
         }
         extraItems={[
           ...(isLocalProject(projectMenu.path)
-            ? [{ id: "new-local-host-session", label: localHostCreating ? t("Connecting…") : t("New conversation on this computer's Host"), icon: AppWindow, disabled: localHostCreating }]
+            ? [
+                {
+                  id: "new-local-host-session",
+                  label: localHostCreating
+                    ? t("Connecting…")
+                    : t("New conversation on this computer's Host"),
+                  icon: AppWindow,
+                  disabled: localHostCreating,
+                },
+              ]
             : []),
           ...(projectMenu.onSelectForBulk
             ? [{ id: "select-for-bulk", label: t("Select"), icon: CheckList }]
             : []),
           ...(projectMenu.move
             ? [
-                { id: "move-project-up", label: t("Move up"), icon: ArrowUp, disabled: !projectMenu.move.up },
+                {
+                  id: "move-project-up",
+                  label: t("Move up"),
+                  icon: ArrowUp,
+                  disabled: !projectMenu.move.up,
+                },
                 {
                   id: "move-project-down",
                   label: t("Move down"),
@@ -1110,11 +1130,11 @@ export function useProjectMenu({
           }
           if (action === "hide-group") {
             if (!hideGroup(group.id)) {
-              setMenuError("Could not save group visibility. Please try again.");
+              setMenuError(t("Could not save group visibility. Please try again."));
               return false;
             }
             captureTrigger(
-              document.querySelector<HTMLElement>('button[aria-label="Manage hidden groups"]'),
+              document.querySelector<HTMLElement>('button[data-workspace-control="hiddenGroups"]'),
             );
             return;
           }

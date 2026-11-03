@@ -27,7 +27,10 @@ import { t } from "../../../shared/i18n";
 type Deps = {
   ensureOpenSession: (id: string) => Promise<Session | null>;
   onSelectHistorySession: (id: string, options?: { isCurrent?: () => boolean }) => Promise<unknown>;
-  onOpenSessionsSideBySide: (ids: string[], options?: { isCurrent?: () => boolean }) => Promise<unknown>;
+  onOpenSessionsSideBySide: (
+    ids: string[],
+    options?: { isCurrent?: () => boolean },
+  ) => Promise<unknown>;
   onOpenWorkerDetails?: (session: Session, isCurrent: () => boolean) => Promise<boolean>;
   activeSessionId: () => string | undefined;
   showSessions: () => void;
@@ -73,9 +76,9 @@ export function useLocalSessionReferences(deps: Deps) {
           const owner = current.current;
           owner.workspaceNavigation.cancel();
           const navigationCurrent = owner.workspaceNavigation.captureRequest?.() ?? (() => true);
-          const referenceCurrent = () => serial === request.current && getGroupLockView() === privacy;
-          const stillCurrent = () =>
-            referenceCurrent() && navigationCurrent();
+          const referenceCurrent = () =>
+            serial === request.current && getGroupLockView() === privacy;
+          const stillCurrent = () => referenceCurrent() && navigationCurrent();
           const target = await resolveLocalSessionReference(reference);
           if (!stillCurrent()) return;
           assertReferenceProjectVisible(target.cwd);
@@ -228,10 +231,7 @@ export function useLocalSessionReferences(deps: Deps) {
           const openingCurrent = () =>
             serial === request.current && getGroupLockView() === privacy && delegatedCurrent();
           if (!openingCurrent()) return;
-          if (
-            worker &&
-            owner.onOpenWorkerDetails
-          ) {
+          if (worker && owner.onOpenWorkerDetails) {
             // History navigation focuses the lead. The existing worker owner opens
             // the read-only transcript tab and reuses it when already present.
             const opened = await owner.onOpenWorkerDetails(session, openingCurrent);
@@ -239,11 +239,7 @@ export function useLocalSessionReferences(deps: Deps) {
             if (!opened)
               throw new Error(t("This local conversation is unavailable or inaccessible."));
           }
-          if (
-            reference.turnId &&
-            openingCurrent()
-          )
-            requestTranscriptJump(id, reference.turnId);
+          if (reference.turnId && openingCurrent()) requestTranscriptJump(id, reference.turnId);
         },
       }) satisfies LocalSessionReferenceNavigation,
     [privacy],

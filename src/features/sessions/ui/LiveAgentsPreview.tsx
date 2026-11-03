@@ -104,11 +104,7 @@ export function LiveAgentsPreview({
         strokeWidth={1.75}
       />
     ) : summary.headline === "finished" ? (
-      <Check
-        aria-hidden
-        className="icon-sm shrink-0 text-(--ui-tone-success-fg)"
-        strokeWidth={2}
-      />
+      <Check aria-hidden className="icon-sm shrink-0 text-(--ui-tone-success-fg)" strokeWidth={2} />
     ) : (
       <span aria-hidden className="grid icon-sm shrink-0 place-items-center">
         <span className="size-1.5 rounded-full bg-(--color-active)" />
@@ -170,7 +166,9 @@ export function LiveAgentsPreview({
             : t("Finished agents")
       }
       className={`min-w-0 shrink-0 ${
-        collapsible ? "mb-2 rounded-lg border border-(--ui-pane-border) bg-(--ui-surface-quiet) data-[collapsed]:mb-0.5" : "px-2"
+        collapsible
+          ? "mb-2 rounded-lg border border-(--ui-pane-border) bg-(--ui-surface-quiet) data-[collapsed]:mb-0.5"
+          : "px-2"
       } ${bottomSpacing ? "pb-2" : ""}`}
       data-live-agents-preview="full"
       data-live-agents-headline={summary.headline}

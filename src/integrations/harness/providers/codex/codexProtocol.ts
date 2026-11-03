@@ -1183,7 +1183,13 @@ const FAILED_AGENT_STATES = new Set([
   "interrupted",
 ]);
 
-const INTERRUPTED_AGENT_STATES = new Set(["shutdown", "closed", "stopped", "cancelled", "canceled"]);
+const INTERRUPTED_AGENT_STATES = new Set([
+  "shutdown",
+  "closed",
+  "stopped",
+  "cancelled",
+  "canceled",
+]);
 
 /**
  * Per-agent state a collab item reports, keyed by child thread. This is what
@@ -1204,7 +1210,9 @@ export function codexSubagentStates(
         threadId,
         status: FAILED_AGENT_STATES.has(status)
           ? "failed"
-          : INTERRUPTED_AGENT_STATES.has(status) ? "interrupted" : "completed",
+          : INTERRUPTED_AGENT_STATES.has(status)
+            ? "interrupted"
+            : "completed",
         ...(message ? { message } : {}),
       },
     ];

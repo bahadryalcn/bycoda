@@ -713,6 +713,7 @@ export class HostChildBackend implements ChildBackend {
     let admitted = false;
     let failed = false;
     let failure: unknown;
+    let outcome: HarnessProcessReceipt | undefined;
     let httpOrigin: HostHttpOrigin | undefined;
     let httpChildObserved = false;
     const constructionSlot = this.constructions.reserve(id);
@@ -791,13 +792,21 @@ export class HostChildBackend implements ChildBackend {
           await Promise.race([
             this.retireChild(id, previous),
             new Promise<never>((_, reject) => {
-              timer = setTimeout(() => reject(new Error("The original provider is still stopping. Retry when it exits.")), 20_000);
+              timer = setTimeout(
+                () =>
+                  reject(
+                    new Error("The original provider is still stopping. Retry when it exits."),
+                  ),
+                20_000,
+              );
             }),
           ]);
         } catch (error) {
           if (previous.exitCode === null && previous.signalCode === null) throw error;
           console.warn("Provider exited with unverified cleanup:", error);
-        } finally { clearTimeout(timer); }
+        } finally {
+          clearTimeout(timer);
+        }
         check();
       }
       await this.killCurrent(id);
@@ -882,7 +891,10 @@ export class HostChildBackend implements ChildBackend {
           } catch (error) {
             if (!(error instanceof ProviderGuardianError)) throw error;
             // The installed guardian changed or is unusable: use the plain guard.
-            console.warn("Provider guardian is unavailable; using the plain provider guard:", error);
+            console.warn(
+              "Provider guardian is unavailable; using the plain provider guard:",
+              error,
+            );
             child = plainSpawn();
           }
         } else child = plainSpawn();
@@ -963,7 +975,8 @@ export class HostChildBackend implements ChildBackend {
       child.on("close", (code) => {
         if (child instanceof NativeGuardianChild && !child.retirementVerified) {
           // A normal exit with unverified cleanup is a warning, not an exit failure.
-          if (code === 0) console.warn("Provider cleanup could not be verified after a normal exit.");
+          if (code === 0)
+            console.warn("Provider cleanup could not be verified after a normal exit.");
           else
             exitReason ??=
               "Provider cleanup could not be verified. This session cannot start a replacement.";
@@ -996,39 +1009,38 @@ export class HostChildBackend implements ChildBackend {
         "host",
       );
       published = true;
-      return receipt;
+      outcome = receipt;
     } catch (error) {
       failed = true;
       failure = error;
-      throw error;
-    } finally {
-      try {
-        this.constructions.release(constructionSlot);
-        if (!published && tools) {
-          if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
-          this.retireTools(tools);
-          if (ownedChild) await this.retireChild(id, ownedChild);
-        }
-      } catch (error) {
-        failure = failed
-          ? new AggregateError([failure, error], "Original provider startup and cleanup failed.")
-          : error;
-        failed = true;
-        throw failure;
-      } finally {
-        if (runPreparation) {
-          if (failed) runWriters!.completeProcess(runPreparation, failure);
-          else runWriters!.completeProcess(runPreparation);
-        }
-        if (httpOrigin && !httpChildObserved) {
-          if (ownedChild) this.httpTargets.retainUnknown(httpOrigin);
-          else this.httpTargets.releaseUnused(httpOrigin);
-        }
-        if (this.starts.get(id) === attempt) this.starts.delete(id);
-        pending.delete(attempt);
-        if (!pending.size && this.pendingStarts.get(id) === pending) this.pendingStarts.delete(id);
-      }
     }
+    try {
+      this.constructions.release(constructionSlot);
+      if (!published && tools) {
+        if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
+        this.retireTools(tools);
+        if (ownedChild) await this.retireChild(id, ownedChild);
+      }
+    } catch (error) {
+      failure = failed
+        ? new AggregateError([failure, error], "Original provider startup and cleanup failed.")
+        : error;
+      failed = true;
+    } finally {
+      if (runPreparation) {
+        if (failed) runWriters!.completeProcess(runPreparation, failure);
+        else runWriters!.completeProcess(runPreparation);
+      }
+      if (httpOrigin && !httpChildObserved) {
+        if (ownedChild) this.httpTargets.retainUnknown(httpOrigin);
+        else this.httpTargets.releaseUnused(httpOrigin);
+      }
+      if (this.starts.get(id) === attempt) this.starts.delete(id);
+      pending.delete(attempt);
+      if (!pending.size && this.pendingStarts.get(id) === pending) this.pendingStarts.delete(id);
+    }
+    if (failed) throw failure;
+    return outcome as HarnessProcessReceipt;
   }
 
   private grantPruning?: ReturnType<typeof setInterval>;

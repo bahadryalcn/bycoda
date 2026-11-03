@@ -68,6 +68,7 @@ mod package_smoke;
 mod pasteboard;
 mod pi_usage;
 mod presence;
+mod privacy_settings;
 mod project_logo;
 mod provider_terminal_profiles;
 mod provider_usage;
@@ -462,6 +463,8 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_decorations(false);
                     let _ = window.set_shadow(true);
+                    #[cfg(target_os = "linux")]
+                    enable_linux_media_stream(&window);
                 }
             }
             if !package_smoke::active() {
@@ -618,6 +621,7 @@ pub fn run() {
             notifications::request_notification_permission,
             notifications::show_notification,
             notifications::open_notification_settings,
+            privacy_settings::open_privacy_settings,
             notifications::set_taskbar_attention,
             tray::tray_sessions_update,
             reminders::reminder_list,
@@ -1228,6 +1232,36 @@ fn finish_reaping_on_exit(handle: &tauri::AppHandle) {
 #[cfg(all(debug_assertions, target_os = "macos"))]
 pub fn ensure_macos_dev_bundle() {
     macos::ensure_dev_bundle();
+}
+
+/// WebKitGTK disables getUserMedia by default; enable it for the voice feature
+/// and grant only audio capture requests.
+#[cfg(target_os = "linux")]
+fn enable_linux_media_stream(window: &tauri::WebviewWindow) {
+    use webkit2gtk::glib::prelude::Cast;
+    use webkit2gtk::{
+        PermissionRequestExt, SettingsExt, UserMediaPermissionRequestExt, WebViewExt,
+    };
+    let _ = window.with_webview(|webview| {
+        let view = webview.inner();
+        if let Some(settings) = WebViewExt::settings(&view) {
+            settings.set_enable_media_stream(true);
+            settings.set_enable_webaudio(true);
+        }
+        view.connect_permission_request(|_, request| {
+            if let Some(media) = request.downcast_ref::<webkit2gtk::UserMediaPermissionRequest>() {
+                if UserMediaPermissionRequestExt::is_for_audio_device(media)
+                    && !UserMediaPermissionRequestExt::is_for_video_device(media)
+                {
+                    request.allow();
+                } else {
+                    request.deny();
+                }
+                return true;
+            }
+            false
+        });
+    });
 }
 
 #[cfg(test)]

@@ -202,6 +202,8 @@ it("keeps detail retry focused with local pending feedback and ignores duplicate
   expect(container.textContent).not.toContain("Detail temporarily unavailable");
 });
 
+// Renders and re-filters a 1,000-row library under jsdom; it passes alone but full-suite worker
+// contention can exceed the 5s default, so the budget is explicit rather than weakening assertions.
 it("bounds a thousand-note library, preserves paging focus and reveals a selected last note after filtering", async () => {
   const all = Array.from({ length: 1_000 }, (_, index) => ({
     ...stored,
@@ -268,7 +270,7 @@ it("bounds a thousand-note library, preserves paging focus and reveals a selecte
   expect(container.querySelector('[aria-current="true"]')?.textContent).toContain(
     "Final library item",
   );
-});
+}, 20_000);
 
 it("finds text beyond summaries with native search and retains the full selected document", async () => {
   vi.useFakeTimers();

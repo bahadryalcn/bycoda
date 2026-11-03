@@ -303,7 +303,8 @@ export async function submitSharedLocalQueue(
           );
     }
     return accepted;
-  } catch (error) {
+  } catch (caught) {
+    let error: unknown = caught;
     failure = String(error).replace(/^Error: /, "");
     // Nothing reached the provider: a host that could not be asked or a queue
     // another computer changed is a coordination wait, not a failed delivery.

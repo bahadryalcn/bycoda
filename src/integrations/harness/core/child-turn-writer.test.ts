@@ -339,7 +339,7 @@ describe("original Host run writers (controlled in-process Host authority)", () 
             : kind === "dto"
               ? Object.freeze({ version: 1, runId: "invented" })
               : kind === "then-property"
-                ? Object.freeze({ then: null })
+                ? Object.freeze(JSON.parse('{"then":null}'))
                 : kind === "accessor"
                   ? Object.freeze(Object.defineProperty({}, "binding", { get: getter }))
                   : {};

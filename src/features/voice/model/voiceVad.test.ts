@@ -1,18 +1,29 @@
 import { expect, it, vi } from "vitest";
 import { VoiceVad, frameFeatures, pcmBase64, resamplePcm } from "./voiceVad";
-it("retains a manual turn across long pauses and never commits until the owner finishes",()=>{
-  const end=vi.fn(),pause=vi.fn();const vad=new VoiceVad(16000,vi.fn(),end,vi.fn(),{manualTurnEnd:true,pause});
-  for(let n=0;n<6;n++)vad.push(voicedFrame());
-  for(let n=0;n<1000;n++)vad.push(new Int16Array(1024));
-  for(let n=0;n<6;n++)vad.push(voicedFrame());
-  expect(end).not.toHaveBeenCalled();expect(pause).not.toHaveBeenCalled();expect(vad.commit(1)).toBe(false);
-  vad.flush();expect(end).toHaveBeenCalledOnce();expect(end.mock.calls[0][0].length).toBeLessThan(16000*3);
+it("retains a manual turn across long pauses and never commits until the owner finishes", () => {
+  const end = vi.fn(),
+    pause = vi.fn();
+  const vad = new VoiceVad(16000, vi.fn(), end, vi.fn(), { manualTurnEnd: true, pause });
+  for (let n = 0; n < 6; n++) vad.push(voicedFrame());
+  for (let n = 0; n < 1000; n++) vad.push(new Int16Array(1024));
+  for (let n = 0; n < 6; n++) vad.push(voicedFrame());
+  expect(end).not.toHaveBeenCalled();
+  expect(pause).not.toHaveBeenCalled();
+  expect(vad.commit(1)).toBe(false);
+  vad.flush();
+  expect(end).toHaveBeenCalledOnce();
+  expect(end.mock.calls[0][0].length).toBeLessThan(16000 * 3);
 });
-it("bounds a long manual capture without automatically answering it",()=>{
-  const end=vi.fn(),limit=vi.fn();const vad=new VoiceVad(16000,vi.fn(),end,vi.fn(),{manualTurnEnd:true,limit});
-  for(let n=0;n<2000;n++)vad.push(voicedFrame());
-  expect(end).not.toHaveBeenCalled();expect(limit).toHaveBeenCalledOnce();
-  vad.flush();expect(end).toHaveBeenCalledOnce();expect(end.mock.calls[0][0].length).toBeLessThanOrEqual(16000*120+1024);
+it("bounds a long manual capture without automatically answering it", () => {
+  const end = vi.fn(),
+    limit = vi.fn();
+  const vad = new VoiceVad(16000, vi.fn(), end, vi.fn(), { manualTurnEnd: true, limit });
+  for (let n = 0; n < 2000; n++) vad.push(voicedFrame());
+  expect(end).not.toHaveBeenCalled();
+  expect(limit).toHaveBeenCalledOnce();
+  vad.flush();
+  expect(end).toHaveBeenCalledOnce();
+  expect(end.mock.calls[0][0].length).toBeLessThanOrEqual(16000 * 120 + 1024);
 });
 /** A voiced (150 Hz) speech-like frame: the VAD requires pitch, not just level. */
 const voicedFrame = () =>

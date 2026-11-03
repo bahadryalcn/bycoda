@@ -748,17 +748,19 @@ function implementManager(options: ManagerOptions, state: RetainedState) {
           invalid?.code === "capacity" ||
           (Number.isSafeInteger(raw.text.length) && raw.text.length > MAX_TEXT);
         if (invalid && oversize) {
-          console.warn(`[editor-draft] capture skipped (${invalid.code}); recovery copy is not kept`);
+          console.warn(
+            `[editor-draft] capture skipped (${invalid.code}); recovery copy is not kept`,
+          );
           // The unsent older capture would otherwise be stored as if it were this document.
           const older = doc.pending;
           if (older) {
             older.cancelled = true;
             doc.pending = undefined;
             older.wake();
-            if (doc.phase === "queued") doc.phase = doc.error ? "error" : (doc.known?.state ?? "ready");
+            if (doc.phase === "queued")
+              doc.phase = doc.error ? "error" : (doc.known?.state ?? "ready");
           }
-        }
-        else if (invalid) failed(doc, invalid, value.sequence);
+        } else if (invalid) failed(doc, invalid, value.sequence);
         else {
           doc.phase = "queued";
           job = enqueue(doc, value);

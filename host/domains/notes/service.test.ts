@@ -42,7 +42,9 @@ const input = {
 it("preserves a committed deletion when its worker notification fails", async () => {
   const f = fixture();
   const saved = await f.service.upsert({ note: input, expectedUpdatedAt: 0 }, f.context);
-  f.notes.onDelete = () => { throw new Error("private callback diagnostic"); };
+  f.notes.onDelete = () => {
+    throw new Error("private callback diagnostic");
+  };
   const error = await f.service
     .delete({ id: input.id, expectedUpdatedAt: saved.updatedAt }, f.context)
     .catch((cause) => cause);

@@ -180,7 +180,8 @@ export function FilePreviewSearch({
   useLayoutEffect(() => {
     // Accessible names are translated; find and keyboard recovery share the
     // actual document scroll owner instead of looking up its English label.
-    previewOwnerRef.current = contentRef.current?.querySelector<HTMLElement>(".markdown-preview") ?? contentRef.current;
+    previewOwnerRef.current =
+      contentRef.current?.querySelector<HTMLElement>(".markdown-preview") ?? contentRef.current;
   }, [active, contentVersion]);
 
   const cancelFocus = useCallback(() => {

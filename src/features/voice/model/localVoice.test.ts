@@ -98,13 +98,25 @@ function callbacks() {
     playback: vi.fn(),
   };
 }
-it("keeps Smart Turn and ASR idle in manual mode until explicit Finish turn",async()=>{
-  setup();backend.start.mockResolvedValueOnce({lease:"local",model:"small",device:"cuda",turn:true} as any);
-  const events=callbacks(),voice=new LocalVoice(events,"tr",undefined,undefined,{manualTurnEnd:true});await voice.connect();
-  const push=(frame:Int16Array)=>nodes[0].port.onmessage({data:frame.buffer});
-  for(let n=0;n<6;n++)push(voicedFrame());for(let n=0;n<1000;n++)push(new Int16Array(1024));
-  expect(backend.endpoint).not.toHaveBeenCalled();expect(backend.transcribe).not.toHaveBeenCalled();
-  voice.finishTurn();await vi.waitFor(()=>expect(events.transcript).toHaveBeenCalledOnce());voice.close();
+it("keeps Smart Turn and ASR idle in manual mode until explicit Finish turn", async () => {
+  setup();
+  backend.start.mockResolvedValueOnce({
+    lease: "local",
+    model: "small",
+    device: "cuda",
+    turn: true,
+  } as any);
+  const events = callbacks(),
+    voice = new LocalVoice(events, "tr", undefined, undefined, { manualTurnEnd: true });
+  await voice.connect();
+  const push = (frame: Int16Array) => nodes[0].port.onmessage({ data: frame.buffer });
+  for (let n = 0; n < 6; n++) push(voicedFrame());
+  for (let n = 0; n < 1000; n++) push(new Int16Array(1024));
+  expect(backend.endpoint).not.toHaveBeenCalled();
+  expect(backend.transcribe).not.toHaveBeenCalled();
+  voice.finishTurn();
+  await vi.waitFor(() => expect(events.transcript).toHaveBeenCalledOnce());
+  voice.close();
 });
 
 it.each(["", "[cough]", "(boğaz temizleme)"])(

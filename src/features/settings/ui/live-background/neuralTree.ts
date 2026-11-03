@@ -3,7 +3,9 @@ import { themePalette } from "../../../../shared/theme/palette";
 
 /** The shared scrim colour at an alpha, as #RRGGBBAA for canvas. */
 const scrimAt = (alpha: number) =>
-  `${themePalette.scrim}${Math.round(alpha * 255).toString(16).padStart(2, "0")}`;
+  `${themePalette.scrim}${Math.round(alpha * 255)
+    .toString(16)
+    .padStart(2, "0")}`;
 
 /**
  * A luminous dendrite: one deterministic branching structure grows from the
@@ -92,9 +94,7 @@ function growTree(): Branch[] {
       const lean = root ? 0 : Math.sign(x1 || offset) * 0.05 * Math.min(depth, 2);
       let next = endAngle + offset + lean + (rand() - 0.5) * 0.22;
       // Roots stay low; the crown is drawn gently upward instead of piling up at a limit.
-      next = root
-        ? Math.sign(next) * Math.max(1.45, Math.min(2.2, Math.abs(next)))
-        : next * 0.9;
+      next = root ? Math.sign(next) * Math.max(1.45, Math.min(2.2, Math.abs(next))) : next * 0.9;
       if (!root) next = Math.max(-1.5, Math.min(1.5, next));
       const shrink = root ? 0.66 + rand() * 0.1 : 0.72 + rand() * 0.1;
       grow(x1, y1, next, length * shrink, depth + 1, index, root, maxDepth);
@@ -244,9 +244,13 @@ export function createNeuralTreeScene(palette: LiveBackgroundPalette): LiveBackg
           const b = 3 * u * u * t;
           const c = 3 * u * t * t;
           const d = t * t * t;
-          const x = a * geometry[o]! + b * geometry[o + 2]! + c * geometry[o + 4]! + d * geometry[o + 6]!;
+          const x =
+            a * geometry[o]! + b * geometry[o + 2]! + c * geometry[o + 4]! + d * geometry[o + 6]!;
           const y =
-            a * geometry[o + 1]! + b * geometry[o + 3]! + c * geometry[o + 5]! + d * geometry[o + 7]!;
+            a * geometry[o + 1]! +
+            b * geometry[o + 3]! +
+            c * geometry[o + 5]! +
+            d * geometry[o + 7]!;
           n++;
           points[n * 2] = x;
           points[n * 2 + 1] = y;

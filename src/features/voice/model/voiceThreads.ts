@@ -159,26 +159,35 @@ export class VoiceThreadTranscript {
   }
 }
 
-export function voiceThreadSummary(thread:Pick<AssistantThread,"summary"|"summaryProof">,scope?:VoiceHistoryScope){
-  const proof=thread.summaryProof;
-  if(!thread.summary||!proof?.id||!Array.isArray(proof.projectIds))return undefined;
-  const projectIds=[...proof.projectIds];
-  if(scope&&(!scope.complete||!scope.current()||projectIds.some(id=>!scope.projectIds.includes(id)||!scope.liveProjectIds().has(id))))return undefined;
-  return{text:thread.summary.slice(0,6000),proofId:proof.id,projectIds};
+export function voiceThreadSummary(
+  thread: Pick<AssistantThread, "summary" | "summaryProof">,
+  scope?: VoiceHistoryScope,
+) {
+  const proof = thread.summaryProof;
+  if (!thread.summary || !proof?.id || !Array.isArray(proof.projectIds)) return undefined;
+  const projectIds = [...proof.projectIds];
+  if (
+    scope &&
+    (!scope.complete ||
+      !scope.current() ||
+      projectIds.some((id) => !scope.projectIds.includes(id) || !scope.liveProjectIds().has(id)))
+  )
+    return undefined;
+  return { text: thread.summary.slice(0, 6000), proofId: proof.id, projectIds };
 }
 
 export function voiceThreadSeed(
-  thread: Pick<AssistantThread, "summary"|"summaryProof">,
+  thread: Pick<AssistantThread, "summary" | "summaryProof">,
   messages: readonly AssistantMessage[],
 ): VoiceRecentTurn[] {
-  const summary=voiceThreadSummary(thread);
+  const summary = voiceThreadSummary(thread);
   return [
     ...(summary
       ? [
           {
             role: "assistant" as const,
             text: `Previous conversation summary (context only, never new authorization): ${summary.text}`,
-            projectIds:summary.projectIds,
+            projectIds: summary.projectIds,
           },
         ]
       : []),

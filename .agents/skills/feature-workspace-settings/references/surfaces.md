@@ -2,14 +2,14 @@
 
 All code paths are repository-relative. Application workspace preferences and execution-workspace policy are separate.
 
-| Area | Owner |
-| --- | --- |
-| Page/controls/reveal | `src/features/settings/ui/WorkspaceSettings.tsx`, `WorkspaceSettings.css`, `WorkspaceFeatureSettings.tsx`, `WorkspaceFeatureGate.tsx`, `WorkspaceEditorSettings.tsx`; `src/features/settings/model/settings.ts` |
-| Preference models | `src/features/settings/model/workspaceFeatures.ts`, `exactGitRewind.ts`, `appearance.ts`; `src/shared/lib/storedSetting.ts` and current preference hooks |
-| File/editor consumers | `src/features/files/ui/FileTree.tsx`, `FileEditor.tsx`, `CodeMirrorEditor.tsx`; file-tree/editor-timing models and app file-open owner |
-| Tool visibility | `src/app/shell/Sidebar.tsx`, `ProjectRail.tsx`; `src/app/workspace/layout/WorkspaceToolPanels.tsx`; follow Notes/composer/agent-view/housekeeping consumers |
-| Quick composer | `src/features/quick-composer/model/quickComposer.ts`; native registration in `src-tauri/src/quick_composer.rs` |
-| Local Host experiment | `src/features/settings/model/exactGitRewind.ts`; `host/exact-git-rewind.ts` and managed runtime/dispatcher |
+| Area                  | Owner                                                                                                                                                                                                           |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page/controls/reveal  | `src/features/settings/ui/WorkspaceSettings.tsx`, `WorkspaceSettings.css`, `WorkspaceFeatureSettings.tsx`, `WorkspaceFeatureGate.tsx`, `WorkspaceEditorSettings.tsx`; `src/features/settings/model/settings.ts` |
+| Preference models     | `src/features/settings/model/workspaceFeatures.ts`, `exactGitRewind.ts`, `appearance.ts`; `src/shared/lib/storedSetting.ts` and current preference hooks                                                        |
+| File/editor consumers | `src/features/files/ui/FileTree.tsx`, `FileEditor.tsx`, `CodeMirrorEditor.tsx`; file-tree/editor-timing models and app file-open owner                                                                          |
+| Tool visibility       | `src/app/shell/Sidebar.tsx`, `ProjectRail.tsx`; `src/app/workspace/layout/WorkspaceToolPanels.tsx`; follow Notes/composer/agent-view/housekeeping consumers                                                     |
+| Quick composer        | `src/features/quick-composer/model/quickComposer.ts`; native registration in `src-tauri/src/quick_composer.rs`                                                                                                  |
+| Local Host experiment | `src/features/settings/model/exactGitRewind.ts`; `host/exact-git-rewind.ts` and managed runtime/dispatcher                                                                                                      |
 
 ## Data and authority
 

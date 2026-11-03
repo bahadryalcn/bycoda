@@ -1,8 +1,5 @@
 import { useSyncExternalStore } from "react";
-import {
-  hasUnsentComposerDraft,
-  subscribeComposerDraftPresence,
-} from "../model/draftCache";
+import { hasUnsentComposerDraft, subscribeComposerDraftPresence } from "../model/draftCache";
 
 const noSubscription = () => () => {};
 const noDraft = () => false;

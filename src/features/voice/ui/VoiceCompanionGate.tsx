@@ -36,7 +36,7 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
             loading={loading}
             onClick={() => (snapshot ? setSetup(true) : void refresh())}
           >
-            <Mic size={18} />
+            <Mic className="icon-lg" />
           </Button>
         </div>
         {setup && snapshot ? <AssistantSetup voice onClose={() => setSetup(false)} /> : null}

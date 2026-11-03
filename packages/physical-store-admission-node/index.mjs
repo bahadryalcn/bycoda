@@ -13,9 +13,7 @@ export function loadPhysicalStoreAdmission(explicitArtifact) {
     throw new TypeError("An explicit absolute .node artifact path is required");
   const canonical = realpathSync(explicitArtifact);
   if (extname(canonical) !== ".node")
-    throw new TypeError(
-      "The resolved physical admission artifact must have a .node extension",
-    );
+    throw new TypeError("The resolved physical admission artifact must have a .node extension");
   if (!statSync(canonical).isFile())
     throw new TypeError("Physical admission artifact must be a regular file");
   const native = require(canonical);

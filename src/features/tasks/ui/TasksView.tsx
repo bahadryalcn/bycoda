@@ -139,7 +139,7 @@ import { StewardsSection, useTaskStewards } from "./TaskStewards";
 import { SummaryPanel, useDailySummaryPanel } from "./TaskSummaryPanel";
 
 type Props = {
-  goalReveal?:{machineId:string;goalId:string;token:number};
+  goalReveal?: { machineId: string; goalId: string; token: number };
   besideRail?: boolean;
   compactRail?: boolean;
   cwd?: string;
@@ -175,14 +175,21 @@ export function TasksView({
       <PaneHeader
         dragRegion
         chromeInset={!besideRail ? true : compactRail ? "compact" : false}
-        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        leading={
+          besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+        }
         icon={navigating ? undefined : <DashboardSquare strokeWidth={1.75} />}
         title={navigating ? undefined : t("Tasks")}
         trailing={IS_MAC ? null : <WindowControls />}
       >
         {navigating ? <ToolNavigation /> : null}
       </PaneHeader>
-      <TasksContent cwd={cwd} recents={recents} onOpenBackgroundSession={onOpenBackgroundSession} goalReveal={goalReveal} />
+      <TasksContent
+        cwd={cwd}
+        recents={recents}
+        onOpenBackgroundSession={onOpenBackgroundSession}
+        goalReveal={goalReveal}
+      />
     </div>
   );
 }
@@ -192,7 +199,7 @@ function TasksContent({
   recents,
   onOpenBackgroundSession,
   goalReveal,
-}: Pick<Props, "cwd" | "recents" | "onOpenBackgroundSession"|"goalReveal">) {
+}: Pick<Props, "cwd" | "recents" | "onOpenBackgroundSession" | "goalReveal">) {
   useLocale();
   // Tasks for a project in a locked group are not shown.
   const viewStateKey = `tasks:${cwd ? projectKey(cwd) : "global"}`;
@@ -407,12 +414,12 @@ function TasksContent({
     openSession: setSessionPreview,
   });
   const goalList = goals.goals;
-  useEffect(()=>{
-    if(!goalReveal)return;
+  useEffect(() => {
+    if (!goalReveal) return;
     setProjectFilter("all");
-    setGoalFilter(goalKey(goalReveal.machineId,goalReveal.goalId));
+    setGoalFilter(goalKey(goalReveal.machineId, goalReveal.goalId));
     setSection("backlog");
-  },[goalReveal]);
+  }, [goalReveal]);
   const stewards = useTaskStewards({
     ops,
     scope: { cwd, recents, projectFilter, lock, machines, selectedProject },
@@ -991,7 +998,9 @@ function TasksContent({
                 .filter(
                   (project) =>
                     !currentSprint ||
-                    currentSprint.projects.some((member) => sprintProjectKey(member) === project.key),
+                    currentSprint.projects.some(
+                      (member) => sprintProjectKey(member) === project.key,
+                    ),
                 )
                 .map((project) => ({
                   value: project.key,
@@ -1023,9 +1032,7 @@ function TasksContent({
         ) : null}
         {machines.length === 0 ? (
           <span className="task-board-notice">
-            {loading
-              ? t("Looking for machines…")
-              : noMachineNotice}
+            {loading ? t("Looking for machines…") : noMachineNotice}
           </span>
         ) : null}
         <div className="task-board-actions">
@@ -1560,7 +1567,17 @@ function TasksContent({
         />
       ) : null}
       {section !== "reports" && goalList.length > 0 ? (
-        <GoalList goals={goals} filter={goalFilter} tasks={storedTasks} acting={acting} revealKey={goalReveal?`${goalReveal.machineId}:${goalReveal.goalId}:${goalReveal.token}`:undefined} />
+        <GoalList
+          goals={goals}
+          filter={goalFilter}
+          tasks={storedTasks}
+          acting={acting}
+          revealKey={
+            goalReveal
+              ? `${goalReveal.machineId}:${goalReveal.goalId}:${goalReveal.token}`
+              : undefined
+          }
+        />
       ) : null}
       {section !== "reports" && hasTasks && !loading ? (
         <p className="task-board-summary">

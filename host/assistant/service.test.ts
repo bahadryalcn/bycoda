@@ -8,95 +8,239 @@ import { AssistantResponseSchema } from "../../src/shared/model/host-contracts/a
 import { chiefContextAction, tokenBudgetMode, workerContextAction } from "./cost";
 import { AssistantTextPreflightError } from "../assistant-text-budget";
 
-it("refunds only a known zero-provider reply refusal, retains the owner message and never retries that intent",async()=>{
-  let calls=0;
-  const f=await setup({reply:async()=>{calls++;throw new AssistantTextPreflightError();}});
-  await f.configure("report",20000);
-  const thread=(await f.request({op:"threads.open"})).thread!;
-  const input={op:"threads.send",threadId:thread.id,via:"text",text:"Keep my exact text",idempotencyKey:"preflight"};
+it("refunds only a known zero-provider reply refusal, retains the owner message and never retries that intent", async () => {
+  let calls = 0;
+  const f = await setup({
+    reply: async () => {
+      calls++;
+      throw new AssistantTextPreflightError();
+    },
+  });
+  await f.configure("report", 20000);
+  const thread = (await f.request({ op: "threads.open" })).thread!;
+  const input = {
+    op: "threads.send",
+    threadId: thread.id,
+    via: "text",
+    text: "Keep my exact text",
+    idempotencyKey: "preflight",
+  };
   await expect(f.request(input)).rejects.toThrow("review reservation");
-  expect((await f.request({op:"snapshot"})).snapshot!.usage.total).toBe(0);
-  await f.restart();await expect(f.request(input)).rejects.toThrow("review reservation");
+  expect((await f.request({ op: "snapshot" })).snapshot!.usage.total).toBe(0);
+  await f.restart();
+  await expect(f.request(input)).rejects.toThrow("review reservation");
   expect(calls).toBe(1);
-  expect((await f.request({op:"threads.messages",threadId:thread.id})).messages?.map(message=>message.text)).toEqual([input.text]);
+  expect(
+    (await f.request({ op: "threads.messages", threadId: thread.id })).messages?.map(
+      (message) => message.text,
+    ),
+  ).toEqual([input.text]);
 });
-it("holds a reply reservation after accepted or uncertain output failure instead of refunding unknown usage",async()=>{
-  let calls=0;
-  const f=await setup({reply:async()=>{calls++;throw new Error("local text allowance; provider usage uncertain");}});
-  await f.configure("report",20000);
-  const thread=(await f.request({op:"threads.open"})).thread!,input={op:"threads.send",threadId:thread.id,via:"text",text:"Status?",idempotencyKey:"uncertain-output"};
+it("holds a reply reservation after accepted or uncertain output failure instead of refunding unknown usage", async () => {
+  let calls = 0;
+  const f = await setup({
+    reply: async () => {
+      calls++;
+      throw new Error("local text allowance; provider usage uncertain");
+    },
+  });
+  await f.configure("report", 20000);
+  const thread = (await f.request({ op: "threads.open" })).thread!,
+    input = {
+      op: "threads.send",
+      threadId: thread.id,
+      via: "text",
+      text: "Status?",
+      idempotencyKey: "uncertain-output",
+    };
   await expect(f.request(input)).rejects.toThrow("provider usage uncertain");
-  const usage=(await f.request({op:"snapshot"})).snapshot!.usage;
-  expect(usage.total).toBeGreaterThan(0);expect(usage.estimated).toBe(true);
-  await f.restart();const profile=(await f.request({op:"snapshot"})).snapshot!.profile;
-  await f.request({op:"profile.update",expectedVersion:profile.version,patch:{perWakeTokenCap:profile.perWakeTokenCap+1000}});
-  await expect(f.request(input)).rejects.toThrow("uncertain outcome");expect(calls).toBe(1);
+  const usage = (await f.request({ op: "snapshot" })).snapshot!.usage;
+  expect(usage.total).toBeGreaterThan(0);
+  expect(usage.estimated).toBe(true);
+  await f.restart();
+  const profile = (await f.request({ op: "snapshot" })).snapshot!.profile;
+  await f.request({
+    op: "profile.update",
+    expectedVersion: profile.version,
+    patch: { perWakeTokenCap: profile.perWakeTokenCap + 1000 },
+  });
+  await expect(f.request(input)).rejects.toThrow("uncertain outcome");
+  expect(calls).toBe(1);
 });
-it("retries a known zero-provider refusal only after changed capacity and reuses the exact canonical owner message",async()=>{
-  let calls=0;
-  const f=await setup({reply:async input=>{calls++;if(calls===1)throw new AssistantTextPreflightError();expect(input.messages.at(-1)?.text).toBe("Original exact request");return{text:"Now fits",tokens:7};}});
-  await f.configure("report",100000);
-  const thread=(await f.request({op:"threads.open"})).thread!,input={op:"threads.send",threadId:thread.id,via:"text",text:"Original exact request",idempotencyKey:"capacity-retry"};
+it("retries a known zero-provider refusal only after changed capacity and reuses the exact canonical owner message", async () => {
+  let calls = 0;
+  const f = await setup({
+    reply: async (input) => {
+      calls++;
+      if (calls === 1) throw new AssistantTextPreflightError();
+      expect(input.messages.at(-1)?.text).toBe("Original exact request");
+      return { text: "Now fits", tokens: 7 };
+    },
+  });
+  await f.configure("report", 100000);
+  const thread = (await f.request({ op: "threads.open" })).thread!,
+    input = {
+      op: "threads.send",
+      threadId: thread.id,
+      via: "text",
+      text: "Original exact request",
+      idempotencyKey: "capacity-retry",
+    };
   await expect(f.request(input)).rejects.toThrow("review reservation");
-  const original=(await f.request({op:"threads.messages",threadId:thread.id})).messages![0];
-  await f.restart();await expect(f.request(input)).rejects.toThrow("review reservation");expect(calls).toBe(1);
-  const profile=(await f.request({op:"snapshot"})).snapshot!.profile;
-  await f.request({op:"profile.update",expectedVersion:profile.version,patch:{perWakeTokenCap:profile.perWakeTokenCap+1000}});
-  expect((await f.request(input)).messages?.map(message=>message.text)).toEqual([input.text,"Now fits"]);
-  const messages=(await f.request({op:"threads.messages",threadId:thread.id})).messages!;
-  expect(messages).toHaveLength(2);expect(messages[0].id).toBe(original.id);
-  expect((await f.request({op:"snapshot"})).snapshot!.usage.total).toBe(7);
-  await f.request(input);expect(calls).toBe(2);
+  const original = (await f.request({ op: "threads.messages", threadId: thread.id })).messages![0];
+  await f.restart();
+  await expect(f.request(input)).rejects.toThrow("review reservation");
+  expect(calls).toBe(1);
+  const profile = (await f.request({ op: "snapshot" })).snapshot!.profile;
+  await f.request({
+    op: "profile.update",
+    expectedVersion: profile.version,
+    patch: { perWakeTokenCap: profile.perWakeTokenCap + 1000 },
+  });
+  expect((await f.request(input)).messages?.map((message) => message.text)).toEqual([
+    input.text,
+    "Now fits",
+  ]);
+  const messages = (await f.request({ op: "threads.messages", threadId: thread.id })).messages!;
+  expect(messages).toHaveLength(2);
+  expect(messages[0].id).toBe(original.id);
+  expect((await f.request({ op: "snapshot" })).snapshot!.usage.total).toBe(7);
+  await f.request(input);
+  expect(calls).toBe(2);
 });
-it("never resurrects a deleted owner message when a refused reply gets more capacity",async()=>{
-  let calls=0;
-  const f=await setup({reply:async()=>{calls++;throw new AssistantTextPreflightError();}});await f.configure("report",100000);
-  const thread=(await f.request({op:"threads.open"})).thread!,input={op:"threads.send",threadId:thread.id,via:"voice",text:"Exact captured owner text",idempotencyKey:"deleted-refusal"};
+it("never resurrects a deleted owner message when a refused reply gets more capacity", async () => {
+  let calls = 0;
+  const f = await setup({
+    reply: async () => {
+      calls++;
+      throw new AssistantTextPreflightError();
+    },
+  });
+  await f.configure("report", 100000);
+  const thread = (await f.request({ op: "threads.open" })).thread!,
+    input = {
+      op: "threads.send",
+      threadId: thread.id,
+      via: "voice",
+      text: "Exact captured owner text",
+      idempotencyKey: "deleted-refusal",
+    };
   await expect(f.request(input)).rejects.toThrow();
-  const user=(await f.request({op:"threads.messages",threadId:thread.id})).messages![0];
-  await f.request({op:"messages.delete",id:user.id,expectedVersion:user.version});
-  const profile=(await f.request({op:"snapshot"})).snapshot!.profile;await f.request({op:"profile.update",expectedVersion:profile.version,patch:{perWakeTokenCap:profile.perWakeTokenCap+1000}});
-  await expect(f.request(input)).rejects.toThrow();expect(calls).toBe(1);
-  expect((await f.request({op:"threads.messages",threadId:thread.id})).messages).toEqual([]);
-  expect((await f.request({op:"snapshot"})).snapshot!.usage.total).toBe(0);
+  const user = (await f.request({ op: "threads.messages", threadId: thread.id })).messages![0];
+  await f.request({ op: "messages.delete", id: user.id, expectedVersion: user.version });
+  const profile = (await f.request({ op: "snapshot" })).snapshot!.profile;
+  await f.request({
+    op: "profile.update",
+    expectedVersion: profile.version,
+    patch: { perWakeTokenCap: profile.perWakeTokenCap + 1000 },
+  });
+  await expect(f.request(input)).rejects.toThrow();
+  expect(calls).toBe(1);
+  expect((await f.request({ op: "threads.messages", threadId: thread.id })).messages).toEqual([]);
+  expect((await f.request({ op: "snapshot" })).snapshot!.usage.total).toBe(0);
 });
-it("allows an explicit reply model change only for known zero-provider refusal and still preserves source and via",async()=>{
-  let calls=0;const f=await setup({reply:async input=>{calls++;if(calls===1)throw new AssistantTextPreflightError();expect(input.profile.replyExecution?.model).toBe("new-owner-choice");return{text:"Ready",tokens:3};}});
-  await f.configure("report",100000);const thread=(await f.request({op:"threads.open"})).thread!,input={op:"threads.send",threadId:thread.id,via:"text",text:"Owner request",idempotencyKey:"role-refusal"};
+it("allows an explicit reply model change only for known zero-provider refusal and still preserves source and via", async () => {
+  let calls = 0;
+  const f = await setup({
+    reply: async (input) => {
+      calls++;
+      if (calls === 1) throw new AssistantTextPreflightError();
+      expect(input.profile.replyExecution?.model).toBe("new-owner-choice");
+      return { text: "Ready", tokens: 3 };
+    },
+  });
+  await f.configure("report", 100000);
+  const thread = (await f.request({ op: "threads.open" })).thread!,
+    input = {
+      op: "threads.send",
+      threadId: thread.id,
+      via: "text",
+      text: "Owner request",
+      idempotencyKey: "role-refusal",
+    };
   await expect(f.request(input)).rejects.toThrow();
-  const profile=(await f.request({op:"snapshot"})).snapshot!.profile;
-  await f.request({op:"profile.update",expectedVersion:profile.version,patch:{replyExecution:{...execution,model:"new-owner-choice"}}});
-  await expect(f.request({...input,via:"voice"})).rejects.toThrow("payload changed");expect(calls).toBe(1);
-  await f.request(input);expect(calls).toBe(2);expect((await f.request({op:"threads.messages",threadId:thread.id})).messages).toHaveLength(2);
+  const profile = (await f.request({ op: "snapshot" })).snapshot!.profile;
+  await f.request({
+    op: "profile.update",
+    expectedVersion: profile.version,
+    patch: { replyExecution: { ...execution, model: "new-owner-choice" } },
+  });
+  await expect(f.request({ ...input, via: "voice" })).rejects.toThrow("payload changed");
+  expect(calls).toBe(1);
+  await f.request(input);
+  expect(calls).toBe(2);
+  expect((await f.request({ op: "threads.messages", threadId: thread.id })).messages).toHaveLength(
+    2,
+  );
 });
 
 const cleanups: (() => Promise<void>)[] = [];
-it("admits a separately configured reply model without requiring a worker model or dispatching project work",async()=>{
-  let calls=0;
-  const f=await setup({reply:async({profile})=>{calls++;expect(profile.execution).toBeNull();expect(profile.replyExecution?.model).toBe("reply-only-model");return{text:"Ready",tokens:9};}});
-  await f.configure("report",20000);
-  let profile=(await f.request({op:"snapshot"})).snapshot!.profile;
-  await f.request({op:"profile.update",expectedVersion:profile.version,patch:{execution:null,replyExecution:null}});
-  const thread=(await f.request({op:"threads.open"})).thread!;
-  const input={op:"threads.send",threadId:thread.id,via:"text",text:"Reply briefly",idempotencyKey:"reply-role-only"};
+it("admits a separately configured reply model without requiring a worker model or dispatching project work", async () => {
+  let calls = 0;
+  const f = await setup({
+    reply: async ({ profile }) => {
+      calls++;
+      expect(profile.execution).toBeNull();
+      expect(profile.replyExecution?.model).toBe("reply-only-model");
+      return { text: "Ready", tokens: 9 };
+    },
+  });
+  await f.configure("report", 20000);
+  let profile = (await f.request({ op: "snapshot" })).snapshot!.profile;
+  await f.request({
+    op: "profile.update",
+    expectedVersion: profile.version,
+    patch: { execution: null, replyExecution: null },
+  });
+  const thread = (await f.request({ op: "threads.open" })).thread!;
+  const input = {
+    op: "threads.send",
+    threadId: thread.id,
+    via: "text",
+    text: "Reply briefly",
+    idempotencyKey: "reply-role-only",
+  };
   await expect(f.request(input)).rejects.toThrow("Configure and enable");
-  expect((await f.request({op:"threads.messages",threadId:thread.id})).messages).toEqual([]);expect(calls).toBe(0);
-  profile=(await f.request({op:"snapshot"})).snapshot!.profile;
-  await f.request({op:"profile.update",expectedVersion:profile.version,patch:{replyExecution:{...execution,model:"reply-only-model"}}});
+  expect((await f.request({ op: "threads.messages", threadId: thread.id })).messages).toEqual([]);
+  expect(calls).toBe(0);
+  profile = (await f.request({ op: "snapshot" })).snapshot!.profile;
+  await f.request({
+    op: "profile.update",
+    expectedVersion: profile.version,
+    patch: { replyExecution: { ...execution, model: "reply-only-model" } },
+  });
   expect((await f.request(input)).messages?.at(-1)?.text).toBe("Ready");
-  await f.request(input);expect(calls).toBe(1);
-  const snapshot=(await f.request({op:"snapshot"})).snapshot!;
-  expect(snapshot.profile).toMatchObject({execution:null,autonomy:"report",dailyTokenBudget:20000});expect(snapshot.jobs).toEqual([]);expect(snapshot.usage.total).toBe(9);
+  await f.request(input);
+  expect(calls).toBe(1);
+  const snapshot = (await f.request({ op: "snapshot" })).snapshot!;
+  expect(snapshot.profile).toMatchObject({
+    execution: null,
+    autonomy: "report",
+    dailyTokenBudget: 20000,
+  });
+  expect(snapshot.jobs).toEqual([]);
+  expect(snapshot.usage.total).toBe(9);
 });
 
-it("preserves worker reservations while settling a Chief conversation reservation",async()=>{
-  let reserve!:(input:{requestId:string;estimatedTokens:number})=>Promise<void>;
-  const f=await setup({reply:async()=>{await reserve({requestId:"worker-effect",estimatedTokens:500});return {text:"Recorded",tokens:10};}});
-  reserve=input=>f.service.reserveSessionTokens(input);
+it("preserves worker reservations while settling a Chief conversation reservation", async () => {
+  let reserve!: (input: { requestId: string; estimatedTokens: number }) => Promise<void>;
+  const f = await setup({
+    reply: async () => {
+      await reserve({ requestId: "worker-effect", estimatedTokens: 500 });
+      return { text: "Recorded", tokens: 10 };
+    },
+  });
+  reserve = (input) => f.service.reserveSessionTokens(input);
   await f.configure("chief");
-  const thread=(await f.request({op:"threads.open"})).thread!;
-  await f.request({op:"threads.send",threadId:thread.id,via:"text",text:"Status?",idempotencyKey:"turn-1"});
-  const usage=(await f.request({op:"snapshot"})).snapshot!.usage;
+  const thread = (await f.request({ op: "threads.open" })).thread!;
+  await f.request({
+    op: "threads.send",
+    threadId: thread.id,
+    via: "text",
+    text: "Status?",
+    idempotencyKey: "turn-1",
+  });
+  const usage = (await f.request({ op: "snapshot" })).snapshot!.usage;
   expect(usage.workerTokens).toBe(500);
   expect(usage.chiefTokens).toBe(10);
   expect(usage.total).toBe(510);
@@ -305,7 +449,9 @@ describe("durable assistant ownership and supervision", () => {
     expect(
       (await f.request({ op: "threads.messages", threadId: thread.id })).messages,
     ).toHaveLength(1);
-    await expect(f.request({ ...input, role: "assistant",via:"text" })).rejects.toThrow("authorship");
+    await expect(f.request({ ...input, role: "assistant", via: "text" })).rejects.toThrow(
+      "authorship",
+    );
     await expect(f.request({ ...input, text: "Different" })).rejects.toThrow("preserve");
     const matches = await f.request({
       op: "conversations.search",

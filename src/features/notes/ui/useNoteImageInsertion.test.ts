@@ -271,7 +271,9 @@ it("refuses files that are not images and says why", () => {
   expect(dropBadge()).toBe("Only images can be inserted here");
   expect(zone.dataset.dropIndicator).toBe("blocked");
   expect(dataTransfer.dropEffect).toBe("none");
-  act(() => api.dropZoneHandlers.onDrop({ ...(event as object), preventDefault: vi.fn() } as never));
+  act(() =>
+    api.dropZoneHandlers.onDrop({ ...(event as object), preventDefault: vi.fn() } as never),
+  );
   expect(dropBadge()).toBeNull();
   zone.remove();
 });
@@ -291,7 +293,10 @@ it("blocks a second drop while an image is still being inserted, and ignores pla
   expect(dropBadge()).toBe("Wait for the current image to finish inserting");
   act(() => api.dropZoneHandlers.onDragLeave(event));
 
-  const text = { ...(event as object), dataTransfer: { types: ["text/plain"], files: [], items: [] } };
+  const text = {
+    ...(event as object),
+    dataTransfer: { types: ["text/plain"], files: [], items: [] },
+  };
   act(() => api.dropZoneHandlers.onDragOver(text as never));
   expect(dropBadge()).toBeNull();
   expect(zone.dataset.dropIndicator).toBeUndefined();

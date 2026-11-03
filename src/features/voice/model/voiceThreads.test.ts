@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { VoiceThreadTranscript, voiceThreadSeed,voiceThreadSummary } from "./voiceThreads";
+import { VoiceThreadTranscript, voiceThreadSeed, voiceThreadSummary } from "./voiceThreads";
 import type {
   AssistantMessage,
   AssistantRequest,
@@ -51,7 +51,7 @@ it("stores streamed sentences as one assistant message and keeps owner and assis
 it("returns the exact accepted owner receipt and original route even if a later target is bound while it saves", async () => {
   let release!: (value: any) => void;
   const request = vi.fn(
-    async (input: AssistantRequest) =>
+    async (_input: AssistantRequest) =>
       new Promise<any>((done) => {
         release = done;
       }),
@@ -164,18 +164,38 @@ it("keeps a verified bounded summary plus the six latest transcript messages for
     { length: 10 },
     (_, i) => ({ role: "user", text: String(i) }) as AssistantMessage,
   );
-  const original=thread("a"),verified={...original,summaryProof:{id:"actual-proof",version:1,projectIds:["a"],throughMessageId:"prior-message",messageCount:20,createdAt:1,inputTruncated:false,omittedMessages:0}};
-  expect(voiceThreadSeed(original,messages)).toHaveLength(6);
+  const original = thread("a"),
+    verified = {
+      ...original,
+      summaryProof: {
+        id: "actual-proof",
+        version: 1,
+        projectIds: ["a"],
+        throughMessageId: "prior-message",
+        messageCount: 20,
+        createdAt: 1,
+        inputTruncated: false,
+        omittedMessages: 0,
+      },
+    };
+  expect(voiceThreadSeed(original, messages)).toHaveLength(6);
   const seed = voiceThreadSeed(verified, messages);
   expect(seed).toHaveLength(7);
   expect(seed[0].text).toContain("never new authorization");
   expect(seed[0].projectIds).toEqual(["a"]);
   expect(seed[1].text).toBe("4");
-  const scope={complete:true,projectIds:["a"],current:()=>true,liveProjectIds:()=>new Set(["a"])};
-  expect(voiceThreadSummary(verified,scope)?.proofId).toBe("actual-proof");
-  expect(voiceThreadSummary(verified,{...scope,liveProjectIds:()=>new Set()})).toBeUndefined();
-  expect(voiceThreadSummary(verified,{...scope,projectIds:[]})).toBeUndefined();
-  expect(voiceThreadSummary(original,scope)).toBeUndefined();
+  const scope = {
+    complete: true,
+    projectIds: ["a"],
+    current: () => true,
+    liveProjectIds: () => new Set(["a"]),
+  };
+  expect(voiceThreadSummary(verified, scope)?.proofId).toBe("actual-proof");
+  expect(
+    voiceThreadSummary(verified, { ...scope, liveProjectIds: () => new Set() }),
+  ).toBeUndefined();
+  expect(voiceThreadSummary(verified, { ...scope, projectIds: [] })).toBeUndefined();
+  expect(voiceThreadSummary(original, scope)).toBeUndefined();
 });
 it("keeps a deferred remote request transport and exact retry key after later local binding", async () => {
   const local = vi.fn(async (_input: AssistantRequest) => ({

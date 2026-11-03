@@ -196,7 +196,8 @@ export class MobileLanAccess {
   ) {}
 
   private load(): Promise<void> {
-    return (this.loading ??= (async () => {
+    if (this.loading) return this.loading;
+    const attempt = (async () => {
       let text: string;
       try {
         text = await readFile(this.file, "utf8");
@@ -217,7 +218,13 @@ export class MobileLanAccess {
         throw new Error("Invalid saved LAN access");
       this.identity = createLanIdentity(saved.key);
       this.saved = saved;
-    })());
+    })();
+    this.loading = attempt;
+    // A rejected load must not be cached forever; let a later call retry.
+    attempt.catch(() => {
+      if (this.loading === attempt) this.loading = undefined;
+    });
+    return attempt;
   }
   private async persist(saved: SavedAccess) {
     await mkdir(dirname(this.file), { recursive: true, mode: 0o700 });
@@ -282,13 +289,21 @@ export class MobileLanAccess {
       let wss: ReturnType<typeof createMobileWssGateway> | undefined;
       gateway.maxConnections = 32;
       try {
-        await new Promise<void>((resolve, reject) => {
-          gateway.once("error", reject);
-          gateway.listen(this.saved?.port ?? 0, selected, () => {
-            gateway.off("error", reject);
-            resolve();
+        const listenGateway = (port: number) =>
+          new Promise<void>((resolve, reject) => {
+            gateway.once("error", reject);
+            gateway.listen(port, selected, () => {
+              gateway.off("error", reject);
+              resolve();
+            });
           });
-        });
+        try {
+          await listenGateway(this.saved?.port ?? 0);
+        } catch (error) {
+          if (!this.saved?.port || (error as NodeJS.ErrnoException).code !== "EADDRINUSE")
+            throw error;
+          await listenGateway(0);
+        }
         if (this.disposed) throw new Error("Host is closing");
         const active = gateway.address();
         if (!active || typeof active === "string") throw new Error("LAN access unavailable");

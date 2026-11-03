@@ -1,10 +1,4 @@
-import {
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer, defaultRangeExtractor } from "@tanstack/react-virtual";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
@@ -16,11 +10,7 @@ import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { selectTreePaths, type TreeSelectionModifiers } from "../../files/model/treeSelection";
 import type { ChangesView } from "../../settings/model/appearance";
-import {
-  basename,
-  type GitChangedFile,
-  type GitFileDiffKind,
-} from "../../../platform/tauri/fs";
+import { basename, type GitChangedFile, type GitFileDiffKind } from "../../../platform/tauri/fs";
 import { ChangeRow, ChangeSelectionCtx, statusColor } from "./ChangeRow";
 
 const ROW_HEIGHT_FALLBACK = 28;
@@ -66,7 +56,6 @@ type ChangeRowProps = {
   ) => void | Promise<void>;
   onFolderAction: (relative: string, action: "stage" | "unstage") => void;
 };
-
 
 export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
   useLocale();
@@ -371,7 +360,9 @@ function ChangeDirRow({
             )}
           </span>
           <FileTypeIcon name={dir.name} isDir isOpen={open} />
-          <MiddleTruncate mode="path" className="min-w-0 flex-1 text-ui-body font-medium">{dir.name}</MiddleTruncate>
+          <MiddleTruncate mode="path" className="min-w-0 flex-1 text-ui-body font-medium">
+            {dir.name}
+          </MiddleTruncate>
         </Button>
         <div className="flex shrink-0 items-center">
           <InlineAction

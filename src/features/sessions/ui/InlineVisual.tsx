@@ -42,9 +42,7 @@ export function InlineVisual({ snapshot }: { snapshot: InlineVisualSnapshot }) {
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-1">
         <OverflowTooltip label={valid.title}>
-          <span className="min-w-0 flex-1 truncate text-ui-caption">
-            {valid.title}
-          </span>
+          <span className="min-w-0 flex-1 truncate text-ui-caption">{valid.title}</span>
         </OverflowTooltip>
         <Button
           variant="ghost"

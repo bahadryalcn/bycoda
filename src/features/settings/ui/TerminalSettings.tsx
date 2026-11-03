@@ -175,7 +175,9 @@ function HostShellRow({
           </Button>
         </div>
       </div>
-      {feedback ? <div className="settings-collection-feedback terminal-host-feedback">{feedback}</div> : null}
+      {feedback ? (
+        <div className="settings-collection-feedback terminal-host-feedback">{feedback}</div>
+      ) : null}
       {detailId ? (
         <span
           id={settingDomId(detailId)}
@@ -187,7 +189,10 @@ function HostShellRow({
       <div id={detailPanel} className="terminal-host-detail" hidden={!expanded}>
         {expanded && listed ? (
           listed.profiles.length ? (
-            <ul className="terminal-shell-list" aria-label={t("Available shells on {p0}", { p0: name })}>
+            <ul
+              className="terminal-shell-list"
+              aria-label={t("Available shells on {p0}", { p0: name })}
+            >
               {listed.profiles.map((profile) => (
                 <li key={profile.id} className="terminal-shell-item">
                   <div className="settings-collection-main">
@@ -215,7 +220,9 @@ function HostShellRow({
               size="inline"
               className="settings-collection-empty"
               title={t("No shells found")}
-              description={t("Install PowerShell, Git for Windows or another shell, then look again.")}
+              description={t(
+                "Install PowerShell, Git for Windows or another shell, then look again.",
+              )}
             />
           )
         ) : null}
@@ -295,7 +302,11 @@ export function TerminalPage() {
                 "New terminals on this computer open in this shell, and local `!commands` run in it. A terminal already open keeps the shell it started with.",
               )}
             </p>
-            <p>{t("Automatic follows the system: PowerShell on Windows, your login shell elsewhere.")}</p>
+            <p>
+              {t(
+                "Automatic follows the system: PowerShell on Windows, your login shell elsewhere.",
+              )}
+            </p>
             <p>
               {t(
                 "`!commands` in this computer's synced sessions run on this computer, using the shell selected here.",
@@ -326,7 +337,10 @@ export function TerminalPage() {
                 : scanning
                   ? { tone: "info", label: t("Looking for shells…") }
                   : listed
-                    ? { tone: listed.profiles.length > 0 ? "success" : "warning", label: shellCount(listed.profiles.length) }
+                    ? {
+                        tone: listed.profiles.length > 0 ? "success" : "warning",
+                        label: shellCount(listed.profiles.length),
+                      }
                     : { tone: "neutral", label: t("Not checked yet") }
             }
             listed={listed}
@@ -343,7 +357,8 @@ export function TerminalPage() {
             feedback={
               saveProblem ? (
                 <SettingsFeedback state="error">
-                  {t("Could not save the terminal profile. Select it again to retry.")} {saveProblem}
+                  {t("Could not save the terminal profile. Select it again to retry.")}{" "}
+                  {saveProblem}
                 </SettingsFeedback>
               ) : unmirrored && !saving ? (
                 <SettingsFeedback
@@ -422,7 +437,12 @@ export function RemoteMachineShells() {
 }
 
 export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
-  return <RemoteMachineShellState key={JSON.stringify([machine.id, machine.environmentId, machine.endpoint, machine.ssh])} machine={machine} />;
+  return (
+    <RemoteMachineShellState
+      key={JSON.stringify([machine.id, machine.environmentId, machine.endpoint, machine.ssh])}
+      machine={machine}
+    />
+  );
 }
 
 function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
@@ -526,7 +546,10 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
           : loading
             ? { tone: "info", label: t("Asking the machine…") }
             : listed
-              ? { tone: listed.profiles.length > 0 ? "success" : "warning", label: shellCount(listed.profiles.length) }
+              ? {
+                  tone: listed.profiles.length > 0 ? "success" : "warning",
+                  label: shellCount(listed.profiles.length),
+                }
               : { tone: "neutral", label: t("Not checked yet") }
       }
       listed={listed}

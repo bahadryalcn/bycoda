@@ -403,4 +403,7 @@
   }
 }
 
-.control[data-state="idle"]:not(:hover, :focus-within) { border-color: transparent; background: transparent; }
+.control[data-state="idle"]:not(:hover, :focus-within) {
+  border-color: transparent;
+  background: transparent;
+}

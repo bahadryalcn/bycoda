@@ -257,10 +257,20 @@ it("does not trust malformed native failure metadata or an altered durable comma
 });
 it.each([
   ["goals.list", {}],
-  ["tasks.save", { task: {
-    id: "task", title: "Fixture", prompt: "Work", projectId: "p",
-    harness: "codex", model: "fixture", runtimeMode: "auto",
-  } }],
+  [
+    "tasks.save",
+    {
+      task: {
+        id: "task",
+        title: "Fixture",
+        prompt: "Work",
+        projectId: "p",
+        harness: "codex",
+        model: "fixture",
+        runtimeMode: "auto",
+      },
+    },
+  ],
   ["files.write", { projectId: "p", path: "file", expected: "before", content: "after" }],
   ["devServers.bridgeRead", { projectId: "p", streamId: "bridge" }],
 ] as const)(

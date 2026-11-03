@@ -445,9 +445,7 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
         )}
         {workspace ? (
           <OverflowTooltip label={commit.author}>
-            <span className={styles.author}>
-              {commit.author}
-            </span>
+            <span className={styles.author}>{commit.author}</span>
           </OverflowTooltip>
         ) : null}
         {!workspace ? (

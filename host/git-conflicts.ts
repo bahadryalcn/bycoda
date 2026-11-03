@@ -178,7 +178,13 @@ export async function hostConflictStages(
     theirs,
     binary,
     tooLarge,
-    workingExists: await lstat(resolve(root, relative)).then(() => true, (error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return false; throw error; }),
+    workingExists: await lstat(resolve(root, relative)).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      },
+    ),
   };
 }
 

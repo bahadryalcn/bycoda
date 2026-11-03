@@ -423,7 +423,7 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
 name = "bycoda"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -473,6 +473,7 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "webkit2gtk",
  "webpki-roots 1.0.9",
  "windows",
  "windows-sys 0.61.2",

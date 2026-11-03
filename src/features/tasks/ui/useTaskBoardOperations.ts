@@ -26,7 +26,7 @@ export function useTaskBoardOperations(refreshQueries: () => Promise<unknown>) {
 
   /** Runs one board action; the owner's other actions wait until it settles.
    * `commit` receives the host's confirmed answer before the refresh starts. */
-  const act = async <T,>(
+  const act = async <T>(
     task: Pick<BoardTask, "id"> & Partial<Pick<BoardTask, "machineId">>,
     action: () => Promise<T>,
     commit?: (saved: T) => void,

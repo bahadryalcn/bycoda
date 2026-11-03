@@ -61,7 +61,10 @@ export default function DocxViewer({ bytes }: { bytes: Uint8Array }) {
 
   if (state.status === "loading") {
     return (
-      <div role="status" className="grid h-full place-items-center p-3 text-ui-caption text-(--ui-text-muted)">
+      <div
+        role="status"
+        className="grid h-full place-items-center p-3 text-ui-caption text-(--ui-text-muted)"
+      >
         {t("Converting document…")}
       </div>
     );
@@ -117,7 +120,13 @@ function DocxPages({ body }: { body: HTMLElement }) {
   });
   return (
     <div className="relative h-full">
-      <div ref={scrollRef} tabIndex={0} role="region" aria-label={t("Document preview")} className="h-full overflow-auto overscroll-contain">
+      <div
+        ref={scrollRef}
+        tabIndex={0}
+        role="region"
+        aria-label={t("Document preview")}
+        className="h-full overflow-auto overscroll-contain"
+      >
         <div
           ref={pageRef}
           className={DOCUMENT_CLASS}

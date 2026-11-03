@@ -440,8 +440,7 @@ export function createAsciiMaskScene(
           // edges. The room only uses the faintest marks, so every denser glyph is the machine.
           const spread = (u / 1.3) ** 2 + (v / 1.05) ** 2;
           const light =
-            (0.2 * Math.exp(-1.4 * spread) + 0.22 * halo + (noise(col, row) - 0.5) * 0.06) *
-            behind;
+            (0.2 * Math.exp(-1.4 * spread) + 0.22 * halo + (noise(col, row) - 0.5) * 0.06) * behind;
           const level = Math.min(BACKGROUND_TOP, rampIndex(light, 0));
           if (level === 0) continue;
           addGlyph(batches, false, 0.1 + 0.9 * light, RAMP[level]!, x, y);

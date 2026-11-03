@@ -29,7 +29,9 @@ describe("note library", () => {
     expect(noteLibraryMatchLocation(summary, "deep", matches)).toBe("title");
     expect(noteLibraryMatchLocation(summary, "needle")).toBeNull();
     expect(noteLibraryMatchLocation(summary, "", matches)).toBeNull();
-    expect(noteLibraryMatchLocation({ ...summary, tags: ["later"] }, "#later", matches)).toBe("metadata");
+    expect(noteLibraryMatchLocation({ ...summary, tags: ["later"] }, "#later", matches)).toBe(
+      "metadata",
+    );
   });
 
   it("shows the timestamp used for created or content-updated sorting", () => {
@@ -38,9 +40,14 @@ describe("note library", () => {
     expect(noteLibraryDate(original, "updated")).toEqual({ timestamp: 20, label: "Updated" });
     expect(noteLibraryDate(original, "created")).toEqual({ timestamp: 10, label: "Created" });
     expect(noteLibraryDate(note("legacy"), "updated")).toEqual({ timestamp: 1, label: "Updated" });
-    expect(filterNoteLibrary([original, newerContent], {
-      query: "", project: null, tag: null, sort: "updated",
-    }).map((entry) => entry.id)).toEqual(["b", "a"]);
+    expect(
+      filterNoteLibrary([original, newerContent], {
+        query: "",
+        project: null,
+        tag: null,
+        sort: "updated",
+      }).map((entry) => entry.id),
+    ).toEqual(["b", "a"]);
   });
 
   it("keeps equal folder names and remote hosts distinct, while merging equivalent Windows paths", () => {

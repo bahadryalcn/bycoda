@@ -42,7 +42,7 @@ export class PersistenceBaselines extends Map<string, PersistenceBaseline> {
     const hotSince = this.now() - this.hotMs;
     // Evict other entries oldest-first. The entry just written is never stubbed; if it
     // alone exceeds the budget, every other entry goes and it stays normalized.
-    for (const [key, size] of [...this.weights]) {
+    for (const [key, size] of Array.from(this.weights)) {
       if (this.bytes <= this.maxBytes && this.weights.size <= this.limit) break;
       if (key === id || (this.writtenAt.get(key) ?? 0) > hotSince) continue;
       const entry = super.get(key)!;

@@ -461,10 +461,17 @@
   }
 }
 
-.option .icon, .option .check { display: none; }
+.option .icon,
+.option .check {
+  display: none;
+}
 .option:is([data-active], [aria-selected="true"]) {
   background: var(--ui-surface-selected);
   box-shadow: inset 0 0 0 1px var(--ui-field-border);
 }
-.root:has(.lid .trigger:focus-visible) .shape { box-shadow: var(--ui-focus-ring); }
-.lid .trigger:focus-visible { box-shadow: none; }
+.root:has(.lid .trigger:focus-visible) .shape {
+  box-shadow: var(--ui-focus-ring);
+}
+.lid .trigger:focus-visible {
+  box-shadow: none;
+}

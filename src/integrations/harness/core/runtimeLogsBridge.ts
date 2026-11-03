@@ -23,9 +23,7 @@ const lookup = createBridgeLookup<RuntimeLogsBridge>(async (sessionId) => {
     return mcpMetadata(bridge);
   return null;
 });
-export function runtimeLogsBridge(
-  sessionId: string,
-): Promise<RuntimeLogsBridge | null> {
+export function runtimeLogsBridge(sessionId: string): Promise<RuntimeLogsBridge | null> {
   return lookup(sessionId.replace(/#\d+$/, ""));
 }
 
@@ -47,12 +45,7 @@ export function runtimeLogsSpawnArgs(
   args: string[],
   bridge: RuntimeLogsBridge | null,
 ): string[] {
-  if (
-    !bridge ||
-    args.includes("--strict-mcp-config") ||
-    args.includes("--max-turns")
-  )
-    return args;
+  if (!bridge || args.includes("--strict-mcp-config") || args.includes("--max-turns")) return args;
   const http = httpMcpArgs(
     provider,
     args,
@@ -90,10 +83,7 @@ export function runtimeLogsSpawnArgs(
     ];
   }
   let commandIndex = 0;
-  while (
-    args[commandIndex] === "-c" &&
-    typeof args[commandIndex + 1] === "string"
-  )
+  while (args[commandIndex] === "-c" && typeof args[commandIndex + 1] === "string")
     commandIndex += 2;
   if (provider === "codex" && args[commandIndex] === "app-server") {
     const quote = (value: string) => JSON.stringify(value);

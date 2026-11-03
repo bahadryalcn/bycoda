@@ -24,14 +24,16 @@ async function hint(page: Page, target: Locator, content: string | RegExp) {
 
 test.beforeEach(async ({ page }) => {
   const errors: string[] = [];
-  page.on("pageerror", error => errors.push(error.message));
+  page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/tests/browser/tooltip-policy.html");
   await page.waitForLoadState("networkidle");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
-test("visible, clipped, multiline, icon and semantic hints follow actual layout", async ({ page }) => {
+test("visible, clipped, multiline, icon and semantic hints follow actual layout", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await absent(page, page.getByTestId("visible"));
   await absent(page, page.getByTestId("inline-shortcut"));
@@ -47,10 +49,14 @@ test("visible, clipped, multiline, icon and semantic hints follow actual layout"
   await expect(page.locator("main [title]")).toHaveCount(0);
 });
 
-test("hints disappear when resize reveals text; keyboard and responsive icon modes remain usable", async ({ page }) => {
+test("hints disappear when resize reveals text; keyboard and responsive icon modes remain usable", async ({
+  page,
+}) => {
   const clipped = page.getByTestId("clipped");
   await hint(page, clipped, "A very long readable");
-  await clipped.evaluate(element => { element.style.width = "1000px"; });
+  await clipped.evaluate((element) => {
+    element.style.width = "1000px";
+  });
   await page.setViewportSize({ width: 2560, height: 1000 });
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   await page.setViewportSize({ width: 800, height: 1000 });
@@ -70,15 +76,21 @@ test("hints disappear when resize reveals text; keyboard and responsive icon mod
   await expect(icon).toBeFocused();
 });
 
-test("hidden shortcut parents, single letters and already-visible keycaps keep distinct meanings", async ({ page }) => {
+test("hidden shortcut parents, single letters and already-visible keycaps keep distinct meanings", async ({
+  page,
+}) => {
   await hint(page, page.getByTestId("hidden-shortcut"), /Ctrl.*H/);
   await expect(page.getByRole("tooltip").getByRole("img", { name: "Control H" })).toBeVisible();
   await hint(page, page.getByTestId("single-letter-shortcut"), "Sessions");
-  await expect(page.getByRole("tooltip").getByRole("img", { name: "S", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("tooltip").getByRole("img", { name: "S", exact: true }),
+  ).toBeVisible();
   await absent(page, page.getByTestId("keycap-shortcut"));
 });
 
-test("selection, middle truncation, action groups and actual activity header suppress repeated text", async ({ page }) => {
+test("selection, middle truncation, action groups and actual activity header suppress repeated text", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await absent(page, page.getByTestId("middle-short"));
   await hint(page, page.getByTestId("middle-long"), "AgentTranscriptActivity.tsx");
@@ -96,10 +108,16 @@ test("selection, middle truncation, action groups and actual activity header sup
   await absent(page, page.getByRole("button", { name: "Copy fixture", exact: true }));
   await hint(page, page.getByRole("button", { name: "Find fixture", exact: true }), "Find fixture");
   await absent(page, page.getByRole("button", { name: "Copy expanded fixture", exact: true }));
-  const phase = page.getByRole("region", { name: "Production consumer" }).getByRole("button").first();
+  const phase = page
+    .getByRole("region", { name: "Production consumer" })
+    .getByRole("button")
+    .first();
   await expect(phase).toContainText("Searched");
   await absent(page, phase);
-  await phase.evaluate(element => { element.style.width = "130px"; element.style.maxWidth = "130px"; });
+  await phase.evaluate((element) => {
+    element.style.width = "130px";
+    element.style.maxWidth = "130px";
+  });
   await hint(page, phase, "Searched");
 });
 
@@ -110,11 +128,19 @@ test("date range keeps its direct-child keyboard focus contract", async ({ page 
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
   await expect(trigger).toBeFocused();
-  expect(await trigger.evaluate(element => {
-    const parent = element.parentElement!;
-    return parent.matches(':has(> button:focus-visible)') && parent.classList.contains('bycoda-arc-date-range');
-  })).toBe(true);
-  const ring = await trigger.evaluate(element => getComputedStyle(element.parentElement!.querySelector('[class*="surface"]')!).boxShadow);
+  expect(
+    await trigger.evaluate((element) => {
+      const parent = element.parentElement!;
+      return (
+        parent.matches(":has(> button:focus-visible)") &&
+        parent.classList.contains("bycoda-arc-date-range")
+      );
+    }),
+  ).toBe(true);
+  const ring = await trigger.evaluate(
+    (element) =>
+      getComputedStyle(element.parentElement!.querySelector('[class*="surface"]')!).boxShadow,
+  );
   expect(ring).not.toBe("none");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -123,7 +149,10 @@ test("date range keeps its direct-child keyboard focus contract", async ({ page 
 });
 
 test("touch does not create hover hints", async ({ browser }) => {
-  const context = await browser.newContext({ hasTouch: true, viewport: { width: 800, height: 1000 } });
+  const context = await browser.newContext({
+    hasTouch: true,
+    viewport: { width: 800, height: 1000 },
+  });
   const page = await context.newPage();
   await page.goto("/tests/browser/tooltip-policy.html");
   await page.waitForLoadState("networkidle");
@@ -133,25 +162,39 @@ test("touch does not create hover hints", async ({ browser }) => {
   await context.close();
 });
 
-for (const width of [1280, 800]) for (const theme of ["light", "dark"]) {
-  test(`visual and reduced-motion matrix ${theme} ${width}`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 1000 });
-    await page.evaluate(theme => document.documentElement.classList.toggle("theme-light", theme === "light"), theme);
-    for (const reducedMotion of ["reduce", "no-preference"] as const) {
-      await page.emulateMedia({ reducedMotion });
-      await absent(page, page.getByTestId("visible"));
-      await absent(page, page.getByTestId("middle-short"));
-      await absent(page, page.getByRole("button", { name: "Copy expanded fixture", exact: true }));
-      await expect(page.locator("main [title]")).toHaveCount(0);
-      if (reducedMotion === "reduce") {
-        await reset(page);
-        await page.screenshot({ path: join(captures, `families-${theme}-${width}.png`), fullPage: true });
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`visual and reduced-motion matrix ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.evaluate(
+        (theme) => document.documentElement.classList.toggle("theme-light", theme === "light"),
+        theme,
+      );
+      for (const reducedMotion of ["reduce", "no-preference"] as const) {
+        await page.emulateMedia({ reducedMotion });
+        await absent(page, page.getByTestId("visible"));
+        await absent(page, page.getByTestId("middle-short"));
+        await absent(
+          page,
+          page.getByRole("button", { name: "Copy expanded fixture", exact: true }),
+        );
+        await expect(page.locator("main [title]")).toHaveCount(0);
+        if (reducedMotion === "reduce") {
+          await reset(page);
+          await page.screenshot({
+            path: join(captures, `families-${theme}-${width}.png`),
+            fullPage: true,
+          });
+        }
+        await hint(page, page.getByTestId("multiline"), "A very long readable");
+        const bounds = (await page.getByRole("tooltip").boundingBox())!;
+        expect(bounds.x).toBeGreaterThanOrEqual(0);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+        if (reducedMotion === "reduce")
+          await page.screenshot({
+            path: join(captures, `hint-${theme}-${width}.png`),
+            fullPage: true,
+          });
       }
-      await hint(page, page.getByTestId("multiline"), "A very long readable");
-      const bounds = (await page.getByRole("tooltip").boundingBox())!;
-      expect(bounds.x).toBeGreaterThanOrEqual(0);
-      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
-      if (reducedMotion === "reduce") await page.screenshot({ path: join(captures, `hint-${theme}-${width}.png`), fullPage: true });
-    }
-  });
-}
+    });
+  }

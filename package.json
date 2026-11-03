@@ -1,9 +1,12 @@
 {
   "name": "bycoda-desktop",
   "private": true,
-  "version": "0.7.1",
+  "version": "0.7.2",
   "type": "module",
   "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "dev": "vite",
     "dev:stable": "vite --mode stable",
@@ -21,7 +24,7 @@
     "test:browser:boot": "node scripts/checks/browser-built-boot.mjs",
     "test:inventory": "node scripts/checks/test-inventory.mjs --check",
     "test:scripts": "node scripts/checks/check-local.mjs --scripts --run",
-    "test:updater": "python -B -m unittest discover -s scripts/local-update -p test_local_update.py",
+    "test:updater": "node scripts/checks/test-updater.mjs",
     "check:plan": "node scripts/checks/check-local.mjs",
     "check:changed": "node scripts/checks/check-local.mjs --run",
     "check:repository-graph": "node scripts/checks/repository-graph.mjs",
@@ -43,6 +46,8 @@
     "lint": "oxlint . && pnpm run lint:hooks",
     "lint:hooks": "oxlint --config .oxlint-hooks.json src",
     "lint:baseline": "node scripts/checks/check-lint-baseline.mjs",
+    "check:locales": "node scripts/i18n/check-locales.mjs",
+    "check:feature-skills": "node scripts/checks/check-feature-skills.mjs",
     "check:colors": "node scripts/checks/check-theme-colors.mjs",
     "check:ui-drift": "node scripts/checks/check-ui-drift.mjs",
     "check:host-contracts": "node scripts/checks/check-host-contracts.mjs",

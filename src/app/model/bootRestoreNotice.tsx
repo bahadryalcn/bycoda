@@ -11,7 +11,11 @@ interface BootRestoreActions {
   startFresh: () => void;
 }
 
-function BootRestoreNotice({ canRead, startFresh, onClose }: BootRestoreActions & { onClose: () => void }) {
+function BootRestoreNotice({
+  canRead,
+  startFresh,
+  onClose,
+}: BootRestoreActions & { onClose: () => void }) {
   const t = useT();
   const [pending, setPending] = useState(false);
   const [stillFailing, setStillFailing] = useState(false);
@@ -34,7 +38,9 @@ function BootRestoreNotice({ canRead, startFresh, onClose }: BootRestoreActions 
       message={
         stillFailing
           ? t("The saved layout is still unreadable. It was not changed. Try again in a moment.")
-          : t("Your saved layout was not changed. Retry to restore it, or start fresh in this window.")
+          : t(
+              "Your saved layout was not changed. Retry to restore it, or start fresh in this window.",
+            )
       }
       durationMs={null}
       action={{ label: t("Retry"), onClick: () => void retry(), pending }}

@@ -149,7 +149,7 @@ export class SessionQueues {
     return this.db.scope(async () => {
       await this.ready;
       const ids: string[] = [];
-      for (const [id, at] of [...this.leases])
+      for (const [id, at] of Array.from(this.leases))
         if (at <= this.now()) {
           ids.push(id);
           this.leases.delete(id);

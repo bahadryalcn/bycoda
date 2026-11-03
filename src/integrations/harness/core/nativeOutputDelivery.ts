@@ -568,7 +568,8 @@ export function captureNativeOutputEvent(sessionId: string, event: object): void
   }
   runtime.events.set(event, { origin: current, sessionId, applied: false });
   for (const item of items) if (item.outcome === "pending-parser") item.outcome = "emitted";
-  const streams = items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
+  const streams =
+    items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
   for (const stream of streams) {
     if (stream.queuedEvents < Number.MAX_SAFE_INTEGER) stream.queuedEvents++;
     else unavailable(stream, "event-count-capacity");
@@ -739,8 +740,10 @@ export function retainNativeOutputEventOrigin(
     failOrigin(origin, "causal-session-changed");
     return null;
   }
-  const batches = items.length === 1 ? [items[0].batch] : [...new Set(items.map((item) => item.batch))];
-  const streams = items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
+  const batches =
+    items.length === 1 ? [items[0].batch] : [...new Set(items.map((item) => item.batch))];
+  const streams =
+    items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
   for (const batch of batches) batch.causalPending ??= 0;
   for (const stream of streams) {
     stream.causalPending ??= 0;
@@ -973,7 +976,10 @@ export function markNativeOutputEventsApplied(sessionId: string, events: readonl
       continue;
     }
     origin.applied = true;
-    const streams = items.length === 1 ? [items[0].batch.stream] : new Set(items.map((item) => item.batch.stream));
+    const streams =
+      items.length === 1
+        ? [items[0].batch.stream]
+        : new Set(items.map((item) => item.batch.stream));
     for (const stream of streams) {
       if (stream.appliedEvents < Number.MAX_SAFE_INTEGER) stream.appliedEvents++;
       else unavailable(stream, "event-count-capacity");

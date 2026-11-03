@@ -5,8 +5,9 @@ import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/Dropdown
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useOwnedTimeout } from "../../../shared/hooks/useOwnedTimeout";
 import { t, useLocale, useT } from "../../../shared/i18n/git";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
+import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   ArrowDown,
   ArrowUp,
@@ -109,10 +110,7 @@ import {
   GIT_CONFLICTS,
   useRemoteSupports,
 } from "../../connections/model/remoteCapabilities";
-import {
-  remotePollDue,
-  useRemoteLoadFailure,
-} from "../../connections/model/remoteHealth";
+import { remotePollDue, useRemoteLoadFailure } from "../../connections/model/remoteHealth";
 import { RemoteLoadError } from "../../connections/ui/RemoteLoadError";
 import type { CommitMenuOptions } from "../model/gitActionsMenu";
 import {
@@ -135,10 +133,7 @@ import { invalidateGitIndex } from "../model/gitIndexStore";
 
 import { GitFeedback } from "./GitFeedback";
 import { useGitResource } from "../hooks/useGitResource";
-import {
-  ACTIVE_PROJECT_REFRESH_MS,
-  GITHUB_PR_FRESH_MS,
-} from "../model/gitRefreshPolicy";
+import { ACTIVE_PROJECT_REFRESH_MS, GITHUB_PR_FRESH_MS } from "../model/gitRefreshPolicy";
 import { GitGenerationSettings } from "./GitGenerationSettings";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -307,19 +302,28 @@ export function GitChangesPanel({
 
   useEffect(() => {
     if (!enabled || !autoFetch || !canFetch || !detailsOpen) return;
+    let cancelled = false;
     const timer = window.setInterval(() => {
       if (document.hidden || !remotePollDue(cwd) || gitPanelRuntime(cwd).state.busy) return;
       // Quiet: a failed background fetch should not interrupt with a dialog.
       void withGitBackgroundFetch(cwd, () => gitFetch(cwd)).then(
         () => {
+          // Ignore results that settle after cleanup (repository or setting changed).
+          if (cancelled) return;
           setFetchError(null);
           reload();
           announceGitChange(cwd, "refs");
         },
-        (error) => setFetchError(error instanceof Error ? error.message : String(error)),
+        (error) => {
+          if (cancelled) return;
+          setFetchError(error instanceof Error ? error.message : String(error));
+        },
       );
     }, AUTO_FETCH_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [autoFetch, canFetch, cwd, detailsOpen, enabled, reload]);
 
   useLayoutEffect(() => {
@@ -427,11 +431,7 @@ export function GitChangesPanel({
       className={`@container/changes flex min-h-0 flex-col ${repository ? "shrink-0 border-b border-stroke" : "h-full flex-1 overflow-hidden"}`}
     >
       <header
-        className={
-          repository
-            ? styles.header
-            : styles.branchHeader
-        }
+        className={repository ? styles.header : styles.branchHeader}
         data-current-checkout={repository?.current || undefined}
       >
         {repository ? (
@@ -488,10 +488,7 @@ export function GitChangesPanel({
             <span className="min-w-0 truncate">{pending ?? busyLabel(busy)}</span>
           </span>
         ) : !busy && status ? (
-          <span
-            role="status"
-            className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)"
-          >
+          <span role="status" className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
             {status}
           </span>
         ) : null}
@@ -812,7 +809,8 @@ function ChangedFiles({
   const unstaged = useMemo(() => files.filter((file) => file.unstaged), [files]);
   const collisionNames = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const file of files) counts.set(basename(file.relative), (counts.get(basename(file.relative)) ?? 0) + 1);
+    for (const file of files)
+      counts.set(basename(file.relative), (counts.get(basename(file.relative)) ?? 0) + 1);
     return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
   }, [files]);
   const visibleStaged = useMemo(
@@ -958,7 +956,14 @@ function ChangedFiles({
         else if (action === "unstage") await gitUnstageFile(cwd, file.relative);
         else await gitDiscardFile(cwd, file.relative);
       } catch (error) {
-        fail(error, action === "stage" ? "Couldn’t stage changes" : action === "unstage" ? "Couldn’t unstage changes" : "Couldn’t discard changes");
+        fail(
+          error,
+          action === "stage"
+            ? "Couldn’t stage changes"
+            : action === "unstage"
+              ? "Couldn’t unstage changes"
+              : "Couldn’t discard changes",
+        );
       }
     });
     queue.tail = task;
@@ -1004,7 +1009,14 @@ function ChangedFiles({
         else if (action === "unstage") await gitUnstageFiles(cwd, paths);
         else await gitDiscardFiles(cwd, paths);
       } catch (error) {
-        fail(error, action === "stage" ? "Couldn’t stage changes" : action === "unstage" ? "Couldn’t unstage changes" : "Couldn’t discard changes");
+        fail(
+          error,
+          action === "stage"
+            ? "Couldn’t stage changes"
+            : action === "unstage"
+              ? "Couldn’t unstage changes"
+              : "Couldn’t discard changes",
+        );
       }
     });
     queue.tail = task;
@@ -1046,7 +1058,14 @@ function ChangedFiles({
       onMutated(discarded, "index");
     } catch (error) {
       onMutated(discarded, "index");
-      fail(error, action === "stage" ? "Couldn’t stage changes" : action === "unstage" ? "Couldn’t unstage changes" : "Couldn’t discard changes");
+      fail(
+        error,
+        action === "stage"
+          ? "Couldn’t stage changes"
+          : action === "unstage"
+            ? "Couldn’t unstage changes"
+            : "Couldn’t discard changes",
+      );
     } finally {
       setBusy(null);
     }
@@ -1298,97 +1317,107 @@ function ChangedFiles({
   return (
     <aside className={`flex min-h-0 min-w-0 flex-col ${fill ? "flex-1" : "shrink-0"}`}>
       <div className="shrink-0 border-b border-stroke">
-      <div className="flex flex-col gap-1.5 p-2">
-        <div className="relative min-w-0">
-          <TextareaField
-            label={t("Commit message")}
-            hideLabel
-            fieldClassName={styles.messageField}
-            ref={messageRef}
-            fieldSize="sm"
-            minRows={1}
-            maxRows={8}
-            autosize
-            value={message}
-            placeholder={
-              amend
-                ? t("Amend message ({p0}↩ to amend)", { p0: MOD })
-                : t("Message ({p0}↩ to commit)", { p0: MOD })
-            }
-            disabled={!canEditMessage}
-            onChange={(event) => setMessage(event.target.value)}
-            onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canCommit) {
-                event.preventDefault();
-                void commit(false);
+        <div className="flex flex-col gap-1.5 p-2">
+          <div className="relative min-w-0">
+            <TextareaField
+              label={t("Commit message")}
+              hideLabel
+              fieldClassName={styles.messageField}
+              ref={messageRef}
+              fieldSize="sm"
+              minRows={1}
+              maxRows={8}
+              autosize
+              value={message}
+              placeholder={
+                amend
+                  ? t("Amend message ({p0}↩ to amend)", { p0: MOD })
+                  : t("Message ({p0}↩ to commit)", { p0: MOD })
               }
-            }}
-            className={styles.message}
-            endAdornment={
-              <>
-                {generating ? <WorkingIndicator label={t("Generating message…")} /> : null}
-                <InlineAction
-                  reveal="always"
-                  label={
-                    generating ? t("Cancel commit message generation") : t("Generate commit message")
-                  }
-                  disabled={!generating && !canGenerate}
-                  onClick={() => (generating ? cancelGenerate() : void generate())}
-                >
-                  {generating ? (
-                    <X className="icon-sm" strokeWidth={1.75} />
-                  ) : (
-                    <WandSparkles className="icon-sm" strokeWidth={1.75} />
+              disabled={!canEditMessage}
+              onChange={(event) => setMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canCommit) {
+                  event.preventDefault();
+                  void commit(false);
+                }
+              }}
+              className={styles.message}
+              endAdornment={
+                <>
+                  {generating ? <WorkingIndicator label={t("Generating message…")} /> : null}
+                  <InlineAction
+                    reveal="always"
+                    label={
+                      generating
+                        ? t("Cancel commit message generation")
+                        : t("Generate commit message")
+                    }
+                    disabled={!generating && !canGenerate}
+                    onClick={() => (generating ? cancelGenerate() : void generate())}
+                  >
+                    {generating ? (
+                      <X className="icon-sm" strokeWidth={1.75} />
+                    ) : (
+                      <WandSparkles className="icon-sm" strokeWidth={1.75} />
+                    )}
+                  </InlineAction>
+                  {!isRemoteProjectPath(cwd) && (
+                    <GitGenerationSettings
+                      cwd={cwd}
+                      preferred={textHarness}
+                      choice={generationChoice}
+                      hasOverride={hasGenerationOverride}
+                      onChange={setGenerationChoice}
+                      disabled={generating || committing}
+                    />
                   )}
-                </InlineAction>
-                {!isRemoteProjectPath(cwd) && (
-                  <GitGenerationSettings
-                    cwd={cwd}
-                    preferred={textHarness}
-                    choice={generationChoice}
-                    hasOverride={hasGenerationOverride}
-                    onChange={setGenerationChoice}
-                    disabled={generating || committing}
-                  />
-                )}
-              </>
-            }
-          />
-
+                </>
+              }
+            />
+          </div>
+          <div className="min-w-0">
+            <GitCommitActions
+              index={index ?? null}
+              pr={pr}
+              busy={busy}
+              pending={pending}
+              hasRemote={hasRemote}
+              hasOpenPr={hasOpenPr}
+              onDefault={onDefault}
+              amend={amend}
+              commitIntent={commitIntent}
+              canCommit={canCommit}
+              blockedReason={blockedMessage}
+              canCommitPush={canCommitPush}
+              canCommitPushPr={canCommitPushPr}
+              canSync={canSync}
+              canPublish={canPublish}
+              canCreatePr={canCreatePr}
+              canViewPr={canViewPr}
+              canOpenMenu={canOpenMenu}
+              menuOpen={menuOpen}
+              onMenuOpenChange={setMenuOpen}
+              onCommit={(push, createPr) => void commit(push, createPr)}
+              onToggleAmend={() => void toggleAmend()}
+              onSync={() => void sync()}
+              onCreatePr={() => void createPr()}
+              onViewPr={() => {
+                if (pr?.url)
+                  openUrlSafely(pr.url, (error) =>
+                    setGitFeedback(cwd, {
+                      kind: "error",
+                      get title() {
+                        return t("Could not open the link");
+                      },
+                      detail: String(error),
+                    }),
+                  );
+              }}
+            />
+          </div>
         </div>
-        <div className="min-w-0">
-          <GitCommitActions
-            index={index ?? null}
-            pr={pr}
-            busy={busy}
-            pending={pending}
-            hasRemote={hasRemote}
-            hasOpenPr={hasOpenPr}
-            onDefault={onDefault}
-            amend={amend}
-            commitIntent={commitIntent}
-            canCommit={canCommit}
-            blockedReason={blockedMessage}
-            canCommitPush={canCommitPush}
-            canCommitPushPr={canCommitPushPr}
-            canSync={canSync}
-            canPublish={canPublish}
-            canCreatePr={canCreatePr}
-            canViewPr={canViewPr}
-            canOpenMenu={canOpenMenu}
-            menuOpen={menuOpen}
-            onMenuOpenChange={setMenuOpen}
-            onCommit={(push, createPr) => void commit(push, createPr)}
-            onToggleAmend={() => void toggleAmend()}
-            onSync={() => void sync()}
-            onCreatePr={() => void createPr()}
-            onViewPr={() => {
-              if (pr?.url) void openUrl(pr.url);
-            }}
-          />
-        </div>
-      </div>
-      {notices}
+        {notices}
       </div>
       {prLoading ? (
         <p role="status" className="px-3 py-1 text-ui-micro text-(--ui-text-secondary)">
@@ -1528,7 +1557,9 @@ function ChangedFiles({
               <FileSection
                 title={t("Staged Changes")}
                 count={staged.length}
-                countLabel={deferredFileQuery ? `${visibleStaged.length} / ${staged.length}` : undefined}
+                countLabel={
+                  deferredFileQuery ? `${visibleStaged.length} / ${staged.length}` : undefined
+                }
                 headerExtra={fileFilter}
                 open={stagedExpanded}
                 onToggle={() => {
@@ -1576,7 +1607,9 @@ function ChangedFiles({
               <FileSection
                 title={t("Changes")}
                 count={unstaged.length}
-                countLabel={deferredFileQuery ? `${visibleUnstaged.length} / ${unstaged.length}` : undefined}
+                countLabel={
+                  deferredFileQuery ? `${visibleUnstaged.length} / ${unstaged.length}` : undefined
+                }
                 headerExtra={staged.length === 0 ? fileFilter : undefined}
                 open={changesExpanded}
                 onToggle={() => {
@@ -1633,7 +1666,9 @@ function ChangedFiles({
               <p role="status" className="px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
                 {visibleStaged.length + visibleUnstaged.length} / {staged.length + unstaged.length}{" "}
                 {t("staged and unstaged entries")}
-                <span className="block">{t("All actions affect the entire repository, including hidden entries.")}</span>
+                <span className="block">
+                  {t("All actions affect the entire repository, including hidden entries.")}
+                </span>
               </p>
             ) : null}
           </>
@@ -1940,7 +1975,9 @@ function GitCommitActions({
       menuOpen={menuOpen}
       onMenuOpenChange={onMenuOpenChange}
       disabled={lead.disabled}
-      disabledReason={primary === "commit" && !committing ? (blockedReason ?? undefined) : undefined}
+      disabledReason={
+        primary === "commit" && !committing ? (blockedReason ?? undefined) : undefined
+      }
       menuDisabled={!canOpenMenu}
       loading={lead.loading}
       loadingLabel={lead.loadingLabel}
@@ -2064,69 +2101,69 @@ export function FileSection({
         <div className={styles.actionSlots}>
           <div className={styles.actionSlot}>{headerExtra}</div>
           <div className={styles.actionSlot}>
-          {view && onToggleView ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              iconOnly
-              label={view === "tree" ? t("View as List") : t("View as Tree")}
-              onClick={onToggleView}
-            >
-              {view === "tree" ? (
-                <ListBullet className="icon-sm" strokeWidth={1.75} />
-              ) : (
-                <FolderTree className="icon-sm" strokeWidth={1.75} />
-              )}
-            </Button>
-          ) : null}
-          </div>
-          <div className={styles.actionSlot}>
-          {overflow.length ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              iconOnly
-              label={t("More actions")}
-              onClick={(event) => setMoreAnchor(moreAnchor ? null : event.currentTarget)}
-              aria-haspopup="menu"
-              aria-expanded={!!moreAnchor}
-            >
-              <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
-            </Button>
-          ) : null}
-          </div>
-          <div className={styles.actionSlot}>
-          {direct.map((action) =>
-            action.label ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                motion="none"
-                key={action.title}
-                type="button"
-                tooltip={action.title === action.label ? undefined : action.title}
-                aria-label={action.title}
-                onClick={action.onClick}
-                className="shrink-0"
-              >
-                {action.label}
-              </Button>
-            ) : (
+            {view && onToggleView ? (
               <Button
                 size="sm"
                 variant="ghost"
                 motion="none"
                 iconOnly
-                key={action.title}
-                label={action.title}
-                onClick={action.onClick}
+                label={view === "tree" ? t("View as List") : t("View as Tree")}
+                onClick={onToggleView}
               >
-                {action.icon}
+                {view === "tree" ? (
+                  <ListBullet className="icon-sm" strokeWidth={1.75} />
+                ) : (
+                  <FolderTree className="icon-sm" strokeWidth={1.75} />
+                )}
               </Button>
-            ),
-          )}
+            ) : null}
+          </div>
+          <div className={styles.actionSlot}>
+            {overflow.length ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                motion="none"
+                iconOnly
+                label={t("More actions")}
+                onClick={(event) => setMoreAnchor(moreAnchor ? null : event.currentTarget)}
+                aria-haspopup="menu"
+                aria-expanded={!!moreAnchor}
+              >
+                <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+              </Button>
+            ) : null}
+          </div>
+          <div className={styles.actionSlot}>
+            {direct.map((action) =>
+              action.label ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  motion="none"
+                  key={action.title}
+                  type="button"
+                  tooltip={action.title === action.label ? undefined : action.title}
+                  aria-label={action.title}
+                  onClick={action.onClick}
+                  className="shrink-0"
+                >
+                  {action.label}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  motion="none"
+                  iconOnly
+                  key={action.title}
+                  label={action.title}
+                  onClick={action.onClick}
+                >
+                  {action.icon}
+                </Button>
+              ),
+            )}
           </div>
         </div>
       </div>

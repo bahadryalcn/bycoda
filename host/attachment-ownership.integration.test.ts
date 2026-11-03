@@ -35,7 +35,10 @@ it("uploads with desktop ownership over real authenticated RPC and collects afte
     await collector.close();
     await engine.close();
     server.closeAllConnections();
-    if (server.listening) await new Promise<void>(async (done) => await server.close(() => done()));
+    if (server.listening)
+      await new Promise<void>((done) => {
+        server.close(() => done());
+      });
     await store.close();
     if (!resolve(directory).startsWith(resolve(prefix))) throw new Error("Unsafe fixture cleanup");
     rmSync(directory, { recursive: true, force: true });

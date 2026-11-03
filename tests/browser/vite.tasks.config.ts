@@ -3,10 +3,23 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [react(),{
-    name:"bounded-task-fixture-css",enforce:"pre",
-    transform(code,id){if(id.replaceAll("\\","/").endsWith("/src/styles/index.css"))return code.replace('@import "tailwindcss";','@import "tailwindcss" source(none);\n@source "../shared/ui";\n@source "../features/tasks";\n@source "../features/workspaces";\n@source "../features/sessions/ui";').replaceAll(/@source "\.\.\/\.\.\/node_modules[^;]+;/g,"");},
-  },tailwindcss()],
+  plugins: [
+    react(),
+    {
+      name: "bounded-task-fixture-css",
+      enforce: "pre",
+      transform(code, id) {
+        if (id.replaceAll("\\", "/").endsWith("/src/styles/index.css"))
+          return code
+            .replace(
+              '@import "tailwindcss";',
+              '@import "tailwindcss" source(none);\n@source "../shared/ui";\n@source "../features/tasks";\n@source "../features/workspaces";\n@source "../features/sessions/ui";',
+            )
+            .replaceAll(/@source "\.\.\/\.\.\/node_modules[^;]+;/g, "");
+      },
+    },
+    tailwindcss(),
+  ],
   build: {
     outDir: "temp/build/browser-tasks",
     emptyOutDir: false,

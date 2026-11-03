@@ -24,6 +24,7 @@ import { VoiceVisualizer } from "./VoiceVisualizer";
 import styles from "./VoiceOverlayWindow.module.css";
 import { VoiceChoiceCard } from "./VoiceChoiceCard";
 import { VoiceJobReview } from "./VoiceJobReview";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 const MOVES: Record<string, [number, number]> = {
   ArrowLeft: [-16, 0],
@@ -135,7 +136,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
       iconOnly
       variant="ghost"
       label={moveLabel}
-      title={moveLabel}
       className={styles.handle}
       onPointerDown={(event) => {
         if (event.button !== 0 || event.detail > 1) return;
@@ -202,7 +202,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             variant={canTalk || (status === "live" && !muted) ? "primary" : "secondary"}
             tone={muted ? "danger" : undefined}
             label={micLabel}
-            title={micLabel}
             loading={status === "connecting" || status === "reconnecting"}
             disabled={!state || (canTalk ? !state.canStart : status !== "live")}
             selected={status === "live" && muted}
@@ -210,23 +209,22 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             onClick={() => send(canTalk ? "start" : "toggleMute")}
           >
             {muted || status === "ready" || status === "sleeping" ? (
-              <MicOff size={14} />
+              <MicOff className="icon-sm" />
             ) : (
-              <Mic size={14} />
+              <Mic className="icon-sm" />
             )}
           </Button>
         )}
         <Button
           iconOnly
           label={sizeLabel}
-          title={sizeLabel}
           aria-expanded={!compact}
           onClick={() => setCompact(!compact)}
         >
-          {compact ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+          {compact ? <Maximize2 className="icon-sm" /> : <Minimize2 className="icon-sm" />}
         </Button>
-        <Button iconOnly label={backLabel} title={backLabel} onClick={returnToApp}>
-          <X size={14} />
+        <Button iconOnly label={backLabel} onClick={returnToApp}>
+          <X className="icon-sm" />
         </Button>
       </header>
       <div role="status" className={compact ? styles.srOnly : styles.status}>
@@ -290,25 +288,28 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               <p className={styles.caption}>{state.privacy}</p>
             )}
             {state?.transcript && (
-              <div className={`${styles.turn} ${styles.heard}`} role="group" aria-label={t("You")}>
+              <div className={`${styles.turn} ${styles.heard}`}>
+                <span className="sr-only">{t("You")}: </span>
                 <p className={styles.message}>{state.transcript}</p>
               </div>
             )}
             {state?.message && (
-              <div className={styles.turn} role="group" aria-live="polite" aria-label={t("Reply")}>
+              <div className={styles.turn} role="status">
+                <span className="sr-only">{t("Reply")}: </span>
                 <p className={styles.message}>{state.message}</p>
               </div>
             )}
             {state?.error &&
               (actionableError ? (
-                <p role="alert" className={styles.caption}>
-                  {state.error}
-                </p>
+                <InlineError className={styles.caption}>{state.error}</InlineError>
               ) : (
-                <details role="alert" className={styles.feedback}>
-                  <summary aria-label={t("Error details")}>{t("Voice needs attention")}</summary>
-                  <p>{state.error}</p>
-                </details>
+                <>
+                  <InlineError className={styles.caption}>{t("Voice needs attention")}</InlineError>
+                  <details className={styles.feedback}>
+                    <summary>{t("Error details")}</summary>
+                    <p>{state.error}</p>
+                  </details>
+                </>
               ))}
             {state?.notice && (
               <p role="status" className={styles.caption}>
@@ -333,20 +334,20 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   variant="primary"
                   disabled={!state?.canStart}
                   onClick={() => send("start")}
-                  startIcon={<Mic size={14} />}
+                  startIcon={<Mic className="icon-sm" />}
                 >
                   {t(status === "idle" ? "Start voice" : "Talk")}
                 </Button>
                 {status !== "idle" && (
                   <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
-                    <Square size={14} />
+                    <Square className="icon-sm" />
                   </Button>
                 )}
               </>
             ) : status === "connecting" || status === "reconnecting" ? (
               <Button
                 label={t("Cancel")}
-                startIcon={<X size={14} />}
+                startIcon={<X className="icon-sm" />}
                 onClick={() => send("disconnect")}
               >
                 {t("Cancel")}
@@ -356,30 +357,20 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 <Button
                   iconOnly
                   label={t(muted ? "Resume" : "Pause mic")}
-                  title={t(muted ? "Resume" : "Pause mic")}
+                  tooltip={t(muted ? "Resume" : "Pause mic")}
                   variant={muted ? "secondary" : "primary"}
                   tone={muted ? "danger" : undefined}
                   selected={muted}
                   aria-pressed={muted}
                   onClick={() => send("toggleMute")}
                 >
-                  {muted ? <MicOff size={14} /> : <Mic size={14} />}
+                  {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
                 </Button>
-                <Button
-                  iconOnly
-                  label={t("Silence")}
-                  title={t("Silence")}
-                  onClick={() => send("silence")}
-                >
-                  <VolumeX size={14} />
+                <Button iconOnly label={t("Silence")} onClick={() => send("silence")}>
+                  <VolumeX className="icon-sm" />
                 </Button>
-                <Button
-                  iconOnly
-                  label={t("Disconnect voice")}
-                  title={t("Disconnect voice")}
-                  onClick={() => send("disconnect")}
-                >
-                  <Square size={14} />
+                <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
+                  <Square className="icon-sm" />
                 </Button>
               </>
             )}

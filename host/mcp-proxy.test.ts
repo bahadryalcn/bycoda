@@ -189,4 +189,37 @@ describe("stdio HTTP MCP proxy", () => {
     expect(result.read()).toContain('"id":7');
     expect(result.read()).toContain('"code":-32700');
   });
+
+  it("retries a short Retry-After once and reports a clear rate-limit error", async () => {
+    const run = async (responses: Response[]) => {
+      let text = "";
+      const out = new Writable({
+        write(c, _e, done) {
+          text += c;
+          done();
+        },
+      });
+      let calls = 0;
+      await runMcpProxy(
+        "social",
+        Readable.from(['{"jsonrpc":"2.0","id":3,"method":"ping"}\n']),
+        out,
+        { BYCODA_MCP_TOKEN: "secret", BYCODA_MCP_ENDPOINT: "http://127.0.0.1:1234" },
+        async () => responses[calls++],
+      );
+      return { text, calls };
+    };
+    const limited = () => new Response("", { status: 429, headers: { "Retry-After": "0" } });
+    const ok = () =>
+      new Response('{"jsonrpc":"2.0","id":3,"result":{}}', {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const recovered = await run([limited(), ok()]);
+    expect(recovered.calls).toBe(2);
+    expect(recovered.text).toContain('"result"');
+    const failed = await run([limited(), limited()]);
+    expect(failed.text).toContain("rate limit exceeded");
+    expect(failed.text).not.toContain("secret");
+  });
 });

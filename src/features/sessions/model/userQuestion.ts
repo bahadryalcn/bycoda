@@ -1,5 +1,19 @@
-import { CUSTOM_OPTION_ID, type UserQuestionOption, type UserQuestion, type UserQuestionReply } from "../../../shared/model/userQuestion";
-export { CUSTOM_OPTION_ID, type UserQuestionOption, type UserQuestion, type UserQuestionBehavior, type UserQuestionDelivery, type UserQuestionDismissAction, type UserQuestionPrompt, type UserQuestionReply } from "../../../shared/model/userQuestion";
+import {
+  CUSTOM_OPTION_ID,
+  type UserQuestionOption,
+  type UserQuestion,
+  type UserQuestionReply,
+} from "../../../shared/model/userQuestion";
+export {
+  CUSTOM_OPTION_ID,
+  type UserQuestionOption,
+  type UserQuestion,
+  type UserQuestionBehavior,
+  type UserQuestionDelivery,
+  type UserQuestionDismissAction,
+  type UserQuestionPrompt,
+  type UserQuestionReply,
+} from "../../../shared/model/userQuestion";
 
 export function questionsFromUnknown(value: unknown): UserQuestion[] {
   const rec = asRecord(value);

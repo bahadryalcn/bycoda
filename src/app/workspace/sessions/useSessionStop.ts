@@ -170,9 +170,10 @@ export function useSessionStop(deps: SessionStopDeps) {
         setSessions((prev) =>
           prev.map((s) => {
             if (s.id !== sessionId) return s;
-            const stopped = s.busy && !noTurnYet
-              ? markConversationTurnStopped(stopStreaming(s))
-              : stopStreaming(s);
+            const stopped =
+              s.busy && !noTurnYet
+                ? markConversationTurnStopped(stopStreaming(s))
+                : stopStreaming(s);
             const completed = isPreparingHandoff(stopped) ? cancelHandoff(stopped) : stopped;
             const ready = {
               ...completed,

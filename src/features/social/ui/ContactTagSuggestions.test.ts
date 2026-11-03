@@ -23,7 +23,14 @@ const account = (grants: string[] = ["read", "draft"]): SocialAccount =>
     grants: { p: grants },
   }) as unknown as SocialAccount;
 const subjects: ContactTagSubject[] = [
-  { ref: "1", accountId: "a", platformId: "ada", projectIds: ["p"], name: "Ada Press", tags: ["vip"] },
+  {
+    ref: "1",
+    accountId: "a",
+    platformId: "ada",
+    projectIds: ["p"],
+    name: "Ada Press",
+    tags: ["vip"],
+  },
   { ref: "2", accountId: "a", platformId: "bo", projectIds: ["p"], name: "Bo Shop", tags: [] },
 ];
 const answer: ContactTagResult = {
@@ -100,11 +107,13 @@ async function mount(mode: "import" | "contacts", accounts = [account()]) {
 }
 const button = (label: string | RegExp) =>
   Array.from(document.body.querySelectorAll<HTMLButtonElement>("footer button")).find((item) =>
-    typeof label === "string" ? item.textContent?.trim() === label : label.test(item.textContent ?? ""),
+    typeof label === "string"
+      ? item.textContent?.trim() === label
+      : label.test(item.textContent ?? ""),
   )!;
 const checkbox = (name: RegExp) =>
-  Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find((item) =>
-    name.test(item.getAttribute("aria-label") ?? ""),
+  Array.from(document.body.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(
+    (item) => name.test(item.getAttribute("aria-label") ?? ""),
   )!;
 async function ask() {
   await act(async () => button("Suggest tags").click());
@@ -146,7 +155,10 @@ describe("ContactTagDialog", () => {
     expect(onApplyImport).toHaveBeenCalledWith({ "1": ["press"], "2": ["retail"] });
     expect(onClose).toHaveBeenCalled();
     // Import mode never writes anything: only the policy read and the suggestion call happened.
-    expect(request.mock.calls.map(([action]) => action).sort()).toEqual(["contacts.suggestTags", "policy.get"]);
+    expect(request.mock.calls.map(([action]) => action).sort()).toEqual([
+      "contacts.suggestTags",
+      "policy.get",
+    ]);
   });
 
   it("keeps every valid suggestion and rejects one again", async () => {
@@ -177,7 +189,8 @@ describe("ContactTagDialog", () => {
     request.mockImplementation(async (action: string, input: Record<string, unknown>) => {
       if (action === "policy.get") return { effective: { agent: AGENT } };
       if (action === "contacts.suggestTags") return structuredClone(answer);
-      if (action === "contacts.upsert" && input.platformId === "bo") throw new Error("Host said no");
+      if (action === "contacts.upsert" && input.platformId === "bo")
+        throw new Error("Host said no");
       return {};
     });
     await mount("contacts");
@@ -195,7 +208,9 @@ describe("ContactTagDialog", () => {
 
   it("explains a missing draft grant and a missing text agent instead of asking", async () => {
     await mount("contacts", [account(["read"])]);
-    expect(document.body.textContent).toContain("Grant this account draft access to the project in Accounts first.");
+    expect(document.body.textContent).toContain(
+      "Grant this account draft access to the project in Accounts first.",
+    );
     expect(button("Suggest tags").disabled).toBe(true);
     expect(request.mock.calls.some(([action]) => action === "contacts.suggestTags")).toBe(false);
   });

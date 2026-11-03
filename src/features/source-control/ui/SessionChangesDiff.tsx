@@ -174,9 +174,7 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
     );
   }
   if (files == null) {
-    return (
-      <SurfaceLoading />
-    );
+    return <SurfaceLoading />;
   }
   if (files.length === 0) {
     return (

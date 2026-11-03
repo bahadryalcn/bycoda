@@ -20,18 +20,13 @@ export function ServerOrganization({
   const pending = useRef(false);
   const groups = [
     ...new Set(
-      servers.map((item) => item.metadata.group)
-        .filter((value): value is string => Boolean(value)),
+      servers.map((item) => item.metadata.group).filter((value): value is string => Boolean(value)),
     ),
   ].sort();
-  const tagSuggestions = [
-    ...new Set(servers.flatMap((item) => item.metadata.tags)),
-  ].sort();
+  const tagSuggestions = [...new Set(servers.flatMap((item) => item.metadata.tags))].sort();
   const [group, setGroup] = useState(server.metadata.group ?? "");
   const [tags, setTags] = useState(server.metadata.tags.join(", "));
-  const tagPrefix = tags.includes(",")
-    ? tags.slice(0, tags.lastIndexOf(",") + 1) + " "
-    : "";
+  const tagPrefix = tags.includes(",") ? tags.slice(0, tags.lastIndexOf(",") + 1) + " " : "";
   const [favorite, setFavorite] = useState(server.metadata.favorite);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -96,10 +91,14 @@ export function ServerOrganization({
           description={t("Separate tags with commas.")}
         />
         <datalist id={`${suggestionsId}-groups`}>
-          {groups.map((value) => <option key={value} value={value} />)}
+          {groups.map((value) => (
+            <option key={value} value={value} />
+          ))}
         </datalist>
         <datalist id={`${suggestionsId}-tags`}>
-          {tagSuggestions.map((value) => <option key={value} value={`${tagPrefix}${value}`} />)}
+          {tagSuggestions.map((value) => (
+            <option key={value} value={`${tagPrefix}${value}`} />
+          ))}
         </datalist>
         <label className="flex items-center gap-2">
           <Checkbox

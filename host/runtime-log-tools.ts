@@ -8,7 +8,11 @@ import {
   assertSessionGrantScope,
   SessionAuthorityUnavailable,
   type SessionGrantScope,
-  assertAssistantThreadScope,assertAssistantThreadGrantScope,type AssistantThreadAuthorityResolver,type AssistantThreadGrantScope,type AssistantThreadPrincipal,
+  assertAssistantThreadScope,
+  assertAssistantThreadGrantScope,
+  type AssistantThreadAuthorityResolver,
+  type AssistantThreadGrantScope,
+  type AssistantThreadPrincipal,
 } from "./session-authority";
 
 export const RUNTIME_LOG_TOOLS = ["read", "sources"] as const;
@@ -18,7 +22,7 @@ export type RuntimeLogPrincipal = {
   projectId: string;
   sessionId: string;
   provider: string;
-  assistantThreadId?:string;
+  assistantThreadId?: string;
 };
 export type RuntimeLogSubjectPrincipal = RuntimeLogPrincipal | AssistantThreadPrincipal;
 type Grant = { principal: RuntimeLogSubjectPrincipal; expiresAt: number; deviceHash?: string };
@@ -34,7 +38,7 @@ export class RuntimeLogAccess {
       "store" | "prepareSessionIdentity" | "sessionAuthority"
     >,
     private readonly now = Date.now,
-    private readonly assistantThread?:AssistantThreadAuthorityResolver,
+    private readonly assistantThread?: AssistantThreadAuthorityResolver,
   ) {}
 
   get environmentId(): string {
@@ -65,7 +69,7 @@ export class RuntimeLogAccess {
     sessionId: string,
     deviceHash?: string,
     expectedScope?: unknown,
-    assistantThreadId?:string,
+    assistantThreadId?: string,
   ): Promise<Awaited<{ token: string; expiresAt: number; scope: SessionGrantScope }>> {
     await this.identity.store.ready;
     if (!sessionId || sessionId.length > 300)
@@ -82,7 +86,12 @@ export class RuntimeLogAccess {
       )
         throw new Error("Device revoked.");
       const session = await this.identity.sessionAuthority(sessionId);
-      if(assistantThreadId)await assertAssistantThreadScope(this.assistantThread,assistantThreadId,session.projectId);
+      if (assistantThreadId)
+        await assertAssistantThreadScope(
+          this.assistantThread,
+          assistantThreadId,
+          session.projectId,
+        );
       if (session.projectId !== initial.projectId || session.provider !== initial.provider)
         throw new SessionAuthorityUnavailable();
       const scope: SessionGrantScope = {
@@ -96,7 +105,9 @@ export class RuntimeLogAccess {
       // Concurrent provider children may have different grants for one session.
       // Bound memory without revoking one child's still-current sibling grant.
       if (this.grants.size >= 4096) {
-        console.warn("Runtime log grant capacity reached; the provider will start without this tool access.");
+        console.warn(
+          "Runtime log grant capacity reached; the provider will start without this tool access.",
+        );
         throw new Error("Runtime log grant capacity reached.");
       }
       const token = randomBytes(32).toString("base64url");
@@ -107,7 +118,7 @@ export class RuntimeLogAccess {
           sessionId,
           projectId: session.projectId,
           provider: session.provider,
-          ...(assistantThreadId?{assistantThreadId}:{}),
+          ...(assistantThreadId ? { assistantThreadId } : {}),
         },
         expiresAt,
         deviceHash,
@@ -119,20 +130,45 @@ export class RuntimeLogAccess {
       return { token, expiresAt, scope };
     });
   }
-  async issueThreadGrant(threadId:string,projectId:string,deviceHash?:string,expectedScope?:unknown):Promise<{token:string;expiresAt:number;scope:AssistantThreadGrantScope}> {
+  async issueThreadGrant(
+    threadId: string,
+    projectId: string,
+    deviceHash?: string,
+    expectedScope?: unknown,
+  ): Promise<{ token: string; expiresAt: number; scope: AssistantThreadGrantScope }> {
     await this.identity.store.ready;
-    await assertAssistantThreadScope(this.assistantThread,threadId,projectId);
-    return this.identity.store.db.scope(async()=>{
+    await assertAssistantThreadScope(this.assistantThread, threadId, projectId);
+    return this.identity.store.db.scope(async () => {
       await this.identity.store.project(projectId);
-      if(deviceHash&&!(await this.identity.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(deviceHash)))throw new Error("Device revoked.");
-      await assertAssistantThreadScope(this.assistantThread,threadId,projectId);
-      const scope:AssistantThreadGrantScope={kind:"assistant-thread",threadId,projectId,environmentId:this.environmentId};assertAssistantThreadGrantScope(expectedScope,scope);
-      for(const [key,grant] of this.grants)if(grant.expiresAt<=this.now())this.grants.delete(key);
-      if(this.grants.size>=4096)throw new Error("Runtime log grant capacity reached.");
-      const token=randomBytes(32).toString("base64url");const expiresAt=this.now()+5*60_000;
-      const grant:Grant={principal:{kind:"assistant-thread",threadId,projectId,provider:"assistant"},expiresAt,deviceHash};
-      this.identity.store.afterCommit(()=>{this.grants.set(digest(token),grant);});
-      return {token,expiresAt,scope};
+      if (
+        deviceHash &&
+        !(await this.identity.store.db
+          .prepare("SELECT id FROM devices WHERE hash=?")
+          .get(deviceHash))
+      )
+        throw new Error("Device revoked.");
+      await assertAssistantThreadScope(this.assistantThread, threadId, projectId);
+      const scope: AssistantThreadGrantScope = {
+        kind: "assistant-thread",
+        threadId,
+        projectId,
+        environmentId: this.environmentId,
+      };
+      assertAssistantThreadGrantScope(expectedScope, scope);
+      for (const [key, grant] of this.grants)
+        if (grant.expiresAt <= this.now()) this.grants.delete(key);
+      if (this.grants.size >= 4096) throw new Error("Runtime log grant capacity reached.");
+      const token = randomBytes(32).toString("base64url");
+      const expiresAt = this.now() + 5 * 60_000;
+      const grant: Grant = {
+        principal: { kind: "assistant-thread", threadId, projectId, provider: "assistant" },
+        expiresAt,
+        deviceHash,
+      };
+      this.identity.store.afterCommit(() => {
+        this.grants.set(digest(token), grant);
+      });
+      return { token, expiresAt, scope };
     });
   }
 
@@ -189,11 +225,20 @@ export class RuntimeLogAccess {
         )
           throw new Error("Device revoked.");
         await this.identity.store.project(grant.principal.projectId);
-        if(grant.principal.kind === "assistant-thread"){
-          await assertAssistantThreadScope(this.assistantThread,grant.principal.threadId,grant.principal.projectId);
-          return {...grant.principal};
+        if (grant.principal.kind === "assistant-thread") {
+          await assertAssistantThreadScope(
+            this.assistantThread,
+            grant.principal.threadId,
+            grant.principal.projectId,
+          );
+          return { ...grant.principal };
         }
-        if(grant.principal.assistantThreadId)await assertAssistantThreadScope(this.assistantThread,grant.principal.assistantThreadId,grant.principal.projectId);
+        if (grant.principal.assistantThreadId)
+          await assertAssistantThreadScope(
+            this.assistantThread,
+            grant.principal.assistantThreadId,
+            grant.principal.projectId,
+          );
         const current = await this.identity.sessionAuthority(grant.principal.sessionId);
         if (
           grant.expiresAt <= this.now() ||
@@ -319,7 +364,7 @@ export function runtimeLogToolQuery(
   principal: RuntimeLogSubjectPrincipal,
 ): RuntimeLogQuery {
   if (
-    !["session","assistant-thread"].includes(principal.kind) ||
+    !["session", "assistant-thread"].includes(principal.kind) ||
     !principal.projectId ||
     (principal.kind === "session" ? !principal.sessionId : !principal.threadId) ||
     !principal.provider

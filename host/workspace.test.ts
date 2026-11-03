@@ -822,3 +822,15 @@ it("reports a staged rename's status the same way as the full index", async () =
   expect(entry).toBeDefined();
   expect(await hostFileDiff(root, "new-name.txt", true)).toMatchObject({ status: entry!.status });
 });
+
+it("refuses to save a file that is not valid UTF-8 and keeps its bytes", async () => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-write-latin1-"));
+  roots.push(root);
+  const bytes = Buffer.from([0x63, 0x61, 0x66, 0xe9]);
+  writeFileSync(join(root, "legacy.txt"), bytes);
+  const shown = await readHostFile(root, "legacy.txt");
+  await expect(writeHostFile(root, "legacy.txt", shown, `${shown}!`)).rejects.toThrow(
+    /not valid UTF-8/,
+  );
+  expect(readFileSync(join(root, "legacy.txt")).equals(bytes)).toBe(true);
+});

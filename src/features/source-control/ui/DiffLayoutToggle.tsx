@@ -14,7 +14,11 @@ import type { DiffLayout } from "../../settings/model/settings";
 
 /** The diff layout preference, shared by every diff surface. */
 export function useDiffLayout(): DiffLayout {
-  return useSyncExternalStore(subscribeDiffLayoutPreference, loadDiffLayoutPreference, loadDiffLayoutPreference);
+  return useSyncExternalStore(
+    subscribeDiffLayoutPreference,
+    loadDiffLayoutPreference,
+    loadDiffLayoutPreference,
+  );
 }
 
 export const DIFF_INLINE_BREAKPOINT = 900;
@@ -74,9 +78,16 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
         motion="none"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => { setFailed(undefined); setOpen((value) => !value); }}
+        onClick={() => {
+          setFailed(undefined);
+          setOpen((value) => !value);
+        }}
         onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
+          if (
+            event.nativeEvent.isComposing ||
+            (event.key !== "ArrowDown" && event.key !== "ArrowUp")
+          )
+            return;
           event.preventDefault();
           setFailed(undefined);
           setOpen(true);
@@ -91,20 +102,36 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
           label={t("Diff view")}
           returnFocusRef={anchor}
           items={choices.map(({ value, label, Icon }) => ({
-            kind: "item", id: value, label, icon: <Icon className="icon-sm" />,
-            checked: preference === value, selectionRole: "radio",
+            kind: "item",
+            id: value,
+            label,
+            icon: <Icon className="icon-sm" />,
+            checked: preference === value,
+            selectionRole: "radio",
           }))}
-          onPick={(id) => { if (id === "auto" || id === "inline" || id === "split") pick(id); }}
+          onPick={(id) => {
+            if (id === "auto" || id === "inline" || id === "split") pick(id);
+          }}
           onClose={() => setOpen(false)}
         />
       ) : null}
       {failed !== undefined ? (
-        <Popover anchor={anchor} role="dialog" aria-label={t("Diff view")} onDismiss={() => setFailed(undefined)} autoFocus>
+        <Popover
+          anchor={anchor}
+          role="dialog"
+          aria-label={t("Diff view")}
+          onDismiss={() => setFailed(undefined)}
+          autoFocus
+        >
           <div className="flex flex-col gap-2 p-3 text-ui-secondary">
             <InlineError>{t("Could not save changes")}</InlineError>
             <div className="flex justify-end gap-1">
-              <Button size="sm" variant="ghost" onClick={() => setFailed(undefined)}>{t("Cancel")}</Button>
-              <Button size="sm" onClick={() => pick(failed)}>{t("Retry")}</Button>
+              <Button size="sm" variant="ghost" onClick={() => setFailed(undefined)}>
+                {t("Cancel")}
+              </Button>
+              <Button size="sm" onClick={() => pick(failed)}>
+                {t("Retry")}
+              </Button>
             </div>
           </div>
         </Popover>

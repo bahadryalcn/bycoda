@@ -305,7 +305,7 @@ it("gives up on a stale claim of a paused queue", async () => {
 
 // H2: what the turn that just ended says about the queue behind it.
 it("goes on after a turn that ended well, but holds the queue after a Stop or a failure", async () => {
-  const { world, queues, drainer, enqueue } = setup();
+  const { world, drainer, enqueue } = setup();
   await enqueue();
   await settle();
   expect(world.sent).toEqual(["a"]);

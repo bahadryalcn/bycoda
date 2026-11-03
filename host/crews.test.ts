@@ -8,11 +8,11 @@ import type { HostTask } from "../src/features/tasks/model/hostTasks";
 import { defaultCrewPolicy, type CrewDefinition } from "../src/features/crews/model/crew";
 const stores: HostStore[] = [];
 afterEach(async () => {
-  await await forEachAsync(await stores.splice(0), async (store) => await store.close());
+  await forEachAsync(stores.splice(0), async (store) => await store.close());
 });
 async function setup(costLimit?: number) {
   const store = new HostStore(":memory:");
-  await stores.push(store);
+  stores.push(store);
   const project = await store.addProject("/crew-fixture", "Crew fixture");
   const session = {
     session: { runtimeMode: "supervised", harness: "codex", model: "codex:fixture", blocks: [] },

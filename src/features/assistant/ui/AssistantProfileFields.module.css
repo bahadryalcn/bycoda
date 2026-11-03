@@ -21,7 +21,7 @@
 }
 .unit {
   color: var(--ui-text-secondary);
-  font-size: 11px;
+  font-size: var(--ui-font-micro);
   white-space: nowrap;
 }
 .hourRange {

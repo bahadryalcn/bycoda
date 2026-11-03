@@ -745,9 +745,7 @@ function ApprovalToastCard({
           className="notification-request-actions flex shrink-0 items-center gap-1"
           data-no-drag=""
         >
-          <Badge tone="warning">
-            {notice.kind === "question" ? t("Question") : t("Approval")}
-          </Badge>
+          <Badge tone="warning">{notice.kind === "question" ? t("Question") : t("Approval")}</Badge>
           {notice.kind === "approval" ? (
             <>
               <Button

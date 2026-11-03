@@ -20,9 +20,9 @@ vi.mock("../../../features/terminal/ui/TerminalView", () => ({
     createElement("div", { "data-tool-terminal": "", "data-active": active }),
 }));
 vi.mock("../../shell/WindowControls", () => ({ WindowControls: () => null }));
-vi.mock("../../../features/assistant/model/assistantClient",async original=>({
+vi.mock("../../../features/assistant/model/assistantClient", async (original) => ({
   ...(await original<typeof import("../../../features/assistant/model/assistantClient")>()),
-  useAssistantIdentity:()=>({title:"Assistant Arif",room:"Room · Arif"}),
+  useAssistantIdentity: () => ({ title: "Assistant Arif", room: "Room · Arif" }),
 }));
 vi.mock("../surfaces/lazySurfaces", () => {
   const view = () => createElement(ToolHeader, null, "Tool header");

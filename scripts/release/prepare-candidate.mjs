@@ -9,7 +9,6 @@ import { validateCandidate } from "./release-candidate.mjs";
 
 export const versionFiles = [
   "package.json",
-  "package-lock.json",
   "Cargo.toml",
   "Cargo.lock",
   "src-tauri/tauri.conf.json",
@@ -28,11 +27,6 @@ export function versionOverlay(source, candidate) {
     );
     next[name] = source[name].replace(/("version"\s*:\s*")[^"]+("?)/, `$1${candidate.version}$2`);
   }
-  const lock = JSON.parse(source["package-lock.json"]);
-  assert.equal(lock.version, candidate.sourceVersion);
-  lock.version = candidate.version;
-  if (lock.packages?.[""]) lock.packages[""].version = candidate.version;
-  next["package-lock.json"] = JSON.stringify(lock, null, 2) + "\n";
   assert(source["Cargo.toml"].includes(`version = "${candidate.sourceVersion}"`));
   next["Cargo.toml"] = source["Cargo.toml"].replace(
     /^(version = ")[^"]+("\s*)$/m,

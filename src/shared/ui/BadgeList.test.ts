@@ -26,7 +26,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const items = (names: string[]): BadgeListItem[] => names.map((name) => ({ id: name, label: name }));
+const items = (names: string[]): BadgeListItem[] =>
+  names.map((name) => ({ id: name, label: name }));
 const names = ["Ada", "Grace", "Linus", "Margaret", "Dennis"];
 const render = (props: Partial<Parameters<typeof BadgeList>[0]> & { items: BadgeListItem[] }) =>
   act(async () => root.render(createElement(BadgeList, { label: "Specialists", ...props })));

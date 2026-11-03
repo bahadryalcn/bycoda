@@ -19,9 +19,11 @@ export const MCP_PROVIDER_LABELS: Record<McpConnection["provider"], string> = {
 
 /** Configuration does not prove authentication; these CLIs own remote OAuth. */
 export function canSignInMcp(connection: McpConnection): boolean {
-  return connection.enabled !== false &&
+  return (
+    connection.enabled !== false &&
     ["claude", "codex", "cursor", "opencode"].includes(connection.provider) &&
-    ["http", "sse", "streamable-http", "remote"].includes(connection.transport.toLowerCase());
+    ["http", "sse", "streamable-http", "remote"].includes(connection.transport.toLowerCase())
+  );
 }
 
 /** Claude prints `✓ Connected` on most terminals and `√ Connected` on Windows consoles. */
@@ -33,7 +35,12 @@ export function isMcpConnected(status: string): boolean {
 export function needsMcpSignIn(
   server: McpConnection & { status: string; auth?: "signed_in" | "signed_out" | "none" },
 ): boolean {
-  return canSignInMcp(server) && server.auth !== "signed_in" && server.auth !== "none" && !isMcpConnected(server.status);
+  return (
+    canSignInMcp(server) &&
+    server.auth !== "signed_in" &&
+    server.auth !== "none" &&
+    !isMcpConnected(server.status)
+  );
 }
 
 /** Claude's list output is for humans; keep only names and health text. */

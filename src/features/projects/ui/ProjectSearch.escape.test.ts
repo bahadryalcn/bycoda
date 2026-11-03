@@ -26,7 +26,9 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  act(() => root.render(createElement(ProjectSearch, { cwd: "/project", onClose, onOpenFile: vi.fn() })));
+  act(() =>
+    root.render(createElement(ProjectSearch, { cwd: "/project", onClose, onOpenFile: vi.fn() })),
+  );
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -35,7 +37,12 @@ afterEach(() => {
 });
 
 function escape(init: KeyboardEventInit = {}) {
-  const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, ...init });
+  const event = new KeyboardEvent("keydown", {
+    key: "Escape",
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
   act(() => void window.dispatchEvent(event));
   return event;
 }

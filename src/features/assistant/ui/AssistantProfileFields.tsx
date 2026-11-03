@@ -25,6 +25,7 @@ import {
   workerContextSettings,
   validWorkerContextSettings,
 } from "../../../shared/model/assistantContext";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 export type ProfileSection =
   | "identity"
@@ -266,9 +267,7 @@ export function AssistantProfileFields({
             ["chief", "Supervise assigned jobs"],
           ])}
           {workerModelError && (
-            <p role="alert" className={styles.error}>
-              {workerModelError}
-            </p>
+            <InlineError className={styles.error}>{workerModelError}</InlineError>
           )}
 
           {choice("planApproval", "Plan approval", [
@@ -432,9 +431,9 @@ export function AssistantProfileFields({
             onChange={(awayMinutes) => onChange({ awayMinutes })}
           />
           {!validAssistantPolicy(value) && (
-            <p role="alert" className={styles.error}>
+            <InlineError className={styles.error}>
               {t("Away must start later than idle.")}
-            </p>
+            </InlineError>
           )}
           <div className={roleStyles.schedulePair}>
             <AssistantHourRange
@@ -604,7 +603,9 @@ export function AssistantProfileFields({
             </div>
           )}
           {!validWorkerContextSettings(value) && (
-            <p role="alert">{t("Worker context limits must increase from compact to handoff.")}</p>
+            <InlineError>
+              {t("Worker context limits must increase from compact to handoff.")}
+            </InlineError>
           )}
         </>
       )}

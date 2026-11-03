@@ -209,9 +209,9 @@ describe("pane docking UI", () => {
       "Split left",
     );
     // The split edge is drawn by the shared drop indicator on the pane, not by a pane child.
-    expect(
-      container.querySelector('[data-pane-id="a"]')?.getAttribute("data-drop-indicator"),
-    ).toBe("split-start");
+    expect(container.querySelector('[data-pane-id="a"]')?.getAttribute("data-drop-indicator")).toBe(
+      "split-start",
+    );
     pointer(window, "pointerup", 20, 150);
     expect(onMove).toHaveBeenCalledWith("a", "a", "left");
     expect(layoutLeaves(tree).map((pane) => pane.id)).toEqual(["a", "empty"]);
@@ -249,9 +249,9 @@ describe("pane docking UI", () => {
     expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     dragStart();
     pointer(window, "pointermove", 390, 150);
-    expect(
-      container.querySelector('[data-pane-id="a"]')?.getAttribute("data-drop-indicator"),
-    ).toBe("split-end");
+    expect(container.querySelector('[data-pane-id="a"]')?.getAttribute("data-drop-indicator")).toBe(
+      "split-end",
+    );
     act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     expect(onMove).not.toHaveBeenCalled();
     expect(document.querySelector(".pointer-drop-hint")).toBeNull();

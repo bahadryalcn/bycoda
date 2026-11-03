@@ -3,7 +3,10 @@ import type { ReportedCommand } from "../../../integrations/harness/core/reporte
 import { reportedSkillRestrictions } from "../../../integrations/harness/core/reportedCommands";
 import type { HarnessId } from "../../sessions/model/session";
 import type { NativeSkill, Skill } from "./skills";
-import { EMPTY_SKILL_POLICY, type SkillPolicy } from "../../../integrations/harness/core/skillPolicy";
+import {
+  EMPTY_SKILL_POLICY,
+  type SkillPolicy,
+} from "../../../integrations/harness/core/skillPolicy";
 import { skillDisabled, skillPathKey } from "../../../integrations/harness/core/skillPolicy";
 
 /**
@@ -96,13 +99,16 @@ export function usesDollarSkills(harness: HarnessId): boolean {
   return harness === "codex";
 }
 
-export function mergeCliCommands(input: {
-  harness: HarnessId;
-  reported: readonly ReportedCommand[];
-  disk: readonly DiskCommand[];
-  /** Names that already mean something else (Bycoda commands, file skills). */
-  taken: ReadonlySet<string>;
-}, policy: SkillPolicy = EMPTY_SKILL_POLICY): NativeSkill[] {
+export function mergeCliCommands(
+  input: {
+    harness: HarnessId;
+    reported: readonly ReportedCommand[];
+    disk: readonly DiskCommand[];
+    /** Names that already mean something else (Bycoda commands, file skills). */
+    taken: ReadonlySet<string>;
+  },
+  policy: SkillPolicy = EMPTY_SKILL_POLICY,
+): NativeSkill[] {
   const { harness, reported, disk, taken } = input;
   const native = reportedSkillRestrictions(reported);
   if (harness === "codex") {
@@ -164,19 +170,28 @@ export function mergeCliCommands(input: {
 }
 
 /** Skills Codex lists for `$`: its own report first, then skills on disk. */
-export function mergeDollarSkills(input: {
-  harness: HarnessId;
-  reported: readonly ReportedCommand[];
-  files: readonly Skill[];
-  disabledPaths?: readonly string[];
-}, policy: SkillPolicy = EMPTY_SKILL_POLICY): Skill[] {
+export function mergeDollarSkills(
+  input: {
+    harness: HarnessId;
+    reported: readonly ReportedCommand[];
+    files: readonly Skill[];
+    disabledPaths?: readonly string[];
+  },
+  policy: SkillPolicy = EMPTY_SKILL_POLICY,
+): Skill[] {
   if (!usesDollarSkills(input.harness)) return [];
   const out = new Map<string, Skill>();
   const disabled = new Set(input.disabledPaths ?? []);
 
   const native = reportedSkillRestrictions(input.reported);
   for (const item of input.reported) {
-    if (item.kind !== "skill" || item.enabled === false || skillDisabled(policy, item) || out.has(item.name) || (item.path && [...disabled].some((path) => skillPathKey(path) === skillPathKey(item.path!))))
+    if (
+      item.kind !== "skill" ||
+      item.enabled === false ||
+      skillDisabled(policy, item) ||
+      out.has(item.name) ||
+      (item.path && [...disabled].some((path) => skillPathKey(path) === skillPathKey(item.path!)))
+    )
       continue;
     out.set(item.name, {
       kind: "native",

@@ -12,8 +12,19 @@ afterEach(() => vi.clearAllMocks());
 
 it("pins attachment byte uploads to the session owner at the Native transport boundary", async () => {
   vi.mocked(invoke).mockResolvedValue({ offset: 1 });
-  await uploadRemoteAttachments("bound", [{ id: "owner-file", name: "a", mimeType: "text/plain", kind: "file", size: 1, data: "eA==" }], { environmentId: "owner" });
-  expect(invoke).toHaveBeenCalledWith("remote_request", expect.objectContaining({ machineId: "bound", method: "attachments.upload", expectedEnvironmentId: "owner" }));
+  await uploadRemoteAttachments(
+    "bound",
+    [{ id: "owner-file", name: "a", mimeType: "text/plain", kind: "file", size: 1, data: "eA==" }],
+    { environmentId: "owner" },
+  );
+  expect(invoke).toHaveBeenCalledWith(
+    "remote_request",
+    expect.objectContaining({
+      machineId: "bound",
+      method: "attachments.upload",
+      expectedEnvironmentId: "owner",
+    }),
+  );
 });
 
 it("claims managed uploads before bytes and includes the generation on resume and upload", async () => {

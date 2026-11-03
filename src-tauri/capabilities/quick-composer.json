@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "quick-composer",
+  "description": "Quick composer and its git popup (quick-composer.html): dialog only for attachment and logo pickers.",
+  "windows": ["quick-composer", "quick-composer-git"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme",
+    "core:webview:allow-set-webview-zoom",
+    "core:window:allow-start-dragging",
+    "dialog:default"
+  ]
+}

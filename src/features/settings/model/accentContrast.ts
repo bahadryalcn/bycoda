@@ -155,7 +155,9 @@ export function mixInOklab(from: string, toward: string, amount: number): string
   const x = a1 + (a2 - a1) * amount;
   const y = b1 + (b2 - b1) * amount;
   return format(
-    oklchToLinear({ lightness, chroma: Math.hypot(x, y), hue: Math.atan2(y, x) }).map(fromLinear) as Channels,
+    oklchToLinear({ lightness, chroma: Math.hypot(x, y), hue: Math.atan2(y, x) }).map(
+      fromLinear,
+    ) as Channels,
   );
 }
 

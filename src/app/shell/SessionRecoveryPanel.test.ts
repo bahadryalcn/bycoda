@@ -282,7 +282,10 @@ describe("session recovery navigation", () => {
     searchFor("crowd-0");
     expect(container.querySelectorAll("ul > li")).toHaveLength(1);
     await click("Restore chat layout");
-    expect(onOpen).toHaveBeenLastCalledWith(crowdedSessions.map((item) => item.id), true);
+    expect(onOpen).toHaveBeenLastCalledWith(
+      crowdedSessions.map((item) => item.id),
+      true,
+    );
   });
   it("reads closed local conversations without reopening them to hide completed entries", async () => {
     vi.mocked(getSession).mockResolvedValue({

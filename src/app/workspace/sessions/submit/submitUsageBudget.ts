@@ -95,7 +95,9 @@ export function gateUsageBudget(
   const release = (rejected = false) => {
     if (isCurrent() && rejected)
       setSessions((all) =>
-        all.map((s) => (s.id === sessionId ? holdRejectedQueuedHead(s, options?.queuedMessageId) : s)),
+        all.map((s) =>
+          s.id === sessionId ? holdRejectedQueuedHead(s, options?.queuedMessageId) : s,
+        ),
       );
     sending.release(isCurrent());
   };

@@ -25,6 +25,26 @@ on:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
+      # Optional macOS Developer ID signing and notarization. Absent values keep
+      # the ad-hoc identity so forks still build. See docs/reference/releases.md.
+      APPLE_CERTIFICATE:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_SIGNING_IDENTITY:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      APPLE_API_KEY:
+        required: false
+      APPLE_API_ISSUER:
+        required: false
+      APPLE_API_PRIVATE_KEY:
+        required: false
 permissions:
   contents: read
 jobs:
@@ -235,6 +255,72 @@ jobs:
         with:
           shared-key: desktop-release-${{ matrix.runner }}
           save-if: false
+      - name: Configure optional macOS Developer ID signing and notarization
+        if: matrix.platform == 'macos-arm64' && inputs.channel == 'stable'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # Only complete, non-empty groups reach the build: Tauri treats an empty
+          # variable as set and would try to notarize with it. Values stay in
+          # secrets-masked environment variables and are never printed.
+          export_secret() {
+            local delimiter="EOF_$(openssl rand -hex 12)"
+            printf '%s<<%s\n%s\n%s\n' "$1" "$delimiter" "$2" "$delimiter" >> "$GITHUB_ENV"
+          }
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "macOS Developer ID signing is unconfigured; the app is ad-hoc signed and macOS resets its privacy grants on every update." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          export_secret APPLE_CERTIFICATE "$APPLE_CERTIFICATE"
+          export_secret APPLE_CERTIFICATE_PASSWORD "$APPLE_CERTIFICATE_PASSWORD"
+          export_secret APPLE_SIGNING_IDENTITY "$APPLE_SIGNING_IDENTITY"
+          notarization=none
+          if [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_ISSUER" ] && [ -n "$APPLE_API_PRIVATE_KEY" ]; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+            (umask 077; printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$key_path")
+            export_secret APPLE_API_KEY "$APPLE_API_KEY"
+            export_secret APPLE_API_ISSUER "$APPLE_API_ISSUER"
+            export_secret APPLE_API_KEY_PATH "$key_path"
+            notarization="App Store Connect API key"
+          elif [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            export_secret APPLE_ID "$APPLE_ID"
+            export_secret APPLE_PASSWORD "$APPLE_PASSWORD"
+            export_secret APPLE_TEAM_ID "$APPLE_TEAM_ID"
+            notarization="Apple ID app-specific password"
+          fi
+          # Tauri reads the identity from the environment, but the checked-in
+          # config pins the ad-hoc identity, so overlay it explicitly as well.
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const file='temp/release-channel.json', config=JSON.parse(readFileSync(file,'utf8'));
+          config.bundle={...config.bundle,macOS:{...config.bundle?.macOS,signingIdentity:process.env.APPLE_SIGNING_IDENTITY}};
+          writeFileSync(file,JSON.stringify(config));
+          NODE
+          # The bundled Host helper is signed by host/package.mjs before the app
+          # is built, so the certificate must already be in a keychain.
+          keychain="$RUNNER_TEMP/bycoda-helper-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$keychain_password"
+          certificate_path="$RUNNER_TEMP/bycoda-developer-id.p12"
+          (umask 077; printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate_path")
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate_path" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$certificate_path"
+          echo "macOS package and bundled Host desktop helper signed with a Developer ID identity; notarization: $notarization." >> "$GITHUB_STEP_SUMMARY"
       - name: Prepare pinned desktop helper for this platform
         shell: bash
         run: node scripts/setup/agent-desktop.mjs --prepare

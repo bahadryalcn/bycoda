@@ -47,14 +47,9 @@ export async function requestOutgoingHandoff(input: {
         );
       }
       if (event.type === "question.asked") {
-        respondHarnessQuestion(
-          input.harness,
-          input.sessionId,
-          event.requestId,
-          {
-            kind: "skipped",
-          },
-        );
+        respondHarnessQuestion(input.harness, input.sessionId, event.requestId, {
+          kind: "skipped",
+        });
       }
     },
   }).catch(() => {

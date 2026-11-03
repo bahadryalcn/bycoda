@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { existsSync,mkdirSync,mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname,join } from "node:path";
+import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { HostStore } from "./store";
 import { HostDesktopControl, type DesktopRunner } from "./desktop-control-host";
@@ -25,9 +25,9 @@ async function fixture() {
   let afterShot = false;
   let changedAfterShot = false;
   const calls: string[][] = [];
-  const homes:string[]=[];
+  const homes: string[] = [];
   const audits = vi.fn(async () => undefined);
-  const run: DesktopRunner = async (_binary, args,options) => {
+  const run: DesktopRunner = async (_binary, args, options) => {
     calls.push(args);
     homes.push(options.env.AGENT_DESKTOP_HOME!);
     const command = args[2];
@@ -234,11 +234,23 @@ it("keeps observation limits and final request authority through the actual adap
   );
   expect(f.calls).toHaveLength(0);
 });
-it("retires only this instance's temporary accessibility cache after Stop and close",async()=>{
-  const f=await fixture();await f.control.request({op:"windows.list",app:"Editor"},agent);
-  const first=f.homes[0],other=join(dirname(first),"other-instance");mkdirSync(other);writeFileSync(join(other,"keep"),"other owner");writeFileSync(join(first,"temporary-accessibility.json"),"private cached names and values");
-  await f.control.request({op:"stop"},owner);expect(existsSync(first)).toBe(false);expect(existsSync(join(other,"keep"))).toBe(true);
-  await f.control.request({op:"resume"},owner);await f.control.request({op:"windows.list",app:"Editor"},agent);
-  const second=f.homes.at(-1)!;expect(second).not.toBe(first);expect(existsSync(second)).toBe(true);
-  await f.control.close();expect(existsSync(second)).toBe(false);expect(existsSync(join(other,"keep"))).toBe(true);
+it("retires only this instance's temporary accessibility cache after Stop and close", async () => {
+  const f = await fixture();
+  await f.control.request({ op: "windows.list", app: "Editor" }, agent);
+  const first = f.homes[0],
+    other = join(dirname(first), "other-instance");
+  mkdirSync(other);
+  writeFileSync(join(other, "keep"), "other owner");
+  writeFileSync(join(first, "temporary-accessibility.json"), "private cached names and values");
+  await f.control.request({ op: "stop" }, owner);
+  expect(existsSync(first)).toBe(false);
+  expect(existsSync(join(other, "keep"))).toBe(true);
+  await f.control.request({ op: "resume" }, owner);
+  await f.control.request({ op: "windows.list", app: "Editor" }, agent);
+  const second = f.homes.at(-1)!;
+  expect(second).not.toBe(first);
+  expect(existsSync(second)).toBe(true);
+  await f.control.close();
+  expect(existsSync(second)).toBe(false);
+  expect(existsSync(join(other, "keep"))).toBe(true);
 });

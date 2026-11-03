@@ -10,16 +10,20 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SocialPanelActiveContext } from "./socialContext";
 
 export function socialContactHistoryLabel(kind: string) {
-  return ({
-    "inbound:message": t("Message received"),
-    "inbound:comment": t("Comment received"),
-    "inbound:reply": t("Reply received"),
-    "inbound:mention": t("Mention received"),
-    "outbound:message": t("Message dispatch accepted"),
-    "outbound:comment": t("Comment dispatch accepted"),
-    "outbound:reply": t("Reply dispatch accepted"),
-    "outbound:publish": t("Post dispatch accepted"),
-  } as Record<string, string>)[kind] ?? t("Recorded interaction");
+  return (
+    (
+      {
+        "inbound:message": t("Message received"),
+        "inbound:comment": t("Comment received"),
+        "inbound:reply": t("Reply received"),
+        "inbound:mention": t("Mention received"),
+        "outbound:message": t("Message dispatch accepted"),
+        "outbound:comment": t("Comment dispatch accepted"),
+        "outbound:reply": t("Reply dispatch accepted"),
+        "outbound:publish": t("Post dispatch accepted"),
+      } as Record<string, string>
+    )[kind] ?? t("Recorded interaction")
+  );
 }
 
 /** Selected detail only. Identity/version/offset guard late responses, including
@@ -131,7 +135,14 @@ export function SocialContactHistory({
   return (
     <>
       {detail.loading ? <LoadingText>{t("Loading interaction history")}</LoadingText> : null}
-      {detail.error ? <Notice kind="error">{detail.error} <Button variant="ghost" loading={detail.loading} onClick={detail.retry}>{t("Retry loading history")}</Button></Notice> : null}
+      {detail.error ? (
+        <Notice kind="error">
+          {detail.error}{" "}
+          <Button variant="ghost" loading={detail.loading} onClick={detail.retry}>
+            {t("Retry loading history")}
+          </Button>
+        </Notice>
+      ) : null}
       <HistoryPageControls
         page={detail.value?.historyPage}
         loading={detail.loading}
@@ -151,16 +162,33 @@ export function SocialContactHistory({
               <tr key={`${item.operationId}:${index}`}>
                 <td className="min-w-0 py-2">
                   <span>{socialContactHistoryLabel(item.kind)}</span>
-                  {item.operationId || item.platformId ? <details className="mt-1 text-(--ui-text-secondary)">
-                    <summary>{t("Technical details")}</summary>
-                    <dl className="mt-1 flex min-w-0 flex-col gap-1">
-                      <div className="wrap-anywhere"><dt>{t("Event type")}</dt><dd>{item.kind}</dd></div>
-                      {item.operationId ? <div className="wrap-anywhere"><dt>{t("Operation")}</dt><dd>{item.operationId}</dd></div> : null}
-                      {item.platformId ? <div className="wrap-anywhere"><dt>{t("Platform reference")}</dt><dd>{item.platformId}</dd></div> : null}
-                    </dl>
-                  </details> : null}
+                  {item.operationId || item.platformId ? (
+                    <details className="mt-1 text-(--ui-text-secondary)">
+                      <summary>{t("Technical details")}</summary>
+                      <dl className="mt-1 flex min-w-0 flex-col gap-1">
+                        <div className="wrap-anywhere">
+                          <dt>{t("Event type")}</dt>
+                          <dd>{item.kind}</dd>
+                        </div>
+                        {item.operationId ? (
+                          <div className="wrap-anywhere">
+                            <dt>{t("Operation")}</dt>
+                            <dd>{item.operationId}</dd>
+                          </div>
+                        ) : null}
+                        {item.platformId ? (
+                          <div className="wrap-anywhere">
+                            <dt>{t("Platform reference")}</dt>
+                            <dd>{item.platformId}</dd>
+                          </div>
+                        ) : null}
+                      </dl>
+                    </details>
+                  ) : null}
                 </td>
-                <td className="py-2 align-top"><time dateTime={new Date(item.at).toISOString()}>{time(item.at)}</time></td>
+                <td className="py-2 align-top">
+                  <time dateTime={new Date(item.at).toISOString()}>{time(item.at)}</time>
+                </td>
               </tr>
             ))}
           </tbody>

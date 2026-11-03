@@ -65,8 +65,8 @@ export type TextPromptInput = {
   threadId?: string;
   onThreadId?: (threadId: string) => void | Promise<void>;
   /** Internal isolated-thread maintenance; never a user/project session command. */
-  compactBefore?:boolean;
-  onCompacted?:(receipt:{threadId:string})=>Promise<void>;
+  compactBefore?: boolean;
+  onCompacted?: (receipt: { threadId: string }) => Promise<void>;
   intent?: TurnIntent;
   prompt: string;
   /** Internal isolated utility allowance; adapters must not invent unsupported provider fields. */
@@ -880,7 +880,7 @@ function setStopping(sessionId: string, delta: 1 | -1): void {
   const next = (stoppingTurns.get(sessionId) ?? 0) + delta;
   if (next > 0) stoppingTurns.set(sessionId, next);
   else stoppingTurns.delete(sessionId);
-  for (const listener of [...stoppingListeners]) listener();
+  for (const listener of Array.from(stoppingListeners)) listener();
 }
 /** True while a Stop for this session is waiting for the provider to confirm. */
 export function isHarnessTurnStopping(sessionId: string): boolean {

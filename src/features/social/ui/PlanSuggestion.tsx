@@ -228,7 +228,8 @@ export function PlanSuggestionPanel({
     narrowedCount: narrowed.length,
   });
   const working = phase === "working";
-  const canAsk = !blocked && !working && !locked && instructions.length <= PLAN_SUGGEST_INSTRUCTIONS_MAX;
+  const canAsk =
+    !blocked && !working && !locked && instructions.length <= PLAN_SUGGEST_INSTRUCTIONS_MAX;
 
   const send = async (next: Attempt) => {
     const current = ++token.current;
@@ -342,7 +343,9 @@ export function PlanSuggestionPanel({
                   type="button"
                   disabled={locked || index === 0}
                   aria-label={t("Move campaign {p0} up", { p0: index + 1 })}
-                  onClick={() => edit({ campaignIds: movePoolEntry(review.campaignIds, index, -1) })}
+                  onClick={() =>
+                    edit({ campaignIds: movePoolEntry(review.campaignIds, index, -1) })
+                  }
                 >
                   {t("Up")}
                 </Button>
@@ -379,7 +382,11 @@ export function PlanSuggestionPanel({
               { p0: unapprovedCount, p1: review.campaignIds.length },
             )}{" "}
             {onOpenContent ? (
-              <Button variant="link" type="button" onClick={(event) => onOpenContent(projectId, event)}>
+              <Button
+                variant="link"
+                type="button"
+                onClick={(event) => onOpenContent(projectId, event)}
+              >
                 {t("Open Campaigns")}
               </Button>
             ) : null}
@@ -523,7 +530,11 @@ export function PlanSuggestionPanel({
             </Button>
           ) : null}
           {!eligible.length && onOpenContent ? (
-            <Button variant="link" type="button" onClick={(event) => onOpenContent(projectId, event)}>
+            <Button
+              variant="link"
+              type="button"
+              onClick={(event) => onOpenContent(projectId, event)}
+            >
               {t("Open Campaigns")}
             </Button>
           ) : null}

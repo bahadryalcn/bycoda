@@ -41,16 +41,18 @@ function useSshInventory<T>(command: string) {
     let current = true;
     setLoading(true);
     setError("");
-    void invoke<T>(command).then(
-      (result) => {
-        if (current) setValue(result);
-      },
-      (reason) => {
-        if (current) setError(String(reason));
-      },
-    ).finally(() => {
-      if (current) setLoading(false);
-    });
+    void invoke<T>(command)
+      .then(
+        (result) => {
+          if (current) setValue(result);
+        },
+        (reason) => {
+          if (current) setError(String(reason));
+        },
+      )
+      .finally(() => {
+        if (current) setLoading(false);
+      });
     return () => {
       current = false;
     };
@@ -129,7 +131,9 @@ export function SshSettings({
   return (
     <Modal title={t("SSH settings")} onClose={() => onClose()} size="lg">
       <div className="flex flex-col gap-4 p-4">
-        <p className="text-ui-caption text-(--ui-text-muted)">{t("Local SSH keys and known hosts.")}</p>
+        <p className="text-ui-caption text-(--ui-text-muted)">
+          {t("Local SSH keys and known hosts.")}
+        </p>
         <Tabs id={panelId} value={securityPanel} onValueChange={setSecurityPanel}>
           <TabList label={t("SSH settings sections")}>
             <Tab value="keys">{t("Keys")}</Tab>
@@ -178,7 +182,9 @@ export function SshSettings({
             {agentInventory.error ? (
               <Alert tone="danger" role="alert">
                 {t("SSH agent")}: {agentInventory.error}
-                <Button loading={agentInventory.loading} onClick={agentInventory.retry}>{t("Retry")}</Button>
+                <Button loading={agentInventory.loading} onClick={agentInventory.retry}>
+                  {t("Retry")}
+                </Button>
               </Alert>
             ) : null}
             {agent ? (
@@ -238,12 +244,12 @@ export function SshSettings({
             {keyInventory.error ? (
               <Alert tone="danger" role="alert">
                 {t("Keys")}: {keyInventory.error}
-                <Button loading={keyInventory.loading} onClick={keyInventory.retry}>{t("Retry")}</Button>
+                <Button loading={keyInventory.loading} onClick={keyInventory.retry}>
+                  {t("Retry")}
+                </Button>
               </Alert>
             ) : null}
-            {keyInventory.loading && keys.length === 0 ? (
-              <LoadingText className="mbs-2" />
-            ) : null}
+            {keyInventory.loading && keys.length === 0 ? <LoadingText className="mbs-2" /> : null}
             {!keyInventory.loading && !keyInventory.error && keys.length === 0 ? (
               <EmptyState size="inline" className="mbs-2" description={t("No SSH keys found.")} />
             ) : null}
@@ -277,7 +283,9 @@ export function SshSettings({
                       aria-label={`${t("Assign key")}: ${key.identityFile} (${server?.name})`}
                       tooltip={`${t("Select a key for")}: ${server?.name}`}
                       aria-pressed={!inheritedIdentity && selectedIdentity === key.identityFile}
-                      disabled={busy || (!inheritedIdentity && selectedIdentity === key.identityFile)}
+                      disabled={
+                        busy || (!inheritedIdentity && selectedIdentity === key.identityFile)
+                      }
                       onClick={() => {
                         void act(async () => {
                           await assignIdentity(key.identityFile);
@@ -295,7 +303,8 @@ export function SshSettings({
           </TabPanel>
           <TabPanel value="hosts" keepMounted className="flex min-w-0 flex-col gap-3">
             <h3 className="text-ui-body font-medium">
-              {t("Known hosts")}{hostInventory.value ? ` (${hosts.length})` : ""}
+              {t("Known hosts")}
+              {hostInventory.value ? ` (${hosts.length})` : ""}
             </h3>
             <SearchInput
               appearance="field"
@@ -308,7 +317,9 @@ export function SshSettings({
             {hostsError ? (
               <Alert tone="danger" role="alert">
                 {hostsError}
-                <Button loading={hostInventory.loading} onClick={hostInventory.retry}>{t("Retry")}</Button>
+                <Button loading={hostInventory.loading} onClick={hostInventory.retry}>
+                  {t("Retry")}
+                </Button>
               </Alert>
             ) : null}
             {!hosts.length && !hostInventory.loading && !hostsError ? (

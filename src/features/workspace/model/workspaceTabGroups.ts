@@ -94,7 +94,9 @@ export function isExternalFileWorkspaceTab(tab: WorkspaceTab): boolean {
     tab.editorPanes.length > 0 &&
     (tab.terminalPanes ?? []).length === 0 &&
     leafIds(tab.layout).every((id) => tab.editorPanes.some((pane) => pane.id === id)) &&
-    tab.editorPanes.every((pane) => pane.files.length > 0 && pane.files.every((file) => file.external))
+    tab.editorPanes.every(
+      (pane) => pane.files.length > 0 && pane.files.every((file) => file.external),
+    )
   );
 }
 

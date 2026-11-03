@@ -53,6 +53,8 @@ import {
 } from "../../sessions/model/attachmentTokens";
 import { quickLaunchAttachments } from "../model/quickAttachments";
 import { useQuickAttachments } from "./useQuickAttachments";
+import { isScreenRecordingBlocked } from "../model/screenCaptureAccess";
+import { openPrivacySettings } from "../../../platform/tauri/privacySettings";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { QuickPermissionIcon, QuickPermissions } from "./QuickPermissions";
 import { QuickModelSelector } from "./QuickModelSelector";
@@ -750,7 +752,21 @@ export function QuickComposer({
         />
       ) : null}
       {error ? (
-        <Alert tone="danger" role="alert" className="mx-3 mb-2 min-w-0 break-words">
+        <Alert
+          tone="danger"
+          role="alert"
+          className="mx-3 mb-2 min-w-0 break-words"
+          action={
+            isScreenRecordingBlocked(error) ? (
+              <Button
+                type="button"
+                onClick={() => void openPrivacySettings("screen-recording").catch(() => {})}
+              >
+                {t("Open Privacy Settings")}
+              </Button>
+            ) : undefined
+          }
+        >
           {error}
         </Alert>
       ) : null}

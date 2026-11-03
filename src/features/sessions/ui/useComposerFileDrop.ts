@@ -172,12 +172,7 @@ export function useComposerFileDrop({
         if (event.payload.type === "enter" || event.payload.type === "over") {
           if (event.payload.type === "enter") nativeCount = event.payload.paths.length;
           if (!over) hide();
-          else
-            show(
-              nativeCount,
-              false,
-              nativeDropPointer({ x, y }, pointerInside(dropRoot())),
-            );
+          else show(nativeCount, false, nativeDropPointer({ x, y }, pointerInside(dropRoot())));
           return;
         }
         if (event.payload.type !== "drop") return;

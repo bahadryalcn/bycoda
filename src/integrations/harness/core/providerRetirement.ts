@@ -27,7 +27,11 @@ type Keeper = {
   errors: WeakSet<object>;
 };
 /** `includeFamily` narrows a drain to the families it returns true for. */
-type DrainScope = { family?: string; ownerKey?: string; includeFamily?: (family: string) => boolean };
+type DrainScope = {
+  family?: string;
+  ownerKey?: string;
+  includeFamily?: (family: string) => boolean;
+};
 export type ProviderRetirementCohort = Readonly<{
   size: number;
   settled: Promise<void>;
@@ -144,8 +148,16 @@ function failure(
 /** Wait for every original, then surface unsafe unfinished retirement. */
 function joined(keeper: Keeper, family: string, work: Promise<unknown>[]): Promise<void> {
   return Promise.allSettled(work).then((outcomes) => {
-    const errors = outcomes.flatMap((outcome) => outcome.status === "rejected" ? [outcome.reason] : []);
-    if (errors.length) throw failure(keeper, family, errors, "The previous provider has not stopped yet. Retry in a moment");
+    const errors = outcomes.flatMap((outcome) =>
+      outcome.status === "rejected" ? [outcome.reason] : [],
+    );
+    if (errors.length)
+      throw failure(
+        keeper,
+        family,
+        errors,
+        "The previous provider has not stopped yet. Retry in a moment",
+      );
   });
 }
 
@@ -165,17 +177,25 @@ function attempt(
   if (!entry.work || entry.state === "failed") {
     entry.state = "retiring";
     killStartedAt.set(entry, Date.now());
-    entry.work = Promise.resolve().then(() => entry.kill(entry.handle)).then(() => {
-      entry.state = "retired";
-      entry.error = undefined;
-      if (shared.records.delete(entry.handle)) keeper.retained--;
-      entry.resolve();
-    }, (error: unknown) => {
-      entry.state = "failed";
-      entry.error = error;
-      console.warn(`[providerRetirement] kill failed (${family}); retry remains available`, error);
-      throw error;
-    });
+    entry.work = Promise.resolve()
+      .then(() => entry.kill(entry.handle))
+      .then(
+        () => {
+          entry.state = "retired";
+          entry.error = undefined;
+          if (shared.records.delete(entry.handle)) keeper.retained--;
+          entry.resolve();
+        },
+        (error: unknown) => {
+          entry.state = "failed";
+          entry.error = error;
+          console.warn(
+            `[providerRetirement] kill failed (${family}); retry remains available`,
+            error,
+          );
+          throw error;
+        },
+      );
     void entry.work.catch(() => {});
   }
   // A deadline bounds this caller, never the actual kill or its ownership record.
@@ -187,9 +207,14 @@ function attempt(
   return Promise.race([
     entry.work,
     new Promise<void>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("The previous provider is still stopping. Retry in a moment.")), remaining);
+      timer = setTimeout(
+        () => reject(new Error("The previous provider is still stopping. Retry in a moment.")),
+        remaining,
+      );
     }),
-  ]).finally(() => { if (timer !== undefined) clearTimeout(timer); });
+  ]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
 }
 function joinOriginals(
   keeper: Keeper,
@@ -448,7 +473,10 @@ export async function drainRetirementsForWriter(
     others,
     new Promise<void>((resolve) => {
       timer = setTimeout(() => {
-        warn("previous provider retirement", new Error("still stopping; continuing with the new provider"));
+        warn(
+          "previous provider retirement",
+          new Error("still stopping; continuing with the new provider"),
+        );
         resolve();
       }, OTHER_PROVIDER_DRAIN_MS);
     }),

@@ -203,11 +203,11 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
           !(await confirmWorkspaceClose(
             needsUnsavedConfirm
               ? () =>
-                    confirmDiscardUnsaved({
-                      title: t("Close file without saving?"),
-                      confirmLabel: t("Discard and close"),
-                      files: [file],
-                    })
+                  confirmDiscardUnsaved({
+                    title: t("Close file without saving?"),
+                    confirmLabel: t("Discard and close"),
+                    files: [file],
+                  })
               : undefined,
             file.terminal && !opts?.skipConfirm ? () => confirmCloseTerminal(file) : undefined,
           ))
@@ -330,11 +330,11 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
           !(await confirmWorkspaceClose(
             unsaved.length > 0
               ? () =>
-                    confirmDiscardUnsaved({
-                      title: t("Close tabs with unsaved files?"),
-                      confirmLabel: t("Discard and close"),
-                      files: unsaved,
-                    })
+                  confirmDiscardUnsaved({
+                    title: t("Close tabs with unsaved files?"),
+                    confirmLabel: t("Discard and close"),
+                    files: unsaved,
+                  })
               : undefined,
             terminals.length > 0 ? () => confirmCloseTerminals(terminals) : undefined,
           ))

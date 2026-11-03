@@ -36,22 +36,16 @@ it("interrupts and retires bounded streamed output without adding an unsupported
     maxOutputTokens: 2,
     maxOutputChars: 5,
   });
-  const rejected = expect(pending).rejects.toThrow(
-    "provider usage is uncertain",
-  );
+  const rejected = expect(pending).rejects.toThrow("provider usage is uncertain");
   await vi.waitFor(() =>
     expect(sent.some((request) => request.method === "turn/start")).toBe(true),
   );
-  const start = sent.find(
-    (request) => request.method === "turn/start",
-  )!.params!;
+  const start = sent.find((request) => request.method === "turn/start")!.params!;
   expect(start).not.toHaveProperty("maxOutputTokens");
   expect(start).not.toHaveProperty("max_output_tokens");
   receive({ method: "item/agentMessage/delta", params: { delta: "123456" } });
   await rejected;
-  expect(sent.some((request) => request.method === "turn/interrupt")).toBe(
-    true,
-  );
+  expect(sent.some((request) => request.method === "turn/interrupt")).toBe(true);
   expect(killChild).toHaveBeenCalled();
   stallTurn = false;
   output = "ok";
@@ -102,9 +96,7 @@ it.each([
     });
     const rejected = expect(pending).rejects.toThrow("unexpected utility tool");
     await vi.waitFor(() =>
-      expect(sent.some((request) => request.method === "turn/start")).toBe(
-        true,
-      ),
+      expect(sent.some((request) => request.method === "turn/start")).toBe(true),
     );
     receive({
       method: "item/started",
@@ -149,9 +141,7 @@ it("rechecks required builtin gates before reusing a warm exact utility thread",
     ephemeral: false,
     threadId: "chief-original",
   });
-  const starts = sent.filter(
-    (request) => request.method === "turn/start",
-  ).length;
+  const starts = sent.filter((request) => request.method === "turn/start").length;
   unsafeBuiltins = true;
   await expect(
     runCodexTextPrompt({
@@ -161,9 +151,7 @@ it("rechecks required builtin gates before reusing a warm exact utility thread",
       threadId: "chief-original",
     }),
   ).rejects.toThrow("isolation");
-  expect(
-    sent.filter((request) => request.method === "turn/start"),
-  ).toHaveLength(starts);
+  expect(sent.filter((request) => request.method === "turn/start")).toHaveLength(starts);
   expect(killChild).toHaveBeenCalled();
 });
 function compactNotifications(id: string, status: string | undefined) {
@@ -219,9 +207,7 @@ vi.mock("../../core/child", () =>
               mcp_servers: { fixture: { command: "never-run" } },
               web_search: "disabled",
               features: {
-                ...Object.fromEntries(
-                  CODEX_UTILITY_DISABLED_FEATURES.map((name) => [name, false]),
-                ),
+                ...Object.fromEntries(CODEX_UTILITY_DISABLED_FEATURES.map((name) => [name, false])),
                 ...(unsafeBuiltins ? { shell_tool: true } : {}),
               },
             },
@@ -260,8 +246,7 @@ vi.mock("../../core/child", () =>
       } else if (request.method === "thread/compact/start") {
         if (!holdCompactAck) receive({ id: request.id, result: {} });
       } else if (request.method === "turn/start") {
-        if (!holdTurnAck)
-          receive({ id: request.id, result: { turn: { id: "turn_1" } } });
+        if (!holdTurnAck) receive({ id: request.id, result: { turn: { id: "turn_1" } } });
         if (stallTurn) return;
         setTimeout(() => {
           receive({
@@ -274,9 +259,7 @@ vi.mock("../../core/child", () =>
               turn: {
                 id: "turn_1",
                 status: failTurn ? "failed" : "completed",
-                ...(failTurn
-                  ? { error: { message: "Generation failed" } }
-                  : {}),
+                ...(failTurn ? { error: { message: "Generation failed" } } : {}),
               },
             },
           });
@@ -303,14 +286,10 @@ vi.mock("../../../../platform/tauri/fs", () => ({
   }),
 }));
 
-const { runCodexTextPrompt, stopCodexTextPrompt, warmupCodexText } =
-  await import("./codexText");
+const { runCodexTextPrompt, stopCodexTextPrompt, warmupCodexText } = await import("./codexText");
 const { generateCodexSessionTitle } = await import("./codexTitle");
-const {
-  generateCodexCommitMessage,
-  generateCodexBranchName,
-  generateCodexPrContent,
-} = await import("./codexGit");
+const { generateCodexCommitMessage, generateCodexBranchName, generateCodexPrContent } =
+  await import("./codexGit");
 
 function threadStarts() {
   return sent.filter((request) => request.method === "thread/start");
@@ -344,9 +323,7 @@ it("does not submit a turn until the exact provider thread receipt is durable", 
     }),
   ).rejects.toThrow("receipt write failed");
   expect(threadStarts()).toHaveLength(1);
-  expect(
-    sent.filter((request) => request.method === "turn/start"),
-  ).toHaveLength(0);
+  expect(sent.filter((request) => request.method === "turn/start")).toHaveLength(0);
 });
 it("isolates utility start/resume config and never sends reasoning while inherited MCP tools remain enabled", async () => {
   await runCodexTextPrompt({
@@ -355,19 +332,13 @@ it("isolates utility start/resume config and never sends reasoning while inherit
     ephemeral: false,
     threadId: "chief-original",
   });
-  const spawn = processConstructions.operations.find(
-    (operation) => operation.kind === "spawn",
-  )!;
+  const spawn = processConstructions.operations.find((operation) => operation.kind === "spawn")!;
   expect(spawn.args[1]).toEqual(codexUtilitySpawnArgs());
-  expect(
-    sent.find((request) => request.method === "thread/resume")?.params?.config,
-  ).toEqual({
+  expect(sent.find((request) => request.method === "thread/resume")?.params?.config).toEqual({
     ...CODEX_UTILITY_CONFIG,
     mcp_servers: { fixture: { enabled: false } },
   });
-  const turnsBefore = sent.filter(
-    (request) => request.method === "turn/start",
-  ).length;
+  const turnsBefore = sent.filter((request) => request.method === "turn/start").length;
   unsafeMcp = true;
   await expect(
     runCodexTextPrompt({
@@ -377,9 +348,7 @@ it("isolates utility start/resume config and never sends reasoning while inherit
       threadId: "chief-original",
     }),
   ).rejects.toThrow("isolation");
-  expect(
-    sent.filter((request) => request.method === "turn/start"),
-  ).toHaveLength(turnsBefore);
+  expect(sent.filter((request) => request.method === "turn/start")).toHaveLength(turnsBefore);
   expect(killChild).toHaveBeenCalled();
 });
 
@@ -397,13 +366,11 @@ it("compacts the same isolated thread and waits for exact completion and durable
     onCompacted: saved,
   });
   await vi.waitFor(() =>
-    expect(sent.some((value) => value.method === "thread/compact/start")).toBe(
-      true,
-    ),
+    expect(sent.some((value) => value.method === "thread/compact/start")).toBe(true),
   );
-  expect(
-    sent.find((value) => value.method === "thread/compact/start")?.params,
-  ).toEqual({ threadId: "chief-original" });
+  expect(sent.find((value) => value.method === "thread/compact/start")?.params).toEqual({
+    threadId: "chief-original",
+  });
   receive({
     method: "turn/started",
     params: { threadId: "other", turn: { id: "foreign" } },
@@ -442,15 +409,11 @@ it("compacts the same isolated thread and waits for exact completion and durable
       turn: { id: "compact-1", status: "completed" },
     },
   });
-  await vi.waitFor(() =>
-    expect(saved).toHaveBeenCalledWith({ threadId: "chief-original" }),
-  );
+  await vi.waitFor(() => expect(saved).toHaveBeenCalledWith({ threadId: "chief-original" }));
   expect(sent.some((value) => value.method === "turn/start")).toBe(false);
   release();
   expect(await result).toBe(output);
-  expect(sent.filter((value) => value.method === "thread/start")).toHaveLength(
-    0,
-  );
+  expect(sent.filter((value) => value.method === "thread/start")).toHaveLength(0);
 });
 it("never reasons after a failed or cancelled compaction", async () => {
   for (const cancel of [false, true]) {
@@ -468,9 +431,7 @@ it("never reasons after a failed or cancelled compaction", async () => {
     });
     const rejected = expect(result).rejects.toThrow();
     await vi.waitFor(() =>
-      expect(
-        sent.some((value) => value.method === "thread/compact/start"),
-      ).toBe(true),
+      expect(sent.some((value) => value.method === "thread/compact/start")).toBe(true),
     );
     if (cancel) controller.abort();
     else compactNotifications("compact-failed", "failed");
@@ -507,9 +468,7 @@ it("does not reason when saving the compaction receipt fails", async () => {
   });
   const rejected = expect(result).rejects.toThrow("receipt disk full");
   await vi.waitFor(() =>
-    expect(sent.some((value) => value.method === "thread/compact/start")).toBe(
-      true,
-    ),
+    expect(sent.some((value) => value.method === "thread/compact/start")).toBe(true),
   );
   compactNotifications("compact-1", "completed");
   await rejected;
@@ -527,9 +486,7 @@ it("binds completion to the RPC turn id despite an unrelated same-thread turn ar
       onCompacted: receipt,
     });
   await vi.waitFor(() =>
-    expect(sent.some((value) => value.method === "thread/compact/start")).toBe(
-      true,
-    ),
+    expect(sent.some((value) => value.method === "thread/compact/start")).toBe(true),
   );
   receive({
     method: "turn/started",
@@ -542,9 +499,7 @@ it("binds completion to the RPC turn id despite an unrelated same-thread turn ar
       turn: { id: "unrelated", status: "completed" },
     },
   });
-  const request = sent.find(
-    (value) => value.method === "thread/compact/start",
-  )!;
+  const request = sent.find((value) => value.method === "thread/compact/start")!;
   receive({ id: request.id, result: { turn: { id: "actual-compact" } } });
   await Promise.resolve();
   expect(receipt).not.toHaveBeenCalled();
@@ -573,9 +528,7 @@ it("refuses missing or cancelled completion status rather than treating it as co
       });
     const rejected = expect(result).rejects.toThrow("successful compaction");
     await vi.waitFor(() =>
-      expect(
-        sent.some((value) => value.method === "thread/compact/start"),
-      ).toBe(true),
+      expect(sent.some((value) => value.method === "thread/compact/start")).toBe(true),
     );
     compactNotifications("bad-compact", status);
     await rejected;
@@ -596,9 +549,7 @@ it("does not treat an unrelated ordinary turn as compact-specific completion", a
     });
   const rejected = expect(result).rejects.toThrow("compaction timed out");
   await vi.waitFor(() =>
-    expect(sent.some((value) => value.method === "thread/compact/start")).toBe(
-      true,
-    ),
+    expect(sent.some((value) => value.method === "thread/compact/start")).toBe(true),
   );
   receive({
     method: "turn/started",
@@ -710,24 +661,17 @@ it("cancels account B while original account A teardown is still held", async ()
     const spawned = processConstructions.operations.filter(
       (operation) => operation.kind === "spawn",
     );
-    expect(spawned.map((operation) => operation.handle)).toEqual([
-      original,
-      fresh,
-    ]);
+    expect(spawned.map((operation) => operation.handle)).toEqual([original, fresh]);
     expect(spawned[1].args[3]).toEqual({ provider: "codex", id: "account-C" });
     expect(
       processConstructions.operations
-        .filter(
-          (operation) =>
-            operation.kind === "write" && operation.handle !== original,
-        )
+        .filter((operation) => operation.kind === "write" && operation.handle !== original)
         .every((operation) => operation.handle === fresh),
     ).toBe(true);
     expect(sent.some((request) => request.method === "turn/start")).toBe(true);
     expect(
-      processConstructions.operations
-        .filter((operation) => operation.kind === "kill")
-        .at(-1)?.handle,
+      processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
+        ?.handle,
     ).toBe(fresh);
   } finally {
     released = true;
@@ -759,9 +703,7 @@ it("cancels A before binary resolution and lets B use its own original helper ha
     expect(original).toBeDefined();
     await stopCodexTextPrompt();
     expect(
-      processConstructions.operations.filter(
-        (operation) => operation.kind === "spawn",
-      ),
+      processConstructions.operations.filter((operation) => operation.kind === "spawn"),
     ).toEqual([]);
     expect(sent).toEqual([]);
     second = runCodexTextPrompt({ cwd: "/repo", prompt: "Dispatch B" });
@@ -787,20 +729,16 @@ it("cancels A before binary resolution and lets B use its own original helper ha
         .every((operation) => operation.handle === replacement),
     ).toBe(true);
     const spawnAt = processConstructions.operations.findIndex(
-      (operation) =>
-        operation.kind === "spawn" && operation.handle === replacement,
+      (operation) => operation.kind === "spawn" && operation.handle === replacement,
     );
     const originalCleanup = processConstructions.operations
       .slice(0, spawnAt)
       .filter((operation) => operation.kind === "kill");
     expect(originalCleanup.length).toBeGreaterThan(0);
+    expect(originalCleanup.every((operation) => operation.handle === original)).toBe(true);
     expect(
-      originalCleanup.every((operation) => operation.handle === original),
-    ).toBe(true);
-    expect(
-      processConstructions.operations
-        .filter((operation) => operation.kind === "kill")
-        .at(-1)?.handle,
+      processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
+        ?.handle,
     ).toBe(replacement);
   } finally {
     release?.({ path: "/late/codex-A" });
@@ -825,30 +763,22 @@ it.each(["timeout", "abort"] as const)(
       (error: Error) => error,
     );
     for (let i = 0; i < 100; i++) await Promise.resolve();
-    expect(
-      sent.filter((request) => request.method === "turn/start"),
-    ).toHaveLength(1);
+    expect(sent.filter((request) => request.method === "turn/start")).toHaveLength(1);
     if (outcome === "abort") controller.abort();
     else await vi.advanceTimersByTimeAsync(100);
     for (let i = 0; i < 100; i++) await Promise.resolve();
-    expect(sent.some((request) => request.method === "turn/interrupt")).toBe(
-      true,
-    );
+    expect(sent.some((request) => request.method === "turn/interrupt")).toBe(true);
 
     stallTurn = false;
     const second = runCodexTextPrompt({ cwd: "/repo", prompt: "Next request" });
     await vi.advanceTimersByTimeAsync(1999);
-    expect(
-      sent.filter((request) => request.method === "turn/start"),
-    ).toHaveLength(1);
+    expect(sent.filter((request) => request.method === "turn/start")).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
     await vi.advanceTimersByTimeAsync(1);
 
     expect(await first).toBeInstanceOf(Error);
     await expect(second).resolves.toBe(output);
-    expect(
-      sent.filter((request) => request.method === "turn/start"),
-    ).toHaveLength(2);
+    expect(sent.filter((request) => request.method === "turn/start")).toHaveLength(2);
     expect(vi.getTimerCount()).toBe(0);
   },
 );
@@ -891,18 +821,13 @@ it.each([
       head: "helpers",
     },
   },
-])(
-  "generates $name without saving a Codex conversation",
-  async ({ response, run, expected }) => {
-    output = JSON.stringify(response);
-    await expect(run()).resolves.toEqual(expected);
-    expect(threadStarts()).toHaveLength(1);
-    expect(threadStarts()[0].params).toMatchObject({ ephemeral: true });
-    expect(sent.some((request) => request.method === "thread/resume")).toBe(
-      false,
-    );
-  },
-);
+])("generates $name without saving a Codex conversation", async ({ response, run, expected }) => {
+  output = JSON.stringify(response);
+  await expect(run()).resolves.toEqual(expected);
+  expect(threadStarts()).toHaveLength(1);
+  expect(threadStarts()[0].params).toMatchObject({ ephemeral: true });
+  expect(sent.some((request) => request.method === "thread/resume")).toBe(false);
+});
 
 it("keeps warmup and subsequent prompts unsaved across model changes", async () => {
   await warmupCodexText("/repo");
@@ -913,13 +838,11 @@ it("keeps warmup and subsequent prompts unsaved across model changes", async () 
       prompt: "Generate text",
     }),
   ).resolves.toBe(output);
-  await expect(
-    runCodexTextPrompt({ cwd: "/repo", prompt: "Generate more text" }),
-  ).resolves.toBe(output);
+  await expect(runCodexTextPrompt({ cwd: "/repo", prompt: "Generate more text" })).resolves.toBe(
+    output,
+  );
   expect(threadStarts()).toHaveLength(3);
-  expect(
-    threadStarts().every((request) => request.params?.ephemeral === true),
-  ).toBe(true);
+  expect(threadStarts().every((request) => request.params?.ephemeral === true)).toBe(true);
 });
 
 it("does not resume a stored thread for an unsaved text request", async () => {
@@ -928,9 +851,7 @@ it("does not resume a stored thread for an unsaved text request", async () => {
     threadId: "stored_thread",
     prompt: "Generate text",
   });
-  expect(sent.some((request) => request.method === "thread/resume")).toBe(
-    false,
-  );
+  expect(sent.some((request) => request.method === "thread/resume")).toBe(false);
   expect(threadStarts()[0].params).toMatchObject({ ephemeral: true });
 });
 
@@ -954,9 +875,7 @@ it("allows side questions to explicitly retain and resume their thread", async (
     threadId: "thread_2",
     prompt: "Follow-up",
   });
-  expect(
-    sent.find((request) => request.method === "thread/resume")?.params,
-  ).toMatchObject({
+  expect(sent.find((request) => request.method === "thread/resume")?.params).toMatchObject({
     threadId: "thread_2",
   });
   expect(threadStarts()).toHaveLength(2);
@@ -976,15 +895,11 @@ it("retains resumable behavior when a side question's saved thread is missing", 
 
 it("keeps a failed generation and its retry unsaved", async () => {
   failTurn = true;
-  await expect(
-    runCodexTextPrompt({ cwd: "/repo", prompt: "Generate text" }),
-  ).rejects.toThrow("Generation failed");
+  await expect(runCodexTextPrompt({ cwd: "/repo", prompt: "Generate text" })).rejects.toThrow(
+    "Generation failed",
+  );
   failTurn = false;
-  await expect(
-    runCodexTextPrompt({ cwd: "/repo", prompt: "Retry" }),
-  ).resolves.toBe(output);
+  await expect(runCodexTextPrompt({ cwd: "/repo", prompt: "Retry" })).resolves.toBe(output);
   expect(threadStarts()).toHaveLength(2);
-  expect(
-    threadStarts().every((request) => request.params?.ephemeral === true),
-  ).toBe(true);
+  expect(threadStarts().every((request) => request.params?.ephemeral === true)).toBe(true);
 });

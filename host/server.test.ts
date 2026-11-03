@@ -2498,8 +2498,12 @@ describe("scoped Conversation Tools RPC", () => {
     });
     expect(known.value.error).toBeUndefined();
     expect(
-      (await s.call("browser.status", { projectId: "missing-project", sessionId: s.created.sessionId }))
-        .value.error,
+      (
+        await s.call("browser.status", {
+          projectId: "missing-project",
+          sessionId: s.created.sessionId,
+        })
+      ).value.error,
     ).toBeTruthy();
   });
 
@@ -3565,7 +3569,8 @@ describe("shared queued messages", () => {
       } finally {
         vi.useRealTimers();
       }
-    });
+      // Real SQLite store and three provider turns; explicit budget for loaded hosts.
+    }, 30_000);
 
     it("keeps an older client's queue its own while it keeps asking, and drains it when it goes quiet", async () => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
@@ -3658,11 +3663,22 @@ describe("shared queued messages", () => {
       const s = await setup();
       const observe = vi.spyOn(HostTasks.prototype, "tick");
       try {
-        const saved = await s.call("tasks.save", { task: {
-          id: "blocked-review-continuation", title: "Review continuation", prompt: "Prepare report",
-          projectId: s.project.id, harness: "codex", model: "codex:test", modelSettings: {},
-          runtimeMode: "supervised", maxRunMinutes: 0, isolate: false, review: true, status: "todo",
-        } });
+        const saved = await s.call("tasks.save", {
+          task: {
+            id: "blocked-review-continuation",
+            title: "Review continuation",
+            prompt: "Prepare report",
+            projectId: s.project.id,
+            harness: "codex",
+            model: "codex:test",
+            modelSettings: {},
+            runtimeMode: "supervised",
+            maxRunMinutes: 0,
+            isolate: false,
+            review: true,
+            status: "todo",
+          },
+        });
         expect(saved.value.error).toBeUndefined();
         const started = await s.call("tasks.start", { taskId: "blocked-review-continuation" });
         expect(started.value.error).toBeUndefined();
@@ -3673,18 +3689,25 @@ describe("shared queued messages", () => {
         await s.engine.waitForRun(worker.session.id, worker.runId);
         await scheduler.tick();
         await scheduler.idle();
-        expect(await scheduler.get("blocked-review-continuation")).toMatchObject({ status: "verifying" });
+        expect(await scheduler.get("blocked-review-continuation")).toMatchObject({
+          status: "verifying",
+        });
         await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2));
         const reviewing = (await scheduler.get("blocked-review-continuation"))!;
         const sessionId = reviewing.reviewer!.sessionId!;
-        s.turn().onEvent({ type: "session.providerBound", providerSessionId: "original-review-thread" });
+        s.turn().onEvent({
+          type: "session.providerBound",
+          providerSessionId: "original-review-thread",
+        });
         s.turn().onEvent({ type: "message.delta", text: "Report is incomplete." });
         s.turn().onEvent({ type: "message.completed" });
         s.finish();
         await s.engine.waitForRun(sessionId, reviewing.reviewer!.runId);
         await scheduler.tick();
         await scheduler.idle();
-        expect(await scheduler.get("blocked-review-continuation")).toMatchObject({ status: "blocked" });
+        expect(await scheduler.get("blocked-review-continuation")).toMatchObject({
+          status: "blocked",
+        });
         expect(s.engine.hasRetainedProviderWriter(sessionId)).toBe(true);
         // A lapsed desktop heartbeat is observation, never takeover authority.
         expect((await beat(s, sessionId, "win1", 1))[sessionId]).toBeNull();
@@ -3694,7 +3717,9 @@ describe("shared queued messages", () => {
         expect(lease.value.result.lease.holder).toBe("desktop:win1");
         expect(transfer).toHaveBeenCalledWith(sessionId, expect.any(Function));
         expect(s.engine.hasRetainedProviderWriter(sessionId)).toBe(false);
-        expect((await s.store.session(sessionId)).session.providerSessionId).toBe("original-review-thread");
+        expect((await s.store.session(sessionId)).session.providerSessionId).toBe(
+          "original-review-thread",
+        );
       } finally {
         observe.mockRestore();
       }

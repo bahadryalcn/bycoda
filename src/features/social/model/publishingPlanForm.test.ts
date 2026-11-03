@@ -87,13 +87,15 @@ describe("Publishing plan form", () => {
 
   it("lists the reasons the first step cannot continue, with the fix where one exists", () => {
     expect(planContentBlockers(content)).toEqual([]);
-    expect(planContentBlockers({ ...content, name: "  " }).map((item) => item.id)).toEqual(["name"]);
+    expect(planContentBlockers({ ...content, name: "  " }).map((item) => item.id)).toEqual([
+      "name",
+    ]);
     expect(planContentBlockers({ ...content, campaignIds: [] }).map((item) => item.id)).toEqual([
       "empty-pool",
     ]);
-    expect(planContentBlockers({ ...content, campaignIds: ["gone"] }).map((item) => item.id)).toEqual([
-      "stale-pool",
-    ]);
+    expect(
+      planContentBlockers({ ...content, campaignIds: ["gone"] }).map((item) => item.id),
+    ).toEqual(["stale-pool"]);
     const none = planContentBlockers({ ...content, availableCampaignIds: [], campaignIds: [] });
     expect(none.map((item) => [item.id, item.fix])).toEqual([["no-campaigns", "content"]]);
     const noAccount = planContentBlockers({ ...content, accountCount: 0, accountFound: false });

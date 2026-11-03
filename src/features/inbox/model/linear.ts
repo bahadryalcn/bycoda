@@ -203,7 +203,8 @@ export function loadHiddenLinearTeamIds(): string[] {
 /** Fails closed so an unreadable saved scope never widens what Linear fetches. */
 export function requireHiddenLinearTeamIds(): string[] {
   const ids = readHiddenLinearTeamIds();
-  if (!ids) throw new Error("Saved Linear team scope is unavailable, so Linear results are paused.");
+  if (!ids)
+    throw new Error("Saved Linear team scope is unavailable, so Linear results are paused.");
   return ids;
 }
 

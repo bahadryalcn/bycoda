@@ -1,12 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import {
-  dropAnnouncer,
-  dropBadge,
-  dropMarks,
-  fileDrag,
-  files,
-  textDrag,
-} from "./external-drop";
+import { dropAnnouncer, dropBadge, dropMarks, fileDrag, files, textDrag } from "./external-drop";
 
 /** Hover hints are the shared Tooltip (no native title): a label line plus shortcut key caps. */
 async function expectHint(
@@ -67,41 +60,31 @@ test("composer attachment submission stays local and keeps Stop available", asyn
   await expect
     .poll(() =>
       page.evaluate(() =>
-        Boolean(
-          (window as unknown as { finishComposerPaste?: () => void })
-            .finishComposerPaste,
-        ),
+        Boolean((window as unknown as { finishComposerPaste?: () => void }).finishComposerPaste),
       ),
     )
     .toBe(true);
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  const pending = page.locator(
-    '.composer-send-controls button[data-button-loading="true"]',
-  );
+  const pending = page.locator('.composer-send-controls button[data-button-loading="true"]');
   const stop = page.getByRole("button", { name: "Stop", exact: true });
   await expect(pending).toHaveCount(1);
   await expect(pending).toHaveAttribute("aria-busy", "true");
   await expect(stop).toBeEnabled();
   for (const light of [false, true]) {
     await page.evaluate(
-      (value) =>
-        document.documentElement.classList.toggle("theme-light", value),
+      (value) => document.documentElement.classList.toggle("theme-light", value),
       light,
     );
     await expect(pending).toBeInViewport();
     await expect(stop).toBeInViewport();
     await page.screenshot({
-      path: testInfo.outputPath(
-        `composer-pending-390-${light ? "light" : "dark"}.png`,
-      ),
+      path: testInfo.outputPath(`composer-pending-390-${light ? "light" : "dark"}.png`),
     });
   }
   await stop.click();
   await expect(pending).toHaveCount(0);
   await page.evaluate(() =>
-    (
-      window as unknown as { finishComposerPaste: () => void }
-    ).finishComposerPaste(),
+    (window as unknown as { finishComposerPaste: () => void }).finishComposerPaste(),
   );
   await expect(
     page.getByRole("button", {
@@ -109,9 +92,9 @@ test("composer attachment submission stays local and keeps Stop available", asyn
       exact: true,
     }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("textbox", { name: "Message", exact: true }),
-  ).toHaveValue(/Keep this chat draft/);
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+    /Keep this chat draft/,
+  );
 });
 
 test("Steer explains a prolonged wait and preserves the paused queue at narrow widths", async ({
@@ -121,46 +104,32 @@ test("Steer explains a prolonged wait and preserves the paused queue at narrow w
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.clock.install();
   for (const light of [false, true]) {
-    await page.goto(
-      "/tests/browser/composer-extras.html?chat-layout&delivery-progress",
-    );
+    await page.goto("/tests/browser/composer-extras.html?chat-layout&delivery-progress");
     await page.evaluate(
-      (value) =>
-        document.documentElement.classList.toggle("theme-light", value),
+      (value) => document.documentElement.classList.toggle("theme-light", value),
       light,
     );
     await page.setViewportSize({ width: 320, height: 800 });
     const card = page.locator("[data-message-queue-card]");
-    await card
-      .getByRole("button", { name: "Steer", exact: true })
-      .press("Enter");
+    await card.getByRole("button", { name: "Steer", exact: true }).press("Enter");
     const progress = page.locator("[data-delivery-progress]");
     await expect(progress).toContainText("Synchronizing the message queue");
-    await expect(
-      card.getByRole("button", { name: "Sending…", exact: true }),
-    ).toBeDisabled();
+    await expect(card.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
     await page.clock.runFor(11_000);
     await expect(progress).toContainText("11s elapsed");
     await expect(progress).toContainText("you do not need to write it again");
-    expect(
-      await progress.evaluate(
-        (element) => element.scrollWidth <= element.clientWidth,
-      ),
-    ).toBe(true);
+    expect(await progress.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
     await page.screenshot({
       path: `temp/verification/2026-10-21-steer-investigation/${light ? "light" : "dark"}-320-waiting.png`,
     });
     await page.clock.runFor(1000);
     await expect(progress).toContainText("Waiting for provider confirmation");
     await page.clock.runFor(1000);
-    await expect(progress).toHaveAttribute(
-      "data-delivery-progress",
-      "rejected",
-    );
+    await expect(progress).toHaveAttribute("data-delivery-progress", "rejected");
     await expect(card).toContainText("Queue paused");
-    await expect(
-      card.getByRole("button", { name: "Steer", exact: true }),
-    ).toBeEnabled();
+    await expect(card.getByRole("button", { name: "Steer", exact: true })).toBeEnabled();
   }
 });
 
@@ -169,41 +138,26 @@ test("queue actions expose progress and recovery in both themes at narrow widths
 }) => {
   await initializeChatLayout(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto(
-    "/tests/browser/composer-extras.html?chat-layout&queue-feedback",
-  );
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&queue-feedback");
   const card = page.locator("[data-message-queue-card]");
   for (const light of [false, true]) {
     await page.evaluate(
-      (value) =>
-        document.documentElement.classList.toggle("theme-light", value),
+      (value) => document.documentElement.classList.toggle("theme-light", value),
       light,
     );
     await page.setViewportSize({ width: 390, height: 800 });
     const steer = card.getByRole("button", { name: "Steer", exact: true });
     await steer.focus();
     await steer.press("Enter");
-    await expect(
-      card.getByRole("button", { name: "Sending…", exact: true }),
-    ).toBeDisabled();
-    await expect(card.locator("[data-queue-feedback]")).toHaveText(
-      "Waiting for confirmation…",
-    );
+    await expect(card.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
+    await expect(card.locator("[data-queue-feedback]")).toHaveText("Waiting for confirmation…");
     await expect(card.getByRole("alert")).toContainText("It remains queued");
     await expect(steer).toBeEnabled();
-    expect(
-      await card.evaluate(
-        (element) => element.scrollWidth <= element.clientWidth,
-      ),
-    ).toBe(true);
+    expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   }
   await card.getByRole("button", { name: "Resume", exact: true }).click();
-  await expect(
-    card.getByRole("button", { name: "Resuming…", exact: true }),
-  ).toBeDisabled();
-  await expect(card.locator("[data-queue-feedback]")).toContainText(
-    "when this turn finishes",
-  );
+  await expect(card.getByRole("button", { name: "Resuming…", exact: true })).toBeDisabled();
+  await expect(card.locator("[data-queue-feedback]")).toContainText("when this turn finishes");
   await page.screenshot({
     path: "temp/verification/2026-10-20-git-reliability/queue-feedback.png",
   });
@@ -223,8 +177,7 @@ test("chat shortcut hints follow custom bindings and expose rewind at narrow wid
   await expectHint(page, rewind, "Rewind and edit", ["Esc", "Esc"]);
   for (const light of [false, true]) {
     await page.evaluate(
-      (value) =>
-        document.documentElement.classList.toggle("theme-light", value),
+      (value) => document.documentElement.classList.toggle("theme-light", value),
       light,
     );
     for (const width of [320, 390, 1000]) {
@@ -251,17 +204,13 @@ test("chat shortcut hints follow custom bindings and expose rewind at narrow wid
         "Composer: Queue Message": { disabled: true },
       }),
     );
-    window.dispatchEvent(
-      new StorageEvent("storage", { key: "bycoda.keybindingOverrides" }),
-    );
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.keybindingOverrides" }));
   });
   await expectHint(page, stop, "Stop", /M.*Ctrl\s*C/);
   await expectHint(page, queue, "Queue message for when this turn finishes", null);
   await page.evaluate(() => {
     localStorage.removeItem("bycoda.keybindingOverrides");
-    window.dispatchEvent(
-      new StorageEvent("storage", { key: "bycoda.keybindingOverrides" }),
-    );
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.keybindingOverrides" }));
   });
   await expectHint(page, stop, "Stop", ["Esc", "Ctrl", "C"]);
   await expectHint(page, queue, "Queue message", /Tab/);
@@ -271,9 +220,7 @@ test("custom context signal exposes completed TPS and compact and respects reduc
   page,
 }, testInfo) => {
   await initializeChatLayout(page);
-  await page.goto(
-    "/tests/browser/composer-extras.html?chat-layout&response-speed",
-  );
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&response-speed");
   const trigger = page.getByRole("button", {
     name: /^Context usage: 50%.*50.0 TPS/,
   });
@@ -281,8 +228,7 @@ test("custom context signal exposes completed TPS and compact and respects reduc
   await expect(trigger.locator(".context-signal")).toHaveAttribute("data-speed-fill", "0.75");
   for (const light of [false, true]) {
     await page.evaluate(
-      (value) =>
-        document.documentElement.classList.toggle("theme-light", value),
+      (value) => document.documentElement.classList.toggle("theme-light", value),
       light,
     );
     for (const width of [390, 1000]) {
@@ -293,10 +239,7 @@ test("custom context signal exposes completed TPS and compact and respects reduc
       await expect(panel).toBeInViewport();
       // The card is the only hint: no second tooltip repeats its heading.
       await expect(page.getByRole("tooltip")).toHaveCount(0);
-      await expect(panel.getByRole("meter")).toHaveAttribute(
-        "aria-valuenow",
-        "50",
-      );
+      await expect(panel.getByRole("meter")).toHaveAttribute("aria-valuenow", "50");
       await expect(panel).toContainText("50.0 TPS");
       await expect(panel).not.toContainText("Speed scale");
       const info = panel.getByRole("button", {
@@ -307,19 +250,13 @@ test("custom context signal exposes completed TPS and compact and respects reduc
       await info.click();
       await expect(info).toHaveAttribute("aria-expanded", "true");
       await expect(panel).toContainText("Average over the full turn");
-      await expect(
-        panel.getByRole("button", { name: "Compact now", exact: true }),
-      ).toBeEnabled();
+      await expect(panel.getByRole("button", { name: "Compact now", exact: true })).toBeEnabled();
       await expect(trigger.locator(".context-signal")).toBeVisible();
       await trigger.screenshot({
-        path: testInfo.outputPath(
-          `signal-${light ? "light" : "dark"}-${width}.png`,
-        ),
+        path: testInfo.outputPath(`signal-${light ? "light" : "dark"}-${width}.png`),
       });
       await page.screenshot({
-        path: testInfo.outputPath(
-          `context-tps-${light ? "light" : "dark"}-${width}.png`,
-        ),
+        path: testInfo.outputPath(`context-tps-${light ? "light" : "dark"}-${width}.png`),
       });
       await page.keyboard.press("Escape");
       await page.mouse.move(0, 0);
@@ -349,8 +286,7 @@ test("composer blank space focuses the larger draft while controls remain operab
   await input.fill("");
   for (const light of [false, true]) {
     await page.evaluate(
-      (value) =>
-        document.documentElement.classList.toggle("theme-light", value),
+      (value) => document.documentElement.classList.toggle("theme-light", value),
       light,
     );
     for (const width of [390, 1000]) {
@@ -368,25 +304,18 @@ test("composer blank space focuses the larger draft while controls remain operab
       expect((await input.boundingBox())!.height).toBeGreaterThanOrEqual(68);
     }
   }
-  await box
-    .getByRole("button", { name: "Add files or skills", exact: true })
-    .click();
+  await box.getByRole("button", { name: "Add files or skills", exact: true }).click();
   await expect(page.locator("[data-composer-plus]")).toBeVisible();
 });
 
-test("reprompt previews, applies and reverses selected text in both themes", async ({
-  page,
-}) => {
+test("reprompt previews, applies and reverses selected text in both themes", async ({ page }) => {
   await initializeChatLayout(page);
   await useTextActionProvider(page, "claude");
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const light of [false, true]) {
-    await page.goto(
-      "/tests/browser/composer-extras.html?translation-selection",
-    );
+    await page.goto("/tests/browser/composer-extras.html?translation-selection");
     await page.evaluate(
-      (value) =>
-        document.documentElement.classList.toggle("theme-light", value),
+      (value) => document.documentElement.classList.toggle("theme-light", value),
       light,
     );
     await page.setViewportSize({ width: light ? 390 : 1000, height: 800 });
@@ -407,12 +336,8 @@ test("reprompt previews, applies and reverses selected text in both themes", asy
     await expect(result).toContainText("Rewritten prompt");
     await expect(result).toContainText("Translated fixture text");
     await expect(input).toHaveValue(original);
-    expect(
-      await result.evaluate((el) => el.scrollWidth <= el.clientWidth),
-    ).toBe(true);
-    await result
-      .getByRole("button", { name: "Apply prompt", exact: true })
-      .click();
+    expect(await result.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await result.getByRole("button", { name: "Apply prompt", exact: true }).click();
     await expect(input).toHaveValue("Before Translated fixture text after");
     await input.press("ArrowUp");
     await expect(input).toHaveValue(original);
@@ -446,28 +371,14 @@ test("Antigravity translates directly and only connected providers are listed", 
   await expect(result).toContainText("Translated fixture text");
   await result.getByRole("button", { name: /Antigravity/ }).click();
   await page.getByRole("menuitem", { name: /^Model/ }).click();
-  await expect(
-    page.getByRole("tab", { name: "Claude Code", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("tab", { name: "Codex", exact: true }),
-  ).toHaveCount(0);
-  await page
-    .getByRole("option")
-    .filter({ hasText: "Gemini 3.8 Flash" })
-    .first()
-    .click();
-  await result
-    .getByRole("button", { name: "Translate selected text", exact: true })
-    .click();
+  await expect(page.getByRole("tab", { name: "Claude Code", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Codex", exact: true })).toHaveCount(0);
+  await page.getByRole("option").filter({ hasText: "Gemini 3.8 Flash" }).first().click();
+  await result.getByRole("button", { name: "Translate selected text", exact: true }).click();
   await expect(result).toContainText("Translated fixture text");
-  await result
-    .getByRole("button", { name: "Apply translation", exact: true })
-    .click();
+  await result.getByRole("button", { name: "Apply translation", exact: true }).click();
   await expect(input).toHaveValue("Translated fixture text");
-  await expect(page.getByTestId("choice")).toContainText(
-    '"harness":"antigravity"',
-  );
+  await expect(page.getByTestId("choice")).toContainText('"harness":"antigravity"');
 });
 
 test("translation selection menu opens above text and survives unavailable geometry", async ({
@@ -490,9 +401,7 @@ test("translation selection menu opens above text and survives unavailable geome
     expect(menu.y + menu.height).toBeLessThan(field.y + 22);
     await input.press("Escape");
     await expect(toolbar).toHaveCount(0);
-    await input.evaluate(() =>
-      document.dispatchEvent(new Event("selectionchange")),
-    );
+    await input.evaluate(() => document.dispatchEvent(new Event("selectionchange")));
     await expect(toolbar).toHaveCount(0);
   }
   // The app's scaled layout must still produce viewport coordinates.
@@ -517,9 +426,7 @@ test("translation selection menu opens above text and survives unavailable geome
   await expect(toolbar).toBeVisible();
 });
 
-test("busy composer keeps Send, Queue and Stop visible with shortcut hints", async ({
-  page,
-}) => {
+test("busy composer keeps Send, Queue and Stop visible with shortcut hints", async ({ page }) => {
   await initializeChatLayout(page);
   await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts");
   await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
@@ -534,33 +441,22 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
   await expectHint(page, stop, "Stop", ["Esc", "Ctrl", "C"]);
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
-      (value) =>
-        document.documentElement.classList.toggle(
-          "theme-light",
-          value === "light",
-        ),
+      (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
       theme,
     );
     for (const width of [390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 800 });
-      for (const control of [send, queue, stop])
-        await expect(control).toBeInViewport();
-      const bounds = await Promise.all(
-        [queue, send, stop].map((control) => control.boundingBox()),
-      );
+      for (const control of [send, queue, stop]) await expect(control).toBeInViewport();
+      const bounds = await Promise.all([queue, send, stop].map((control) => control.boundingBox()));
       expect(bounds[0]!.x + bounds[0]!.width).toBeLessThanOrEqual(bounds[1]!.x);
       expect(bounds[1]!.x + bounds[1]!.width).toBeLessThanOrEqual(bounds[2]!.x);
       const plus = await page
         .getByRole("button", { name: "Add files or skills", exact: true })
         .boundingBox();
-      const context = await page
-        .locator(".context-meter-summary")
-        .boundingBox();
+      const context = await page.locator(".context-meter-summary").boundingBox();
       for (const box of [plus, context, ...bounds]) {
         expect(box).not.toBeNull();
-        expect(Math.abs(box!.height - bounds[2]!.height)).toBeLessThanOrEqual(
-          1,
-        );
+        expect(Math.abs(box!.height - bounds[2]!.height)).toBeLessThanOrEqual(1);
         expect(Math.abs(box!.y - bounds[2]!.y)).toBeLessThanOrEqual(1);
       }
     }
@@ -568,21 +464,15 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
   await stop.focus();
   await page.keyboard.press("Enter");
   await expect(stop).toHaveCount(0);
-  await expect(
-    page.getByRole("textbox", { name: "Message", exact: true }),
-  ).toHaveValue("Keep this chat draft");
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+    "Keep this chat draft",
+  );
 });
 
 /** Text actions follow the global default provider, not the conversation's, so the fixture pins it. */
-async function useTextActionProvider(
-  page: import("@playwright/test").Page,
-  harness: string,
-) {
+async function useTextActionProvider(page: import("@playwright/test").Page, harness: string) {
   await page.addInitScript((value) => {
-    localStorage.setItem(
-      "bycoda.lastModel",
-      JSON.stringify({ harness: value, model: "" }),
-    );
+    localStorage.setItem("bycoda.lastModel", JSON.stringify({ harness: value, model: "" }));
   }, harness);
 }
 
@@ -615,9 +505,7 @@ test("hints reveal with one quiet fade and remain complete when motion is reduce
 }, testInfo) => {
   await initializeChatLayout(page);
   await page.setViewportSize({ width: 640, height: 800 });
-  await page.goto(
-    "/tests/browser/composer-extras.html?chat-layout&accounts&hint-motion",
-  );
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts&hint-motion");
   const hint = page.locator(".composer-tips-text");
   await expect(hint).toHaveCount(0);
   await page.locator(".composer-tips-icon").click();
@@ -637,9 +525,7 @@ test("hints reveal with one quiet fade and remain complete when motion is reduce
   await expect(hint.locator("[data-tip-fold]")).toHaveCount(1);
   expect(
     await hint.evaluate((root) =>
-      getComputedStyle(
-        root.querySelector("[data-tip-fold]")!,
-      ).transform.startsWith("matrix3d("),
+      getComputedStyle(root.querySelector("[data-tip-fold]")!).transform.startsWith("matrix3d("),
     ),
   ).toBe(false);
   await page.screenshot({
@@ -650,20 +536,14 @@ test("hints reveal with one quiet fade and remain complete when motion is reduce
   const nextText = await hint.getAttribute("aria-label");
   expect(nextText).not.toBe(fullText);
   expect((await hint.innerText()).replaceAll(" ", " ")).toBe(nextText);
-  expect(
-    await hint.evaluate((root) => root.getAnimations({ subtree: true }).length),
-  ).toBe(0);
+  expect(await hint.evaluate((root) => root.getAnimations({ subtree: true }).length)).toBe(0);
   await expect(page.locator(".composer-tips-cursor")).toHaveCount(0);
 });
 
 for (const variant of ["", "&remote", "&project-picker"]) {
-  test(`chat context remains at the end of its row ${variant || "local"}`, async ({
-    page,
-  }) => {
+  test(`chat context remains at the end of its row ${variant || "local"}`, async ({ page }) => {
     await initializeChatLayout(page);
-    await page.goto(
-      `/tests/browser/composer-extras.html?chat-layout&accounts${variant}`,
-    );
+    await page.goto(`/tests/browser/composer-extras.html?chat-layout&accounts${variant}`);
     const input = page.getByRole("textbox", { name: "Message", exact: true });
     const context = page.getByRole("button", { name: /^Context usage/ });
     await expect(context).toBeVisible();
@@ -672,23 +552,17 @@ for (const variant of ["", "&remote", "&project-picker"]) {
       // The meter closes the trailing cluster of the toolbar row, right before Send/Stop.
       expect(
         await context.evaluate((button) => {
-          const box = button
-            .closest("[data-composer-box]")!
-            .getBoundingClientRect();
+          const box = button.closest("[data-composer-box]")!.getBoundingClientRect();
           const meter = button.getBoundingClientRect();
           const actions = [
-            ...button
-              .closest(".composer-send-controls")!
-              .querySelectorAll("button"),
+            ...button.closest(".composer-send-controls")!.querySelectorAll("button"),
           ].filter((candidate) => candidate !== button);
           const last = actions[actions.length - 1]!.getBoundingClientRect();
           return (
             meter.left >= box.left &&
             meter.right <= last.left + 1 &&
             last.right <= box.right &&
-            Math.abs(
-              meter.top + meter.height / 2 - (last.top + last.height / 2),
-            ) < 8
+            Math.abs(meter.top + meter.height / 2 - (last.top + last.height / 2)) < 8
           );
         }),
       ).toBe(true);
@@ -698,9 +572,7 @@ for (const variant of ["", "&remote", "&project-picker"]) {
         exact: true,
       });
       await expect(dialog).toBeInViewport();
-      await expect(
-        page.getByRole("button", { name: "Compact now" }),
-      ).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Compact now" })).toBeEnabled();
       await page.keyboard.press("Escape");
       await expect(context).toBeFocused();
     }
@@ -708,16 +580,10 @@ for (const variant of ["", "&remote", "&project-picker"]) {
     await page.getByRole("button", { name: "Compact now" }).click();
     await expect(page.getByTestId("compacted")).toHaveText("1");
     await expect(input).toHaveValue("Keep this chat draft");
-    await expect(
-      page.getByRole("button", { name: "Social Media", exact: true }),
-    ).toHaveCount(0);
-    await page
-      .getByRole("button", { name: "Toggle busy", exact: true })
-      .click();
+    await expect(page.getByRole("button", { name: "Social Media", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
     await context.click();
-    await expect(
-      page.getByRole("button", { name: "Compact now" }),
-    ).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Compact now" })).toBeDisabled();
     await page.keyboard.press("Escape");
   });
 }
@@ -726,9 +592,7 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
   page,
 }, testInfo) => {
   await initializeChatLayout(page);
-  await page.goto(
-    "/tests/browser/composer-extras.html?chat-layout&accounts&workspace-footer",
-  );
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts&workspace-footer");
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   const hint = page.locator(".composer-tips-icon");
   const tooltip = page.getByRole("tooltip");
@@ -774,27 +638,18 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
   await expect(branch).toBeVisible();
   expect(
     await controls.evaluate((element) => {
-      const checkout = element.querySelector(
-        '[aria-label="Workspace Current checkout"]',
-      )!;
+      const checkout = element.querySelector('[aria-label="Workspace Current checkout"]')!;
       const branch = element.querySelector('[aria-label="Branch main"]')!;
       const directories = element.querySelector("[data-composer-directories]")!;
       return (
-        !!(
-          checkout.compareDocumentPosition(branch) &
-          Node.DOCUMENT_POSITION_FOLLOWING
-        ) &&
-        !!(
-          branch.compareDocumentPosition(directories) &
-          Node.DOCUMENT_POSITION_FOLLOWING
-        )
+        !!(checkout.compareDocumentPosition(branch) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+        !!(branch.compareDocumentPosition(directories) & Node.DOCUMENT_POSITION_FOLLOWING)
       );
     }),
   ).toBe(true);
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
-      (light) =>
-        document.documentElement.classList.toggle("theme-light", light),
+      (light) => document.documentElement.classList.toggle("theme-light", light),
       theme === "light",
     );
     for (const width of [320, 390, 768, 1024, 1440]) {
@@ -803,18 +658,13 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
       await page.mouse.move(0, 0);
       await expect(tooltip).toHaveCount(0);
       await expect(input).toBeInViewport();
-      await expect(
-        page.getByRole("button", { name: "Send", exact: true }),
-      ).toBeInViewport();
+      await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
       await expect(folders).toBeInViewport();
       await expect(checkout).toBeInViewport();
       await expect(branch).toBeInViewport();
       expect(
         await folders.evaluate(
-          (button) =>
-            !!button.closest(
-              "[data-composer-workspace] [data-composer-directories]",
-            ),
+          (button) => !!button.closest("[data-composer-workspace] [data-composer-directories]"),
         ),
       ).toBe(true);
       await hint.hover();
@@ -846,11 +696,9 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
       await hint.focus();
       await expect(tooltip).toHaveCount(0);
       await expect(input).toHaveValue("Keep this chat draft");
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth,
-        ),
-      ).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
       await page.screenshot({
         path: testInfo.outputPath(`chat-${theme}-${width}.png`),
         animations: "disabled",
@@ -927,30 +775,22 @@ test("chat busy actions explain steering and queuing without losing the draft", 
   const stop = page.getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeVisible();
   await input.fill("Keep my work");
-  await page
-    .getByRole("button", { name: "Toggle disabled", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
   await expect(stop).toBeEnabled();
   await expect(input).toHaveValue("Keep my work");
   await stop.click();
-  await page
-    .getByRole("button", { name: "Toggle disabled", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
   // The fixture transcript is at its end, so the finished turn has nothing unseen to report:
   // the dock leaves while the "done" state stays covered by ActivityDock.test.ts.
   await expect(page.locator("[data-activity-dock]")).toHaveCount(0);
   await input.fill("My next request");
-  await page
-    .getByRole("button", { name: "Toggle disabled", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
   await expect(input).toHaveValue("My next request");
   await expect(input).toBeDisabled();
 });
 
 for (const renderer of ["auto", "shader-failure", "context-loss"] as const) {
-  test(`welcome crew stays transparent with ${renderer}`, async ({
-    page,
-  }, testInfo) => {
+  test(`welcome crew stays transparent with ${renderer}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1059, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.addInitScript((mode) => {
@@ -973,9 +813,7 @@ for (const renderer of ["auto", "shader-failure", "context-loss"] as const) {
       });
       if (mode !== "auto") {
         const getContext = HTMLCanvasElement.prototype.getContext;
-        HTMLCanvasElement.prototype.getContext = function (
-          ...args: Parameters<typeof getContext>
-        ) {
+        HTMLCanvasElement.prototype.getContext = function (...args: Parameters<typeof getContext>) {
           const context = getContext.apply(this, args);
           if (args[0] === "webgl" && context) {
             const gl = context as WebGLRenderingContext;
@@ -994,12 +832,7 @@ for (const renderer of ["auto", "shader-failure", "context-loss"] as const) {
         canvas.evaluate((surface: HTMLCanvasElement) => {
           const context = surface.getContext("2d");
           if (!context) return false;
-          const pixels = context.getImageData(
-            0,
-            0,
-            surface.width,
-            surface.height,
-          ).data;
+          const pixels = context.getImageData(0, 0, surface.width, surface.height).data;
           let painted = 0;
           let transparent = 0;
           for (let index = 3; index < pixels.length; index += 400) {
@@ -1010,14 +843,12 @@ for (const renderer of ["auto", "shader-failure", "context-loss"] as const) {
         }),
       )
       .toBe(true);
-    const containedLabels = await page
-      .locator(".crew-scene")
-      .evaluate((scene) => {
-        const bottom = scene.getBoundingClientRect().bottom;
-        return [...scene.querySelectorAll(".crew-scene__label")].every(
-          (label) => label.getBoundingClientRect().bottom <= bottom + 1,
-        );
-      });
+    const containedLabels = await page.locator(".crew-scene").evaluate((scene) => {
+      const bottom = scene.getBoundingClientRect().bottom;
+      return [...scene.querySelectorAll(".crew-scene__label")].every(
+        (label) => label.getBoundingClientRect().bottom <= bottom + 1,
+      );
+    });
     expect(containedLabels).toBe(true);
     const input = page.getByRole("textbox", { name: "Message", exact: true });
     await input.fill("Keep my Wallet draft");
@@ -1054,9 +885,7 @@ test("welcome and working labels stay readable in narrow panels and both themes"
   await page.goto("/tests/browser/composer-extras.html");
   const label = page.locator(".shimmer-text").first();
   await expect(label).toHaveCSS("animation-name", "none");
-  expect(await label.evaluate((el) => getComputedStyle(el).color)).not.toBe(
-    "rgba(0, 0, 0, 0)",
-  );
+  expect(await label.evaluate((el) => getComputedStyle(el).color)).not.toBe("rgba(0, 0, 0, 0)");
   await page.goto("/tests/browser/composer-extras.html?footer");
   await page.setViewportSize({ width: 320, height: 800 });
   const footer = page.locator('footer[aria-label="Provider usage"]');
@@ -1074,9 +903,7 @@ test("welcome and working labels stay readable in narrow panels and both themes"
   await expect(
     footer.getByRole("button", { name: "Conversation tools", exact: true }),
   ).toBeInViewport();
-  expect(
-    await footer.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
-  ).toBe(true);
+  expect(await footer.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   await footer.locator("[data-provider-usage]").evaluate((el) => {
     el.scrollLeft = el.scrollWidth;
   });
@@ -1089,26 +916,17 @@ test("welcome and working labels stay readable in narrow panels and both themes"
   await expect(title).toContainText("a-long-project-name");
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
-      (light) =>
-        document.documentElement.classList.toggle("theme-light", light),
+      (light) => document.documentElement.classList.toggle("theme-light", light),
       theme === "light",
     );
     for (const width of [1100, 320]) {
       await page.setViewportSize({ width, height: 800 });
-      await expect(
-        page.getByRole("textbox", { name: "Message", exact: true }),
-      ).toBeInViewport();
-      await expect(
-        page.getByRole("button", { name: "Send", exact: true }),
-      ).toBeInViewport();
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth,
-        ),
-      ).toBe(true);
-      expect(
-        await title.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
-      ).toBe(true);
+      await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeInViewport();
+      await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
       await page.screenshot({
         path: testInfo.outputPath(`welcome-${theme}-${width}.png`),
       });
@@ -1119,13 +937,9 @@ test("welcome and working labels stay readable in narrow panels and both themes"
     el.style.inlineSize = "420px";
   });
   expect(
-    await page
-      .locator(".bycoda-empty")
-      .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+    await page.locator(".bycoda-empty").evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
   ).toBe(true);
-  await expect(
-    page.getByRole("button", { name: "Send", exact: true }),
-  ).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
   await page.screenshot({
     path: testInfo.outputPath("welcome-split-panel.png"),
   });
@@ -1154,9 +968,7 @@ test("model picker names and selects accounts and session shows its active agent
   });
   await page.setViewportSize({ width: 1000, height: 800 });
   await page.goto("/tests/browser/composer-extras.html?accounts");
-  const main = page
-    .locator("[data-composer-model-controls] button[aria-haspopup]")
-    .first();
+  const main = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
   await expect(main).toContainText("personal");
   await main.click();
   await page.getByRole("menuitem", { name: /^Model / }).click();
@@ -1178,23 +990,15 @@ test("model picker names and selects accounts and session shows its active agent
   );
   const tips = page.locator(".composer-tips-icon");
   await tips.click();
-  await expect(
-    page.getByRole("dialog", { name: "Chat tips", exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Chat tips", exact: true })).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("session-running-account.png"),
     animations: "disabled",
   });
   await page.setViewportSize({ width: 320, height: 800 });
   await expect(page.locator("[data-session-agent]")).toBeInViewport();
-  await expect(
-    page.getByRole("button", { name: "Send", exact: true }),
-  ).toBeInViewport();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 test("chat edits model settings from one menu at narrow and wide sizes", async ({
@@ -1220,17 +1024,13 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
   });
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto("/tests/browser/composer-extras.html");
-  const main = page
-    .locator("[data-composer-model-controls] button[aria-haspopup]")
-    .first();
+  const main = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
   const menu = page.getByRole("menu", {
     name: "Model and settings",
     exact: true,
   });
   const row = (name: string) =>
-    menu
-      .getByRole("menuitem")
-      .filter({ has: page.getByText(name, { exact: true }) });
+    menu.getByRole("menuitem").filter({ has: page.getByText(name, { exact: true }) });
   const choose = async (name: string, option: string) => {
     await main.click();
     // Hovering a row opens its flyout; at narrow widths the flyout may cover the row itself,
@@ -1241,23 +1041,13 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
     await flyout.getByRole("menuitemradio", { name: option, exact: true }).click();
   };
   await expect(main).toBeInViewport();
-  await expect(
-    page.getByRole("button", { name: "Extras", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Send", exact: true }),
-  ).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Extras", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
   await choose("Advisor", "Claude Opus 5.5");
   await choose("Subagent model", "Claude Haiku 4.5");
-  await expect(page.getByTestId("choice")).toContainText(
-    '"model":"claude:sonnet-5"',
-  );
-  await expect(page.getByTestId("choice")).toContainText(
-    '"advisor":"claude-opus-5-5"',
-  );
-  await expect(page.getByTestId("choice")).toContainText(
-    '"subagentModel":"claude-haiku-4-5"',
-  );
+  await expect(page.getByTestId("choice")).toContainText('"model":"claude:sonnet-5"');
+  await expect(page.getByTestId("choice")).toContainText('"advisor":"claude-opus-5-5"');
+  await expect(page.getByTestId("choice")).toContainText('"subagentModel":"claude-haiku-4-5"');
   await main.click();
   await expect(menu).toBeInViewport();
   await page.screenshot({
@@ -1265,14 +1055,10 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
     animations: "disabled",
   });
   await page.keyboard.press("Escape");
-  await expect(
-    page.getByRole("textbox", { name: "Message", exact: true }),
-  ).toHaveValue("Keep this chat draft");
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+    "Keep this chat draft",
+  );
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
   await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
   await main.click();
@@ -1280,9 +1066,7 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
   await expect(row("Advisor")).toBeEnabled();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Toggle disabled", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
   await main.click();
   await expect(row("Advisor")).toBeDisabled();
   // Keyboard activation must respect the same lock as pointer input.
@@ -1290,9 +1074,7 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
   await menu.press("Enter");
   await expect(page.getByRole("menuitemradio")).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await page
-    .getByRole("button", { name: "Toggle disabled", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
 
   await page.getByRole("button", { name: "codex", exact: true }).click();
   await main.click();
@@ -1311,9 +1093,7 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
   await choose("Reasoning", "High");
   await choose("Service Tier", "Fast");
   await expect(main).toContainText("High");
-  await expect(page.getByTestId("choice")).toContainText(
-    '"serviceTier":"fast"',
-  );
+  await expect(page.getByTestId("choice")).toContainText('"serviceTier":"fast"');
   await page.setViewportSize({ width: 1000, height: 800 });
   await main.click();
   await page.screenshot({
@@ -1333,14 +1113,12 @@ test("chat edits model settings from one menu at narrow and wide sizes", async (
   await main.click();
   await expect(row("Model")).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(
-    page.getByRole("textbox", { name: "Message", exact: true }),
-  ).toHaveValue("Keep this chat draft");
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+    "Keep this chat draft",
+  );
 });
 
-test("model menu stays inside its frame and viewport", async ({
-  page,
-}, testInfo) => {
+test("model menu stays inside its frame and viewport", async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     localStorage.setItem("bycoda.language", "en");
     Object.assign(window, {
@@ -1361,9 +1139,7 @@ test("model menu stays inside its frame and viewport", async ({
   });
   await page.setViewportSize({ width: 1000, height: 800 });
   await page.goto("/tests/browser/composer-extras.html?accounts");
-  const main = page
-    .locator("[data-composer-model-controls] button[aria-haspopup]")
-    .first();
+  const main = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
   await expect(main).toContainText("personal");
   await main.click();
   await page.getByRole("menuitem", { name: /^Model / }).click();
@@ -1383,9 +1159,7 @@ test("model menu stays inside its frame and viewport", async ({
         menu.evaluate((el) => {
           const content = el.getBoundingClientRect();
           const frame = el.parentElement!.getBoundingClientRect();
-          return (
-            content.right <= frame.right && el.scrollWidth <= el.clientWidth + 1
-          );
+          return content.right <= frame.right && el.scrollWidth <= el.clientWidth + 1;
         }),
       )
       .toBe(true);
@@ -1395,8 +1169,7 @@ test("model menu stays inside its frame and viewport", async ({
         flyout.evaluate((el) => {
           const frame = el.parentElement!.getBoundingClientRect();
           const tabs = el.querySelectorAll('[role="tab"]').length;
-          const preferredHeight =
-            Math.max(tabs * 32 + (tabs - 1) * 4 + 12, 300) + 2;
+          const preferredHeight = Math.max(tabs * 32 + (tabs - 1) * 4 + 12, 300) + 2;
           const controls = document
             .querySelector(".model-controls-menu")!
             .parentElement!.getBoundingClientRect();
@@ -1406,8 +1179,7 @@ test("model menu stays inside its frame and viewport", async ({
             frame.height <= preferredHeight + 1 &&
             // The flyout overlaps its row by 4px, inside the menu's 5px inset.
             (innerWidth < 661 ||
-              (frame.left >= controls.right - 10 &&
-                frame.left <= controls.right))
+              (frame.left >= controls.right - 10 && frame.left <= controls.right))
           );
         }),
       )
@@ -1441,12 +1213,8 @@ test("independent scalar model settings preserve the draft caret and sibling val
   await effort.press("End");
   await effort.press("Enter");
   await expect(draft).toBeFocused();
-  expect(
-    await draft.evaluate((node) => [node.selectionStart, node.selectionEnd]),
-  ).toEqual([3, 8]);
-  await expect(page.getByTestId("scalar-settings")).toContainText(
-    '"reasoningEffort":"high"',
-  );
+  expect(await draft.evaluate((node) => [node.selectionStart, node.selectionEnd])).toEqual([3, 8]);
+  await expect(page.getByTestId("scalar-settings")).toContainText('"reasoningEffort":"high"');
   const tier = page.getByRole("combobox", {
     name: "Service Tier: Standard",
     exact: true,
@@ -1454,12 +1222,8 @@ test("independent scalar model settings preserve the draft caret and sibling val
   await tier.click();
   await tier.press("End");
   await tier.press("Enter");
-  await expect(page.getByTestId("scalar-settings")).toContainText(
-    '"reasoningEffort":"high"',
-  );
-  await expect(page.getByTestId("scalar-settings")).toContainText(
-    '"serviceTier":"fast"',
-  );
+  await expect(page.getByTestId("scalar-settings")).toContainText('"reasoningEffort":"high"');
+  await expect(page.getByTestId("scalar-settings")).toContainText('"serviceTier":"fast"');
   await expect(draft).toHaveValue("Preserve this draft");
   await expect(draft).toBeFocused();
 });

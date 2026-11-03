@@ -79,7 +79,7 @@ export class AdoptedChanges {
       // The first read only establishes what is already there.
       if (!first) this.note(row.id);
     }
-    for (const id of [...this.signatures.keys()])
+    for (const id of Array.from(this.signatures.keys()))
       if (!live.has(id)) {
         this.signatures.delete(id);
         this.note(id);

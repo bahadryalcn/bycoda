@@ -130,7 +130,8 @@ function detailReaders(item: InboxItem): DetailReaders {
   };
 }
 
-const errorMessage = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason));
+const errorMessage = (reason: unknown) =>
+  reason instanceof Error ? reason.message : String(reason);
 
 /**
  * Every read is a query keyed by the item identity, its list revision and the

@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { claudeShellCommands } from "../../../platform/tauri/fs";
 import { getSession, shouldPersistSession, upsertSession } from "./sessionStore";
-import { proposalBlock, type OrchestrationProposal } from "../../orchestration/model/orchestrationPlan";
+import {
+  proposalBlock,
+  type OrchestrationProposal,
+} from "../../orchestration/model/orchestrationPlan";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../../platform/tauri/fs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../platform/tauri/fs")>()),
@@ -44,25 +47,52 @@ afterEach(() => {
 describe("progressive stored history", () => {
   it("recovers a raw plan revision after its proposal context arrives on an earlier page", async () => {
     const proposal: OrchestrationProposal = {
-      version: 1, leadId: "proposal-pages", cwd: "/tmp/project", request: "Improve layout",
+      version: 1,
+      leadId: "proposal-pages",
+      cwd: "/tmp/project",
+      request: "Improve layout",
       author: { harness: "codex", model: "model", name: "Lead" },
       settings: { choices: [{ harness: "codex", model: "model", name: "Worker" }], maxWorkers: 2 },
-      status: "ready", title: "Layout", summary: "Initial plan", tasks: [],
+      status: "ready",
+      title: "Layout",
+      summary: "Initial plan",
+      tasks: [],
     };
     const raw = {
-      id: "revision", role: "assistant", text: `<bycoda_proposal>${JSON.stringify({
-        title: "Revised layout", summary: "Preserve old layout",
-        tasks: [{ id: "ui", title: "Layout", prompt: "Improve layout", harness: "codex", model: "model", files: ["src"], dependsOn: [] }],
+      id: "revision",
+      role: "assistant",
+      text: `<bycoda_proposal>${JSON.stringify({
+        title: "Revised layout",
+        summary: "Preserve old layout",
+        tasks: [
+          {
+            id: "ui",
+            title: "Layout",
+            prompt: "Improve layout",
+            harness: "codex",
+            model: "model",
+            files: ["src"],
+            dependsOn: [],
+          },
+        ],
       })}</bycoda_proposal>`,
     };
     vi.mocked(invoke).mockImplementation((command, args) => {
       if (command === "session_get_page") {
         const earlier = (args as { before?: number }).before != null;
         return Promise.resolve({
-          session: record("proposal-pages", earlier
-            ? [{ ...proposalBlock("original", proposal), streaming: false }, { id: "u", role: "user", text: "Preserve old layout" }]
-            : [raw]),
-          before: earlier ? undefined : 2, totalBlocks: 3, revision: 7,
+          session: record(
+            "proposal-pages",
+            earlier
+              ? [
+                  { ...proposalBlock("original", proposal), streaming: false },
+                  { id: "u", role: "user", text: "Preserve old layout" },
+                ]
+              : [raw],
+          ),
+          before: earlier ? undefined : 2,
+          totalBlocks: 3,
+          revision: 7,
         }) as ReturnType<typeof invoke>;
       }
       return Promise.resolve([]) as ReturnType<typeof invoke>;
@@ -73,9 +103,13 @@ describe("progressive stored history", () => {
     await vi.advanceTimersByTimeAsync(0);
     const complete = onHydrated.mock.calls.at(-1)![1];
     expect(complete.blocks[2]).toMatchObject({
-      id: "revision", role: "plan", orchestration: { status: "ready", title: "Revised layout" },
+      id: "revision",
+      role: "plan",
+      orchestration: { status: "ready", title: "Revised layout" },
     });
-    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "session_upsert")).toBe(false);
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "session_upsert")).toBe(
+      false,
+    );
   });
 
   it("never persists an incomplete remote view even if it has a local path", () => {

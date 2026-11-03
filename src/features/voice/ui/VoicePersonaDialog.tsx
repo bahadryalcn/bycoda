@@ -30,7 +30,7 @@ const choices = (table: Record<string, { label: string }>) =>
 export function VoicePersonaDialog({
   purpose,
   onClose,
-  styleOnly=false,
+  styleOnly = false,
 }: {
   purpose: "welcome" | "edit";
   onClose: () => void;
@@ -41,8 +41,12 @@ export function VoicePersonaDialog({
   const change = (patch: Partial<VoicePersona>) =>
     setDraft((current) => ({ ...current, ...patch }));
   const finish = (value: VoicePersona) => {
-    const previous=loadVoicePersona();
-    saveVoicePersona(styleOnly?{...value,name:previous.name,userName:previous.userName,rules:previous.rules}:value);
+    const previous = loadVoicePersona();
+    saveVoicePersona(
+      styleOnly
+        ? { ...value, name: previous.name, userName: previous.userName, rules: previous.rules }
+        : value,
+    );
     onClose();
   };
   const toggleDuty = (duty: string, on: boolean) =>
@@ -52,7 +56,13 @@ export function VoicePersonaDialog({
   const welcome = purpose === "welcome";
   return (
     <Modal
-      title={styleOnly ? t("Voice style") : welcome ? t("Make the voice companion yours") : t("Companion identity")}
+      title={
+        styleOnly
+          ? t("Voice style")
+          : welcome
+            ? t("Make the voice companion yours")
+            : t("Companion identity")
+      }
       description={
         welcome
           ? t("Pick a few options or write your own. You can change them later in Settings.")
@@ -84,28 +94,30 @@ export function VoicePersonaDialog({
       }
     >
       <div className={styles.form}>
-        {!styleOnly?<div className={styles.pair}>
-          <Combobox
-            label={t("Companion name")}
-            allowCustomValue
-            value={draft.name}
-            placeholder="bycoda"
-            maxLength={PERSONA_LIMITS.name}
-            options={PERSONA_NAMES.map((name) => ({
-              value: name,
-              label: name,
-            }))}
-            onValueChange={(name) => change({ name: name.slice(0, PERSONA_LIMITS.name) })}
-          />
-          <TextField
-            label={t("Your name")}
-            value={draft.userName}
-            placeholder={t("Optional")}
-            maxLength={PERSONA_LIMITS.userName}
-            autoComplete="given-name"
-            onChange={(event) => change({ userName: event.target.value })}
-          />
-        </div>:null}
+        {!styleOnly ? (
+          <div className={styles.pair}>
+            <Combobox
+              label={t("Companion name")}
+              allowCustomValue
+              value={draft.name}
+              placeholder="bycoda"
+              maxLength={PERSONA_LIMITS.name}
+              options={PERSONA_NAMES.map((name) => ({
+                value: name,
+                label: name,
+              }))}
+              onValueChange={(name) => change({ name: name.slice(0, PERSONA_LIMITS.name) })}
+            />
+            <TextField
+              label={t("Your name")}
+              value={draft.userName}
+              placeholder={t("Optional")}
+              maxLength={PERSONA_LIMITS.userName}
+              autoComplete="given-name"
+              onChange={(event) => change({ userName: event.target.value })}
+            />
+          </div>
+        ) : null}
         <div className={styles.pair}>
           <Combobox
             label={t("How it addresses you")}
@@ -150,18 +162,20 @@ export function VoicePersonaDialog({
             onChange={(event) => change({ customDuties: event.target.value })}
           />
         </fieldset>
-        {!styleOnly?<TextareaField
-          label={t("Ground rules")}
-          description={t(
-            "For example: always answer in English, keep replies under two sentences.",
-          )}
-          value={draft.rules}
-          minRows={3}
-          maxRows={8}
-          autosize
-          maxLength={PERSONA_LIMITS.rules}
-          onChange={(event) => change({ rules: event.target.value })}
-        />:null}
+        {!styleOnly ? (
+          <TextareaField
+            label={t("Ground rules")}
+            description={t(
+              "For example: always answer in English, keep replies under two sentences.",
+            )}
+            value={draft.rules}
+            minRows={3}
+            maxRows={8}
+            autosize
+            maxLength={PERSONA_LIMITS.rules}
+            onChange={(event) => change({ rules: event.target.value })}
+          />
+        ) : null}
       </div>
     </Modal>
   );

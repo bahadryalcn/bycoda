@@ -137,6 +137,9 @@ import {
 import { previewVoice } from "../model/voicePreview";
 import { maySpeakVoiceBriefing } from "../model/voiceBriefing";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { isMacMicrophoneBlocked } from "../model/microphoneAccess";
+import { openPrivacySettings } from "../../../platform/tauri/privacySettings";
 
 /** Cloud speech-to-speech providers, signed in through Grok Build or Codex. */
 const REALTIME: Record<"grok" | "openai", { provider: RealtimeProvider; name: string }> = {
@@ -2324,9 +2327,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       onClick={() => (canTalk ? void start() : toggleMute())}
     >
       {muted || status === "ready" || status === "sleeping" ? (
-        <MicOff size={14} />
+        <MicOff className="icon-sm" />
       ) : (
-        <Mic size={14} />
+        <Mic className="icon-sm" />
       )}
     </Button>
   );
@@ -2484,7 +2487,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           tooltip={t("Return voice companion to this window")}
           onClick={dock}
         >
-          <AppWindow size={16} />
+          <AppWindow className="icon-md" />
         </Button>
       </div>
     );
@@ -2515,7 +2518,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             setOpen(true);
           }}
         >
-          <MessageSquare size={16} />
+          <MessageSquare className="icon-md" />
         </Button>
       </div>
     );
@@ -2641,7 +2644,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               small
             />
           ) : (
-            <GripVertical size={14} />
+            <GripVertical className="icon-sm" />
           )}
         </Button>
         {!compact ? <h2 className={styles.title}>{identity.title}</h2> : null}
@@ -2698,7 +2701,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           aria-expanded={!compact}
           onClick={() => setCompact(!compact)}
         >
-          {compact ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+          {compact ? <Maximize2 className="icon-sm" /> : <Minimize2 className="icon-sm" />}
         </Button>
         {!compact && (
           <Button
@@ -2707,7 +2710,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             tooltip={t("Close voice companion")}
             onClick={dismiss}
           >
-            <X size={14} />
+            <X className="icon-sm" />
           </Button>
         )}
       </header>
@@ -2728,8 +2731,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
                 setGlobalScope(scopeRef.current);
               }}
               options={[
-                { value: "global", label: t("Global"), icon: <Globe size={13} /> },
-                { value: "session", label: t("Project"), icon: <MessageMultiple size={13} /> },
+                { value: "global", label: t("Global"), icon: <Globe className="icon-sm" /> },
+                {
+                  value: "session",
+                  label: t("Project"),
+                  icon: <MessageMultiple className="icon-sm" />,
+                },
               ]}
             />
           </div>
@@ -2822,26 +2829,34 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           )}
         </div>
         {shownTranscript && (
-          <div className={`${styles.turn} ${styles.heard}`} role="group" aria-label={t("You")}>
+          <div className={`${styles.turn} ${styles.heard}`}>
+            <span className="sr-only">{t("You")}: </span>
             <p className={styles.message}>{shownTranscript}</p>
           </div>
         )}
         {shownMessage && (
-          <div className={styles.turn} role="group" aria-live="polite" aria-label={t("Reply")}>
+          <div className={styles.turn} role="status">
+            <span className="sr-only">{t("Reply")}: </span>
             <p className={styles.message}>{shownMessage}</p>
           </div>
         )}
         {shownError &&
           (actionableError ? (
-            <p role="alert" className={styles.caption}>
-              {shownError}
-            </p>
+            <InlineError className={styles.caption}>{shownError}</InlineError>
           ) : (
-            <details role="alert" className={styles.feedback}>
-              <summary aria-label={t("Error details")}>{t("Voice needs attention")}</summary>
-              <p>{shownError}</p>
-            </details>
+            <>
+              <InlineError className={styles.caption}>{t("Voice needs attention")}</InlineError>
+              <details className={styles.feedback}>
+                <summary>{t("Error details")}</summary>
+                <p>{shownError}</p>
+              </details>
+            </>
           ))}
+        {shownError && isMacMicrophoneBlocked(shownError) ? (
+          <Button onClick={() => void openPrivacySettings("microphone").catch(() => {})}>
+            {t("Open Privacy Settings")}
+          </Button>
+        ) : null}
         {historyNotice && historyNotice !== shownError && (
           <p role="status" className={styles.caption}>
             {historyNotice}
@@ -2874,18 +2889,18 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               data-voice-start
               disabled={!target && !props.workspace}
               onClick={() => void start()}
-              startIcon={<Mic size={14} />}
+              startIcon={<Mic className="icon-sm" />}
             >
               {t(status === "idle" ? "Start voice" : "Talk")}
             </Button>
             {status !== "idle" && (
               <Button iconOnly label={t("Disconnect voice")} onClick={close}>
-                <Square size={14} />
+                <Square className="icon-sm" />
               </Button>
             )}
           </>
         ) : status === "connecting" || status === "reconnecting" ? (
-          <Button label={t("Cancel")} startIcon={<X size={14} />} onClick={close}>
+          <Button label={t("Cancel")} startIcon={<X className="icon-sm" />} onClick={close}>
             {t("Cancel")}
           </Button>
         ) : (
@@ -2902,7 +2917,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               aria-pressed={muted}
               onClick={toggleMute}
             >
-              {muted ? <MicOff size={14} /> : <Mic size={14} />}
+              {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
             </Button>
             <Button
               iconOnly
@@ -2910,7 +2925,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               tooltip={t("Silence")}
               onClick={() => client.current?.silence()}
             >
-              <VolumeX size={14} />
+              <VolumeX className="icon-sm" />
             </Button>
             <Button
               iconOnly
@@ -2918,7 +2933,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               tooltip={t("Disconnect voice")}
               onClick={close}
             >
-              <Square size={14} />
+              <Square className="icon-sm" />
             </Button>
           </>
         )}

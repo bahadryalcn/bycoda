@@ -304,11 +304,10 @@ it("keeps the actual canvas policy when SSH typography overrides change without 
       lineHeight: 1.35,
       minimumContrastRatio: 7,
     });
-    expect(instance.options).toHaveProperty(
-      "theme.background",
-      "rgba(17, 34, 51, 0)",
+    expect(instance.options).toHaveProperty("theme.background", "rgba(17, 34, 51, 0)");
+    expect(host.querySelector("[data-terminal-canvas]")?.getAttribute("data-terminal-canvas")).toBe(
+      "resolved",
     );
-    expect(host.querySelector("[data-terminal-canvas]")?.getAttribute("data-terminal-canvas")).toBe("resolved");
     // Omitting lineHeight changes typography only, never contrast/transparency.
     await act(async () => root.render(render(20)));
     expect(xterm.instances).toHaveLength(1);

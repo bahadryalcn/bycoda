@@ -111,7 +111,8 @@ export function gateRunLease(
           if (!isRunLeaseDiscoveryPending()) return await startWhenCurrent();
           if (!options?.managed && !options?.appRequestId && !options?.ciRepair) recoverUnstarted();
           else options?.onSendRejected?.();
-          const text = "Message not sent: Host ownership discovery is still pending. Your message is retained; check the Host connection before continuing.";
+          const text =
+            "Message not sent: Host ownership discovery is still pending. Your message is retained; check the Host connection before continuing.";
           showSubmitNotice(sessionId, text, "error");
           options?.onSettled?.({ status: "failed", text: "", error: text });
           return false;

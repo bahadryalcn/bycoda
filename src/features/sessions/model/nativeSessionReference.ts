@@ -13,10 +13,9 @@ export interface NativeSessionReferenceMetadata {
 export async function nativeSessionReference(
   sessionId: string,
 ): Promise<LocalSessionLocator | null> {
-  const metadata = await invoke<NativeSessionReferenceMetadata | null>(
-    "session_reference_get",
-    { sessionId },
-  );
+  const metadata = await invoke<NativeSessionReferenceMetadata | null>("session_reference_get", {
+    sessionId,
+  });
   return metadata?.locator ?? null;
 }
 

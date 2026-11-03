@@ -31,8 +31,16 @@ function deferred<T>(): Deferred<T> {
 
 const asRequest = (fn: unknown) => fn as Request;
 
-const scopeA: RemoteModelCatalogScope = { machineId: "machine", environmentId: "env", projectId: "project-a" };
-const scopeB: RemoteModelCatalogScope = { machineId: "machine", environmentId: "env", projectId: "project-b" };
+const scopeA: RemoteModelCatalogScope = {
+  machineId: "machine",
+  environmentId: "env",
+  projectId: "project-a",
+};
+const scopeB: RemoteModelCatalogScope = {
+  machineId: "machine",
+  environmentId: "env",
+  projectId: "project-b",
+};
 
 const catalog = (id: string, pending?: HostModelCatalog["pending"]): HostModelCatalog => ({
   models: { codex: [{ id, label: id }] as never },
@@ -107,7 +115,9 @@ describe("useRemoteModelCatalog", () => {
     expect(remoteModelCatalogScopeKey({ ...scopeA, environmentId: "other" })).not.toBe(
       remoteModelCatalogScopeKey(scopeA),
     );
-    expect(remoteModelCatalogScopeKey({ ...scopeA, machineId: "other" })).not.toBe(remoteModelCatalogScopeKey(scopeA));
+    expect(remoteModelCatalogScopeKey({ ...scopeA, machineId: "other" })).not.toBe(
+      remoteModelCatalogScopeKey(scopeA),
+    );
     expect(remoteModelCatalogScopeKey(scopeA)).toBe(remoteModelCatalogScopeKey({ ...scopeA }));
   });
 
@@ -116,7 +126,10 @@ describe("useRemoteModelCatalog", () => {
     await render({ scope: scopeA, enabled: true, request: asRequest(request) });
     await flush();
     expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith("models.list", { projectId: "project-a", progressive: true });
+    expect(request).toHaveBeenCalledWith("models.list", {
+      projectId: "project-a",
+      progressive: true,
+    });
     expect(ids(latest.catalog)).toEqual(["a1"]);
     expect(latest.error).toBe("");
   });
@@ -337,10 +350,20 @@ describe("useRemoteModelCatalog", () => {
     it("a replaced Host environment restarts the read", async () => {
       let calls = 0;
       const request = vi.fn(async () => catalog(`h${++calls}`));
-      await render({ scope: scopeA, enabled: true, hostEnvironmentId: "env-1", request: asRequest(request) });
+      await render({
+        scope: scopeA,
+        enabled: true,
+        hostEnvironmentId: "env-1",
+        request: asRequest(request),
+      });
       await flush();
       expect(request).toHaveBeenCalledTimes(1);
-      await render({ scope: scopeA, enabled: true, hostEnvironmentId: "env-2", request: asRequest(request) });
+      await render({
+        scope: scopeA,
+        enabled: true,
+        hostEnvironmentId: "env-2",
+        request: asRequest(request),
+      });
       await flush();
       expect(request).toHaveBeenCalledTimes(2);
       expect(ids(latest.catalog)).toEqual(["h2"]);
@@ -366,7 +389,11 @@ describe("useRemoteModelCatalog", () => {
     const request = vi.fn(async (_method: string, params?: unknown) => catalog(projectOf(params)));
     // 65 distinct scopes: the oldest (p0) must be evicted, p64 kept.
     for (let index = 0; index < 65; index++) {
-      await render({ scope: { ...scopeA, projectId: `p${index}` }, enabled: true, request: asRequest(request) });
+      await render({
+        scope: { ...scopeA, projectId: `p${index}` },
+        enabled: true,
+        request: asRequest(request),
+      });
       await flush();
     }
     const never = deferred<HostModelCatalog>();

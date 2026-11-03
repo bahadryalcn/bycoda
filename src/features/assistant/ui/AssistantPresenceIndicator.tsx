@@ -1,5 +1,8 @@
 import { t, useLocale } from "../../../shared/i18n";
-import { assistantPresencePresentation, type AssistantPresenceState } from "../model/assistantPresencePresentation";
+import {
+  assistantPresencePresentation,
+  type AssistantPresenceState,
+} from "../model/assistantPresencePresentation";
 import styles from "./AssistantPresenceIndicator.module.css";
 
 export type AssistantPresenceIndicatorProps = {
@@ -10,7 +13,12 @@ export type AssistantPresenceIndicatorProps = {
   markOnly?: boolean;
 };
 
-export function AssistantPresenceIndicator({ state, label, className, markOnly = false }: AssistantPresenceIndicatorProps) {
+export function AssistantPresenceIndicator({
+  state,
+  label,
+  className,
+  markOnly = false,
+}: AssistantPresenceIndicatorProps) {
   useLocale();
   const presentation = assistantPresencePresentation(state);
   return (

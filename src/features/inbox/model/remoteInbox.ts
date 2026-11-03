@@ -1,6 +1,11 @@
 /** Native provider credentials stay in the desktop. Only these inbox operations
  * cross the host heartbeat bridge; no arbitrary Tauri command can be submitted. */
-import { isRemoteJiraOperation, jiraBoardActions, parseRemoteJiraOperation, type RemoteJiraOperation } from "./jiraBoardProtocol";
+import {
+  isRemoteJiraOperation,
+  jiraBoardActions,
+  parseRemoteJiraOperation,
+  type RemoteJiraOperation,
+} from "./jiraBoardProtocol";
 export const REMOTE_INBOX_VERSION = 1;
 export const REMOTE_INBOX_PROVIDERS = [
   "github",
@@ -157,8 +162,9 @@ export function inboxOperationWrites(operation: RemoteInboxOperation): boolean {
   return (
     operation.action === "comment" ||
     operation.action === "pr-action" ||
-    operation.action === "review"
-    || operation.action === "jira-board-transition" || operation.action === "jira-board-move"
+    operation.action === "review" ||
+    operation.action === "jira-board-transition" ||
+    operation.action === "jira-board-move"
   );
 }
 export function parseRemoteInboxOperation(
@@ -173,8 +179,9 @@ export function parseRemoteInboxOperation(
   if (input.projectId !== undefined && scoped.length === 0)
     throw new Error("Inbox project does not belong to this computer.");
   if ((jiraBoardActions as readonly unknown[]).includes(action)) {
-    if (typeof input.projectId !== "string" || scoped.length !== 1) throw new Error("Select the owning project before opening a Jira board");
-    const {projectId: _projectId,requestId: _requestId,confirm: _confirm,...jira}=input;
+    if (typeof input.projectId !== "string" || scoped.length !== 1)
+      throw new Error("Select the owning project before opening a Jira board");
+    const { projectId: _projectId, requestId: _requestId, confirm: _confirm, ...jira } = input;
     return parseRemoteJiraOperation(jira, scoped[0]!.cwd);
   }
   if (action === "providers") return { action };
@@ -349,7 +356,8 @@ export function parseRemoteInboxOperation(
 export function nativeInboxCommand(
   operation: Exclude<RemoteInboxOperation, { action: "providers" | "list" }>,
 ): { command: string; args: Record<string, unknown> } {
-  if (isRemoteJiraOperation(operation)) throw new Error("Jira board operations require the scoped desktop board owner");
+  if (isRemoteJiraOperation(operation))
+    throw new Error("Jira board operations require the scoped desktop board owner");
   const { item } = operation;
   if (operation.action === "review" || operation.action === "review-context") {
     if (item.provider !== "github" || item.kind !== "pr")

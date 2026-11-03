@@ -9,7 +9,10 @@ import type { HostSession } from "../../connections/model/protocol";
 import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import { sessionExecutionClient } from "../../connections/model/sessionExecutionClient";
 import { getGroupLockView, subscribeGroupLock } from "../../group-lock/model/groupLock";
-import { assertReferenceProjectVisible, resolveLocalSessionReference } from "../model/localSessionNavigation";
+import {
+  assertReferenceProjectVisible,
+  resolveLocalSessionReference,
+} from "../model/localSessionNavigation";
 import type { Session } from "../model/session";
 import { t } from "../../../shared/i18n";
 
@@ -31,7 +34,9 @@ type Reader = {
 export function useReadOnlyHostSession(shell: Session, visible: boolean) {
   const binding = hostSessionBinding(shell);
   const privacy = useSyncExternalStore(subscribeGroupLock, getGroupLockView);
-  const key = JSON.stringify(binding && [binding.machineId, binding.environmentId, binding.projectId, binding.sessionId]);
+  const key = JSON.stringify(
+    binding && [binding.machineId, binding.environmentId, binding.projectId, binding.sessionId],
+  );
   const [refresh, setRefresh] = useState(0);
   const [state, setState] = useState<ReadState>({ key, privacy, loading: true });
   const retained = useRef(state);
@@ -42,25 +47,39 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const previous = retained.current;
-    let snapshot = previous.key === key && previous.privacy === privacy ? previous.snapshot : undefined;
+    let snapshot =
+      previous.key === key && previous.privacy === privacy ? previous.snapshot : undefined;
     let historyLoading = false;
     const current = () => !cancelled && getGroupLockView() === privacy;
     const publish = (patch: Partial<ReadState>) => {
       if (!current()) return;
       setState((previous) => ({ ...previous, key, privacy, ...patch }));
     };
-    const unavailable = () => new Error(t("This local conversation is unavailable or inaccessible."));
-    publish({ snapshot, loading: !snapshot, error: undefined, historyLoading: false, historyError: undefined });
+    const unavailable = () =>
+      new Error(t("This local conversation is unavailable or inaccessible."));
+    publish({
+      snapshot,
+      loading: !snapshot,
+      error: undefined,
+      historyLoading: false,
+      historyError: undefined,
+    });
     const connect = async () => {
-      const resolved = await resolveLocalSessionReference({ locator: {
-        kind: "host", environmentId: binding.environmentId, sessionId: binding.sessionId,
-      } });
+      const resolved = await resolveLocalSessionReference({
+        locator: {
+          kind: "host",
+          environmentId: binding.environmentId,
+          sessionId: binding.sessionId,
+        },
+      });
       if (!current()) return;
       const host = resolved.host;
       if (!host || host.machine.id !== binding.machineId || host.project.id !== binding.projectId)
         throw unavailable();
-      const client = sessionExecutionClient(binding.environmentId,
-        sessionAccessForMachine(binding.machineId, false, true, binding.environmentId));
+      const client = sessionExecutionClient(
+        binding.environmentId,
+        sessionAccessForMachine(binding.machineId, false, true, binding.environmentId),
+      );
       const validate = (value: HostSession) => {
         if (value.session.id !== binding.sessionId || value.projectId !== binding.projectId)
           throw unavailable();
@@ -69,12 +88,18 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
       reader.current = {
         loadHistory: async () => {
           const original = snapshot;
-          if (!current() || !original || historyLoading || original.history?.before === undefined) return;
+          if (!current() || !original || historyLoading || original.history?.before === undefined)
+            return;
           historyLoading = true;
           publish({ historyLoading: true, historyError: undefined });
           try {
-            const next = await loadRemoteHistoryPage(binding.machineId, binding.sessionId,
-              original, () => current() && snapshot === original, client);
+            const next = await loadRemoteHistoryPage(
+              binding.machineId,
+              binding.sessionId,
+              original,
+              () => current() && snapshot === original,
+              client,
+            );
             if (!current() || snapshot !== original || !next) return;
             validate(next);
             snapshot = next;
@@ -90,11 +115,22 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
         loadBlock: async (id) => {
           const original = snapshot;
           if (!current() || !original) return;
-          const block = await loadRemoteBlock(binding.machineId, binding.sessionId, id, original.revision, client);
+          const block = await loadRemoteBlock(
+            binding.machineId,
+            binding.sessionId,
+            id,
+            original.revision,
+            client,
+          );
           if (!current() || !block || snapshot?.revision !== original.revision) return;
           assertReferenceProjectVisible(resolved.cwd);
-          snapshot = { ...snapshot, session: { ...snapshot.session,
-            blocks: snapshot.session.blocks.map((entry) => entry.id === id ? block : entry) } };
+          snapshot = {
+            ...snapshot,
+            session: {
+              ...snapshot.session,
+              blocks: snapshot.session.blocks.map((entry) => (entry.id === id ? block : entry)),
+            },
+          };
           publish({ snapshot });
         },
       };
@@ -104,7 +140,9 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
           if (!historyLoading) {
             const original = snapshot;
             const next = await loadRemoteSession(binding.machineId, binding.sessionId, original, {
-              pages: true, executionClient: client, isCurrent: current,
+              pages: true,
+              executionClient: client,
+              isCurrent: current,
             });
             if (!current()) return;
             validate(next);
@@ -115,12 +153,17 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
         } catch (error) {
           publish({ loading: false, error: String(error).replace(/^Error: /, "") });
         } finally {
-          if (current()) timer = setTimeout(() => { void poll(); }, 2500);
+          if (current())
+            timer = setTimeout(() => {
+              void poll();
+            }, 2500);
         }
       };
       await poll();
     };
-    void connect().catch((error) => publish({ loading: false, error: String(error).replace(/^Error: /, "") }));
+    void connect().catch((error) =>
+      publish({ loading: false, error: String(error).replace(/^Error: /, "") }),
+    );
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
@@ -131,11 +174,18 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
   const snapshot = valid ? state.snapshot : undefined;
   const retry = useCallback(() => setRefresh((value) => value + 1), []);
   const loadHistory = useCallback(() => reader.current?.loadHistory() ?? Promise.resolve(), []);
-  const loadBlock = useCallback((id: string) => reader.current?.loadBlock(id) ?? Promise.resolve(), []);
+  const loadBlock = useCallback(
+    (id: string) => reader.current?.loadBlock(id) ?? Promise.resolve(),
+    [],
+  );
   return {
     session: {
-      ...shell, ...(snapshot?.session ?? {}), id: shell.id, hostBinding: binding,
-      blocks: snapshot?.session.blocks ?? [], busy: snapshot?.status === "running",
+      ...shell,
+      ...snapshot?.session,
+      id: shell.id,
+      hostBinding: binding,
+      blocks: snapshot?.session.blocks ?? [],
+      busy: snapshot?.status === "running",
       historyLoading: !snapshot && (!valid || state.loading),
     } as Session,
     error: valid ? state.error : undefined,

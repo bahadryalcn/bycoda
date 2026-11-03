@@ -56,10 +56,7 @@ export function CrewWorkList({
   const selectedHidden =
     !!selectedId && !!query.trim() && !runs.some((run) => run.id === selectedId);
   return (
-    <nav
-      aria-label={t("Crew work")}
-      className="flex min-w-0 flex-col bg-(--ui-surface-panel)"
-    >
+    <nav aria-label={t("Crew work")} className="flex min-w-0 flex-col bg-(--ui-surface-panel)">
       <div className="flex flex-col gap-2 px-3 pb-2 pt-3">
         <SegmentedControl
           label={t("Crew work view")}

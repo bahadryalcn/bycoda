@@ -11,7 +11,20 @@ import { SocialPanelActiveContext } from "./socialContext";
 import { Notice, type Props } from "./socialShared";
 import "./social-programs.css";
 
-export function SocialPrograms({ client, snapshot, projects, initialProject, run, collectionManaged = false, selectionIntent, onSelectionChange }: Props & { collectionManaged?: boolean; selectionIntent?: { id: string; token: number }; onSelectionChange?: (id: string) => void }) {
+export function SocialPrograms({
+  client,
+  snapshot,
+  projects,
+  initialProject,
+  run,
+  collectionManaged = false,
+  selectionIntent,
+  onSelectionChange,
+}: Props & {
+  collectionManaged?: boolean;
+  selectionIntent?: { id: string; token: number };
+  onSelectionChange?: (id: string) => void;
+}) {
   const active = useContext(SocialPanelActiveContext);
   const [error, setError] = useState("");
   const [bulkLink, setBulkLink] = useState("");
@@ -104,7 +117,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
         hasPrograms={programs.length > 0}
         onError={setError}
       />
-      <div className={!collectionManaged && programs.length ? "social-program-workspace" : undefined}>
+      <div
+        className={!collectionManaged && programs.length ? "social-program-workspace" : undefined}
+      >
         {!collectionManaged ? (
           <ProgramList
             programs={programs}

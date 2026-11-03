@@ -13,7 +13,11 @@ it.each([
 });
 
 it("never presents failed, pending or unsupported observations as Here", () => {
-  expect(assistantPresencePresentation("present", true)).toEqual({ state: "unknown", label: "Unknown", tone: "neutral" });
+  expect(assistantPresencePresentation("present", true)).toEqual({
+    state: "unknown",
+    label: "Unknown",
+    tone: "neutral",
+  });
   for (const state of [undefined, null, "active", "busy", "constructor", {}, false]) {
     expect(assistantPresencePresentation(state).state).toBe("unknown");
   }

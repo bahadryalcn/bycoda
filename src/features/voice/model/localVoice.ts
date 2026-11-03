@@ -8,6 +8,8 @@ import {
 import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
 import { speechTranscript } from "./voiceTranscript";
+import { openMicrophone } from "./microphoneAccess";
+import { t } from "../../../shared/i18n";
 
 export type SpeechBinding = { sessionId?: string; sequence: number };
 type Callbacks = {
@@ -58,7 +60,13 @@ export class LocalVoice {
     private config?: VoiceRuntimeConfig,
     /** Shared with the decorative visualizer; capture never causes React renders. */
     readonly level = { current: 0 },
-    private conversation: {turnEndSilence?:number;allowBargeIn?:boolean;manualTurnEnd?:boolean;languageLock?:string;deviceId?:string} = {},
+    private conversation: {
+      turnEndSilence?: number;
+      allowBargeIn?: boolean;
+      manualTurnEnd?: boolean;
+      languageLock?: string;
+      deviceId?: string;
+    } = {},
   ) {
     this.hint = language;
   }
@@ -66,14 +74,23 @@ export class LocalVoice {
   async connect() {
     try {
       if (!navigator.mediaDevices?.getUserMedia)
-        throw new Error("Microphone access requires the desktop app or a secure browser context.");
+        throw new Error(
+          t("Microphone access requires the desktop app or a secure browser context."),
+        );
       this.info = await localVoiceBackend.start(this.config);
       if (this.closed) {
         await localVoiceBackend.release(this.info.lease);
         return;
       }
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...(this.conversation.deviceId ? {deviceId:{exact:this.conversation.deviceId}} : {}) },
+      this.stream = await openMicrophone({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          ...(this.conversation.deviceId
+            ? { deviceId: { exact: this.conversation.deviceId } }
+            : {}),
+        },
         video: false,
       });
       if (this.closed) {
@@ -109,12 +126,23 @@ export class LocalVoice {
                   void this.endpoint(audio, pauseId, this.binding, this.speechEpoch);
               },
             }
-          : {endSilence:this.conversation.turnEndSilence,manualTurnEnd:this.conversation.manualTurnEnd,limit:()=>this.callbacks.error("Voice capture reached its limit. Finish this turn before continuing.")},
+          : {
+              endSilence: this.conversation.turnEndSilence,
+              manualTurnEnd: this.conversation.manualTurnEnd,
+              limit: () =>
+                this.callbacks.error(
+                  "Voice capture reached its limit. Finish this turn before continuing.",
+                ),
+            },
       );
       this.source = this.audio.createMediaStreamSource(this.stream);
       this.capture = new AudioWorkletNode(this.audio, "bycoda-voice-capture");
       this.capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-        if (this.closed || this.muted || (this.playbackActive && this.conversation.allowBargeIn === false)) {
+        if (
+          this.closed ||
+          this.muted ||
+          (this.playbackActive && this.conversation.allowBargeIn === false)
+        ) {
           this.level.current = 0;
           return;
         }
@@ -143,12 +171,18 @@ export class LocalVoice {
       throw error;
     }
   }
-  configureConversation(options: {turnEndSilence?:number;allowBargeIn?:boolean;manualTurnEnd?:boolean}) {
-    this.conversation = {...this.conversation,...options};
+  configureConversation(options: {
+    turnEndSilence?: number;
+    allowBargeIn?: boolean;
+    manualTurnEnd?: boolean;
+  }) {
+    this.conversation = { ...this.conversation, ...options };
     this.vad?.setEndSilence(options.turnEndSilence);
-    this.vad?.setManualTurnEnd(options.manualTurnEnd===true);
+    this.vad?.setManualTurnEnd(options.manualTurnEnd === true);
   }
-  finishTurn(){if(!this.closed&&!this.muted)this.vad?.flush();}
+  finishTurn() {
+    if (!this.closed && !this.muted) this.vad?.flush();
+  }
 
   private async transcribe(audio: Int16Array, binding: SpeechBinding, epoch: number) {
     if (!this.info || this.closed) return;
@@ -220,7 +254,8 @@ export class LocalVoice {
       if (pending !== binding && pending.sequence === binding.sequence)
         pending.sequence = accepted.sequence;
     this.silence();
-    if (!this.conversation.languageLock && /^[a-z]{2}$/.test(result.language)) this.language = result.language;
+    if (!this.conversation.languageLock && /^[a-z]{2}$/.test(result.language))
+      this.language = result.language;
     this.callbacks.transcript({ ...result, text }, accepted);
   }
 

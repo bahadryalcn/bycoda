@@ -123,7 +123,8 @@ const click = async (text: string, scope: ParentNode = element) => {
   expect(target, text).toBeTruthy();
   await act(async () => target!.click());
 };
-const context = () => element.querySelector<HTMLElement>(".social-content-page .social-content-context")!;
+const context = () =>
+  element.querySelector<HTMLElement>(".social-content-page .social-content-context")!;
 const entries = () =>
   buttons(element.querySelector<HTMLElement>('[aria-label="Content entry"]')!).map((item) => ({
     label: item.textContent,
@@ -216,7 +217,9 @@ const previewOf = (targets: { contentError?: string; approved: boolean }[]) => (
 });
 
 it("orders preview, check result, approval and one next step and walks the exact-revision flow", async () => {
-  await render(snapshot({ policies: { global: { maxContentCharacters: 280 }, platforms: {} } as never }));
+  await render(
+    snapshot({ policies: { global: { maxContentCharacters: 280 }, platforms: {} } as never }),
+  );
   expect(sections()).toEqual(["Content preview", "Check result", "Approval", "Next step"]);
   const post = element.querySelector<HTMLElement>(".social-preview")!;
   expect(post.textContent).toContain("Brand account");
@@ -227,12 +230,16 @@ it("orders preview, check result, approval and one next step and walks the exact
   expect(button("Schedule posts")!.disabled).toBe(true);
 
   // A flagged check leaves one next step: fix the issue.
-  request.mockResolvedValueOnce(previewOf([{ contentError: "Too long for this account", approved: false }]));
+  request.mockResolvedValueOnce(
+    previewOf([{ contentError: "Too long for this account", approved: false }]),
+  );
   await click("Check account and content");
   expect(element.querySelector('[aria-label="Check result"]')?.textContent).toContain(
     "Too long for this account",
   );
-  expect(element.querySelector('[aria-label="Check result"]')?.textContent).toContain("1 issue found");
+  expect(element.querySelector('[aria-label="Check result"]')?.textContent).toContain(
+    "1 issue found",
+  );
   expect(nextLabel()).toBe("Fix 1 issue");
   expect(element.querySelector(".social-check input")).toBeNull();
   expect(button("Give publishing approval")!.disabled).toBe(true);

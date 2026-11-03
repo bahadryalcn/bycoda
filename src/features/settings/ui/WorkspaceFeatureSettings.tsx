@@ -1,13 +1,7 @@
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import {
-  DashboardSquare,
-  Zap,
-  Inbox,
-  StickyNote,
-  Globe,
-} from "../../../shared/ui/icons";
+import { DashboardSquare, Zap, Inbox, StickyNote, Globe } from "../../../shared/ui/icons";
 import {
   useWorkspaceFeatures,
   workspaceFeatureSettings,
@@ -85,14 +79,26 @@ export function WorkspaceFeatureSettings() {
       id={id === "notes" ? "notes" : `workspace-${id}`}
       label={t(label)}
       description={t(description)}
-      dependency={id === "notes" ? t("Controls project notes and note references in the composer.") : undefined}
-      feedback={errors[id] ? <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback> : undefined}
+      dependency={
+        id === "notes"
+          ? t("Controls project notes and note references in the composer.")
+          : undefined
+      }
+      feedback={
+        errors[id] ? (
+          <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
+        ) : undefined
+      }
     >
-      <Toggle label={t(label)} on={features[id]} onChange={(next) => {
-        const setting = workspaceFeatureSettings[id];
-        setting.save(next);
-        setErrors((current) => ({ ...current, [id]: setting.load() !== next }));
-      }} />
+      <Toggle
+        label={t(label)}
+        on={features[id]}
+        onChange={(next) => {
+          const setting = workspaceFeatureSettings[id];
+          setting.save(next);
+          setErrors((current) => ({ ...current, [id]: setting.load() !== next }));
+        }}
+      />
     </Row>
   ));
 }

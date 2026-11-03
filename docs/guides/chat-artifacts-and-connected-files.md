@@ -33,7 +33,6 @@ Previous attachment names, file references and owning computers are retained in 
 
 If a provider switch fails or is cancelled, its divider shows that result instead of remaining on Preparing. You can select another provider and use Retry with the preserved request and attachments. A retry still waits for the original provider to close safely; an unresolved cleanup error does not send a duplicate request to the new provider.
 
-
 ## Documents, tables, and media
 
 Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.

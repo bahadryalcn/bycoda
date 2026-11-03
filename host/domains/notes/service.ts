@@ -110,8 +110,10 @@ export function createHostNotesService(ports: HostNotesServicePorts) {
       } catch (cause) {
         if (
           cause instanceof Error &&
-          "code" in cause && cause.code === "NOTES_DELETE_NOTIFICATION_FAILED" &&
-          "committed" in cause && cause.committed === true
+          "code" in cause &&
+          cause.code === "NOTES_DELETE_NOTIFICATION_FAILED" &&
+          "committed" in cause &&
+          cause.committed === true
         ) {
           throw new HostDomainOutcomeError(
             "The note was deleted, but its update notification failed. Refresh before continuing.",

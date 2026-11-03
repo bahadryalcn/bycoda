@@ -75,7 +75,7 @@ test("empty state, persisted preferences and clearing history", async ({ page })
   ).toHaveAttribute("aria-checked", "false");
   await page.getByRole("button", { name: "Notifications", exact: true }).click();
   await page.getByRole("button", { name: "Notifications", exact: true }).click();
-  await expect(
-    page.getByRole("region", { name: "Notification options", exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Notification options", exact: true })).toHaveCount(
+    0,
+  );
 });

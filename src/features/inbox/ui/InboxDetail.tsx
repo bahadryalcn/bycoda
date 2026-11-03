@@ -11,7 +11,7 @@ import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { useGithubPrChecks } from "../hooks/useGithubPrChecks";
 import { summarizePrChecks } from "../model/githubPrChecks";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
   Check,
   Copy,
@@ -64,10 +64,7 @@ import { InboxDescriptionSummary, InboxPrChangesGlance } from "./InboxPrOverview
 import { useInboxDetailData } from "./useInboxDetailData";
 
 /** The body is the PR tabs' one shared panel; an issue has no tabs and stays a plain region. */
-function DetailBody({
-  tabbed,
-  ...props
-}: ComponentPropsWithRef<"div"> & { tabbed: boolean }) {
+function DetailBody({ tabbed, ...props }: ComponentPropsWithRef<"div"> & { tabbed: boolean }) {
   return tabbed ? <TabPanel {...props} /> : <div {...props} />;
 }
 
@@ -152,7 +149,8 @@ export function InboxDetail({
               : "Open on GitHub";
   const commentScope = `${cwd}:${item.projectPath}:${inboxItemKey(item)}`;
   const [replyTo, setReplyTo] = useRetainedState<InboxReplyTarget | null>(
-    `inbox:reply:${commentScope}`, null,
+    `inbox:reply:${commentScope}`,
+    null,
   );
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
@@ -218,9 +216,13 @@ export function InboxDetail({
           : gitlabKind
             ? await gitlabWorkItemThread(item.repo, gitlabKind, item.number, { force: true })
             : azureDevOpsKind
-              ? await azureDevOpsWorkItemThread(item.repo, azureDevOpsKind, item.number, { force: true })
+              ? await azureDevOpsWorkItemThread(item.repo, azureDevOpsKind, item.number, {
+                  force: true,
+                })
               : githubKind
-                ? await githubWorkItemThread(item.projectPath, item.repo, githubKind, item.number, { force: true })
+                ? await githubWorkItemThread(item.projectPath, item.repo, githubKind, item.number, {
+                    force: true,
+                  })
                 : null;
       if (next) setThread(next);
       setPostRefreshError(null);
@@ -293,7 +295,7 @@ export function InboxDetail({
           aria-label={externalActionLabel}
           disabled={!item.url}
           disabledReason={item.url ? undefined : t("No link available")}
-          onClick={() => void openUrl(item.url)}
+          onClick={() => openUrlSafely(item.url)}
         >
           <ExternalLink className="icon-sm" strokeWidth={1.75} />
           <span className="@max-[420px]/linked:hidden">{externalActionLabel}</span>
@@ -323,9 +325,7 @@ export function InboxDetail({
             data-inbox-detail-header
             className={`relative border-b border-(--ui-tone-neutral-border) ${panel ? "" : "shrink-0"}`}
           >
-            <div
-              className={`flex w-full min-w-0 flex-col gap-2 px-4 pt-3 ${isPr ? "" : "pb-3"}`}
-            >
+            <div className={`flex w-full min-w-0 flex-col gap-2 px-4 pt-3 ${isPr ? "" : "pb-3"}`}>
               <header className={`flex flex-col ${panel ? "gap-2" : "gap-2.5"}`}>
                 <h1
                   className={`break-words font-medium leading-tight text-(--ui-tone-neutral-fg) ${
@@ -417,11 +417,7 @@ export function InboxDetail({
                     </Badge>
                   ) : null}
                 </div>
-                <BadgeList
-                  label={t("Labels")}
-                  rows={2}
-                  items={inboxLabelItems(item.labels)}
-                />
+                <BadgeList label={t("Labels")} rows={2} items={inboxLabelItems(item.labels)} />
                 {!panel && relatedSessions.length > 0 ? (
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
                     <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)">
@@ -450,76 +446,95 @@ export function InboxDetail({
                     })}
                   </div>
                 ) : null}
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-0.5" data-inbox-detail-actions>
-                <div role="group" aria-label={t("Agent actions")} data-inbox-actions="agent" className="flex flex-wrap items-center gap-2">
-                  {onStart && item.kind !== "pr" ? (
-                    <>
-                      <Button
-                        variant="primary"
-                        type="button"
-                        disabled={
-                          starting ||
-                          (chooseStartProject &&
-                            (projects.length === 0 || !startProject || loading || !!error))
-                        }
-                        onClick={() => {
-                          if (starting) return;
-                          setStarting(true);
-                          setStartError(null);
-                          const next = chooseStartProject
-                            ? { ...item, projectPath: startProject }
-                            : item;
-                          void Promise.resolve(onStart(next, tracker ? details?.body : undefined))
-                            .catch((err: unknown) => {
-                              setStartError(err instanceof Error ? err.message : String(err));
-                            })
-                            .finally(() => setStarting(false));
-                        }}
-                      >
-                        {starting ? t("Sending...") : t("Send to agent")}
+                <div
+                  className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-0.5"
+                  data-inbox-detail-actions
+                >
+                  <div
+                    role="group"
+                    aria-label={t("Agent actions")}
+                    data-inbox-actions="agent"
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    {onStart && item.kind !== "pr" ? (
+                      <>
+                        <Button
+                          variant="primary"
+                          type="button"
+                          disabled={
+                            starting ||
+                            (chooseStartProject &&
+                              (projects.length === 0 || !startProject || loading || !!error))
+                          }
+                          onClick={() => {
+                            if (starting) return;
+                            setStarting(true);
+                            setStartError(null);
+                            const next = chooseStartProject
+                              ? { ...item, projectPath: startProject }
+                              : item;
+                            void Promise.resolve(onStart(next, tracker ? details?.body : undefined))
+                              .catch((err: unknown) => {
+                                setStartError(err instanceof Error ? err.message : String(err));
+                              })
+                              .finally(() => setStarting(false));
+                          }}
+                        >
+                          {starting ? t("Sending...") : t("Send to agent")}
+                        </Button>
+                        {!chooseStartProject && item.repo ? (
+                          <span className="min-w-0 max-w-48 truncate text-ui-caption text-(--ui-text-secondary)">
+                            {t("in {p0}", { p0: item.repo })}
+                          </span>
+                        ) : null}
+                        {chooseStartProject ? (
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <span className="text-ui-caption text-(--ui-text-secondary)">
+                              {t("Agent working folder")}
+                            </span>
+                            <InboxProjectPicker
+                              projects={projects}
+                              value={startProject}
+                              onChange={setStartProject}
+                            />
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {onDiscuss ? (
+                      <Button variant="secondary" type="button" onClick={onDiscuss}>
+                        <MessageSquare className="icon-sm" strokeWidth={1.75} /> {t("Ask")}
                       </Button>
-                      {!chooseStartProject && item.repo ? (
-                        <span className="min-w-0 max-w-48 truncate text-ui-caption text-(--ui-text-secondary)">
-                          {t("in {p0}", { p0: item.repo })}
-                        </span>
-                      ) : null}
-                      {chooseStartProject ? (
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <span className="text-ui-caption text-(--ui-text-secondary)">{t("Agent working folder")}</span>
-                          <InboxProjectPicker projects={projects} value={startProject} onChange={setStartProject} />
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                  {onDiscuss ? (
-                    <Button variant="secondary" type="button" onClick={onDiscuss}>
-                      <MessageSquare className="icon-sm" strokeWidth={1.75} /> {t("Ask")}
-                    </Button>
-                  ) : null}
-                </div>
-                <div role="group" aria-label={t("Provider actions")} data-inbox-actions="public" className="flex flex-wrap items-center gap-2">
-                  {githubKind === "pr" ? (
-                    <GithubPrActions
-                      item={item}
-                      baseRef={baseRef}
-                      headRef={headRef}
-                      reviewedHeadOid={prDiff?.headOid || details?.headRefOid}
-                      onChange={onItemChange}
-                    />
-                  ) : null}
-                  {panel ? null : (
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      disabled={!item.url}
-                      disabledReason={item.url ? undefined : t("No link available")}
-                      onClick={() => void openUrl(item.url)}
-                    >
-                      <ExternalLink className="icon-sm" strokeWidth={1.75} />
-                      {externalActionLabel}
-                    </Button>
-                  )}
-                </div>
+                    ) : null}
+                  </div>
+                  <div
+                    role="group"
+                    aria-label={t("Provider actions")}
+                    data-inbox-actions="public"
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    {githubKind === "pr" ? (
+                      <GithubPrActions
+                        item={item}
+                        baseRef={baseRef}
+                        headRef={headRef}
+                        reviewedHeadOid={prDiff?.headOid || details?.headRefOid}
+                        onChange={onItemChange}
+                      />
+                    ) : null}
+                    {panel ? null : (
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        disabled={!item.url}
+                        disabledReason={item.url ? undefined : t("No link available")}
+                        onClick={() => openUrlSafely(item.url)}
+                      >
+                        <ExternalLink className="icon-sm" strokeWidth={1.75} />
+                        {externalActionLabel}
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 {startError ? <InlineError>{startError}</InlineError> : null}
               </header>
@@ -584,24 +599,33 @@ export function InboxDetail({
                       diff={prDiff}
                       fullFile={fullFile}
                       focusPath={diffFocusPath}
-                      contextControl={inboxShowsFullFileDiff(item) ? (
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <SegmentedControl
-                            label={t("Diff context")}
-                            selectionRole="pressed"
-                            value={diffMode}
-                            onValueChange={(next) => setDiffMode(next === "full" ? "full" : "hunks")}
-                            options={[{ value: "hunks", label: t("Hunks") }, { value: "full", label: t("Full file") }]}
-                          />
-                          {baseRef && headRef ? (
-                            <span className="inline-flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
-                              <GitCompare className="icon-xs shrink-0" aria-hidden="true" />
-                              <span className="wrap-anywhere">{baseRef} ← {headRef}</span>
-                              <CopyBranchNameButton branch={headRef} />
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : undefined}
+                      contextControl={
+                        inboxShowsFullFileDiff(item) ? (
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <SegmentedControl
+                              label={t("Diff context")}
+                              selectionRole="pressed"
+                              value={diffMode}
+                              onValueChange={(next) =>
+                                setDiffMode(next === "full" ? "full" : "hunks")
+                              }
+                              options={[
+                                { value: "hunks", label: t("Hunks") },
+                                { value: "full", label: t("Full file") },
+                              ]}
+                            />
+                            {baseRef && headRef ? (
+                              <span className="inline-flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
+                                <GitCompare className="icon-xs shrink-0" aria-hidden="true" />
+                                <span className="wrap-anywhere">
+                                  {baseRef} ← {headRef}
+                                </span>
+                                <CopyBranchNameButton branch={headRef} />
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : undefined
+                      }
                     />
                   </>
                 ) : (
@@ -674,12 +698,23 @@ export function InboxDetail({
                     replyMode={
                       linear ? "parent" : jira || gitlab || azuredevops ? undefined : "thread"
                     }
-                    onReply={(next) => { if (!posting) setReplyTo(next); }}
+                    onReply={(next) => {
+                      if (!posting) setReplyTo(next);
+                    }}
                   />
                   {postRefreshError ? (
-                    <Alert tone="warning" role="status" action={
-                      <Button loading={threadRefreshing} onClick={() => void refreshPostedThread()}>{t("Retry refresh")}</Button>
-                    }>
+                    <Alert
+                      tone="warning"
+                      role="status"
+                      action={
+                        <Button
+                          loading={threadRefreshing}
+                          onClick={() => void refreshPostedThread()}
+                        >
+                          {t("Retry refresh")}
+                        </Button>
+                      }
+                    >
                       <p>{t("Comment sent. Could not refresh the conversation.")}</p>
                       <p className="wrap-anywhere text-ui-caption">{postRefreshError}</p>
                     </Alert>

@@ -115,7 +115,11 @@ it("keeps occurrence identities stable when newer arrivals prepend", () => {
   const older = { ...entry, occurredAt: 1000 };
   const reused = { ...entry, occurredAt: 2000 };
   const before = historyOccurrenceIds([reused, older]);
-  const after = historyOccurrenceIds([{ ...entry, key: "x:question:9", occurredAt: 3000 }, reused, older]);
+  const after = historyOccurrenceIds([
+    { ...entry, key: "x:question:9", occurredAt: 3000 },
+    reused,
+    older,
+  ]);
   expect(before).toEqual(after.slice(1));
   expect(new Set(before).size).toBe(2);
   // Identical key and time are still distinct rows.

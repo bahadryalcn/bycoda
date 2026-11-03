@@ -2,7 +2,13 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { CheckCircle, CircleAlert, CircleDashed, CircleDot, CircleX } from "../../../shared/ui/icons";
+import {
+  CheckCircle,
+  CircleAlert,
+  CircleDashed,
+  CircleDot,
+  CircleX,
+} from "../../../shared/ui/icons";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import type { HostTask, TaskOwnerNotice } from "../model/hostTasks";
 import {
@@ -59,7 +65,7 @@ export function TaskStatusText({
       align="start"
       data-no-drag=""
       data-task-status-line={status.kind}
-      title={t("Show details")}
+      tooltip={t("Show details")}
       className={shared}
       onClick={(event) => {
         event.stopPropagation();
@@ -86,7 +92,10 @@ const NOTICE_GROUPS: readonly { kind: TaskOwnerNotice["kind"]; label: () => stri
 export function TaskOwnerNotices({ task }: { task: HostTask }) {
   useLocale();
   const notices = finishedOwnerNotices(task);
-  if (notices.length === 0 && !(task.completedWithFindings && ["review", "done"].includes(task.status)))
+  if (
+    notices.length === 0 &&
+    !(task.completedWithFindings && ["review", "done"].includes(task.status))
+  )
     return null;
   return (
     <section
@@ -108,10 +117,7 @@ export function TaskOwnerNotices({ task }: { task: HostTask }) {
             <p className="text-ui-micro text-(--ui-text-muted)">{group.label()}</p>
             <ul className="space-y-0.5">
               {rows.map((notice) => (
-                <li
-                  key={notice.id}
-                  className="text-(--ui-text-secondary)"
-                >
+                <li key={notice.id} className="text-(--ui-text-secondary)">
                   <OverflowTooltip label={notice.message}>
                     <span className="line-clamp-2 break-words">{notice.message}</span>
                   </OverflowTooltip>
@@ -197,10 +203,7 @@ export function TaskOutcomeSummary({ task }: { task: HostTask }) {
         {t("What was done")}
       </h3>
       {summary ? <ClampedMarkdown text={summary} /> : null}
-      {diff ? (
-        <p className="font-mono text-ui-micro text-(--ui-text-muted)">{diff}</p>
-      ) : null}
+      {diff ? <p className="font-mono text-ui-micro text-(--ui-text-muted)">{diff}</p> : null}
     </section>
   );
 }
-

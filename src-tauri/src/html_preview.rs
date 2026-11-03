@@ -59,6 +59,14 @@ fn preview_asset(root: &Path, relative: &str) -> Result<PathBuf, String> {
     if !candidate.starts_with(root) || !candidate.is_file() {
         return Err("Asset is outside the preview folder".into());
     }
+    // Never serve hidden files or folders (.env, .git, .ssh, ...) to the page.
+    let hidden = candidate.strip_prefix(root).is_ok_and(|rel| {
+        rel.components()
+            .any(|part| part.as_os_str().to_string_lossy().starts_with('.'))
+    });
+    if hidden {
+        return Err("Hidden files are not served by HTML previews".into());
+    }
     if candidate.metadata().map_err(|e| e.to_string())?.len() > 16 * 1024 * 1024 {
         return Err("Preview asset is too large".into());
     }
@@ -131,9 +139,8 @@ pub fn respond(request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<
         .status(status)
         .header("Content-Type", content_type)
         .header("Cache-Control", "no-store")
-        .header("Access-Control-Allow-Origin", "*")
         .header("X-Content-Type-Options", "nosniff")
-        .header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; media-src 'self' data: blob: https:; connect-src 'self' https:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'")
+        .header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; media-src 'self' data: blob: https:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'")
         .body(body)
         .expect("static preview response headers")
 }
@@ -249,6 +256,24 @@ mod tests {
         assert!(preview_content(&format!("/{token}/file:///secret.txt")).is_err());
         close_html_preview(token.clone());
         assert!(preview_content(&format!("/{token}/index.html")).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn preview_rejects_hidden_files_and_folders() {
+        let root = std::env::temp_dir().join(format!("bycoda-hidden-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir_all(root.join("assets")).unwrap();
+        std::fs::write(root.join(".env"), "TOKEN=1").unwrap();
+        std::fs::write(root.join(".git/config"), "[core]").unwrap();
+        std::fs::write(root.join("assets/.secret"), "x").unwrap();
+        std::fs::write(root.join("assets/app.js"), "1").unwrap();
+        let root = root.canonicalize().unwrap();
+        assert!(preview_asset(&root, ".env").is_err());
+        assert!(preview_asset(&root, ".git/config").is_err());
+        assert!(preview_asset(&root, "assets/.secret").is_err());
+        assert!(preview_asset(&root, "assets/../.env").is_err());
+        assert!(preview_asset(&root, "assets/app.js").is_ok());
         std::fs::remove_dir_all(root).unwrap();
     }
 

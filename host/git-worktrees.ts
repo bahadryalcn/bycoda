@@ -310,7 +310,8 @@ export function resolveHostWorktree(projectCwd: string, requested: unknown): str
   // before refusing.
   // Only a cached list needs a second look; a list git just produced is already current.
   const first = listSync(projectCwd);
-  const target = find(first.value) ?? (first.ran ? undefined : find(listSync(projectCwd, true).value));
+  const target =
+    find(first.value) ?? (first.ran ? undefined : find(listSync(projectCwd, true).value));
   if (!target || !available(target.path))
     throw new Error("Choose an available worktree of this project");
   return canonicalWorkspacePathSync(target.path);

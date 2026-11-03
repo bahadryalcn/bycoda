@@ -105,7 +105,9 @@ export function useHarnessLifecycle({
  * fresh session would otherwise show only the built-in fallback model
  * until the picker happened to be opened. Idempotent: refreshHarnessCatalogs
  * dedupes via hasLiveCatalog and its inflight map. */
-export function useActiveHarnessCatalogRefresh(activeHarness: Session["harness"] | undefined): void {
+export function useActiveHarnessCatalogRefresh(
+  activeHarness: Session["harness"] | undefined,
+): void {
   useEffect(() => {
     if (!activeHarness || !isLiveHarness(activeHarness)) return;
     void refreshHarnessCatalogs([activeHarness]);

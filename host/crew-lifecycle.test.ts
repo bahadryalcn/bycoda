@@ -42,7 +42,9 @@ async function waitForReview(tasks: HostTasks, store: HostStore, taskId: string)
           ? (await store.session(task.reviewer.sessionId)).status
           : undefined,
       };
-      throw new Error(`Crew fixture did not reach review after ${Date.now() - started}ms: ${JSON.stringify(stages)}`);
+      throw new Error(
+        `Crew fixture did not reach review after ${Date.now() - started}ms: ${JSON.stringify(stages)}`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }

@@ -34,7 +34,13 @@ import { ExternalMcpAccess } from "./ExternalMcpAccess";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
 import { Globe, Plus, RefreshCw, ListFilter, MoreHorizontal } from "../../../shared/ui/icons";
-import { canSignInMcp, isMcpConnected, MCP_PROVIDER_LABELS, needsMcpSignIn, type McpConnection } from "../model/mcp";
+import {
+  canSignInMcp,
+  isMcpConnected,
+  MCP_PROVIDER_LABELS,
+  needsMcpSignIn,
+  type McpConnection,
+} from "../model/mcp";
 import { AdvancedSettings, Row } from "./settingsControls";
 import {
   getCachedMcpSettings,
@@ -57,8 +63,12 @@ function actionErrorText(cause: unknown, provider?: Provider): string {
   const text = String(cause);
   if (provider && /CLI not found/i.test(text)) {
     return provider === "cursor"
-      ? t("Cursor CLI (cursor-agent) is not installed. Install it to sign in from here, or sign in to this server inside Cursor.")
-      : t("{p0} CLI is not installed. Install it to sign in from here.", { p0: MCP_PROVIDER_LABELS[provider] });
+      ? t(
+          "Cursor CLI (cursor-agent) is not installed. Install it to sign in from here, or sign in to this server inside Cursor.",
+        )
+      : t("{p0} CLI is not installed. Install it to sign in from here.", {
+          p0: MCP_PROVIDER_LABELS[provider],
+        });
   }
   return text;
 }
@@ -302,7 +312,12 @@ function ExpandableWarning({ children }: { children: ReactNode }) {
       state="warning"
       action={
         overflowing || expanded ? (
-          <Button variant="ghost" size="sm" aria-expanded={expanded} onClick={() => setExpanded((open) => !open)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((open) => !open)}
+          >
             {expanded ? t("Show less") : t("Show more")}
           </Button>
         ) : undefined
@@ -459,19 +474,34 @@ ${query}`;
     (limit: number) =>
       setReveal((current) => ({
         key: revealKey,
-        count: Math.min((current.key === revealKey ? current.count : BATCH_SIZE) + BATCH_SIZE, limit),
+        count: Math.min(
+          (current.key === revealKey ? current.count : BATCH_SIZE) + BATCH_SIZE,
+          limit,
+        ),
       })),
     [revealKey],
   );
   const pageServers = visible.slice(0, visibleCount);
   useEffect(() => {
-    if (!continuation.current || !listRoot.current || visibleCount >= visible.length || typeof IntersectionObserver === "undefined") return;
+    if (
+      !continuation.current ||
+      !listRoot.current ||
+      visibleCount >= visible.length ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
     let cancelled = false;
-    const observer = new IntersectionObserver((entries) => {
-      if (!cancelled && entries.some((entry) => entry.isIntersecting)) revealMore(visible.length);
-    }, { root: listRoot.current, rootMargin: "160px" });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!cancelled && entries.some((entry) => entry.isIntersecting)) revealMore(visible.length);
+      },
+      { root: listRoot.current, rootMargin: "160px" },
+    );
     observer.observe(continuation.current);
-    return () => { cancelled = true; observer.disconnect(); };
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
   }, [visible.length, visibleCount, revealMore]);
 
   async function login(server: ServerRow) {
@@ -502,7 +532,8 @@ ${query}`;
     setActionError("");
     try {
       if (
-        confirmedScope === undefined && !(await confirmInApp({
+        confirmedScope === undefined &&
+        !(await confirmInApp({
           title: t("Remove MCP server?"),
           message: t(
             "“{p0}” is removed from the {p1} scope. Conversations that use it lose its tools; you can add it again later.",
@@ -529,16 +560,40 @@ ${query}`;
   }
 
   return (
-    <div id="setting-mcp-servers" data-setting-id="mcp-servers" tabIndex={-1} className={styles.connections}>
+    <div
+      id="setting-mcp-servers"
+      data-setting-id="mcp-servers"
+      tabIndex={-1}
+      className={styles.connections}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-ui-title font-medium">{t("MCP connections")}</h2>
-            <span id="setting-mcp-scopes" data-setting-id="mcp-scopes" tabIndex={-1} className={styles.scopeHelp}>
+            <span
+              id="setting-mcp-scopes"
+              data-setting-id="mcp-scopes"
+              tabIndex={-1}
+              className={styles.scopeHelp}
+            >
               <InfoPopover label={t("Advanced: scopes and connection status")}>
-                {[scopeDescription("local"), scopeDescription("project"), scopeDescription("user")].map((description) => <p key={description}>{description}</p>)}
-                <p>{t("Claude Code status comes from its CLI. Other providers show configured entries. Sign in opens your browser when supported.")}</p>
-                <p>{t("Claude CLI status is matched by server name; it is not verified separately for each scope.")}</p>
+                {[
+                  scopeDescription("local"),
+                  scopeDescription("project"),
+                  scopeDescription("user"),
+                ].map((description) => (
+                  <p key={description}>{description}</p>
+                ))}
+                <p>
+                  {t(
+                    "Claude Code status comes from its CLI. Other providers show configured entries. Sign in opens your browser when supported.",
+                  )}
+                </p>
+                <p>
+                  {t(
+                    "Claude CLI status is matched by server name; it is not verified separately for each scope.",
+                  )}
+                </p>
               </InfoPopover>
             </span>
             {projectPicker}
@@ -566,38 +621,45 @@ ${query}`;
           </Button>
         </div>
       </div>
-      {servers.length > 0 || loading || query || effectiveFilter !== "all" || scopeFilter !== "all" || showAllProviders ? (
-      <div className={styles.toolbar}>
-        <div className={styles.search}>
-          <SearchInput
-            appearance="field"
-            aria-label={t("Search MCP servers")}
-            type="search"
-            placeholder={t("Search MCP servers")}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
+      {servers.length > 0 ||
+      loading ||
+      query ||
+      effectiveFilter !== "all" ||
+      scopeFilter !== "all" ||
+      showAllProviders ? (
+        <div className={styles.toolbar}>
+          <div className={styles.search}>
+            <SearchInput
+              appearance="field"
+              aria-label={t("Search MCP servers")}
+              type="search"
+              placeholder={t("Search MCP servers")}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          <Button
+            ref={filterAnchor}
+            iconOnly
+            label={t("Filters")}
+            selected={effectiveFilter !== "all" || scopeFilter !== "all" || showAllProviders}
+            aria-expanded={filtersOpen}
+            aria-haspopup="dialog"
+            onClick={() => setFiltersOpen(!filtersOpen)}
+          >
+            <ListFilter className="icon-sm" />
+          </Button>
+          {effectiveFilter !== "all" || scopeFilter !== "all" ? (
+            <span className={styles.filterLabel}>
+              {[
+                effectiveFilter !== "all" ? MCP_PROVIDER_LABELS[effectiveFilter] : "",
+                scopeFilter !== "all" ? scopeLabel(scopeFilter) : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          ) : null}
         </div>
-        <Button
-          ref={filterAnchor}
-          iconOnly
-          label={t("Filters")}
-          selected={effectiveFilter !== "all" || scopeFilter !== "all" || showAllProviders}
-          aria-expanded={filtersOpen}
-          aria-haspopup="dialog"
-          onClick={() => setFiltersOpen(!filtersOpen)}
-        >
-          <ListFilter className="icon-sm" />
-        </Button>
-        {effectiveFilter !== "all" || scopeFilter !== "all" ? (
-          <span className={styles.filterLabel}>
-            {[
-              effectiveFilter !== "all" ? MCP_PROVIDER_LABELS[effectiveFilter] : "",
-              scopeFilter !== "all" ? scopeLabel(scopeFilter) : "",
-            ].filter(Boolean).join(" · ")}
-          </span>
-        ) : null}
-      </div>
       ) : null}
       {filtersOpen ? (
         <Popover
@@ -643,7 +705,9 @@ ${query}`;
                 label: scope === "all" ? t("All") : scopeLabel(scope),
                 accessory: (
                   <Badge variant="count" size="xs" tone="neutral">
-                    {scope === "all" ? servers.length : servers.filter((server) => server.scope === scope).length}
+                    {scope === "all"
+                      ? servers.length
+                      : servers.filter((server) => server.scope === scope).length}
                   </Badge>
                 ),
               }))}
@@ -660,7 +724,9 @@ ${query}`;
             </Button>
             <Button
               variant="secondary"
-              disabled={effectiveFilter === "all" && scopeFilter === "all" && !showAllProviders && !query}
+              disabled={
+                effectiveFilter === "all" && scopeFilter === "all" && !showAllProviders && !query
+              }
               onClick={() => {
                 setFilter("all");
                 setScopeFilter("all");
@@ -676,19 +742,37 @@ ${query}`;
       {actionError ? (
         <SettingsFeedback
           state="error"
-          action={<Button variant="ghost" onClick={() => setActionError("")}>{t("Dismiss")}</Button>}
+          action={
+            <Button variant="ghost" onClick={() => setActionError("")}>
+              {t("Dismiss")}
+            </Button>
+          }
         >
           {actionError}
         </SettingsFeedback>
       ) : null}
-      {error ? <SettingsFeedback state="error" action={<Button loading={loading} onClick={() => void refresh()}>{t("Retry")}</Button>}>{servers.length ? `${t("Showing the last successful result.")} ` : ""}{error}</SettingsFeedback> : null}
+      {error ? (
+        <SettingsFeedback
+          state="error"
+          action={
+            <Button loading={loading} onClick={() => void refresh()}>
+              {t("Retry")}
+            </Button>
+          }
+        >
+          {servers.length ? `${t("Showing the last successful result.")} ` : ""}
+          {error}
+        </SettingsFeedback>
+      ) : null}
       {claudeError && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
         <ExpandableWarning>
           {t("Claude connection status unavailable: ")} {claudeError}
         </ExpandableWarning>
       ) : claudePartial && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
         <SettingsFeedback state="warning">
-          {t("Claude did not finish checking every server in time. Servers it did not reach show Configured.")}
+          {t(
+            "Claude did not finish checking every server in time. Servers it did not reach show Configured.",
+          )}
         </SettingsFeedback>
       ) : null}
       {loading && servers.length === 0 ? (
@@ -697,7 +781,8 @@ ${query}`;
         <SettingsFeedback
           state="empty"
           action={
-            servers.length > 0 && (query.trim() || effectiveFilter !== "all" || scopeFilter !== "all") ? (
+            servers.length > 0 &&
+            (query.trim() || effectiveFilter !== "all" || scopeFilter !== "all") ? (
               <Button
                 onClick={() => {
                   setFilter("all");
@@ -718,84 +803,115 @@ ${query}`;
               : t("No MCP servers configured for this provider.")}
         </SettingsFeedback>
       ) : (
-        <div ref={listRoot} className={styles.list} role="region" aria-label={t("MCP connections")} tabIndex={0}>
+        <div
+          ref={listRoot}
+          className={styles.list}
+          role="region"
+          aria-label={t("MCP connections")}
+          tabIndex={0}
+        >
           {pageServers.map((server) => {
             // Until Claude reports health, a configured Claude row is unknown, not signed out.
-            const checking = claudeChecking && server.provider === "claude" && server.status === "Configured";
+            const checking =
+              claudeChecking && server.provider === "claude" && server.status === "Configured";
             return (
-            <div key={serverRowKey(server)} className={styles.row}>
-              <span className={styles.providerIcon}>
-                <ProviderIcon provider={server.provider} />
-              </span>
-              <div className={styles.identity}>
-                <div className={styles.nameLine}>
-                  <OverflowTooltip label={server.name}>
-                    <div className={styles.name}>
-                      {server.name}
-                    </div>
-                  </OverflowTooltip>
-                  <Badge size="xs" appearance="subtle" tone={server.scope === "user" ? "info" : "neutral"} className={styles.scopeTag}>
-                    {scopeLabel(server.scope)}
-                  </Badge>
+              <div key={serverRowKey(server)} className={styles.row}>
+                <span className={styles.providerIcon}>
+                  <ProviderIcon provider={server.provider} />
+                </span>
+                <div className={styles.identity}>
+                  <div className={styles.nameLine}>
+                    <OverflowTooltip label={server.name}>
+                      <div className={styles.name}>{server.name}</div>
+                    </OverflowTooltip>
+                    <Badge
+                      size="xs"
+                      appearance="subtle"
+                      tone={server.scope === "user" ? "info" : "neutral"}
+                      className={styles.scopeTag}
+                    >
+                      {scopeLabel(server.scope)}
+                    </Badge>
+                  </div>
                 </div>
-              </div>
-              <span className={styles.status}>
-              <Badge
-                className={styles.statusBadge}
-                size="sm"
-                appearance="subtle"
-                tone={
-                  checking
-                    ? "neutral"
-                    : /needs authentication/i.test(server.status)
-                    ? "warning"
-                    : /failed|error|disconnected/i.test(server.status)
-                      ? "danger"
-                      : isMcpConnected(server.status) || server.auth === "signed_in"
-                        ? "success"
-                        : "neutral"
-                }
-              >
-                {checking ? t("Checking…") : server.status}
-              </Badge>
-              </span>
-              <div className={styles.details}>
-                <p className={styles.metadata} title={server.configPath || undefined}>
-                  {MCP_PROVIDER_LABELS[server.provider]} &#183; {server.transport || "MCP"}
-                </p>
-                {server.configPath ? (
-                  <details className={styles.disclosure}>
-                    <summary>{t("Connection details")}</summary>
-                    <div className={styles.detailContent}>
-                      <span className={styles.path}>{server.configPath}</span>
-                      {server.provider === "claude" ? <p>{t("Claude CLI status is matched by server name; it is not verified separately for each scope.")}</p> : null}
-                    </div>
-                  </details>
-                ) : null}
-              </div>
-              <div className={styles.rowActions}>
-                {!checking && needsMcpSignIn(server) ? (
-                    <Button stableWidth type="button"
+                <span className={styles.status}>
+                  <Badge
+                    className={styles.statusBadge}
+                    size="sm"
+                    appearance="subtle"
+                    tone={
+                      checking
+                        ? "neutral"
+                        : /needs authentication/i.test(server.status)
+                          ? "warning"
+                          : /failed|error|disconnected/i.test(server.status)
+                            ? "danger"
+                            : isMcpConnected(server.status) || server.auth === "signed_in"
+                              ? "success"
+                              : "neutral"
+                    }
+                  >
+                    {checking ? t("Checking…") : server.status}
+                  </Badge>
+                </span>
+                <div className={styles.details}>
+                  <p className={styles.metadata} title={server.configPath || undefined}>
+                    {MCP_PROVIDER_LABELS[server.provider]} &#183; {server.transport || "MCP"}
+                  </p>
+                  {server.configPath ? (
+                    <details className={styles.disclosure}>
+                      <summary>{t("Connection details")}</summary>
+                      <div className={styles.detailContent}>
+                        <span className={styles.path}>{server.configPath}</span>
+                        {server.provider === "claude" ? (
+                          <p>
+                            {t(
+                              "Claude CLI status is matched by server name; it is not verified separately for each scope.",
+                            )}
+                          </p>
+                        ) : null}
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
+                <div className={styles.rowActions}>
+                  {!checking && needsMcpSignIn(server) ? (
+                    <Button
+                      stableWidth
+                      type="button"
                       loading={busy?.server === serverRowKey(server) && busy.action === "login"}
                       disabled={loading || busy !== null}
-                      onClick={() => void login(server)}>{t("Sign in")}</Button>
+                      onClick={() => void login(server)}
+                    >
+                      {t("Sign in")}
+                    </Button>
                   ) : null}
+                </div>
+                <Button
+                  className={styles.rowMenu}
+                  type="button"
+                  variant="ghost"
+                  iconOnly
+                  label={t("Actions for {p0}", { p0: server.name })}
+                  tooltip={t("Actions for {p0}", { p0: server.name })}
+                  aria-haspopup="menu"
+                  aria-expanded={menu?.server === server}
+                  disabled={loading || busy !== null}
+                  loading={busy?.server === serverRowKey(server) && busy.action === "remove"}
+                  onClick={(event) => setMenu({ server, anchor: event.currentTarget })}
+                >
+                  <MoreHorizontal className="icon-sm" />
+                </Button>
               </div>
-              <Button className={styles.rowMenu} type="button" variant="ghost" iconOnly
-                label={t("Actions for {p0}", { p0: server.name })}
-                tooltip={t("Actions for {p0}", { p0: server.name })}
-                aria-haspopup="menu" aria-expanded={menu?.server === server}
-                disabled={loading || busy !== null}
-                loading={busy?.server === serverRowKey(server) && busy.action === "remove"}
-                onClick={(event) => setMenu({ server, anchor: event.currentTarget })}>
-                <MoreHorizontal className="icon-sm" />
-              </Button>
-            </div>
             );
           })}
-          {visibleCount < visible.length ? <div ref={continuation} className={styles.continuation}>
-            <Button variant="ghost" onClick={() => revealMore(visible.length)}>{t("Show more connections")}</Button>
-          </div> : null}
+          {visibleCount < visible.length ? (
+            <div ref={continuation} className={styles.continuation}>
+              <Button variant="ghost" onClick={() => revealMore(visible.length)}>
+                {t("Show more connections")}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
       {visibleCount < visible.length ? (
@@ -813,47 +929,118 @@ ${query}`;
         <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
           {t(
             "Operation in progress for {p0}. Wait for the result before starting another operation.",
-            { p0: (() => {
-              const server = servers.find((entry) => serverRowKey(entry) === busy.server);
-              return server ? `${t(busy.action === "login" ? "Sign in" : "Remove")}: ${server.name} · ${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}` : busy.server;
-            })() },
+            {
+              p0: (() => {
+                const server = servers.find((entry) => serverRowKey(entry) === busy.server);
+                return server
+                  ? `${t(busy.action === "login" ? "Sign in" : "Remove")}: ${server.name} · ${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`
+                  : busy.server;
+              })(),
+            },
           )}
         </p>
       ) : null}
-      {menu ? <DropdownMenu anchor={menu.anchor} label={t("Actions for {p0}", { p0: menu.server.name })}
-        onClose={() => setMenu(null)}
-        items={[
-          ...(canSignInMcp(menu.server) && menu.server.auth !== "none" && !needsMcpSignIn(menu.server)
-            ? [{ kind: "item" as const, id: "login", label: t("Sign in again"), disabled: loading || busy !== null }] : []),
-          { kind: "item", id: "reveal", label: t("Show config"), disabled: !menu.server.configPath },
-          { kind: "item", id: "copy", label: t("Copy config path"), disabled: !menu.server.configPath },
-          { kind: "item", id: "remove", label: t("Remove"), danger: true,
-            disabled: menu.server.provider !== "claude" || loading || busy !== null,
-            description: menu.server.provider !== "claude" ? t("Edit in provider config") : undefined },
-        ]}
-        onPick={(action) => {
-          const server = menu.server;
-          setMenu(null);
-          if (action === "login") void login(server);
-          if (action === "reveal") void revealPath(server.configPath).catch((cause) => setActionError(String(cause)));
-          if (action === "copy") void copyText(server.configPath).catch((cause) => setActionError(String(cause)));
-          if (action === "remove") {
-            if (server.configPath) void remove(server);
-            else { setRemoveTarget(server); }
+      {menu ? (
+        <DropdownMenu
+          anchor={menu.anchor}
+          label={t("Actions for {p0}", { p0: menu.server.name })}
+          onClose={() => setMenu(null)}
+          items={[
+            ...(canSignInMcp(menu.server) &&
+            menu.server.auth !== "none" &&
+            !needsMcpSignIn(menu.server)
+              ? [
+                  {
+                    kind: "item" as const,
+                    id: "login",
+                    label: t("Sign in again"),
+                    disabled: loading || busy !== null,
+                  },
+                ]
+              : []),
+            {
+              kind: "item",
+              id: "reveal",
+              label: t("Show config"),
+              disabled: !menu.server.configPath,
+            },
+            {
+              kind: "item",
+              id: "copy",
+              label: t("Copy config path"),
+              disabled: !menu.server.configPath,
+            },
+            {
+              kind: "item",
+              id: "remove",
+              label: t("Remove"),
+              danger: true,
+              disabled: menu.server.provider !== "claude" || loading || busy !== null,
+              description:
+                menu.server.provider !== "claude" ? t("Edit in provider config") : undefined,
+            },
+          ]}
+          onPick={(action) => {
+            const server = menu.server;
+            setMenu(null);
+            if (action === "login") void login(server);
+            if (action === "reveal")
+              void revealPath(server.configPath).catch((cause) => setActionError(String(cause)));
+            if (action === "copy")
+              void copyText(server.configPath).catch((cause) => setActionError(String(cause)));
+            if (action === "remove") {
+              if (server.configPath) void remove(server);
+              else {
+                setRemoveTarget(server);
+              }
+            }
+          }}
+        />
+      ) : null}
+      {removeTarget ? (
+        <Modal
+          title={t("Remove MCP server?")}
+          size="sm"
+          onClose={() => {
+            if (!busyRef.current) setRemoveTarget(null);
+          }}
+          footer={
+            <>
+              <Button disabled={busy !== null} onClick={() => setRemoveTarget(null)}>
+                {t("Cancel")}
+              </Button>
+              <Button
+                tone="danger"
+                loading={busy !== null}
+                onClick={() => void remove(removeTarget, removeScope)}
+              >
+                {t("Remove server")}
+              </Button>
+            </>
           }
-        }} /> : null}
-      {removeTarget ? <Modal title={t("Remove MCP server?")} size="sm"
-        onClose={() => { if (!busyRef.current) setRemoveTarget(null); }}
-        footer={<>
-          <Button disabled={busy !== null} onClick={() => setRemoveTarget(null)}>{t("Cancel")}</Button>
-          <Button tone="danger" loading={busy !== null} onClick={() => void remove(removeTarget, removeScope)}>{t("Remove server")}</Button>
-        </>}>
-        <p>{t("“{p0}” is removed from the {p1} scope. Conversations that use it lose its tools; you can add it again later.", { p0: removeTarget.name, p1: scopeLabel(removeScope) })}</p>
-        <SharedSelect label={t("Scope to remove {p0} from", { p0: removeTarget.name })}
-          disabled={busy !== null} value={removeScope} onValueChange={(value) => setRemoveScopes((current) => ({ ...current, [removeTarget.name]: value as Scope }))}
-          options={[{ value: "local", label: t("Local project") }, { value: "project", label: t("Project") }, { value: "user", label: t("Personal") }]} />
-        {actionError ? <SettingsFeedback state="error">{actionError}</SettingsFeedback> : null}
-      </Modal> : null}
+        >
+          <p>
+            {t(
+              "“{p0}” is removed from the {p1} scope. Conversations that use it lose its tools; you can add it again later.",
+              { p0: removeTarget.name, p1: scopeLabel(removeScope) },
+            )}
+          </p>
+          <SharedSelect
+            label={t("Scope to remove {p0} from", { p0: removeTarget.name })}
+            disabled={busy !== null}
+            value={removeScope}
+            onValueChange={(value) =>
+              setRemoveScopes((current) => ({ ...current, [removeTarget.name]: value as Scope }))
+            }
+            options={[
+              { value: "local", label: t("Local project") },
+              { value: "project", label: t("Project") },
+              { value: "user", label: t("Personal") },
+            ]}
+          />
+          {actionError ? <SettingsFeedback state="error">{actionError}</SettingsFeedback> : null}
+        </Modal>
+      ) : null}
       {addOpen ? (
         <AddServerModal
           cwd={cwd}

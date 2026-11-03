@@ -55,8 +55,7 @@ vi.mock("../../core/jsonRpc", () => ({
             ),
           },
         };
-      if (method === "mcpServerStatus/list")
-        return { data: [], nextCursor: null };
+      if (method === "mcpServerStatus/list") return { data: [], nextCursor: null };
       if (method === "thread/start") return { thread: { id: "text-thread" } };
       if (method === "turn/start") {
         state.starts.push(params);

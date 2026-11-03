@@ -34,7 +34,10 @@ function sameKeys(a: readonly unknown[], b: readonly unknown[]) {
  * timed success flash, a persistent error until retried, and timer teardown on unmount. The payload
  * and the clipboard call stay with the caller: `copy(() => copyText(text))`.
  */
-export function useCopyFeedback({ resetKeys = NO_KEYS, successMs = 2000 }: CopyFeedbackOptions = {}) {
+export function useCopyFeedback({
+  resetKeys = NO_KEYS,
+  successMs = 2000,
+}: CopyFeedbackOptions = {}) {
   const [view, setView] = useState<View>({ keys: resetKeys, epoch: 0, status: "idle" });
   // Adjusting during render shows the idle state for the new content on its very first paint.
   if (!sameKeys(view.keys, resetKeys)) {
@@ -73,7 +76,11 @@ export function useCopyFeedback({ resetKeys = NO_KEYS, successMs = 2000 }: CopyF
         if (!mounted.current || epoch.current !== owner) return;
         inFlight.current = false;
         const error =
-          status === "failed" ? (reason instanceof Error ? reason.message : String(reason)) : undefined;
+          status === "failed"
+            ? reason instanceof Error
+              ? reason.message
+              : String(reason)
+            : undefined;
         setView((prev) => (prev.epoch === owner ? { ...prev, status, error } : prev));
         if (status === "copied") {
           timer.current = setTimeout(() => {

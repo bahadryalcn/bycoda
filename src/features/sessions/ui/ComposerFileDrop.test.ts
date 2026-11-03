@@ -108,9 +108,9 @@ describe("Composer Explorer file drops", () => {
       ),
     );
     // One mark on the composer box and one badge that says what releasing does.
-    expect(container.querySelector("[data-composer-box]")?.getAttribute("data-drop-indicator")).toBe(
-      "inside",
-    );
+    expect(
+      container.querySelector("[data-composer-box]")?.getAttribute("data-drop-indicator"),
+    ).toBe("inside");
     expect(document.querySelector(".pointer-drop-hint")?.textContent).toBe("Attach 1 file");
     expect(container.textContent).not.toContain("Drop files to attach");
 

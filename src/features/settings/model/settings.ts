@@ -1760,11 +1760,16 @@ export function loadTabAnimationsEnabled(): boolean {
 
 export function saveTabAnimationsEnabled(value: boolean) {
   writeFlag(TAB_ANIMATIONS_ENABLED_KEY, value);
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("bycoda:tab-animations-change"));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent("bycoda:tab-animations-change"));
 }
 
 export const subscribeTabAnimationsEnabled = (onChange: () => void) =>
-  subscribePreferenceChanges([TAB_ANIMATIONS_ENABLED_KEY], "bycoda:tab-animations-change", onChange);
+  subscribePreferenceChanges(
+    [TAB_ANIMATIONS_ENABLED_KEY],
+    "bycoda:tab-animations-change",
+    onChange,
+  );
 
 export type CollapsedProjectRailMode = "compact" | "hidden";
 
@@ -1876,7 +1881,8 @@ export function saveQuickComposerEnabled(value: boolean): boolean {
   } catch {
     return false;
   }
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("bycoda:quick-composer-enabled-change"));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent("bycoda:quick-composer-enabled-change"));
   return true;
 }
 
@@ -1893,7 +1899,11 @@ export function loadQuickComposerShortcut(): string {
 
 export const QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT = "bycoda:quick-composer-shortcut-change";
 export const subscribeQuickComposerShortcut = (onChange: () => void) =>
-  subscribePreferenceChanges([QUICK_COMPOSER_SHORTCUT_KEY], QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT, onChange);
+  subscribePreferenceChanges(
+    [QUICK_COMPOSER_SHORTCUT_KEY],
+    QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT,
+    onChange,
+  );
 
 export function saveQuickComposerShortcut(value: string): boolean {
   if (!isGlobalShortcut(value)) return false;
@@ -1906,7 +1916,8 @@ export function saveQuickComposerShortcut(value: string): boolean {
   } catch {
     return false;
   }
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent(QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT));
   return true;
 }
 
@@ -2264,7 +2275,12 @@ const RESUME_AT_RESET_KEY = "bycoda.resumeAtReset";
 export const RESUME_AT_RESET_DEFAULT = true;
 
 /** Whether a usage limit notice starts armed to continue at the reset. */
-const resumeAtResetSetting = storedFlag(RESUME_AT_RESET_KEY, RESUME_AT_RESET_DEFAULT, "bycoda:resume-at-reset-change", true);
+const resumeAtResetSetting = storedFlag(
+  RESUME_AT_RESET_KEY,
+  RESUME_AT_RESET_DEFAULT,
+  "bycoda:resume-at-reset-change",
+  true,
+);
 export const subscribeResumeAtReset = resumeAtResetSetting.subscribe;
 
 function saveChatFlag(key: string, value: boolean, event: string): boolean {
@@ -2272,7 +2288,9 @@ function saveChatFlag(key: string, value: boolean, event: string): boolean {
     const raw = value ? "1" : "0";
     localStorage.setItem(key, raw);
     if (localStorage.getItem(key) !== raw) return false;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(event));
   return true;
 }
@@ -2836,8 +2854,16 @@ export function loadAutoContinueInterrupted(): boolean {
 }
 
 export function saveAutoContinueInterrupted(value: boolean) {
-  return saveChatFlag(AUTO_CONTINUE_INTERRUPTED_KEY, value, "bycoda:auto-continue-interrupted-change");
+  return saveChatFlag(
+    AUTO_CONTINUE_INTERRUPTED_KEY,
+    value,
+    "bycoda:auto-continue-interrupted-change",
+  );
 }
 
 export const subscribeAutoContinueInterrupted = (onChange: () => void) =>
-  subscribePreferenceChanges([AUTO_CONTINUE_INTERRUPTED_KEY], "bycoda:auto-continue-interrupted-change", onChange);
+  subscribePreferenceChanges(
+    [AUTO_CONTINUE_INTERRUPTED_KEY],
+    "bycoda:auto-continue-interrupted-change",
+    onChange,
+  );

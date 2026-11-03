@@ -10880,5 +10880,22 @@
   "Voice needs attention": "Verificar a ligação de voz",
   "The assistant conversation context is not ready. Wait until connected before trying this tool. No operation was dispatched.": "O contexto de conversa do assistente ainda não está pronto. Aguarde a ligação antes de usar esta ferramenta. Nenhuma operação foi iniciada.",
   "Exact owner approval is unavailable for this captured conversation.": "A aprovação explícita do proprietário não está disponível para esta conversa.",
-  "The turn mode menu could not be opened. Try again.": "Não foi possível abrir o menu do modo de conversa. Tente novamente."
+  "The turn mode menu could not be opened. Try again.": "Não foi possível abrir o menu do modo de conversa. Tente novamente.",
+  "Could not save group visibility. Please try again.": "Não foi possível salvar a visibilidade do grupo. Tente novamente.",
+  "Refresh and review the pull request before merging.": "Atualize e revise o pull request antes de fazer o merge.",
+  "Failed at {p0}": "Falhou em {p0}",
+  "took {p0}": "levou {p0}",
+  "Supervision recorded": "Supervisão registrada",
+  "Attachments cannot be added while this conversation changes. Try again.": "Não é possível adicionar anexos enquanto esta conversa muda. Tente novamente.",
+  "Could not copy the path to the clipboard.": "Não foi possível copiar o caminho para a área de transferência.",
+  "Could not open the link": "Não foi possível abrir o link",
+  "Unconfirmed": "Não confirmado",
+  "Format document": "Formatar documento",
+  "Editor actions": "Ações do editor",
+  "Open Privacy Settings": "Abrir ajustes de privacidade",
+  "Microphone access is blocked. Allow bycoda in System Settings > Privacy & Security > Microphone, then try again.": "O acesso ao microfone está bloqueado. Permita o bycoda em Ajustes do Sistema > Privacidade e segurança > Microfone e tente novamente.",
+  "Microphone access is blocked. Allow it in your system or browser settings, then try again.": "O acesso ao microfone está bloqueado. Permita-o nos ajustes do sistema ou do navegador e tente novamente.",
+  "Screenshots need Screen Recording access. Allow bycoda in System Settings > Privacy & Security > Screen & System Audio Recording, then restart bycoda and try again.": "As capturas de tela precisam de acesso à gravação de tela. Permita o bycoda em Ajustes do Sistema > Privacidade e segurança > Gravação de tela e áudio do sistema, reinicie o bycoda e tente novamente.",
+  "Custom": "Personalizado",
+  "minutes": "minutos"
 }

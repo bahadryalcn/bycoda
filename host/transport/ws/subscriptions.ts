@@ -221,7 +221,9 @@ export class HostSubscriptionHub {
   }
 
   targets(): HostStreamTarget[] {
-    return [...this.streams.values()].filter((stream) => !stream.deleted).map((stream) => stream.target);
+    return [...this.streams.values()]
+      .filter((stream) => !stream.deleted)
+      .map((stream) => stream.target);
   }
 
   invalidate(target?: HostStreamTarget): void {

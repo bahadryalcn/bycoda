@@ -560,7 +560,52 @@ pub async fn quick_composer_capture(
     .map_err(|err| err.to_string())?
 }
 
+/// Error text the quick composer UI recognizes to show the Screen Recording
+/// recovery action; it is a stable code, not user-facing copy.
+pub(crate) const SCREEN_RECORDING_DENIED: &str = "screen-recording-permission-required";
+
+#[cfg(target_os = "macos")]
+mod screen_access {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+        fn CGRequestScreenCaptureAccess() -> bool;
+    }
+
+    static REQUESTED: AtomicBool = AtomicBool::new(false);
+
+    /// `screencapture` runs with bycoda as the responsible process, so without
+    /// Screen Recording access it yields wallpaper-only images or nothing.
+    /// The system prompt is requested once per launch; later calls only
+    /// report so the user is sent to System Settings instead of re-prompted.
+    pub(super) fn granted() -> bool {
+        // SAFETY: both CoreGraphics functions take no arguments and only
+        // read or request the TCC grant for this process.
+        unsafe {
+            if CGPreflightScreenCaptureAccess() {
+                return true;
+            }
+            if !REQUESTED.swap(true, Ordering::SeqCst) {
+                let _ = CGRequestScreenCaptureAccess();
+            }
+            false
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+mod screen_access {
+    pub(super) fn granted() -> bool {
+        true
+    }
+}
+
 fn capture_screenshot() -> Result<Option<String>, String> {
+    if !screen_access::granted() {
+        return Err(SCREEN_RECORDING_DENIED.into());
+    }
     let path = screenshots::new_path()?;
     let dir = path.parent().ok_or("Missing capture directory")?;
     // Let WindowServer remove the panel before the system capture overlay appears.

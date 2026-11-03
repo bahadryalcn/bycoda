@@ -8,7 +8,7 @@ export function SessionMessageAuthor({ author, onOpen }: { author?: Author; onOp
   const t = useT();
   if (!author) return null;
   const label =
-    (author.kind === "assistant"||author.kind==="assistant-manual")
+    author.kind === "assistant" || author.kind === "assistant-manual"
       ? t("{p0} wrote", { p0: author.name })
       : author.kind === "task"
         ? t("Task wrote")
@@ -16,7 +16,7 @@ export function SessionMessageAuthor({ author, onOpen }: { author?: Author; onOp
           ? t("Automation wrote")
           : t("Steward wrote");
   const reason =
-    (author.kind === "assistant"||author.kind==="assistant-manual")
+    author.kind === "assistant" || author.kind === "assistant-manual"
       ? {
           nudge: t("Nudge"),
           answer: t("Answer"),

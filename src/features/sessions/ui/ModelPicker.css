@@ -17,7 +17,8 @@ button.model-picker-field-trigger[data-model-picker-presentation="field"] {
   justify-content: flex-start;
   text-align: start;
 }
-button.model-picker-field-trigger[data-model-picker-presentation="field"] > .model-picker-field-chevron {
+button.model-picker-field-trigger[data-model-picker-presentation="field"]
+  > .model-picker-field-chevron {
   margin-inline-start: auto;
 }
 @media (hover: hover) and (pointer: fine) {

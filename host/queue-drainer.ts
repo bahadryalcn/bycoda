@@ -239,7 +239,7 @@ export class QueueDrainer {
         () => {
           const current = (async () => {
             this.timer = undefined;
-            for (const [id, { until }] of [...this.blocked])
+            for (const [id, { until }] of Array.from(this.blocked))
               if (until <= this.now()) this.blocked.delete(id);
             for (const id of await this.queues.takeExpired()) this.kick(id);
             // A desktop that stopped renewing no longer holds the conversation.

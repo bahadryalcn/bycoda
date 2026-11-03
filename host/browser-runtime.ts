@@ -71,7 +71,9 @@ export class BrowserRuntime {
   /** Attach real runtime readiness; the setup hint appears only when setup is missing. */
   async describe<T extends object>(state: T) {
     const runtime = await this.status();
-    return runtime.installed ? { ...state, runtime } : { ...state, runtime, setup: BROWSER_SETUP_HINT };
+    return runtime.installed
+      ? { ...state, runtime }
+      : { ...state, runtime, setup: BROWSER_SETUP_HINT };
   }
 
   readonly load: BrowserLoader = async () => {

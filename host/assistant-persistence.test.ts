@@ -92,9 +92,24 @@ it("keeps Host provenance through metadata edits, sparse saves, summaries and re
     },
   };
   await store.save(record, {});
-  await store.db.exec("CREATE TABLE goals(id TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE tasks(id TEXT PRIMARY KEY,value TEXT NOT NULL)");
-  await store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run(job.goalId,JSON.stringify({id:job.goalId,projectIds:[project.id],leadProjectId:project.id,taskIds:["task"]}));
-  await store.db.prepare("INSERT INTO tasks(id,value) VALUES(?,?)").run("task",JSON.stringify({id:"task",goalId:job.goalId,projectId:project.id,sessionId:"owned"}));
+  await store.db.exec(
+    "CREATE TABLE goals(id TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE tasks(id TEXT PRIMARY KEY,value TEXT NOT NULL)",
+  );
+  await store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run(
+    job.goalId,
+    JSON.stringify({
+      id: job.goalId,
+      projectIds: [project.id],
+      leadProjectId: project.id,
+      taskIds: ["task"],
+    }),
+  );
+  await store.db
+    .prepare("INSERT INTO tasks(id,value) VALUES(?,?)")
+    .run(
+      "task",
+      JSON.stringify({ id: "task", goalId: job.goalId, projectId: project.id, sessionId: "owned" }),
+    );
   const managed = await store.markAssistantManagedSession("owned", job.id);
   expect(managed.managedBy?.jobId).toBe(job.id);
   const before = await store.session("owned");
@@ -139,11 +154,24 @@ it("keeps Host provenance through metadata edits, sparse saves, summaries and re
       {},
     ),
   ).rejects.toThrow("authorship");
-  await store.db.prepare("UPDATE assistant_jobs SET value=json_set(value,'$.detachedSessionIds',json('[\"owned\"]')) WHERE id=?").run(job.id);
-  await store.markAssistantManagedSession("owned",job.id);
-  const withdrawn=await store.session("owned"),detachedAt=withdrawn.session.managedBy!.detachedAt;
+  await store.db
+    .prepare(
+      "UPDATE assistant_jobs SET value=json_set(value,'$.detachedSessionIds',json('[\"owned\"]')) WHERE id=?",
+    )
+    .run(job.id);
+  await store.markAssistantManagedSession("owned", job.id);
+  const withdrawn = await store.session("owned"),
+    detachedAt = withdrawn.session.managedBy!.detachedAt;
   expect(detachedAt).toBeGreaterThan(0);
-  await store.save({...withdrawn,managedBy:before.managedBy,session:{...withdrawn.session,managedBy:before.session.managedBy},revision:withdrawn.revision+1},{type:"test.staleManagement"});
+  await store.save(
+    {
+      ...withdrawn,
+      managedBy: before.managedBy,
+      session: { ...withdrawn.session, managedBy: before.session.managedBy },
+      revision: withdrawn.revision + 1,
+    },
+    { type: "test.staleManagement" },
+  );
   expect((await store.session("owned")).session.managedBy?.detachedAt).toBe(detachedAt);
   await core.close();
   await store.close();

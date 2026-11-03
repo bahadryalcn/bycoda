@@ -303,7 +303,11 @@ function QuestionFormContent({
 
   const skipCurrent = () => {
     if (held || submitted.current) return;
-    if (dismissEntirePrompt || prompt.dismissAction === "cancel" || prompt.dismissAction === "decline") {
+    if (
+      dismissEntirePrompt ||
+      prompt.dismissAction === "cancel" ||
+      prompt.dismissAction === "decline"
+    ) {
       send({ kind: "skipped" }, "dismiss");
       return;
     }
@@ -556,7 +560,7 @@ function QuestionFormContent({
                   ? t("Cancel question")
                   : prompt.dismissAction === "decline"
                     ? t("Decline")
-                    : dismissLabel??t("Skip")}
+                    : (dismissLabel ?? t("Skip"))}
             </Button>
             {index > 0 ? (
               <Button

@@ -14,7 +14,9 @@ describe("host-owned ACP configuration", () => {
       await mkdir(join(cli, ".."), { recursive: true });
       await writeFile(cli, "");
       const packaged = join(root, "runtime", "node.exe");
-      expect(windowsNpmCli({ PATH: [join(root, "empty"), nodejs].join(delimiter) }, packaged)).toBe(cli);
+      expect(windowsNpmCli({ PATH: [join(root, "empty"), nodejs].join(delimiter) }, packaged)).toBe(
+        cli,
+      );
       expect(windowsNpmCli({ PATH: join(root, "empty") }, packaged)).toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -5,8 +5,12 @@ import type { HarnessEvent } from "../../core/types";
 import { mapCodexNotification, type CodexCommandOutputState } from "./codexProtocol";
 
 const delta = (state: CodexCommandOutputState, itemId: string, text: string): HarnessEvent[] =>
-  mapCodexNotification("item/commandExecution/outputDelta", { itemId, delta: text }, undefined, state)
-    .events;
+  mapCodexNotification(
+    "item/commandExecution/outputDelta",
+    { itemId, delta: text },
+    undefined,
+    state,
+  ).events;
 
 describe("Codex command output accumulation (CMD-02)", () => {
   it("emits the accumulated output so earlier chunks survive replacement", () => {

@@ -41,8 +41,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
     customOpen: false,
     error: null as string | null,
   });
-  const scoped =
-    local.key === pathsKey ? local : { key: pathsKey, customOpen: false, error: null };
+  const scoped = local.key === pathsKey ? local : { key: pathsKey, customOpen: false, error: null };
   const customOpen = scoped.customOpen;
   const saveError = scoped.error;
   const setCustomOpen = (next: boolean) =>

@@ -15,7 +15,13 @@ export function sessionExecutionClient(
     list: (params) => access.list(params.projectId, params.known),
     page: async (params) =>
       SessionsPageResultSchema.parse(
-        await access.page(params.sessionId, params.before, params.revision, params.digests, params.preview),
+        await access.page(
+          params.sessionId,
+          params.before,
+          params.revision,
+          params.digests,
+          params.preview,
+        ),
       ),
     sync: async ({ sessionId, ...params }) =>
       SessionSyncResponseSchema.parse(await access.sync(sessionId, params)),

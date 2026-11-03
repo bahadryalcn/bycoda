@@ -199,7 +199,8 @@ export function gitActionsMenuItems(state: GitMenuState): ExplorerMenuItem[] {
         return {
           ...item,
           submenu: item.submenu?.map((sub) =>
-            sub.kind === "item" && commitMenuOptions(sub.id) ? { ...sub, disabled: true } : sub),
+            sub.kind === "item" && commitMenuOptions(sub.id) ? { ...sub, disabled: true } : sub,
+          ),
         };
       })
     : items;

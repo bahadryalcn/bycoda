@@ -568,7 +568,11 @@ export function JiraBoardView({
       same = group.issues.some((i) => i.identifier === issue.identifier);
     }
     if (same && !canRank)
-      return { label: t("Already in {p0}", { p0: name }), element: container, placement: "blocked" };
+      return {
+        label: t("Already in {p0}", { p0: name }),
+        element: container,
+        placement: "blocked",
+      };
     const label = same ? t("Reorder in {p0}", { p0: name }) : t("Move to {p0}", { p0: name });
     // Ranking lands before the card under the pointer; otherwise the whole column or sprint receives.
     return before !== undefined && canRank

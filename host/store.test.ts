@@ -349,7 +349,7 @@ describe("incremental project summaries", () => {
     const title = (await store.summaries(project.id))[0].title;
     await expect(
       (async () =>
-        await await await await await store.transaction(async () => {
+        await store.transaction(async () => {
           await store.save(
             {
               ...base,
@@ -483,7 +483,7 @@ describe("sparse journal checkpoints", () => {
     next = await edit(store, next, [{ ...next.session.blocks[0], text: "pending" }]);
     await expect(
       (async () =>
-        await await await await await store.transaction(async () => {
+        await store.transaction(async () => {
           await flush(store);
           throw new Error("rollback");
         }, "critical"))(),
@@ -568,7 +568,7 @@ describe("sparse journal checkpoints", () => {
       const writes = store.snapshotWrites;
       for (let index = 0; index < 10; index++) {
         const block = { ...current.session.blocks.at(-1)!, text: `tool event ${index}` };
-        current = await await await await await store.transaction(
+        current = await store.transaction(
           async () =>
             await store.save(
               {
@@ -625,7 +625,7 @@ describe("sparse journal checkpoints", () => {
     };
     await expect(
       (async () =>
-        await await await await await store.transaction(async () => {
+        await store.transaction(async () => {
           await save();
           throw new Error("rollback");
         }, "critical"))(),
@@ -834,7 +834,7 @@ it("rolls back a journal and its events when an enclosing transaction fails", as
   const base = await store.save(session("rollback", project.id), {});
   await expect(
     (async () =>
-      await await await await await store.transaction(async () => {
+      await store.transaction(async () => {
         await store.save({ ...base, revision: 2 }, { changed: true });
         throw new Error("rollback");
       }))(),

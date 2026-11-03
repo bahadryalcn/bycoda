@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { recordGuideActivity } from "../../../features/onboarding/model/guideActivity";
 import { loadDiffViewer } from "../../../features/settings/model/settings";
 import { rememberOpenedFile, resolveOpenablePath } from "../../../features/files/model/fileIndex";

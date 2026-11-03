@@ -107,7 +107,9 @@ it("shows loading, recoverable status failures and a retry action", async () => 
   await mount();
   expect(container.textContent).toContain("Loading host setting");
   await act(async () => fail(new Error("Host kapalı")));
-  expect(container.textContent).toContain("The central host setting could not be read: Host kapalı");
+  expect(container.textContent).toContain(
+    "The central host setting could not be read: Host kapalı",
+  );
   expect(container.querySelector("form")).toBeNull();
   await act(async () => container.querySelector("button")!.click());
   expect(container.querySelector("form")).not.toBeNull();
@@ -202,7 +204,9 @@ it("retains the form after a connect failure and allows retry", async () => {
   await input("https://local.test");
   await map();
   await save();
-  expect(container.textContent).toContain("The host setting could not be changed: Host erişilemiyor");
+  expect(container.textContent).toContain(
+    "The host setting could not be changed: Host erişilemiyor",
+  );
   expect(container.querySelector<HTMLInputElement>('input[type="url"]')!.value).toBe(
     "https://local.test",
   );

@@ -196,10 +196,25 @@
   font-variant-numeric: tabular-nums;
 }
 @container (inline-size < 520px) {
-  .row { grid-template-columns: 16px minmax(0, 1fr) 8rem 28px; }
-  .identity { grid-column: 2 / 4; }
-  .details { grid-column: 2 / 4; }
-  .rowActions { grid-column: 2; grid-row: 3; }
-  .status { grid-column: 3; grid-row: 3; }
-  .rowMenu { grid-column: 4; grid-row: 3; }
+  .row {
+    grid-template-columns: 16px minmax(0, 1fr) 8rem 28px;
+  }
+  .identity {
+    grid-column: 2 / 4;
+  }
+  .details {
+    grid-column: 2 / 4;
+  }
+  .rowActions {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  .status {
+    grid-column: 3;
+    grid-row: 3;
+  }
+  .rowMenu {
+    grid-column: 4;
+    grid-row: 3;
+  }
 }

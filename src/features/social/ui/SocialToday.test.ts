@@ -108,7 +108,9 @@ it("shows real failures with the reason and opens Activity", async () => {
   await mount();
   expect(element.textContent).toContain("2 sends need your attention");
   expect(element.textContent).toContain("Rate limited ×2");
-  const open = [...element.querySelectorAll("button")].find((item) => item.textContent === "Review")!;
+  const open = [...element.querySelectorAll("button")].find(
+    (item) => item.textContent === "Review",
+  )!;
   await act(async () => open.click());
   expect(onNavigate).toHaveBeenCalledWith("Activity");
 });
@@ -125,8 +127,14 @@ it("names a failed read instead of reporting that nothing needs attention", asyn
 });
 
 it("says nothing needs attention only after every read succeeded", async () => {
-  sectionSnapshot.mockImplementation(async () => ({ cursor: "", unchanged: false, snapshot: snapshot() }));
+  sectionSnapshot.mockImplementation(async () => ({
+    cursor: "",
+    unchanged: false,
+    snapshot: snapshot(),
+  }));
   await mount();
-  expect(element.textContent).toContain("Nothing needs your attention in the data read from This computer.");
+  expect(element.textContent).toContain(
+    "Nothing needs your attention in the data read from This computer.",
+  );
   expect(element.textContent).toContain("No posts or plans are scheduled.");
 });

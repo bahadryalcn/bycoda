@@ -69,7 +69,10 @@ test("shell counts stay compact and follow custom accents in both rail presentat
       const recovery = page.locator(expanded ? ".recovery-rail-number" : ".recovery-rail-count");
       await expect(working).toHaveText(String(Math.min(count, 9)));
       const workingCount = Math.min(count, 9);
-      await expect(working).toHaveAttribute("aria-label", `${workingCount} working ${workingCount === 1 ? "session" : "sessions"}`);
+      await expect(working).toHaveAttribute(
+        "aria-label",
+        `${workingCount} working ${workingCount === 1 ? "session" : "sessions"}`,
+      );
       await expect(working.locator('[data-size="xs"][aria-hidden="true"]')).toBeVisible();
       await expect(recovery).toHaveText(count > 99 ? "99+" : String(count));
       for (const light of [false, true]) {

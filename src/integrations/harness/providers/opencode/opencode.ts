@@ -669,9 +669,11 @@ export async function stopOpenCodeSession(
     if (ownsEvents()) originalWire.push(closeHarnessSse(sessionId));
   }
   await settleProviderRetirements([
-    ...originalWire.map((work) => work.catch((error: unknown) => {
-      console.warn("[opencode] wire cleanup failed", error);
-    })),
+    ...originalWire.map((work) =>
+      work.catch((error: unknown) => {
+        console.warn("[opencode] wire cleanup failed", error);
+      }),
+    ),
     context || expectedOwner
       ? retirements.retire(handles)
       : retirements.retireOwner(sessionId, handles),

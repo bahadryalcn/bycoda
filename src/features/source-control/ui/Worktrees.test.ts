@@ -326,8 +326,8 @@ it("selects an existing worktree from the draft workspace menu", async () => {
   expect(document.querySelector('[aria-label="Existing worktrees"]')).not.toBeNull();
   expect(existingWorktree.getAttribute("aria-expanded")).toBe("true");
   expect(listWorktrees).toHaveBeenCalledWith("/existing-worktree-picker");
-  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-    (item) => item.textContent?.includes(tree.path),
+  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((item) =>
+    item.textContent?.includes(tree.path),
   )!;
   expect(option.textContent).toContain("feature");
   expect(option.textContent).toContain(tree.path);

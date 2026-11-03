@@ -115,11 +115,7 @@ export function SshIdentityField({
         placeholder={loading ? t("Loading…") : t("SSH agent and default keys")}
         options={[{ value: "", label: t("SSH agent and default keys") }, ...options]}
       />
-      {value ? (
-        <p className="break-all text-ui-caption text-(--ui-text-muted)">
-          {value}
-        </p>
-      ) : null}
+      {value ? <p className="break-all text-ui-caption text-(--ui-text-muted)">{value}</p> : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="secondary"

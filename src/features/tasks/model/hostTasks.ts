@@ -224,9 +224,9 @@ export type HostTask = HostTaskInput & {
   /** The session turn this task started. */
   runId?: string;
   /** Host-projected delivered supervisor writes; unknown outcomes remain separate. */
-  assistantFollowups?:{delivered:number;unconfirmed:number};
+  assistantFollowups?: { delivered: number; unconfirmed: number };
   /** Diagnostic only: the exact current run has had no observed output for 15 min. */
-  runStall?:{sessionId:string;runId:string;lastActivityAt:number;detectedAt:number};
+  runStall?: { sessionId: string; runId: string; lastActivityAt: number; detectedAt: number };
   /** Why the task is blocked. */
   error?: string;
   /** Failed checks carried into the next worker run, including via To do. */

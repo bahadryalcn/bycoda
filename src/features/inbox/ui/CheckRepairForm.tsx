@@ -57,7 +57,11 @@ export function CheckRepairForm({
   const searchRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const choices: PickerOption[] = [
-    { value: "", title: t("New project chat"), icon: <Plus className="icon-sm" strokeWidth={1.75} /> },
+    {
+      value: "",
+      title: t("New project chat"),
+      icon: <Plus className="icon-sm" strokeWidth={1.75} />,
+    },
     ...repair.sessions
       .filter((session) =>
         (session.title || "Untitled chat")
@@ -235,9 +239,7 @@ export function CheckRepairForm({
           ) : null}
           <PickerFooter align="between" className="gap-3 px-3 py-2.5">
             <div className="min-w-0 text-ui-micro leading-4">
-              <p className="break-words text-(--ui-text-secondary)">
-                {selectedTitle}
-              </p>
+              <p className="break-words text-(--ui-text-secondary)">{selectedTitle}</p>
               <p className="text-(--ui-text-secondary)">{t("CI details included")}</p>
             </div>
             <Button
@@ -255,12 +257,7 @@ export function CheckRepairForm({
         </>
       }
     >
-      <PickerList
-        label={t("Project chats")}
-        controller={picker}
-        query={query}
-        disabled={busy}
-      />
+      <PickerList label={t("Project chats")} controller={picker} query={query} disabled={busy} />
       {choices.length === 1 && query.trim() ? (
         <EmptyState size="inline" kind="filtered" description={t("No matching chats")} />
       ) : null}

@@ -10880,5 +10880,22 @@
   "Voice needs attention": "请检查语音连接",
   "The assistant conversation context is not ready. Wait until connected before trying this tool. No operation was dispatched.": "助手的对话上下文尚未就绪。请等待连接完成后再使用此工具。未执行任何操作。",
   "Exact owner approval is unavailable for this captured conversation.": "无法为此对话获取所有者的明确批准。",
-  "The turn mode menu could not be opened. Try again.": "无法打开对话模式菜单。请重试。"
+  "The turn mode menu could not be opened. Try again.": "无法打开对话模式菜单。请重试。",
+  "Could not save group visibility. Please try again.": "无法保存分组可见性。请重试。",
+  "Refresh and review the pull request before merging.": "合并前请刷新并检查拉取请求。",
+  "Failed at {p0}": "在 {p0} 失败",
+  "took {p0}": "耗时 {p0}",
+  "Supervision recorded": "已记录监督",
+  "Attachments cannot be added while this conversation changes. Try again.": "此对话变更期间无法添加附件。请重试。",
+  "Could not copy the path to the clipboard.": "无法将路径复制到剪贴板。",
+  "Could not open the link": "无法打开链接",
+  "Unconfirmed": "未确认",
+  "Format document": "格式化文档",
+  "Editor actions": "编辑器操作",
+  "Open Privacy Settings": "打开隐私设置",
+  "Microphone access is blocked. Allow bycoda in System Settings > Privacy & Security > Microphone, then try again.": "麦克风访问被阻止。请在“系统设置 > 隐私与安全性 > 麦克风”中允许 bycoda，然后重试。",
+  "Microphone access is blocked. Allow it in your system or browser settings, then try again.": "麦克风访问被阻止。请在系统或浏览器设置中允许，然后重试。",
+  "Screenshots need Screen Recording access. Allow bycoda in System Settings > Privacy & Security > Screen & System Audio Recording, then restart bycoda and try again.": "截图需要屏幕录制权限。请在“系统设置 > 隐私与安全性 > 屏幕与系统音频录制”中允许 bycoda，然后重启 bycoda 并重试。",
+  "Custom": "自定义",
+  "minutes": "分钟"
 }

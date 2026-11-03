@@ -55,71 +55,79 @@ export function CheckoutList({
     return (
       <li key={tree.path} className={styles.item}>
         <ActionHost selected={isSession} className="flex w-full min-w-0 items-center">
-        <Button
-          variant="item"
-          motion="none"
-          className={`  ${styles.row}  min-w-0 flex-1 `}
-          data-session={isSession || undefined}
-          selected={isSession}
-          aria-current={isSession ? "location" : undefined}
-          tooltip={tree.path}
-          onClick={() => onSelect(tree.path)}
-        >
-          <span className={styles.identity}>
-            <MiddleTruncate mode="text" className={styles.branch}>{title}</MiddleTruncate>
-            {detail ? <MiddleTruncate mode="path" className={styles.folder}>{detail}</MiddleTruncate> : null}
-            {isSession ? <Badge tone="info">{t("This session")}</Badge> : null}
-            {tree.isMain ? <Badge>{t("Main folder")}</Badge> : null}
-          </span>
-          <span className={styles.badges}>
-            {tree.locked ? (
-              <span role="img" title={t("Locked")} aria-label={t("Locked")}>
-                <Lock className="icon-xs" />
-              </span>
-            ) : null}
-            {tree.dirty ? (
-              <span
-                role="img"
-                className={styles.dirty}
-                title={t("Uncommitted changes")}
-                aria-label={t("Uncommitted changes")}
-              />
-            ) : null}
-            <Stat
-              icon={<ArrowUp aria-hidden className="icon-xs" />}
-              count={unpushed}
-              label={t(unpushed === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", {
-                p0: unpushed,
-              })}
-            />
-            <Stat
-              icon={<MessageSquare aria-hidden className="icon-xs" />}
-              count={sessions}
-              label={t(
-                sessions === 1 ? "{p0} session in this checkout" : "{p0} sessions in this checkout",
-                { p0: sessions },
-              )}
-            />
-          </span>
-        </Button>
-        {!tree.isMain ? (
-          <InlineAction
-            label={t("Delete worktree")}
-            disabled={!enabled || tree.locked || !tree.branch}
-            tooltip={
-              tree.locked
-                ? t("Unlock this worktree in Git first")
-                : !tree.branch
-                  ? t("Create a branch before deleting this detached worktree")
-                  : t("Delete worktree")
-            }
-            onClick={() => requestWorktreeManagement(cwd, tree.path)}
+          <Button
+            variant="item"
+            motion="none"
+            className={`  ${styles.row}  min-w-0 flex-1 `}
+            data-session={isSession || undefined}
+            selected={isSession}
+            aria-current={isSession ? "location" : undefined}
+            tooltip={tree.path}
+            onClick={() => onSelect(tree.path)}
           >
-            <Trash2 aria-hidden className="icon-sm" />
-          </InlineAction>
-        ) : (
-          <span className={styles.deleteSlot} aria-hidden />
-        )}
+            <span className={styles.identity}>
+              <MiddleTruncate mode="text" className={styles.branch}>
+                {title}
+              </MiddleTruncate>
+              {detail ? (
+                <MiddleTruncate mode="path" className={styles.folder}>
+                  {detail}
+                </MiddleTruncate>
+              ) : null}
+              {isSession ? <Badge tone="info">{t("This session")}</Badge> : null}
+              {tree.isMain ? <Badge>{t("Main folder")}</Badge> : null}
+            </span>
+            <span className={styles.badges}>
+              {tree.locked ? (
+                <span role="img" title={t("Locked")} aria-label={t("Locked")}>
+                  <Lock className="icon-xs" />
+                </span>
+              ) : null}
+              {tree.dirty ? (
+                <span
+                  role="img"
+                  className={styles.dirty}
+                  title={t("Uncommitted changes")}
+                  aria-label={t("Uncommitted changes")}
+                />
+              ) : null}
+              <Stat
+                icon={<ArrowUp aria-hidden className="icon-xs" />}
+                count={unpushed}
+                label={t(unpushed === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", {
+                  p0: unpushed,
+                })}
+              />
+              <Stat
+                icon={<MessageSquare aria-hidden className="icon-xs" />}
+                count={sessions}
+                label={t(
+                  sessions === 1
+                    ? "{p0} session in this checkout"
+                    : "{p0} sessions in this checkout",
+                  { p0: sessions },
+                )}
+              />
+            </span>
+          </Button>
+          {!tree.isMain ? (
+            <InlineAction
+              label={t("Delete worktree")}
+              disabled={!enabled || tree.locked || !tree.branch}
+              tooltip={
+                tree.locked
+                  ? t("Unlock this worktree in Git first")
+                  : !tree.branch
+                    ? t("Create a branch before deleting this detached worktree")
+                    : t("Delete worktree")
+              }
+              onClick={() => requestWorktreeManagement(cwd, tree.path)}
+            >
+              <Trash2 aria-hidden className="icon-sm" />
+            </InlineAction>
+          ) : (
+            <span className={styles.deleteSlot} aria-hidden />
+          )}
         </ActionHost>
       </li>
     );

@@ -29,5 +29,11 @@ export function useOrchestrationState(): OrchestrationState {
     orchestrator.snapshot,
     orchestrator.snapshot,
   );
-  return { inspectedWorkerId, setInspectedWorkerId, workerDetailRequest, setWorkerDetailRequest, orchestrationRuns };
+  return {
+    inspectedWorkerId,
+    setInspectedWorkerId,
+    workerDetailRequest,
+    setWorkerDetailRequest,
+    orchestrationRuns,
+  };
 }

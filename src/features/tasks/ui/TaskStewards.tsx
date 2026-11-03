@@ -17,14 +17,7 @@ import { formatTaskSpan, TASK_MACHINE_ERROR } from "../model/taskClient";
 import { t, useLocale } from "../../../shared/i18n";
 import { type FormEvent, useMemo, useState } from "react";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
-import {
-  Bot,
-  MoreHorizontal,
-  Pencil,
-  Play,
-  Plus,
-  Trash2,
-} from "../../../shared/ui/icons";
+import { Bot, MoreHorizontal, Pencil, Play, Plus, Trash2 } from "../../../shared/ui/icons";
 import {
   AUTOMATION_WEEKDAYS,
   automationScheduleLabel,

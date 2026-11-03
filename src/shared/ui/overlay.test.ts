@@ -460,9 +460,7 @@ it("keeps the live Sash drag width when the container resizes mid-drag", async (
   // The pane's parent resizes with each frame; that must not snap back to 400.
   await act(async () => window.dispatchEvent(new Event("resize")));
   expect(pane.style.width).toBe("460px");
-  await act(async () =>
-    sash!.onResizeEnd(60, { cancelled: false, moved: true, keyboard: false }),
-  );
+  await act(async () => sash!.onResizeEnd(60, { cancelled: false, moved: true, keyboard: false }));
   expect(pane.style.width).toBe("460px");
 });
 

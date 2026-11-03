@@ -136,7 +136,8 @@ export function Sash({
         if (state.frame !== null) cancelAnimationFrame(state.frame);
         window.removeEventListener("keydown", keydown, true);
         window.removeEventListener("blur", blur);
-        if (handle.hasPointerCapture(state.pointerId)) handle.releasePointerCapture(state.pointerId);
+        if (handle.hasPointerCapture(state.pointerId))
+          handle.releasePointerCapture(state.pointerId);
         restoreSelection();
         document.body.style.cursor = previousCursor;
         setDragging(false);

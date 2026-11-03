@@ -29,7 +29,7 @@ function fixture() {
 it("shares exact static UTF-8 bytes across changing tokens without parsing/regenerating raw JSON", async () => {
   const f = fixture();
   const original = Buffer.from(
-    `\uFEFF { "path":"C:\\\\123\\\\${randomUUID()}\\\\file\\\"123.txt", "escaped":"\\u0061\\n", "text":"ş😀", "version" : 1e+02, "reportNonce":"${randomUUID()}" } \r\n`,
+    `\uFEFF { "path":"C:\\\\123\\\\${randomUUID()}\\\\file\\"123.txt", "escaped":"\\u0061\\n", "text":"ş😀", "version" : 1e+02, "reportNonce":"${randomUUID()}" } \r\n`,
   );
   const later = Buffer.from(
     original

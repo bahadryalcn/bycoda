@@ -80,7 +80,8 @@ export function SocialReplySuggestion({
       onSuggestion({ text: result.text, factIds: result.factIds });
       onClose();
     } catch (cause) {
-      if (current === token.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (current === token.current)
+        setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       if (current === token.current) setWorking(false);
     }
@@ -142,12 +143,15 @@ export function SocialReplySuggestion({
             : t("The draft goes to the reply editor. Nothing is sent.")}
         </p>
       )}
-      {error ? (
-        <InlineError>{error}</InlineError>
-      ) : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       <div className="social-assistant-actions">
-        <Button type="submit" loading={working} disabled={!canAsk} startIcon={<Sparkles aria-hidden="true" />}>
-{error ? t("Try again") : t("Suggest")}
+        <Button
+          type="submit"
+          loading={working}
+          disabled={!canAsk}
+          startIcon={<Sparkles aria-hidden="true" />}
+        >
+          {error ? t("Try again") : t("Suggest")}
         </Button>
         {working ? (
           <Button variant="ghost" type="button" onClick={stop}>

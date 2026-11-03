@@ -15,15 +15,7 @@ import {
   setLanguagePreference,
   isLocale,
 } from "../../../shared/i18n";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Modal } from "../../../shared/ui/Modal";
 import {
   AppWindow,
@@ -151,9 +143,7 @@ export default function OnboardingDialog({
                   options={[{ value: "system", label: t("System language") }, ...LANGUAGES]}
                   onValueChange={(value) => {
                     if (value === "system" || isLocale(value))
-                      void setLanguagePreference(value).catch((reason) =>
-                        setError(String(reason)),
-                      );
+                      void setLanguagePreference(value).catch((reason) => setError(String(reason)));
                   }}
                 />
               </div>
@@ -242,13 +232,19 @@ export default function OnboardingDialog({
                       </div>
                     ))}
                     <div className="onboarding-actions">
-                      <Button onClick={() => setConnections(true)} variant="secondary" type="button">
+                      <Button
+                        onClick={() => setConnections(true)}
+                        variant="secondary"
+                        type="button"
+                      >
                         <Globe aria-hidden className="icon-sm" />
                         {t("Manage connections…")}
                       </Button>
                     </div>
                     <p className="onboarding-hint">
-                      {t("Remote agents stay on their own computer. Add connections later in Settings.")}
+                      {t(
+                        "Remote agents stay on their own computer. Add connections later in Settings.",
+                      )}
                     </p>
                   </div>
                 </>
@@ -575,7 +571,9 @@ function Projects({
             <EmptyState
               context="panel"
               icon={<FolderOpen aria-hidden width={24} height={24} strokeWidth={1.75} />}
-              description={t("No new conversation history found. Choose a project folder to start.")}
+              description={t(
+                "No new conversation history found. Choose a project folder to start.",
+              )}
               action={chooseFolders}
             />
           ) : null}

@@ -13,10 +13,13 @@ vi.mock("../model/updater", () => ({
 }));
 
 beforeEach(() => {
-  vi.stubGlobal("ResizeObserver", class {
-    observe() {}
-    disconnect() {}
-  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
 });
 
 afterEach(() => {

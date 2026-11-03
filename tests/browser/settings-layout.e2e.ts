@@ -87,9 +87,14 @@ for (const [theme, width] of [
       if (section === "chat") {
         const templates = form.getByRole("region", { name: "Prompt templates", exact: true });
         await templates.scrollIntoViewIfNeeded();
-        await expect(templates.getByRole("button", { name: "Add template", exact: true })).toBeVisible();
+        await expect(
+          templates.getByRole("button", { name: "Add template", exact: true }),
+        ).toBeVisible();
         await templates.getByRole("button", { name: "How to use templates", exact: true }).click();
-        const templateHelp = page.getByRole("dialog", { name: "How to use templates", exact: true });
+        const templateHelp = page.getByRole("dialog", {
+          name: "How to use templates",
+          exact: true,
+        });
         await expect(templateHelp).toContainText("Name and text are required.");
         const helpBounds = (await templateHelp.boundingBox())!;
         expect(helpBounds.x).toBeGreaterThanOrEqual(0);
@@ -164,7 +169,10 @@ test("keybinding rows keep command and key on one line at 800px", async ({ page 
     nodes.slice(0, 12).map((node) => {
       const label = node.querySelector(".settings-row-label")!.getBoundingClientRect();
       const control = node.querySelector(".settings-row-control")!.getBoundingClientRect();
-      return { sameLine: control.top < label.bottom - 1, height: node.getBoundingClientRect().height };
+      return {
+        sameLine: control.top < label.bottom - 1,
+        height: node.getBoundingClientRect().height,
+      };
     }),
   );
   expect(sampled.length).toBeGreaterThan(5);

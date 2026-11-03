@@ -25,7 +25,7 @@ and precise alignment. Apple-inspired clarity means removing repetition and
 competing emphasis while keeping every capability discoverable.
 
 Apply this product language through the [desktop design system](ui-design-system.md)
-and the [native mobile design system](../../mobile/docs/reference/design-system.md).
+and the native mobile design system (`mobile/docs/reference/design-system.md` in the separate mobile repository).
 Keep their platform-specific controls, geometry and behavior; consistent intent
 does not require copying desktop controls into a touch interface.
 
@@ -56,8 +56,8 @@ adapters and shared theme to establish one control and composition language.
 Do not introduce marketing typography, decorative textures, another UI library
 or new product defaults as an interpretation of higher quality.
 
-The single execution view is
-[the shared redesign TODO](../../temp/local/2026-10-27-workbench-audit/TODO.md).
+The single execution view is the shared redesign TODO kept in local, untracked
+planning files.
 Each product package specifies a target composition as well as source gaps.
 Design acceptance covers the whole surface and its states, with real light/dark
 1280/800 consumers and independent review after the owner's deferred checks.

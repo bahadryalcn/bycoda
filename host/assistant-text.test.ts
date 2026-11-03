@@ -40,22 +40,27 @@ it("keeps isolated reasoning and accounts monotonic valid provider metrics", asy
     }),
   );
 });
-it("retains only a valid provider-reported context window for the next Chief admission",async()=>{
- vi.mocked(runHarnessTextPrompt).mockImplementation(async input=>{
-  input.onEvent?.({type:"context",used:5000,window:128000});
-  input.onEvent?.({type:"context",used:5500,window:0});
-  return "Answer";
- });
- expect(await runner()(profile,"Prompt")).toEqual({text:"Answer",contextWindow:128000});
+it("retains only a valid provider-reported context window for the next Chief admission", async () => {
+  vi.mocked(runHarnessTextPrompt).mockImplementation(async (input) => {
+    input.onEvent?.({ type: "context", used: 5000, window: 128000 });
+    input.onEvent?.({ type: "context", used: 5500, window: 0 });
+    return "Answer";
+  });
+  expect(await runner()(profile, "Prompt")).toEqual({ text: "Answer", contextWindow: 128000 });
 });
 it("does not manufacture usage when the provider reports no metrics", async () => {
   vi.mocked(runHarnessTextPrompt).mockResolvedValue("Answer");
   expect(await runner()(profile, "Prompt")).toEqual({ text: "Answer" });
 });
-it("carries utility allowances without turning a conversational request into a persistent thread",async()=>{
+it("carries utility allowances without turning a conversational request into a persistent thread", async () => {
   vi.mocked(runHarnessTextPrompt).mockResolvedValue("Answer");
-  await runner()(profile,"Prompt",undefined,undefined,{maxOutputTokens:125,maxOutputChars:500});
-  expect(runHarnessTextPrompt).toHaveBeenCalledWith(expect.objectContaining({ephemeral:true,maxOutputTokens:125,maxOutputChars:500}));
+  await runner()(profile, "Prompt", undefined, undefined, {
+    maxOutputTokens: 125,
+    maxOutputChars: 500,
+  });
+  expect(runHarnessTextPrompt).toHaveBeenCalledWith(
+    expect.objectContaining({ ephemeral: true, maxOutputTokens: 125, maxOutputChars: 500 }),
+  );
 });
 it("opts only the Chief into its durably captured provider thread", async () => {
   vi.mocked(runHarnessTextPrompt).mockResolvedValue("Answer");
@@ -83,18 +88,49 @@ it("refuses late output after reasoning cancellation", async () => {
     name: "AbortError",
   });
 });
-it("adds actual compaction and reasoning metrics without counting repeated snapshots twice",async()=>{
-  const receipt=vi.fn(async()=>undefined);
-  vi.mocked(runHarnessTextPrompt).mockImplementation(async input=>{
-    input.onEvent?.({type:"turn.metrics",inputTokens:100,outputTokens:30});input.onEvent?.({type:"turn.metrics",inputTokens:90,outputTokens:20});
-    await input.onCompacted!({threadId:"chief-thread"});input.onEvent?.({type:"turn.metrics",inputTokens:200,outputTokens:40});input.onEvent?.({type:"turn.metrics",inputTokens:100,outputTokens:10});return "Answer";
+it("adds actual compaction and reasoning metrics without counting repeated snapshots twice", async () => {
+  const receipt = vi.fn(async () => undefined);
+  vi.mocked(runHarnessTextPrompt).mockImplementation(async (input) => {
+    input.onEvent?.({ type: "turn.metrics", inputTokens: 100, outputTokens: 30 });
+    input.onEvent?.({ type: "turn.metrics", inputTokens: 90, outputTokens: 20 });
+    await input.onCompacted!({ threadId: "chief-thread" });
+    input.onEvent?.({ type: "turn.metrics", inputTokens: 200, outputTokens: 40 });
+    input.onEvent?.({ type: "turn.metrics", inputTokens: 100, outputTokens: 10 });
+    return "Answer";
   });
-  expect(await runner()(profile,"Canonical handoff",undefined,{threadId:"chief-thread",onThreadId:async()=>undefined,compactBefore:true,onCompacted:receipt})).toEqual({text:"Answer",tokens:370});expect(receipt).toHaveBeenCalledWith({threadId:"chief-thread"});
+  expect(
+    await runner()(profile, "Canonical handoff", undefined, {
+      threadId: "chief-thread",
+      onThreadId: async () => undefined,
+      compactBefore: true,
+      onCompacted: receipt,
+    }),
+  ).toEqual({ text: "Answer", tokens: 370 });
+  expect(receipt).toHaveBeenCalledWith({ threadId: "chief-thread" });
 });
-it("keeps total usage unknown when compaction metrics are missing",async()=>{
-  vi.mocked(runHarnessTextPrompt).mockImplementation(async input=>{await input.onCompacted!({threadId:"chief-thread"});input.onEvent?.({type:"turn.metrics",inputTokens:200,outputTokens:40});return "Answer";});
-  expect(await runner()(profile,"Canonical handoff",undefined,{threadId:"chief-thread",onThreadId:async()=>undefined,compactBefore:true,onCompacted:async()=>undefined})).toEqual({text:"Answer"});
+it("keeps total usage unknown when compaction metrics are missing", async () => {
+  vi.mocked(runHarnessTextPrompt).mockImplementation(async (input) => {
+    await input.onCompacted!({ threadId: "chief-thread" });
+    input.onEvent?.({ type: "turn.metrics", inputTokens: 200, outputTokens: 40 });
+    return "Answer";
+  });
+  expect(
+    await runner()(profile, "Canonical handoff", undefined, {
+      threadId: "chief-thread",
+      onThreadId: async () => undefined,
+      compactBefore: true,
+      onCompacted: async () => undefined,
+    }),
+  ).toEqual({ text: "Answer" });
 });
-it("rejects reasoning output if the adapter skipped the requested compaction receipt",async()=>{
-  vi.mocked(runHarnessTextPrompt).mockResolvedValue("Answer");await expect(runner()(profile,"Canonical handoff",undefined,{threadId:"chief-thread",onThreadId:async()=>undefined,compactBefore:true,onCompacted:async()=>undefined})).rejects.toThrow("confirm Chief compaction");
+it("rejects reasoning output if the adapter skipped the requested compaction receipt", async () => {
+  vi.mocked(runHarnessTextPrompt).mockResolvedValue("Answer");
+  await expect(
+    runner()(profile, "Canonical handoff", undefined, {
+      threadId: "chief-thread",
+      onThreadId: async () => undefined,
+      compactBefore: true,
+      onCompacted: async () => undefined,
+    }),
+  ).rejects.toThrow("confirm Chief compaction");
 });

@@ -1,4 +1,11 @@
-import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useT } from "../i18n";
 import { Badge, type BadgeAppearance, type BadgeTone } from "./Badge";
 import styles from "./BadgeList.module.css";
@@ -124,7 +131,8 @@ export function BadgeList({
     const measure = () => {
       // Layout width, not the transformed box: a dialog that scales in must not skew the packing.
       const available = host.offsetWidth - 1;
-      const scale = host.offsetWidth > 0 ? host.getBoundingClientRect().width / host.offsetWidth : 1;
+      const scale =
+        host.offsetWidth > 0 ? host.getBoundingClientRect().width / host.offsetWidth : 1;
       const read = (node: Element) => node.getBoundingClientRect().width / (scale || 1);
       const widths = Array.from(measured.querySelectorAll("[data-probe-item]"), read);
       const more = measured.querySelector("[data-probe-more]");

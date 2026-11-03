@@ -58,13 +58,19 @@ afterEach(async () => {
 });
 const owner = { kind: "owner" as const, id: "owner" };
 const agent = { kind: "assistant" as const, id: "voice-session" };
-it("reads finite owner indicator state without hashing or executing a configured helper",async()=>{
- const f=await setup();await f.configure();writeFileSync(f.binary,"Changed fixture binary; never executed");
- expect(await f.control.indicatorStatus(owner,async()=>true)).toEqual({enabled:true,active:false,stopped:false});
- expect(f.calls).toEqual([]);
- expect((await f.request({op:"status"})).status?.verified).toBe(false);
- await expect(f.control.indicatorStatus(agent,async()=>true)).rejects.toThrow();
- await expect(f.control.indicatorStatus(owner,async()=>false)).rejects.toThrow("revoked");
+it("reads finite owner indicator state without hashing or executing a configured helper", async () => {
+  const f = await setup();
+  await f.configure();
+  writeFileSync(f.binary, "Changed fixture binary; never executed");
+  expect(await f.control.indicatorStatus(owner, async () => true)).toEqual({
+    enabled: true,
+    active: false,
+    stopped: false,
+  });
+  expect(f.calls).toEqual([]);
+  expect((await f.request({ op: "status" })).status?.verified).toBe(false);
+  await expect(f.control.indicatorStatus(agent, async () => true)).rejects.toThrow();
+  await expect(f.control.indicatorStatus(owner, async () => false)).rejects.toThrow("revoked");
 });
 it("launches only an allowlisted app headlessly and journals before dispatch without replay", async () => {
   let f: Awaited<ReturnType<typeof setup>>;

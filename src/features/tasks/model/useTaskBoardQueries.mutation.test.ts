@@ -90,9 +90,14 @@ const goal = (id: string, machineId: string, title = id): BoardGoal =>
 const steward = (id: string, machineId: string, title = id): BoardSteward =>
   ({ id, title, machineId, machineName: `Host ${machineId}` }) as BoardSteward;
 const limits = (machineId: string, dailyMinutes: number): MachineLimits =>
-  ({ machineId, machineName: `Host ${machineId}`, dailyMinutes, usedMinutes: 0 }) as unknown as MachineLimits;
+  ({
+    machineId,
+    machineName: `Host ${machineId}`,
+    dailyMinutes,
+    usedMinutes: 0,
+  }) as unknown as MachineLimits;
 
-const result = <T,>(machineId: string, data: T[]): MachineResult<T> => ({
+const result = <T>(machineId: string, data: T[]): MachineResult<T> => ({
   machineId,
   machineName: `Host ${machineId}`,
   status: "ok",
@@ -150,7 +155,7 @@ beforeEach(async () => {
     HOST_SETTINGS,
   ]);
   const pick =
-    <T,>(store: Record<string, T[]>, kind: keyof typeof holds) =>
+    <T>(store: Record<string, T[]>, kind: keyof typeof holds) =>
     async (machines: RemoteMachine[]) =>
       (take(kind) as Promise<MachineResult<T>[]> | undefined) ??
       machines.map((entry) => result(entry.id, store[entry.id] ?? []));
@@ -243,7 +248,10 @@ describe("useTaskBoardQueries confirmed writers", () => {
     const removing = await refreshWithHeldRead("goals");
     await act(async () => latest.removeGoal(goal("g1", "a")));
     expect(latest.board.goals).toEqual([]);
-    expect(mocks.rememberGoal).toHaveBeenLastCalledWith(expect.objectContaining({ id: "g1" }), true);
+    expect(mocks.rememberGoal).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "g1" }),
+      true,
+    );
     await removing.release([result("a", [goal("g1", "a", "Confirmed goal")])]);
     expect(latest.board.goals).toEqual([]);
   });

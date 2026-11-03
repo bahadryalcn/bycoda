@@ -61,12 +61,21 @@ export function ProjectNotificationSettings({
     notificationProjectPath ?? "",
     ...recents.map((project) => project.path),
   ]);
-  const { machines } = useRemoteMachines(notificationProjects.projects.some((project) => project.detail.startsWith("remote://")));
-  const projects = notificationProjects.projects.map((project) => {
-    const remote = /^remote:\/\/([^/]+)\/(.*)$/.exec(project.detail);
-    const machine = remote ? machines.find((entry) => entry.id === remote[1]) : undefined;
-    return { ...project, detail: remote ? `${machine ? machineLabel(machines, machine) : t("Remote host")} / ${remote[2]}` : project.detail };
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  const { machines } = useRemoteMachines(
+    notificationProjects.projects.some((project) => project.detail.startsWith("remote://")),
+  );
+  const projects = notificationProjects.projects
+    .map((project) => {
+      const remote = /^remote:\/\/([^/]+)\/(.*)$/.exec(project.detail);
+      const machine = remote ? machines.find((entry) => entry.id === remote[1]) : undefined;
+      return {
+        ...project,
+        detail: remote
+          ? `${machine ? machineLabel(machines, machine) : t("Remote host")} / ${remote[2]}`
+          : project.detail,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
   const preferences = useProjectNotificationPreferences();
   const { status: preferencesStatus, retry: retryPreferencesRead } =
     useProjectNotificationPreferencesStatus();
@@ -75,7 +84,11 @@ export function ProjectNotificationSettings({
   const groupColors = loadTabGroupColors();
   const groupCustomColors = loadTabGroupCustomColors();
   const groupMascots = loadTabGroupMascots();
-  const [error, setError] = useState<{ projectId: string; category: NotificationCategory; enabled: boolean } | null>(null);
+  const [error, setError] = useState<{
+    projectId: string;
+    category: NotificationCategory;
+    enabled: boolean;
+  } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [selecting, setSelecting] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -140,7 +153,9 @@ export function ProjectNotificationSettings({
       updateNotificationPreferences([projectId], {
         disabled: enabled ? disabled.filter((id) => id !== category) : [...disabled, category],
       });
-      setError((current) => current?.projectId === projectId && current.category === category ? null : current);
+      setError((current) =>
+        current?.projectId === projectId && current.category === category ? null : current,
+      );
     } catch {
       setError({ projectId, category, enabled });
     }
@@ -189,12 +204,20 @@ export function ProjectNotificationSettings({
               label={t("Search projects")}
               query={query}
               onQueryChange={setQuery}
-              count={search || scope !== "all" ? t("Showing {p0} of {p1} known projects", {
-                p0: visibleProjects.length,
-                p1: projects.length,
-              }) : undefined}
+              count={
+                search || scope !== "all"
+                  ? t("Showing {p0} of {p1} known projects", {
+                      p0: visibleProjects.length,
+                      p1: projects.length,
+                    })
+                  : undefined
+              }
             >
-              <InfoPopover label={t("About project notifications")}>{t("Choose categories per project. Sounds and desktop alerts follow the application settings above.")}</InfoPopover>
+              <InfoPopover label={t("About project notifications")}>
+                {t(
+                  "Choose categories per project. Sounds and desktop alerts follow the application settings above.",
+                )}
+              </InfoPopover>
               <Segmented
                 label={t("Show projects")}
                 value={scope}
@@ -292,9 +315,13 @@ export function ProjectNotificationSettings({
                     ref={project.id === targetId ? targetCard : undefined}
                     tabIndex={-1}
                     className="project-notification-item"
-                    style={{ paddingInlineStart: /^\s*\u21b3/.test(project.name) ? "1rem" : undefined }}
+                    style={{
+                      paddingInlineStart: /^\s*\u21b3/.test(project.name) ? "1rem" : undefined,
+                    }}
                   >
-                    <legend className="sr-only">{project.name} ({project.detail})</legend>
+                    <legend className="sr-only">
+                      {project.name} ({project.detail})
+                    </legend>
                     <div className="project-notification-item-heading settings-collection-row">
                       <div className="flex min-w-[min(100%,200px)] flex-1 items-center gap-3">
                         {selecting ? (
@@ -314,7 +341,9 @@ export function ProjectNotificationSettings({
                           variant="item"
                           motion="none"
                           type="button"
-                          aria-label={t("Notification categories for {p0}", { p0: `${project.name} (${project.detail})` })}
+                          aria-label={t("Notification categories for {p0}", {
+                            p0: `${project.name} (${project.detail})`,
+                          })}
                           tooltip={t("Notification categories for {p0}", { p0: project.name })}
                           aria-expanded={isExpanded}
                           aria-controls={panelId}
@@ -369,17 +398,34 @@ export function ProjectNotificationSettings({
                       </div>
                       <div className="settings-collection-actions">
                         <NotificationMuteControl projectIds={[project.id]} compact />
-                        <InfoPopover label={t("About muting notifications")}>{t("Mute pauses alerts without changing categories. Unread items stay in Inbox.")}</InfoPopover>
+                        <InfoPopover label={t("About muting notifications")}>
+                          {t(
+                            "Mute pauses alerts without changing categories. Unread items stay in Inbox.",
+                          )}
+                        </InfoPopover>
                       </div>
                     </div>
                     {error?.projectId === project.id ? (
                       <div className="project-notification-error">
                         <SettingsFeedback
                           state="error"
-                          action={<Button onClick={() => setCategory(project.id, error.category, error.enabled)}>{t("Retry")}</Button>}
+                          action={
+                            <Button
+                              onClick={() => setCategory(project.id, error.category, error.enabled)}
+                            >
+                              {t("Retry")}
+                            </Button>
+                          }
                         >
                           {t("Could not save notification preferences. Please try again.")}
-                          <span className="block">{project.name} · {t(NOTIFICATION_CATEGORIES.find((category) => category.id === error.category)?.label ?? error.category)}</span>
+                          <span className="block">
+                            {project.name} ·{" "}
+                            {t(
+                              NOTIFICATION_CATEGORIES.find(
+                                (category) => category.id === error.category,
+                              )?.label ?? error.category,
+                            )}
+                          </span>
                         </SettingsFeedback>
                       </div>
                     ) : null}
@@ -388,7 +434,9 @@ export function ProjectNotificationSettings({
                       hidden={!isExpanded}
                       className="project-notification-categories"
                     >
-                      <MiddleTruncate className="project-notification-summary">{project.detail}</MiddleTruncate>
+                      <MiddleTruncate className="project-notification-summary">
+                        {project.detail}
+                      </MiddleTruncate>
                       <div className="project-notification-category-grid">
                         {muted ? (
                           <p

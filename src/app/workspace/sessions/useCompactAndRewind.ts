@@ -319,7 +319,10 @@ export function useCompactAndRewind({
         return false;
       }
       if (!editedResends.start(sessionId)) {
-        say(sessionId, "Another change to this conversation is still finishing. Try again in a moment.");
+        say(
+          sessionId,
+          "Another change to this conversation is still finishing. Try again in a moment.",
+        );
         return false;
       }
       try {

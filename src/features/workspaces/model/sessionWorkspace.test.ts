@@ -80,10 +80,34 @@ beforeEach(() => {
 });
 
 it("prepares an explicit local Host workspace using its durable owner context instead of resolving by cwd", async () => {
-  const owned = { ...session, workspaceMode: "worktree" as const, hostBinding: { kind: "local-host" as const, machineId: "machine", environmentId: "environment", projectId: "project-id", sessionId: session.id, authorityGeneration: null, created: false } };
+  const owned = {
+    ...session,
+    workspaceMode: "worktree" as const,
+    hostBinding: {
+      kind: "local-host" as const,
+      machineId: "machine",
+      environmentId: "environment",
+      projectId: "project-id",
+      sessionId: session.id,
+      authorityGeneration: null,
+      created: false,
+    },
+  };
   await expect(prepareSessionWorkspace(owned)).resolves.toEqual(workspace);
   expect(resolveWorkspaceContext).not.toHaveBeenCalled();
-  expect(workspaceRequest).toHaveBeenCalledWith("workspaces.prepare", expect.objectContaining({ owner: { kind: "session", id: session.id }, projectId: "project-id" }), expect.objectContaining({ cwd: "/project", environmentId: "environment", machineId: "machine", ownerProjectId: "project-id" }));
+  expect(workspaceRequest).toHaveBeenCalledWith(
+    "workspaces.prepare",
+    expect.objectContaining({
+      owner: { kind: "session", id: session.id },
+      projectId: "project-id",
+    }),
+    expect.objectContaining({
+      cwd: "/project",
+      environmentId: "environment",
+      machineId: "machine",
+      ownerProjectId: "project-id",
+    }),
+  );
 });
 
 it("prepares a new session from project policy using authoritative IDs and a stable retry key", async () => {
@@ -212,9 +236,9 @@ it("honors current-checkout policy and explicit worktree override without creati
 
 it("refuses an older Host for an explicit worktree before any workspace mutation", async () => {
   vi.mocked(requireWorkspaceCapability).mockRejectedValue(new Error("Update bycoda Host"));
-  await expect(
-    prepareSessionWorkspace({ ...session, workspaceMode: "worktree" }),
-  ).rejects.toThrow("Update bycoda Host");
+  await expect(prepareSessionWorkspace({ ...session, workspaceMode: "worktree" })).rejects.toThrow(
+    "Update bycoda Host",
+  );
   expect(workspaceRequest).not.toHaveBeenCalled();
 });
 

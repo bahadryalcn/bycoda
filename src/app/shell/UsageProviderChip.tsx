@@ -459,12 +459,7 @@ function UsageProviderDetails({
           {detailWindows.length > 0 ? (
             <div className="flex flex-col gap-1.5">
               {detailWindows.map((entry) => (
-                <UsageWindowCard
-                  key={entry.key}
-                  kind={entry.key}
-                  window={entry.window}
-                  now={now}
-                />
+                <UsageWindowCard key={entry.key} kind={entry.key} window={entry.window} now={now} />
               ))}
             </div>
           ) : (
@@ -534,9 +529,7 @@ function AccountSwitchRow({
       >
         {account ? <AccountColorDot account={account} /> : null}
         <span className="min-w-0 flex-1 truncate">{accountLabel}</span>
-        <span className="text-ui-caption text-(--ui-text-secondary)">
-          {t("Switch account")}
-        </span>
+        <span className="text-ui-caption text-(--ui-text-secondary)">{t("Switch account")}</span>
         <ChevronRight className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden />
       </Button>
     </div>
@@ -660,9 +653,7 @@ function ProviderAccountPicker({
                   ) : null}
                 </span>
               </span>
-              {selected ? (
-                <Check className="icon-sm shrink-0 text-accent" aria-hidden />
-              ) : null}
+              {selected ? <Check className="icon-sm shrink-0 text-accent" aria-hidden /> : null}
             </div>
           );
         })}
@@ -718,10 +709,7 @@ function SwitchSuggestion({
         <p className="mt-0.5 flex min-w-0 items-center gap-2 text-ui-micro">
           <AccountColorDot account={account} />
           <span className="min-w-0 truncate font-medium">{account.label}</span>
-          <AccountStatusLabel
-            status={accountStatus(limits, now)}
-            className="text-ui-caption"
-          />
+          <AccountStatusLabel status={accountStatus(limits, now)} className="text-ui-caption" />
         </p>
       </div>
       <Button variant="ghost" motion="none" type="button" className="shrink-0" onClick={onSwitch}>
@@ -1121,9 +1109,7 @@ function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; load
         label={loading ? t("Loading usage…") : t("Usage unavailable")}
         loading={loading}
       />
-      {limits.error ? (
-        <InlineError live="off">{limits.error}</InlineError>
-      ) : null}
+      {limits.error ? <InlineError live="off">{limits.error}</InlineError> : null}
     </Surface>
   );
 }

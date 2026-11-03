@@ -505,8 +505,11 @@ export class DesktopLive {
             const timer = setTimeout(() => {
               // A live heartbeat retaining this writer is evidence against transfer.
               this.pruneWriterClients();
-              if (this.busyClient(sessionId) ||
-                  (this.clientAlive(clientId) && this.writerClients.get(clientId)?.sessions.has(sessionId)))
+              if (
+                this.busyClient(sessionId) ||
+                (this.clientAlive(clientId) &&
+                  this.writerClients.get(clientId)?.sessions.has(sessionId))
+              )
                 finish(
                   "The desktop did not confirm provider writer retirement. Reopen bycoda there and retry.",
                 );

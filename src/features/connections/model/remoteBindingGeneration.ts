@@ -59,7 +59,10 @@ export class RemoteBindingGeneration {
     this.bound = session;
   }
 
-  capture(key: string = this.trackedKey, session: string | undefined = this.bound): RemoteBindingToken {
+  capture(
+    key: string = this.trackedKey,
+    session: string | undefined = this.bound,
+  ): RemoteBindingToken {
     return { version: this.generation, key, session };
   }
 

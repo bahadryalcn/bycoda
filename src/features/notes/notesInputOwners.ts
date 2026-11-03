@@ -317,7 +317,7 @@ export class NoteInputOwner {
     this.registration.allowed();
   external<T>(apply: () => T): T {
     this.externalRevision++;
-    for (const cancel of [...this.pendingPublications]) cancel();
+    for (const cancel of Array.from(this.pendingPublications)) cancel();
     this.canonicalPending.clear();
     return this.registration.external(apply);
   }

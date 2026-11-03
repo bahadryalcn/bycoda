@@ -224,7 +224,7 @@ export class SocialTransport {
       }
       const signature = request.headers["x-hub-signature-256"];
       if (typeof signature !== "string") throw new Error("Invalid webhook signature.");
-      const result = this.service.webhook(platform, Buffer.concat(chunks), signature, secret);
+      const result = await this.service.webhook(platform, Buffer.concat(chunks), signature, secret);
       response.setHeader("Content-Type", "application/json");
       response.end(JSON.stringify(result));
     } catch {

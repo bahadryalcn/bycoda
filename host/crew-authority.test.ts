@@ -587,7 +587,12 @@ it("retains a confirmed create through the paired service after caller revocatio
   });
   const pending = service.call(
     "crews.start",
-    { projectId: f.project.id, definitionId: f.saved.id, prompt: "Start", requestId: "paired-create" },
+    {
+      projectId: f.project.id,
+      definitionId: f.saved.id,
+      prompt: "Start",
+      requestId: "paired-create",
+    },
     { authorized: f.guard },
   );
   const denied = expect(pending).rejects.toBeInstanceOf(HostDomainAuthorizationError);
@@ -606,7 +611,9 @@ it("retains a confirmed create through the paired service after caller revocatio
   expect(f.sessions.get("created-session")).toMatchObject({ status: "idle" });
   await f.crews.tick();
   expect(f.engine.updateSession).not.toHaveBeenCalled();
-  expect(f.engine.command.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(["create"]);
+  expect(f.engine.command.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual([
+    "create",
+  ]);
 });
 
 it("preserves accepted turn identity and a concurrent pause through the paired service after revocation", async () => {
@@ -625,13 +632,21 @@ it("preserves accepted turn identity and a concurrent pause through the paired s
   });
   const pending = service.call(
     "crews.start",
-    { projectId: f.project.id, definitionId: f.saved.id, prompt: "Start", requestId: "paired-send" },
+    {
+      projectId: f.project.id,
+      definitionId: f.saved.id,
+      prompt: "Start",
+      requestId: "paired-send",
+    },
     { authorized: f.guard },
   );
   const denied = expect(pending).rejects.toThrow("revoked");
   await entered.promise;
   const acceptedSession = structuredClone(f.sessions.get("created-session"));
-  const edited = await f.crews.save({ ...f.saved, name: "Concurrent owner edit" }, f.saved.updatedAt);
+  const edited = await f.crews.save(
+    { ...f.saved, name: "Concurrent owner edit" },
+    f.saved.updatedAt,
+  );
   await service.call(
     "crews.pause",
     { projectId: f.project.id, runId: "paired-send" },
@@ -653,9 +668,11 @@ it("preserves accepted turn identity and a concurrent pause through the paired s
   expect(acceptedSession).toMatchObject({ status: "running", runId: "created-session-turn" });
   expect(f.sessions.get("created-session")).toEqual(acceptedSession);
   await f.crews.tick();
-  expect(f.engine.command.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(["create", "send"]);
-  expect(f.engine.command.mock.calls.map(([input]) => (input as { commandId: string }).commandId)).toEqual([
-    "crew-paired-send:create",
-    "crew-paired-send:send",
+  expect(f.engine.command.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual([
+    "create",
+    "send",
   ]);
+  expect(
+    f.engine.command.mock.calls.map(([input]) => (input as { commandId: string }).commandId),
+  ).toEqual(["crew-paired-send:create", "crew-paired-send:send"]);
 });

@@ -11,21 +11,46 @@ type HostCall = {
   };
 };
 const fixture = "/tests/browser/tasks.html";
-for(const width of [1280,800])for(const theme of ["light","dark"]){
-  test(`stalled worker stays running with a diagnostic ${width} ${theme}`,async({page})=>{
-    await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:"reduce"});
-    await openTasks(page,`${fixture}?stalled`);await page.evaluate(light=>document.documentElement.classList.toggle("theme-light",light),theme==="light");
-    await mkdir("temp/verification/arif-assistant-stalls",{recursive:true});
-    const card=page.getByRole("article",{name:"Inspect delayed worker",exact:true});await expect(card.getByText("Running · no recent output",{exact:true})).toBeVisible();
-    await page.screenshot({path:`temp/verification/arif-assistant-stalls/${theme}-${width}-board.png`});
-    await page.getByRole("radio",{name:"List view",exact:true}).click();await expect(page.getByText("Running · no recent output",{exact:true})).toBeVisible();
-    await page.screenshot({path:`temp/verification/arif-assistant-stalls/${theme}-${width}-list.png`});
-    await page.getByRole("button",{name:"Inspect delayed worker",exact:true}).click();const details=page.getByRole("complementary",{name:"Task details",exact:true});await expect(details.locator("[data-task-status-line=stalled]")).toContainText("Running · no recent output");
-    await page.screenshot({path:`temp/verification/arif-assistant-stalls/${theme}-${width}-detail.png`});
-    await openTasks(page,`${fixture}?stalled&cleared`);await page.evaluate(light=>document.documentElement.classList.toggle("theme-light",light),theme==="light");await expect(page.getByText("Running · no recent output",{exact:true})).toHaveCount(0);
-    await page.screenshot({path:`temp/verification/arif-assistant-stalls/${theme}-${width}-cleared.png`});
-  });
-}
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`stalled worker stays running with a diagnostic ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await openTasks(page, `${fixture}?stalled`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await mkdir("temp/verification/arif-assistant-stalls", { recursive: true });
+      const card = page.getByRole("article", { name: "Inspect delayed worker", exact: true });
+      await expect(card.getByText("Running · no recent output", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/arif-assistant-stalls/${theme}-${width}-board.png`,
+      });
+      await page.getByRole("radio", { name: "List view", exact: true }).click();
+      await expect(page.getByText("Running · no recent output", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/arif-assistant-stalls/${theme}-${width}-list.png`,
+      });
+      await page.getByRole("button", { name: "Inspect delayed worker", exact: true }).click();
+      const details = page.getByRole("complementary", { name: "Task details", exact: true });
+      await expect(details.locator("[data-task-status-line=stalled]")).toContainText(
+        "Running · no recent output",
+      );
+      await page.screenshot({
+        path: `temp/verification/arif-assistant-stalls/${theme}-${width}-detail.png`,
+      });
+      await openTasks(page, `${fixture}?stalled&cleared`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await expect(page.getByText("Running · no recent output", { exact: true })).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/arif-assistant-stalls/${theme}-${width}-cleared.png`,
+      });
+    });
+  }
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
     test(`suspended merge preferences require review in forms at ${width}px ${theme}`, async ({

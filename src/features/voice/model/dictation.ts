@@ -2,6 +2,8 @@ import captureUrl from "./voiceCapture.js?url&no-inline";
 import { localVoiceBackend, type VoiceRuntimeConfig } from "./localVoiceClient";
 import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
+import { openMicrophone } from "./microphoneAccess";
+import { t } from "../../../shared/i18n";
 
 const noop = () => {};
 
@@ -47,7 +49,9 @@ export class Dictation {
     this.callbacks.state("starting");
     try {
       if (!navigator.mediaDevices?.getUserMedia)
-        throw new Error("Microphone access requires the desktop app or a secure browser context.");
+        throw new Error(
+          t("Microphone access requires the desktop app or a secure browser context."),
+        );
       // The microphone opens while the recognizer loads (seconds when it is cold):
       // phrases spoken meanwhile wait for it instead of being lost or delayed.
       const backend = localVoiceBackend.start(this.config, true).then(({ lease }) => {
@@ -56,14 +60,17 @@ export class Dictation {
           throw new Error("Dictation was cancelled.");
         }
         this.lease = lease;
+        // Runs until the final release, so it also covers the stop() drain.
         this.heartbeat = setInterval(() => {
-          if (this.lease) void localVoiceBackend.keepAlive(this.lease).catch(() => this.cancel());
+          const current = this.lease;
+          if (!current || this.closed) return;
+          void localVoiceBackend.keepAlive(current).catch((cause) => this.fail(cause));
         }, 30_000);
         return lease;
       });
       this.backend = backend;
       backend.catch((cause) => this.fail(cause));
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = await openMicrophone({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: false,
       });
@@ -100,7 +107,7 @@ export class Dictation {
   private fail(cause: unknown) {
     if (this.closed) return;
     this.cancel();
-    this.callbacks.error(errorText(cause).trim() || "Dictation could not start.");
+    this.callbacks.error(errorText(cause).trim() || t("Dictation could not start."));
   }
 
   private transcribe(audio: Int16Array, rate: number) {
@@ -120,7 +127,7 @@ export class Dictation {
         const text = (await pending).text.trim();
         if (text && !this.closed) this.callbacks.text(text);
       } catch {
-        if (!this.closed) this.callbacks.error("Speech recognition failed. Please try again.");
+        if (!this.closed) this.callbacks.error(t("Speech recognition failed. Please try again."));
       }
     });
   }
@@ -140,14 +147,13 @@ export class Dictation {
     if (this.closed) return;
     this.closed = true;
     this.stopCapture();
+    this.stopHeartbeat();
     this.release();
     this.callbacks.state("idle");
   }
 
   private stopCapture() {
     this.callbacks.level?.(0);
-    if (this.heartbeat) clearInterval(this.heartbeat);
-    this.heartbeat = undefined;
     this.stream?.getTracks().forEach((track) => track.stop());
     this.source?.disconnect();
     this.capture?.disconnect();
@@ -156,6 +162,11 @@ export class Dictation {
     // Start may still be resuming after a cancel and call this again.
     this.stream = undefined;
     this.audio = undefined;
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    this.heartbeat = undefined;
   }
 
   private release() {

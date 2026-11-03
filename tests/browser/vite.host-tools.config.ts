@@ -6,9 +6,7 @@ const mock = fileURLToPath(new URL("./host-tools-mocks.ts", import.meta.url));
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: [
-      { find: /.*\/connections\/model\/hostFeatureClient$/, replacement: mock },
-    ],
+    alias: [{ find: /.*\/connections\/model\/hostFeatureClient$/, replacement: mock }],
   },
   build: {
     outDir: "temp/build/browser-host-tools",

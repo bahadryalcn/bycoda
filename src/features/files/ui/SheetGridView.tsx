@@ -16,7 +16,13 @@ const OVERSCAN = 10;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 
-export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet; fitContent?: boolean }) {
+export function SheetGridView({
+  grid,
+  fitContent = false,
+}: {
+  grid: SparseSheet;
+  fitContent?: boolean;
+}) {
   useLocale();
   const name = grid.name;
   const id = useId();
@@ -70,7 +76,11 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
   return (
     <div
       className={`relative flex min-h-0 flex-col ${fitContent ? "" : "flex-1"}`}
-      style={fitContent ? { height: headerHeight + grid.rowCount * rowHeight, maxHeight: "min(560px,60dvh)" } : undefined}
+      style={
+        fitContent
+          ? { height: headerHeight + grid.rowCount * rowHeight, maxHeight: "min(560px,60dvh)" }
+          : undefined
+      }
     >
       {grid.truncated ? (
         <div className="shrink-0 border-b border-stroke px-3 py-1 text-ui-micro text-[var(--ui-text-secondary)]">

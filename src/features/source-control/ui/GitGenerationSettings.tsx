@@ -125,9 +125,10 @@ export function GitGenerationSettings({
   const model = resolveModel(harness, choice?.model ?? automatic?.model ?? defaultModelId(harness));
   const account = useSyncExternalStore(
     subscribeProviderAccounts,
-    () => supportsProviderAccounts(harness) && providerAccounts(harness).length > 1
-      ? providerAccountLabel(harness, defaultProviderAccountId(harness))
-      : "",
+    () =>
+      supportsProviderAccounts(harness) && providerAccounts(harness).length > 1
+        ? providerAccountLabel(harness, defaultProviderAccountId(harness))
+        : "",
     () => "",
   );
   return (
@@ -174,12 +175,19 @@ export function GitGenerationSettings({
             disabled={disabled}
           />
           {account ? (
-            <p className="text-ui-caption text-(--ui-text-secondary)">{t("Account")} · {account}</p>
+            <p className="text-ui-caption text-(--ui-text-secondary)">
+              {t("Account")} · {account}
+            </p>
           ) : null}
           {hasOverride && (
             <div className="flex items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
               <span>{t("Project setting")} ·</span>
-              <Button size="sm" variant="link" disabled={disabled} onClick={() => onChange(undefined)}>
+              <Button
+                size="sm"
+                variant="link"
+                disabled={disabled}
+                onClick={() => onChange(undefined)}
+              >
                 {t("Use global")}
               </Button>
             </div>

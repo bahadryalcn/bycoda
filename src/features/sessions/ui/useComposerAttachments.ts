@@ -192,7 +192,7 @@ export function useComposerAttachmentReads({
     (read: (accepted: ComposerPreparation & { isCurrent(): boolean }) => Promise<void>) => {
       let parentAttempt: ParentAdmission | null = parentInputRef.current?.admit() ?? null;
       if (!parentAttempt) {
-        setPasteError("Attachments cannot be added while this conversation changes. Try again.");
+        setPasteError(t("Attachments cannot be added while this conversation changes. Try again."));
         return;
       }
       const initialParentAttempt = parentAttempt;

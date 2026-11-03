@@ -114,9 +114,7 @@ export function TaskSessionSheet({
             </Button>
           </Alert>
         ) : null}
-        {!session && !error ? (
-          <LoadingText />
-        ) : null}
+        {!session && !error ? <LoadingText /> : null}
         {conversation.map((block) => (
           <section className="task-session-message" data-role={block.role} key={block.id}>
             <h3>{t(block.role === "user" ? "You" : "Assistant")}</h3>

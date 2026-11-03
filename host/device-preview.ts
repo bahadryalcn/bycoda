@@ -184,7 +184,7 @@ export class DevicePreviews {
   }
   async dispose(): Promise<void> {
     this.disposed = true;
-    await Promise.allSettled([...this.work]);
+    await Promise.allSettled(this.work);
   }
   private async run(job: Preview, input: PreviewInput) {
     job.state = "running";

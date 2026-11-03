@@ -13,7 +13,14 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
   bridge.invoke.mockResolvedValue([]);
-  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
@@ -134,32 +141,45 @@ async function submit() {
   );
 }
 it("selects a discovered key without connecting and saves only its path with the existing route", async () => {
-  bridge.invoke.mockResolvedValue([{ identityFile: "C:/keys/work", keyType: "ssh-ed25519", fingerprint: "SHA256:public" }]);
+  bridge.invoke.mockResolvedValue([
+    { identityFile: "C:/keys/work", keyType: "ssh-ed25519", fingerprint: "SHA256:public" },
+  ]);
   vi.mocked(saveSshConnection).mockResolvedValue(policyServer);
-  await act(async () => root.render(createElement(SshServerEditor, { server: policyServer, onClose: vi.fn() })));
+  await act(async () =>
+    root.render(createElement(SshServerEditor, { server: policyServer, onClose: vi.fn() })),
+  );
   const picker = document.querySelector<HTMLButtonElement>('button[aria-label^="Choose SSH key"]')!;
   expect(picker).toBeTruthy();
   await act(async () => picker.click());
-  const option = document.querySelector<HTMLButtonElement>('[role="option"][data-value="C:/keys/work"]')!;
+  const option = document.querySelector<HTMLButtonElement>(
+    '[role="option"][data-value="C:/keys/work"]',
+  )!;
   expect(option).toBeTruthy();
   await act(async () => option.click());
   expect(saveSshConnection).not.toHaveBeenCalled();
   await submit();
   expect(saveSshConnection).toHaveBeenCalledExactlyOnceWith({
-    id: policyServer.id, name: policyServer.name,
+    id: policyServer.id,
+    name: policyServer.name,
     endpoint: { ...policyServer.sshEndpoint, identityFile: "C:/keys/work", jumpHost: undefined },
   });
 });
 it("keeps manual key entry usable when discovery fails", async () => {
   bridge.invoke.mockRejectedValue(new Error("unavailable"));
   vi.mocked(saveSshConnection).mockResolvedValue(legacy);
-  await act(async () => root.render(createElement(SshServerEditor, { server: legacy, onClose: vi.fn() })));
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Could not load SSH keys");
+  await act(async () =>
+    root.render(createElement(SshServerEditor, { server: legacy, onClose: vi.fn() })),
+  );
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not load SSH keys",
+  );
   await input("Identity file", "C:/custom/private-reference");
   await submit();
-  expect(saveSshConnection).toHaveBeenCalledWith(expect.objectContaining({
-    endpoint: expect.objectContaining({ identityFile: "C:/custom/private-reference" }),
-  }));
+  expect(saveSshConnection).toHaveBeenCalledWith(
+    expect.objectContaining({
+      endpoint: expect.objectContaining({ identityFile: "C:/custom/private-reference" }),
+    }),
+  );
 });
 async function setAriaInput(name: string, value: string) {
   const field = document.querySelector<HTMLInputElement>(`input[aria-label="${name}"]`)!;

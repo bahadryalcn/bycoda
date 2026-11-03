@@ -96,9 +96,16 @@ export function ArchivePage({
   cwd: string;
   sessions: SessionSummary[];
   /** Whether `sessions` is a complete answer. Anything but "ready" must not read as an empty archive. */
-  sessionsStatus?: { state: "loading" | "unavailable" | "ready"; error?: string; onRetry?: () => void };
+  sessionsStatus?: {
+    state: "loading" | "unavailable" | "ready";
+    error?: string;
+    onRetry?: () => void;
+  };
   onOpenSession: (sessionId: string) => void;
-  onArchiveSession: (sessionId: string, archived: boolean) => void | boolean | Promise<void | boolean>;
+  onArchiveSession: (
+    sessionId: string,
+    archived: boolean,
+  ) => void | boolean | Promise<void | boolean>;
   onDeleteSession: (sessionId: string) => void | boolean | Promise<void | boolean>;
   onRestoreProject?: (path: string) => void | Promise<void>;
   onDeleteProject?: (path: string) => void | Promise<void>;
@@ -131,10 +138,14 @@ export function ArchivePage({
     [sessions],
   );
   const matchingProjects = archivedProjects.filter((project) =>
-    `${archivedProjectLabel(project.path)} ${project.path}`.toLocaleLowerCase().includes(projectQuery.trim().toLocaleLowerCase()),
+    `${archivedProjectLabel(project.path)} ${project.path}`
+      .toLocaleLowerCase()
+      .includes(projectQuery.trim().toLocaleLowerCase()),
   );
   const matchingSessions = archived.filter((session) =>
-    sessionDisplayTitle(session.title, session.harness).toLocaleLowerCase().includes(sessionQuery.trim().toLocaleLowerCase()),
+    sessionDisplayTitle(session.title, session.harness)
+      .toLocaleLowerCase()
+      .includes(sessionQuery.trim().toLocaleLowerCase()),
   );
   const run = async (key: string, action: () => void | boolean | Promise<void | boolean>) => {
     // Restore/delete actions for the same target must not overlap either.
@@ -146,7 +157,8 @@ export function ArchivePage({
     setPending((current) => ({ ...current, [key]: true }));
     setErrors((current) => ({ ...current, [key]: "" }));
     try {
-      if (await action() === false) throw new Error(t("The operation did not complete. You can try again."));
+      if ((await action()) === false)
+        throw new Error(t("The operation did not complete. You can try again."));
     } catch (error) {
       setErrors((current) => ({ ...current, [key]: String(error).replace(/^Error: /, "") }));
       throw error;
@@ -238,7 +250,9 @@ export function ArchivePage({
               {matchingProjects.map((project) => (
                 <div key={project.path} className="settings-collection-row">
                   <div className="settings-collection-main">
-                    <p className="settings-collection-title">{archivedProjectLabel(project.path)}</p>
+                    <p className="settings-collection-title">
+                      {archivedProjectLabel(project.path)}
+                    </p>
                     <p className="settings-collection-meta">{prettyCwd(project.path)}</p>
                   </div>
                   <div className="settings-collection-actions">
@@ -248,9 +262,9 @@ export function ArchivePage({
                         loading={!!pending[`restore:${project.path}`]}
                         disabled={!!pending[`restore:${project.path}`]}
                         onClick={() =>
-                          void run(`restore:${project.path}`, () => restoreProject(project.path)).catch(
-                            () => {},
-                          )
+                          void run(`restore:${project.path}`, () =>
+                            restoreProject(project.path),
+                          ).catch(() => {})
                         }
                       >
                         {t("Restore")}
@@ -390,7 +404,9 @@ export function ArchivePage({
                       tone="danger"
                       confirmMode="press"
                       disabled={!!pending[`unarchive:${session.id}`]}
-                      onConfirm={() => run(`delete:${session.id}`, () => onDeleteSession(session.id))}
+                      onConfirm={() =>
+                        run(`delete:${session.id}`, () => onDeleteSession(session.id))
+                      }
                     />
                   </div>
                   {errors[`unarchive:${session.id}`] ? (
@@ -434,7 +450,11 @@ export function ArchivePage({
           path={deleting.path}
           onCancel={() => setDeleting(null)}
           onConfirm={async () => {
-            if (!onDeleteProject || isProjectLockedIn(getGroupLockView().lock, deleting.path) || !availableProjects.current.some((project) => project.path === deleting.path)) {
+            if (
+              !onDeleteProject ||
+              isProjectLockedIn(getGroupLockView().lock, deleting.path) ||
+              !availableProjects.current.some((project) => project.path === deleting.path)
+            ) {
               throw new Error(t("The operation did not complete. You can try again."));
             }
             await onDeleteProject?.(deleting.path);

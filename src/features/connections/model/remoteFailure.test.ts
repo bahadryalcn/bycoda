@@ -22,7 +22,8 @@ describe("classifyRemoteError", () => {
       "Host rejected request: Path is outside this machine’s projects",
       "RPC_WS_VALIDATION: Invalid workspace path",
       "RPC_WS_RESOURCE_RETIRED: Session was removed",
-    ]) expect(isConnectionFailure(classifyRemoteError(message))).toBe(false);
+    ])
+      expect(isConnectionFailure(classifyRemoteError(message))).toBe(false);
   });
   it.each([
     "Machine is unreachable. Check the host and SSH tunnel, then reconnect.",

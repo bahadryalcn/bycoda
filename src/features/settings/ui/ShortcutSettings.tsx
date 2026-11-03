@@ -198,7 +198,10 @@ export function ShortcutEditor({
 
   return (
     <div className={styles.editor} aria-busy={busy} data-capturing={recording || undefined}>
-      <div className={styles.control} title={recording ? t("Del disables · Esc cancels") : undefined}>
+      <div
+        className={styles.control}
+        title={recording ? t("Del disables · Esc cancels") : undefined}
+      >
         <div
           className={styles.recorder}
           onPointerDownCapture={() => {
@@ -252,17 +255,28 @@ export function ShortcutEditor({
         </div>
         <span className={styles.actionSlot}>
           {recording ? (
-            <Button variant="ghost" iconOnly label={t("Cancel")}
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Cancel")}
               tooltip={t("Del disables · Esc cancels")}
               onClick={() => {
                 setRecording(false);
                 setError(null);
                 onFeedbackChange?.(null);
-              }}><X aria-hidden className="icon-sm" /></Button>
+              }}
+            >
+              <X aria-hidden className="icon-sm" />
+            </Button>
           ) : resetVisible ? (
-            <Button variant="ghost" iconOnly
-              label={t("Reset {p0} shortcut", { p0: name })} tooltip={t("Restore default")}
-              disabled={busy || disabled} onClick={() => void run(onReset)}>
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Reset {p0} shortcut", { p0: name })}
+              tooltip={t("Restore default")}
+              disabled={busy || disabled}
+              onClick={() => void run(onReset)}
+            >
               <RotateCcw aria-hidden strokeWidth={1.75} />
             </Button>
           ) : null}
@@ -292,7 +306,12 @@ export function QuickComposerShortcutEditor({
     loadQuickComposerEnabled,
     subscribeQuickComposerEnabled,
   );
-  const persist = async (nextEnabled: boolean, nextShortcut: string, writeShortcut = true, writeEnabled = false) => {
+  const persist = async (
+    nextEnabled: boolean,
+    nextShortcut: string,
+    writeShortcut = true,
+    writeEnabled = false,
+  ) => {
     const previousEnabled = loadQuickComposerEnabled();
     const previousShortcut = loadQuickComposerShortcut();
     let nativeAttempted = false;
@@ -305,24 +324,27 @@ export function QuickComposerShortcutEditor({
       }
       if (writeShortcut) {
         shortcutWritten = true;
-        if (saveQuickComposerShortcut(nextShortcut) === false) throw new Error(t("Could not save changes"));
+        if (saveQuickComposerShortcut(nextShortcut) === false)
+          throw new Error(t("Could not save changes"));
       }
       if (writeEnabled) {
         enabledWritten = true;
-        if (saveQuickComposerEnabled(nextEnabled) === false) throw new Error(t("Could not save changes"));
+        if (saveQuickComposerEnabled(nextEnabled) === false)
+          throw new Error(t("Could not save changes"));
       }
     } catch (reason) {
       const failures = [String(reason)];
       const rollback = async (action: () => boolean | void | Promise<void>) => {
         try {
-          if (await action() === false) throw new Error(t("Could not save changes"));
+          if ((await action()) === false) throw new Error(t("Could not save changes"));
         } catch (error) {
           failures.push(t("Restoring the previous shortcut failed: {p0}", { p0: String(error) }));
         }
       };
       if (shortcutWritten) await rollback(() => saveQuickComposerShortcut(previousShortcut));
       if (enabledWritten) await rollback(() => saveQuickComposerEnabled(previousEnabled));
-      if (nativeAttempted) await rollback(() => setQuickComposerShortcut(previousEnabled, previousShortcut));
+      if (nativeAttempted)
+        await rollback(() => setQuickComposerShortcut(previousEnabled, previousShortcut));
       throw new Error(failures.join(" "));
     } finally {
       setShortcut(loadQuickComposerShortcut());
@@ -414,11 +436,13 @@ function KeybindingSettingsRow({
           {modified ? <span className={styles.modified}>{t("Modified")}</span> : null}
         </span>
       }
-      scope={row.when === "Always" ? undefined : (
-        <OverflowTooltip label={t("When: {p0}", { p0: t(row.when) })}>
-          <span className={styles.context}>{t("When: {p0}", { p0: t(row.when) })}</span>
-        </OverflowTooltip>
-      )}
+      scope={
+        row.when === "Always" ? undefined : (
+          <OverflowTooltip label={t("When: {p0}", { p0: t(row.when) })}>
+            <span className={styles.context}>{t("When: {p0}", { p0: t(row.when) })}</span>
+          </OverflowTooltip>
+        )
+      }
       descriptionVisible={false}
       description={
         modified
@@ -430,10 +454,34 @@ function KeybindingSettingsRow({
       }
     >
       <span className={styles.feedbackSlot} role={feedback?.state === "error" ? "alert" : "status"}>
-        <span className="sr-only">{feedback?.state === "error" ? feedback.message : feedback?.state === "loading" ? t("Saving…") : feedback ? t("Saved") : ""}</span>
-        {feedback ? <InfoPopover label={feedback.state === "error" ? feedback.message : feedback.state === "loading" ? t("Saving…") : t("Saved")}>
-          <p>{feedback.state === "error" ? feedback.message : feedback.state === "loading" ? t("Saving…") : t("Saved")}</p>
-        </InfoPopover> : null}
+        <span className="sr-only">
+          {feedback?.state === "error"
+            ? feedback.message
+            : feedback?.state === "loading"
+              ? t("Saving…")
+              : feedback
+                ? t("Saved")
+                : ""}
+        </span>
+        {feedback ? (
+          <InfoPopover
+            label={
+              feedback.state === "error"
+                ? feedback.message
+                : feedback.state === "loading"
+                  ? t("Saving…")
+                  : t("Saved")
+            }
+          >
+            <p>
+              {feedback.state === "error"
+                ? feedback.message
+                : feedback.state === "loading"
+                  ? t("Saving…")
+                  : t("Saved")}
+            </p>
+          </InfoPopover>
+        ) : null}
       </span>
       {row.command === "App: Quick Composer" ? (
         <QuickComposerShortcutEditor onSaved={onSaved} onFeedbackChange={setFeedback} />
@@ -519,17 +567,23 @@ export function KeybindingsPage() {
       let nativeAttempted = false;
       let desktopAttempted = false;
       try {
-        if(command===DESKTOP_STOP_COMMAND){desktopAttempted=true;await applyDesktopStopShortcut(next);}
+        if (command === DESKTOP_STOP_COMMAND) {
+          desktopAttempted = true;
+          await applyDesktopStopShortcut(next);
+        }
         if (IS_MAC) {
           nativeAttempted = true;
           await invoke("keybindings_set_overrides", { overrides: next });
         }
         saveKeybindingOverride(command, override);
       } catch (error) {
-        const rollbackErrors:unknown[]=[];
-        if(desktopAttempted){
-          try{await applyDesktopStopShortcut(previous);}
-          catch(rollbackError){rollbackErrors.push(rollbackError);}
+        const rollbackErrors: unknown[] = [];
+        if (desktopAttempted) {
+          try {
+            await applyDesktopStopShortcut(previous);
+          } catch (rollbackError) {
+            rollbackErrors.push(rollbackError);
+          }
         }
         if (nativeAttempted) {
           try {
@@ -538,9 +592,13 @@ export function KeybindingsPage() {
             rollbackErrors.push(rollbackError);
           }
         }
-        if(rollbackErrors.length)throw new Error(t("Shortcut save failed: {p0}. Restoring the native shortcut also failed: {p1}",{
-          p0:String(error),p1:rollbackErrors.map(String).join("; "),
-        }));
+        if (rollbackErrors.length)
+          throw new Error(
+            t("Shortcut save failed: {p0}. Restoring the native shortcut also failed: {p1}", {
+              p0: String(error),
+              p1: rollbackErrors.map(String).join("; "),
+            }),
+          );
         throw error;
       }
     } finally {
@@ -589,9 +647,11 @@ export function KeybindingsPage() {
             )}
           </p>
         </InfoPopover>
-        {query.trim() || filtered ? <span className={styles.summary} role="status">
-          {t("Showing {p0} of {p1} bindings", { p0: rows.length, p1: allRows.length })}
-        </span> : null}
+        {query.trim() || filtered ? (
+          <span className={styles.summary} role="status">
+            {t("Showing {p0} of {p1} bindings", { p0: rows.length, p1: allRows.length })}
+          </span>
+        ) : null}
         {filtersOpen ? (
           <Popover
             anchor={filterAnchor}
@@ -674,7 +734,11 @@ export function KeybindingsPage() {
             return (
               <Group
                 key={group}
-                title={<span>{t(group)} <span className={styles.groupCount}>· {entries.length}</span></span>}
+                title={
+                  <span>
+                    {t(group)} <span className={styles.groupCount}>· {entries.length}</span>
+                  </span>
+                }
               >
                 {entries.map((row) => (
                   <KeybindingSettingsRow

@@ -222,8 +222,7 @@ function sameBlocksIgnoringLiveToolOutput(previous: Block[], next: Block[]): boo
   if (a.role !== "tool" || b.role !== "tool" || !a.tool || !b.tool) return false;
   if (a.id !== b.id || !a.streaming || !b.streaming) return false;
   return (
-    sameFieldsExcept(a, b, "tool") &&
-    sameFieldsExcept(a.tool, b.tool, "detail", "outputTruncated")
+    sameFieldsExcept(a, b, "tool") && sameFieldsExcept(a.tool, b.tool, "detail", "outputTruncated")
   );
 }
 

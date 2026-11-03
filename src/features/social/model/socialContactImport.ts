@@ -51,17 +51,24 @@ export function previewContactImport(
   source: string,
   context: { accounts: Pick<SocialAccount, "id">[]; projectIds: string[] },
 ): ContactImportPreview {
-  if (source.length > CONTACT_IMPORT_MAX_BYTES) return { rows: [], error: t("The import can be at most 1 MiB.") };
+  if (source.length > CONTACT_IMPORT_MAX_BYTES)
+    return { rows: [], error: t("The import can be at most 1 MiB.") };
   let parsed: unknown;
   try {
     parsed = JSON.parse(source);
   } catch {
     return { rows: [], error: t("The file is not valid JSON.") };
   }
-  if (!Array.isArray(parsed)) return { rows: [], error: t("The file must contain a JSON contact list.") };
+  if (!Array.isArray(parsed))
+    return { rows: [], error: t("The file must contain a JSON contact list.") };
   if (!parsed.length) return { rows: [], error: t("The file has no contacts.") };
   if (parsed.length > CONTACT_IMPORT_MAX_ROWS)
-    return { rows: [], error: t("Import at most {p0} contacts per file. Split the file.", { p0: CONTACT_IMPORT_MAX_ROWS }) };
+    return {
+      rows: [],
+      error: t("Import at most {p0} contacts per file. Split the file.", {
+        p0: CONTACT_IMPORT_MAX_ROWS,
+      }),
+    };
   const accounts = new Set(context.accounts.map((account) => account.id));
   const projects = new Set(context.projectIds);
   const seen = new Map<string, number>();
@@ -84,7 +91,8 @@ export function previewContactImport(
     let projectIds: string[] = [];
     if (!Array.isArray(record.projectIds) || !record.projectIds.length)
       issues.push(t("Add at least one project in projectIds."));
-    else if (record.projectIds.some((id) => typeof id !== "string")) issues.push(t("projectIds must be text values."));
+    else if (record.projectIds.some((id) => typeof id !== "string"))
+      issues.push(t("projectIds must be text values."));
     else {
       projectIds = record.projectIds as string[];
       const unknown = projectIds.filter((id) => !projects.has(id));
@@ -103,7 +111,8 @@ export function previewContactImport(
     if (accountId && platformId) {
       const key = `${accountId}\u0000${platformId}`;
       const first = seen.get(key);
-      if (first !== undefined) issues.push(t("Same account and platformId as row {p0}.", { p0: first }));
+      if (first !== undefined)
+        issues.push(t("Same account and platformId as row {p0}.", { p0: first }));
       else seen.set(key, row);
     }
     if (issues.length) return { row, issues, ignored };

@@ -76,10 +76,24 @@ export function InboxConnectionStatus({
           role="status"
           aria-live="polite"
           data-state={
-            checking ? "checking" : error ? "error" : verified ? "verified" : configured ? "configured" : "idle"
+            checking
+              ? "checking"
+              : error
+                ? "error"
+                : verified
+                  ? "verified"
+                  : configured
+                    ? "configured"
+                    : "idle"
           }
         >
-          {error ? t("Check failed") : configured ? verified ? t("Verified") : t("Configured") : t("Not configured")}
+          {error
+            ? t("Check failed")
+            : configured
+              ? verified
+                ? t("Verified")
+                : t("Configured")
+              : t("Not configured")}
         </Badge>
       </Tooltip>
       <Button stableWidth className="shrink-0" loading={checking} disabled={busy} onClick={onCheck}>
@@ -94,23 +108,68 @@ export function InboxConnectionError({ error }: { error: string | null }) {
 }
 
 /** Account actions keep credential deletion behind an explicit confirmation. */
-export function InboxAccountActions({ disabled, loading, onDisconnect }: {
-  disabled: boolean; loading: boolean; onDisconnect: () => void;
+export function InboxAccountActions({
+  disabled,
+  loading,
+  onDisconnect,
+}: {
+  disabled: boolean;
+  loading: boolean;
+  onDisconnect: () => void;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [confirming, setConfirming] = useState(false);
-  return <>
-    <Button iconOnly variant="ghost" label={t("Account actions")} disabled={disabled} loading={loading}
-      aria-haspopup="menu" aria-expanded={Boolean(anchor)} onClick={(event) => setAnchor(event.currentTarget)}>
-      <MoreHorizontal className="icon-md" />
-    </Button>
-    {anchor ? <DropdownMenu anchor={anchor} label={t("Account actions")}
-      items={[{ kind: "item", id: "disconnect", label: t("Disconnect"), danger: true }]}
-      onClose={() => setAnchor(null)} onPick={() => { setAnchor(null); setConfirming(true); }} /> : null}
-    {confirming ? <Modal title={t("Disconnect account?")} size="sm" onClose={() => setConfirming(false)}
-      footer={<><Button onClick={() => setConfirming(false)}>{t("Cancel")}</Button>
-        <Button tone="danger" onClick={() => { setConfirming(false); onDisconnect(); }}>{t("Disconnect")}</Button></>}>
-      <p className="p-4 text-ui-secondary">{t("Saved credentials will be removed from this computer.")}</p>
-    </Modal> : null}
-  </>;
+  return (
+    <>
+      <Button
+        iconOnly
+        variant="ghost"
+        label={t("Account actions")}
+        disabled={disabled}
+        loading={loading}
+        aria-haspopup="menu"
+        aria-expanded={Boolean(anchor)}
+        onClick={(event) => setAnchor(event.currentTarget)}
+      >
+        <MoreHorizontal className="icon-md" />
+      </Button>
+      {anchor ? (
+        <DropdownMenu
+          anchor={anchor}
+          label={t("Account actions")}
+          items={[{ kind: "item", id: "disconnect", label: t("Disconnect"), danger: true }]}
+          onClose={() => setAnchor(null)}
+          onPick={() => {
+            setAnchor(null);
+            setConfirming(true);
+          }}
+        />
+      ) : null}
+      {confirming ? (
+        <Modal
+          title={t("Disconnect account?")}
+          size="sm"
+          onClose={() => setConfirming(false)}
+          footer={
+            <>
+              <Button onClick={() => setConfirming(false)}>{t("Cancel")}</Button>
+              <Button
+                tone="danger"
+                onClick={() => {
+                  setConfirming(false);
+                  onDisconnect();
+                }}
+              >
+                {t("Disconnect")}
+              </Button>
+            </>
+          }
+        >
+          <p className="p-4 text-ui-secondary">
+            {t("Saved credentials will be removed from this computer.")}
+          </p>
+        </Modal>
+      ) : null}
+    </>
+  );
 }

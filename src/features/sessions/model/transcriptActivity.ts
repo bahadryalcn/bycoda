@@ -69,7 +69,12 @@ export function toolCallState(block: Block): ToolCallState {
   if (isFailedStatus(status)) return "rejected";
   if (needsApproval(block)) return "pending";
   // Settled, and not red: what it did before the stop stays readable.
-  if (status === "completed" || status === "success" || status === "stopped" || status === "interrupted") {
+  if (
+    status === "completed" ||
+    status === "success" ||
+    status === "stopped" ||
+    status === "interrupted"
+  ) {
     return "accepted";
   }
   if (block.streaming || status === "in_progress" || status === "pending" || status === "running") {
@@ -204,7 +209,7 @@ const FENCE = "```";
 
 function countFences(text: string, from: number, to: number): number {
   let count = 0;
-  for (let at = text.indexOf(FENCE, from); at >= 0 && at + FENCE.length <= to; ) {
+  for (let at = text.indexOf(FENCE, from); at >= 0 && at + FENCE.length <= to;) {
     count++;
     at = text.indexOf(FENCE, at + FENCE.length);
   }

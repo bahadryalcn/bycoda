@@ -2,7 +2,11 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getHostRpcMethod } from "../../../shared/model/host-contracts";
-import { remoteRpcCallLiterals, rpcCallLiterals, rpcDispatchLiterals } from "../../../../scripts/checks/host-rpc-source-fixture.mjs";
+import {
+  remoteRpcCallLiterals,
+  rpcCallLiterals,
+  rpcDispatchLiterals,
+} from "../../../../scripts/checks/host-rpc-source-fixture.mjs";
 
 // The desktop's native layer forwards only allowlisted host methods
 // (`supported_remote_method` in src-tauri/src/remote.rs). A method the app
@@ -26,7 +30,7 @@ function hostMethods(): Set<string> {
   const server = readFileSync(join(root, "host", "server.ts"), "utf8");
   // Compatibility spellings or tool actions in the HTTP source do not add a
   // canonical RPC contract and must never expand the native forwarding list.
-  return new Set(rpcDispatchLiterals(server).filter(name => getHostRpcMethod(name)));
+  return new Set(rpcDispatchLiterals(server).filter((name) => getHostRpcMethod(name)));
 }
 
 // Same spelling as a host method, but not a remote call: an agent tool name
@@ -57,12 +61,14 @@ describe("remote method allowlist", () => {
     expect(rpcCallLiterals(source).sort()).toEqual(["desktop.request", "tasks.list"]);
     expect(rpcDispatchLiterals(source)).toEqual(["tasks.list"]);
     expect(remoteRpcCallLiterals(source).sort()).toEqual(["desktop.request", "tasks.list"]);
-    expect(remoteRpcCallLiterals(`
+    expect(
+      remoteRpcCallLiterals(`
       import {remoteRequest as send} from "./connections";
       send(machine, "unsupported.real.rpc", {});
       assistantRequest({op: "notes.get"});
       describe({method: "desktop.status"});
-    `)).toEqual(["unsupported.real.rpc"]);
+    `),
+    ).toEqual(["unsupported.real.rpc"]);
     expect(allowlist().has("unsupported.real.rpc")).toBe(false);
     for (const name of ["desktop.status", "desktop.stop"]) {
       expect(getHostRpcMethod(name)).toBeUndefined();
@@ -117,7 +123,8 @@ describe("remote method allowlist", () => {
       }
     }
     expect([...missing].sort()).toEqual([]);
-  });
+    // Parses every source file under src/; CPU-bound under the parallel suite.
+  }, 30_000);
 
   it("keeps raw development-server relay operations behind their dedicated native gateway", () => {
     const allowed = allowlist();

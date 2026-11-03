@@ -7,8 +7,7 @@ import {
   codexUtilitySpawnArgs,
 } from "./codexUtilityIsolation";
 import type { JsonRpcWriterView } from "../turnWriter";
-const writer = (request: ReturnType<typeof vi.fn>) =>
-  ({ request }) as unknown as JsonRpcWriterView;
+const writer = (request: ReturnType<typeof vi.fn>) => ({ request }) as unknown as JsonRpcWriterView;
 const disabled = {
   runtimeStatus: "disabled",
   tools: {},
@@ -17,9 +16,7 @@ const disabled = {
 };
 const isolatedConfig = {
   web_search: "disabled",
-  features: Object.fromEntries(
-    CODEX_UTILITY_DISABLED_FEATURES.map((name) => [name, false]),
-  ),
+  features: Object.fromEntries(CODEX_UTILITY_DISABLED_FEATURES.map((name) => [name, false])),
 };
 it("disables command execution itself rather than mistaking unified-exec opt-out or read-only sandbox for a tool denial", () => {
   const args = codexUtilitySpawnArgs();
@@ -77,9 +74,7 @@ it("does not accept cached/live/unknown web search as disabled", async () => {
   for (const web_search of [undefined, "cached", "live"])
     await expect(
       codexUtilityConfig(
-        writer(
-          vi.fn(async () => ({ config: { ...isolatedConfig, web_search } })),
-        ),
+        writer(vi.fn(async () => ({ config: { ...isolatedConfig, web_search } }))),
         "/captured",
       ),
     ).rejects.toThrow("isolation");
@@ -90,19 +85,14 @@ it.each([
   { config: { mcp_servers: [] } },
   {
     config: {
-      mcp_servers: Object.fromEntries(
-        Array.from({ length: 201 }, (_, i) => [i, {}]),
-      ),
+      mcp_servers: Object.fromEntries(Array.from({ length: 201 }, (_, i) => [i, {}])),
     },
   },
-])(
-  "fails closed when the effective config cannot be bounded %#",
-  async (response) => {
-    await expect(
-      codexUtilityConfig(writer(vi.fn(async () => response)), "/captured"),
-    ).rejects.toThrow("isolation");
-  },
-);
+])("fails closed when the effective config cannot be bounded %#", async (response) => {
+  await expect(
+    codexUtilityConfig(writer(vi.fn(async () => response)), "/captured"),
+  ).rejects.toThrow("isolation");
+});
 it("checks all pages against the original thread before certifying isolation", async () => {
   const request = vi
     .fn()
@@ -134,17 +124,14 @@ it.each([
   "never mistakes unknown/enabled/cached tools or malformed evidence for disabled %#",
   async (response) => {
     await expect(
-      assertCodexUtilityIsolation(
-        writer(vi.fn(async () => response)),
-        "original-thread",
-      ),
+      assertCodexUtilityIsolation(writer(vi.fn(async () => response)), "original-thread"),
     ).rejects.toThrow("isolation");
   },
 );
 it("bounds repeated or unending inventory cursors instead of accepting a partial empty page", async () => {
   const repeated = vi.fn(async () => ({ data: [], nextCursor: "same" }));
-  await expect(
-    assertCodexUtilityIsolation(writer(repeated), "thread"),
-  ).rejects.toThrow("isolation");
+  await expect(assertCodexUtilityIsolation(writer(repeated), "thread")).rejects.toThrow(
+    "isolation",
+  );
   expect(repeated).toHaveBeenCalledTimes(2);
 });

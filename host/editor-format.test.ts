@@ -110,3 +110,10 @@ it("rejects oversized buffers and paths outside registered projects", async () =
     commands.run("format_text_file", { path: process.execPath, source: "", cursorOffset: 0 }),
   ).rejects.toThrow("outside");
 });
+
+it("does not corrupt multibyte characters split across stdin chunks in the formatter worker", async () => {
+  const { path, root } = await project();
+  const source = `const a = "${"ğ".repeat(70_000)}";\n`;
+  const result = await formatWorkspaceText(root, path, source, 0);
+  expect(JSON.stringify(result)).not.toContain("�");
+});

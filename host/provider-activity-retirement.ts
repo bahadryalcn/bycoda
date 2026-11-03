@@ -50,9 +50,11 @@ export class ProviderActivityRetirement {
     // Host providers bypass the desktop registry. Without a harness every
     // same-owner family blocks; with one, only that writer's family blocks and
     // another family (for example a skill probe) is warned about.
-    this.startWork = (harness
-      ? drainRetirementsForWriter(this.ownerKey, harness)
-      : drainProviderRetirements({ ownerKey: this.ownerKey }))
+    this.startWork = (
+      harness
+        ? drainRetirementsForWriter(this.ownerKey, harness)
+        : drainProviderRetirements({ ownerKey: this.ownerKey })
+    )
       .then(() => attempted(acquire))
       .then((value) => {
         if (value !== undefined && typeof value !== "function")
@@ -65,7 +67,10 @@ export class ProviderActivityRetirement {
       .catch((error) => {
         this.failed = true;
         throw error;
-      }).finally(() => { this.startSettled = true; });
+      })
+      .finally(() => {
+        this.startSettled = true;
+      });
     void this.startWork.catch(() => {});
     return this.startWork;
   }
@@ -73,10 +78,12 @@ export class ProviderActivityRetirement {
   private capture(): Cohort {
     if (!this.cohort) {
       this.cohort = captureProviderRetirementCohort(this.ownerKey);
-      void this.cohort.settled.finally(() => {
-        this.cohortSettled = true;
-        this.forgetIfComplete();
-      }).catch(() => {});
+      void this.cohort.settled
+        .finally(() => {
+          this.cohortSettled = true;
+          this.forgetIfComplete();
+        })
+        .catch(() => {});
     }
     return this.cohort;
   }
@@ -181,14 +188,23 @@ export class ProviderActivityRetirement {
     if (this.startSucceeded) this.capture();
   }
   private forgetIfComplete(): void {
-    if (this.bookkeepingDone && this.resourceReleased &&
-        (!this.retirementWork || this.retirementSettled)) this.released();
+    if (
+      this.bookkeepingDone &&
+      this.resourceReleased &&
+      (!this.retirementWork || this.retirementSettled)
+    )
+      this.released();
   }
   observation() {
-    return { failed: this.failed, settled: this.retirementWork
-      ? this.retirementSettled : this.cohortSettled || this.cohort?.size === 0 ||
-        (this.startSettled && !this.startSucceeded),
-      retiring: !!this.retirementWork && !this.retirementSettled };
+    return {
+      failed: this.failed,
+      settled: this.retirementWork
+        ? this.retirementSettled
+        : this.cohortSettled ||
+          this.cohort?.size === 0 ||
+          (this.startSettled && !this.startSucceeded),
+      retiring: !!this.retirementWork && !this.retirementSettled,
+    };
   }
   /** Only settled records may release ledger capacity. */
   evict(): void {
@@ -201,7 +217,7 @@ export class ProviderActivityRetirements {
   private readonly records = new Set<ProviderActivityRetirement>();
   reserve(ownerKey: string, released?: () => void): ProviderActivityRetirement {
     // A failed observation cannot discard an outstanding physical stop.
-    for (const record of [...this.records]) {
+    for (const record of Array.from(this.records)) {
       const state = record.observation();
       if (record.ownerKey === ownerKey && (state.retiring || (state.failed && !state.settled)))
         throw new Error("The original provider is still stopping. Retry when it exits.");

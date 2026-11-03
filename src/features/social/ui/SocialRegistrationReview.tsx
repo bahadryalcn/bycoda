@@ -110,7 +110,9 @@ export function SocialRegistrationReview({
             </p>
             <TextField
               label={t("Existing LinkedIn Page ID")}
-              description={t("If sign-in is needed, use Browser workspace to log in, finish or cancel that login action, then verify the existing Page.")}
+              description={t(
+                "If sign-in is needed, use Browser workspace to log in, finish or cancel that login action, then verify the existing Page.",
+              )}
               value={resourceId}
               inputMode="numeric"
               maxLength={20}
@@ -205,11 +207,7 @@ export function SocialRegistrationReview({
           </label>
           <Button
             type="button"
-            disabled={
-              busy ||
-              !accepted ||
-              review.updatedAt !== workflow.updatedAt
-            }
+            disabled={busy || !accepted || review.updatedAt !== workflow.updatedAt}
             loading={pending === "submit"}
             onClick={() =>
               void run("submit", async () => {

@@ -892,43 +892,43 @@ export function NotesView({
         </Button>
       </div>
       {notes.length > 0 || filtered || loading ? (
-      <div className="flex shrink-0 items-center gap-1 px-2 py-1">
-        <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-          <Search className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
-          <SearchInput
-            focusOwner="group"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Filter notes")}
-            aria-label={t("Filter notes")}
-            aria-busy={searchingBody}
-            spellCheck={false}
-            autoComplete="off"
+        <div className="flex shrink-0 items-center gap-1 px-2 py-1">
+          <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+            <Search className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
+            <SearchInput
+              focusOwner="group"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("Filter notes")}
+              aria-label={t("Filter notes")}
+              aria-busy={searchingBody}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            {searchingBody ? (
+              <span role="status" aria-label={t("Searching note content…")}>
+                <WorkingIndicator size="xs" />
+              </span>
+            ) : null}
+          </SearchInputGroup>
+          <FilterTrigger
+            label={t("Filters and options")}
+            icon={<SlidersHorizontal className="icon-sm" />}
+            activeCount={scopeFilterCount}
+            onReset={clearScopeFilters}
+            resetLabel={t("Reset project and tag filters")}
+            size="sm"
+            ref={filtersButton}
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={filtersOpen}
+            onClick={(event) => {
+              event.currentTarget.focus();
+              setFiltersOpen((open) => !open);
+            }}
+            className="shrink-0"
           />
-          {searchingBody ? (
-            <span role="status" aria-label={t("Searching note content…")}>
-              <WorkingIndicator size="xs" />
-            </span>
-          ) : null}
-        </SearchInputGroup>
-        <FilterTrigger
-          label={t("Filters and options")}
-          icon={<SlidersHorizontal className="icon-sm" />}
-          activeCount={scopeFilterCount}
-          onReset={clearScopeFilters}
-          resetLabel={t("Reset project and tag filters")}
-          size="sm"
-          ref={filtersButton}
-          type="button"
-          aria-haspopup="dialog"
-          aria-expanded={filtersOpen}
-          onClick={(event) => {
-            event.currentTarget.focus();
-            setFiltersOpen((open) => !open);
-          }}
-          className="shrink-0"
-        />
-      </div>
+        </div>
       ) : null}
       {filtersOpen ? (
         <Popover
@@ -1176,9 +1176,7 @@ export function NotesView({
                     group={group}
                     label={
                       group.label ||
-                      (libraryPreferences.grouping === "project"
-                        ? t("No project")
-                        : t("Untagged"))
+                      (libraryPreferences.grouping === "project" ? t("No project") : t("Untagged"))
                     }
                     collapsed={collapsedGroups.has(group.key)}
                     menuOpen={menu?.target.kind === "group" && menu.target.key === group.key}
@@ -1320,7 +1318,9 @@ export function NotesView({
         dragRegion
         chromeInset={!besideRail ? true : compactRail ? "compact" : false}
         className="select-none"
-        leading={besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+        leading={
+          besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+        }
         trailing={IS_MAC ? null : <WindowControls />}
       >
         <ToolHeader>
@@ -1456,7 +1456,9 @@ export function NotesView({
       ) : null}
       {menu ? (
         <ContextMenu
-          {...("anchor" in menu ? { anchor: menu.anchor, side: "bottom" as const, align: "start" as const } : { x: menu.x, y: menu.y })}
+          {...("anchor" in menu
+            ? { anchor: menu.anchor, side: "bottom" as const, align: "start" as const }
+            : { x: menu.x, y: menu.y })}
           ariaLabel={t("Note actions")}
           width={236}
           header={
@@ -1569,87 +1571,96 @@ function NoteCard({
   const hint = [note.title, note.sourceCwd || project, ...note.tags].filter(Boolean).join(" · ");
   return (
     <ActionHost selected={active} className="min-w-0 flex-1 items-start">
-    {/* The tag badges hold their own "+N" button, which cannot sit inside the row button: the tag
+      {/* The tag badges hold their own "+N" button, which cannot sit inside the row button: the tag
         line is a sibling laid over the row (clicks outside the badges fall through to the row)
         and the row keeps the line's height. It also holds the gutter the row actions cover. */}
-    <div className="relative min-w-0 flex-1">
-    <Button
-      data-action-primary=""
-      variant="item"
-      layout="stacked"
-      motion="none"
-      tooltip={hint}
-      aria-current={active ? "true" : undefined}
-      aria-haspopup="menu"
-      data-note-id={note.id}
-      data-note-group={group}
-      onClick={onSelect}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onMenu({ x: event.clientX, y: event.clientY });
-      }}
-      onKeyDown={(event) => {
-        if (isMenuKey(event)) {
-          event.preventDefault();
-          onMenu({ anchor: event.currentTarget });
-        } else onNavigate(event);
-      }}
-      className="w-full min-w-0"
-    >
-      <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-secondary font-medium">
-        {note.title || t("Untitled")}
-      </span>
-      <span className="line-clamp-1 text-ui-caption text-(--ui-text-secondary)">
-        {match === "content" ? t("Match in note") : note.preview || t("No preview")}
-      </span>
-      <span className="flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden text-ui-micro text-(--ui-text-secondary)">
-        {grouping !== "project" && project && note.sourceCwd ? (
-          <span className="min-w-0 max-w-full truncate">
-            <NoteProjectMark
-              cwd={note.sourceCwd}
-              logos={logos}
-              mascots={mascots}
-              colors={colors}
-              customColors={customColors}
-            />
+      <div className="relative min-w-0 flex-1">
+        <Button
+          data-action-primary=""
+          variant="item"
+          layout="stacked"
+          motion="none"
+          tooltip={hint}
+          aria-current={active ? "true" : undefined}
+          aria-haspopup="menu"
+          data-note-id={note.id}
+          data-note-group={group}
+          onClick={onSelect}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onMenu({ x: event.clientX, y: event.clientY });
+          }}
+          onKeyDown={(event) => {
+            if (isMenuKey(event)) {
+              event.preventDefault();
+              onMenu({ anchor: event.currentTarget });
+            } else onNavigate(event);
+          }}
+          className="w-full min-w-0"
+        >
+          <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-secondary font-medium">
+            {note.title || t("Untitled")}
           </span>
+          <span className="line-clamp-1 text-ui-caption text-(--ui-text-secondary)">
+            {match === "content" ? t("Match in note") : note.preview || t("No preview")}
+          </span>
+          <span className="flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden text-ui-micro text-(--ui-text-secondary)">
+            {grouping !== "project" && project && note.sourceCwd ? (
+              <span className="min-w-0 max-w-full truncate">
+                <NoteProjectMark
+                  cwd={note.sourceCwd}
+                  logos={logos}
+                  mascots={mascots}
+                  colors={colors}
+                  customColors={customColors}
+                />
+              </span>
+            ) : null}
+            {time ? (
+              <Tooltip label={`${t(date.label)}: ${new Date(date.timestamp).toLocaleString()}`}>
+                <time
+                  dateTime={new Date(date.timestamp).toISOString()}
+                  className="shrink-0 tabular-nums"
+                >
+                  {t(date.label)} {time}
+                </time>
+              </Tooltip>
+            ) : null}
+            {!note.preview ? <span className="sr-only">{t("No preview")}</span> : null}
+            {/* Empty trailing gutter: the row actions sit over it, so the title, preview and meta never move. */}
+            {note.tags.length ? null : (
+              <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
+            )}
+          </span>
+          {note.tags.length ? <span aria-hidden="true" className="mt-1 block h-4" /> : null}
+        </Button>
+        {note.tags.length ? (
+          <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
+            <BadgeList
+              label={t("Tags")}
+              size="xs"
+              items={note.tags.map((tag) => ({ id: tag, label: `#${tag}` }))}
+              className="pointer-events-auto"
+            />
+            <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
+          </div>
         ) : null}
-        {time ? (
-          <Tooltip label={`${t(date.label)}: ${new Date(date.timestamp).toLocaleString()}`}>
-            <time dateTime={new Date(date.timestamp).toISOString()} className="shrink-0 tabular-nums">
-              {t(date.label)} {time}
-            </time>
-          </Tooltip>
-        ) : null}
-        {!note.preview ? <span className="sr-only">{t("No preview")}</span> : null}
-        {/* Empty trailing gutter: the row actions sit over it, so the title, preview and meta never move. */}
-        {note.tags.length ? null : <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />}
-      </span>
-      {note.tags.length ? <span aria-hidden="true" className="mt-1 block h-4" /> : null}
-    </Button>
-    {note.tags.length ? (
-      <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
-        <BadgeList
-          label={t("Tags")}
-          size="xs"
-          items={note.tags.map((tag) => ({ id: tag, label: `#${tag}` }))}
-          className="pointer-events-auto"
-        />
-        <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
       </div>
-    ) : null}
-    </div>
-    <div data-action-slot="collapse" data-action-anchor="end" className="flex shrink-0 items-center">
-      <InlineAction
-        label={t("Actions for {p0}", { p0: note.title || t("Untitled") })}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={(event) => onMenu({ anchor: event.currentTarget })}
+      <div
+        data-action-slot="collapse"
+        data-action-anchor="end"
+        className="flex shrink-0 items-center"
       >
-        <MoreHorizontal className="icon-sm" />
-      </InlineAction>
-    </div>
+        <InlineAction
+          label={t("Actions for {p0}", { p0: note.title || t("Untitled") })}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={(event) => onMenu({ anchor: event.currentTarget })}
+        >
+          <MoreHorizontal className="icon-sm" />
+        </InlineAction>
+      </div>
     </ActionHost>
   );
 }
@@ -1875,30 +1886,24 @@ function NoteEditor({
   }
   onSavedRef.current = onSaved;
   // Picker, preview paste, DOM and native drops; the draft owner applies the body.
-  const {
-    imageBusy,
-    dropZoneRef,
-    dropZoneHandlers,
-    insertImage,
-    pasteImages,
-    onPreviewPaste,
-  } = useNoteImageInsertion({
-    noteId: note.id,
-    inputOwner,
-    draftState,
-    bodyRef,
-    modeRef,
-    toolbarTargetRef,
-    editorViewRef,
-    previewViewRef,
-    previewRangeRef,
-    onInserted: (value) => {
-      editNote({ body: value });
-      setSaveError(null);
-      scheduleSave();
-    },
-    onError: setSaveError,
-  });
+  const { imageBusy, dropZoneRef, dropZoneHandlers, insertImage, pasteImages, onPreviewPaste } =
+    useNoteImageInsertion({
+      noteId: note.id,
+      inputOwner,
+      draftState,
+      bodyRef,
+      modeRef,
+      toolbarTargetRef,
+      editorViewRef,
+      previewViewRef,
+      previewRangeRef,
+      onInserted: (value) => {
+        editNote({ body: value });
+        setSaveError(null);
+        scheduleSave();
+      },
+      onError: setSaveError,
+    });
   useNoteTextInput(inputOwner, "title", titleFieldRef);
   useNoteInputState(inputOwner, "library-state", {
     mode: visibleMode,
@@ -2458,90 +2463,90 @@ function NoteEditor({
           panels="shared"
           id={modesId}
         >
-        <div className="note-editor-toolbar">
-          <TabList label={t("Note sections")}>
-            <Tab value="preview">{t("Document")}</Tab>
-            <Tab value="source">{t("Source")}</Tab>
-            {narrow ? null : <Tab value="split">{t("Split")}</Tab>}
-          </TabList>
-          <NoteMarkdownToolbar
-            viewRef={
-              visibleMode === "preview"
-                ? previewViewRef
-                : visibleMode === "source"
-                  ? editorViewRef
-                  : previewEditing && toolbarTarget === "preview"
-                    ? previewViewRef
-                    : editorViewRef
-            }
-            editing={editing}
-            imageBusy={imageBusy}
-            onInsertImage={() => void insertImage()}
-          />
-        </div>
-        <TabPanel
-          ref={dropZoneRef}
-          tabIndex={undefined}
-          data-external-drop-owner="note-images"
-          aria-busy={imageBusy}
-          className="note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-editor-border) transition-colors"
-          {...dropZoneHandlers}
-        >
-          <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
-            {/* Stays mounted in preview so undo history survives the switch. */}
-            <NoteEditorPane
-              label={t("Source")}
-              scrollKey={`${note.id}:source`}
-              hidden={visibleMode === "preview"}
-              split={visibleMode === "split"}
-            >
-              <NoteMarkdownEditor
-                inputObserver={inputOwner.observer("source")}
-                inputPublication={
-                  bodyPublication?.value === body
-                    ? bodyPublication.proof
-                    : inputOwner.resultControlPublication(note, "source", body)
-                }
-                viewRef={editorViewRef}
-                minHeight={0}
-                autoFocus={blank && visibleMode === "source"}
-                value={body}
-                onChange={(next) => {
-                  editNote({ body: next });
-                  scheduleSave();
-                }}
-                onSave={() => void saveNow()}
-                onPasteImages={pasteImages}
-                onFocus={() => setToolbarTarget("source")}
-              />
-            </NoteEditorPane>
-            <NoteEditorPane
-              label={t("Document")}
-              document
-              scrollKey={`${note.id}:document`}
-              hidden={visibleMode === "source"}
-              split={visibleMode === "split"}
-            >
-              <NoteEditablePreview
-                stateObserver={inputOwner.observer("preview-state")}
-                inputObserver={inputOwner.observer("preview-block")}
-                canMutate={inputOwner.allowed}
-                value={body}
-                cwd={sourceCwd}
-                viewRef={previewViewRef}
-                rangeRef={previewRangeRef}
-                onEditingChange={setPreviewEditing}
-                onFocus={() => setToolbarTarget("preview")}
-                onChange={(next) => {
-                  editNote({ body: next });
-                  scheduleSave();
-                }}
-                onSave={() => void saveNow()}
-                onPasteImages={pasteImages}
-              />
-            </NoteEditorPane>
+          <div className="note-editor-toolbar">
+            <TabList label={t("Note sections")}>
+              <Tab value="preview">{t("Document")}</Tab>
+              <Tab value="source">{t("Source")}</Tab>
+              {narrow ? null : <Tab value="split">{t("Split")}</Tab>}
+            </TabList>
+            <NoteMarkdownToolbar
+              viewRef={
+                visibleMode === "preview"
+                  ? previewViewRef
+                  : visibleMode === "source"
+                    ? editorViewRef
+                    : previewEditing && toolbarTarget === "preview"
+                      ? previewViewRef
+                      : editorViewRef
+              }
+              editing={editing}
+              imageBusy={imageBusy}
+              onInsertImage={() => void insertImage()}
+            />
           </div>
-        </TabPanel>
+          <TabPanel
+            ref={dropZoneRef}
+            tabIndex={undefined}
+            data-external-drop-owner="note-images"
+            aria-busy={imageBusy}
+            className="note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-editor-border) transition-colors"
+            {...dropZoneHandlers}
+          >
+            <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
+              {/* Stays mounted in preview so undo history survives the switch. */}
+              <NoteEditorPane
+                label={t("Source")}
+                scrollKey={`${note.id}:source`}
+                hidden={visibleMode === "preview"}
+                split={visibleMode === "split"}
+              >
+                <NoteMarkdownEditor
+                  inputObserver={inputOwner.observer("source")}
+                  inputPublication={
+                    bodyPublication?.value === body
+                      ? bodyPublication.proof
+                      : inputOwner.resultControlPublication(note, "source", body)
+                  }
+                  viewRef={editorViewRef}
+                  minHeight={0}
+                  autoFocus={blank && visibleMode === "source"}
+                  value={body}
+                  onChange={(next) => {
+                    editNote({ body: next });
+                    scheduleSave();
+                  }}
+                  onSave={() => void saveNow()}
+                  onPasteImages={pasteImages}
+                  onFocus={() => setToolbarTarget("source")}
+                />
+              </NoteEditorPane>
+              <NoteEditorPane
+                label={t("Document")}
+                document
+                scrollKey={`${note.id}:document`}
+                hidden={visibleMode === "source"}
+                split={visibleMode === "split"}
+              >
+                <NoteEditablePreview
+                  stateObserver={inputOwner.observer("preview-state")}
+                  inputObserver={inputOwner.observer("preview-block")}
+                  canMutate={inputOwner.allowed}
+                  value={body}
+                  cwd={sourceCwd}
+                  viewRef={previewViewRef}
+                  rangeRef={previewRangeRef}
+                  onEditingChange={setPreviewEditing}
+                  onFocus={() => setToolbarTarget("preview")}
+                  onChange={(next) => {
+                    editNote({ body: next });
+                    scheduleSave();
+                  }}
+                  onSave={() => void saveNow()}
+                  onPasteImages={pasteImages}
+                />
+              </NoteEditorPane>
+            </div>
+          </TabPanel>
         </Tabs>
       </SurfaceSelection>
     </div>

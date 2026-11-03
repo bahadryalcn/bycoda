@@ -37,10 +37,22 @@ it("does not turn malformed display provenance into an assistant-management gran
     }),
   ).toBeUndefined();
 });
-it("round-trips explicit manual supervision provenance without a fabricated job identity",()=>{
- const session=newSession("codex","/manual"),author={kind:"assistant-manual" as const,name:"Owner Name",supervisionId:"grant",reason:"nudge" as const,operationId:"manual-operation"};
- session.managedBy={assistant:true,supervisionId:"grant",managedAt:123};session.blocks=[{id:"manual",role:"user",text:"Continue",author}];
- const payload=sanitizeSessionForPersist(session);expect(payload.managedBy).toEqual(session.managedBy);expect(payload.blocks[0].author).toEqual(author);expect(payload.managedBy).not.toHaveProperty("jobId");
- expect(assistantSessionManagement({...session.managedBy,jobId:"fake-job"})).toBeUndefined();expect(sessionMessageAuthor({...author,jobId:"fake-job"})).toBeUndefined();
- expect(assistantSessionManagement({...session.managedBy,jobId:""})).toBeUndefined();
+it("round-trips explicit manual supervision provenance without a fabricated job identity", () => {
+  const session = newSession("codex", "/manual"),
+    author = {
+      kind: "assistant-manual" as const,
+      name: "Owner Name",
+      supervisionId: "grant",
+      reason: "nudge" as const,
+      operationId: "manual-operation",
+    };
+  session.managedBy = { assistant: true, supervisionId: "grant", managedAt: 123 };
+  session.blocks = [{ id: "manual", role: "user", text: "Continue", author }];
+  const payload = sanitizeSessionForPersist(session);
+  expect(payload.managedBy).toEqual(session.managedBy);
+  expect(payload.blocks[0].author).toEqual(author);
+  expect(payload.managedBy).not.toHaveProperty("jobId");
+  expect(assistantSessionManagement({ ...session.managedBy, jobId: "fake-job" })).toBeUndefined();
+  expect(sessionMessageAuthor({ ...author, jobId: "fake-job" })).toBeUndefined();
+  expect(assistantSessionManagement({ ...session.managedBy, jobId: "" })).toBeUndefined();
 });

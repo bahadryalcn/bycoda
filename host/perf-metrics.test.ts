@@ -145,7 +145,7 @@ it("keeps the RPC allowlist aligned with the dispatch literals, including J2 tok
   const source = readFileSync(new URL("./server.ts", import.meta.url), "utf8");
   // Agent tool action names and legacy HTTP spellings are data, not canonical
   // RPC registrations; they must not become metric labels by string matching.
-  const methods = rpcDispatchLiterals(source).filter(name => getHostRpcMethod(name));
+  const methods = rpcDispatchLiterals(source).filter((name) => getHostRpcMethod(name));
   for (const name of new Set([
     ...methods,
     "mcp.tokens.create",
@@ -162,11 +162,15 @@ it("keeps the RPC allowlist aligned with the dispatch literals, including J2 tok
 });
 
 it("keeps arbitrary and noncanonical method strings out of the fixed metric inventory", () => {
-  const before = perfMetrics.snapshot().metrics.find(entry => entry.name === "other")?.count ?? 0;
+  const before = perfMetrics.snapshot().metrics.find((entry) => entry.name === "other")?.count ?? 0;
   for (const name of ["owner-secret-arbitrary-method", "desktop.status"]) recordDuration(name, 1);
   const result = perfMetrics.snapshot();
-  expect(result.metrics.find(entry => entry.name === "other")?.count).toBe(before + 2);
-  expect(result.metrics.some(entry => ["owner-secret-arbitrary-method", "desktop.status"].includes(entry.name))).toBe(false);
+  expect(result.metrics.find((entry) => entry.name === "other")?.count).toBe(before + 2);
+  expect(
+    result.metrics.some((entry) =>
+      ["owner-secret-arbitrary-method", "desktop.status"].includes(entry.name),
+    ),
+  ).toBe(false);
   expect(result.limits.registeredMetrics).toBeLessThanOrEqual(MAX_METRICS);
 });
 

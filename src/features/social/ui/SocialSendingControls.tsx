@@ -7,7 +7,12 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useRef, useState } from "react";
 import { Notice, StatusBadge, type Props } from "./socialShared";
 
-export function SocialSendingControls({ snapshot, client, run, executorLabel }: Props & { executorLabel?: string }) {
+export function SocialSendingControls({
+  snapshot,
+  client,
+  run,
+  executorLabel,
+}: Props & { executorLabel?: string }) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
@@ -28,7 +33,14 @@ export function SocialSendingControls({ snapshot, client, run, executorLabel }: 
   return (
     <section className="social-sending-controls" aria-label={t("Sending controls")}>
       <header className="social-section-heading">
-        <div className="min-w-0"><h2>{t("Sending on this computer")}</h2>{executorLabel ? <p className="wrap-anywhere text-ui-caption text-(--ui-text-secondary)">{executorLabel}</p> : null}</div>
+        <div className="min-w-0">
+          <h2>{t("Sending on this computer")}</h2>
+          {executorLabel ? (
+            <p className="wrap-anywhere text-ui-caption text-(--ui-text-secondary)">
+              {executorLabel}
+            </p>
+          ) : null}
+        </div>
         <StatusBadge
           status={snapshot.stopped ? "paused" : snapshot.sendingEnabled ? "active" : "draft"}
           label={
@@ -41,7 +53,9 @@ export function SocialSendingControls({ snapshot, client, run, executorLabel }: 
         />
       </header>
       <p className="text-ui-caption text-(--ui-text-secondary)">
-        {snapshot.stopped ? t("Pending jobs are kept") : t("Drafts are never sent. Only content you approve and active rules can send.")}
+        {snapshot.stopped
+          ? t("Pending jobs are kept")
+          : t("Drafts are never sent. Only content you approve and active rules can send.")}
       </p>
       {!snapshot.hostOnline ? (
         <Notice kind="warning" title={t("Cannot reach the sending service")}>

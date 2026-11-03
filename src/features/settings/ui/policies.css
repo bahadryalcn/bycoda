@@ -60,7 +60,9 @@
   max-inline-size: 46rem;
   margin-block-end: 16px;
 }
-.policy-reader-context p { margin: 0; }
+.policy-reader-context p {
+  margin: 0;
+}
 
 .policy-document {
   max-inline-size: 46rem;
