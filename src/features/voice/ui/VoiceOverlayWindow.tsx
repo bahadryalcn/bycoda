@@ -288,12 +288,14 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               <p className={styles.caption}>{state.privacy}</p>
             )}
             {state?.transcript && (
-              <div className={`${styles.turn} ${styles.heard}`} role="group" aria-label={t("You")}>
+              <div className={`${styles.turn} ${styles.heard}`}>
+                <span className="sr-only">{t("You")}: </span>
                 <p className={styles.message}>{state.transcript}</p>
               </div>
             )}
             {state?.message && (
-              <div className={styles.turn} role="group" aria-live="polite" aria-label={t("Reply")}>
+              <div className={styles.turn} role="status">
+                <span className="sr-only">{t("Reply")}: </span>
                 <p className={styles.message}>{state.message}</p>
               </div>
             )}
@@ -301,10 +303,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               (actionableError ? (
                 <InlineError className={styles.caption}>{state.error}</InlineError>
               ) : (
-                <details role="alert" className={styles.feedback}>
-                  <summary aria-label={t("Error details")}>{t("Voice needs attention")}</summary>
-                  <p>{state.error}</p>
-                </details>
+                <>
+                  <InlineError className={styles.caption}>{t("Voice needs attention")}</InlineError>
+                  <details className={styles.feedback}>
+                    <summary>{t("Error details")}</summary>
+                    <p>{state.error}</p>
+                  </details>
+                </>
               ))}
             {state?.notice && (
               <p role="status" className={styles.caption}>

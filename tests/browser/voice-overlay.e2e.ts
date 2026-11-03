@@ -255,10 +255,10 @@ for (const theme of ["light", "dark"])
       await page.evaluate(() =>
         (window as any).fixtureVoice.speech("Keep my full request together."),
       );
-      await expect(panel.getByRole("group", { name: "You", exact: true })).toContainText(
+      await expect(panel.locator("div:has(> .sr-only)").filter({ hasText: "You:" })).toContainText(
         "Keep my full request together.",
       );
-      await expect(panel.getByRole("group", { name: "Reply", exact: true })).toBeVisible();
+      await expect(panel.getByRole("status").filter({ hasText: "Reply:" })).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-listening.png`) });
       const controls = ["Pause mic", "Silence", "Disconnect voice"];
       const actionBoxes = await Promise.all(
@@ -281,7 +281,7 @@ for (const theme of ["light", "dark"])
         const binding = fixture.callbacks.accept((window as any).heldVoiceOnset);
         fixture.callbacks.transcript({ text: "Finish the original project request." }, binding);
       });
-      await expect(panel.getByRole("group", { name: "You", exact: true })).toContainText(
+      await expect(panel.locator("div:has(> .sr-only)").filter({ hasText: "You:" })).toContainText(
         "Finish the original project request.",
       );
       expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(1);
@@ -299,10 +299,10 @@ for (const theme of ["light", "dark"])
           true,
         ),
       );
-      await expect(panel.locator('details[role="alert"]')).not.toHaveAttribute("open", "");
+      await expect(panel.locator("details")).not.toHaveAttribute("open", "");
       await expect(panel.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-attention.png`) });
-      await panel.locator('summary[aria-label="Error details"]').click();
+      await panel.locator('summary:has-text("Error details")').click();
       await expect(
         panel.getByText("Voice input cleanup was not confirmed. Start voice again.", {
           exact: true,
@@ -349,7 +349,7 @@ for (const theme of ["light", "dark"])
       );
       await expect(mirror.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
       await mirror.screenshot({ path: join(output, `${theme}-${width}-floating-attention.png`) });
-      await mirror.locator('summary[aria-label="Error details"]').click();
+      await mirror.locator('summary:has-text("Error details")').click();
       await expect(
         mirror.getByText("Voice input cleanup was not confirmed. Start voice again.", {
           exact: true,

@@ -2829,12 +2829,14 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           )}
         </div>
         {shownTranscript && (
-          <div className={`${styles.turn} ${styles.heard}`} role="group" aria-label={t("You")}>
+          <div className={`${styles.turn} ${styles.heard}`}>
+            <span className="sr-only">{t("You")}: </span>
             <p className={styles.message}>{shownTranscript}</p>
           </div>
         )}
         {shownMessage && (
-          <div className={styles.turn} role="group" aria-live="polite" aria-label={t("Reply")}>
+          <div className={styles.turn} role="status">
+            <span className="sr-only">{t("Reply")}: </span>
             <p className={styles.message}>{shownMessage}</p>
           </div>
         )}
@@ -2842,10 +2844,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           (actionableError ? (
             <InlineError className={styles.caption}>{shownError}</InlineError>
           ) : (
-            <details role="alert" className={styles.feedback}>
-              <summary aria-label={t("Error details")}>{t("Voice needs attention")}</summary>
-              <p>{shownError}</p>
-            </details>
+            <>
+              <InlineError className={styles.caption}>{t("Voice needs attention")}</InlineError>
+              <details className={styles.feedback}>
+                <summary>{t("Error details")}</summary>
+                <p>{shownError}</p>
+              </details>
+            </>
           ))}
         {shownError && isMacMicrophoneBlocked(shownError) ? (
           <Button onClick={() => void openPrivacySettings("microphone").catch(() => {})}>

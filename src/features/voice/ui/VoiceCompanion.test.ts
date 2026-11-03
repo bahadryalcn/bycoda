@@ -985,9 +985,11 @@ it("keeps the panel in the app when the floating window cannot open", async () =
     await setup();
     await floatOut();
     expect(container.querySelector("section")).not.toBeNull();
-    const feedback = container.querySelector<HTMLDetailsElement>('details[role="alert"]')!;
+    const feedback = container.querySelector<HTMLDetailsElement>("details")!;
     expect(feedback.open).toBe(false);
-    expect(feedback.querySelector("summary")?.textContent).toBe("Voice needs attention");
+    expect(feedback.hasAttribute("role")).toBe(false);
+    expect(feedback.querySelector("summary")?.textContent).toBe("Error details");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Voice needs attention");
     await act(() => {
       feedback.querySelector("summary")!.click();
     });
