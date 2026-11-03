@@ -1,0 +1,24 @@
+id: rust-rename-without-fsync
+language: rust
+severity: error
+message: "A temp-file + `rename` replacement is only crash-safe when the temp file is `sync_all()`ed before the rename (APFS and NTFS can otherwise leave an empty file after power loss). Write the bytes, call `file.sync_all()`, then rename; on startup, treat an unparsable state file as absent and move it aside instead of failing."
+note: Rule K-ATOMIC in docs/reference/code-invariants.md
+files:
+  - "src-tauri/src/**"
+  - "packages/**/src/**"
+ignores:
+  - "**/*_tests.rs"
+  - "**/tests.rs"
+rule:
+  any:
+    - pattern: std::fs::rename($$$)
+    - pattern: fs::rename($$$)
+  not:
+    inside:
+      kind: function_item
+      stopBy: end
+      has:
+        stopBy: end
+        any:
+          - pattern: $F.sync_all()
+          - pattern: $F.sync_data()

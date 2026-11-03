@@ -51,7 +51,48 @@ test("JSX attribute rules read the whole opening tag", () => {
     "fixed-control-size",
     "native-title",
     "popover-menu",
+    "raw-native-control",
     "role-alert-text",
+  ]);
+});
+
+test("component-usage rules flag raw controls, dialogs, live regions and untranslated copy", () => {
+  const tsx = [
+    'import { Loader2, Check } from "../../shared/ui/icons";',
+    '<input type="date" value={v} />',
+    '<a href="https://example.com" target="_blank">docs</a>',
+    '<Alert tone="danger" role="alert">{error}</Alert>',
+    '<div aria-live="polite">{status}</div>',
+    '<Loader2 className="icon-sm" />',
+    '<Check className="icon-sm" />',
+    '<span className="font-semibold outline-none p-[13px]">x</span>',
+    "<div style={{ width: 240, color: tone }} />",
+    '<TextField label="Enter the project name" />',
+    "<p>Nothing to show here yet.</p>",
+    '<p>{t("Nothing to show here yet.")}</p>',
+    "<code>git push origin main</code>",
+  ].join("\n");
+  assert.deepEqual(rulesOf("src/features/demo/E.tsx", tsx).sort(), [
+    "alert-role-prop",
+    "arbitrary-spacing",
+    "focus-outline-removed",
+    "font-weight",
+    "inline-style-layout",
+    "loader-icon-spinner",
+    "native-date-input",
+    "raw-anchor",
+    "raw-aria-live",
+    "raw-native-control",
+    "target-blank",
+    "untranslated-jsx-text",
+    "untranslated-prop",
+  ]);
+  // Shared UI owns the primitives, so the same text is clean there.
+  assert.deepEqual(rulesOf("src/shared/ui/Demo.tsx", '<button aria-live="polite" />'), []);
+  const css = ".x { font-weight: 600; outline: none; }\n.y { font-weight: 500; }";
+  assert.deepEqual(rulesOf("src/features/demo/e.css", css).sort(), [
+    "focus-outline-removed",
+    "font-weight",
   ]);
 });
 

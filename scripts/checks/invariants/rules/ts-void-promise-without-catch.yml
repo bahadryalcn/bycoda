@@ -1,0 +1,30 @@
+id: ts-void-promise-without-catch
+language: tsx
+severity: error
+message: "A `void`-discarded promise with no rejection handler becomes an unhandled rejection; in the Host process that terminates the service (Node exits on unhandled rejections). Append `.catch(...)` that logs or reports, pass a rejection handler as the second `then` argument, or await it inside a try/catch (an async IIFE whose body has a try/catch is fine)."
+note: Rule K-ASYNC in docs/reference/code-invariants.md
+files:
+  - "src/**"
+  - "host/**"
+  - "packages/**"
+ignores:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/test-support/**"
+rule:
+  pattern: void $CALL
+constraints:
+  CALL:
+    kind: call_expression
+    not:
+      any:
+        - pattern: $P.catch($$$)
+        - pattern: $P.finally($$$)
+        - pattern: $P.then($ON_FULFILLED, $ON_REJECTED)
+        - all:
+            - pattern: (async ($$$ARGS) => $BODY)()
+            - has:
+                kind: try_statement
+                stopBy: end
+                has:
+                  kind: catch_clause

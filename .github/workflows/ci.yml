@@ -198,6 +198,8 @@ jobs:
         run: |
           pnpm run check:packages
           pnpm run typecheck:packages
+      - name: Check code invariants ratchet
+        run: pnpm run check:invariants
       - run: pnpm test --reporter=default --reporter=json --outputFile.json=temp/test-results/web-ci/results.json
       - run: pnpm exec tsc-rs --noEmit
       - id: playwright

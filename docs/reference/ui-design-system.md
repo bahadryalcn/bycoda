@@ -858,9 +858,19 @@ and `bycoda.css`. The rules cover:
 - loaders without reduced-motion handling;
 - base-hue colour utilities;
 - native `title=` on actions;
-- `<p role="alert">`;
+- hand-written `role="alert"` and `aria-live` on DOM elements, and `role=` passed to `<Alert>`;
 - feature `createPortal` and `Popover role=menu`;
-- `hover:bg-*` recipes, opacity used as the disabled state, and fixed control heights.
+- `hover:bg-*` recipes, opacity used as the disabled state, and fixed control heights;
+- raw `<button>`, `<input>`, `<select>`, `<textarea>`, `<a href>` and `target="_blank"` in
+  feature code, native date/time inputs, and `Loader*` glyphs used as spinners;
+- weights above 500, arbitrary spacing values, literal layout numbers in `style={{}}`, and
+  removed focus outlines;
+- English prose left outside `t()` in JSX text or label/placeholder/tooltip props.
+
+Native dialogs (`alert`, `confirm`, `prompt`), `dangerouslySetInnerHTML`, direct motion-library
+imports, `console.log` in UI files and the `jsx-a11y` keyboard/ARIA rules are enforced by
+`.oxlint-invariants.json` through `pnpm check:invariants`. The complete convention table with
+the sanctioned component for each rule is in [code invariants](code-invariants.md).
 
 Existing findings are counted per file and rule in `scripts/checks/ui-drift-baseline.json` (1,964
 findings when created on 2026-11-01, 243 after the wave-2 migrations). A new
@@ -876,11 +886,12 @@ lower counts pass and are reported as improvements.
 Wiring: `scripts/checks/check-staged.mjs` runs the ratchet over the staged text of `src/**`
 `.ts`/`.tsx`/`.css` files (the working tree supplies variable definitions), and
 `scripts/checks/check-local.mjs` (`pnpm check:changed`) runs it over changed `src` files with
-`--files`. The preflight CI step is requested but not added yet: append
-`node scripts/checks/check-ui-drift.mjs` and `node scripts/checks/check-theme-colors.mjs` to the
-"Verify shared Host contracts and headless boundaries" step of `.github/workflows/ci.yml`
-(web jobs; the check reads `node_modules/tailwindcss/theme.css`, so dependencies must be
-installed). Until then the ratchet is a local and pre-commit gate only.
+`--files`. The `web` CI job runs `pnpm run check:invariants` after the package boundary check,
+and `check:web` includes it. The whole-tree `check:ui-drift` gate is not in CI yet: the current
+tree already exceeds the baseline for older rules in the voice and assistant features (numeric
+icon sizes, literal font sizes, motion literals), so wiring it needs either those lines fixed or
+an owner-approved `--ratchet`/`--update-baseline` first. The check reads
+`node_modules/tailwindcss/theme.css`, so dependencies must be installed when it runs in CI.
 
 Use `node scripts/checks/inventory-ui.mjs` (or `--json`) to measure remaining source
 sites. It is an advisory inventory, not a conformance gate. Review native semantics
