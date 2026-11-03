@@ -127,3 +127,28 @@ it("treats [] as verified global and missing canonical directory identity as unk
   expect(voiceHistoryMessageVisible(message("global", []), scope)).toBe(true);
   expect(voiceHistoryMessageVisible(message("unknown"), scope)).toBe(false);
 });
+it("keeps an incomplete directory current only while all captured paths remain visible", () => {
+  let visible = ["/a", "remote://machine/b"];
+  const scope = captureVoiceHistoryScope(visible, [{ id: "a", path: "/a" }], () => visible);
+  expect(scope.complete).toBe(false);
+  expect(scope.current()).toBe(true);
+  expect(
+    projectVoiceHistory(
+      {
+        thread: {
+          id: "global",
+          summary: "Unverified summary",
+          summaryProof: { id: "proof", projectIds: ["a"] },
+        } as AssistantThread,
+        messages: [message("safe", ["a"]), message("unknown", ["b"])],
+      },
+      true,
+      scope,
+    ),
+  ).toMatchObject({
+    thread: { summary: "", summaryProof: undefined },
+    messages: [{ id: "safe" }],
+  });
+  visible = ["/a"];
+  expect(scope.current()).toBe(false);
+});

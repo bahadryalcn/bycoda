@@ -1615,8 +1615,8 @@ function ConnectedRemoteSession({
       setRefresh((value) => value + 1);
       return receipt;
     } catch (reason) {
-      reportRemoteConnection(machine.environmentId, "session", reason);
       if (!alive.current || version !== bindingGen.version) return undefined;
+      reportRemoteConnection(remotePath(machine.environmentId, project.cwd), "session", reason);
       const message = String(reason);
       lastRunFailure.current = message;
       if (message.includes("Host rejected request:")) {
@@ -2202,9 +2202,10 @@ function ConnectedRemoteSession({
     if (sendingRef.current || preparingRef.current) return false;
     const version = bindingGen.version;
     const failed = (reason: unknown) => {
-      reportRemoteConnection(machine.environmentId, "session", reason);
-      if (alive.current && version === bindingGen.version)
+      if (alive.current && version === bindingGen.version) {
+        reportRemoteConnection(remotePath(machine.environmentId, project.cwd), "session", reason);
         setError(String(reason).replace(/^Error: /, ""));
+      }
     };
     setError("");
     if (hostSession) {
@@ -3276,7 +3277,7 @@ function ConnectedRemoteSession({
         bindingGen.version === targetBindingVersion &&
         bindingGen.session === targetSessionId
       ) {
-        reportRemoteConnection(machine.environmentId, "session", reason);
+        reportRemoteConnection(remotePath(machine.environmentId, project.cwd), "session", reason);
         setError(String(reason).replace(/^Error: /, ""));
       }
       return false;
@@ -3520,6 +3521,7 @@ function ConnectedRemoteSession({
     questionDraftScope,
     headerStatus: (
       <RemoteDataStatus
+        cwd={owner?.environmentId ?? project.key}
         presentation="indicator"
         state={remoteDataState}
         onRefresh={refreshOwnerContent}
@@ -3776,6 +3778,7 @@ function ConnectedRemoteSession({
         ) : null}
         <RemoteConnectionBanner cwd={owner?.environmentId ?? project.key} stale={!!hostSession} />
         <RemoteDataStatus
+          cwd={owner?.environmentId ?? project.key}
           presentation="notice"
           state={remoteDataState}
           onRefresh={refreshOwnerContent}

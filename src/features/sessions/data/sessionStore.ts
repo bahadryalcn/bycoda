@@ -100,6 +100,9 @@ import {
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
 
 export type SessionSummary = {
+  interrupted?: boolean;
+  lastActivityAt?: number;
+  providerHistory?: import("../model/sessionProviderHistory").SessionProviderHistory;
   managedBy?: Session["managedBy"];
   /** Optional actual Native write locator, never a FULL/application receipt. */
   nativeWriteId?: string;
@@ -482,6 +485,11 @@ export function upsertSession(
   return persistSession(session, undefined, false, initialTimes);
 }
 
+/** Persist recovery bookkeeping without changing the conversation's activity time. */
+export function upsertSessionPreservingActivity(session: Session): Promise<SessionSummary | null> {
+  return persistSession(session, undefined, false, undefined, undefined, true);
+}
+
 /** Explicit /clear must overwrite an existing transcript even though it is empty. */
 export function upsertClearedSession(session: Session): Promise<SessionSummary | null> {
   if (
@@ -738,6 +746,7 @@ async function replaceStoredSession(
   work: PersistenceWork,
   guard?: { expectedUpdatedAt: number; expectedRevision?: number } | { expectMissing: true },
   initialTimes?: { createdAt: number; updatedAt: number },
+  preserveActivityAt = false,
 ): Promise<SessionSummary | null> {
   if (deletedSessionIds.has(session.id)) {
     failSessionOutputWrite(outputWrite);
@@ -751,6 +760,7 @@ async function replaceStoredSession(
     prepareSessionOutputWritePayload(
       outputWrite,
       {
+        ...(preserveActivityAt ? { preserveActivityAt: true } : {}),
         session: {
           ...payload,
           ...initialTimes,
@@ -802,6 +812,7 @@ async function persistSession(
   allowEmpty = false,
   initialTimes?: { createdAt: number; updatedAt: number },
   parent?: PersistenceWork,
+  preserveActivityAt = false,
 ): Promise<SessionSummary | null> {
   if (
     hostSessionBinding(session) ||
@@ -815,7 +826,16 @@ async function persistSession(
   noteSessionWriteLead(session);
   const summary = await enqueueSessionWrite(
     session.id,
-    (work) => replaceStoredSession(session, payload, outputWrite, work, guard, initialTimes),
+    (work) =>
+      replaceStoredSession(
+        session,
+        payload,
+        outputWrite,
+        work,
+        guard,
+        initialTimes,
+        preserveActivityAt,
+      ),
     false,
     parent,
   ).catch((error) => {
@@ -989,6 +1009,10 @@ export function persistFingerprint(session: Session): string {
   return `${JSON.stringify(persistableMeta(session))}|${session.orchestrationLeadId ?? ""}|${blockIdentity}|${turnOutcomes}`;
 }
 
+function summaryActivityAt(row: { updatedAt: number; lastActivityAt?: number }): number {
+  return row.lastActivityAt ?? row.updatedAt;
+}
+
 export async function listSessionsByProject(cwd: string): Promise<SessionSummary[]> {
   if (!cwd || cwd === "~") return [];
   const rows = await invoke<SessionSummary[]>("session_list_by_project", {
@@ -1000,7 +1024,10 @@ export async function listSessionsByProject(cwd: string): Promise<SessionSummary
   if (!owned.length)
     return rows.filter((row) => !hostSessionBinding({ id: row.id })).map(normalizeSummary);
   return [...rows.filter((row) => !hostSessionBinding({ id: row.id })), ...owned]
-    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt - a.updatedAt)
+    .sort(
+      (a, b) =>
+        Number(!!b.pinned) - Number(!!a.pinned) || summaryActivityAt(b) - summaryActivityAt(a),
+    )
     .map(normalizeSummary);
 }
 
@@ -1027,10 +1054,21 @@ export async function listRecentSessions(limit: number): Promise<SessionSummary[
   const owned = hostSessionShellSummaries();
   const native = rows.filter((row) => !hostSessionBinding({ id: row.id }));
   if (!owned.length) return native.map(normalizeSummary);
-  const combined = [...native, ...owned].sort((a, b) => b.updatedAt - a.updatedAt);
+  const combined = [...native, ...owned].sort(
+    (a, b) => summaryActivityAt(b) - summaryActivityAt(a),
+  );
   return [
     ...combined.filter((entry) => entry.pinned),
     ...combined.filter((entry) => !entry.pinned).slice(0, limit),
+  ].map(normalizeSummary);
+}
+
+/** All local summaries at or after the cutoff. No pin or row-count limit. */
+export async function listRecentSessionsSince(since: number): Promise<SessionSummary[]> {
+  const rows = await invoke<SessionSummary[]>("session_list_recent_since", { since });
+  return [
+    ...rows.filter((row) => !hostSessionBinding({ id: row.id })),
+    ...hostSessionShellSummaries().filter((row) => summaryActivityAt(row) >= since),
   ].map(normalizeSummary);
 }
 

@@ -15,6 +15,9 @@ import { lazySurface } from "../../../shared/ui/lazySurface";
 import { CrewWorkDetail } from "./CrewWorkDetail";
 import { CrewWorkList, type CrewWorkView } from "./CrewWorkList";
 import { CrewWorkStatusText } from "./CrewWorkState";
+import { classifyRemoteError, isConnectionFailure } from "../../connections/model/remoteFailure";
+import { reportRemoteConnection } from "../../connections/model/remoteHealth";
+import { useRemoteConnectionFeedback } from "../../connections/ui/RemoteConnectionFeedback";
 
 const CrewEditDialog = lazySurface(async () => ({
   default: (await import("./CrewDialogs")).CrewEditDialog,
@@ -23,6 +26,18 @@ const StartCrewDialog = lazySurface(async () => ({
   default: (await import("./CrewDialogs")).StartCrewDialog,
 }));
 type CrewState = ReturnType<typeof useProjectCrews>;
+
+/** Only query transport failures belong to the machine notice; mutations keep their own outcomes. */
+function useCrewConnectionFeedback(cwd: string, state: CrewState) {
+  const failure = state.error ? classifyRemoteError(state.error) : undefined;
+  const connectionFailure = failure && isConnectionFailure(failure);
+  const sharedConnectionIssue = useRemoteConnectionFeedback(cwd, failure);
+  useEffect(() => {
+    if (state.error && connectionFailure) reportRemoteConnection(cwd, "crews", state.error);
+    else if (state.isSuccess && state.data) reportRemoteConnection(cwd, "crews");
+  }, [cwd, state.error, state.isSuccess, state.data, connectionFailure]);
+  return !!connectionFailure && sharedConnectionIssue;
+}
 
 /** Where a saved crew can be used; the same wording as the editor. */
 function crewScopeLabel(crew: { projectId?: string }) {
@@ -73,6 +88,7 @@ export function CrewSessions({
   useLocale();
   const [opened, setOpened] = useState<{ definitionId?: string; runId?: string } | null>(null);
   const data = state.data;
+  const sharedConnectionIssue = useCrewConnectionFeedback(cwd, state);
   const q = query.trim();
   const runs = [...(data?.runs ?? [])]
     .filter(
@@ -81,7 +97,7 @@ export function CrewSessions({
     .filter((run) => crewRunMatchesQuery(run, q))
     .sort((a, b) => b.updatedAt - a.updatedAt);
   if (!data && !state.error) return null;
-  if (data && !data.runs.length && !data.definitions.length) return null;
+  if (data && !data.runs.length && !data.definitions.length && !state.error) return null;
   return (
     // A quiet section label on the list's gutter. With nothing running it is only this one
     // line (and Manage), so an idle project spends no rows on an empty state.
@@ -99,10 +115,15 @@ export function CrewSessions({
           {t("Manage")}
         </Button>
       </div>
-      {state.error ? (
+      {state.error && !sharedConnectionIssue ? (
         <Button variant="ghost" onClick={() => void state.refetch()} tooltip={state.error.message}>
           {t("Crew host unavailable. Retry")}
         </Button>
+      ) : null}
+      {sharedConnectionIssue && !data ? (
+        <p role="status" className="px-2.5 py-1 text-ui-caption text-(--ui-text-muted)">
+          {t("Not connected")}
+        </p>
       ) : null}
       <div className="flex flex-col gap-px empty:hidden">
         {runs.map((run) => (

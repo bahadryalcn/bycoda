@@ -18,6 +18,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - `src/features/connections/ui/QuickConnect.tsx`, `SshServerEditor.tsx`, `SshIdentityField.tsx`, `SshSettings.tsx`: configuration and trust/identity.
 - `src/features/connections/ui/ServersTerminalWorkspace.tsx` and restore controls: tabs, focus and explicit reconnect.
 - `src/features/connections/model/serverInventory.ts`, `serverTerminalRestoreState.ts`, `src/features/terminal/model/terminalClose.ts`: state and lifetime boundaries.
+- `host/conversation-server-tools.ts`, `src-tauri/src/conversation_servers.rs`, `src-tauri/src/conversation_ssh_execution.rs`: agent inventory tools and separately approved, conversation-owned SSH commands.
 
 ## Preserve
 
@@ -26,6 +27,8 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - Retain identity cancellation, trust/configuration review, explicit submits, permission gates and duplicate-operation guards.
 - Terminal close checks foreground/unknown process state; failed reads are not idle. Preserve tab neighbor focus and cancellation.
 - Restore opens a fresh shell only after Connect. Never replay old commands or implicitly reconnect saved tabs.
+- Agent SSH commands require native approval of the exact saved target and command. Bind request IDs and output to the original Host, project and conversation; revalidate configuration and authority after approval. Never adopt private manual SSH terminals or bypass host-key, credential or proxy gates.
+- Start acknowledgement is not command success. Read bounded output and exit status; cancelled, timed-out or interrupted local SSH can leave the remote outcome unknown. Never automatically replay a command after restart or an uncertain reply.
 
 ## Workflow
 

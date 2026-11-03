@@ -5,7 +5,21 @@
   min-inline-size: 0;
 }
 .questions {
-  margin-block-end: 18px;
+  gap: 16px;
+  margin-block-end: 24px;
+}
+.card {
+  padding: 16px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+  line-height: 1.55;
+}
+.card[data-question-form] {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 .footer {
   display: flex;
@@ -13,6 +27,7 @@
   gap: 8px;
   flex-wrap: wrap;
   min-inline-size: 0;
+  padding-block-start: 4px;
 }
 .status {
   margin: 0;
@@ -23,6 +38,20 @@
 .title {
   margin: 0;
   font-size: var(--ui-font-secondary);
-  font-weight: 500;
+  font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.card > button {
+  justify-self: start;
+}
+
+.footer > .status {
+  flex: 1 1 240px;
+}
+
+@media (max-width: 720px) {
+  .card {
+    padding: 12px;
+  }
 }

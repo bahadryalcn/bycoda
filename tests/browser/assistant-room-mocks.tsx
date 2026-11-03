@@ -8,6 +8,55 @@ import { DEFAULT_ASSISTANT_POLICY } from "../../src/shared/model/assistantPolicy
 import { ModelPicker as ActualModelPicker } from "../../src/features/sessions/ui/ModelPicker.tsx";
 import { VoiceSetupSteps as ActualVoiceSetupSteps } from "../../src/features/voice/ui/VoiceSetupSteps.tsx";
 const realControls = new URLSearchParams(location.search).has("real-controls");
+const desktopParams = new URLSearchParams(location.search);
+const desktopInstalled = desktopParams.has("desktop");
+let desktopStopped = desktopParams.has("desktop-stopped");
+let desktopActive = desktopParams.has("desktop-active");
+let desktopConfiguration = {
+  enabled: desktopParams.has("desktop-enabled") && !desktopStopped,
+  binaryPath: desktopInstalled ? "/fixture/agent-desktop.exe" : "",
+  binarySha256: desktopInstalled ? "a".repeat(64) : "",
+  allowedApps: [] as string[],
+  allowPhysicalInput: false,
+  version: 0,
+};
+function desktopFixtureRequest(input: any) {
+  if (input.op === "status" && (window as any).__desktopStatusFailure)
+    throw new Error("Desktop status unavailable in fixture.");
+  if (input.op === "configure") {
+    if (input.expectedVersion !== desktopConfiguration.version)
+      throw new Error("Desktop configuration changed. Refresh before saving.");
+    desktopConfiguration = { ...input.configuration, version: desktopConfiguration.version + 1 };
+    desktopStopped = !desktopConfiguration.enabled;
+  } else if (input.op === "stop" || input.op === "resume") {
+    desktopStopped = input.op === "stop";
+    desktopActive = false;
+    desktopConfiguration = {
+      ...desktopConfiguration,
+      enabled: !desktopStopped,
+      version: desktopConfiguration.version + 1,
+    };
+  } else if (input.op !== "status") {
+    throw new Error("Desktop input is forbidden in this settings fixture.");
+  }
+  (window as any).__desktopFixtureConfiguration = structuredClone(desktopConfiguration);
+  return {
+    ok: true,
+    configuration: structuredClone(desktopConfiguration),
+    status: {
+      installed: desktopInstalled,
+      verified: desktopInstalled,
+      enabled: desktopConfiguration.enabled,
+      stopped: desktopStopped,
+      active: desktopActive && desktopConfiguration.enabled && !desktopStopped,
+      ...(desktopActive && desktopConfiguration.enabled && !desktopStopped
+        ? { currentAction: { app: "Notepad", action: "set-value" } }
+        : {}),
+      upstreamRef: "fixture",
+      protocol: "2.5",
+    },
+  };
+}
 const now = Date.now();
 let questionAckLost = false;
 let questionMutationCount = 0;
@@ -239,6 +288,7 @@ let uncertainJobSaved = false;
 let uncertainNoteSaved = false;
 let uncertainQuickSaved = false;
 const deletedFixtureNotes = new Map<string, AssistantSnapshot["notes"][number]>();
+const deletedFixtureMemory = new Map<string, AssistantSnapshot["memory"][number]>();
 let fixtureRestoreAttempts = 0;
 if (privacyFixture) {
   snapshot.jobs.push({
@@ -616,29 +666,14 @@ export async function hostToolRequest(
       phase: input.op === "prepare" ? "preparing" : "missing",
       ...(input.op === "prepare" ? { stage: "building" } : {}),
     };
-  if (_method === "desktop.request")
-    return {
-      configuration: {
-        enabled: false,
-        binaryPath: "",
-        binarySha256: "",
-        allowedApps: [],
-        allowPhysicalInput: false,
-        version: 0,
-      },
-      status: {
-        installed: new URLSearchParams(location.search).has("desktop"),
-        verified: new URLSearchParams(location.search).has("desktop"),
-        enabled: new URLSearchParams(location.search).has("desktop") && input.op !== "stop",
-        stopped: input.op === "stop",
-        active: new URLSearchParams(location.search).has("desktop") && input.op !== "stop",
-        ...(new URLSearchParams(location.search).has("desktop") && input.op !== "stop"
-          ? { currentAction: { app: "Notepad", action: "set-value" } }
-          : {}),
-        upstreamRef: "fixture",
-        protocol: "2.5",
-      },
-    };
+  if (_method === "desktop.request") {
+    if (input.op === "configure" && (window as any).__desktopHoldConfigure) {
+      await new Promise<void>((resolve) => {
+        (window as any).__desktopConfigureRelease = resolve;
+      });
+    }
+    return desktopFixtureRequest(input);
+  }
   switch (input.op) {
     case "questions.present": {
       (window as any).__presentationRequest = structuredClone(input);
@@ -1098,8 +1133,41 @@ export async function hostToolRequest(
       return { profile: snapshot.profile };
     case "memory.save": {
       const entry = snapshot.memory.find((entry) => entry.id === input.id);
-      if (entry) Object.assign(entry, input, { version: entry.version + 1 });
-      return { memory: entry };
+      if (input.id && (!entry || input.expectedVersion !== entry.version))
+        throw new Error("Editing memory requires its current version.");
+      const memory = {
+        ...(entry ?? {
+          id: `fixture-memory-${snapshot.memory.length + 1}`,
+          createdAt: now,
+        }),
+        version: (entry?.version ?? 0) + 1,
+        updatedAt: now,
+        kind: input.kind,
+        text: input.text,
+        scope: input.scope,
+        source: input.source,
+        quote: input.quote ?? "",
+        active: input.active ?? true,
+        forbiddenTerms: input.forbiddenTerms ?? [],
+      };
+      snapshot.memory = [...snapshot.memory.filter((item) => item.id !== memory.id), memory];
+      return { memory };
+    }
+    case "memory.delete": {
+      const entry = snapshot.memory.find((entry) => entry.id === input.id);
+      if (!entry || input.expectedVersion !== entry.version)
+        throw new Error("Editing memory requires its current version.");
+      const trashId = `memory:${entry.id}`;
+      deletedFixtureMemory.set(trashId, structuredClone(entry));
+      snapshot.memory = snapshot.memory.filter((item) => item.id !== entry.id);
+      snapshot.trash.push({
+        id: trashId,
+        kind: "memory",
+        title: entry.text,
+        deletedAt: now,
+        expiresAt: now + 604800000,
+      });
+      return { ok: true };
     }
     case "trash.restore":
       document.body.dataset.lastRestore = input.id;
@@ -1108,6 +1176,13 @@ export async function hostToolRequest(
       if (deletedFixtureNotes.has(input.id)) {
         snapshot.notes.push(deletedFixtureNotes.get(input.id)!);
         deletedFixtureNotes.delete(input.id);
+      }
+      if (deletedFixtureMemory.has(input.id)) {
+        const entry = deletedFixtureMemory.get(input.id)!;
+        if (snapshot.memory.some((item) => item.id === entry.id))
+          throw new Error("Memory already exists.");
+        snapshot.memory.push({ ...entry, version: entry.version + 1 });
+        deletedFixtureMemory.delete(input.id);
       }
       if (deletedFixtureJobs.has(input.id)) {
         const job = deletedFixtureJobs.get(input.id)!;

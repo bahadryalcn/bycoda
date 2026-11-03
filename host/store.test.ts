@@ -17,6 +17,46 @@ import type {
 } from "./workspace-contracts";
 const cleanups: Array<() => void | Promise<void>> = [];
 describe("managed workspace persistence", () => {
+  it("keeps provider history in cold summaries after reopen", async () => {
+    const path = join(open(), "provider-history.db");
+    const store = new HostStore(path);
+    cleanups.push(() => store.close());
+    const project = await store.addProject("/provider-history", "History");
+    const value = session("history", project.id);
+    value.session.harness = "codex";
+    value.session.blocks = [
+      {
+        id: "u1",
+        role: "user",
+        text: "First",
+        turnModel: { harness: "claude", id: "opus", name: "Opus" },
+      },
+      {
+        id: "h",
+        role: "handoff",
+        text: "",
+        handoff: { from: "claude", to: "codex", status: "ready" },
+      },
+      {
+        id: "u2",
+        role: "user",
+        text: "Continue",
+        turnModel: { harness: "codex", id: "gpt", name: "GPT" },
+      },
+    ];
+    const expected = {
+      providers: ["claude", "codex"],
+      activeHarness: "codex",
+      activeModel: "GPT",
+      handedOffFrom: "claude",
+    };
+    await store.save(value, {});
+    expect((await store.summaries(project.id))[0].providerHistory).toEqual(expected);
+    await store.close();
+    const reopened = new HostStore(path);
+    cleanups.push(() => reopened.close());
+    expect((await reopened.summaries(project.id))[0].providerHistory).toEqual(expected);
+  });
   it("retains optional session workspace identity in summaries after reopen", async () => {
     const path = join(open(), "workspace-summary.db"),
       store = new HostStore(path);

@@ -185,7 +185,7 @@ export function SidebarWorktreeSwitcher({
           openPicker();
         }}
         // The header row's gap-1 (4px) is cancelled exactly, so the hit area abuts the Forward button without covering it.
-        className="-ml-1 flex h-6.5 min-w-0 max-w-full items-center gap-2 leading-tight"
+        className="-ml-1 flex h-6.5 w-fit min-w-0 max-w-full items-center gap-2 leading-tight"
       >
         <MiddleTruncate mode="text">{title}</MiddleTruncate>
         {pending || creating ? (

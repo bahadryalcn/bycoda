@@ -1,3 +1,4 @@
+import { shouldWaitForVoice } from "./voiceSpeechPolicy";
 import { buildVoicePrompt } from "./voicePrompt";
 import {
   canRunHarnessTextPrompt,
@@ -18,7 +19,7 @@ import { voiceContext } from "./voiceSession";
 import { voiceWorkText } from "./voiceWork";
 
 export type VoiceDecision = {
-  action: "reply" | "submit" | "stop" | "silence" | "remember" | "forget";
+  action: "reply" | "submit" | "stop" | "silence" | "remember" | "forget" | "no_reply";
   reply: string;
   /** Work brief for submit, note text for remember. */
   text?: string;
@@ -132,6 +133,12 @@ export function parseVoiceDecision(output: string, transcript: string): VoiceDec
     const result: unknown = JSON.parse(source);
     if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error();
     const value = result as Record<string, unknown>;
+    if (
+      value.action === "no_reply" &&
+      Object.keys(value).length === 1 &&
+      shouldWaitForVoice(transcript)
+    )
+      return { action: "no_reply", reply: "" };
     if (
       value.action === "submit" &&
       Object.keys(value).every((key) => key === "action" || key === "text")

@@ -884,12 +884,20 @@ it("authenticates per provider and disables automatic provider responses/interru
     audio: { input: { turn_detection: null, transcription: { model: "gpt-4o-mini-transcribe" } } },
   });
   expect(update.session.instructions).toContain("interface language: tr");
+  expect(update.session.audio.input.transcription.prompt).toContain("ekipler");
+  expect(update.session.audio.input.transcription).not.toHaveProperty("language");
+  expect(realtimeSession("openai", "m", "tr", undefined, "", "de-DE")).toMatchObject({
+    audio: {
+      input: { transcription: { language: "de", prompt: expect.stringContaining("Aufgaben") } },
+    },
+  });
   const xai = new RealtimeVoice("xai", callbacks(), "en");
   await xai.connect(secret("xai"));
   expect(sockets[1].protocols).toEqual(["xai-client-secret.temporary"]);
   expect(sockets[1].sent()[0].session.turn_detection).toMatchObject({
     type: null,
   });
+  expect(sockets[1].sent()[0].session.audio.input).not.toHaveProperty("transcription");
   expect(realtimeSession("xai", "m", "en").tools.map((tool) => tool.name)).toEqual([
     "assistant_status",
     "assistant_job_control",
@@ -1049,7 +1057,9 @@ it("only confirmed lexical input interrupts playback and discards later audio of
   acceptInput(socket, "dur", "speech");
   expect(player.stop).toHaveBeenCalled();
   expect(events.playback).toHaveBeenLastCalledWith(false);
-  expect(socket.sent()).toContainEqual({ type: "response.cancel" });
+  expect(socket.sent()).toContainEqual(
+    expect.objectContaining({ type: "response.cancel", event_id: expect.any(String) }),
+  );
   expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(1);
   socket.emit({ type: "response.output_audio.delta", response_id: "r1", delta: "AAA=" });
   expect(output.createBuffer).toHaveBeenCalledTimes(1);
@@ -1597,5 +1607,324 @@ it("waits for a natural mid-sentence pause before ending the turn", async () => 
   for (let i = 0; i < 9; i++) pushFrame(speech);
   for (let i = 0; i < 30; i++) pushFrame(new Int16Array(1024));
   expect(appends()).toHaveLength(1);
+  voice.close();
+});
+
+it("correlates benign cancel races and reports unrelated cancel errors", async () => {
+  setup();
+  const events = callbacks();
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "hello", "first");
+  socket.emit({ type: "response.created", response: { id: "r1" } });
+  acceptInput(socket, "stop", "second");
+  const cancel = socket.sent().find((event) => event.type === "response.cancel");
+  expect(cancel).toMatchObject({ response_id: "r1", event_id: expect.any(String) });
+  socket.emit({
+    type: "error",
+    error: {
+      event_id: cancel.event_id,
+      code: "response_cancel_not_active",
+      message: "already done",
+    },
+  });
+  expect(events.error).not.toHaveBeenCalled();
+  socket.emit({
+    type: "error",
+    error: { event_id: "other", code: "response_cancel_not_active", message: "other cancel" },
+  });
+  expect(events.error).toHaveBeenCalled();
+  voice.close();
+});
+
+it("truncates unheard audio and discards its unaligned transcript on interruption", async () => {
+  setup();
+  const events = {
+    ...callbacks(),
+    interrupted: vi.fn(),
+    replyDiscarded: vi.fn(),
+    replyPlayed: vi.fn(),
+  };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "hello", "first");
+  socket.emit({ type: "response.created", response: { id: "r1" } });
+  socket.emit({
+    type: "response.output_audio_transcript.delta",
+    response_id: "r1",
+    delta: "hello",
+  });
+  socket.emit({
+    type: "response.output_audio.delta",
+    response_id: "r1",
+    item_id: "item1",
+    content_index: 0,
+    delta: "AAA=",
+  });
+  acceptInput(socket, "stop", "second");
+  expect(events.replyDiscarded).toHaveBeenCalledWith("r1");
+  expect(events.replyPlayed).not.toHaveBeenCalled();
+  expect(events.interrupted).toHaveBeenCalledWith({
+    responseId: "r1",
+    itemId: "item1",
+    contentIndex: 0,
+    audioEndMs: 0,
+  });
+  expect(socket.sent()).toContainEqual({
+    type: "conversation.item.truncate",
+    item_id: "item1",
+    content_index: 0,
+    audio_end_ms: 0,
+  });
+  voice.close();
+});
+
+it("marks a reply played only after generation and audio both finish", async () => {
+  setup();
+  const events = { ...callbacks(), replyPlayed: vi.fn(), replyDiscarded: vi.fn() };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "hello", "first");
+  socket.emit({ type: "response.created", response: { id: "r1" } });
+  socket.emit({
+    type: "response.output_audio_transcript.delta",
+    response_id: "r1",
+    delta: "hello",
+  });
+  socket.emit({
+    type: "response.output_audio.delta",
+    response_id: "r1",
+    item_id: "item1",
+    content_index: 0,
+    delta: "AAA=",
+  });
+  const output = contexts.at(-1)!;
+  const player = output.createBufferSource.mock.results[0].value;
+  socket.emit({ type: "response.done", response: { id: "r1", output: [] } });
+  expect(events.replyPlayed).not.toHaveBeenCalled();
+  player.onended();
+  expect(events.replyPlayed).toHaveBeenCalledExactlyOnceWith("r1");
+  voice.close();
+});
+
+it("truncates xAI audio using the compatible event and reports content-free timing", async () => {
+  setup();
+  const events = { ...callbacks(), timing: vi.fn(), interrupted: vi.fn() };
+  const voice = new RealtimeVoice("xai", events, "tr");
+  await voice.connect(secret("xai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "hello", "first");
+  socket.emit({ type: "response.created", response: { id: "r1" } });
+  socket.emit({
+    type: "response.output_audio_transcript.delta",
+    response_id: "r1",
+    delta: "private",
+  });
+  socket.emit({
+    type: "response.output_audio.delta",
+    response_id: "r1",
+    item_id: "item1",
+    content_index: 0,
+    delta: "AAA=",
+  });
+  acceptInput(socket, "stop", "second");
+  expect(socket.sent()).toContainEqual({
+    type: "conversation.item.truncate",
+    item_id: "item1",
+    content_index: 0,
+    audio_end_ms: 0,
+  });
+  expect(events.interrupted).toHaveBeenCalled();
+  expect(events.timing.mock.calls.map(([event]) => event.stage)).toEqual([
+    "first_scheduled_output",
+    "playback_interrupted",
+  ]);
+  expect(
+    events.timing.mock.calls.every(
+      ([event]) =>
+        Number.isFinite(event.durationMs) &&
+        event.durationMs >= 0 &&
+        Object.keys(event).length === 2,
+    ),
+  ).toBe(true);
+  voice.close();
+});
+
+it("discards a transcript when no audio was scheduled", async () => {
+  setup();
+  const events = { ...callbacks(), replyPlayed: vi.fn(), replyDiscarded: vi.fn() };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "hello", "first");
+  socket.emit({ type: "response.created", response: { id: "r1" } });
+  socket.emit({
+    type: "response.output_audio_transcript.delta",
+    response_id: "r1",
+    delta: "unheard",
+  });
+  socket.emit({ type: "response.done", response: { id: "r1", output: [] } });
+  expect(events.replyDiscarded).toHaveBeenCalledWith("r1");
+  expect(events.replyPlayed).not.toHaveBeenCalled();
+  voice.close();
+});
+
+it("waits for response completion when audio drains before its transcript", async () => {
+  setup();
+  const events = { ...callbacks(), replyPlayed: vi.fn() };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "hello", "first");
+  socket.emit({ type: "response.created", response: { id: "r1" } });
+  socket.emit({
+    type: "response.output_audio.delta",
+    response_id: "r1",
+    item_id: "item1",
+    content_index: 0,
+    delta: "AAA=",
+  });
+  const player = contexts.at(-1)!.createBufferSource.mock.results[0].value;
+  player.onended();
+  expect(events.replyPlayed).not.toHaveBeenCalled();
+  socket.emit({
+    type: "response.output_audio_transcript.delta",
+    response_id: "r1",
+    delta: "hello",
+  });
+  socket.emit({ type: "response.done", response: { id: "r1", output: [] } });
+  expect(events.replyPlayed).toHaveBeenCalledExactlyOnceWith("r1");
+  voice.close();
+});
+
+it("pause suppresses a response created after the wait without authorizing its tools", async () => {
+  setup();
+  const events = callbacks();
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "first question", "first");
+  voice.pause();
+  socket.emit({ type: "response.created", response: { id: "late" } });
+  expect(socket.sent()).toContainEqual(
+    expect.objectContaining({ type: "response.cancel", response_id: "late" }),
+  );
+  socket.emit({ type: "response.output_audio.delta", response_id: "late", delta: "AAA=" });
+  socket.emit({
+    type: "response.function_call_arguments.done",
+    response_id: "late",
+    call_id: "c",
+    name: "stop_work",
+  });
+  expect(events.playback).not.toHaveBeenCalledWith(true);
+  expect(events.tool).not.toHaveBeenCalled();
+  socket.emit({ type: "response.done", response: { id: "late", output: [] } });
+  acceptInput(socket, "next question", "next");
+  expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(2);
+  voice.close();
+});
+
+it("pause cancels a deferred tool continuation without repeating its completed tool", async () => {
+  setup();
+  const events = callbacks();
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "first", "first");
+  socket.emit({ type: "response.created", response: { id: "r1" } });
+  socket.emit({
+    type: "response.function_call_arguments.done",
+    response_id: "r1",
+    call_id: "c",
+    name: "test_tool",
+  });
+  socket.emit({ type: "response.done", response: { id: "r1", output: [] } });
+  await vi.waitFor(() =>
+    expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(2),
+  );
+  voice.pause();
+  socket.emit({ type: "response.created", response: { id: "continuation" } });
+  expect(socket.sent()).toContainEqual(
+    expect.objectContaining({ type: "response.cancel", response_id: "continuation" }),
+  );
+  socket.emit({
+    type: "response.function_call_arguments.done",
+    response_id: "continuation",
+    call_id: "c2",
+    name: "test_tool",
+  });
+  expect(events.tool).toHaveBeenCalledTimes(1);
+  voice.close();
+});
+
+it.each([false, true])(
+  "resumes a paused question only with a confirmed owner answer: %s",
+  async (answered) => {
+    setup();
+    let finish!: (result: unknown) => void;
+    const events = callbacks();
+    events.tool = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const voice = new RealtimeVoice("openai", events, "tr");
+    await voice.connect(secret("openai"));
+    const socket = sockets.at(-1)!;
+    acceptInput(socket, "help me choose", "first");
+    socket.emit({ type: "response.created", response: { id: "question" } });
+    socket.emit({
+      type: "response.function_call_arguments.done",
+      response_id: "question",
+      call_id: "choice",
+      name: "present_choices",
+    });
+    socket.emit({ type: "response.done", response: { id: "question", output: [] } });
+    voice.pause();
+    if (answered) voice.resumeAfterOwnerAnswer();
+    expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(1);
+    finish({ kind: answered ? "answered" : "skipped" });
+    await vi.waitFor(() =>
+      expect(socket.sent()).toContainEqual(
+        expect.objectContaining({
+          type: "conversation.item.create",
+          item: expect.objectContaining({ type: "function_call_output", call_id: "choice" }),
+        }),
+      ),
+    );
+    expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(
+      answered ? 2 : 1,
+    );
+    expect(events.tool).toHaveBeenCalledOnce();
+    voice.close();
+  },
+);
+
+it("preserves a newer accepted turn while a paused response is awaiting its ID", async () => {
+  setup();
+  const events = callbacks();
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "first", "first");
+  voice.pause();
+  acceptInput(socket, "new command", "second");
+  socket.emit({ type: "response.created", response: { id: "old" } });
+  expect(socket.sent()).toContainEqual(
+    expect.objectContaining({ type: "response.cancel", response_id: "old" }),
+  );
+  socket.emit({ type: "response.done", response: { id: "old", output: [] } });
+  expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(2);
+  socket.emit({ type: "response.created", response: { id: "new" } });
+  socket.emit({
+    type: "response.output_audio_transcript.delta",
+    response_id: "new",
+    delta: "answer",
+  });
+  expect(events.reply).toHaveBeenCalledWith("answer", false, "new");
   voice.close();
 });

@@ -7,7 +7,8 @@ export function sessionStatusOrder(
 ): (a: SessionSummary, b: SessionSummary) => number {
   const rank = (session: SessionSummary): number => {
     if (inputIds.has(session.id)) return 0;
-    if (session.issue === "failed") return 1;
+    if (session.issue === "failed" || (session.interrupted && !workingIds.has(session.id)))
+      return 1;
     if (workingIds.has(session.id) || session.issue === "retrying") return 2;
     return 3;
   };

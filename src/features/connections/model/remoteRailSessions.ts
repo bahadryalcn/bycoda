@@ -44,8 +44,14 @@ export function remoteLiveSessionInfos(listed: readonly RemoteRailSession[]): Li
     model: session.model ?? "",
     status:
       session.issue ??
-      (session.needsInput ? "input" : session.status === "running" ? "working" : undefined),
-    activityAt: session.updatedAt,
+      (session.needsInput
+        ? "input"
+        : session.status === "running"
+          ? "working"
+          : session.status === "interrupted"
+            ? "interrupted"
+            : undefined),
+    activityAt: session.lastActivityAt ?? session.updatedAt,
   }));
 }
 

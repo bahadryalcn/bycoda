@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
-import { Checkbox } from "../../../shared/ui/Checkbox";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
 import type { ManualProject, ManualSupervisionController } from "../model/assistantManual";
 import styles from "./AssistantView.module.css";
+import sessionStyles from "./AssistantSessions.module.css";
 import { InlineError } from "../../../shared/ui/InlineError";
 
 export function ManualSessionSupervision({
@@ -16,6 +17,7 @@ export function ManualSessionSupervision({
   environmentId,
   onSettings,
   onOpenSession,
+  onDraftStateChange,
 }: {
   controller: ManualSupervisionController;
   projects: readonly ManualProject[];
@@ -24,6 +26,7 @@ export function ManualSessionSupervision({
   environmentId?: string;
   onSettings?: () => void;
   onOpenSession?: (id: string, environmentId?: string) => void | Promise<void>;
+  onDraftStateChange?: (state: { dirty: boolean; pending: boolean }) => void;
 }) {
   const { data, pending, stopping, error, chief } = controller;
   const visible = projects.filter((project) => project.id);
@@ -46,6 +49,9 @@ export function ManualSessionSupervision({
     if (data && !dirty.current)
       setSelected(data.policy.projectIds.filter((id) => projectIds.has(id)));
   }, [data?.policy.version, projects]);
+  useEffect(() => {
+    onDraftStateChange?.({ dirty: dirty.current, pending: !!pending || stopping });
+  }, [onDraftStateChange, selected, pending, stopping, data?.policy.version]);
   const selectedVisible = selected.filter((id) => projectIds.has(id));
   const scopeChanged =
     dirty.current && editVersion.current !== null && data?.policy.version !== editVersion.current;
@@ -58,6 +64,17 @@ export function ManualSessionSupervision({
   );
   const matching = (title: string) =>
     !query.trim() || title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
+  const status = stopping
+    ? "Turning off…"
+    : error
+      ? "Unknown"
+      : pending === "list" || (!data && pending)
+        ? "Loading…"
+        : !data
+          ? "Unknown"
+          : enabled
+            ? "Enabled"
+            : "Off";
   async function commit(enabled: boolean) {
     if (
       await controller.save(enabled, selectedVisible, editVersion.current ?? data?.policy.version)
@@ -86,34 +103,47 @@ export function ManualSessionSupervision({
       {t("Turn off supervision")}
     </Button>
   );
-  if (!settings && !enabled && !grants.length && !error && !pending)
+  if (!settings && data && !enabled && !grants.length && !error && !pending && !stopping)
     return (
-      <section className={styles.section} aria-label={t("Manual session supervision")}>
-        <div className={styles.rowHeading}>
+      <section className={sessionStyles.panel} aria-label={t("Manual session supervision")}>
+        <div className={sessionStyles.panelHeader}>
           <h2>{t("Manual session supervision")}</h2>
-          <div className={styles.toolbar}>
-            <Badge>{t("Off")}</Badge>
-            {onSettings && <Button onClick={onSettings}>{t("Settings")}</Button>}
-            <Button onClick={() => void controller.refresh()}>{t("Refresh")}</Button>
-          </div>
+          <Badge>{t("Off")}</Badge>
+        </div>
+        <p className={sessionStyles.description}>
+          {t(
+            "Only explicitly enrolled conversations in selected projects can be supervised. Existing task, review and automation owners keep control.",
+          )}
+        </p>
+        <div className={sessionStyles.actions}>
+          {onSettings && <Button onClick={onSettings}>{t("Settings")}</Button>}
+          <Button onClick={() => void controller.refresh()}>{t("Refresh")}</Button>
         </div>
       </section>
     );
   return (
-    <section className={styles.section} aria-label={t("Manual session supervision")}>
-      <div className={styles.rowHeading}>
-        {!settings && <h2>{t("Manual session supervision")}</h2>}
-        <div className={styles.toolbar}>
-          {!settings && <Badge>{t(stopping ? "Turning off…" : enabled ? "Enabled" : "Off")}</Badge>}
-          {off}
-          <Button
-            loading={pending === "list"}
-            disabled={!!pending || stopping}
-            onClick={() => void controller.refresh()}
-          >
-            {t("Refresh")}
-          </Button>
+    <section
+      className={settings ? styles.section : sessionStyles.panel}
+      aria-label={t("Manual session supervision")}
+    >
+      {!settings && (
+        <div className={sessionStyles.panelHeader}>
+          <h2>{t("Manual session supervision")}</h2>
+          <Badge>{t(status)}</Badge>
         </div>
+      )}
+      <div className={sessionStyles.actions}>
+        {!settings && onSettings && (
+          <Button onClick={onSettings}>{t("Choose projects in Settings")}</Button>
+        )}
+        {off}
+        <Button
+          loading={pending === "list"}
+          disabled={!!pending || stopping}
+          onClick={() => void controller.refresh()}
+        >
+          {t("Refresh")}
+        </Button>
       </div>
       <p className={styles.muted}>
         {t(
@@ -147,33 +177,32 @@ export function ManualSessionSupervision({
               }}
             />
           </label>
-          <fieldset
-            className={styles.manualScope}
+          {!visible.length && (
+            <p role="status" className={styles.muted}>
+              {t("No visible projects are available. Add or unlock a project to select it.")}
+            </p>
+          )}
+          <SearchableSelect
+            multiple
+            visibleLabel
+            label={t("Selected projects")}
+            searchPlaceholder={t("Search projects…")}
+            noOptionsLabel={t("No visible projects are available.")}
+            value={selectedVisible}
+            options={visible.map((project) => ({
+              value: project.id!,
+              label: project.name,
+              description: project.path,
+              keywords: project.id,
+            }))}
+            showSelectedValues={false}
             disabled={!!pending || stopping || !chief || !data}
-          >
-            <legend>{t("Selected projects")}</legend>
-            {visible.map((project) => (
-              <label key={project.id} className={styles.manualProject}>
-                <Checkbox
-                  checked={selectedVisible.includes(project.id!)}
-                  onChange={(event) => {
-                    const checked = event.currentTarget.checked;
-                    if (!dirty.current) editVersion.current = data?.policy.version ?? null;
-                    dirty.current = true;
-                    setSelected((before) =>
-                      checked
-                        ? [...new Set([...before, project.id!])]
-                        : before.filter((id) => id !== project.id),
-                    );
-                  }}
-                />
-                <span>{project.name}</span>
-              </label>
-            ))}
-            {!visible.length && (
-              <p className={styles.muted}>{t("No visible projects are available.")}</p>
-            )}
-          </fieldset>
+            onChange={(projectIds) => {
+              if (!dirty.current) editVersion.current = data?.policy.version ?? null;
+              dirty.current = true;
+              setSelected(projectIds);
+            }}
+          />
           {scopeChanged && (
             <div className={styles.feedback} role="status">
               <span>{t("Project scope changed. Your unsaved selection is kept.")}</span>
@@ -205,15 +234,10 @@ export function ManualSessionSupervision({
         </>
       ) : (
         <>
-          {!enabled && (
+          {data && !enabled && (
             <p role="status" className={styles.muted}>
               {t("Manual session supervision is off.")}
             </p>
-          )}
-          {onSettings && (
-            <div>
-              <Button onClick={onSettings}>{t("Choose projects in Settings")}</Button>
-            </div>
           )}
           {grants
             .filter((grant) =>

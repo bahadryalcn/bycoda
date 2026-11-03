@@ -360,7 +360,13 @@ export type AssistantSnapshot = {
   usage: AssistantUsage;
   paused: boolean;
   lastHeartbeatAt: number | null;
-  briefing: { id: string; text: string; createdAt: number; projectIds?: string[] } | null;
+  briefing: {
+    id: string;
+    text: string;
+    createdAt: number;
+    projectIds?: string[];
+    voiceReceipt?: { reason: "return"; returnAt: number; meaningful: boolean; important: boolean };
+  } | null;
   briefingSchedule?: { enabled: boolean; time: string };
   notesError?: string;
   keepAwake?: AssistantKeepAwakeStatus;
@@ -929,6 +935,14 @@ export const AssistantSnapshotSchema = z.strictObject({
       text: z.string().max(6000),
       createdAt: version,
       projectIds: z.array(id).max(1000).optional(),
+      voiceReceipt: z
+        .strictObject({
+          reason: z.literal("return"),
+          returnAt: version,
+          meaningful: z.boolean(),
+          important: z.boolean(),
+        })
+        .optional(),
     })
     .nullable(),
   notesError: z.string().max(2000).optional(),

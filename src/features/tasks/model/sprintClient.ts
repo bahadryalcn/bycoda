@@ -112,7 +112,16 @@ export function useSprintBoard(
     failures: Record<string, string>;
     coordinatorError?: string;
   }>({ epoch: -1, failures: {} });
-  const readQueue = useRef<Promise<void>>(Promise.resolve());
+  // Polls share a single catch-up; coordinator-only readbacks use their own lane
+  // so an offline source cannot hold up an acknowledged planning operation.
+  const syncRead = useRef<{ epoch: number; promise: Promise<void> } | null>(null);
+  const listRead = useRef<{
+    epoch: number;
+    promise: Promise<void>;
+    followup?: Promise<void>;
+  } | null>(null);
+  const publication = useRef(0);
+  const coordinatorReads = useRef(new Set<symbol>());
   const requests = useRef(new Map<string, string>());
   const knownTasks = useRef(new Set<string>());
   const refs = useRef({ machines, tasks, allowedProjects });
@@ -144,6 +153,9 @@ export function useSprintBoard(
         ),
       ].sort(),
   );
+  const routeScope = JSON.stringify(
+    machines.map((machine) => [machine.id, machine.environmentId, machine.endpoint]),
+  );
   const requestId = (signature: string) => {
     const key = `${effectiveEnvironment}:${signature}`;
     let id = requests.current.get(key);
@@ -161,7 +173,30 @@ export function useSprintBoard(
       const key = boardKeyOf(coordinatorId, effectiveEnvironment);
       const patchBoard = (patch: Partial<Omit<BoardState, "key">>) =>
         setBoardState((state) => patchedBoardState(state, key, patch));
-      setLoading(true);
+      const beginCoordinatorRead = () => {
+        const token = Symbol();
+        coordinatorReads.current.add(token);
+        setLoading(true);
+        return () => {
+          coordinatorReads.current.delete(token);
+          if (current()) setLoading(coordinatorReads.current.size > 0);
+        };
+      };
+      const readBoard = async () => {
+        const finish = beginCoordinatorRead();
+        const revision = ++publication.current;
+        try {
+          const board = await remoteRequest<SprintBoard>(coordinatorId, "sprints.list");
+          if (current() && revision === publication.current) {
+            dataRef.current = board;
+            patchBoard({ data: board, error: null });
+          }
+          return board;
+        } finally {
+          finish();
+        }
+      };
+      const finishInitialRead = beginCoordinatorRead();
       try {
         const capabilities = await machineCapabilities(
           refs.current.machines.find((m) => m.id === coordinatorId)!,
@@ -170,7 +205,9 @@ export function useSprintBoard(
         const available = capabilities.includes(HOST_SPRINTS);
         patchBoard({ supported: available });
         if (!available) throw new Error("Update the planning Host to use sprints.");
-        let board = await remoteRequest<SprintBoard>(coordinatorId, "sprints.list");
+        const board = await readBoard();
+        finishInitialRead();
+        if (!current()) return;
         const failures: string[] = [];
         const sourceFailures: Record<string, string> = {};
         if (sync) {
@@ -199,6 +236,7 @@ export function useSprintBoard(
             if (!current()) return;
             try {
               const caps = await machineCapabilities(source);
+              if (!current()) return;
               if (!caps.includes(HOST_TASK_HISTORY))
                 throw new Error("Update this Host for sprint history.");
               const projectIds = [...allowed]
@@ -237,6 +275,7 @@ export function useSprintBoard(
                     caughtUp: true,
                   },
                 });
+                if (!current()) return;
                 snapshot.tasks.forEach((task) =>
                   knownTasks.current.add(
                     sprintTaskKey({
@@ -294,6 +333,7 @@ export function useSprintBoard(
                     caughtUp: !result.hasMore,
                   },
                 });
+                if (!current()) return;
                 events.forEach((event) => {
                   const key = sprintTaskKey({
                     environmentId: source.environmentId,
@@ -319,11 +359,10 @@ export function useSprintBoard(
               sourceFailures[source.environmentId] = message;
             }
           }
-          board = await remoteRequest<SprintBoard>(coordinatorId, "sprints.list");
+          if (!current()) return;
+          await readBoard();
         }
         if (current()) {
-          dataRef.current = board;
-          patchBoard({ data: board, error: null });
           if (sync) {
             latestSync.current = { epoch, failures: sourceFailures };
             patchBoard({ syncErrors: failures, syncFailures: sourceFailures });
@@ -336,37 +375,58 @@ export function useSprintBoard(
           if (sync) latestSync.current = { epoch, coordinatorError: message, failures: {} };
         }
       } finally {
-        if (current()) setLoading(false);
+        finishInitialRead();
       }
     },
     [coordinatorId, effectiveEnvironment],
   );
   const read = useCallback(
-    (sync = true) => {
+    (sync = true): Promise<void> => {
       const epoch = generation.current;
-      const operation = readQueue.current
-        .catch(() => undefined)
-        .then(async () => {
-          if (epoch === generation.current) await performRead(sync);
+      if (sync) {
+        if (syncRead.current?.epoch === epoch) return syncRead.current.promise;
+        const entry = { epoch, promise: Promise.resolve() };
+        entry.promise = performRead(true).finally(() => {
+          if (syncRead.current === entry) syncRead.current = null;
         });
-      readQueue.current = operation;
-      return operation;
+        syncRead.current = entry;
+        return entry.promise;
+      }
+      const active = listRead.current;
+      if (active?.epoch === epoch) {
+        // A mutation may have completed after the active read began. Coalesce
+        // its callers into one follow-up, never reuse that earlier snapshot.
+        active.followup ??= active.promise.then(() => {
+          if (epoch === generation.current) return read(false);
+        });
+        return active.followup;
+      }
+      const entry = { epoch, promise: Promise.resolve() };
+      entry.promise = performRead(false).finally(() => {
+        if (listRead.current === entry) listRead.current = null;
+      });
+      listRead.current = entry;
+      return entry.promise;
     },
     [performRead],
   );
   useEffect(() => {
     generation.current++;
+    publication.current++;
+    latestSync.current = { epoch: -1, failures: {} };
+    coordinatorReads.current.clear();
+    setLoading(false);
     knownTasks.current.clear();
     return () => {
       generation.current++;
     };
-  }, [coordinatorId, effectiveEnvironment]);
+  }, [coordinatorId, effectiveEnvironment, projectScope, routeScope]);
   useEffect(() => {
     if (!visible) return;
     void read();
     const timer = setInterval(() => void read(), 15_000);
     return () => clearInterval(timer);
-  }, [read, visible, projectScope]);
+  }, [read, visible, projectScope, routeScope]);
   const setCoordinatorEnvironmentId = useCallback((value: string) => {
     try {
       localStorage.setItem(COORDINATOR_KEY, value);
@@ -418,6 +478,7 @@ export function useSprintBoard(
         input: { ...input, requestId: requestId(signature) },
       });
       if (epoch === generation.current) {
+        publication.current++;
         const next = {
           ...dataRef.current,
           planning: [

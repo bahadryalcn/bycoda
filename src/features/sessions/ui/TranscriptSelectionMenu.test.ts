@@ -3,6 +3,12 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
+import { extractChatCitations } from "../model/chatCitation";
+
+const actionButton = (label: string) =>
+  Array.from(document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button')).find(
+    (button) => button.textContent?.includes(label),
+  )!;
 
 let container: HTMLDivElement;
 let root: Root;
@@ -28,6 +34,85 @@ afterEach(() => {
 });
 
 describe("TranscriptSelectionMenu", () => {
+  it("never retargets an open citation comment when a pane changes sessions", () => {
+    const onAddToChat = vi.fn();
+    const props = { onAddToChat, onDismiss: vi.fn() };
+    const selection = {
+      text: "Quoted words",
+      responseText: "Quoted words",
+      responseId: "reply-1",
+      occurrence: 0,
+      rect: new DOMRect(10, 20, 100, 20),
+    };
+    act(() =>
+      root.render(
+        createElement(TranscriptSelectionMenu, { ...props, sessionId: "session-1", selection }),
+      ),
+    );
+    act(() => actionButton("Add citation").click());
+    expect(document.querySelector('[role="dialog"] textarea')).not.toBeNull();
+    act(() =>
+      root.render(
+        createElement(TranscriptSelectionMenu, {
+          ...props,
+          sessionId: "session-2",
+          selection: null,
+        }),
+      ),
+    );
+    expect(document.querySelector('[role="dialog"] textarea')).toBeNull();
+    expect(onAddToChat).not.toHaveBeenCalled();
+  });
+  it("offers Reprompt only for an explicitly authorized user selection", async () => {
+    const props = {
+      selection: { text: "Message", rect: new DOMRect(10, 20, 100, 20) },
+      onTranslate: vi.fn(),
+      onDismiss: vi.fn(),
+    };
+    await act(async () => root.render(createElement(TranscriptSelectionMenu, props)));
+    expect(actionButton("Reprompt")).toBeUndefined();
+    await act(async () =>
+      root.render(createElement(TranscriptSelectionMenu, { ...props, allowReprompt: true })),
+    );
+    expect(actionButton("Reprompt")).toBeDefined();
+  });
+
+  it("captures a source and optional comment without losing the quote when the native selection collapses", async () => {
+    const onAddToChat = vi.fn();
+    const props = { sessionId: "session-1", onAddToChat, onDismiss: vi.fn() };
+    const selection = {
+      text: "Same phrase",
+      responseText: "Same phrase then Same phrase",
+      responseId: "reply-1",
+      occurrence: 1,
+      rect: new DOMRect(10, 20, 100, 20),
+    };
+    act(() => root.render(createElement(TranscriptSelectionMenu, { ...props, selection })));
+    act(() => actionButton("Add citation").click());
+    act(() => root.render(createElement(TranscriptSelectionMenu, { ...props, selection: null })));
+    const field = document.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+      setter.call(field, "Make this compact");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const add = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((button) => button.textContent === "Add to chat")!;
+    await act(async () => add.click());
+    expect(onAddToChat).toHaveBeenCalledOnce();
+    const value = extractChatCitations(onAddToChat.mock.calls[0][0]).citations[0];
+    expect(value).toMatchObject({
+      sessionId: "session-1",
+      blockId: "reply-1",
+      text: "Same phrase",
+      sourceText: "Same phrase then Same phrase",
+      occurrence: 1,
+      comment: "Make this compact",
+    });
+  });
+
   it("does not attach an old note failure to a reopened selection", async () => {
     let rejectSave!: (error: Error) => void;
     const onAddToNotes = vi.fn(
@@ -45,9 +130,7 @@ describe("TranscriptSelectionMenu", () => {
         }),
       ),
     );
-    await act(async () =>
-      document.querySelector<HTMLButtonElement>('[role="toolbar"] button')!.click(),
-    );
+    await act(async () => actionButton("Add to notes").click());
     act(() => root.render(createElement(TranscriptSelectionMenu, { ...props, selection: null })));
     act(() =>
       root.render(
@@ -104,7 +187,7 @@ describe("TranscriptSelectionMenu", () => {
         }),
       ),
     );
-    const button = document.querySelector<HTMLButtonElement>('[role="toolbar"] button')!;
+    const button = actionButton("Add to notes");
     await act(async () => button.click());
     expect(onDismiss).not.toHaveBeenCalled();
     expect(button.getAttribute("aria-disabled")).toBe("true");

@@ -121,14 +121,20 @@ const presence = vi.hoisted(() => ({
   value: "active" as "active" | "idle" | "away" | "unknown",
   native: "unknown" as "active" | "idle" | "away" | "unknown",
 }));
-vi.mock("../model/voicePresence", () => ({
+vi.mock("../model/voicePresence", async (original) => ({
+  ...(await original<typeof import("../model/voicePresence")>()),
   useVoicePresence: () => presence.value,
   readNativeVoicePresence: async () => presence.native,
 }));
 const mock = vi.hoisted(() => ({
   callbacks: null as any,
   close: vi.fn(),
-  speak: vi.fn(() => true),
+  speak: vi.fn((_text: string, _append?: boolean) => true),
+  delivered: [] as Array<() => void>,
+  autoDeliver: true,
+  preview: vi.fn(async (..._args: unknown[]) => {}),
+  silence: vi.fn(),
+  resumeAfterOwnerAnswer: vi.fn(),
   converse: vi.fn(async () => ({ action: "submit", reply: "" })),
   connect: vi.fn(async () => {}),
   warm: vi.fn(async () => {}),
@@ -163,16 +169,19 @@ vi.mock("../model/realtimeVoice", () => ({
       mock.realtime = args[1];
     }
     connect = mock.realtimeConnect;
+    resumeAfterOwnerAnswer = mock.resumeAfterOwnerAnswer;
     close = mock.close;
     speak = mock.speak;
     addImage = mock.image;
     mute = mock.mute;
-    silence() {}
+    silence = mock.silence;
+    pause = mock.silence;
     configureConversation = mock.configureConversation;
     finishTurn = mock.finishTurn;
   },
 }));
 vi.mock("../model/voiceAssistant", () => ({ converseWithAssistant: mock.assistant }));
+vi.mock("../model/voicePreview", () => ({ previewVoice: mock.preview }));
 vi.mock("../model/voiceToolClient", () => ({
   callVoiceTool: mock.toolCall,
   discoverVoiceTools: mock.discover,
@@ -190,9 +199,16 @@ vi.mock("../model/localVoice", () => ({
     }
     connect = mock.connect;
     close = mock.close;
-    speak = mock.speak;
+    speak(text: string, append?: boolean, delivered?: () => void) {
+      const accepted = mock.speak(text, append);
+      if (accepted && delivered) {
+        mock.delivered.push(delivered);
+        if (mock.autoDeliver) delivered();
+      }
+      return accepted;
+    }
     mute = mock.mute;
-    silence() {}
+    silence = mock.silence;
     configureConversation = mock.configureConversation;
     finishTurn = mock.finishTurn;
   },
@@ -242,6 +258,8 @@ beforeEach(() => {
   assistantHost.messages = [];
   assistantHost.contexts.clear();
   presence.value = "active";
+  mock.delivered = [];
+  mock.autoDeliver = true;
   localStorage.removeItem("bycoda.voice.scope");
   vi.spyOn(historyTransport, "captureLocalVoiceHistory").mockImplementation(() => ({
     key: "fixture-local",
@@ -263,6 +281,8 @@ afterEach(async () => {
   localStorage.removeItem("bycoda.voice.persona");
   localStorage.removeItem("bycoda.voice.memory");
   localStorage.removeItem("bycoda.voice.owner-rule-pending.v1");
+  localStorage.removeItem("bycoda.voice.last-briefing");
+  localStorage.removeItem("bycoda.voice.last-briefing-attempt");
   for (const key of Object.keys(localStorage))
     if (key.startsWith("bycoda.assistant.question-presentation:")) localStorage.removeItem(key);
   vi.clearAllMocks();
@@ -390,11 +410,100 @@ async function speech(text: string, binding?: any) {
       turn = mock.callbacks.start();
     });
   await act(async () => {
+    if (mock.callbacks.interceptTranscript?.({ text, language: "tr", inferenceMs: 150 }, turn))
+      return;
     const accepted = mock.callbacks.accept(turn);
     if (accepted) mock.callbacks.transcript({ text, language: "tr", inferenceMs: 150 }, accepted);
   });
   return turn;
 }
+it("silently accepts a completed answer's acknowledgement but admits a compound request", async () => {
+  mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Ekipler hazır." } as any);
+  const { onSubmit } = await setup();
+  await speech("Ekipleri göster");
+  const calls = mock.converse.mock.calls.length,
+    spoken = mock.speak.mock.calls.length;
+  await speech("tamam");
+  expect(mock.converse).toHaveBeenCalledTimes(calls);
+  expect(mock.speak).toHaveBeenCalledTimes(spoken);
+  expect(onSubmit).not.toHaveBeenCalled();
+  await speech("tamam ekipleri aç");
+  expect(mock.converse).toHaveBeenCalledTimes(calls + 1);
+});
+it("keeps an answer to an outstanding question on the normal path", async () => {
+  mock.converse.mockResolvedValueOnce({
+    action: "reply",
+    reply: "Ayrıntıları göstereyim mi?",
+  } as any);
+  await setup();
+  await speech("Durum nedir?");
+  const calls = mock.converse.mock.calls.length;
+  await speech("tamam");
+  expect(mock.converse).toHaveBeenCalledTimes(calls + 1);
+});
+it("waits silently and does not cancel work on an explicit thinking pause", async () => {
+  const { onSubmit, onStop } = await setup();
+  const calls = mock.converse.mock.calls.length;
+  await speech("bir saniye, düşünüyorum");
+  expect(mock.silence).toHaveBeenCalledOnce();
+  expect(mock.converse).toHaveBeenCalledTimes(calls);
+  expect(mock.speak).not.toHaveBeenCalled();
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(onStop).not.toHaveBeenCalled();
+});
+it("keeps capture through mouse idle while conversation is active, then expires it", async () => {
+  vi.useFakeTimers();
+  mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Buradayım." } as any);
+  const { render } = await setup();
+  await speech("Orada mısın?");
+  presence.value = "idle";
+  await render("a");
+  expect(mock.close).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(10 * 60_000));
+  expect(mock.close).toHaveBeenCalledOnce();
+  expect(container.textContent).toContain("Asleep");
+});
+it("clears conversational engagement when the microphone is paused", async () => {
+  mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Buradayım." } as any);
+  const { render } = await setup();
+  await speech("Orada mısın?");
+  presence.value = "idle";
+  await render("a");
+  await click("Pause mic");
+  expect(mock.close).toHaveBeenCalledOnce();
+});
+it("omits unheard local speech after a newer admitted request", async () => {
+  mock.autoDeliver = false;
+  mock.converse.mockResolvedValueOnce({ action: "reply", reply: "Duyulmayan devam." } as any);
+  await setup();
+  await speech("İlk sorum");
+  const delivered = mock.delivered[0];
+  expect(assistantHost.messages.some((item) => item.text === "Duyulmayan devam.")).toBe(false);
+  await speech("Hayır ikinci sorum");
+  await act(async () => delivered());
+  expect(assistantHost.messages.some((item) => item.text === "Duyulmayan devam.")).toBe(false);
+});
+it("persists only completed realtime playback and never a discarded reply", async () => {
+  await setupGlobal();
+  await act(async () => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Bir özet ver");
+    mock.realtime.reply("Üretilmiş devam", false, "r-cut");
+    mock.realtime.replyDiscarded("r-cut");
+    mock.realtime.replyPlayed("r-cut");
+  });
+  expect(assistantHost.messages.some((item) => item.text === "Üretilmiş devam")).toBe(false);
+  await act(async () => {
+    mock.realtime.reply("Duyulan yanıt.", false, "r-played");
+    mock.realtime.replyPlayed("r-played");
+  });
+  expect(assistantHost.messages.filter((item) => item.text === "Duyulan yanıt.")).toHaveLength(1);
+  await act(async () => {
+    expect(mock.realtime.interceptTranscript("tamam")).toBe(true);
+    mock.realtime.replyPlayed("r-played");
+  });
+  expect(assistantHost.messages.filter((item) => item.text === "Duyulan yanıt.")).toHaveLength(1);
+});
 it("lets the owner select manual ending live without submitting or reconnecting", async () => {
   const { onSubmit } = await setup();
   await chooseManualEnding();
@@ -1423,6 +1532,86 @@ it("sleeps when idle and returns ready without opening the microphone", async ()
   expect(mock.connect).toHaveBeenCalledTimes(connects);
 });
 
+for (const kind of ["daily", "routine", "stale"] as const)
+  it(`does not read a ${kind} briefing just because the owner returns`, async () => {
+    const profile = assistantHost.snapshot.profile;
+    try {
+      assistantHost.snapshot.profile = {
+        ...profile,
+        proactiveSpeech: "return",
+        quietStart: 0,
+        quietEnd: 0,
+        language: "tr",
+      };
+      const time = Date.now() - (kind === "stale" ? 360_000 : 0);
+      assistantHost.snapshot.briefing = {
+        id: kind,
+        text: "Rutin özet",
+        createdAt: time,
+        ...(kind === "daily"
+          ? {}
+          : {
+              voiceReceipt: {
+                reason: "return",
+                returnAt: time,
+                meaningful: kind !== "routine",
+                important: false,
+              },
+            }),
+      };
+      const { render } = await setup();
+      presence.value = "idle";
+      await render("a");
+      presence.value = "active";
+      await render("a");
+      expect(mock.preview).not.toHaveBeenCalled();
+    } finally {
+      assistantHost.snapshot.profile = profile;
+      delete assistantHost.snapshot.briefing;
+    }
+  });
+it("lets a confirmed return briefing finish and never automatically retries an interrupted delivery", async () => {
+  vi.useFakeTimers();
+  const profile = assistantHost.snapshot.profile;
+  mock.preview.mockImplementationOnce(() => new Promise<void>(() => {}));
+  try {
+    assistantHost.snapshot.profile = {
+      ...profile,
+      proactiveSpeech: "return",
+      quietStart: 0,
+      quietEnd: 0,
+      language: "tr",
+    };
+    const now = Date.now();
+    assistantHost.snapshot.briefing = {
+      id: "meaningful-return",
+      text: "İncelemeni bekleyen bir iş var.",
+      createdAt: now,
+      voiceReceipt: { reason: "return", returnAt: now, meaningful: true, important: true },
+    };
+    const { render } = await setup();
+    presence.value = "idle";
+    await render("a");
+    presence.value = "active";
+    await render("a");
+    expect(mock.preview).toHaveBeenCalledOnce();
+    expect(mock.preview.mock.calls[0][7]).toMatchObject({ complete: true });
+    const signal = mock.preview.mock.calls[0][3] as AbortSignal;
+    await act(async () => vi.advanceTimersByTimeAsync(61_000));
+    expect(signal.aborted).toBe(false);
+    expect(mock.connect).toHaveBeenCalledOnce();
+    presence.value = "away";
+    await render("a");
+    expect(signal.aborted).toBe(true);
+    presence.value = "active";
+    await render("a");
+    expect(mock.preview).toHaveBeenCalledOnce();
+  } finally {
+    assistantHost.snapshot.profile = profile;
+    delete assistantHost.snapshot.briefing;
+  }
+});
+
 it("does not wake voice after an explicit disconnect", async () => {
   const { render } = await setup();
   await click("Disconnect voice");
@@ -1531,6 +1720,45 @@ it("seeds GLOBAL voice only with proven captured contributors and no unscoped su
   } finally {
     assistantHost.request.mockImplementation(original);
     locked.mockRestore();
+  }
+});
+it("keeps GLOBAL voice listening with an incomplete Host project directory without disclosing unverified history", async () => {
+  const original = assistantHost.request.getMockImplementation()!;
+  assistantHost.request.mockImplementation(async (input) =>
+    input.op === "projects.list"
+      ? { projects: [{ id: "pa", path: "/a", name: "Alpha" }] }
+      : input.op === "threads.messages"
+        ? {
+            messages: [
+              { role: "user", text: "Verified personal", projectIds: [] },
+              { role: "assistant", text: "Unknown Beta", projectIds: ["pb"] },
+            ],
+          }
+        : original(input),
+  );
+  try {
+    const { render } = await setupGlobal();
+    expect(container.textContent).toContain("Listening");
+    expect(mock.realtimeConnect).toHaveBeenCalledWith(
+      expect.anything(),
+      [{ role: "user", text: "Verified personal" }],
+      expect.objectContaining({ summary: "", disclosureCurrent: expect.any(Function) }),
+    );
+    const options = mock.realtimeConnect.mock.calls[0][2] as { disclosureCurrent: () => boolean };
+    expect(options.disclosureCurrent()).toBe(true);
+    const locked = vi
+      .spyOn(groupLock, "isProjectLocked")
+      .mockImplementation((path) => path === "/b");
+    try {
+      expect(options.disclosureCurrent()).toBe(false);
+      await render("a");
+      expect(container.textContent).toContain("Ready. Microphone is off.");
+      expect(mock.close).toHaveBeenCalled();
+    } finally {
+      locked.mockRestore();
+    }
+  } finally {
+    assistantHost.request.mockImplementation(original);
   }
 });
 it("discards read history and closes capture when privacy changes before credential-delayed seed disclosure", async () => {
@@ -1789,6 +2017,35 @@ it("shows a clickable voice choice and consumes its spoken answer without starti
   expect(onSubmit).not.toHaveBeenCalled();
   expect(container.textContent).not.toContain("Which project?");
 });
+it("keeps a realtime choice pending through an explicit wait and accepts the later answer", async () => {
+  localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
+  const { onSubmit } = await setup();
+  let answer!: Promise<unknown>;
+  const settled = vi.fn();
+  await act(async () => {
+    answer = mock.realtime.tool("present_choices", {
+      question: "Which project?",
+      options: [
+        { id: "one", label: "monocode" },
+        { id: "two", label: "clinic" },
+      ],
+    });
+    void answer.then(settled);
+  });
+  await act(async () => {
+    expect(mock.realtime.interceptTranscript("bir saniye düşünüyorum")).toBe(true);
+  });
+  expect(settled).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Which project?");
+  expect(mock.silence).toHaveBeenCalledOnce();
+  await act(async () => {
+    expect(mock.realtime.interceptTranscript("the second one")).toBe(true);
+  });
+  await expect(answer).resolves.toEqual({ kind: "answered", answers: { choice: ["two"] } });
+  expect(mock.resumeAfterOwnerAnswer).toHaveBeenCalledOnce();
+  expect(onSubmit).not.toHaveBeenCalled();
+});
+
 it("temporarily expands a compact companion for a pending choice without changing the preference", async () => {
   localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai", compact: true }));
   await setup();

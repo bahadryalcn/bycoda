@@ -1,5 +1,22 @@
 # Personal assistant
 
+**Room > Sessions** separates job-created sessions from manual conversation
+supervision. Search narrows both lists; the status filter applies to job sessions.
+Clear filters when no sessions match, or choose **View jobs** when no job sessions
+exist yet. The supervision panel keeps its current state, project settings and
+refresh action together. An unavailable policy shows **Unknown** until refreshed;
+only a confirmed disabled policy shows **Off**. Supervision still requires explicit
+project selection and individual conversation enrollment.
+
+The Room's **History** tab groups activity by day, newest first. Each entry keeps
+its time, event type and available job/session links together. Search and the
+type filter narrow the visible entries; **Clear history** still requires confirmation.
+
+In the Room's **Jobs** tab, write requests in the input above the job list, one
+request per line, then choose **Review jobs**. The heading shows the number of
+matching jobs. Search and filters narrow the list; **Reset** in an empty search
+result clears them without changing your draft.
+
 Open **Set up** in the tool navigation to choose the assistant's name, language,
 execution provider, working permissions and daily token budget. The chosen name
 also appears in its Room and on messages it writes. Voice setup checks the
@@ -34,10 +51,32 @@ project; that content does not become a saved personal rule or trusted memory.
 
 ## Give and follow work
 
+Room **Settings** separates personal preferences, work permissions, schedules,
+project supervision, computer access and advanced limits. Switching sections keeps
+unsaved preferences. **Save profile settings** applies profile preferences and conversation retention without closing the dialog.
+Project supervision and computer controls have their own Save actions; changing
+sections or saving the profile does not save those independent policies. Search
+projects by name or folder path; paths distinguish projects with the same name.
+Helper executable and checksum fields are under **Advanced helper settings**.
+Closing settings or running setup again asks before discarding unsaved profile,
+project or computer drafts. Pending saves and helper preparation keep settings open.
+
+Computer settings distinguish the verified helper file, saved permission and a
+currently running desktop operation. Opening settings reads these states; it does
+not enable control, connect to an application or prepare the helper. Enabling the
+saved permission allows future requests through existing approvals. A verified
+helper alone does not mean control is enabled or an operation is running.
+
 The Room opens on **Today**, with a request field and current work. Use its tabs
 for conversations, jobs, sessions, notes, history and memory. The header's status
 control contains activity and usage details. Refresh and secondary actions stay
 in menus; the settings control and **Stop everything** remain directly available.
+
+**Conversations** shows your messages on the right and assistant replies on the
+left, grouped by day. Press **Enter** to send or **Shift+Enter** for a new line.
+Unsent drafts stay with their conversation. Message deletion, recorded actions
+and related work remain available beside each message; conversation actions live
+in the chat header. The voice launcher has its own space beside the composer.
 
 Enter several requests in the Room or say them during voice chat. Review each
 request and its project before choosing **Start**. Keep the same request when
@@ -138,7 +177,15 @@ Save preferences as owner rules and choose whether they apply to voice, coding
 sessions or both. Learned facts have separate provenance and cannot promote
 themselves into owner rules. Forbidden terms can be excluded from assistant
 text outputs. Review remembered facts and remove outdated information in
-**Memory**.
+**Memory**. Its search and **Add memory** action sit above grouped Rules, About me
+and Learned entries. Each entry keeps its scope, source and date beside the text;
+enable, edit and delete controls stay with that entry. In the editor, write the
+memory first, then select its kind and scope and optional forbidden words. Deleting
+requires confirmation; **Undo** restores the deleted entry.
+
+**Notes** shows searchable cards with a title, update time and content excerpt.
+Open a title to read or edit the complete note. **New note** keeps an unfinished
+draft when closed; deleting a card requires confirmation and retains recovery.
 
 **Summarize today** in Notes shows the retained daily briefing and its generation
 time. It returns that day's saved artifact even if a later return briefing became

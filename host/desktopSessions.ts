@@ -9,6 +9,7 @@ import type {
   RemoteProvider,
 } from "../src/features/connections/model/protocol";
 import type { Block, Session } from "../src/features/sessions/model/session";
+import { sessionProviderHistory } from "../src/features/sessions/model/sessionProviderHistory";
 import { assistantSessionManagement } from "../src/features/sessions/model/sessionProvenance";
 import { DesktopLive } from "./desktopLive";
 import { AsyncHostNotes } from "./host-notes-async";
@@ -459,7 +460,7 @@ export class DesktopSessions {
     const sql = blocks
       ? `SELECT id, cwd, harness, model, model_settings, runtime_mode, title,
       provider_session_id, blocks_json,
-      created_at, updated_at,
+      created_at, updated_at, ${optional("last_activity_at")},
       ${optional("branch")}, ${optional("archived", "0")}, ${optional("worktree_cwd")},
       ${optional("has_user_message", "1")}, ${optional("pinned", "0")},
       ${optional("linked_work_item_json")}, ${optional("provider_account_id")},
@@ -467,7 +468,7 @@ export class DesktopSessions {
       ${optional("pending_context_replay")}, ${optional("assistant_management_json")}
       FROM ${transcriptView && !meta ? "session_transcripts" : "sessions"} WHERE ${where}`
       : `SELECT id, cwd, harness, model, runtime_mode, title,
-      provider_session_id, created_at, updated_at,
+      provider_session_id, created_at, updated_at, ${optional("last_activity_at")},
       ${optional("archived", "0")}, ${optional("worktree_cwd")},
       ${optional("has_user_message", "1")}, ${optional("pinned", "0")},
       ${optional("linked_work_item_json")}, ${optional("is_draft", "0")}, ${optional("assistant_management_json")}
@@ -504,6 +505,30 @@ export class DesktopSessions {
       )
       .map((sqlRow) => {
         const row: Row = sqlRow;
+        row.provider_history = this.readProviderHistory(db, row);
+        const normalized = db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_block_state'")
+          .get();
+        const last =
+          normalized &&
+          db.prepare("SELECT 1 FROM session_block_state WHERE session_id=?").get(String(row.id))
+            ? db
+                .prepare(
+                  "SELECT block_json FROM session_blocks WHERE session_id=? ORDER BY ordinal DESC LIMIT 1",
+                )
+                .get(String(row.id))?.block_json
+            : db
+                .prepare(
+                  "SELECT CASE WHEN json_valid(blocks_json) THEN json_extract(blocks_json, '$[#-1]') END AS block FROM sessions WHERE id=?",
+                )
+                .get(String(row.id))?.block;
+        const marker = typeof last === "string" ? parse(last) : undefined;
+        row.interrupted =
+          !!marker &&
+          marker.role === "system" &&
+          (marker.notice === "interrupt" ||
+            marker.text === "Turn interrupted when bycoda quit." ||
+            marker.text === "Turn interrupted when Bycoda quit.");
         if (meta) this.readTranscriptFacts(db, row, transcriptView);
         else if (
           transcriptView &&
@@ -553,6 +578,36 @@ export class DesktopSessions {
     row.last_user_text = userText(blocks.filter((block) => block?.role === "user").at(-1));
   }
 
+  private readProviderHistory(db: DatabaseSync, row: Row) {
+    const id = String(row.id);
+    const normalizedSchema = !!db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_block_state'")
+      .get();
+    const normalized =
+      normalizedSchema &&
+      Number(
+        db.prepare("SELECT length FROM session_block_state WHERE session_id=?").get(id)?.length ??
+          -1,
+      ) >= 0;
+    const projection = `json_object('role',json_extract(block_json,'$.role'),
+      'draft',json_extract(block_json,'$.draft'),
+      'workspacePreparationPending',json_extract(block_json,'$.workspacePreparationPending'),
+      'followUpDelivery',json_extract(block_json,'$.followUpDelivery'),
+      'turnModel',json_extract(block_json,'$.turnModel'),
+      'handoff',json_extract(block_json,'$.handoff'))`;
+    const sql = normalized
+      ? `SELECT ${projection} AS fact FROM session_blocks${rolesIndex(db)} WHERE session_id=? AND json_extract(block_json,'$.role') IN ('user','handoff') ORDER BY ordinal`
+      : `SELECT ${projection} AS fact FROM (SELECT value AS block_json FROM json_each((SELECT CASE WHEN json_valid(blocks_json) THEN blocks_json ELSE '[]' END FROM sessions WHERE id=?))) WHERE json_extract(block_json,'$.role') IN ('user','handoff')`;
+    const facts = db
+      .prepare(sql)
+      .all(id)
+      .map((fact) => parse(fact.fact) as Block);
+    return sessionProviderHistory({
+      harness: String(row.harness) as Session["harness"],
+      blocks: facts,
+    });
+  }
+
   private summaryOf({ row, inFlight }: Found, projectId: string): HostSessionSummary {
     const updatedAt = Number(row.updated_at);
     return {
@@ -561,12 +616,14 @@ export class DesktopSessions {
         : {}),
       projectId,
       revision: updatedAt,
-      status: inFlight ? "running" : "idle",
+      status: inFlight ? "running" : row.interrupted ? "interrupted" : "idle",
+      lastActivityAt: Number(row.last_activity_at ?? row.updated_at),
       updatedAt,
       id: String(row.id),
       cwd: workCwd(row),
       title: String(row.title ?? ""),
       harness: String(row.harness) as RemoteProvider,
+      providerHistory: row.provider_history as HostSessionSummary["providerHistory"],
       model: row.model ? String(row.model) : undefined,
       runtimeMode: row.runtime_mode as HostSessionSummary["runtimeMode"],
       providerSessionId: row.provider_session_id ? String(row.provider_session_id) : null,
@@ -1344,7 +1401,8 @@ export class DesktopSessions {
         : {}),
       projectId,
       revision: updatedAt,
-      status: found.inFlight ? "running" : "idle",
+      status: found.inFlight ? "running" : row.interrupted ? "interrupted" : "idle",
+      lastActivityAt: Number(row.last_activity_at ?? updatedAt),
       createdAt: Number(row.created_at) || updatedAt,
       updatedAt,
       archived: !!Number(row.archived),

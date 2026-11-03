@@ -742,6 +742,12 @@ it.each(["environment.describe", "goals.list"])(
     });
     await render();
     expect(card("Fast local task")).toBeTruthy();
+    expect(
+      invoke.mock.calls.some(
+        ([command, args]) => command === "remote_request" && (args as any)?.machineId === remote.id,
+      ),
+    ).toBe(false);
+    await allProjects();
     expect(container.querySelector('[data-remote-data-state="refreshing"]')).toBeTruthy();
     expect(container.querySelector('[data-remote-data-state="empty"]')).toBeNull();
     expect(invoke.mock.calls.filter(([command]) => command === "remote_machines")).toHaveLength(1);
@@ -753,8 +759,6 @@ it.each(["environment.describe", "goals.list"])(
       );
     });
     await act(async () => {});
-    expect(card("Remote task")).toBeNull();
-    await allProjects();
     expect(card("Remote task")).toBeTruthy();
     expect(container.querySelector('[data-remote-data-state="ready"]')).toBeTruthy();
   },
@@ -825,7 +829,7 @@ it("removes the old host's cards and write targets while a reused machine identi
   expect(isDisabled(button(form, "Add and start")!)).toBe(true);
   await act(async () => releaseProbe({ capabilities: ["tasks", "tasks.todo"] }));
   await act(async () => {});
-  expect(container.querySelector('[data-remote-data-state="ready"]')).toBeTruthy();
+  expect(container.querySelector('[data-remote-data-state="empty"]')).toBeTruthy();
   expect(card("Old host task")).toBeNull();
 });
 
@@ -2754,3 +2758,42 @@ async function chooseExecutionMode(scope: ParentNode, label: string) {
   )!;
   await act(async () => option.click());
 }
+
+it("keeps a successfully empty local board available when optional goals fail", async () => {
+  host([], ["tasks", "tasks.todo", "goals"]);
+  const normal = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "remote_request" && args.method === "goals.list")
+      throw new Error("Goals unavailable");
+    return normal(command, args);
+  });
+  await render();
+  expect(container.textContent).not.toContain("Tasks unavailable");
+  await act(async () => button(container, "Connection issue")!.click());
+  expect(document.body.textContent).toContain("Goals unavailable");
+});
+
+it("retains task rows and disables duplicate refresh while the network read is pending", async () => {
+  host([task({ title: "Retained task", status: "todo" })]);
+  await render();
+  const normal = invoke.getMockImplementation()!;
+  let release!: (value: unknown) => void;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  let attempts = 0;
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "remote_request" && args.method === "tasks.list") {
+      attempts++;
+      return held;
+    }
+    return normal(command, args);
+  });
+  await act(async () => button(container, "Refresh")!.click());
+  expect(card("Retained task")).toBeTruthy();
+  expect(isDisabled(button(container, "Refresh")!)).toBe(true);
+  await act(async () => button(container, "Refresh")!.click());
+  expect(attempts).toBe(1);
+  await act(async () => release([task({ title: "Retained task", status: "todo" })]));
+  expect(isDisabled(button(container, "Refresh")!)).toBe(false);
+});

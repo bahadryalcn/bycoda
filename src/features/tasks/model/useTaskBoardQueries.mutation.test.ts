@@ -18,6 +18,7 @@ import { useTaskBoardQueries } from "./useTaskBoardQueries";
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   capabilities: vi.fn(),
+  projects: vi.fn(),
   listTasks: vi.fn(),
   rememberTasks: vi.fn(),
   listGoals: vi.fn(),
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../../automations/model/machineSnapshot", () => ({
   machineCapabilities: mocks.capabilities,
+  machineProjects: mocks.projects,
   invalidateMachineSnapshot: vi.fn(),
 }));
 vi.mock("./taskClient", async (original) => ({
@@ -54,8 +56,8 @@ vi.mock("./settingsClient", async (original) => ({
 
 type Hook = ReturnType<typeof useTaskBoardQueries>;
 let latest: Hook;
-function Probe() {
-  const probed = useTaskBoardQueries();
+function Probe({ scope = "all" }: { scope?: string }) {
+  const probed = useTaskBoardQueries(scope);
   // Publish the committed value to the test after render, not during it.
   useLayoutEffect(() => {
     latest = probed;
@@ -147,6 +149,7 @@ beforeEach(async () => {
   mocks.invoke.mockImplementation(async (command: string) =>
     command === "remote_machines" ? world.machines : null,
   );
+  mocks.projects.mockResolvedValue([]);
   mocks.capabilities.mockResolvedValue([
     HOST_TASKS,
     HOST_TASKS_TODO,
@@ -292,4 +295,82 @@ describe("useTaskBoardQueries confirmed writers", () => {
     await until(() => latest.board.tasks.length === 2);
     expect(titles(latest.board.tasks)).toEqual(["Confirmed title", "From host"]);
   });
+});
+
+it("does not probe an unrelated machine until All projects is requested", async () => {
+  world.machines.push(machine("b"));
+  await act(async () =>
+    root.render(createElement(Harness, { scope: JSON.stringify(["env-a", "project"]) })),
+  );
+  await until(() => latest.board.hasTaskAnswer && !latest.board.pending);
+  expect(mocks.capabilities.mock.calls.map(([entry]) => entry.id)).toEqual(["a"]);
+  await act(async () => latest.refresh(true));
+  expect(mocks.capabilities.mock.calls.every(([entry]) => entry.id === "a")).toBe(true);
+  await act(async () => root.render(createElement(Harness, { scope: "all" })));
+  await until(() => mocks.capabilities.mock.calls.some(([entry]) => entry.id === "b"));
+});
+
+it("does not use another host's answer to finish a newly selected host's loading state", async () => {
+  world.machines.push(machine("b"));
+  await act(async () =>
+    root.render(createElement(Harness, { scope: JSON.stringify(["env-a", "project"]) })),
+  );
+  await until(() => latest.board.hasTaskAnswer && !latest.board.pending);
+  const held = hold("tasks");
+  await act(async () =>
+    root.render(createElement(Harness, { scope: JSON.stringify(["env-b", "project"]) })),
+  );
+  await settle();
+  expect(latest.board.hasTaskAnswer).toBe(false);
+  expect(latest.board.pending).toBe(true);
+  expect(latest.board.tasks).toEqual([]);
+  await act(async () => held.resolve([result("b", [])]));
+  await until(() => latest.board.hasTaskAnswer);
+});
+
+it("publishes project discovery independently and retains last-known projects after failure", async () => {
+  world.machines.push(machine("b"));
+  let release!: (value: unknown) => void;
+  const remote = new Promise((resolve) => {
+    release = resolve;
+  });
+  mocks.projects.mockImplementation(async (entry: RemoteMachine) =>
+    entry.id === "b" ? remote : [{ id: "project", cwd: "/a", name: "Local project" }],
+  );
+  await act(async () => root.render(createElement(Harness)));
+  await until(() => latest.board.projects.length === 1);
+  expect(latest.board.projects[0].name).toBe("Local project");
+  await act(async () => release([{ id: "remote", cwd: "/b", name: "Remote project" }]));
+  await until(() => latest.board.projects.length === 2);
+  mocks.projects.mockRejectedValue(new Error("Project discovery unavailable"));
+  await act(async () => latest.refresh(true));
+  expect(latest.board.projects).toHaveLength(2);
+  expect(latest.board.error).toContain("Project discovery unavailable");
+});
+
+it("retains limits as stale after failure and retries only their host", async () => {
+  world.machines.push(machine("b"));
+  world.limits.b = limits("b", 30);
+  await mount();
+  mocks.listLimits.mockImplementation(async (entries: RemoteMachine[]) => {
+    if (entries[0].id === "a") throw new Error("Limits unavailable");
+    return [world.limits.b];
+  });
+  await act(async () => latest.refresh(true, "a"));
+  expect(latest.board.limits.find((entry) => entry.machineId === "a")).toMatchObject({
+    stale: true,
+    dailyMinutes: 60,
+  });
+  expect(latest.board.limitErrors).toEqual([
+    { machineId: "a", machineName: "Host a", error: "Limits unavailable" },
+  ]);
+  expect(latest.board.taskError).toBeFalsy();
+  mocks.listLimits.mockClear();
+  mocks.listLimits.mockResolvedValue([world.limits.a]);
+  await act(async () => latest.refresh(true, "a"));
+  expect(
+    mocks.listLimits.mock.calls.map(([entries]) => entries.map((entry: RemoteMachine) => entry.id)),
+  ).toEqual([["a"]]);
+  expect(latest.board.limitErrors).toEqual([]);
+  expect(latest.board.limits.find((entry) => entry.machineId === "a")?.stale).toBe(false);
 });

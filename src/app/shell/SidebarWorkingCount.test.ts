@@ -151,7 +151,7 @@ it("collapses and reopens Working in the workspace when the project rail is clos
   props.liveAgents = [
     {
       id: "background",
-      cwd: props.cwd,
+      cwd: "/other/project",
       title: "Background work",
       harness: "codex",
       activity: "Working",
@@ -312,7 +312,7 @@ it("counts host work without opening its sessions and updates when it finishes",
   expect(badge()).toBeNull();
 });
 
-it("shows the same turn clock in Working and Sessions, then removes it when work ends", async () => {
+it("keeps the turn clock in Sessions while Working summarizes this project", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(200_000);
   try {
@@ -343,17 +343,24 @@ it("shows the same turn clock in Working and Sessions, then removes it when work
       },
     ];
     await render();
-    // The live summary prints the turn time on the title line; the session card keeps it beside
-    // the working mark. Both read the same shared clock.
+    // This project's duplicate row becomes a count; its session card retains the live clock.
     const rail = () =>
       container.querySelector('[data-live-agent-card="timed"] [data-live-agent-elapsed]');
     const card = () =>
       container.querySelector('[data-session-card="timed"] [data-session-working-status]');
-    expect(rail()?.textContent).toBe("3m 10s");
-    expect(card()?.textContent).toContain(rail()?.textContent);
+    expect(rail()).toBeNull();
+    expect(container.querySelector("[data-live-agents-project-summary]")?.textContent).toBe(
+      "1 working in this project",
+    );
+    expect(card()?.textContent).toContain("3m 10s");
     act(() => vi.advanceTimersByTime(1000));
-    expect(rail()?.textContent).toBe("3m 11s");
+    expect(rail()).toBeNull();
     expect(card()?.textContent).toContain("3m 11s");
+    props.lastSessionsOpen = true;
+    await render();
+    expect(container.querySelector("[data-live-agents-project-summary]")).toBeNull();
+    expect(rail()?.textContent).toBe("3m 11s");
+    props.lastSessionsOpen = false;
     props.busySessionIds = new Set();
     props.liveAgents = [];
     await render();

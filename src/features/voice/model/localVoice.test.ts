@@ -132,7 +132,7 @@ it.each(["", "[cough]", "(boğaz temizleme)"])(
     for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
     expect(events.start).toHaveBeenCalledOnce();
     expect(cancel).not.toHaveBeenCalled();
-    for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+    for (let i = 0; i < 20; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
     await Promise.resolve();
     await Promise.resolve();
     expect(events.accept).not.toHaveBeenCalled();
@@ -167,7 +167,7 @@ it.each(["", "[cough]", "(boğaz temizleme)"])(
       for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
     };
     const end = () => {
-      for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+      for (let i = 0; i < 20; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
     };
     speech();
     end();
@@ -213,7 +213,7 @@ it.each(["older-first", "newer-first", "cancelled"])(
     await voice.connect();
     for (let turn = 0; turn < 2; turn++) {
       for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
-      for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+      for (let i = 0; i < 20; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
     }
     const resolve = async (index: number) => {
       finish[index]({ text: index ? "hayır" : "evet", language: "tr", inferenceMs: 1 });
@@ -244,7 +244,7 @@ it("invalidates pending recognition across mute and resume", async () => {
   const voice = new LocalVoice(events, "tr");
   await voice.connect();
   for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
-  for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+  for (let i = 0; i < 20; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
   voice.mute(true);
   voice.mute(false);
   finish({ text: "stop", language: "en", inferenceMs: 1 });
@@ -263,7 +263,7 @@ it("interrupts only after accepted words and retains the onset target", async ()
   vi.mocked(speechSynthesis.cancel).mockClear();
   for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
   expect(speechSynthesis.cancel).not.toHaveBeenCalled();
-  for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+  for (let i = 0; i < 20; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
   await Promise.resolve();
   await Promise.resolve();
   expect(events.accept).toHaveBeenCalledWith({ sessionId: "a", sequence: 1 });
@@ -284,7 +284,7 @@ it.each(["evet", "hayır", "dur", "yes", "no", "stop"])(
     const voice = new LocalVoice(events, "tr");
     await voice.connect();
     for (let i = 0; i < 2; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
-    for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+    for (let i = 0; i < 20; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
     await Promise.resolve();
     await Promise.resolve();
     expect(events.transcript).toHaveBeenCalledWith(
@@ -372,7 +372,7 @@ it("captures and transcribes PCM locally with the app language as a hint, and mu
   const voice = new LocalVoice(events, "en");
   await voice.connect();
   for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
-  for (let i = 0; i < 10; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+  for (let i = 0; i < 20; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
   await Promise.resolve();
   await Promise.resolve();
   expect(events.start).toHaveBeenCalledTimes(1);
@@ -623,5 +623,114 @@ it("starts complete Supertonic sentences almost at once and plays its 44.1 kHz a
   await vi.waitFor(() => expect(playback).toHaveLength(1));
   expect(playback[0].start).toHaveBeenCalledWith(0.05);
   expect(contexts[1].createBuffer).toHaveBeenCalledWith(1, 4410, 44100);
+  voice.close();
+});
+it("consumes recognized backchannels without interrupting playback or accepting a new turn", async () => {
+  setup();
+  const events = {
+    ...callbacks(),
+    accept: vi.fn((binding) => binding),
+    interceptTranscript: vi.fn(() => true),
+  };
+  backend.transcribe.mockResolvedValueOnce({ text: "hı hı", language: "tr", inferenceMs: 1 });
+  const voice = new LocalVoice(events, "tr");
+  await voice.connect();
+  vi.mocked(speechSynthesis.cancel).mockClear();
+  for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+  for (let i = 0; i < 20; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+  await vi.waitFor(() => expect(events.interceptTranscript).toHaveBeenCalledOnce());
+  expect(events.accept).not.toHaveBeenCalled();
+  expect(events.transcript).not.toHaveBeenCalled();
+  expect(speechSynthesis.cancel).not.toHaveBeenCalled();
+  voice.close();
+});
+it("does not admit older recognition after a newer acknowledged backchannel", async () => {
+  setup();
+  const finish: ((result: any) => void)[] = [];
+  for (let i = 0; i < 2; i++)
+    backend.transcribe.mockImplementationOnce(() => new Promise((resolve) => finish.push(resolve)));
+  const events = {
+    ...callbacks(),
+    accept: vi.fn((binding) => binding),
+    interceptTranscript: vi.fn((result) => result.text === "tamam"),
+  };
+  const voice = new LocalVoice(events, "tr");
+  await voice.connect();
+  try {
+    for (let turn = 0; turn < 2; turn++) {
+      for (let i = 0; i < 5; i++) nodes[0].port.onmessage({ data: voicedFrame().buffer });
+      for (let i = 0; i < 20; i++) nodes[0].port.onmessage({ data: new Int16Array(1024).buffer });
+    }
+    finish[1]({ text: "tamam", language: "tr", inferenceMs: 1 });
+    await vi.waitFor(() => expect(events.interceptTranscript).toHaveBeenCalledOnce());
+    finish[0]({ text: "eski isteği başlat", language: "tr", inferenceMs: 1 });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events.accept).not.toHaveBeenCalled();
+    expect(events.transcript).not.toHaveBeenCalled();
+  } finally {
+    voice.close();
+  }
+});
+
+it("marks natural speech delivered only after its audio ends, never after cancellation", async () => {
+  setup();
+  const chunk = { audio: btoa("\0\0".repeat(4800)), sampleRate: 48000 };
+  backend.speechNext.mockResolvedValueOnce(chunk).mockResolvedValueOnce({ done: true });
+  const voice = new LocalVoice(callbacks(), "tr", { natural: true, engine: "voxcpm2" });
+  await voice.connect();
+  const delivered = vi.fn();
+  voice.speak("Merhaba", false, delivered);
+  await vi.waitFor(() => expect(playback).toHaveLength(1));
+  await vi.waitFor(() => expect(backend.speechNext).toHaveBeenCalledTimes(2));
+  expect(delivered).not.toHaveBeenCalled();
+  playback[0].onended();
+  await vi.waitFor(() => expect(delivered).toHaveBeenCalledOnce());
+  backend.speechNext.mockResolvedValueOnce(chunk).mockResolvedValueOnce({ done: true });
+  const cancelled = vi.fn();
+  voice.speak("Tekrar", false, cancelled);
+  await vi.waitFor(() => expect(playback).toHaveLength(2));
+  voice.silence();
+  playback[1].onended();
+  await Promise.resolve();
+  expect(cancelled).not.toHaveBeenCalled();
+  voice.close();
+});
+it("uses a patient default fallback while preserving an explicit silence setting", async () => {
+  setup();
+  const voice = new LocalVoice(callbacks(), "tr");
+  await voice.connect();
+  const push = (frame: Int16Array) => nodes[0].port.onmessage({ data: frame.buffer });
+  for (let n = 0; n < 6; n++) push(voicedFrame());
+  for (let n = 0; n < 10; n++) push(new Int16Array(1024));
+  expect(backend.transcribe).not.toHaveBeenCalled();
+  for (let n = 0; n < 10; n++) push(new Int16Array(1024));
+  expect(backend.transcribe).toHaveBeenCalledOnce();
+  voice.configureConversation({ turnEndSilence: 0.6 });
+  for (let n = 0; n < 6; n++) push(voicedFrame());
+  for (let n = 0; n < 10; n++) push(new Int16Array(1024));
+  expect(backend.transcribe).toHaveBeenCalledTimes(2);
+  voice.close();
+});
+
+it("restores Smart Turn when explicit silence is cleared and keeps manual mode manual", async () => {
+  setup();
+  backend.start.mockResolvedValueOnce({
+    lease: "local",
+    model: "small",
+    device: "cuda",
+    turn: true,
+  } as any);
+  const voice = new LocalVoice(callbacks(), "tr", undefined, undefined, { turnEndSilence: 0.6 });
+  await voice.connect();
+  voice.configureConversation({ turnEndSilence: undefined });
+  const push = (frame: Int16Array) => nodes[0].port.onmessage({ data: frame.buffer });
+  for (let n = 0; n < 6; n++) push(voicedFrame());
+  for (let n = 0; n < 10; n++) push(new Int16Array(1024));
+  expect(backend.endpoint).toHaveBeenCalledOnce();
+  expect(backend.transcribe).not.toHaveBeenCalled();
+  voice.configureConversation({ manualTurnEnd: true, turnEndSilence: undefined });
+  for (let n = 0; n < 30; n++) push(new Int16Array(1024));
+  expect(backend.transcribe).not.toHaveBeenCalled();
   voice.close();
 });

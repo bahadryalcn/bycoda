@@ -25,6 +25,9 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - Title/content/consequence lead metadata. Ordinary completed operations may summarize with detail available; active, failed, approval and recovery states stay discoverable.
 - Preserve navigation identity, mounted drafts, selections, widths/density, shortcuts/context menus, drag/drop and native window behavior.
 - Use one clear activity state signal; optional figures do not replace operational state. Failed reads are unknown, not empty/idle/success.
+- Last Sessions is a collection view, separate from actual project and execution
+  checkout. Keep it open on session selection; Explorer/Changes follow the selected
+  session checkout. Project navigation exits the collection without losing drafts.
 - Composition changes grant no Host, filesystem, Git, send or credential authority. Keep operation feedback with its initiating control or affected item.
 
 ## Workflow

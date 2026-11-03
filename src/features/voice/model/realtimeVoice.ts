@@ -14,6 +14,7 @@ import {
 } from "./voiceReconnect";
 import { openMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
+import { VOICE_FEATURE_CONTEXT, voiceTranscriptionHint } from "./voiceFeatureLexicon";
 
 export type VoiceEvent = {
   type: string;
@@ -224,6 +225,7 @@ export const voiceTools = [
 
 export function voiceInstructions(language: string, persona = "", languageLock = "auto") {
   return `${voiceLanguageInstructions(languageLock)}You are bycoda's responsive voice companion and application manager. Speak briefly and naturally, in the language the user speaks (interface language: ${language}).
+${VOICE_FEATURE_CONTEXT}
 Talk at a lively, natural conversational pace with the native pronunciation and intonation of that language, like a native speaker; never slow down, drag words or over-enunciate. Keep spoken replies to one to three short sentences unless the user asks for detail.
 For ordinary conversation and planning choices, use the current accepted owner turn and verified conversation history already supplied. You can call present_choices directly when those sources are sufficient. Do not read renderer state merely to start a conversation, discuss options or show a planning question.
 You can manage visible projects and multiple sessions through the application's tools. Read app_context only when the owner's request needs current application, session or composer state. Discover relevant capabilities with app_tools_list, then call the exact discovered action through app_tool_call. Do not guess tool names, schemas, targets or availability.
@@ -266,6 +268,9 @@ export function realtimeSession(
           noise_reduction: { type: "near_field" },
           transcription: {
             model: "gpt-4o-mini-transcribe",
+            // Optional vocabulary hint supported by the current transcription model.
+            // No private target names and no replacement of recognized owner speech.
+            prompt: voiceTranscriptionHint(voiceLanguageCode(languageLock) ?? language),
             ...(voiceLanguageCode(languageLock)
               ? { language: voiceLanguageCode(languageLock) }
               : {}),
@@ -297,12 +302,21 @@ const CONGESTION_LIMIT = 15_000;
 type Callbacks = {
   state: (state: "speaking" | "replying" | "listening") => void;
   /** Assistant speech as text; `append` continues the current reply. */
-  reply: (text: string, append: boolean) => void;
+  reply: (text: string, append: boolean, responseId: string) => void;
+  replyPlayed?: (responseId: string) => void;
+  replyDiscarded?: (responseId: string) => void;
   /** The user's words, when the provider transcribes them. */
   transcript?: (text: string) => void;
   /** A pending card may consume speech without authorizing a new model turn. */
   interceptTranscript?: (text: string) => boolean;
   replyDone?: () => void;
+  /** Playback was interrupted; transcript alignment is unknown. */
+  interrupted?: (receipt: {
+    responseId: string;
+    itemId: string;
+    contentIndex: number;
+    audioEndMs: number;
+  }) => void;
   consumeOwnerTranscript?: (text: string) => boolean;
   /** Snapshot at acoustic onset; activate only if that candidate becomes speech. */
   captureTurn?: () => () => void;
@@ -314,6 +328,11 @@ type Callbacks = {
   error: (message: string, fatal: boolean, details?: VoiceFailure) => void;
   /** Idle transport rotation; the owner decides whether presence allows reconnect. */
   rotate?: () => void;
+  /** Local scheduling measurements; no transcript or audio is included. */
+  timing?: (event: {
+    stage: "first_scheduled_output" | "playback_complete" | "playback_interrupted";
+    durationMs: number;
+  }) => void;
   diagnostic?: (event: {
     kind: "close";
     code: number;
@@ -333,6 +352,21 @@ export class RealtimeVoice {
   private capture?: AudioWorkletNode;
   private nextAudio = 0;
   private players = new Set<AudioBufferSourceNode>();
+  private playout = new Map<
+    string,
+    {
+      responseId: string;
+      itemId: string;
+      contentIndex: number;
+      completed: number;
+      chunks: { start: number; duration: number }[];
+    }
+  >();
+  private cancelEvents = new Map<string, string | undefined>();
+  private eventSequence = 0;
+  private pendingAdmissionAt?: number;
+  private responseTiming = new Map<string, { admittedAt: number; scheduled: boolean }>();
+  private replyPlayback = new Map<string, { pending: number; done: boolean; hasAudio: boolean }>();
   private closed = false;
   private ready = false;
   private createdItems = new Set<string>();
@@ -373,7 +407,7 @@ export class RealtimeVoice {
   private congestedSince?: number;
   /** Backlog size at the last check; a smaller value means the upload advanced. */
   private congestedBytes = 0;
-  private expectedResponse?: { tools: boolean; cancelled?: boolean };
+  private expectedResponse?: { tools: boolean; cancelled?: boolean; cancelOnCreated?: boolean };
   private responseTools = new Map<string, boolean>();
   /** Ends a pending connect when the user closes voice while it connects. */
   private abortConnect?: (error: Error) => void;
@@ -739,11 +773,18 @@ export class RealtimeVoice {
         const id = (event.response as { id?: string } | undefined)?.id;
         if (!id || !this.expectedResponse) {
           if (id) this.suppressed.add(id);
-          this.send({ type: "response.cancel" });
+          this.cancelResponse(id);
           break;
+        }
+        if (this.pendingAdmissionAt !== undefined) {
+          this.responseTiming.set(id, { admittedAt: this.pendingAdmissionAt, scheduled: false });
+          if (this.responseTiming.size > 64)
+            this.responseTiming.delete(this.responseTiming.keys().next().value!);
+          this.pendingAdmissionAt = undefined;
         }
         this.responseTools.set(id, this.expectedResponse.tools && !this.expectedResponse.cancelled);
         if (this.expectedResponse.cancelled) this.suppressed.add(id);
+        if (this.expectedResponse.cancelOnCreated) this.cancelResponse(id);
         this.expectedResponse = undefined;
         this.responseId = id;
         this.responding = true;
@@ -769,14 +810,20 @@ export class RealtimeVoice {
       case "response.output_audio_transcript.delta":
       case "response.audio_transcript.delta":
         if (typeof event.delta === "string" && this.allowedResponse(event.response_id)) {
-          this.callbacks.reply(event.delta, this.replyStarted);
+          this.callbacks.reply(event.delta, this.replyStarted, String(event.response_id));
+          if (!this.replyPlayback.has(String(event.response_id)))
+            this.replyPlayback.set(String(event.response_id), {
+              pending: 0,
+              done: false,
+              hasAudio: false,
+            });
           this.replyStarted = true;
         }
         break;
       case "response.output_audio.delta":
       case "response.audio.delta":
         if (typeof event.delta === "string" && this.allowedResponse(event.response_id))
-          this.play(event.delta);
+          this.play(event.delta, event);
         break;
       case "response.function_call_arguments.done":
         this.call(event);
@@ -785,6 +832,11 @@ export class RealtimeVoice {
         const id = (event.response as { id?: string } | undefined)?.id;
         if (!id || !this.responseTools.has(id)) break;
         this.callbacks.replyDone?.();
+        const playback = this.replyPlayback.get(id);
+        if (playback) {
+          playback.done = true;
+          this.finishPlayback(id);
+        } else this.responseTiming.delete(id);
         if (id === this.responseId) this.responding = false;
         const output = (event.response as { output?: unknown[] } | undefined)?.output ?? [];
         for (const item of output)
@@ -799,7 +851,15 @@ export class RealtimeVoice {
         break;
       }
       case "error": {
-        // A cancel racing a finished response is harmless.
+        const error = event.error as
+          | { code?: string; event_id?: string; message?: string }
+          | undefined;
+        const cancelId = error?.event_id;
+        const benignCancel =
+          typeof cancelId === "string" &&
+          this.cancelEvents.has(cancelId) &&
+          error?.code === "response_cancel_not_active";
+        if (typeof cancelId === "string") this.cancelEvents.delete(cancelId);
         const code = (event.error as { code?: string } | undefined)?.code ?? "";
         // A rejected commit (e.g. too little audio) is a rejected candidate.
         if (
@@ -810,7 +870,7 @@ export class RealtimeVoice {
           this.rejectPending();
           break;
         }
-        if (!/cancel/i.test(code)) {
+        if (!benignCancel) {
           const message = errorMessage(event) ?? "The voice request failed.";
           const details = classifyVoiceFailure(message, code);
           if (
@@ -969,8 +1029,9 @@ export class RealtimeVoice {
     this.callbacks.transcript?.(text);
     this.silence();
     if (this.responding) {
+      const pendingResponse = !!this.expectedResponse;
       if (this.expectedResponse) this.expectedResponse.cancelled = true;
-      this.send({ type: "response.cancel" });
+      this.cancelResponse(pendingResponse ? undefined : this.responseId);
     }
     if (this.callbacks.consumeOwnerTranscript?.(text)) {
       this.pendingTurn = false;
@@ -978,6 +1039,7 @@ export class RealtimeVoice {
       this.commitCandidate();
       return;
     }
+    this.pendingAdmissionAt = performance.now();
     this.pendingTurn = true;
     this.continueAfterTools = false;
     this.commitCandidate();
@@ -1039,6 +1101,18 @@ export class RealtimeVoice {
     this.pendingTurn = false;
     this.expectedResponse = { tools: true };
     this.send({ type: "response.create" });
+  }
+
+  private cancelResponse(responseId?: string) {
+    const eventId = `voice-cancel-${++this.eventSequence}`;
+    this.cancelEvents.set(eventId, responseId);
+    if (this.cancelEvents.size > 64)
+      this.cancelEvents.delete(this.cancelEvents.keys().next().value!);
+    this.send({
+      type: "response.cancel",
+      event_id: eventId,
+      ...(responseId && this.provider === "openai" ? { response_id: responseId } : {}),
+    });
   }
 
   private send(event: Record<string, unknown>) {
@@ -1131,10 +1205,87 @@ export class RealtimeVoice {
     this.send({ type: "input_audio_buffer.clear" });
   }
 
+  private finishPlayback(id: string) {
+    const playback = this.replyPlayback.get(id);
+    if (!playback || !playback.done || playback.pending) return;
+    this.replyPlayback.delete(id);
+    for (const [key, entry] of this.playout) if (entry.responseId === id) this.playout.delete(key);
+    const timing = this.responseTiming.get(id);
+    if (timing && playback.hasAudio) {
+      this.callbacks.timing?.({
+        stage: "playback_complete",
+        durationMs: Math.max(0, performance.now() - timing.admittedAt),
+      });
+    }
+    this.responseTiming.delete(id);
+    if (playback.hasAudio) this.callbacks.replyPlayed?.(id);
+    else this.callbacks.replyDiscarded?.(id);
+  }
+
+  /** Explicitly yield the turn, including responses that have not been created yet. */
+  pause() {
+    this.pendingTurn = false;
+    this.continueAfterTools = false;
+    if (this.expectedResponse) {
+      this.expectedResponse.cancelled = true;
+      this.expectedResponse.cancelOnCreated = true;
+    } else if (this.responding && this.responseId) {
+      this.cancelResponse(this.responseId);
+    }
+    this.silence();
+  }
+
+  /** A confirmed owner answer may resume a paused, still-pending question tool.
+   * Keep the old response suppressed; only its completed result feeds a new reply. */
+  resumeAfterOwnerAnswer() {
+    if (this.closed || !this.pendingCalls) return;
+    this.pendingTurn = true;
+    this.continueResponse();
+  }
+
   silence(responseId?: string) {
     const id = responseId ?? this.responseId;
     if (id) this.suppressed.add(id);
     if (this.suppressed.size > 32) this.suppressed.delete(this.suppressed.values().next().value!);
+    for (const replyId of this.replyPlayback.keys()) {
+      this.callbacks.replyDiscarded?.(replyId);
+      const timing = this.responseTiming.get(replyId);
+      if (timing)
+        this.callbacks.timing?.({
+          stage: "playback_interrupted",
+          durationMs: Math.max(0, performance.now() - timing.admittedAt),
+        });
+      this.responseTiming.delete(replyId);
+    }
+    this.replyPlayback.clear();
+    if (id) this.responseTiming.delete(id);
+    const now = this.output?.currentTime ?? 0;
+    for (const entry of this.playout.values()) {
+      const played =
+        entry.completed +
+        entry.chunks.reduce(
+          (sum, chunk) => sum + Math.max(0, Math.min(chunk.duration, now - chunk.start)),
+          0,
+        );
+      const total = entry.completed + entry.chunks.reduce((sum, chunk) => sum + chunk.duration, 0);
+      if (played < total || (this.responding && entry.responseId === this.responseId)) {
+        const receipt = {
+          responseId: entry.responseId,
+          itemId: entry.itemId,
+          contentIndex: entry.contentIndex,
+          audioEndMs: Math.floor(played * 1000),
+        };
+        this.callbacks.interrupted?.(receipt);
+        if (!this.closed)
+          this.send({
+            type: "conversation.item.truncate",
+            item_id: entry.itemId,
+            content_index: entry.contentIndex,
+            audio_end_ms: receipt.audioEndMs,
+          });
+      }
+    }
+    this.playout.clear();
     for (const player of this.players) {
       try {
         player.stop();
@@ -1154,7 +1305,7 @@ export class RealtimeVoice {
     this.callbacks.playback(active);
   }
 
-  private play(encoded: string) {
+  private play(encoded: string, event: VoiceEvent) {
     const context = this.output;
     if (!context || this.closed) return;
     const raw = atob(encoded);
@@ -1166,12 +1317,65 @@ export class RealtimeVoice {
     player.buffer = buffer;
     player.connect(context.destination);
     this.players.add(player);
+    const responseId = typeof event.response_id === "string" ? event.response_id : undefined;
+    if (responseId) {
+      const playback = this.replyPlayback.get(responseId) ?? {
+        pending: 0,
+        done: false,
+        hasAudio: false,
+      };
+      playback.pending++;
+      playback.hasAudio = true;
+      this.replyPlayback.set(responseId, playback);
+    }
     player.onended = () => {
       this.players.delete(player);
+      if (responseId) {
+        const playback = this.replyPlayback.get(responseId);
+        if (playback) {
+          playback.pending--;
+          this.finishPlayback(responseId);
+        }
+      }
       player.disconnect();
       if (!this.players.size) this.setPlaying(false);
     };
     const start = Math.max(context.currentTime, this.nextAudio);
+    const timing = responseId && this.responseTiming.get(responseId);
+    if (timing && !timing.scheduled) {
+      timing.scheduled = true;
+      this.callbacks.timing?.({
+        stage: "first_scheduled_output",
+        durationMs: Math.max(
+          0,
+          performance.now() - timing.admittedAt + (start - context.currentTime) * 1000,
+        ),
+      });
+    }
+    if (
+      typeof event.response_id === "string" &&
+      typeof event.item_id === "string" &&
+      typeof event.content_index === "number"
+    ) {
+      const key = `${event.response_id}:${event.item_id}:${event.content_index}`;
+      const entry = this.playout.get(key) ?? {
+        responseId: event.response_id,
+        itemId: event.item_id,
+        contentIndex: event.content_index,
+        completed: 0,
+        chunks: [],
+      };
+      entry.chunks = entry.chunks.filter((chunk) => {
+        if (chunk.start + chunk.duration <= context.currentTime) {
+          entry.completed += chunk.duration;
+          return false;
+        }
+        return true;
+      });
+      entry.chunks.push({ start, duration: buffer.duration });
+      this.playout.set(key, entry);
+      if (this.playout.size > 64) this.playout.delete(this.playout.keys().next().value!);
+    }
     player.start(start);
     this.nextAudio = start + buffer.duration;
     this.setPlaying(true);
@@ -1196,6 +1400,9 @@ export class RealtimeVoice {
     this.createdItems.clear();
     this.pendingInput = undefined;
     this.candidates = [];
+    this.pendingAdmissionAt = undefined;
+    this.responseTiming.clear();
+    this.cancelEvents.clear();
     this.activateCandidate = undefined;
     this.level.current = 0;
     this.abortConnect?.(new Error("Voice connection closed."));

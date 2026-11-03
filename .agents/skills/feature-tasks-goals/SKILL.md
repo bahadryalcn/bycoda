@@ -25,6 +25,8 @@ Code paths below are repository-root relative.
 ## Preserve
 
 - Preserve multi-machine board scope, query/event cursors, ordering, bulk-action populations and honest disconnected state.
+- Scope initial reads and retries to the selected project Host; optional collections and unrelated Host failures must not make a successfully read empty task list unavailable. Publish project and sprint data incrementally; coalesce slow polling and retain stale limits with explicit read errors.
+- New-task creation keeps a stable receipt identity separate from edit mode. Reconcile an uncertain save before resending; optional metadata must not invalidate an accepted save. Start acknowledges persisted queue admission, not completion of the global scheduler pass.
 - Keep custom provider/model/reasoning values, drafts, budgets/concurrency and manual-start policy. Omitted reviewer configuration differs from explicit null.
 - Implementation completion, review PASS, acceptance, delivery/merge, installation and release are separate states with separate authority.
 - Retain attempt history, artifact/handoff manifests, findings/rechecks, goal plan approval and sprint/steward recovery/reporting/daily-limit semantics.
@@ -40,3 +42,4 @@ Code paths below are repository-root relative.
 - Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
 - [Execution/delivery contract](../../../docs/reference/managed-workspaces.md)
 - [Common Host authority](../../../docs/reference/host-runtime.md)
+- [Task states and recovery](../../../docs/guides/tasks.md)

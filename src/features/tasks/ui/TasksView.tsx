@@ -29,7 +29,6 @@ import {
   initialTaskProjectScope,
   taskMatchesProject,
   taskProjectIdentity,
-  type TaskProjectScope,
 } from "../model/taskBoardScope";
 import { SprintManagement } from "./SprintManagement";
 import { SprintPlanningControls } from "./SprintPlanningControls";
@@ -67,7 +66,6 @@ import {
   unfinishedDependencies,
 } from "../model/hostTasks";
 import { getLocale, t, useLocale, useT } from "../../../shared/i18n";
-import { machineProjects } from "../../automations/model/machineSnapshot";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -86,7 +84,7 @@ import { unreadReviewNotes } from "../model/taskReviewNotes";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { backgroundMachineFor, hostProjectCwd } from "../../automations/model/hostAutomationClient";
+import { backgroundMachineFor } from "../../automations/model/hostAutomationClient";
 import { LAYER } from "../../../shared/lib/layers";
 import { TaskSessionSheet } from "./TaskSessionSheet";
 import { LocalHostStartButton } from "../../connections/ui/LocalHostDownNotice";
@@ -204,6 +202,13 @@ function TasksContent({
   // Tasks for a project in a locked group are not shown.
   const viewStateKey = `tasks:${cwd ? projectKey(cwd) : "global"}`;
   const lock = useLockSnapshot();
+  const [projectFilter, setProjectFilter] = useState(() => initialTaskProjectScope(cwd));
+  // A new project folder resets the scope, adjusted during render from the previous one.
+  const [scopeCwd, setScopeCwd] = useState(cwd);
+  if (scopeCwd !== cwd) {
+    setScopeCwd(cwd);
+    setProjectFilter(initialTaskProjectScope(cwd));
+  }
   // The board query owns every confirmed collection. A mutation writes the
   // host's answer back through the put/remove functions, so a later poll cannot
   // roll it back; only drafts and selections below are local state.
@@ -218,10 +223,12 @@ function TasksContent({
     putSteward,
     removeSteward,
     putLimits,
-  } = useTaskBoardQueries();
+  } = useTaskBoardQueries(projectFilter);
   const ops = useTaskBoardOperations(refreshQueries);
   const { error, setError, saving, setSaving, acting, act, refresh, confirm, confirmDialog } = ops;
-  const retryBoard = () => void refreshQueries(true);
+  const retryBoard = () => {
+    if (!board.pending) void refreshQueries(true);
+  };
   const { boardDataState, now } = useBoardDataState(board);
   // Machines whose host keeps a task board, this computer's included.
   const machines = board.machines;
@@ -236,7 +243,7 @@ function TasksContent({
   const limitCapable = board.limitCapable;
   const storedTasks = board.tasks;
   const limits = board.limits;
-  const loading = board.pending && !board.hasTaskAnswer;
+  const loading = board.pending && !board.hasTaskAnswer && !board.taskError;
   const [sessionPreview, setSessionPreview] = useState<BackgroundSessionTarget | null>(null);
   const [statusDetails, setStatusDetails] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -247,19 +254,12 @@ function TasksContent({
   const [searchQuery, setSearchQuery] = useRetainedState(`${viewStateKey}:search`, "");
   const [statusFilter, setStatusFilter] = useRetainedState(`${viewStateKey}:status`, "all");
   const [machineFilter, setMachineFilter] = useRetainedState(`${viewStateKey}:machine`, "all");
-  const [projectFilter, setProjectFilter] = useState(() => initialTaskProjectScope(cwd));
-  // A new project folder resets the scope, adjusted during render from the previous one.
-  const [scopeCwd, setScopeCwd] = useState(cwd);
-  if (scopeCwd !== cwd) {
-    setScopeCwd(cwd);
-    setProjectFilter(initialTaskProjectScope(cwd));
-  }
   const [section, setSection] = useRetainedState<"backlog" | "sprints" | "reports">(
     `${viewStateKey}:section`,
     "backlog",
   );
   const [sprintFilter, setSprintFilter] = useRetainedState(`${viewStateKey}:sprint`, "");
-  const [discoveredProjects, setDiscoveredProjects] = useState<TaskProjectScope[]>([]);
+  const discoveredProjects = board.projects;
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [deliveryTask, setDeliveryTask] = useState<BoardTask | null>(null);
   const [workspaceReview, setWorkspaceReview] = useState<{
@@ -302,31 +302,6 @@ function TasksContent({
     () => storedTasks.filter((task) => !isProjectLockedIn(lock, task.cwd)),
     [lock, storedTasks],
   );
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.allSettled(
-      machines.map(async (machine) => {
-        const projects = await machineProjects(machine);
-        return projects.map((project): TaskProjectScope => ({
-          key: taskProjectIdentity(machine.environmentId, project.id),
-          environmentId: machine.environmentId,
-          projectId: project.id,
-          machineId: machine.id,
-          machineName: machine.name,
-          cwd: hostProjectCwd(machine, project),
-          name: project.name || projectDisplayName(project.cwd),
-        }));
-      }),
-    ).then((results) => {
-      if (!cancelled)
-        setDiscoveredProjects(
-          results.flatMap((result) => (result.status === "fulfilled" ? result.value : [])),
-        );
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [machines]);
   const projectScopes = useMemo(() => {
     const entries = new Map(
       discoveredProjects
@@ -890,7 +865,7 @@ function TasksContent({
   // The raw error and notice already live in the status control; do not repeat them here.
   const unreadable =
     storedTasks.length === 0
-      ? boardDataState.error || missingNotice
+      ? board.taskError
         ? t("Tasks couldn’t be read. Retry, or open Connection issue for details.")
         : machines.length === 0
           ? t("Connect a machine with a task board to see tasks here.")
@@ -923,7 +898,7 @@ function TasksContent({
   const summaryLine = [
     t("{p0} tasks", { p0: tasks.length }),
     runningTasks > 0 ? t("{p0} running", { p0: runningTasks }) : "",
-    limits.length > 0
+    limits.length > 0 && !board.limitErrors.length
       ? t("{p0} agent time today", { p0: formatAgentMinutes(agentMinutesToday) })
       : "",
   ]
@@ -1222,7 +1197,7 @@ function TasksContent({
                       },
                     ]
                   : []),
-                ...(limits.length > 0
+                ...(limits.length > 0 || board.limitErrors.length > 0
                   ? [
                       {
                         kind: "item" as const,
@@ -1428,8 +1403,14 @@ function TasksContent({
           onOpenTask={setSelectedKey}
         />
       ) : null}
-      {section === "backlog" && limitsOpen && limits.length > 0 ? (
-        <LimitsPanel limits={limits} onChange={onChangeLimits} />
+      {section === "backlog" && limitsOpen ? (
+        <LimitsPanel
+          limits={limits}
+          errors={board.limitErrors}
+          retrying={board.pending}
+          onRetry={(machineId) => void refreshQueries(true, machineId)}
+          onChange={onChangeLimits}
+        />
       ) : null}
       {draft ? (
         <Modal

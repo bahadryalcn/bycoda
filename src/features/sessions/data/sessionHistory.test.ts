@@ -27,6 +27,56 @@ function summary(id: string, cwd: string, updatedAt = 1): SessionSummary {
 }
 
 describe("historyWithLiveSessions", () => {
+  it("retains a stored interruption during hydration and clears it after a newer turn", () => {
+    const session: Session = {
+      ...newSession("codex", "/tmp/interrupted"),
+      id: "cut",
+      historyPartial: true,
+      blocks: [{ id: "u", role: "user", text: "Continue" }],
+    };
+    const stored = { ...summary(session.id, session.cwd), interrupted: true };
+    expect(historyWithLiveSessions([stored], [session], session.cwd)[0].interrupted).toBe(true);
+    expect(
+      historyWithLiveSessions([stored], [{ ...session, historyPartial: false }], session.cwd)[0]
+        .interrupted,
+    ).toBe(false);
+  });
+  it("refreshes provider history for an existing row before the next persistence completes", () => {
+    const session: Session = {
+      ...newSession("codex", "/tmp/provider-history"),
+      id: "history",
+      blocks: [
+        {
+          id: "u1",
+          role: "user",
+          text: "First",
+          turnModel: { harness: "claude", id: "opus", name: "Opus" },
+        },
+        {
+          id: "u2",
+          role: "user",
+          text: "Next",
+          turnModel: { harness: "codex", id: "gpt", name: "GPT" },
+        },
+      ],
+    };
+    const stored = {
+      ...summary(session.id, session.cwd),
+      providerHistory: { providers: ["claude"] as const, activeHarness: "claude" as const },
+    };
+    const rows = historyWithLiveSessions(
+      [{ ...stored, providerHistory: { ...stored.providerHistory, providers: ["claude"] } }],
+      [session],
+      session.cwd,
+    );
+    expect(rows[0].providerHistory).toEqual({
+      providers: ["claude", "codex"],
+      activeHarness: "codex",
+      activeModel: "GPT",
+      handedOffFrom: "claude",
+    });
+    expect(stored.providerHistory.providers).toEqual(["claude"]);
+  });
   it("uses turn completion for recency even while persisted history is stale", () => {
     const session: Session = {
       ...newSession("codex", "/tmp/project-a"),
@@ -41,7 +91,7 @@ describe("historyWithLiveSessions", () => {
     ];
     const rows = historyWithLiveSessions(history, [session], session.cwd);
     expect(rows.map((row) => row.id)).toEqual(["finished", "newer-start"]);
-    expect(rows[0].updatedAt).toBe(300);
+    expect(rows[0].lastActivityAt).toBe(300);
     expect(history[1].updatedAt).toBe(100);
     expect(historyWithLiveSessions([], [session], session.cwd)[0].updatedAt).toBe(300);
     session.blocks.push({
@@ -52,10 +102,10 @@ describe("historyWithLiveSessions", () => {
       durationMs: 0,
       draft: true,
     });
-    expect(historyWithLiveSessions(history, [session], session.cwd)[0].updatedAt).toBe(300);
+    expect(historyWithLiveSessions(history, [session], session.cwd)[0].lastActivityAt).toBe(300);
     expect(
       historyWithLiveSessions([summary(session.id, session.cwd, 400)], [session], session.cwd)[0]
-        .updatedAt,
+        .lastActivityAt ?? 400,
     ).toBe(400);
   });
 

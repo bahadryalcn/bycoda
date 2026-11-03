@@ -1,6 +1,8 @@
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Portal } from "../../../shared/ui/Portal";
+import { RefreshCw } from "../../../shared/ui/icons";
 import type { TranscriptSelection } from "../../sessions/model/transcriptSelection";
 import { readHtmlPreviewSelection, withHtmlSelectionBridge } from "../model/htmlPreviewSelection";
 import { Button } from "../../../shared/ui/Button";
@@ -11,10 +13,22 @@ export function HtmlPreview({
   path,
   source,
   active,
+  toolbar,
+  toolbarTarget,
+  compact = false,
+  sourceVisible = false,
+  originalSource = source,
 }: {
   path: string;
   source: string;
   active: boolean;
+  /** Embedded previews compose their actions into this single toolbar. */
+  toolbar?: ReactNode;
+  /** A surrounding dialog can own the toolbar row without remounting the frame. */
+  toolbarTarget?: HTMLElement | null;
+  compact?: boolean;
+  sourceVisible?: boolean;
+  originalSource?: string;
 }) {
   useLocale();
   const [state, setState] = useState<{ url?: string; error?: string }>({});
@@ -66,25 +80,48 @@ export function HtmlPreview({
   }, [path, source, active, reload]);
 
   if (!active) return null;
+  const header = (
+    <div
+      className={
+        toolbarTarget
+          ? "flex items-center gap-1"
+          : compact
+            ? "flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-surface) px-2 py-1"
+            : "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-3 py-1"
+      }
+    >
+      {toolbar}
+      <Button
+        variant="ghost"
+        size="sm"
+        motion="none"
+        {...(compact
+          ? { iconOnly: true as const, label: t("Reload preview") }
+          : { iconOnly: false as const })}
+        loading={!state.url && !state.error}
+        onClick={() => {
+          if (opening.current) return;
+          opening.current = true;
+          setState({});
+          setReload((value) => value + 1);
+        }}
+      >
+        {compact ? <RefreshCw className="icon-sm" /> : t("Reload preview")}
+      </Button>
+    </div>
+  );
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-3 py-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          motion="none"
-          loading={!state.url && !state.error}
-          onClick={() => {
-            if (opening.current) return;
-            opening.current = true;
-            setState({});
-            setReload((value) => value + 1);
-          }}
+      {toolbarTarget ? <Portal target={toolbarTarget}>{header}</Portal> : header}
+      {sourceVisible ? (
+        <pre
+          tabIndex={0}
+          className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 text-ui-caption"
         >
-          {t("Reload preview")}
-        </Button>
-      </div>
-      {state.error ? (
+          {originalSource}
+        </pre>
+      ) : null}
+      {state.error && !sourceVisible ? (
         <div
           role="alert"
           className="min-w-0 break-words p-6 text-ui-caption text-(--ui-tone-danger-fg)"
@@ -99,14 +136,15 @@ export function HtmlPreview({
           sandbox="allow-scripts allow-forms"
           referrerPolicy="no-referrer"
           className="min-h-0 w-full flex-1 border-0"
+          hidden={sourceVisible}
         />
-      ) : (
+      ) : !sourceVisible ? (
         <p role="status" className="p-6 text-ui-caption text-[var(--ui-text-muted)]">
           {t("Opening preview…")}
         </p>
-      )}
+      ) : null}
       <PreviewSelectionMenu
-        selection={selection}
+        selection={sourceVisible ? null : selection}
         path={path}
         onDismiss={() => setSelection(null)}
       />

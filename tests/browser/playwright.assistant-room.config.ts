@@ -1,7 +1,13 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
-  testMatch: "assistant-room.e2e.ts",
+  testMatch: [
+    "assistant-room.e2e.ts",
+    "assistant-settings.e2e.ts",
+    "assistant-history.e2e.ts",
+    "assistant-memory.e2e.ts",
+    "assistant-room-dialogs.e2e.ts",
+  ],
   outputDir: "../../temp/test-results/assistant-room",
   workers: 1,
   timeout: 120000,

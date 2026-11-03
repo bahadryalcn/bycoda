@@ -52,6 +52,72 @@ beforeEach(() => {
   vi.mocked(invoke).mockReturnValue(new Promise(() => {}));
 });
 
+it("recovers the same creation after a persisted save loses its reply, including a copied form draft", async () => {
+  vi.mocked(machineCapabilities).mockResolvedValue([HOST_TASK_CONTINUATION]);
+  let persisted: any;
+  vi.mocked(remoteRequest).mockImplementation(async (_id, method, params) => {
+    if (method === "tasks.list") return [persisted];
+    persisted = { ...(params as { task: object }).task, createdAt: 1, updatedAt: 1 };
+    throw new Error("Reply lost");
+  });
+  const draft = { ...newTaskDraft("G:/app", "codex", "codex:test"), title: "Once" };
+  await expect(saveTask([local], draft)).rejects.toThrow("Reply lost");
+  const saved = await saveTask([local], { ...draft, title: "Still recovering" });
+  expect(saved.id).toBe(draft.creation!.id);
+  expect(saved.title).toBe("Once");
+  expect(draft.id).toBeUndefined();
+  expect(
+    vi.mocked(remoteRequest).mock.calls.filter(([, method]) => method === "tasks.save"),
+  ).toHaveLength(1);
+});
+
+it("does not resend when reconciliation is unavailable", async () => {
+  vi.mocked(machineCapabilities).mockResolvedValue([HOST_TASK_CONTINUATION]);
+  vi.mocked(remoteRequest).mockRejectedValue(new Error("Offline"));
+  const draft = { ...newTaskDraft("G:/app", "codex", "codex:test"), title: "Once" };
+  await expect(saveTask([local], draft)).rejects.toThrow("Offline");
+  await expect(saveTask([local], draft)).rejects.toThrow("Offline");
+  expect(vi.mocked(remoteRequest).mock.calls.map(([, method]) => method)).toEqual([
+    "tasks.save",
+    "tasks.list",
+  ]);
+});
+
+it("reuses creation identity after a read confirms the first save did not persist", async () => {
+  vi.mocked(machineCapabilities).mockResolvedValue([HOST_TASK_CONTINUATION]);
+  let firstId: string | undefined;
+  vi.mocked(remoteRequest).mockImplementation(async (_id, method, params) => {
+    if (method === "tasks.list") return [];
+    const task = (params as { task: { id: string } }).task;
+    if (!firstId) {
+      firstId = task.id;
+      throw new Error("Not delivered");
+    }
+    return { ...task, createdAt: 1, updatedAt: 1 };
+  });
+  const draft = { ...newTaskDraft("G:/app", "codex", "codex:test"), title: "Once" };
+  await expect(saveTask([local], draft)).rejects.toThrow("Not delivered");
+  expect((await saveTask([local], draft)).id).toBe(firstId);
+});
+
+it("returns a successful save receipt without requesting capabilities after persistence", async () => {
+  let persisted = false;
+  vi.mocked(machineCapabilities).mockImplementation(async () => {
+    if (persisted) throw new Error("Descriptor unavailable");
+    return [HOST_TASK_CONTINUATION, "tasks.workspaces"];
+  });
+  vi.mocked(remoteRequest).mockImplementation(async (_id, _method, params) => {
+    persisted = true;
+    return { ...(params as { task: object }).task, createdAt: 1, updatedAt: 1 };
+  });
+  const saved = await saveTask([local], {
+    ...newTaskDraft("G:/app", "codex", "codex:test"),
+    title: "Saved",
+  });
+  expect(saved.title).toBe("Saved");
+  expect(persisted).toBe(true);
+});
+
 it("saves a local to-do item while an unrelated remote host cannot answer", async () => {
   vi.mocked(machineCapabilities).mockImplementation(async (machine) => {
     if (machine.id !== local.id) return new Promise(() => {});

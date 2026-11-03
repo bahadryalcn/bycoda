@@ -29,6 +29,8 @@ function sessionSummaryEqual(a: SessionSummary, b: SessionSummary): boolean {
   return (
     a.id === b.id &&
     a.issue === b.issue &&
+    a.interrupted === b.interrupted &&
+    a.lastActivityAt === b.lastActivityAt &&
     a.orchestrationLeadId === b.orchestrationLeadId &&
     a.cwd === b.cwd &&
     a.harness === b.harness &&

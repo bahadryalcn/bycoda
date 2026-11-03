@@ -24,6 +24,36 @@ function tool(
 const text = { type: "string" };
 
 describe("managed tool discovery", () => {
+  it("describes SSH command approval, same-process recovery and cancellation separately from inventory", () => {
+    const entries = createManagedToolCatalog("conversation", [
+      tool("servers.ssh.execute", false, { id: text, requestId: text, command: text }),
+      tool("servers.ssh.status", true, { requestId: text }),
+      tool("servers.ssh.cancel", false, { requestId: text }),
+      tool("servers.get", true, { id: text }),
+    ]);
+    const execute = entries.find((entry) => entry.action === "servers.ssh.execute")!;
+    expect(execute.supported).toBe(true);
+    expect(execute.authorizationScope).toBe("write");
+    expect(execute.authorization.requirement).toBe("native-owner-approval");
+    expect(execute.effects).toEqual(["execution", "external-write"]);
+    expect(execute.retry.mode).toBe("same-request");
+    expect(execute.retry.persistence).toBe("in-process");
+    expect(execute.retry.identityFields).toEqual(["requestId"]);
+    expect(execute.retry.instruction).toContain("never authorizes automatic replay");
+    expect(execute.readback).toEqual(["conversation:servers.ssh.status"]);
+    expect(execute.cancellation).toEqual(["conversation:servers.ssh.cancel"]);
+    const status = entries.find((entry) => entry.action === "servers.ssh.status")!;
+    expect(status.authorizationScope).toBe("read");
+    expect(status.effects).toEqual(["read"]);
+    expect(status.retry.mode).toBe("safe-read");
+    const cancel = entries.find((entry) => entry.action === "servers.ssh.cancel")!;
+    expect(cancel.authorizationScope).toBe("write");
+    expect(cancel.effects).toEqual(["execution", "local-state"]);
+    expect(cancel.readback).toEqual(["conversation:servers.ssh.status"]);
+    expect(entries.find((entry) => entry.action === "servers.get")!.readback).toEqual([
+      "conversation:servers.get",
+    ]);
+  });
   it("keeps identities and revision deterministic independently of registration and schema property order", () => {
     const first = createManagedToolCatalog("conversation", [
       tool("notes.read", true, { id: text, offset: { type: "number" } }),

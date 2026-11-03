@@ -229,7 +229,9 @@ it.each([false, true])(
     expect(delivered.artifactDeliveryActivityId).toBeUndefined();
     expect(readFileSync(join(target, artifactPath), "utf8")).toBe(report);
     expect(readFileSync(join(target, "source.txt"), "utf8")).toBe("managed task implementation\n");
-    const dependent = await tasks.startTask("dependent");
+    await tasks.startTask("dependent");
+    await tasks.tick();
+    const dependent = (await tasks.get("dependent"))!;
     expect(dependent.workspaceId).toBeTruthy();
     expect(dependent.workspaceId).not.toBe(reviewed.workspaceId);
     await vi.waitFor(() => expect(providerDirectories).toHaveLength(2), {

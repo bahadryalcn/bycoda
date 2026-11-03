@@ -216,20 +216,21 @@ it("keeps one compact identity and reveals health metadata only on owner request
     ),
   ).toBe(false);
 });
-it("keeps every settings field mounted while secondary groups are disclosed", async () => {
+it("keeps every settings field mounted while switching settings pages", async () => {
   await render({ initialTab: "settings" });
   const groups = [...document.querySelectorAll<HTMLDetailsElement>("details")];
   const cost = groups.find(
     (group) => group.querySelector("summary")?.textContent === "Cost and context",
   )!;
   expect(cost).toBeDefined();
-  expect(cost.open).toBe(false);
+  expect(cost.hidden).toBe(true);
   const fields = cost.querySelectorAll("input,button,select");
   expect(fields.length).toBeGreaterThan(0);
-  await act(async () => {
-    cost.open = true;
-    cost.dispatchEvent(new Event("toggle"));
-  });
+  const advanced = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (tab) => tab.textContent === "Advanced",
+  )!;
+  await act(async () => advanced.click());
+  expect(cost.hidden).toBe(false);
   expect(cost.querySelectorAll("input,button,select").length).toBe(fields.length);
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
 });
@@ -821,6 +822,136 @@ it("keeps failed conversation drafts across tabs and reuses the accepted send id
   });
 });
 
+async function renderConversationDraft() {
+  mock.snapshot!.threads = [
+    {
+      id: "keyboard-thread",
+      version: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      summary: "",
+    },
+  ];
+  localStorage.setItem(
+    "bycoda.assistant.thread-drafts",
+    JSON.stringify({ "keyboard-thread": "Keep this exact draft" }),
+  );
+  await render({ initialTab: "conversations" });
+  return container.querySelector<HTMLTextAreaElement>("textarea")!;
+}
+
+it("sends the retained chat draft with Enter and clears it only after a confirmed reply", async () => {
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementation(async (input) => {
+    if (input.op === "threads.send")
+      return {
+        messages: [
+          {
+            id: "keyboard-reply",
+            threadId: input.threadId,
+            role: "assistant",
+            via: "text",
+            text: "Confirmed reply",
+            jobIds: [],
+            version: 1,
+            createdAt: 2,
+            updatedAt: 2,
+          },
+        ],
+      };
+    return base(input);
+  });
+  const textarea = await renderConversationDraft();
+  const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+  await act(async () => textarea.dispatchEvent(enter));
+  expect(enter.defaultPrevented).toBe(true);
+  const sends = mock.request.mock.calls.filter(([input]) => input.op === "threads.send");
+  expect(sends).toHaveLength(1);
+  expect(sends[0]).toEqual([
+    expect.objectContaining({
+      threadId: "keyboard-thread",
+      text: "Keep this exact draft",
+      via: "text",
+      idempotencyKey: expect.any(String),
+    }),
+    "room-fixture",
+  ]);
+  expect(textarea.value).toBe("");
+  expect(container.textContent).toContain("Confirmed reply");
+});
+
+it.each([
+  ["Shift+Enter", { shiftKey: true }],
+  ["Alt+Enter", { altKey: true }],
+  ["Ctrl+Enter", { ctrlKey: true }],
+  ["Meta+Enter", { metaKey: true }],
+  ["IME composition", { isComposing: true }],
+] as const)("keeps %s native and retains the unsent chat draft", async (_label, modifiers) => {
+  const textarea = await renderConversationDraft();
+  const enter = new KeyboardEvent("keydown", {
+    key: "Enter",
+    bubbles: true,
+    cancelable: true,
+    ...modifiers,
+  });
+  await act(async () => textarea.dispatchEvent(enter));
+  expect(enter.defaultPrevented).toBe(false);
+  expect(mock.request.mock.calls.some(([input]) => input.op === "threads.send")).toBe(false);
+  expect(textarea.value).toBe("Keep this exact draft");
+});
+
+it("does not send the chat draft for legacy IME Enter key code 229", async () => {
+  const textarea = await renderConversationDraft();
+  const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+  Object.defineProperty(enter, "keyCode", { value: 229 });
+  await act(async () => textarea.dispatchEvent(enter));
+  expect(enter.defaultPrevented).toBe(false);
+  expect(mock.request.mock.calls.some(([input]) => input.op === "threads.send")).toBe(false);
+  expect(textarea.value).toBe("Keep this exact draft");
+});
+
+it("blocks another Enter while the chat reply is pending and retains a failed draft", async () => {
+  const base = mock.request.getMockImplementation()!;
+  let rejectSend!: (cause: Error) => void;
+  mock.request.mockImplementation((input) =>
+    input.op === "threads.send"
+      ? new Promise((_resolve, reject) => {
+          rejectSend = reject;
+        })
+      : base(input),
+  );
+  const textarea = await renderConversationDraft();
+  const pressEnter = () =>
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+  await act(async () => {
+    pressEnter();
+  });
+  await act(async () => {
+    pressEnter();
+  });
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "threads.send")).toHaveLength(1);
+  expect(textarea.value).toBe("Keep this exact draft");
+  await act(async () => rejectSend(new Error("Reply outcome unknown")));
+  expect(container.textContent).toContain("Reply outcome unknown");
+  expect(textarea.value).toBe("Keep this exact draft");
+});
+
+it("does not send from Enter when this Host has no conversation capability", async () => {
+  mock.snapshot!.capabilities.conversations = false;
+  const textarea = await renderConversationDraft();
+  await act(async () =>
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(mock.request.mock.calls.some(([input]) => input.op === "threads.send")).toBe(false);
+  expect(textarea.value).toBe("Keep this exact draft");
+  expect(container.textContent).toContain("Conversation replies are unavailable.");
+  expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(true);
+});
+
 it("applies repeated external navigation without remounting the room", async () => {
   await render({ initialTab: "memory", navigationToken: 1 });
   expect(container.querySelector('[aria-label="Memory"]')).not.toBeNull();
@@ -1068,10 +1199,10 @@ it("retains the chosen retention draft after failure and retries with the acknow
   await render({ initialTab: "settings" });
   await click("Keep conversation messages: Forever");
   await click("30 days");
-  await click("Save");
+  await click("Save profile settings");
   expect(document.body.textContent).toContain("Retention save unavailable");
   expect(document.body.textContent).toContain("30 days");
-  await click("Save");
+  await click("Save profile settings");
   expect(
     mock.request.mock.calls
       .filter(([input]) => input.op === "profile.update")
@@ -1315,7 +1446,7 @@ it("preserves explicit assistant role providers and nullable inheritance in sett
     maxRunMinutes: 20,
   };
   await render({ initialTab: "settings" });
-  await click("Save");
+  await click("Save profile settings");
   expect(mock.request).toHaveBeenCalledWith(
     expect.objectContaining({
       op: "profile.update",
@@ -1344,7 +1475,7 @@ it("submits every existing policy field from Settings without forwarding profile
   Object.assign(mock.snapshot!.profile, policy);
   await render({ initialTab: "settings" });
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
-  await click("Save");
+  await click("Save profile settings");
   const [input, environment] = mock.request.mock.calls.find(
     ([input]) => input.op === "profile.update",
   )!;
@@ -1391,9 +1522,8 @@ it("saves edited overnight hours to the bound Host and shows that exact range af
     await act(async () => option.click());
   }
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
-  await click("Save");
+  await click("Save profile settings");
   expect(mock.snapshot!.profile).toMatchObject({ activeStart: 22, activeEnd: 6, version: 4 });
-  await click("Settings");
   expect(document.querySelector('button[aria-label="Work hours start: 22:00"]')).toBeTruthy();
   expect(document.querySelector('button[aria-label="Work hours end: 06:00"]')).toBeTruthy();
   expect(mock.request.mock.calls.filter(([input]) => input.op === "profile.update")).toHaveLength(
@@ -1522,7 +1652,7 @@ it("keeps the settings source across profile-to-retention awaits while emergency
   await render({ initialTab: "settings" });
   await click("Keep conversation messages: Forever");
   await click("30 days");
-  await click("Save");
+  await click("Save profile settings");
   mock.environmentId = "replacement";
   await render({ initialTab: "settings" });
   await click("Stop everything");

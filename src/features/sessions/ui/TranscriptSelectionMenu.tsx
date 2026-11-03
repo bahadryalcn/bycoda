@@ -1,6 +1,18 @@
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
-import { FilePlusCorner, MessageSquarePlus, Sparkles } from "../../../shared/ui/icons";
+import {
+  Check,
+  Copy,
+  FilePlusCorner,
+  MessageSquarePlus,
+  Sparkles,
+  X,
+} from "../../../shared/ui/icons";
+import { Button } from "../../../shared/ui/Button";
+import { TextareaField } from "../../../shared/ui/TextareaField";
+import { copyMessage } from "../../../platform/tauri/clipboard";
+import { serializeChatCitation } from "../model/chatCitation";
+import styles from "./TranscriptSelectionMenu.module.css";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { Popover } from "../../../shared/ui/Popover";
 import {
@@ -20,6 +32,8 @@ type Props = {
   onAddToNotes?: (text: string) => void | Promise<void>;
   onDismiss: () => void;
   onTranslate?: (target: TextActionTarget) => void;
+  sessionId?: string;
+  allowReprompt?: boolean;
 };
 
 type Operations = {
@@ -31,14 +45,38 @@ type Operations = {
 };
 
 export function TranscriptSelectionMenu({
-  selection,
+  selection: liveSelection,
   onAddToChat,
   onAddToNotes,
   onDismiss,
   onTranslate,
+  sessionId,
+  allowReprompt = false,
 }: Props) {
   const t = useT();
   const dismissSelection = useEffectEvent(() => onDismiss());
+  const [citationDraft, setCitationDraft] = useState<{
+    sessionId: string | undefined;
+    selection: TranscriptSelection;
+    comment: string;
+    open: boolean;
+  } | null>(null);
+  // Focusing the comment field collapses the browser range. Keep the exact
+  // captured selection, not a fresh reading of the now-collapsed DOM range.
+  const selection =
+    citationDraft?.open && citationDraft.sessionId === sessionId
+      ? citationDraft.selection
+      : liveSelection;
+  const [copied, setCopied] = useState<string | null>(null);
+  const selectionKey = selection
+    ? JSON.stringify([
+        sessionId,
+        selection.responseId,
+        selection.occurrence,
+        selection.text,
+        selection.responseText,
+      ])
+    : null;
 
   const [targets, setTargets] = useState<{ text: string; values: TranslationTarget[] } | null>(
     null,
@@ -63,7 +101,13 @@ export function TranscriptSelectionMenu({
   // selection it acts on is gone; drop it rather than chase the range.
   useEffect(() => {
     if (!selection) return;
-    const dismiss = () => dismissSelection();
+    const dismiss = (event: Event) => {
+      // A scroll inside the comment itself must not discard its owner.
+      if (event.target instanceof Element && event.target.closest("[data-citation-comment]"))
+        return;
+      setCitationDraft((current) => current && { ...current, open: false });
+      dismissSelection();
+    };
     window.addEventListener("scroll", dismiss, true);
     window.addEventListener("resize", dismiss);
     return () => {
@@ -75,7 +119,7 @@ export function TranscriptSelectionMenu({
   // Operation state belongs to the text it was started for: a selection that
   // goes away or is replaced directly by another drops pending/error state, and
   // a late result of the old one is ignored. An already started save continues.
-  const selectionText = selection?.text ?? null;
+  const selectionText = selectionKey;
   const [operations, setOperations] = useState<Operations>(() => ({
     text: selectionText,
     epoch: 0,
@@ -95,7 +139,7 @@ export function TranscriptSelectionMenu({
 
   if (!selection) return null;
 
-  const run = async (id: string, onSelect: () => void | Promise<void>) => {
+  const run = async (id: string, onSelect: () => void | Promise<void>, dismiss = true) => {
     if (running.current.has(id)) return;
     running.current.add(id);
     const owner = epoch.current;
@@ -110,8 +154,11 @@ export function TranscriptSelectionMenu({
       const result = onSelect();
       if (result) await result;
       if (owner !== epoch.current) return;
-      window.getSelection()?.removeAllRanges();
-      onDismiss();
+      if (dismiss) {
+        setCitationDraft((current) => current && { ...current, open: false });
+        window.getSelection()?.removeAllRanges();
+        onDismiss();
+      }
     } catch (error) {
       if (owner !== epoch.current) return;
       const message = error instanceof Error ? error.message : String(error);
@@ -138,8 +185,54 @@ export function TranscriptSelectionMenu({
     },
   });
   const items: FloatingButtonGroupAction[] = [];
+  items.push({
+    ...action(
+      "copy",
+      copied === selectionKey ? t("Copied") : t("Copy"),
+      copied === selectionKey ? <Check /> : <Copy />,
+      () => {},
+    ),
+    onSelect: () =>
+      void run(
+        "copy",
+        async () => {
+          await copyMessage(selection.text);
+          setCopied(selectionKey);
+        },
+        false,
+      ),
+  });
+  if (onAddToChat)
+    items.push({
+      ...action(
+        "chat",
+        sessionId && selection.responseId ? t("Add citation") : t("Add to chat"),
+        <MessageSquarePlus />,
+        () => onAddToChat(selection.text),
+      ),
+      onSelect: () => {
+        if (!sessionId || !selection.responseId || !selection.responseText) {
+          void run("chat", () => onAddToChat(selection.text));
+          return;
+        }
+        setCitationDraft((current) => ({
+          sessionId,
+          selection,
+          comment:
+            current &&
+            current.sessionId === sessionId &&
+            current.selection.responseId === selection.responseId &&
+            current.selection.text === selection.text &&
+            current.selection.occurrence === selection.occurrence
+              ? current.comment
+              : "",
+          open: true,
+        }));
+      },
+    });
   if (onTranslate) {
-    items.push(action("reprompt", t("Reprompt"), <Sparkles />, () => onTranslate("reprompt")));
+    if (allowReprompt)
+      items.push(action("reprompt", t("Reprompt"), <Sparkles />, () => onTranslate("reprompt")));
     for (const target of targets?.text === selection.text ? targets.values : []) {
       items.push(
         action(
@@ -151,26 +244,93 @@ export function TranscriptSelectionMenu({
       );
     }
   }
-  if (onAddToChat)
-    items.push(
-      action("chat", t("Add to chat"), <MessageSquarePlus />, () => onAddToChat(selection.text)),
-    );
   if (onAddToNotes)
     items.push(
       action("notes", t("Add to notes"), <FilePlusCorner />, () => onAddToNotes(selection.text)),
     );
+
+  if (citationDraft?.open && citationDraft.sessionId === sessionId) {
+    const closeComment = () => {
+      setCitationDraft((current) => current && { ...current, open: false });
+      onDismiss();
+    };
+    return (
+      <Popover
+        anchor={selection.rect}
+        side="bottom"
+        align="start"
+        width={336}
+        kind="dialog"
+        aria-label={t("Add citation")}
+        flow="scroll"
+        onDismiss={closeComment}
+        className={styles.comment}
+        data-citation-comment
+      >
+        <div className={styles.header}>
+          <span>{t("Add citation")}</span>
+          <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={closeComment}>
+            <X />
+          </Button>
+        </div>
+        <blockquote className={styles.quote}>{selection.text}</blockquote>
+        <TextareaField
+          label={t("Comment")}
+          placeholder={t("Add an optional comment…")}
+          fieldSize="sm"
+          minRows={2}
+          maxRows={5}
+          autosize
+          value={citationDraft.comment}
+          onChange={(event) =>
+            setCitationDraft((current) => current && { ...current, comment: event.target.value })
+          }
+        />
+        <div className={styles.footer}>
+          <Button variant="ghost" size="sm" onClick={closeComment}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            size="sm"
+            loading={pending.chat}
+            onClick={() =>
+              void run("chat", () => {
+                if (!sessionId || !selection.responseId || !selection.responseText || !onAddToChat)
+                  return;
+                onAddToChat(
+                  serializeChatCitation({
+                    version: 1,
+                    id: crypto.randomUUID(),
+                    sessionId,
+                    blockId: selection.responseId,
+                    text: selection.text,
+                    sourceText: selection.responseText,
+                    occurrence: selection.occurrence ?? 0,
+                    comment: citationDraft.comment,
+                  }),
+                );
+              })
+            }
+          >
+            {t("Add to chat")}
+          </Button>
+        </div>
+        {errors.chat ? <InlineError>{errors.chat}</InlineError> : null}
+      </Popover>
+    );
+  }
 
   return (
     <Popover
       anchor={selection.rect}
       side="top"
       align="center"
-      width={232}
+      width={420}
       onDismiss={(reason) => {
         if (reason === "escape") window.getSelection()?.removeAllRanges();
         onDismiss();
       }}
-      className="p-1"
+      className={styles.menu}
     >
       {/* Raised popup family: the Popover owns surface, elevation and radius; the
           rows are compact and calm. This wrapper is the one scroll owner on
@@ -179,9 +339,10 @@ export function TranscriptSelectionMenu({
         <FloatingButtonGroup
           label={t("Selected text actions")}
           items={items}
-          orientation="vertical"
+          orientation="horizontal"
           size="sm"
           preserveSelection
+          className={styles.toolbar}
         />
         {items.map(({ id }) =>
           errors[id] ? (

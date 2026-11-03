@@ -41,6 +41,11 @@ completed move, delete, paste or duplication. Clipboard failures remain local so
 you can retry deliberately. Empty, loading and failed folders have distinct states.
 
 Preview and Source keep their mounted document state when you switch modes.
+Use the eye and code icons in the upper right to switch modes; their tooltips
+show Preview and Source. In a Markdown preview, hold Ctrl and scroll the mouse
+wheel to zoom between 50% and 200%, or use the minus and plus controls. Click
+the percentage to reset to 100%. Preview zoom stays in that open viewer across
+mode switches; source editors retain their separate code zoom.
 Right-click source code (or press Shift+F10) to open editor actions: Undo, Redo,
 Cut, Copy, Paste, Select All, Find, Format document and Save. Selected code also
 offers Add to chat. The original side of a split diff retains reading actions;

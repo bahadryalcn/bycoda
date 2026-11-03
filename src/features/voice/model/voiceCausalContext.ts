@@ -14,6 +14,13 @@ type Port = (
   input: AssistantVoiceContextOpen | AssistantVoiceContextInvalidate,
 ) => Promise<{ voiceContext?: unknown }>;
 type OwnerSource = ReturnType<VoiceThreadTranscript["ownerReceipt"]>;
+/** History can still be stored, but this generation cannot certify its provenance. */
+export class VoiceContextScopeUnavailable extends Error {
+  constructor() {
+    super("The project directory is incomplete, so voice history provenance is unavailable.");
+    this.name = "VoiceContextScopeUnavailable";
+  }
+}
 /** One actual provider connection (or one isolated local reasoning turn).
  * A new owner utterance cannot clean an unknown retained provider context. */
 export class VoiceCausalGeneration {
@@ -54,12 +61,16 @@ export class VoiceCausalGeneration {
         if (
           history.remote ||
           !environmentId ||
-          !scope?.complete ||
+          !scope ||
           !scope.current() ||
           owner.request !== history.request ||
           owner.message.text !== ownerText
         )
           throw new Error("The voice question context could not be verified for saving.");
+        if (!scope.complete) {
+          if (history.global) throw new VoiceContextScopeUnavailable();
+          throw new Error("The voice question context could not be verified for saving.");
+        }
         if (
           (this.initialThread && this.initialThread !== owner.message.threadId) ||
           (this.environmentId && this.environmentId !== environmentId)

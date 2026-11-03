@@ -1117,5 +1117,18 @@
   "Correction runs": "Düzeltme çalışmaları",
   "Failed reviews": "Başarısız incelemeler",
   "Full details": "Tüm ayrıntılar",
-  "No summary.": "Özet yok."
+  "No summary.": "Özet yok.",
+  "Quoted reply": "Alıntılanan yanıt",
+  "Edit citation comment": "Alıntı yorumunu düzenle",
+  "Remove citation": "Alıntıyı kaldır",
+  "Copy quote": "Alıntıyı kopyala",
+  "Source changed or unavailable. The saved quote is preserved.": "Kaynak değişti veya kullanılamıyor. Kaydedilen alıntı korunuyor.",
+  "Comment (optional)": "Yorum (isteğe bağlı)",
+  "Save comment": "Yorumu kaydet",
+  "Quote copied": "Alıntı kopyalandı",
+  "Could not copy quote. Please try again.": "Alıntı kopyalanamadı. Lütfen tekrar deneyin.",
+  "Add citation": "Alıntı ekle",
+  "Add an optional comment…": "İsteğe bağlı bir yorum ekle…",
+  "Close translation": "Çeviriyi kapat",
+  "Remove quoted replies before running this command. Your draft is preserved.": "Bu komutu çalıştırmadan önce alıntılanan yanıtları kaldırın. Taslağınız korunuyor."
 }

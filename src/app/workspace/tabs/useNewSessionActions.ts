@@ -27,9 +27,31 @@ import {
 import { inboxComposerCard, type InboxItem } from "../../../features/inbox/model/githubTasks";
 import { inboxTrackerDescription } from "../../../features/inbox/model/inboxContext";
 import { linkedWorkItemFromInboxItem } from "../../../features/sessions/model/sessionWorkItem";
-import { looksLikeProject } from "../../../features/projects/model/recents";
+import { looksLikeProject, sameProjectPath } from "../../../features/projects/model/recents";
 import { type NoteComposerCard } from "../../../features/notes";
 import { type SidebarTabId } from "../../../features/settings/model/appearance";
+import { isProjectLockedIn, type LockSnapshot } from "../../../features/group-lock/model/lockState";
+import { pathKey } from "../../../shared/lib/paths";
+
+export function canCreateListedSession(
+  project: string,
+  allowed: ReadonlySet<string>,
+  lock: LockSnapshot,
+): boolean {
+  return allowed.has(pathKey(project)) && !isProjectLockedIn(lock, project);
+}
+
+/** A global row may identify an adopted local shell or an unopened remote session. */
+export function listedRemoteSessionId(
+  sessions: readonly Session[],
+  project: string,
+  listedId: string,
+): string {
+  const shell = sessions.find(
+    (session) => session.id === listedId && sameProjectPath(session.cwd, project),
+  );
+  return (shell && remoteSessionFor(shell.id)) || listedId;
+}
 
 export interface NewSessionActionDeps {
   setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
@@ -58,6 +80,7 @@ export interface NewSessionActions {
   createWorkspaceTab: (cwd: string, focus?: WorktreeFocus) => string;
   onNewSession: (sourceSessionId?: string, options?: NewSessionOptions) => string;
   onNew: () => string;
+  onNewSessionForProject: (project: string) => string;
   onSelectRemoteSession: (
     project: string,
     remoteSessionId: string,
@@ -151,6 +174,30 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
   );
 
   const onNew = useCallback(() => onNewSession(), [onNewSession]);
+
+  const onNewSessionForProject = useCallback(
+    (project: string) => {
+      workspaceNavigation.cancel();
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
+      const session = newWorkspaceSession(
+        project,
+        sessionDefaults?.runtimeMode,
+        worktreeFocus(project),
+      );
+      const tab = newTab(session.id);
+      setSessions((previous) => [...previous, session]);
+      appendTab(tab, project);
+      setActiveTabId(tab.id);
+      followProject(project);
+      setComposerFocused(true);
+      return session.id;
+    },
+    [appendTab, followProject, sessionDefaults?.runtimeMode, workspaceNavigation.cancel],
+  );
 
   const onSelectRemoteSession = useCallback(
     (project: string, remoteSessionId: string, options?: { preview?: boolean }) => {
@@ -270,6 +317,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
     createWorkspaceTab,
     onNewSession,
     onNew,
+    onNewSessionForProject,
     onSelectRemoteSession,
     onStartInboxItem,
     onAddNoteToChat,

@@ -3,7 +3,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { Progress } from "../../../shared/ui/Progress";
-import { ExternalLink } from "../../../shared/ui/icons";
+import { ExternalLink, MessageSquare } from "../../../shared/ui/icons";
 import {
   workerContextAction,
   type WorkerContextSettings,
@@ -12,6 +12,7 @@ import { contextRatio, formatTokens } from "../../sessions/model/contextUsage";
 import { useAssistantSession } from "../model/assistantSessions";
 import { AssistantManagedBadge } from "../../sessions/ui/AssistantManagedBadge";
 import styles from "./AssistantView.module.css";
+import sessionStyles from "./AssistantSessions.module.css";
 import { assistantJobProjectIds } from "../model/assistantJobs";
 
 export function AssistantSessions({
@@ -22,6 +23,8 @@ export function AssistantSessions({
   environmentId,
   projectName,
   onOpenSession,
+  onJobs,
+  onReset,
 }: {
   jobs: readonly AssistantJob[];
   contextSettings?: WorkerContextSettings;
@@ -30,6 +33,8 @@ export function AssistantSessions({
   environmentId?: string;
   projectName: (id: string) => string;
   onOpenSession?: (id: string, environmentId?: string) => void | Promise<void>;
+  onJobs?: () => void;
+  onReset?: () => void;
 }) {
   const entries = jobs
     .flatMap((job) => job.sessionIds.map((id) => ({ id, job })))
@@ -40,7 +45,11 @@ export function AssistantSessions({
           `${id}\n${job.title}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())),
     );
   return (
-    <section className={styles.section}>
+    <section className={sessionStyles.panel} aria-label={t("Job sessions")}>
+      <div className={sessionStyles.panelHeader}>
+        <h2>{t("Job sessions")}</h2>
+        <Badge>{entries.length}</Badge>
+      </div>
       {entries.map(({ id, job }) => (
         <ManagedSessionRow
           key={`${job.id}:${id}`}
@@ -53,7 +62,22 @@ export function AssistantSessions({
         />
       ))}
       {!entries.length && (
-        <p className={styles.empty}>{t("No sessions from assistant jobs yet")}</p>
+        <div className={sessionStyles.empty}>
+          <MessageSquare className="icon-lg" aria-hidden="true" />
+          <strong>
+            {t(
+              query.trim() || filter
+                ? "No matching sessions"
+                : "No sessions from assistant jobs yet",
+            )}
+          </strong>
+          <p>
+            {t("Sessions created by assistant jobs appear here. Open a job to follow its work.")}
+          </p>
+          {query.trim() || filter
+            ? onReset && <Button onClick={onReset}>{t("Clear filters")}</Button>
+            : onJobs && <Button onClick={onJobs}>{t("View jobs")}</Button>}
+        </div>
       )}
     </section>
   );

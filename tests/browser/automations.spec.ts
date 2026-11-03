@@ -1,5 +1,92 @@
 import { expect, test } from "@playwright/test";
 
+for (const width of [1280, 800]) {
+  test(`offline automation Host preserves creation and drafts through recovery at ${width}px`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/tests/browser/automations.html?host=offline");
+    const warning = page.getByText(/tailm.*reachable right now/);
+    const retry = page.getByRole("button", { name: "Retry", exact: true });
+    await expect(warning).toBeVisible();
+    await expect(page.getByText("Automations unavailable", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Create your first automation", { exact: true })).toHaveCount(0);
+    const blank = page.getByRole("button", { name: /Start from scratch/ });
+    await expect(blank).toBeVisible();
+    const capture = async (state: string) => {
+      for (const light of [false, true]) {
+        await page.evaluate(
+          (enabled) => document.documentElement.classList.toggle("theme-light", enabled),
+          light,
+        );
+        await page.evaluate(async () => {
+          await document.fonts.ready;
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          );
+        });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+        await page.screenshot({
+          animations: "disabled",
+          path: `temp/verification/2026-11-04-automations-offline/${state}-${width}-${light ? "light" : "dark"}.png`,
+        });
+      }
+    };
+    await capture("picker-offline");
+    await blank.click();
+    const name = page.getByRole("textbox", { name: "Automation name", exact: true });
+    const instructions = page.getByRole("textbox", { name: "Instructions", exact: true });
+    await name.fill("Preserve offline draft");
+    await instructions.fill("Owner instructions survive connection recovery.");
+    await retry.click();
+    await expect(retry).toBeEnabled();
+    await expect(name).toHaveValue("Preserve offline draft");
+    await expect(instructions).toHaveValue("Owner instructions survive connection recovery.");
+    await capture("draft-offline");
+    await page.evaluate(() => {
+      (
+        window as unknown as { automationFixtureControl: { remoteAvailable: boolean } }
+      ).automationFixtureControl.remoteAvailable = true;
+    });
+    await retry.click();
+    await expect(warning).toBeHidden();
+    await expect(name).toHaveValue("Preserve offline draft");
+    await expect(instructions).toHaveValue("Owner instructions survive connection recovery.");
+    await capture("draft-recovered");
+    const calls = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            automationFixtureCalls: { command: string; args: Record<string, unknown> }[];
+          }
+        ).automationFixtureCalls,
+    );
+    expect(
+      calls.filter(
+        ({ command, args }) =>
+          command === "remote_request" &&
+          args.method === "environment.describe" &&
+          args.fresh === true,
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      calls.some(
+        ({ command, args }) =>
+          command === "automations_upsert" ||
+          command === "automation_run" ||
+          (command === "remote_request" &&
+            ["automations.save", "automations.runNow"].includes(String(args.method))),
+      ),
+    ).toBe(false);
+    expect(errors).toEqual([]);
+  });
+}
+
 test("automation save keeps its label and focus while fields lock and failures preserve the draft", async ({
   page,
 }) => {

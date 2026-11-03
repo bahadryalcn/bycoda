@@ -103,6 +103,7 @@ import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import { runHostShell } from "./shell";
 import { isTaskWorktreeRemoving } from "./task-worktree-cleanup";
 import { prepareHostSkillPrompt } from "./prompt-skills";
+import { projectChatCitationsForProvider } from "../src/features/sessions/model/chatCitation";
 import {
   forgetRuntimeHint,
   harnessRuntimeHints,
@@ -2552,14 +2553,16 @@ export class HostEngine {
                   // hints are model input too, but must not be added to the request twice.
                   const request = codexGoal ? command.text : withShellContext(shellRuns, turnText);
                   turnText =
-                    !codexGoal && /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(request)
+                    !codexGoal &&
+                    (request.includes("bycoda-citation:") ||
+                      /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(request))
                       ? await prepareHostSkillPrompt(
                           request,
                           value.session.worktreeCwd ?? value.session.cwd,
                           undefined,
                           value.session.id,
                         )
-                      : request;
+                      : projectChatCitationsForProvider(request);
                   handoffPromptPrepared = true;
                   // A handoff starts a new provider thread, so its hint is sent again.
                   const hint = [
@@ -4007,10 +4010,11 @@ export class HostEngine {
             } else {
               const preparedPrompt =
                 !promptPrepared &&
-                /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(prompt) &&
+                (prompt.includes("bycoda-citation:") ||
+                  /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(prompt)) &&
                 !(session.harness === "codex" && /^\s*\/goal(?:\s|$)/.test(prompt))
                   ? await prepareHostSkillPrompt(prompt, session.cwd, undefined, session.id)
-                  : prompt;
+                  : projectChatCitationsForProvider(prompt);
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               const thread = {
                 harness: session.harness,

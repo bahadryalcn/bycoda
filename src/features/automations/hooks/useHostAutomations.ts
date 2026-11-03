@@ -5,6 +5,7 @@ import { automationKey } from "../model/automationKey";
 import type { Automation } from "../model/automations";
 import { listHostAutomationResults, probeMachines } from "../model/hostAutomationClient";
 import { failedMachineNames } from "../model/machineResults";
+import { HOST_AUTOMATIONS } from "../model/hostAutomations";
 
 export const HOST_AUTOMATIONS_QUERY_KEY = ["automations", "hosts"] as const;
 
@@ -48,12 +49,15 @@ export function useHostAutomations(enabled: boolean) {
   const queryClient = useQueryClient();
   const epoch = useRef(0);
   const confirmed = useRef(new Map<string, ConfirmedChange>());
+  const forceProbe = useRef(false);
 
   const query = useQuery({
     queryKey: HOST_AUTOMATIONS_QUERY_KEY,
     queryFn: async (): Promise<HostAutomationsSnapshot> => {
       const startedAt = epoch.current;
-      const reach = await probeMachines();
+      const fresh = forceProbe.current;
+      forceProbe.current = false;
+      const reach = await probeMachines(HOST_AUTOMATIONS, fresh);
       const results = await listHostAutomationResults(reach.capable, reach.unreachableMachines);
       let automations = results.flatMap((result) => result.data);
       for (const [key, change] of confirmed.current) {
@@ -98,9 +102,13 @@ export function useHostAutomations(enabled: boolean) {
     [remember],
   );
   const { refetch } = query;
-  const refresh = useCallback(async () => {
-    await refetch();
-  }, [refetch]);
+  const refresh = useCallback(
+    async (fresh = false) => {
+      forceProbe.current = fresh;
+      await refetch();
+    },
+    [refetch],
+  );
 
   const data = query.data;
   return {

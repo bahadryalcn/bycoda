@@ -25,6 +25,8 @@ const LIVE_AGENT_CAP = 4;
 
 type Props = {
   agents: LiveAgent[];
+  /** Project whose working conversations already appear in the workspace list. */
+  currentProject?: string;
   activeSessionId?: string;
   onSelect?: (sessionId: string) => void;
   bottomSpacing?: boolean;
@@ -37,6 +39,7 @@ type Props = {
 
 export function LiveAgentsPreview({
   agents,
+  currentProject,
   activeSessionId,
   onSelect,
   bottomSpacing = false,
@@ -60,7 +63,19 @@ export function LiveAgentsPreview({
   const listId = useId();
   const lockList = useLockOverscroll<HTMLDivElement>();
   const summary = summarizeLiveAgents(agents);
-  const visibleOnRail = shouldShowLiveAgents(agents, activeSessionId);
+  const currentProjectKey =
+    currentProject && currentProject !== "~" ? projectKey(currentProject) : null;
+  const listedAgents = currentProjectKey
+    ? agents.filter(
+        (agent) =>
+          projectKey(agent.cwd) !== currentProjectKey ||
+          agent.done ||
+          agent.issue ||
+          agent.needsApproval,
+      )
+    : agents;
+  const projectWorkingCount = agents.length - listedAgents.length;
+  const visibleOnRail = projectWorkingCount > 0 || shouldShowLiveAgents(agents, activeSessionId);
   const ticking =
     visibleOnRail && !collapsed && agents.some((agent) => !agent.done && agent.startedAt != null);
 
@@ -69,8 +84,8 @@ export function LiveAgentsPreview({
   if (!visibleOnRail) return null;
 
   const cap = collapsible ? 2 : LIVE_AGENT_CAP;
-  const extra = agents.length - cap;
-  const visible = expanded || extra <= 0 ? agents : agents.slice(0, cap);
+  const extra = listedAgents.length - cap;
+  const visible = expanded || extra <= 0 ? listedAgents : listedAgents.slice(0, cap);
   const title =
     summary.headline === "working"
       ? t("Working")
@@ -166,9 +181,7 @@ export function LiveAgentsPreview({
             : t("Finished agents")
       }
       className={`min-w-0 shrink-0 ${
-        collapsible
-          ? "mb-2 rounded-lg border border-(--ui-pane-border) bg-(--ui-surface-quiet) data-[collapsed]:mb-0.5"
-          : "px-2"
+        collapsible ? "mb-2 rounded-lg bg-(--ui-surface-quiet) data-[collapsed]:mb-0.5" : "px-2"
       } ${bottomSpacing ? "pb-2" : ""}`}
       data-live-agents-preview="full"
       data-live-agents-headline={summary.headline}
@@ -207,6 +220,14 @@ export function LiveAgentsPreview({
           </div>
         )}
         <div id={listId} hidden={collapsed} className={collapsible ? "px-1 pb-1" : undefined}>
+          {projectWorkingCount > 0 ? (
+            <p
+              data-live-agents-project-summary
+              className="px-2 py-1 text-ui-caption text-(--ui-text-secondary)"
+            >
+              {t("{p0} working in this project", { p0: projectWorkingCount })}
+            </p>
+          ) : null}
           <div
             ref={lockList}
             className={`flex flex-col gap-px ${collapsible ? "" : "px-1"} ${

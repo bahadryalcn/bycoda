@@ -412,12 +412,20 @@ export class EnvironmentRuntime {
               : "network",
         });
         if (event.phase === "blocked" || event.phase === "closed") {
-          for (const entry of this.entries.values())
-            this.report(
-              entry,
-              new Error("Host connection is no longer authorized or available"),
-              true,
-            );
+          const code =
+            event.category === "identity"
+              ? "RPC_WS_IDENTITY"
+              : event.category === "authentication"
+                ? "RPC_WS_BLOCKED"
+                : "RPC_WS_SCHEMA";
+          const error =
+            event.phase === "blocked"
+              ? Object.assign(new Error(`${code}: Host connection admission was refused`), {
+                  code,
+                  generation,
+                })
+              : new Error("Host connection is no longer authorized or available");
+          for (const entry of this.entries.values()) this.report(entry, error, true);
           if (event.phase === "closed") void this.close().catch(() => {});
         }
       }

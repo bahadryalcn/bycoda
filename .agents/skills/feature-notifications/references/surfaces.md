@@ -2,6 +2,11 @@
 
 Paths are repository-relative.
 
+The bottom-right workspace sound shortcut is `src/features/notifications/ui/SoundsButton.tsx`,
+composed by `src/app/shell/WorkspaceControls.tsx`. It uses the shared application
+sound preference in `src/features/settings/model/sounds.ts`, including Settings
+synchronization, persistence and failed-save retry; desktop alerts remain independent.
+
 | Area                                | Owner                                                                                                                                                                                                                                                                                   |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Channels/events/permission/schedule | `src/features/settings/ui/NotificationsSettings.tsx`, `NotificationsSettings.css`; Settings model/reveal metadata                                                                                                                                                                       |

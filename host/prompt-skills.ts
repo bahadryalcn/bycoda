@@ -5,6 +5,11 @@ import { skillInvocationTokens } from "../src/features/skills/model/skillTokens"
 import { SKILL_INVOCATION_GUIDANCE } from "../src/integrations/harness/core/skillGuidance";
 import { readSkillPolicy } from "./skill-policy";
 import {
+  extractChatCitations,
+  projectChatCitationsForProvider,
+  withChatCitations,
+} from "../src/features/sessions/model/chatCitation";
+import {
   assertSkillInvocationsEnabled,
   skillDisabled,
 } from "../src/integrations/harness/core/skillPolicy";
@@ -20,12 +25,19 @@ export async function prepareHostSkillPrompt(
   home = homedir(),
   sessionId?: string,
 ): Promise<string> {
+  const { text: prose, citations } = extractChatCitations(text);
+  const project = (prepared: string) =>
+    projectChatCitationsForProvider(withChatCitations(prepared, citations));
+  // Source snapshots and their comments are literal context, not skill
+  // invocations. Strip their markers before policy/token discovery and append
+  // their readable provider projection only after genuine owner skills expand.
+  text = prose;
   const policy = readSkillPolicy(home);
   const native = reportedSkillRestrictions(getReportedCommands(sessionId));
   assertSkillInvocationsEnabled(text, policy);
   assertSkillInvocationsEnabled(text, native);
   const names = new Set(skillInvocationTokens(text).map((token) => token.name));
-  if (!names.size) return text;
+  if (!names.size) return project(text);
   const named = listHostSkillCandidates(cwd, home).skills.filter((skill) => names.has(skill.name));
   const picked = [
     ...new Map(
@@ -41,7 +53,7 @@ export async function prepareHostSkillPrompt(
   for (const skill of picked)
     if (skill.userInvocable === false)
       throw new Error(`Skill "${skill.name}" does not allow user invocation.`);
-  if (!picked.length) return text;
+  if (!picked.length) return project(text);
   const blocks = await Promise.all(
     picked.map(async (skill) => {
       try {
@@ -63,5 +75,7 @@ export async function prepareHostSkillPrompt(
       }
     }),
   );
-  return [SKILL_INVOCATION_GUIDANCE, "", blocks.join("\n\n"), "", "---", "", text].join("\n");
+  return project(
+    [SKILL_INVOCATION_GUIDANCE, "", blocks.join("\n\n"), "", "---", "", text].join("\n"),
+  );
 }

@@ -1,5 +1,10 @@
 # Workbench navigation
 
+While a project is open, Working summarizes its running conversations in one compact
+line and lists conversations from other projects. Its header still counts all running
+conversations. Conversations needing attention and finished conversations remain
+available as individual rows. Last Sessions keeps the complete Working list.
+
 Readable labels stay quiet on hover. Tooltips explain icons, missing shortcuts
 and additional context, or reveal the full text when a label is clipped. Narrow
 panes that hide tab labels keep their icon explanations. Error reasons and
@@ -37,12 +42,43 @@ including compact details and opening a cited conversation beside the current on
 
 Use the project rail to choose a project or workspace, the sessions list to
 choose a conversation, and the top tabs to switch open work. These keep their
-existing saved widths, layout and density settings. Detailed session rows show
-the conversation title before model and status information.
+existing saved widths, layout and density settings. Standard and detailed session
+rows show project identity above the conversation title. Within one project, the
+project mark stays neutral and rows do not apply its saved project color or ground.
+Pin or unpin from the upper left; status stays at the upper right, with branch and
+provider icons below the title. Previous providers appear muted; the last provider
+used retains its color. Hover or focus the title for model, location and handoff
+details. Compact density keeps one-line rows.
+
+Interrupted conversations show a yellow warning with an Interrupted label or an
+accessible warning icon in compact rows. Opening a conversation does not clear
+the warning; continuing its turn does. Recording an interruption during quit or
+recovery preserves its last activity time, so that maintenance alone does not
+move it to the top of the recent list. Existing timestamps changed by older
+versions cannot be reconstructed reliably.
+
+Click **Last sessions** in the project rail to open a combined workspace list. It
+shows conversations active during the last seven days, newest first, with each
+project's saved icon, color and background. This view stays open when a conversation
+is selected. Explorer and Changes follow that conversation's real project and
+execution worktree. The **+** action in Last Sessions first asks which project should own the new
+conversation. Search or choose a project, including the current one; cancelling
+creates nothing. The new conversation uses that project’s defaults and selected
+checkout while Last Sessions stays open. Choosing a project from the rail returns
+to its own conversation list. The
+combined list does not make unrelated repositories share Git operations. The time
+filter can narrow this window to Today; Clear restores Last 7 days. Remote rows
+come from available history and show a coverage note rather than claiming a full
+remote archive. Local pinning remains available; project-scoped archive/delete
+operations stay in the project view.
 
 The sessions filter menu can show only conversations managed by your named
 assistant. It uses the Host's management record and combines with provider,
 time, archive and status filters. Clear filters restores the full list.
+
+The Workspace picker fits its label and arrows. Conversation search opens in the
+remaining header space. While search is open, selection and filter buttons yield
+their space to the query; they return when search closes, retaining their state.
 
 Settings → Keybindings includes **Stop computer use**, with the default global
 shortcut **Ctrl+Alt+Esc** (Control+Option+Esc on macOS). It stops computer control
@@ -100,11 +136,28 @@ inside the app, including updates from other conversations. Returning to bycoda
 before a queued banner is sent cancels that banner; it is not replayed when you
 leave. Sound preferences and in-app attention indicators remain independent.
 
+Use **Sounds** in the bottom-right workspace controls to toggle application sounds,
+including notification cues. The icon shows when sounds are muted. This shares
+the saved **Settings > Notifications > Sounds** preference; desktop banners and
+request popups keep their own settings. If saving fails, the previous state stays
+active and the error offers **Retry**.
+
 The project menu groups remote machine reconnection and editing under Machine.
 Recovery lists retain their open and clear actions, including local pending and
 retry feedback. In compact navigation, open the recovery panel to use its full
 list controls. Unsaved-file indicators remain visible independently of tab-close
 controls.
+
+Remote workspace panels share one connection notice per machine. When automatic
+reconnection is enabled, short network interruptions retry quietly for eight
+seconds while loaded conversations, files and Git data remain available. A longer
+interruption shows the shared recovery controls instead of repeating the same
+warning in each pane. Content that has never loaded remains unverified, not empty.
+Authentication, identity and compatibility problems appear immediately; turning
+automatic reconnection off also makes the recovery control available immediately.
+Independent service, storage and operation errors retain their own feedback and
+retry controls. Notification timing does not change sending permissions or replay
+messages and commands.
 
 Before starting a local desktop turn, bycoda saves the conversation. If the save
 fails, the send reports that the conversation could not be saved before starting.

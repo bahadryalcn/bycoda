@@ -6,6 +6,7 @@
   min-inline-size: 0;
   color: var(--color-content);
   font-size: var(--ui-font-secondary);
+  background: var(--ui-chat-canvas);
 }
 .header,
 .strip,
@@ -402,23 +403,85 @@
   overflow-y: auto;
   padding: 12px;
   border-inline-end: 1px solid var(--ui-tone-neutral-border);
+  background: var(--ui-chat-canvas);
 }
 .transcript {
   min-inline-size: 0;
   min-block-size: 0;
   display: flex;
   flex-direction: column;
+  background: var(--ui-chat-canvas);
 }
 .message {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-block: 10px;
-}
-.message[data-author="assistant"] {
-  background: var(--ui-surface-raised);
+  gap: 4px;
+  align-self: flex-start;
+  inline-size: fit-content;
+  max-inline-size: min(78%, 640px);
+  min-inline-size: min(160px, 100%);
+  padding: 10px 12px 6px;
   border-radius: var(--ui-radius-card);
-  padding: 12px;
+  border-end-start-radius: var(--ui-radius-control);
+  background: var(--ui-surface-muted);
+  border: 1px solid var(--ui-tone-neutral-border);
+  overflow-wrap: anywhere;
+}
+.message[data-author="user"] {
+  align-self: flex-end;
+  background: var(--ui-surface);
+  border-end-start-radius: var(--ui-radius-card);
+  border-end-end-radius: var(--ui-radius-control);
+}
+.message > p {
+  margin: 0;
+  font-size: var(--ui-font-body);
+  line-height: 1.6;
+}
+.messageMeta {
+  order: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--ui-font-micro);
+  color: var(--ui-text-secondary);
+}
+.messageMeta > :first-child {
+  font-weight: 500;
+  margin-inline-end: auto;
+}
+.messageMeta time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.dayDivider {
+  align-self: center;
+  margin-block: 12px 4px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.chatHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+  flex: none;
+  background: var(--ui-chat-canvas);
+}
+.chatIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.chatIdentity > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .undo {
   padding: 8px 16px;
@@ -534,10 +597,13 @@
   padding: 12px 16px 0;
 }
 .messageHistory {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   flex: 1;
   overflow-y: auto;
   min-block-size: 120px;
-  padding: 16px 20px;
+  padding: 16px 20px 24px;
   overscroll-behavior: contain;
 }
 .messageHistory > .empty {
@@ -546,23 +612,111 @@
 .transcript > .composer {
   flex: none;
   margin: 0;
-  padding: 12px 16px;
+  /* The persistent VoiceCompanion launcher owns the trailing corner. */
+  padding: 12px 80px 12px 20px;
+  flex-wrap: nowrap;
+  align-items: flex-end;
   border-block-start: 1px solid var(--ui-tone-neutral-border);
-  background: var(--ui-surface);
+  background: var(--ui-chat-canvas);
 }
 .transcript > .muted {
   margin: 0;
   padding: 0 16px 12px;
 }
 .conversationActions {
-  margin-block-end: 4px;
+  margin: 0;
 }
 .jobsSection {
   max-inline-size: 1000px;
 }
 .jobsSection > .jobInput {
-  order: -1;
   margin: 0 0 8px;
+}
+.jobComposerActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+.content[data-view="Today"] .jobComposerActions {
+  display: contents;
+}
+.content[data-view="Jobs"] {
+  padding: 24px;
+}
+.content[data-view="Jobs"] > .collectionTools,
+.content[data-view="Jobs"] > .jobsSection {
+  max-inline-size: 1040px;
+  margin-inline: auto;
+}
+.content[data-view="Jobs"] > .collectionTools {
+  margin-block-end: 20px;
+}
+.jobsTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--ui-font-title);
+  font-weight: 600;
+}
+.content[data-view="Jobs"] .collectionTools > .jobsTitle {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.jobsTitle span {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.content[data-view="Jobs"] .collectionTools > :nth-child(2) {
+  flex: 0 1 240px;
+  min-inline-size: 0;
+}
+.content[data-view="Jobs"] .jobInput {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 20px;
+  margin-block-end: 12px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-radius-card);
+}
+.content[data-view="Jobs"] .jobInput > :first-child {
+  flex: none;
+}
+.jobsEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 16px;
+  text-align: center;
+  border-block: 1px solid var(--ui-tone-neutral-border);
+}
+.jobsEmpty h3 {
+  color: var(--color-content);
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
+.jobsEmpty p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+}
+@media (max-width: 600px) {
+  .content[data-view="Jobs"] {
+    padding: 16px;
+  }
+  .content[data-view="Jobs"] .jobInput {
+    padding: 16px;
+  }
 }
 .jobsSection > .rowHeading:empty {
   display: none;
@@ -603,5 +757,11 @@
   }
   .messageHistory {
     padding: 12px;
+  }
+  .message {
+    max-inline-size: 90%;
+  }
+  .chatHeader {
+    padding-inline: 12px;
   }
 }

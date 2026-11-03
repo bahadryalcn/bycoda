@@ -62,6 +62,8 @@ const CONVERSATION_ACTIONS = new Set(
 );
 CONVERSATION_ACTIONS.add("browser.preview");
 CONVERSATION_ACTIONS.add("browser.resize");
+for (const action of ["servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel"])
+  CONVERSATION_ACTIONS.add(action);
 for (const action of [
   "desktop.status",
   "desktop.snapshot",
@@ -128,6 +130,7 @@ const CANCELLATIONS: Record<string, string[]> = {
   "goals.replan": ["goals.cancel"],
   "terminals.create": ["terminals.close"],
   "terminals.write": ["terminals.interrupt"],
+  "servers.ssh.execute": ["servers.ssh.cancel"],
   "devServers.start": ["devServers.stop"],
   "devServers.restart": ["devServers.stop"],
   "tasks.create": ["tasks.stop"],
@@ -225,6 +228,8 @@ function effectFor(group: ManagedToolGroup, action: string, read: boolean): Tool
   if (["browser.open", "browser.input", "browser.preview", "browser.resize"].includes(action))
     return ["presentation", "execution"];
   if (read) return ["read"];
+  if (action === "servers.ssh.execute") return ["execution", "external-write"];
+  if (action === "servers.ssh.cancel") return ["execution", "local-state"];
   if (/^inbox\.(comment|review|prAction)$/.test(action)) return ["external-write"];
   if (
     /^(devServers\.(start|stop|restart|kill)|terminals\.(write|interrupt|close|create)|devices\.(start|boot|action|preview)|tasks\.(start|retry|stop|review\.recheck)|crews\.(start|assign|respond|answer|stop)|automations\.(runNow|stopRun)|stewards\.(runNow|stopRun)|logs\.monitors\.(start|stop)|goals\.(create|replan|cancel))$/.test(
@@ -281,6 +286,7 @@ export function createManagedToolCatalog(
           action.startsWith("inbox.") ||
           action === "devices.preview" ||
           action === "terminals.create" ||
+          action === "servers.ssh.execute" ||
           [
             "desktop.act",
             "desktop.click",
@@ -314,6 +320,8 @@ export function createManagedToolCatalog(
       if (action === "devices.preview") readback = ["devices.preview.status"];
       if (action === "browser.preview") readback = ["browser.status", "ui.tools.status"];
       if (action === "browser.resize") readback = ["browser.frame"];
+      if (["servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel"].includes(action))
+        readback = ["servers.ssh.status"];
       if (action.startsWith("desktop."))
         readback =
           action === "desktop.clipboard"
@@ -337,6 +345,7 @@ export function createManagedToolCatalog(
           ? "owner-or-active-rule"
           : group === "conversation" &&
               (/^inbox\.(comment|review|prAction)$/.test(action) ||
+                action === "servers.ssh.execute" ||
                 ["tasks.delete", "tasks.transfer", "tasks.notes.resolve"].includes(action))
             ? "native-owner-approval"
             : group === "conversation" && action === "goals.create"
@@ -388,21 +397,23 @@ export function createManagedToolCatalog(
           mode,
           persistence:
             mode === "same-request"
-              ? action === "browser.preview"
+              ? action === "browser.preview" || action === "servers.ssh.execute"
                 ? "in-process"
                 : "operation-contract"
               : "none",
           identityFields,
           instruction:
-            action === "browser.preview" && mode === "same-request"
-              ? "Reuse requestId only with identical input. Receipt lookup is in-process, not durable; after restart or an uncertain result inspect browser and panel state before retrying."
-              : mode === "same-request"
-                ? "Reuse the same identity and exact payload; inspect the existing result before retrying an uncertain operation."
-                : mode === "safe-read"
-                  ? "Repeat the read; preserve pagination and scope identity."
-                  : mode === "unsupported"
-                    ? "No managed workflow is defined for this operation."
-                    : "Read current state before retrying; metadata does not establish duplicate suppression.",
+            action === "servers.ssh.execute" && mode === "same-request"
+              ? "Reuse requestId only with identical input and inspect servers.ssh.status first. Receipts and output are in-process, not durable; missing state after restart is unknown and never authorizes automatic replay."
+              : action === "browser.preview" && mode === "same-request"
+                ? "Reuse requestId only with identical input. Receipt lookup is in-process, not durable; after restart or an uncertain result inspect browser and panel state before retrying."
+                : mode === "same-request"
+                  ? "Reuse the same identity and exact payload; inspect the existing result before retrying an uncertain operation."
+                  : mode === "safe-read"
+                    ? "Repeat the read; preserve pagination and scope identity."
+                    : mode === "unsupported"
+                      ? "No managed workflow is defined for this operation."
+                      : "Read current state before retrying; metadata does not establish duplicate suppression.",
         },
         preconditions,
         invalidates:

@@ -251,6 +251,13 @@ type Props = {
   /** Opens a crew's coordinator; the Crews section needs it to open running crews. */
   onOpenCrewSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
   recentSessions?: RecentSessionsSource;
+  onOpenLastSessions?: () => void;
+  lastSessionsOpen?: boolean;
+  onSelectListedSession?: (
+    sessionId: string,
+    cwd: string,
+    options?: { keepOpen?: boolean },
+  ) => void;
   settingsOpen?: boolean;
   /** Settings dialog is open over the rail: selects the Settings tool without hiding rail chrome. */
   settingsDialogOpen?: boolean;
@@ -305,6 +312,9 @@ export function ProjectRail({
   onPreviewSession,
   onOpenCrewSession,
   recentSessions,
+  onOpenLastSessions,
+  lastSessionsOpen = false,
+  onSelectListedSession,
   settingsOpen = false,
   settingsDialogOpen = false,
   onOpenSettings,
@@ -722,6 +732,7 @@ export function ProjectRail({
       step,
     );
   const searchOrPageActive =
+    lastSessionsOpen ||
     searchActive ||
     inboxActive ||
     notesActive ||
@@ -810,11 +821,16 @@ export function ProjectRail({
       <div className="shrink-0 @max-[140px]/rail:hidden">
         <LastSessionsSection
           source={recentSessions}
+          onOpenLastSessions={onOpenLastSessions}
+          lastSessionsOpen={lastSessionsOpen}
           projectKeys={railProjectKeys}
           enabled={visible}
           activeSessionId={activeSessionId}
           searchActive={searchOrPageActive}
-          onOpenSession={onPreviewSession ?? onSelectAgent}
+          onOpenSession={
+            onSelectListedSession ??
+            ((id, _cwd, options) => (onPreviewSession ?? onSelectAgent)?.(id, options))
+          }
           onOpenProject={onSelectProject}
           drag={rail.drag("last-sessions")}
           onShownChange={setLastSessionsShown}
@@ -939,6 +955,7 @@ export function ProjectRail({
       <div className="shrink-0 @max-[140px]/rail:hidden">
         <LiveAgentsPreview
           agents={visibleLiveAgents}
+          currentProject={lastSessionsOpen ? undefined : cwd}
           activeSessionId={activeSessionId}
           onSelect={onSelectAgent}
           collapsible

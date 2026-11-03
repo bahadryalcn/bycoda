@@ -680,7 +680,10 @@ fn rpc_timed(
             if device_effect {
                 device_http_unknown(method)
             } else {
-                error.to_string()
+                let ureq::Error::Transport(error) = ureq::Error::from(error) else {
+                    unreachable!("An I/O error becomes a transport error")
+                };
+                rpc_transport_failure(&error, &rpc_operation(method, &params))
             }
         })?;
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
@@ -1452,15 +1455,7 @@ fn remote_request_blocking(
     if !supported_remote_method(&method) {
         return Err("Unsupported remote operation".into());
     }
-    if method == "machine.changes"
-        && params.get("tasksKnown").is_none()
-        && ["sessions", "projects"].iter().all(|key| {
-            params
-                .get(key)
-                .and_then(Value::as_array)
-                .is_some_and(Vec::is_empty)
-        })
-    {
+    if method == "machine.changes" && changes::is_empty_subscription(&params) {
         // Releasing a renderer registration is local. Never start an SSH tunnel
         // or read credentials merely because a disconnected pane closes.
         return state
@@ -4381,6 +4376,66 @@ mod tests {
         assert!(headers[0].ends_with("Bearer first"));
         assert!(headers[1].ends_with("Bearer second"));
     }
+    #[test]
+    fn rpc_body_read_failures_retain_transport_diagnostics() {
+        use std::io::{BufRead, BufReader};
+        use std::{net::TcpListener, thread, time::Duration};
+
+        for (method, stall, expected) in [
+            ("environment.describe", false, "RPC_HOST_UNAVAILABLE"),
+            ("environment.describe", true, "RPC_TIMEOUT"),
+            ("devices.action", false, "RPC_DEVICE_OUTCOME_UNKNOWN"),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0;
+                loop {
+                    let mut line = String::new();
+                    assert!(reader.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if line.to_ascii_lowercase().starts_with("content-length:") {
+                        size = line.split(':').nth(1).unwrap().trim().parse().unwrap();
+                    }
+                }
+                let mut body = vec![0; size];
+                reader.read_exact(&mut body).unwrap();
+                // A partial response after valid headers must retain the same
+                // transport classification as a failure before those headers.
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: 128\r\nConnection: close\r\n\r\n{{\"result\":\"response-secret"
+                )
+                .unwrap();
+                stream.flush().unwrap();
+                if stall {
+                    thread::sleep(Duration::from_millis(500));
+                }
+            });
+            let error = super::rpc_timed(
+                &endpoint,
+                "request-secret",
+                Some("env"),
+                method,
+                json!({}),
+                Duration::from_millis(250),
+            )
+            .unwrap_err();
+            server.join().unwrap();
+            assert!(error.contains(expected), "{method}: {error}");
+            assert!(error.contains(method), "{error}");
+            assert!(!error.contains("secret"), "{error}");
+            assert_ne!(error, super::CONNECTION_REFUSED);
+        }
+    }
+
     #[test]
     fn a_slow_host_does_not_look_like_a_dead_tunnel() {
         use std::{net::TcpListener, thread, time::Duration};

@@ -7,6 +7,10 @@ Paths below are repository-root relative. Use this map for cross-producer, persi
 - `src/features/sessions/ui/Composer.tsx`, `ComposerSuggestions.tsx`, `ComposerTips.tsx`, `QuestionForm.tsx`, `QueuedMessageEditDialog.tsx`: input, suggestions, questions and queue editing (basenames are in the same UI directory).
 - In that directory, `ModelPicker.tsx`, `ModelFlyout.tsx`, `ModelExtras.tsx`, `ProviderAccountMenu.tsx`, `ProviderAccountRecoveryDialog.tsx`, `ProviderSignInDialog.tsx`, `AccessPicker.tsx`, `SessionDirsPicker.tsx` and `SessionFolderPicker.tsx` compose choices; policies remain with their domain owners.
 - `AttachmentChip.tsx`, `AttachmentFilePreview.tsx`, `AttachmentTokenText.tsx`, `SkillTokenText.tsx`, `FileMentionPicker.tsx`, `McpServerPicker.tsx`, `TranslationResultDialog.tsx`, `TranscriptSelectionMenu.tsx` preserve attachment/token/translation/selection actions.
+- `AttachmentIdentity.tsx`, `ComposerAttachmentHighlight.tsx` and model
+  `attachmentPresentation.ts` own attachment type presentation. Keep editable
+  reference text and native textarea metrics unchanged; presentation kinds do
+  not extend provider kinds or change persisted token identities.
 - `src/features/quick-composer/` owns popup UI, model/hooks and native launch coordination; `src/features/workspace/ui/WorkspacePicker.tsx` is the shared workspace choice.
 - `src/features/devices/deviceComposer.ts`, `src/features/devices/deviceImageComposer.ts`, `src/features/host-tools/browserComposer.ts`, `src/features/host-tools/logsComposer.ts` produce contextual input. Notes, Inbox, Skills and source-control pickers remain adjacent feature owners.
 

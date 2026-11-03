@@ -2,6 +2,12 @@
 
 All source paths are repository-relative. Follow imports for secondary controls.
 
+Working preview: `src/features/sessions/ui/LiveAgentsPreview.tsx` is mounted by
+`src/app/shell/Sidebar.tsx` and `ProjectRail.tsx`. Project-local callers pass the
+open project; Last Sessions omits it. The full header counts precede project-row
+summarization and paging. `CompactLiveAgents` in `ProjectRail.tsx` retains its
+compact navigation.
+
 | Surface                            | Starting points                                                                                                                                                                               |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Full and compact conversation rows | `src/app/shell/Sidebar.tsx`, `src/app/shell/sessionList.css`, `src/app/shell/LastSessionsSection.tsx`                                                                                         |
@@ -18,3 +24,40 @@ Localization uses actual `t()` call families in the shell and the existing catal
 under `src/shared/i18n/`. Do not assume a new sidebar translation namespace.
 Mobile source is present under `mobile/` with independent repository ownership;
 desktop list checks do not establish mobile or physical-device acceptance.
+
+Interruption projection: `src/features/sessions/model/inFlight.ts` owns the latest
+turn marker; `src/features/sessions/data/sessionHistory.ts` and model modules
+`recentSessions.ts`/`globalRecentSessions.ts` preserve it through lists.
+`src/app/model/appLifecycle.ts` uses the activity-preserving session write for
+quit/recovery. Native `src-tauri/src/session_store.rs` stores `last_activity_at`
+separately from the update/conflict stamp and orders/cuts off list queries by
+activity. Host `host/desktopSessions.ts` retains interruption and activity in its
+desktop projection. Existing pre-migration activity falls back to its stored
+update timestamp; do not claim reconstruction of older poisoned timestamps.
+Remote projections in `src/features/connections/model/remoteRailSessions.ts`,
+`remoteSessionLists.ts` and `remotePageCache.ts` preserve status/activity through
+fresh lists, deltas and cached pages. Keep optional activity metadata in
+`src/shared/model/host-contracts/session-reads.ts` and regenerate its manifest
+after schema changes.
+
+Provider-history projection: `src/features/sessions/model/sessionProviderHistory.ts`,
+`src-tauri/src/session_store/provider_history.rs`, `host/store.ts`,
+`host/desktopSessions.ts`; preserve optional summary metadata in remote protocol mappings.
+Project identity: `src/app/shell/useSessionProjectAppearance.tsx` reuses rail appearance
+resolvers and ActionHost ground. Layout/interaction fixtures: `tests/browser/session-row-layout.spec.ts`.
+
+Global Last Sessions workspace: `src/features/sessions/hooks/useGlobalRecentSessions.ts`
+and `src/features/sessions/model/globalRecentSessions.ts` combine the rolling seven-day
+read with allowed-project visibility and live summaries. `session_list_recent_since`
+in `src-tauri/src/session_store.rs` retains the existing compact rail query separately.
+`src/app/App.tsx` owns list mode and exact-project navigation;
+`src/app/workspace/tabs/useNewSessionActions.ts` resolves adopted remote identities.
+Project-local rows remain neutral; only the global list applies saved project appearance.
+The global time menu is limited to Today and Last 7 days because its source window is seven days.
+
+Global New session project choice: `src/features/projects/ui/NewSessionProjectDialog.tsx`
+composes the shared modal/picker primitives. `Sidebar.tsx` mounts it for the header
+action or a new `newListedSessionRequest`; handled requests must not replay on remount.
+`App.tsx` routes generic New commands through the selector while Last Sessions is open.
+`src/app/workspace/tabs/useNewSessionActions.ts` creates directly for the explicitly
+chosen project and saved checkout; the App callback rechecks current visibility/locks.

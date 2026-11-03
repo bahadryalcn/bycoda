@@ -185,6 +185,24 @@ describe("project choices through lifecycle saves", () => {
     expect([...(lastSavedMemory() ?? [])]).toEqual([...state.memory]);
   });
 
+  it("preserves activity timestamps for both interrupted and idle quit snapshots", async () => {
+    const state = workspace();
+    for (const session of state.sessions)
+      session.blocks = [{ id: `user-${session.id}`, role: "user", text: "hello" }];
+    state.sessions[0].busy = true;
+    const { persistQuitState } = await import("./appLifecycle");
+    await persistQuitState(
+      state.sessions,
+      state.tabs,
+      state.activeTabId,
+      state.projectCwd,
+      state.memory,
+    );
+    const writes = vi.mocked(invoke).mock.calls.filter(([command]) => command === "session_upsert");
+    expect(writes).toHaveLength(state.sessions.length);
+    for (const [, args] of writes) expect(args).toMatchObject({ preserveActivityAt: true });
+  });
+
   it("preserves choices when closing a busy window", async () => {
     const state = workspace();
     state.sessions[3].busy = true;

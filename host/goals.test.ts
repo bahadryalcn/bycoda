@@ -1285,6 +1285,7 @@ describe("goal workspace and scheduling choices", () => {
     await tasks.startTask(goal.taskIds[1]);
     expect((await tasks.get(goal.taskIds[1]))?.status).toBe("queued");
     await tasks.startTask(goal.taskIds[0]);
+    await tasks.tick();
     expect((await tasks.get(goal.taskIds[0]))?.status).toBe("running");
   }, 60000);
   it("caps one goal without consuming another goal's available capacity", async () => {

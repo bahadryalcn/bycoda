@@ -268,3 +268,8 @@ it("rejects unsupported providers and invalid budgets before starting any work",
   await expect(converseWithAssistant(input({ maxToolCalls: 50 }))).rejects.toThrow("1–12");
   expect(run).not.toHaveBeenCalled();
 });
+
+it("parses only the exact silent decision schema", () => {
+  expect(parseVoiceAssistantDecision('{"type":"no_reply"}')).toEqual({ type: "no_reply" });
+  expect(() => parseVoiceAssistantDecision('{"type":"no_reply","name":"submit_work"}')).toThrow();
+});

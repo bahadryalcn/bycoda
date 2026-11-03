@@ -520,6 +520,8 @@ html.theme-light {
      distinct from the canvas (and from a background image behind it) without a hard jump.
      Popups, menus and modals use --ui-surface-floating. */
   --ui-chat-canvas: color-mix(in oklab, var(--color-content) 3%, var(--ui-tint-base));
+  /* Reading has one quiet neutral step above navigation; artwork/glass retains its owner. */
+  --ui-chat-pane-canvas: color-mix(in srgb, var(--color-content) 4%, var(--ui-chat-canvas));
   --ui-composer-surface: var(--ui-surface);
   /* Chat cards (changed files, plan, task list, tool output) share the composer's quiet step:
      near black / near white on the pure canvas instead of a mid gray card (owner 2026-11-03). */
@@ -858,12 +860,12 @@ html[data-canvas-background="pure"] {
      stays near the pure ground instead of a mid gray slab; the pane border and floating elevation
      separate it, and controls inside keep their steps (fields stay one step lighter). */
   --ui-surface-floating: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
-  /* The composer sits one quiet step above the pure ground (about #0e0e0e on black, owner
-     2026-11-01: "1e1e1e bunun yerine 0e0e0e"); its border keeps the writing area distinct. */
-  --ui-composer-surface: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
+  /* Keep the writing area visibly above the dark chat canvas while retaining the user's tint. */
+  --ui-composer-surface: color-mix(in srgb, var(--color-content) 9%, var(--color-background-base));
 }
 html.theme-light[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureLight);
+  --ui-chat-pane-canvas: var(--ui-chat-canvas);
   --ui-surface-floating: var(--ui-surface-raised);
   /* Mirror of the dark step: a faint off-white on the white ground. */
   --ui-composer-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
@@ -1147,7 +1149,7 @@ html.has-native-glass:not(.theme-light) .sidebar-glass {
 /* The calm canvas sits under the artwork layer, so images and scenes still cover it.
    Native glass keeps the window translucent: the main pane's glass owns that fill. */
 .chat-pane-background {
-  background-color: var(--ui-chat-canvas);
+  background-color: var(--ui-chat-pane-canvas);
 }
 
 html.has-native-glass:not(.theme-light) .chat-pane-background {
@@ -1376,6 +1378,13 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
 
 ::highlight(bycoda-transcript-search-match) {
   background-color: color-mix(in srgb, var(--color-search) 46%, transparent);
+}
+
+::highlight(bycoda-chat-citation) {
+  background-color: var(--ui-text-selection-background);
+  color: var(--ui-text-selection-foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--ui-focus-ring-color);
 }
 
 ::highlight(bycoda-transcript-search-current) {

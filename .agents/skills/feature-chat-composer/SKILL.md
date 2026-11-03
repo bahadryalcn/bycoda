@@ -14,6 +14,8 @@ Code paths below are repository-root relative.
 - `src/features/sessions/ui/Composer.tsx`
 - `src/app/workspace/sessions/submit/`
 - `src/features/sessions/data/composerDraftStore.ts`
+- `src/features/sessions/model/chatCitation.ts`, `src/features/sessions/ui/ComposerCitations.tsx`
+- `src/features/sessions/ui/InterruptedNotice.tsx`: manual interrupted-turn recovery above the composer; keep Continue beside the explanation without changing continuation admission or blocked reasons.
 
 ## Workflow
 
@@ -30,6 +32,7 @@ Code paths below are repository-root relative.
 - Handoff budgets may trim earlier history/recap and retain an archive reference; preserve the current request and do not reject send solely because optional handoff context does not fit.
 - Retain attachment owning-Host identity, saved/recovered context, permission gates and resource cleanup. Failed/cancelled handoffs must settle visible preparation state without bypassing original-source cleanup.
 - Stop/cancel remains usable during preparation. Question drafts retain exact input and separate semantic lineages; bounded admission must not evict pending/unknown data.
+- Citation snapshots/comments persist with the owning text draft but stay outside the editable textarea. Preserve them through remount, queue/send rejection and retained-input snapshots; removing a reference must not remove typed text. Provider preparation expands only the user's input, then appends literal citation data so quoted mentions cannot trigger file or skill expansion.
 
 ## Verification and references
 

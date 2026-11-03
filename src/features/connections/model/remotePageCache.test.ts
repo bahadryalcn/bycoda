@@ -32,6 +32,13 @@ const snapshot: RemotePageSnapshot = {
     blocks: [{ id: "b1", role: "assistant", text: "tail" }],
   },
 };
+
+it("retains last activity and interrupted status in cached pages", () => {
+  expect(
+    sanitizeRemotePageSnapshot({ ...snapshot, status: "interrupted", lastActivityAt: 42 }),
+  ).toMatchObject({ status: "interrupted", lastActivityAt: 42 });
+  expect(sanitizeRemotePageSnapshot({ ...snapshot, lastActivityAt: -1 })).toBeUndefined();
+});
 const record = (index: number, bytes = 100, savedAt = index): RemotePageCacheRecord => ({
   schema: REMOTE_PAGE_CACHE_SCHEMA,
   key: JSON.stringify(["env", `s${index}`]),

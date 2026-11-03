@@ -26,6 +26,8 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - Markdown source is canonical; mode switching cannot normalize or discard unsupported syntax. Formatting/save target the actual active editor.
 - Do not confuse Notes own pane, plain session textareas, file preview and Git diff rulers; follow the real consumer before sharing a fix.
 - Retain native selection, editor transparent glyphs, workspace-aware links/images, find focus return and draft recovery ownership.
+- Markdown shell preview zoom scales inner document content, not its scroll owner or toolbar. Keep Ctrl+wheel non-passive and cancel page zoom at limits; source editors retain their separate code zoom. HTML/SVG consumers opt out of document zoom.
+- Preview/Source icon choices retain translated names, tooltips, exclusive selection and keyboard navigation through the shared SegmentedControl.
 
 ## Workflow
 

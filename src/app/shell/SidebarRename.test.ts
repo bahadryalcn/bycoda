@@ -2718,3 +2718,30 @@ it("reports keyboard navigation IDs only for the mounted session page", () => {
   expect(mounted).toHaveLength(32);
   expect(props.onSessionNavigationOrder).toHaveBeenLastCalledWith(mounted);
 });
+
+it("opens a project selector for an explicit global New request without creating a session", async () => {
+  props.lastSessionsOpen = true;
+  props.onNewListedSession = vi.fn();
+  props.onNew = vi.fn();
+  props.recents = [{ path: "/workspace/project", openedAt: Date.now() }];
+  props.newListedSessionRequest = 0;
+  await act(async () => render());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  props.newListedSessionRequest = 1;
+  await act(async () => render());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Choose a project for the new session",
+  );
+  expect(props.onNew).not.toHaveBeenCalled();
+  expect(props.onNewListedSession).not.toHaveBeenCalled();
+  await act(async () =>
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => render());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => render());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});

@@ -5,17 +5,24 @@ import { Row } from "../settings/ui/settingsControls";
 import { desktopHelperRequest } from "./desktopControlClient";
 import type { DesktopHelperResponse } from "../../shared/model/host-contracts/desktop-helper";
 import { InlineError } from "../../shared/ui/InlineError";
+import { Badge } from "../../shared/ui/Badge";
 
 export function DesktopHelperSetup({
   disabled,
   onUse,
+  onPendingChange,
 }: {
   disabled?: boolean;
   onUse: (helper: NonNullable<DesktopHelperResponse["helper"]>) => void;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const [state, setState] = useState<DesktopHelperResponse>();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  useEffect(() => {
+    onPendingChange?.(pending || state?.phase === "preparing");
+    return () => onPendingChange?.(false);
+  }, [onPendingChange, pending, state?.phase]);
   useEffect(() => {
     let cancelled = false,
       reading = false;
@@ -67,15 +74,26 @@ export function DesktopHelperSetup({
         "Prepare the pinned helper once, then use its verified path and checksum. Preparing it does not enable computer control.",
       )}
     >
-      <div role="status">
-        {state?.phase === "preparing"
-          ? stage
-          : state?.phase === "ready"
-            ? t("Verified helper ready")
+      <Badge
+        role="status"
+        tone={
+          state?.phase === "ready"
+            ? "success"
             : state?.phase === "interrupted"
-              ? t("Preparation interrupted")
-              : t("Helper not prepared")}
-      </div>
+              ? "warning"
+              : "neutral"
+        }
+      >
+        {!state
+          ? t("Unavailable")
+          : state.phase === "preparing"
+            ? stage
+            : state?.phase === "ready"
+              ? t("Verified helper ready")
+              : state?.phase === "interrupted"
+                ? t("Preparation interrupted")
+                : t("Helper not prepared")}
+      </Badge>
       {(error || state?.error) && <InlineError>{error || state?.error}</InlineError>}
       {state?.phase === "preparing" ? (
         <Button type="button" loading={pending} onClick={() => void act("cancel")}>

@@ -61,6 +61,7 @@ const metadata = {
   executionOwner: z.enum(["host", "desktop"]).optional(),
   createdAt: SafeCounterSchema.optional(),
   updatedAt: SafeCounterSchema,
+  lastActivityAt: SafeCounterSchema.optional(),
   archived: z.boolean().optional(),
   pinned: z.boolean().optional(),
   autoWorktreeBranch: z.string().optional(),

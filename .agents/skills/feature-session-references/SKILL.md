@@ -14,6 +14,7 @@ Code paths below are repository-root relative.
 - `src/features/sessions/model/localSessionReference.ts`
 - `src/app/workspace/sessions/useLocalSessionReferences.ts`
 - `docs/guides/local-session-references.md`
+- `src/features/sessions/model/chatCitation.ts`, `src/features/sessions/model/chatCitationHighlight.ts`, `src/features/sessions/ui/ChatCitationText.tsx`: selected-message snapshots inside the current conversation, distinct from cross-session URI authority.
 
 ## Workflow
 
@@ -28,6 +29,7 @@ Code paths below are repository-root relative.
 - Wrong-origin mismatch has no authority fallback. Native resolution may use existing verified migration receipts but must not initialize a store or start migration.
 - Preserve project bounds, private reasoning exclusion, bounded pages/cursors/prose, drafts/caret/selection, archive membership and existing history/split/worker navigation.
 - Invalid internal links must not fall through to OS launch. Consumers outside an authorized provider expose unavailable actions rather than inventing access.
+- Selected-message citations retain exact session/block identity, source snapshot and occurrence. Hover/focus must not scroll; click may reveal the existing source. A changed/missing source preserves its saved excerpt and must never resolve by matching a different message. Reduced motion keeps a static brief highlight.
 - Preview caches retain only appropriate in-flight work and invalidate on privacy-context change. Worker references navigate to the worker transcript/turn rather than silently focusing its lead.
 
 ## Verification and references

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3]
+
+### Voice and assistant
+
+- Add a professional conversation preset with automatic turn ending, longer pauses and interruption support.
+- Handle requests to pause, listening acknowledgments and resumed answers without losing the current conversation turn.
+- Track played and interrupted audio per response so conversation history and assistant briefings reflect what was delivered.
+- Improve recognition of bycoda feature names without including private project or session names in transcription hints.
+- Avoid return briefings when presence is unknown and reserve spoken return updates for meaningful activity.
+- Reorganize assistant settings with explicit saves, confirmation of saved changes and protection for unsaved drafts.
+- Group assistant history by day and make saved memory searchable by rules, profile information and learned facts.
+
+### Conversations and previews
+
+- Quote selected message text with source references, comments and matching highlights.
+- Add recent conversations across accessible projects and retain the provider and model history of submitted turns and handoffs.
+- Refine attachment references, session rows, sidebar controls and translated interface text.
+- Open inline visuals in a resizable side panel or expanded view, with shared preview, source and reload controls.
+- Choose the project when starting a new conversation and summarize work already listed in the current project without duplicating its running sessions.
+- Preserve interrupted status and last activity when reading stored conversations.
+
+### Connected servers
+
+- Run an exact command on a saved SSH server through the conversation tools, with native owner approval and strict host-key verification.
+- Read bounded command output and request cancellation by operation ID, with explicit unknown outcomes when remote termination cannot be confirmed.
+
+### Reliability
+
+- Consolidate remote connection notices and fall back to HTTP when a WebSocket connection is slow to become ready.
+- Preserve independent Git subscriptions across windows and validate authenticated subscription requests consistently.
+- Make task starts and queue ordering atomic, preserve board state during pending or failed changes, and improve review recovery.
+
 ## [0.7.2]
 
 ### Voice and assistant

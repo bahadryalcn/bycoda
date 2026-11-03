@@ -1,4 +1,6 @@
 import c0 from "./compact-navigation.playwright.config.ts";
+import attachmentCards from "./attachment-cards.playwright.config.ts";
+import sessionRowLayout from "./session-row-layout.playwright.config.ts";
 import c1 from "./composer-host-compatibility.playwright.config.ts";
 import c2 from "./edit-from-here.playwright.config.ts";
 import c3 from "./playwright.arc-controls.config.ts";
@@ -51,11 +53,15 @@ import c49 from "./playwright.field-message.config.ts";
 import c50 from "./tooltip-policy.playwright.config.ts";
 import c51 from "./playwright.global-voice.config.ts";
 import assistantRoom from "./playwright.assistant-room.config.ts";
+import assistantSettings from "./playwright.assistant-settings.config.ts";
 import generatedFileLinks from "./generated-file-links.playwright.config.ts";
 
 export const fixtureConfigs = {
+  "tests/browser/attachment-cards.playwright.config.ts": attachmentCards,
+  "tests/browser/session-row-layout.playwright.config.ts": sessionRowLayout,
   "tests/browser/generated-file-links.playwright.config.ts": generatedFileLinks,
   "tests/browser/playwright.assistant-room.config.ts": assistantRoom,
+  "tests/browser/playwright.assistant-settings.config.ts": assistantSettings,
   "tests/browser/compact-navigation.playwright.config.ts": c0,
   "tests/browser/composer-host-compatibility.playwright.config.ts": c1,
   "tests/browser/edit-from-here.playwright.config.ts": c2,

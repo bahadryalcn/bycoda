@@ -2,6 +2,7 @@ import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
 import { EyeOff, GitPullRequest, RefreshCw, UsageIcon } from "../../shared/ui/icons";
 import { FullscreenButton } from "./FullscreenButton";
+import { SoundsButton } from "../../features/notifications/ui/SoundsButton";
 
 export const WORKSPACE_REFRESH_EVENT = "bycoda:refresh-workspace-view";
 
@@ -69,6 +70,7 @@ export function WorkspaceControls({
         </Button>
       ))}
       <span className="mx-1 h-3 border-l border-stroke" aria-hidden="true" />
+      <SoundsButton />
       <Button
         iconOnly
         label={t("Refresh current view")}

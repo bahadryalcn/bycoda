@@ -62,6 +62,8 @@ export interface ExpandingSearchProps {
   /** The widest the field grows. It never grows past its container, except for a `ghost` search whose
    *  slot is only the closed icon: that one opens as an overlay up to this width (viewport permitting). */
   expandedWidth?: number;
+  /** Keep the open field inside its slot, including compact ghost searches. */
+  constrainToSlot?: boolean;
   maxResults?: number;
   /** The edge the button sits on; the field grows away from it. */
   anchor?: "start" | "end";
@@ -313,6 +315,7 @@ export function ExpandingSearch({
   onSelect,
   onExpandedChange,
   expandedWidth = 360,
+  constrainToSlot = false,
   maxResults = 6,
   anchor = "end",
   emptyHint = "Try a shorter word or check the spelling.",
@@ -370,7 +373,7 @@ export function ExpandingSearch({
       const rootWidth = root.clientWidth;
       // A ghost search whose slot is only the closed icon owns no room: the open field is an overlay
       // sized by `expandedWidth` and the viewport, so neighbours never need a reserved slot.
-      const detached = variant === "ghost" && rootWidth < collapsed * 1.5;
+      const detached = !constrainToSlot && variant === "ghost" && rootWidth < collapsed * 1.5;
       let limit = rootWidth;
       if (detached && typeof window !== "undefined") {
         const rect = root.getBoundingClientRect();
@@ -398,7 +401,7 @@ export function ExpandingSearch({
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [expandedWidth, width, syncShape, variant, anchor]);
+  }, [expandedWidth, constrainToSlot, width, syncShape, variant, anchor]);
 
   // Opening grows on the morph spring with a hint of overshoot; folding back settles without one, so the circle never dips below its own size.
   const morphTo = (goal: number) => {

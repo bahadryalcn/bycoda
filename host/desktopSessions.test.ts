@@ -129,6 +129,90 @@ async function setup() {
 }
 
 describe("desktop sessions on the host", () => {
+  it("projects the latest desktop interruption and its separate activity time", async () => {
+    const s = await setup();
+    s.seed({ id: "interrupted", cwd: s.projectDir, updated: 200 });
+    s.desktopDb.exec("ALTER TABLE sessions ADD COLUMN last_activity_at INTEGER");
+    const blocks = [
+      { id: "u", role: "user", text: "hello" },
+      { id: "i", role: "system", notice: "interrupt", text: "stopped" },
+    ];
+    s.desktopDb
+      .prepare("UPDATE sessions SET blocks_json=?, last_activity_at=100 WHERE id='interrupted'")
+      .run(JSON.stringify(blocks));
+    const desktop = new DesktopSessions(() => [s.dbPath]);
+    try {
+      expect(desktop.list(s.projectDir, s.project.id, ["codex"])[0]).toMatchObject({
+        status: "interrupted",
+        updatedAt: 200,
+        lastActivityAt: 100,
+      });
+      blocks.push({ id: "next", role: "user", text: "continue", notice: "" });
+      s.desktopDb
+        .prepare("UPDATE sessions SET blocks_json=?, updated_at=201 WHERE id='interrupted'")
+        .run(JSON.stringify(blocks));
+      expect(desktop.list(s.projectDir, s.project.id, ["codex"])[0].status).toBe("idle");
+    } finally {
+      desktop.close();
+    }
+  });
+  it("lists provider history from legacy and authoritative normalized provenance", async () => {
+    const s = await setup();
+    s.seed({ id: "history", cwd: s.projectDir });
+    const blocks = [
+      {
+        id: "u1",
+        role: "user",
+        text: "First",
+        turnModel: { harness: "claude", id: "opus", name: "Opus" },
+      },
+      {
+        id: "h",
+        role: "handoff",
+        text: "",
+        handoff: { from: "claude", to: "codex", status: "ready" },
+      },
+      {
+        id: "u2",
+        role: "user",
+        text: "Continue",
+        turnModel: { harness: "codex", id: "gpt", name: "GPT" },
+      },
+    ];
+    s.desktopDb
+      .prepare("UPDATE sessions SET blocks_json=? WHERE id='history'")
+      .run(JSON.stringify(blocks));
+    const desktop = new DesktopSessions(() => [s.dbPath]);
+    const expected = {
+      providers: ["claude", "codex"],
+      activeHarness: "codex",
+      activeModel: "GPT",
+      handedOffFrom: "claude",
+    };
+    try {
+      expect(desktop.list(s.projectDir, s.project.id, ["codex"])[0].providerHistory).toEqual(
+        expected,
+      );
+      s.desktopDb
+        .exec(`CREATE TABLE session_block_state(session_id TEXT PRIMARY KEY, revision INTEGER, length INTEGER);
+        CREATE TABLE session_blocks(session_id TEXT, ordinal INTEGER, block_json TEXT);
+        CREATE INDEX session_blocks_roles ON session_blocks(session_id,json_extract(block_json,'$.role'),json_extract(block_json,'$.draft'));`);
+      s.desktopDb.prepare("INSERT INTO session_block_state VALUES ('history',1,3)").run();
+      blocks.forEach((block, index) =>
+        s.desktopDb
+          .prepare("INSERT INTO session_blocks VALUES ('history',?,?)")
+          .run(index, JSON.stringify(block)),
+      );
+      s.desktopDb
+        .prepare("UPDATE sessions SET blocks_json='[]',updated_at=updated_at+1 WHERE id='history'")
+        .run();
+      expect(desktop.list(s.projectDir, s.project.id, ["codex"])[0].providerHistory).toEqual(
+        expected,
+      );
+    } finally {
+      desktop.close();
+    }
+  });
   it.each(["job", "manual"])(
     "projects optional native %s assistant provenance into summaries and full snapshots",
     async (scope) => {

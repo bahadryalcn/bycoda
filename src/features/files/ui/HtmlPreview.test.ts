@@ -137,8 +137,10 @@ it.each([
       await act(async () =>
         window.dispatchEvent(new MessageEvent("message", { data, source: frame.contentWindow })),
       );
-      const button = document.querySelector<HTMLButtonElement>('[role="toolbar"] button')!;
-      expect(button.textContent).toContain("Add to chat");
+      const button = document.querySelector<HTMLButtonElement>(
+        '[role="toolbar"] button[aria-label="Add to chat"]',
+      )!;
+      expect(button).toBeTruthy();
       expect(onAdd).not.toHaveBeenCalled();
       await act(async () => button.click());
       expect((onAdd.mock.calls[0][0] as CustomEvent).detail).toEqual({
@@ -166,3 +168,76 @@ it.each([
     }
   },
 );
+
+it("keeps the live frame and preview token while compact source disclosure is toggled", async () => {
+  const settings = (window as unknown as Window).happyDOM.settings;
+  settings.navigation.disableChildFrameNavigation = true;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  invoke.mockReset().mockResolvedValue("retained-token");
+  urlFormat.value = "windows-http";
+  const container = document.createElement("div");
+  const toolbarTarget = document.createElement("div");
+  document.body.append(toolbarTarget);
+  document.body.append(container);
+  const root = createRoot(container);
+  const source = '<meta name="sandbox"><button>Counter</button>';
+  const originalSource = "<button>Counter</button>";
+  const render = async (sourceVisible: boolean, target: HTMLElement | null = null) =>
+    act(async () =>
+      root.render(
+        createElement(HtmlPreview, {
+          path: "remote://inline-visual/snapshot.html",
+          source,
+          active: true,
+          compact: true,
+          toolbar: createElement("span", {}, "Queue flow"),
+          toolbarTarget: target,
+          sourceVisible,
+          originalSource,
+        }),
+      ),
+    );
+  try {
+    await render(false);
+    const frame = container.querySelector("iframe")!;
+    const frameUrl = frame.src;
+    const reload = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Reload preview"]',
+    )!;
+    expect(reload).toBeTruthy();
+    expect(reload.querySelector("svg")).toBeTruthy();
+    expect(container.textContent).toContain("Queue flow");
+    expect(container.textContent).not.toContain("Reload preview");
+    await render(true);
+    expect(container.querySelector("pre")?.textContent).toBe(originalSource);
+    expect(container.querySelector("iframe")).toBe(frame);
+    expect(frame.hidden).toBe(true);
+    expect(frame.src).toBe(frameUrl);
+    await render(false);
+    expect(container.querySelector("pre")).toBeNull();
+    expect(container.querySelector("iframe")).toBe(frame);
+    expect(frame.hidden).toBe(false);
+    expect(frame.src).toBe(frameUrl);
+    await render(false, toolbarTarget);
+    expect(container.querySelector('button[aria-label="Reload preview"]')).toBeNull();
+    expect(toolbarTarget.querySelector('button[aria-label="Reload preview"]')).toBeTruthy();
+    expect(toolbarTarget.textContent).toContain("Queue flow");
+    expect(container.querySelector("iframe")).toBe(frame);
+    expect(frame.src).toBe(frameUrl);
+    expect(invoke.mock.calls.filter(([command]) => command === "create_html_preview")).toHaveLength(
+      1,
+    );
+    expect(invoke.mock.calls.filter(([command]) => command === "close_html_preview")).toHaveLength(
+      0,
+    );
+    await act(async () => root.unmount());
+    expect(toolbarTarget.childNodes).toHaveLength(0);
+    expect(invoke).toHaveBeenCalledWith("close_html_preview", { token: "retained-token" });
+  } finally {
+    if (container.childNodes.length) await act(async () => root.unmount());
+    container.remove();
+    toolbarTarget.remove();
+    settings.navigation.disableChildFrameNavigation = false;
+    vi.unstubAllGlobals();
+  }
+});

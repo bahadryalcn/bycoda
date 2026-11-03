@@ -47,6 +47,64 @@ afterEach(() => {
 });
 
 describe("LiveAgentsPreview", () => {
+  it("summarizes this project's work before applying the other-project row cap", () => {
+    const agents = [
+      agent("x1", "G:/Projects/X"),
+      agent("x2", "g:\\projects\\x\\"),
+      agent("x3", "G:/Projects/X"),
+      agent("y1", "G:/Projects/Y"),
+      agent("y2", "G:/Projects/Y"),
+    ];
+    const onSelect = vi.fn();
+    render({ agents, currentProject: "g:/projects/x", collapsible: true, onSelect });
+    expect(container.querySelector("[data-live-agents-project-summary]")?.textContent).toBe(
+      "3 working in this project",
+    );
+    expect(container.querySelectorAll("[data-live-agent-card]")).toHaveLength(2);
+    expect(container.textContent).not.toContain("more");
+    expect(container.querySelector("button[aria-expanded]")?.textContent).toContain("5");
+    act(() => container.querySelector<HTMLButtonElement>('[data-live-agent-card="y1"]')!.click());
+    expect(onSelect).toHaveBeenCalledWith("y1");
+    render({ agents, currentProject: "G:/Projects/Y", collapsible: true });
+    expect(container.querySelector("[data-live-agents-project-summary]")?.textContent).toBe(
+      "2 working in this project",
+    );
+    expect(container.querySelector('[data-live-agent-card="y1"]')).toBeNull();
+    act(() =>
+      Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("1 more"))!
+        .click(),
+    );
+    expect(container.querySelectorAll("[data-live-agent-card]")).toHaveLength(3);
+  });
+
+  it("retains attention and finished rows, distinguishes machines and allows an all-project summary", () => {
+    const agents = [
+      agent("run", "remote://host-a/repo/x"),
+      agent("attention", "remote://host-a/repo/x", { needsApproval: true }),
+      agent("failed", "remote://host-a/repo/x", { done: true, issue: "failed" }),
+      agent("finished", "remote://host-a/repo/x", { done: true }),
+      agent("other-host", "remote://host-b/repo/x"),
+    ];
+    render({ agents, currentProject: "remote://host-a/repo/x" });
+    expect(container.querySelector("[data-live-agents-project-summary]")?.textContent).toBe(
+      "1 working in this project",
+    );
+    expect(container.querySelectorAll("[data-live-agent-card]")).toHaveLength(4);
+    render({
+      agents: [agents[0]],
+      activeSessionId: "run",
+      currentProject: agents[0].cwd,
+      collapsible: true,
+    });
+    expect(container.querySelector("[data-live-agents-project-summary]")?.textContent).toBe(
+      "1 working in this project",
+    );
+    expect(container.querySelectorAll("[data-live-agent-card]")).toHaveLength(0);
+    render({ agents });
+    expect(container.querySelector("[data-live-agents-project-summary]")).toBeNull();
+  });
+
   it("names questions separately from action approvals", () => {
     render({
       agents: [

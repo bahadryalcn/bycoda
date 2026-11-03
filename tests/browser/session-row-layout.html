@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Session row layout fixture</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Browser-local native boundary for the isolated fixture.
+      localStorage.setItem("bycoda.language", "en");
+      window.__fixtureGitCalls = [];
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+        transformCallback: () => 1,
+        invoke: async (command, args) => {
+          if (command.startsWith("git_"))
+            window.__fixtureGitCalls.push({ command, cwd: args?.cwd });
+          if (command === "git_diff_stats")
+            return {
+              files: args?.cwd?.includes("demo") ? 2 : 1,
+              additions: args?.cwd?.includes("demo") ? 14 : 3,
+              deletions: 1,
+            };
+          if (command === "git_diff_index")
+            return {
+              repository: true,
+              branch: "main",
+              head: "fixture-head",
+              files: [],
+              additions: 0,
+              deletions: 0,
+              remote: null,
+              upstream: null,
+              defaultBranch: "main",
+              ahead: 0,
+              behind: 0,
+              aheadOfDefault: 0,
+              headPushed: true,
+              operation: null,
+              conflicts: [],
+            };
+          if (command === "git_operation_state") return null;
+          if (command === "git_operation_status") return { operation: null, conflicts: [] };
+          if (command === "git_branches") return { current: "main", detached: false, branches: [] };
+          if (command === "git_worktrees") return { defaultRoot: "/fixture/bycoda", worktrees: [] };
+          if (command === "git_status") return { files: [], branch: "main" };
+          if (command === "remote_machines") return [];
+          if (command === "plugin:event|listen") return 1;
+          if (command === "plugin:window|is_visible" || command === "plugin:window|is_focused")
+            return true;
+          return [];
+        },
+      };
+    </script>
+    <script type="module" src="./session-row-layout.tsx"></script>
+  </body>
+</html>

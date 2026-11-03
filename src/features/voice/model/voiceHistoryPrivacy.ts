@@ -34,7 +34,12 @@ export function captureVoiceHistoryScope(
     projectIds,
     complete,
     liveProjectIds,
-    current: () => complete && projectIds.every((id) => liveProjectIds().has(id)),
+    // Directory coverage gates summaries and saved context, not microphone lifetime.
+    // Even an unmatched path must still invalidate capture when it becomes hidden.
+    current: () => {
+      const current = new Set(visible().map(pathKey));
+      return [...capturedPaths].every((path) => current.has(path));
+    },
   };
 }
 export function voiceHistoryMessageVisible(

@@ -1,0 +1,22 @@
+.token {
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--color-stroke);
+  color: var(--color-content);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.bracket {
+  position: relative;
+  color: transparent;
+}
+
+.icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  transform: translate(-50%, -50%);
+  text-indent: 0;
+}

@@ -24,9 +24,40 @@ import { setHarnessModels, resetHarnessModelOverlays } from "../src/features/ses
 import * as runtimeGuidance from "../src/integrations/harness/core/runtimeGuidance";
 import { HandoffHistoryStore } from "./handoff-history";
 import * as skillPrompts from "./prompt-skills";
+import { withChatCitations } from "../src/features/sessions/model/chatCitation";
 import { execFileAsync } from "../src/shared/lib/processExecution.node";
 
 const cleanups: Array<() => Promise<void> | void> = [];
+it("projects citation-only prompts at the Host provider boundary while preserving raw history", async () => {
+  const { engine, store, id, turns, waitForTurnStart } = await setup();
+  const text = withChatCitations("Explain this passage.", [
+    {
+      version: 1,
+      id: "citation-1",
+      sessionId: id,
+      blockId: "old-reply",
+      text: "A selected phrase",
+      sourceText: "A selected phrase",
+      occurrence: 0,
+      comment: "Keep it compact",
+    },
+  ]);
+  const receipt = await engine.command({
+    type: "send",
+    commandId: "citation-prompt",
+    sessionId: id,
+    text,
+  });
+  await waitForTurnStart();
+  expect(turns[0].input.text).not.toContain("bycoda-citation:");
+  expect(turns[0].input.text).toContain('"quote": "A selected phrase"');
+  expect(turns[0].input.text).toContain('"comment": "Keep it compact"');
+  expect(
+    (await store.session(id)).session.blocks.find((block) => block.id === "citation-prompt")?.text,
+  ).toBe(text);
+  turns[0].finish();
+  await engine.waitForRun(id, receipt.runId);
+});
 it("stamps internal message authors without accepting a client author or leaking to the owner turn", async () => {
   const { engine, store, id, turns, waitForTurnStart } = await setup();
   const author = {

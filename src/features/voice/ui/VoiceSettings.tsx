@@ -11,6 +11,10 @@ import { TextField } from "../../../shared/ui/TextField";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Modal } from "../../../shared/ui/Modal";
 import { t, useLocale } from "../../../shared/i18n";
+import {
+  saveProfessionalConversationPreset,
+  VOICE_PRESET_FAILED,
+} from "../model/voiceConversationPreset";
 import { saveVoiceTurnEndChoice, VOICE_TURN_CHOICE_FAILED } from "../model/voiceTurnPolicy";
 import {
   AdvancedSettings,
@@ -82,6 +86,7 @@ export function VoiceSettings() {
   const [result, setResult] = useState<VoiceRuntimeStatus>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Failure>();
+  const [presetError, setPresetError] = useState(false);
   const [turnChoiceError, setTurnChoiceError] = useState(false);
   const [checkedKey, setCheckedKey] = useState("");
   const [locating, setLocating] = useState(false);
@@ -546,6 +551,7 @@ export function VoiceSettings() {
             defaultOpen={false}
             keepMounted
             settingIds={[
+              "voice-conversation-preset",
               "voice-idle-sleep",
               "voice-manual-turn-end",
               "voice-turn-silence",
@@ -559,10 +565,38 @@ export function VoiceSettings() {
             title={
               <>
                 {t("Advanced")}
-                {turnChoiceError ? <Badge tone="danger">{t("Needs attention")}</Badge> : null}
+                {turnChoiceError || presetError ? (
+                  <Badge tone="danger">{t("Needs attention")}</Badge>
+                ) : null}
               </>
             }
           >
+            <Row
+              id="voice-conversation-preset"
+              label={t("Professional conversation")}
+              description={t(
+                "Uses a longer pause, allows interruptions, and holds spoken progress updates. You can change each setting afterward.",
+              )}
+            >
+              <div className="space-y-1">
+                <Button
+                  onClick={() => {
+                    try {
+                      saveProfessionalConversationPreset();
+                      setPresetError(false);
+                      setTurnChoiceError(false);
+                    } catch {
+                      setPresetError(true);
+                    }
+                  }}
+                >
+                  {t("Apply preset")}
+                </Button>
+                {presetError && (
+                  <SettingsFeedback state="error">{t(VOICE_PRESET_FAILED)}</SettingsFeedback>
+                )}
+              </div>
+            </Row>
             <Row
               id="voice-idle-sleep"
               label={t("Sleep voice when I'm idle")}

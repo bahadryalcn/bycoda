@@ -16,6 +16,7 @@ import {
 } from "../../voice/model/voiceActivity";
 import { requestTranscriptJump } from "../../sessions/model/transcriptJump";
 import styles from "./AssistantView.module.css";
+import briefingStyles from "./AssistantBriefingCard.module.css";
 import { assistantJobVisible } from "../model/assistantJobs";
 import { captureAssistantHostRead, type AssistantHostRead } from "../model/assistantHostRead";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -176,12 +177,9 @@ export function AssistantBriefingCard({
     if (targets.length === 1 && result.unavailable === 0) await open(targets[0], guard, owner);
   }
   return (
-    <section className={styles.briefing} aria-label={t("While you were away")}>
-      <div className={styles.rowHeading}>
-        <details className={styles.briefingText}>
-          <summary>{t("While you were away")}</summary>
-          <p className={styles.prewrap}>{briefing.text}</p>
-        </details>
+    <section className={briefingStyles.briefing} aria-label={t("While you were away")}>
+      <div className={briefingStyles.header}>
+        <h2>{t("While you were away")}</h2>
         <Button
           iconOnly
           label={t("Dismiss")}
@@ -196,7 +194,8 @@ export function AssistantBriefingCard({
           <X className="icon-sm" />
         </Button>
       </div>
-      <div className={styles.toolbar}>
+      <p className={briefingStyles.copy}>{briefing.text}</p>
+      <div className={briefingStyles.actions}>
         {!snapshot.profile.voiceSetupComplete ? (
           <Button onClick={onSetupVoice}>{t("Set up voice")}</Button>
         ) : speaking === "idle" ? (
@@ -260,7 +259,7 @@ export function AssistantBriefingCard({
             .filter((target) => canSeeProject(target.projectId))
             .map((target) => (
               <div
-                className={styles.row}
+                className={briefingStyles.approval}
                 key={
                   target.kind === "goal"
                     ? `goal:${target.goalId}`

@@ -913,6 +913,7 @@ pub fn run() {
             session_store::session_rebase_project,
             session_store::session_list_linked,
             session_store::session_list_recent,
+            session_store::session_list_recent_since,
             session_store::session_search,
             session_store::session_search_content,
             session_store::cancel_session_search,
@@ -1154,6 +1155,7 @@ pub fn run() {
         }
         tauri::RunEvent::Exit => {
             assistant_presence::shutdown(handle);
+            conversation_tools_bridge::shutdown_ssh_executions();
             if handle
                 .try_state::<desktop_control_window::State>()
                 .is_some()

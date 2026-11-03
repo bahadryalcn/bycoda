@@ -5,16 +5,15 @@ description: Change voice audio, microphone capture, dictation, recognition admi
 
 # Voice
 
-Audio, dictation and companion UI. [Voice management](../feature-voice-management/SKILL.md)
-owns application actions; composer owns draft/caret/send. Paths are repository-relative.
+Audio, dictation and companion UI. [Management](../feature-voice-management/SKILL.md)
+owns actions; composer owns drafts/send. Paths are repository-relative.
 
 ## Start and workflow
 
 1. Identify route, mic lifetime, target, candidate/accepted sequence and playback owner.
 2. Trace the UI/controller into the relevant model and Host worker using
    [the source map and audio contracts](references/surfaces.md).
-3. Preserve keys, cancellation and setup recovery. Exercise rejected recognition
-   while earlier genuine speech is pending.
+3. Preserve keys, cancellation and recovery; test rejection during pending speech.
 4. Report protocol, recorded audio, real mic/provider and installed proof separately.
 
 ## Preserve
@@ -45,6 +44,8 @@ owns application actions; composer owns draft/caret/send. Paths are repository-r
   can enable it; conscious owner changes win over pending acknowledgements.
 - Silence is not Stop work. Preserve accepted-job tracking, abortable side replies,
   pin/follow behavior and the existing permission gates.
+- Preserve the speech admission, played-history and engagement contracts in the
+  [source map](references/surfaces.md#conversation-policy-and-delivery).
 - Dictation inserts through the composer draft/selection owner, preserving IME,
   attachments and cancellation. It does not implicitly submit a message.
   Fast start (mic during load, warm recognizer): [source map](references/surfaces.md).
@@ -76,14 +77,13 @@ owns application actions; composer owns draft/caret/send. Paths are repository-r
 - Preserve CPU/GPU/auto, cloud/system/natural choices and truthful setup recovery.
   Setup changes grant no installation authority.
 
-## Conditional references and checks
+## References and checks
 
 - Runtime detail: [source map](references/surfaces.md).
 - Durable choice provenance: [owner decisions](references/decisions.md).
 - User behavior: [voice guide](../../../docs/guides/voice.md).
 - Global tools/draft attachments: [voice management](../feature-voice-management/SKILL.md).
 
-Run voice tests; Host workers use
-`pnpm exec vitest run --config host/vitest.config.ts host/voice-python.test.ts`
-or the affected adjacent suite. Use normal `pnpm check:web` / `pnpm host:build`
-when needed. Source/mocks do not prove acoustic, device or provider acceptance.
+Run adjacent voice tests and the affected Host suite (`host/vitest.config.ts`).
+Use normal web/Host checks when needed; source/mocks do not prove acoustic,
+device, provider or installed acceptance.

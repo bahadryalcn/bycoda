@@ -11,7 +11,7 @@ const REMOTE_PAGE_CACHE_MAX_STRING_CHARS = 64 * 1024;
 export type RemotePageCacheKey = { environmentId: string; sessionId: string };
 export type RemotePageSnapshot = Pick<
   HostSession,
-  "session" | "projectId" | "revision" | "status" | "updatedAt"
+  "session" | "projectId" | "revision" | "status" | "updatedAt" | "lastActivityAt"
 > & {
   history: NonNullable<HostSession["history"]>;
 };
@@ -164,6 +164,7 @@ function projectRemotePageSnapshot(
       typeof value.projectId !== "string" ||
       !nonNegativeInteger(value.revision) ||
       !finite(value.updatedAt) ||
+      (value.lastActivityAt !== undefined && !nonNegativeInteger(value.lastActivityAt)) ||
       !["idle", "running", "interrupted"].includes(String(value.status)) ||
       !isObject(value.history) ||
       !nonNegativeInteger(value.history.revision) ||
@@ -222,6 +223,7 @@ function projectRemotePageSnapshot(
       projectId: value.projectId,
       revision: value.revision,
       updatedAt: value.updatedAt,
+      ...(value.lastActivityAt !== undefined ? { lastActivityAt: value.lastActivityAt } : {}),
       status: value.status,
       history,
       session,

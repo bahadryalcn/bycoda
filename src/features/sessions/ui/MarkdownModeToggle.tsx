@@ -1,6 +1,17 @@
 import { useLocale, useT } from "../../../shared/i18n";
-import { useCallback, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Button } from "../../../shared/ui/Button";
+import { CodeBlock, Eye, Minus, Plus } from "../../../shared/ui/icons";
+import styles from "./MarkdownModeToggle.module.css";
 
 export type MarkdownViewMode = "preview" | "source";
 
@@ -51,8 +62,18 @@ export function MarkdownModeToggle({ mode, onChange }: ToggleProps) {
       className="shrink-0"
       value={mode}
       options={[
-        { value: "preview", label: t("Preview") },
-        { value: "source", label: t("Source") },
+        {
+          value: "preview",
+          label: t("Preview"),
+          icon: <Eye className="icon-sm" />,
+          iconOnly: true,
+        },
+        {
+          value: "source",
+          label: t("Source"),
+          icon: <CodeBlock className="icon-sm" />,
+          iconOnly: true,
+        },
       ]}
       onValueChange={(next) => onChange(next as MarkdownViewMode)}
     />
@@ -68,6 +89,8 @@ type ShellProps = {
   actions?: ReactNode;
   /** Optional start-aligned content (for example Save and status) sharing the same row. */
   leading?: ReactNode;
+  /** Markdown preview content only; source editors own their existing code zoom. */
+  zoomable?: boolean;
 };
 
 export function MarkdownViewShell({
@@ -77,8 +100,27 @@ export function MarkdownViewShell({
   source,
   actions,
   leading,
+  zoomable = true,
 }: ShellProps) {
   useLocale();
+  const t = useT();
+  const [zoom, setZoom] = useState(100);
+  const content = useRef<HTMLDivElement>(null);
+  const changeZoom = useCallback((step: number) => {
+    setZoom((value) => Math.max(50, Math.min(200, value + step)));
+  }, []);
+  useEffect(() => {
+    const node = content.current;
+    if (!node || !zoomable || mode !== "preview") return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.defaultPrevented || !event.ctrlKey || event.deltaY === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      changeZoom(event.deltaY < 0 ? 10 : -10);
+    };
+    node.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    return () => node.removeEventListener("wheel", onWheel, { capture: true });
+  }, [zoomable, mode, changeZoom]);
   return (
     <div className="markdown-view-shell flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="markdown-view-actions flex shrink-0 items-center gap-2 px-2 py-1">
@@ -87,10 +129,48 @@ export function MarkdownViewShell({
         ) : null}
         <div className="ms-auto flex flex-wrap items-center justify-end gap-1">
           {actions}
+          {zoomable && mode === "preview" ? (
+            <div className="flex shrink-0 items-center gap-0.5">
+              <Button
+                iconOnly
+                label={t("Zoom out")}
+                variant="ghost"
+                size="sm"
+                disabled={zoom === 50}
+                onClick={() => changeZoom(-10)}
+              >
+                <Minus className="icon-sm" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                tooltip={t("Reset zoom")}
+                aria-label={t("Reset zoom")}
+                className="tabular-nums"
+                onClick={() => setZoom(100)}
+              >
+                {zoom}%
+              </Button>
+              <Button
+                iconOnly
+                label={t("Zoom in")}
+                variant="ghost"
+                size="sm"
+                disabled={zoom === 200}
+                onClick={() => changeZoom(10)}
+              >
+                <Plus className="icon-sm" />
+              </Button>
+            </div>
+          ) : null}
           <MarkdownModeToggle mode={mode} onChange={onModeChange} />
         </div>
       </div>
-      <div className="relative min-h-0 min-w-0 flex-1">
+      <div
+        ref={content}
+        className={`${styles.content} relative min-h-0 min-w-0 flex-1`}
+        style={{ "--markdown-document-zoom": zoomable ? zoom / 100 : 1 } as CSSProperties}
+      >
         <MarkdownViewPane name="preview" active={mode === "preview"}>
           {preview}
         </MarkdownViewPane>

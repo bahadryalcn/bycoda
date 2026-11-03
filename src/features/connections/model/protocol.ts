@@ -170,6 +170,7 @@ export type HostSession = {
   /** Missing from snapshots written before creation time was stored. */
   createdAt?: number;
   updatedAt: number;
+  lastActivityAt?: number;
   archived?: boolean;
   pinned?: boolean;
   /** Temporary branch created by the composer for automatic first-turn naming. */
@@ -191,6 +192,7 @@ export type HostSession = {
   };
 };
 export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" | "desktop"> & {
+  providerHistory?: import("../../sessions/model/sessionProviderHistory").SessionProviderHistory;
   issue?: "retrying" | "failed";
   issueTurnId?: string;
   issueMessage?: string;

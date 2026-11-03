@@ -1,12 +1,17 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { DesktopControlSettings } from "../../host-tools/DesktopControlSettings";
+import { AssistantMemoryPanel } from "./AssistantMemoryPanel";
+import { MemoryEditor } from "./MemoryEditor";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
+import sessionStyles from "./AssistantSessions.module.css";
+import { AssistantSettings } from "./AssistantSettings";
+import { AssistantHistory } from "./AssistantHistory";
+import historyStyles from "./AssistantHistory.module.css";
+import { AssistantNoteCard } from "./AssistantNoteCard";
+import noteStyles from "./AssistantNoteCard.module.css";
 import type {
-  AssistantActivity,
   AssistantJob,
   AssistantMemory,
   AssistantMessage,
   AssistantNote,
-  AssistantProfilePatch,
   AssistantRequest,
   AssistantSnapshot,
   AssistantTrash,
@@ -19,7 +24,6 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
-import { Switch } from "../../../shared/ui/Switch";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TabStrip } from "../../../shared/ui/Tabs";
 import { Badge } from "../../../shared/ui/Badge";
@@ -37,8 +41,8 @@ import {
   RefreshCw,
   X,
   Plus,
-  ExternalLink,
   ChevronDown,
+  ArrowUp,
 } from "../../../shared/ui/icons";
 import {
   assistantIdentity,
@@ -52,11 +56,7 @@ import { AssistantBriefingCard } from "./AssistantBriefingCard";
 import type { AssistantGoalApprovalTarget } from "../model/assistantBriefing";
 import { AssistantSessions } from "./AssistantSessions";
 import { ManualSessionSupervision } from "./ManualSessionSupervision";
-import {
-  useManualSupervision,
-  visibleAssistantProjects,
-  type ManualSupervisionController,
-} from "../model/assistantManual";
+import { useManualSupervision, visibleAssistantProjects } from "../model/assistantManual";
 import { useVisibleProjects } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLocked } from "../../group-lock/model/groupLock";
 import {
@@ -88,7 +88,6 @@ import {
 } from "../model/assistantJobDeletion";
 import type { AssistantAutomationTarget } from "../model/assistantAutomationReveal";
 import { AssistantSetup } from "./AssistantSetup";
-import { AssistantProfileFields } from "./AssistantProfileFields";
 import { AssistantOwnerQuestions } from "./AssistantOwnerQuestions";
 import {
   hasAssistantSummaryRefresh,
@@ -141,27 +140,7 @@ function jobStatusLabel(job: AssistantJob) {
         : statusLabel(job.status)
     : statusLabel(job.status);
 }
-function activityKindLabel(kind: string) {
-  const labels: Record<string, string> = {
-    "budget.exhausted": "Budget exhausted",
-    "chief.woke": "Status reviewed",
-    "conversation.replied": "Conversation reply",
-    "job.received": "Job received",
-    "job.replanned": "Job replanned",
-    "job.started": "Job started",
-    "job.unknown": "Dispatch status unknown",
-    "job.pause": "Job paused",
-    "job.resume": "Job resumed",
-    "job.stop": "Job stopped",
-    "memory.saved": "Memory saved",
-    "profile.updated": "Settings updated",
-    "task.started": "Task started",
-    "job.waiting": "Waiting for you",
-  };
-  return t(labels[kind] ?? "Activity");
-}
 const date = (at: number) => new Date(at).toLocaleString();
-const day = (at: number) => new Date(at).toLocaleDateString();
 const matches = (query: string, ...values: (string | undefined)[]) =>
   !query.trim() ||
   values.some((value) => value?.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
@@ -1085,7 +1064,7 @@ export function AssistantView(props: AssistantViewProps) {
           </div>
           <section
             id="assistant-content"
-            className={styles.content}
+            className={`${styles.content} ${view === "Sessions" ? sessionStyles.workspace : ""} ${view === "History" ? historyStyles.workspace : ""} ${view === "Notes" ? noteStyles.page : ""}`}
             data-view={view}
             aria-label={t(view)}
           >
@@ -1094,13 +1073,48 @@ export function AssistantView(props: AssistantViewProps) {
                 {t("Outside working hours. Accepted turns can finish; new work waits.")}
               </p>
             )}
-            {view !== "Today" && (
-              <div className={styles.collectionTools}>
+            {view === "History" && (
+              <header className={historyStyles.heading}>
+                <h2>{t("History")}</h2>
+                <span>{snapshot.activity.length}</span>
+              </header>
+            )}
+            {view === "Sessions" && (
+              <div className={sessionStyles.pageHeading}>
+                <h2>{t("Sessions")}</h2>
+                <p>{t("Follow assistant jobs and manage supervision of your conversations.")}</p>
+              </div>
+            )}
+            {view !== "Today" && view !== "Memory" && (
+              <div
+                className={`${styles.collectionTools} ${view === "Notes" ? noteStyles.toolbar : ""}`}
+              >
+                {view === "Notes" && (
+                  <h2>
+                    {t("Notes")}{" "}
+                    <span>
+                      {
+                        snapshot.notes.filter((note) => matches(query, note.title, note.body))
+                          .length
+                      }
+                    </span>
+                  </h2>
+                )}
+                {view === "Jobs" && (
+                  <h2 className={styles.jobsTitle}>
+                    {t("Jobs")} <span>{allJobs.length}</span>
+                  </h2>
+                )}
                 <SearchInput
                   type="search"
                   value={query}
                   aria-label={t("Search this section")}
-                  placeholder={t("Search")}
+                  placeholder={t(view === "Sessions" ? "Search sessions" : "Search")}
+                  appearance={
+                    view === "Sessions" || view === "History" || view === "Notes"
+                      ? "field"
+                      : undefined
+                  }
                   onChange={(event) => setQuery(event.currentTarget.value)}
                 />
                 {view === "Notes" && (
@@ -1139,6 +1153,7 @@ export function AssistantView(props: AssistantViewProps) {
                       {t("Summarize today")}
                     </Button>
                     <Button
+                      variant="primary"
                       startIcon={<Plus className="icon-sm" />}
                       disabled={!snapshot.capabilities.notes}
                       onClick={() => setNoteEdit("new")}
@@ -1150,14 +1165,6 @@ export function AssistantView(props: AssistantViewProps) {
                 {view === "History" && (
                   <Button disabled={!snapshot.activity.length} onClick={clearHistory}>
                     {t("Clear history")}
-                  </Button>
-                )}
-                {view === "Memory" && (
-                  <Button
-                    startIcon={<Plus className="icon-sm" />}
-                    onClick={() => setMemoryEdit("new")}
-                  >
-                    {t("Add memory")}
                   </Button>
                 )}
                 {["Jobs", "History", "Sessions"].includes(view) && (
@@ -1281,6 +1288,93 @@ export function AssistantView(props: AssistantViewProps) {
             )}
             {(view === "Today" || view === "Jobs") && (
               <section className={`${styles.section} ${styles.jobsSection}`}>
+                <div className={styles.jobInput}>
+                  <TextareaField
+                    label={t("Give {p0} a job", { p0: identity.name })}
+                    value={jobDraftVisible ? jobText : ""}
+                    disabled={!jobDraftVisible}
+                    minRows={view === "Jobs" ? 3 : 1}
+                    autosize
+                    maxRows={6}
+                    maxLength={16000}
+                    placeholder={t("One request per line")}
+                    onChange={(event) => setJobText(event.currentTarget.value)}
+                  />
+                  <div className={styles.jobComposerActions}>
+                    {view === "Jobs" && (
+                      <span className={styles.muted}>{t("Review jobs before starting")}</span>
+                    )}
+                    <Button
+                      variant="primary"
+                      startIcon={<Plus className="icon-sm" />}
+                      disabled={
+                        !jobDraftVisible ||
+                        !jobText.trim() ||
+                        Boolean(pending) ||
+                        (!snapshot.capabilities.jobs &&
+                          !snapshot.capabilities.quickNotes &&
+                          !snapshot.capabilities.quickAutomations)
+                      }
+                      onClick={() => {
+                        try {
+                          const saved = JSON.parse(
+                            localStorage.getItem("bycoda.assistant.job-review") ?? "null",
+                          );
+                          if (
+                            saved?.source === jobText &&
+                            Array.isArray(saved.rows) &&
+                            saved.rows.every(
+                              (row: JobDraft) =>
+                                typeof row.id === "string" &&
+                                typeof row.key === "string" &&
+                                typeof row.request === "string" &&
+                                typeof row.title === "string" &&
+                                typeof row.projectId === "string" &&
+                                Array.isArray(row.projectIds),
+                            )
+                          ) {
+                            jobBatch.current = null;
+                            jobReviewEnvironment.current =
+                              typeof saved.environmentId === "string"
+                                ? saved.environmentId
+                                : undefined;
+                            setJobReviewFrozen(saved.frozen === true);
+                            setJobReview(saved.rows);
+                            return;
+                          }
+                        } catch {
+                          /* Review the retained source text. */
+                        }
+                        jobBatch.current = null;
+                        jobReviewEnvironment.current = undefined;
+                        setJobReviewFrozen(false);
+                        setJobReview(
+                          jobText
+                            .split(/\r?\n/)
+                            .filter((request) => request.trim())
+                            .map((request) => ({
+                              id: operationId(),
+                              title: request.trim().slice(0, 300),
+                              request,
+                              projectId: defaultProjectId,
+                              projectIds: defaultProjectId ? [defaultProjectId] : [],
+                              key: jobKey(request, defaultProjectId),
+                            })),
+                        );
+                      }}
+                    >
+                      {t("Review jobs")}
+                    </Button>
+                  </div>
+                </div>
+                {!jobDraftVisible && (
+                  <p role="status" className={styles.muted}>
+                    {t("The selected project is no longer visible.")}
+                  </p>
+                )}
+                {!snapshot.capabilities.jobs && (
+                  <p className={styles.muted}>{t("Job execution is unavailable on this Host.")}</p>
+                )}
                 <div className={styles.rowHeading}>
                   {allJobs.length > 0 && view === "Today" && <h2>{t("Active jobs")}</h2>}
                   {visibleSelectedCount > 0 && (
@@ -1299,126 +1393,62 @@ export function AssistantView(props: AssistantViewProps) {
                     </div>
                   )}
                 </div>
-                {allJobs.length
-                  ? allJobs.map((job) => (
-                      <JobRow
-                        key={job.id}
-                        job={job}
-                        projectName={assistantJobProjectIds(job).map(projectName).join(" · ")}
-                        selected={selected.has(job.id)}
-                        busy={pending?.key === job.id}
-                        disabled={Boolean(pending)}
-                        error={error?.key === job.id ? error.text : ""}
-                        onEdit={
-                          job.kind !== "quick" && !finished(job) && environmentId
-                            ? (mode) =>
-                                setJobEdit({ job, mode, environmentId, scopeKey: privacy.key })
-                            : undefined
-                        }
-                        onSelect={(checked) =>
-                          setSelected((current) => {
-                            const next = new Set(current);
-                            if (checked) next.add(job.id);
-                            else next.delete(job.id);
-                            return next;
-                          })
-                        }
-                        onDetails={() => setDetail(job.id)}
-                        onControl={(action) => control(job, action)}
-                        onReviewTasks={
-                          props.onReviewJobTasks ? () => reviewJobTasks(job) : undefined
-                        }
-                      />
-                    ))
-                  : view === "Today"
-                    ? null
-                    : empty(
+                {allJobs.length ? (
+                  allJobs.map((job) => (
+                    <JobRow
+                      key={job.id}
+                      job={job}
+                      projectName={assistantJobProjectIds(job).map(projectName).join(" · ")}
+                      selected={selected.has(job.id)}
+                      busy={pending?.key === job.id}
+                      disabled={Boolean(pending)}
+                      error={error?.key === job.id ? error.text : ""}
+                      onEdit={
+                        job.kind !== "quick" && !finished(job) && environmentId
+                          ? (mode) =>
+                              setJobEdit({ job, mode, environmentId, scopeKey: privacy.key })
+                          : undefined
+                      }
+                      onSelect={(checked) =>
+                        setSelected((current) => {
+                          const next = new Set(current);
+                          if (checked) next.add(job.id);
+                          else next.delete(job.id);
+                          return next;
+                        })
+                      }
+                      onDetails={() => setDetail(job.id)}
+                      onControl={(action) => control(job, action)}
+                      onReviewTasks={props.onReviewJobTasks ? () => reviewJobTasks(job) : undefined}
+                    />
+                  ))
+                ) : view === "Today" ? null : (
+                  <div className={styles.jobsEmpty}>
+                    <h3>
+                      {t(
                         query || filter || jobProjectFilter || jobDateFilter !== "all"
                           ? "No matching jobs"
                           : "No jobs yet",
                       )}
+                    </h3>
+                    {query || filter || jobProjectFilter || jobDateFilter !== "all" ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setQuery("");
+                          setFilter("");
+                          setJobProjectFilter("");
+                          setJobDateFilter("all");
+                        }}
+                      >
+                        {t("Reset")}
+                      </Button>
+                    ) : (
+                      <p>{t("Give {p0} a job", { p0: identity.name })}</p>
+                    )}
+                  </div>
+                )}
                 {errorFor("bulk")}
-                <div className={styles.jobInput}>
-                  <TextareaField
-                    label={t("Give {p0} a job", { p0: identity.name })}
-                    value={jobDraftVisible ? jobText : ""}
-                    disabled={!jobDraftVisible}
-                    minRows={1}
-                    maxRows={6}
-                    maxLength={16000}
-                    placeholder={t("One request per line")}
-                    onChange={(event) => setJobText(event.currentTarget.value)}
-                  />
-                  <Button
-                    variant="primary"
-                    startIcon={<Plus className="icon-sm" />}
-                    disabled={
-                      !jobDraftVisible ||
-                      !jobText.trim() ||
-                      Boolean(pending) ||
-                      (!snapshot.capabilities.jobs &&
-                        !snapshot.capabilities.quickNotes &&
-                        !snapshot.capabilities.quickAutomations)
-                    }
-                    onClick={() => {
-                      try {
-                        const saved = JSON.parse(
-                          localStorage.getItem("bycoda.assistant.job-review") ?? "null",
-                        );
-                        if (
-                          saved?.source === jobText &&
-                          Array.isArray(saved.rows) &&
-                          saved.rows.every(
-                            (row: JobDraft) =>
-                              typeof row.id === "string" &&
-                              typeof row.key === "string" &&
-                              typeof row.request === "string" &&
-                              typeof row.title === "string" &&
-                              typeof row.projectId === "string" &&
-                              Array.isArray(row.projectIds),
-                          )
-                        ) {
-                          jobBatch.current = null;
-                          jobReviewEnvironment.current =
-                            typeof saved.environmentId === "string"
-                              ? saved.environmentId
-                              : undefined;
-                          setJobReviewFrozen(saved.frozen === true);
-                          setJobReview(saved.rows);
-                          return;
-                        }
-                      } catch {
-                        /* Review the retained source text. */
-                      }
-                      jobBatch.current = null;
-                      jobReviewEnvironment.current = undefined;
-                      setJobReviewFrozen(false);
-                      setJobReview(
-                        jobText
-                          .split(/\r?\n/)
-                          .filter((request) => request.trim())
-                          .map((request) => ({
-                            id: operationId(),
-                            title: request.trim().slice(0, 300),
-                            request,
-                            projectId: defaultProjectId,
-                            projectIds: defaultProjectId ? [defaultProjectId] : [],
-                            key: jobKey(request, defaultProjectId),
-                          })),
-                      );
-                    }}
-                  >
-                    {t("Review jobs")}
-                  </Button>
-                </div>
-                {!jobDraftVisible && (
-                  <p role="status" className={styles.muted}>
-                    {t("The selected project is no longer visible.")}
-                  </p>
-                )}
-                {!snapshot.capabilities.jobs && (
-                  <p className={styles.muted}>{t("Job execution is unavailable on this Host.")}</p>
-                )}
               </section>
             )}
             {view === "Conversations" && (
@@ -1439,7 +1469,7 @@ export function AssistantView(props: AssistantViewProps) {
               />
             )}
             {view === "Sessions" && (
-              <>
+              <div className={sessionStyles.layout}>
                 <AssistantSessions
                   jobs={snapshot.jobs}
                   query={query}
@@ -1448,6 +1478,15 @@ export function AssistantView(props: AssistantViewProps) {
                   contextSettings={snapshot.profile}
                   projectName={projectName}
                   onOpenSession={onOpenSession}
+                  onJobs={() => {
+                    setView("Jobs");
+                    setQuery("");
+                    setFilter("");
+                  }}
+                  onReset={() => {
+                    setQuery("");
+                    setFilter("");
+                  }}
                 />
                 <ManualSessionSupervision
                   key={environmentId ?? "unknown"}
@@ -1458,7 +1497,7 @@ export function AssistantView(props: AssistantViewProps) {
                   onSettings={() => setSettings(true)}
                   onOpenSession={onOpenSession}
                 />
-              </>
+              </div>
             )}
             {view === "Notes" && (
               <section className={styles.section}>
@@ -1490,57 +1529,65 @@ export function AssistantView(props: AssistantViewProps) {
                     {t("Global notes are unavailable on this Host.")}
                   </p>
                 )}
-                {snapshot.notes
-                  .filter((note) => matches(query, note.title, note.body))
-                  .map((note) => (
-                    <div className={styles.row} key={note.id}>
-                      <div className={styles.rowText}>
-                        <Button variant="link" onClick={() => setNoteEdit(note)}>
-                          {note.title}
-                        </Button>
-                        <p>{date(note.updatedAt)}</p>
-                        <p className={styles.excerpt}>{note.body}</p>
-                      </div>
-                      <Button
-                        iconOnly
-                        label={t("Delete note")}
-                        onClick={() =>
-                          setConfirm({
-                            title: t("Delete note?"),
-                            message: note.title,
-                            confirmLabel: t("Delete"),
-                            onConfirm: async () => {
-                              const result = await assistantRequest({
-                                op: "notes.delete",
-                                id: note.id,
-                                expectedUpdatedAt: note.updatedAt,
-                              });
-                              if (result.ok !== true)
-                                throw new Error(
-                                  t("Note deletion is uncertain. Review the Room before retrying."),
-                                );
-                              if (result.trashId?.startsWith("notetrash:")) {
-                                setDeletedNoteWithoutReceipt(null);
-                                setUndo({ id: result.trashId, label: note.title, environmentId });
-                              } else {
-                                setUndo(null);
-                                setDeletedNoteWithoutReceipt(note.title);
-                              }
-                            },
-                          })
+                <div className={noteStyles.collection}>
+                  {snapshot.notes
+                    .filter((note) => matches(query, note.title, note.body))
+                    .map((note) => (
+                      <AssistantNoteCard
+                        key={note.id}
+                        note={note}
+                        updatedAt={date(note.updatedAt)}
+                        onOpen={() => setNoteEdit(note)}
+                        actions={
+                          <Button
+                            iconOnly
+                            label={t("Delete note")}
+                            onClick={() =>
+                              setConfirm({
+                                title: t("Delete note?"),
+                                message: note.title,
+                                confirmLabel: t("Delete"),
+                                onConfirm: async () => {
+                                  const result = await assistantRequest({
+                                    op: "notes.delete",
+                                    id: note.id,
+                                    expectedUpdatedAt: note.updatedAt,
+                                  });
+                                  if (result.ok !== true)
+                                    throw new Error(
+                                      t(
+                                        "Note deletion is uncertain. Review the Room before retrying.",
+                                      ),
+                                    );
+                                  if (result.trashId?.startsWith("notetrash:")) {
+                                    setDeletedNoteWithoutReceipt(null);
+                                    setUndo({
+                                      id: result.trashId,
+                                      label: note.title,
+                                      environmentId,
+                                    });
+                                  } else {
+                                    setUndo(null);
+                                    setDeletedNoteWithoutReceipt(note.title);
+                                  }
+                                },
+                              })
+                            }
+                          >
+                            <Trash2 className="icon-sm" />
+                          </Button>
                         }
-                      >
-                        <Trash2 className="icon-sm" />
-                      </Button>
-                    </div>
-                  ))}
+                      />
+                    ))}
+                </div>
                 {snapshot.capabilities.notes &&
                   !snapshot.notes.some((note) => matches(query, note.title, note.body)) &&
                   empty(query ? "No results" : "No notes yet")}
               </section>
             )}
             {view === "History" && (
-              <HistoryPanel
+              <AssistantHistory
+                filtered={Boolean(query.trim() || filter)}
                 entries={snapshot.activity.filter(
                   (item) =>
                     matches(query, item.summary, item.kind) && (!filter || item.kind === filter),
@@ -1550,112 +1597,48 @@ export function AssistantView(props: AssistantViewProps) {
               />
             )}
             {view === "Memory" && (
-              <section className={styles.section}>
-                <div className={styles.rowHeading}>
-                  <span className={styles.muted}>
-                    {t("Rules {p0}/40", {
-                      p0: snapshot.memory.filter((entry) => entry.kind === "rule").length,
-                    })}
-                  </span>
-                </div>
-                {memorySearching && <p role="status">{t("Loading...")}</p>}
-                {errorFor("memory.search")}
-                {!memorySearching && !memoryEntries.length && empty("Nothing saved here yet")}
-                {(
-                  [
-                    ["rule", "Rules"],
-                    ["profile", "About me"],
-                    ["fact", "Learned"],
-                  ] as const
-                )
-                  .filter(([kind]) => memoryEntries.some((entry) => entry.kind === kind))
-                  .map(([kind, label]) => (
-                    <section className={styles.section} key={kind}>
-                      <h3>{t(label)}</h3>
-                      {memoryEntries
-                        .filter(
-                          (entry) => entry.kind === kind && matches(query, entry.text, entry.quote),
-                        )
-                        .map((entry) => (
-                          <div className={styles.row} key={entry.id}>
-                            <div className={styles.rowText}>
-                              <p className={styles.prewrap}>{entry.text}</p>
-                              <span className={styles.muted}>
-                                {t(
-                                  entry.scope === "all"
-                                    ? "Everywhere"
-                                    : entry.scope === "voice"
-                                      ? "Voice only"
-                                      : "Coding sessions only",
-                                )}{" "}
-                                ·{" "}
-                                {t(
-                                  entry.source === "typed"
-                                    ? "You wrote"
-                                    : entry.source === "spoken"
-                                      ? "You said"
-                                      : "Learned",
-                                )}{" "}
-                                · {date(entry.createdAt)}
-                              </span>
-                              {entry.quote && entry.quote !== entry.text && (
-                                <p className={styles.excerpt}>{entry.quote}</p>
-                              )}
-                            </div>
-                            <Switch
-                              aria-label={t("Enable memory")}
-                              checked={entry.active}
-                              disabled={Boolean(pending)}
-                              onCheckedChange={(active) =>
-                                void mutate(entry.id, t("Saving..."), {
-                                  op: "memory.save",
-                                  id: entry.id,
-                                  kind: entry.kind,
-                                  text: entry.text,
-                                  scope: entry.scope,
-                                  source: entry.source,
-                                  quote: entry.quote,
-                                  forbiddenTerms: entry.forbiddenTerms,
-                                  expectedVersion: entry.version,
-                                  active,
-                                })
-                              }
-                            />
-                            <Button onClick={() => setMemoryEdit(entry)}>{t("Edit")}</Button>
-                            <Button
-                              iconOnly
-                              label={t("Delete memory")}
-                              onClick={() =>
-                                setConfirm({
-                                  title: t("Delete memory?"),
-                                  message: entry.text,
-                                  confirmLabel: t("Delete"),
-                                  onConfirm: async () => {
-                                    await assistantRequest({
-                                      op: "memory.delete",
-                                      id: entry.id,
-                                      expectedVersion: entry.version,
-                                    });
-                                    setUndo({
-                                      id: `memory:${entry.id}`,
-                                      label: entry.text,
-                                      environmentId,
-                                    });
-                                  },
-                                })
-                              }
-                            >
-                              <Trash2 className="icon-sm" />
-                            </Button>
-                            {errorFor(entry.id)}
-                          </div>
-                        ))}
-                      {!memorySearching &&
-                        !memoryEntries.some((entry) => entry.kind === kind) &&
-                        empty("Nothing saved here yet")}
-                    </section>
-                  ))}
-              </section>
+              <AssistantMemoryPanel
+                entries={memoryEntries}
+                ruleCount={snapshot.memory.filter((entry) => entry.kind === "rule").length}
+                query={query}
+                searching={memorySearching}
+                pending={Boolean(pending)}
+                searchError={errorFor("memory.search")}
+                errorFor={errorFor}
+                date={date}
+                onQuery={setQuery}
+                onAdd={() => setMemoryEdit("new")}
+                onEdit={setMemoryEdit}
+                onToggle={(entry, active) =>
+                  void mutate(entry.id, t("Saving..."), {
+                    op: "memory.save",
+                    id: entry.id,
+                    kind: entry.kind,
+                    text: entry.text,
+                    scope: entry.scope,
+                    source: entry.source,
+                    quote: entry.quote,
+                    forbiddenTerms: entry.forbiddenTerms,
+                    expectedVersion: entry.version,
+                    active,
+                  })
+                }
+                onDelete={(entry) =>
+                  setConfirm({
+                    title: t("Delete memory?"),
+                    message: entry.text,
+                    confirmLabel: t("Delete"),
+                    onConfirm: async () => {
+                      await assistantRequest({
+                        op: "memory.delete",
+                        id: entry.id,
+                        expectedVersion: entry.version,
+                      });
+                      setUndo({ id: `memory:${entry.id}`, label: entry.text, environmentId });
+                    },
+                  })
+                }
+              />
             )}
           </section>
           {pending && (
@@ -2568,54 +2551,6 @@ function JobRow({
   );
 }
 
-function HistoryPanel({
-  entries,
-  onOpenSession,
-  onJob,
-}: {
-  entries: AssistantActivity[];
-  onOpenSession?: (id: string, environmentId?: string) => void | Promise<void>;
-  onJob: (id: string) => void;
-}) {
-  const days = [...new Set(entries.map((item) => day(item.createdAt)))];
-  return (
-    <section className={styles.section}>
-      {days.map((label) => (
-        <section className={styles.section} key={label}>
-          <h3>{label}</h3>
-          {entries
-            .filter((item) => day(item.createdAt) === label)
-            .map((item) => (
-              <div className={styles.row} key={item.id}>
-                <div className={styles.rowText}>
-                  <p>{item.summary}</p>
-                  <span className={styles.muted}>
-                    {new Date(item.createdAt).toLocaleTimeString()} · {activityKindLabel(item.kind)}
-                  </span>
-                </div>
-                {item.jobId && (
-                  <Button variant="link" onClick={() => onJob(item.jobId!)}>
-                    {t("Job")}
-                  </Button>
-                )}
-                {item.sessionId && onOpenSession && (
-                  <Button
-                    iconOnly
-                    label={t("Open session")}
-                    onClick={() => onOpenSession(item.sessionId!)}
-                  >
-                    <ExternalLink className="icon-sm" />
-                  </Button>
-                )}
-              </div>
-            ))}
-        </section>
-      ))}
-      {!entries.length && <p className={styles.empty}>{t("No activity yet")}</p>}
-    </section>
-  );
-}
-
 function ConversationPanel({
   request,
   environmentId,
@@ -3039,6 +2974,29 @@ function ConversationPanel({
         : readySummaryVisible
           ? t("A verified conversation summary is available.")
           : "";
+  const locale = useLocale();
+  const history = useRef<HTMLDivElement>(null);
+  const followMessages = useRef(true);
+  useEffect(() => {
+    followMessages.current = true;
+  }, [threadId, query]);
+  const lastMessageId = visible[visible.length - 1]?.id;
+  useEffect(() => {
+    if (!query && followMessages.current && history.current)
+      history.current.scrollTop = history.current.scrollHeight;
+  }, [threadId, query, lastMessageId]);
+  const day = (timestamp: number) =>
+    new Date(timestamp).toLocaleDateString(locale, {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  const time = (timestamp: number) =>
+    new Date(timestamp).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  const threadLabel = currentThread?.projectId
+    ? (projects.find((project) => (project.id ?? project.path) === currentThread.projectId)?.name ??
+      currentThread.projectId)
+    : t("Global");
   return (
     <div className={styles.conversations}>
       <aside className={styles.threadList} aria-label={t("Conversations")}>
@@ -3105,7 +3063,11 @@ function ConversationPanel({
           ))}
       </aside>
       <div className={styles.transcript}>
-        <div className={styles.messageHistory}>
+        <div className={styles.chatHeader}>
+          <div className={styles.chatIdentity}>
+            <strong>{snapshot.profile.name}</strong>
+            <span className={styles.muted}>{threadLabel}</span>
+          </div>
           {threadId && (
             <div className={styles.conversationActions}>
               <Button
@@ -3155,6 +3117,15 @@ function ConversationPanel({
               ]}
             />
           )}
+        </div>
+        <div
+          className={styles.messageHistory}
+          ref={history}
+          onScroll={(event) => {
+            const node = event.currentTarget;
+            followMessages.current = node.scrollHeight - node.scrollTop - node.clientHeight < 64;
+          }}
+        >
           {(summaryRefreshing || summaryLabel) && (
             <p role="status" className={styles.muted}>
               {summaryRefreshing ? t("Updating conversation summary") : summaryLabel}
@@ -3177,97 +3148,106 @@ function ConversationPanel({
               {t(threadId ? "No messages to display" : "Open a conversation to begin")}
             </p>
           )}
-          {visible.map((message) => (
-            <article className={styles.message} key={message.id} data-author={message.role}>
-              <div className={styles.rowHeading}>
-                <span className={styles.muted}>
-                  {message.role === "user" ? t("You") : snapshot.profile.name} ·{" "}
-                  {t(message.via === "voice" ? "Voice" : "Text")} · {date(message.createdAt)}
-                </span>
-                <Button
-                  iconOnly
-                  label={t("Delete message")}
-                  disabled={clearing}
-                  onClick={() =>
-                    setConfirm({
-                      title: t("Delete message?"),
-                      message: message.text,
-                      confirmLabel: t("Delete"),
-                      onConfirm: async () => {
-                        if (!messageVisible(message)) return;
-                        await assistantRequest({
-                          op: "messages.delete",
-                          id: message.id,
-                          expectedVersion: message.version,
-                        });
-                        setMessages((current) => ({
-                          ...current,
-                          [message.threadId]: (current[message.threadId] ?? []).filter(
-                            (item) => item.id !== message.id,
-                          ),
-                        }));
-                        setSearchResults(
-                          (current) => current?.filter((item) => item.id !== message.id) ?? null,
+          {visible.map((message, index) => (
+            <Fragment key={message.id}>
+              {(index === 0 || day(visible[index - 1].createdAt) !== day(message.createdAt)) && (
+                <div className={styles.dayDivider}>{day(message.createdAt)}</div>
+              )}
+              <article className={styles.message} key={message.id} data-author={message.role}>
+                <div className={styles.messageMeta}>
+                  <span>{message.role === "user" ? t("You") : snapshot.profile.name}</span>
+                  <span>{t(message.via === "voice" ? "Voice" : "Text")}</span>
+                  <time
+                    dateTime={new Date(message.createdAt).toISOString()}
+                    title={date(message.createdAt)}
+                  >
+                    {time(message.createdAt)}
+                  </time>
+                  <Button
+                    iconOnly
+                    label={t("Delete message")}
+                    disabled={clearing}
+                    onClick={() =>
+                      setConfirm({
+                        title: t("Delete message?"),
+                        message: message.text,
+                        confirmLabel: t("Delete"),
+                        onConfirm: async () => {
+                          if (!messageVisible(message)) return;
+                          await assistantRequest({
+                            op: "messages.delete",
+                            id: message.id,
+                            expectedVersion: message.version,
+                          });
+                          setMessages((current) => ({
+                            ...current,
+                            [message.threadId]: (current[message.threadId] ?? []).filter(
+                              (item) => item.id !== message.id,
+                            ),
+                          }));
+                          setSearchResults(
+                            (current) => current?.filter((item) => item.id !== message.id) ?? null,
+                          );
+                        },
+                      })
+                    }
+                  >
+                    <Trash2 className="icon-xs" />
+                  </Button>
+                </div>
+                {message.ownerQuestionId && (
+                  <p className={styles.muted}>
+                    {t(
+                      message.ownerQuestionAction === "snooze"
+                        ? "Question postponed"
+                        : "Answer recorded",
+                    )}
+                  </p>
+                )}
+                <p className={styles.prewrap}>{message.text}</p>
+                {!!message.toolActions?.length && (
+                  <details className={styles.muted}>
+                    <summary>
+                      {t("Recorded actions")} ({message.toolActions.length})
+                    </summary>
+                    <ul>
+                      {message.toolActions.map((action) => (
+                        <li key={action.id}>
+                          {action.family} · {action.action} —{" "}
+                          {t(action.status === "completed" ? "Completed" : "Outcome unknown")}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                {message.sessionId && onOpenSession && (
+                  <Button variant="link" onClick={() => onOpenSession(message.sessionId!)}>
+                    {t("Open session")}
+                  </Button>
+                )}
+                {!!message.jobIds.length && (
+                  <details className={styles.relatedWork}>
+                    <summary>
+                      {t("Jobs")} ({message.jobIds.length})
+                    </summary>
+                    <div className={styles.stack}>
+                      {message.jobIds.map((id) => {
+                        const job = snapshot.jobs.find((job) => job.id === id);
+                        return job ? (
+                          <Button key={id} variant="link" onClick={() => onJob(id)}>
+                            {job.title}
+                          </Button>
+                        ) : (
+                          <span key={id} className={styles.muted}>
+                            {id}
+                          </span>
                         );
-                      },
-                    })
-                  }
-                >
-                  <Trash2 className="icon-xs" />
-                </Button>
-              </div>
-              {message.ownerQuestionId && (
-                <p className={styles.muted}>
-                  {t(
-                    message.ownerQuestionAction === "snooze"
-                      ? "Question postponed"
-                      : "Answer recorded",
-                  )}
-                </p>
-              )}
-              <p className={styles.prewrap}>{message.text}</p>
-              {!!message.toolActions?.length && (
-                <details className={styles.muted}>
-                  <summary>
-                    {t("Recorded actions")} ({message.toolActions.length})
-                  </summary>
-                  <ul>
-                    {message.toolActions.map((action) => (
-                      <li key={action.id}>
-                        {action.family} · {action.action} —{" "}
-                        {t(action.status === "completed" ? "Completed" : "Outcome unknown")}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-              {message.sessionId && onOpenSession && (
-                <Button variant="link" onClick={() => onOpenSession(message.sessionId!)}>
-                  {t("Open session")}
-                </Button>
-              )}
-              {!!message.jobIds.length && (
-                <details className={styles.relatedWork}>
-                  <summary>
-                    {t("Jobs")} ({message.jobIds.length})
-                  </summary>
-                  <div className={styles.stack}>
-                    {message.jobIds.map((id) => {
-                      const job = snapshot.jobs.find((job) => job.id === id);
-                      return job ? (
-                        <Button key={id} variant="link" onClick={() => onJob(id)}>
-                          {job.title}
-                        </Button>
-                      ) : (
-                        <span key={id} className={styles.muted}>
-                          {id}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </details>
-              )}
-            </article>
+                      })}
+                    </div>
+                  </details>
+                )}
+              </article>
+            </Fragment>
           ))}
           {error && (
             <div className={styles.feedback} role="alert">
@@ -3281,11 +3261,28 @@ function ConversationPanel({
         <div className={styles.composer}>
           <TextareaField
             label={t("Message {p0}", { p0: snapshot.profile.name })}
+            hideLabel
+            placeholder={t("Message {p0}", { p0: snapshot.profile.name })}
             value={threadId ? (drafts[threadId] ?? "") : ""}
             disabled={!threadId}
-            minRows={2}
+            minRows={1}
+            autosize
             maxRows={8}
             maxLength={16000}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.nativeEvent.isComposing &&
+                event.keyCode !== 229
+              ) {
+                event.preventDefault();
+                if (supported && !clearing) void send();
+              }
+            }}
             onChange={(event) => {
               const value = event.currentTarget.value;
               setDrafts((current) => ({ ...current, [threadId]: value }));
@@ -3293,11 +3290,14 @@ function ConversationPanel({
           />
           <Button
             variant="primary"
+            iconOnly
+            label={t("Send")}
+            tooltip={t("Send")}
             loading={pending}
             disabled={clearing || !threadId || !drafts[threadId]?.trim() || !supported}
             onClick={() => void send()}
           >
-            {t("Send")}
+            <ArrowUp className="icon-md" />
           </Button>
         </div>
         {!supported && (
@@ -3310,432 +3310,6 @@ function ConversationPanel({
         )}
       </div>
     </div>
-  );
-}
-
-function AssistantSettings({
-  request,
-  environmentId,
-  snapshot,
-  manual,
-  projects,
-  onClose,
-  onSetup,
-}: {
-  request: OwnerRequest;
-  environmentId?: string;
-  snapshot: AssistantSnapshot;
-  manual: ManualSupervisionController;
-  projects: readonly Project[];
-  onClose: () => void;
-  onSetup: () => void;
-}) {
-  const [assistantRequest] = useState(() => request);
-  const [draft, setDraft] = useState<AssistantProfilePatch>(() => ({
-    ...snapshot.profile,
-  }));
-  const version = useRef(snapshot.profile.version);
-  const [retention, setRetention] = useState(snapshot.conversationRetentionDays ?? 0);
-  const savedRetention = useRef(snapshot.conversationRetentionDays ?? 0);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const formId = useId();
-  async function save() {
-    if (pending) return;
-    setPending(true);
-    setError("");
-    const {
-      execution,
-      chiefExecution,
-      replyExecution,
-      planningExecution,
-      allowRoutineQuestions,
-      name,
-      showTitle,
-      avatar,
-      addressAs,
-      language,
-      autonomy,
-      planApproval,
-      dailyTokenBudget,
-      perWakeTokenCap,
-      proactiveSpeech,
-      keepAwakeWhileWorking,
-      quietStart,
-      quietEnd,
-      chiefSoftContext,
-      chiefHardContext,
-      workerSoftContext,
-      workerHardContext,
-      workerCompactPercent,
-      workerHandoffPercent,
-      stallMinutes,
-      idleMinutes,
-      awayMinutes,
-      chiefWakeLimit,
-      nudgeLimit,
-      activeStart,
-      activeEnd,
-      notificationPresent,
-      notificationAway,
-      notificationDnd,
-      summaryRefreshMessages,
-    } = draft;
-    try {
-      const saved = await assistantRequest({
-        op: "profile.update",
-        expectedVersion: version.current,
-        patch: {
-          execution,
-          chiefExecution,
-          replyExecution,
-          planningExecution,
-          allowRoutineQuestions,
-          name,
-          showTitle,
-          avatar,
-          addressAs,
-          language,
-          autonomy,
-          planApproval,
-          dailyTokenBudget,
-          perWakeTokenCap,
-          proactiveSpeech,
-          keepAwakeWhileWorking,
-          quietStart,
-          quietEnd,
-          chiefSoftContext,
-          chiefHardContext,
-          workerSoftContext,
-          workerHardContext,
-          workerCompactPercent,
-          workerHandoffPercent,
-          stallMinutes,
-          idleMinutes,
-          awayMinutes,
-          chiefWakeLimit,
-          nudgeLimit,
-          activeStart,
-          activeEnd,
-          notificationPresent,
-          notificationAway,
-          notificationDnd,
-          summaryRefreshMessages,
-        },
-      });
-      if (!saved.profile)
-        throw new Error(t("The settings save was not confirmed. Check before retrying."));
-      version.current = saved.profile.version;
-      if (retention !== savedRetention.current) {
-        const result = await assistantRequest({
-          op: "conversations.retention",
-          days: retention as 0 | 30 | 90 | 365,
-        });
-        if (result.ok !== true)
-          throw new Error(t("The retention change was not confirmed. Check before retrying."));
-        savedRetention.current = retention;
-      }
-      onClose();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setPending(false);
-    }
-  }
-  return (
-    <Modal
-      title={
-        snapshot.profile.name ? t("Settings · {p0}", { p0: snapshot.profile.name }) : t("Set up")
-      }
-      onClose={() => {
-        if (!pending) onClose();
-      }}
-      size="md"
-      fitViewport
-      footerStart={
-        <>
-          <Button variant="ghost" disabled={pending} onClick={onSetup}>
-            {t("Run setup again")}
-          </Button>
-          {error && <InlineError>{error}</InlineError>}
-        </>
-      }
-      footer={
-        <ModalActions>
-          <Button
-            type="submit"
-            form={formId}
-            variant="primary"
-            loading={pending}
-            disabled={!draft.name?.trim()}
-          >
-            {t("Save")}
-          </Button>
-        </ModalActions>
-      }
-    >
-      <form
-        id={formId}
-        className={`${styles.stack} ${styles.modalBody}`}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-      >
-        {(
-          [
-            ["identity", "Identity"],
-            ["language", "Language"],
-            ["behavior", "Conversation behavior"],
-            ["autonomy", "Autonomy"],
-            ["presence", "Presence and hours"],
-            ["cost", "Cost and context"],
-          ] as const
-        ).map(([section, label]) => (
-          <details className={styles.settingsGroup} key={section} open={section === "identity"}>
-            <summary>{t(label)}</summary>
-            <div className={styles.stack}>
-              <AssistantProfileFields
-                section={section}
-                value={draft}
-                onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))}
-              />
-              {section === "presence" && (
-                <>
-                  <AssistantPresenceStatus snapshot={snapshot} details />
-                  <AssistantKeepAwakeStatus state={snapshot.keepAwake} />
-                </>
-              )}
-            </div>
-          </details>
-        ))}
-        <details className={styles.settingsGroup}>
-          <summary>{t("Manual session supervision")}</summary>
-          <div className={styles.stack}>
-            <ManualSessionSupervision
-              key={environmentId ?? "unknown"}
-              controller={manual}
-              projects={projects}
-              environmentId={environmentId}
-              settings
-            />
-          </div>
-        </details>
-        <details className={styles.settingsGroup}>
-          <summary>{t("Computer use")}</summary>
-          <div className={styles.stack}>
-            <DesktopControlSettings />
-          </div>
-        </details>
-        <details className={styles.settingsGroup}>
-          <summary>{t("Conversation retention")}</summary>
-          <div className={styles.stack}>
-            <Select
-              label={t("Keep conversation messages")}
-              value={String(retention)}
-              disabled={pending}
-              options={[
-                [0, t("Forever")],
-                [30, t("30 days")],
-                [90, t("90 days")],
-                [365, t("365 days")],
-              ].map(([value, label]) => ({ value: String(value), label: String(label) }))}
-              onValueChange={(value) => setRetention(Number(value))}
-            />
-            <p className={styles.muted}>
-              {t(
-                "Older messages move to Recently deleted for seven days. Summaries and unsent drafts are kept. Choosing Forever does not restore deleted messages.",
-              )}
-            </p>
-          </div>
-        </details>
-        <details className={styles.settingsGroup}>
-          <summary>{t("Today's usage")}</summary>
-          <div className={styles.stack}>
-            <p>
-              {t("Chief tokens")}: {snapshot.usage.chiefTokens.toLocaleString()}
-            </p>
-            <p>
-              {t("Worker tokens")}: {snapshot.usage.workerTokens.toLocaleString()}
-            </p>
-            {snapshot.usage.workerUsageIncomplete && (
-              <p role="status" className={styles.muted}>
-                {t("Usage unavailable. No zero usage is assumed.")}
-              </p>
-            )}
-            <div role="group" aria-label={t("Worker cache usage")}>
-              <h3>{t("Worker cache usage")}</h3>
-              {snapshot.usage.cacheUsage ? (
-                <div className={styles.stack}>
-                  <p>
-                    {t("{p0} of {p1} worker turns measured", {
-                      p0: snapshot.usage.cacheUsage.measuredTurns,
-                      p1: snapshot.usage.cacheUsage.totalTurns,
-                    })}
-                  </p>
-                  <p className={styles.muted}>
-                    {t(
-                      snapshot.usage.cacheUsage.complete
-                        ? "All observed worker turns have cache measurements."
-                        : "Partial measurements. Missing cache usage is unavailable, not zero.",
-                    )}
-                  </p>
-                  <p>
-                    {t("Cache read tokens")}:{" "}
-                    {snapshot.usage.cacheUsage.cacheReadTokens === undefined
-                      ? t("Unavailable")
-                      : snapshot.usage.cacheUsage.cacheReadTokens.toLocaleString()}
-                  </p>
-                  <p>
-                    {t("Cache write tokens")}:{" "}
-                    {snapshot.usage.cacheUsage.cacheWriteTokens === undefined
-                      ? t("Unavailable")
-                      : snapshot.usage.cacheUsage.cacheWriteTokens.toLocaleString()}
-                  </p>
-                  <p>
-                    {t("Mean reported cache hit")}:{" "}
-                    {snapshot.usage.cacheUsage.cacheHitPercent === undefined
-                      ? t("Unavailable")
-                      : `${snapshot.usage.cacheUsage.cacheHitPercent.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
-                  </p>
-                  {snapshot.usage.cacheUsage.cacheHitPercent !== undefined && (
-                    <p className={styles.muted}>
-                      {t(
-                        "Average of {p0} provider-reported worker percentages. This is not a billing discount.",
-                        { p0: snapshot.usage.cacheUsage.percentageTurns },
-                      )}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className={styles.muted}>{t("Cache usage unavailable")}</p>
-              )}
-            </div>
-          </div>
-        </details>
-      </form>
-    </Modal>
-  );
-}
-
-function MemoryEditor({
-  request,
-  entry,
-  onClose,
-}: {
-  request: OwnerRequest;
-  entry: AssistantMemory | "new";
-  onClose: () => void;
-}) {
-  const [assistantRequest] = useState(() => request);
-  const original = entry === "new" ? null : entry;
-  const [text, setText] = useState(original?.text ?? "");
-  const [kind, setKind] = useState<AssistantMemory["kind"]>(original?.kind ?? "rule");
-  const [scope, setScope] = useState<AssistantMemory["scope"]>(original?.scope ?? "all");
-  const [terms, setTerms] = useState(original?.forbiddenTerms.join(", ") ?? "");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const formId = useId();
-  async function save() {
-    if (pending) return;
-    setPending(true);
-    setError("");
-    try {
-      await assistantRequest({
-        op: "memory.save",
-        ...(original ? { id: original.id, expectedVersion: original.version } : {}),
-        kind,
-        text,
-        scope,
-        source: "typed",
-        quote: text,
-        active: original?.active ?? true,
-        forbiddenTerms: terms
-          .split(",")
-          .map((term) => term.trim())
-          .filter(Boolean),
-      });
-      onClose();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setPending(false);
-    }
-  }
-  return (
-    <Modal
-      title={t(original ? "Edit memory" : "Add memory")}
-      onClose={() => {
-        if (!pending) onClose();
-      }}
-      size="md"
-      fitViewport
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
-      footer={
-        <ModalActions>
-          <Button variant="ghost" disabled={pending} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            type="submit"
-            form={formId}
-            variant="primary"
-            loading={pending}
-            disabled={!text.trim()}
-          >
-            {t("Save")}
-          </Button>
-        </ModalActions>
-      }
-    >
-      <form
-        id={formId}
-        className={`${styles.stack} ${styles.modalBody}`}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-      >
-        <Select
-          visibleLabel
-          label={t("Kind")}
-          value={kind}
-          options={[
-            ["rule", "Rules"],
-            ["profile", "About me"],
-            ["fact", "Learned"],
-          ].map(([value, label]) => ({ value, label: t(label) }))}
-          onValueChange={(value) => setKind(value as typeof kind)}
-        />
-        <TextareaField
-          label={t("Memory")}
-          value={text}
-          required
-          maxLength={4000}
-          minRows={4}
-          onChange={(event) => setText(event.currentTarget.value)}
-        />
-        <Select
-          visibleLabel
-          label={t("Scope")}
-          value={scope}
-          options={[
-            ["all", "Everywhere"],
-            ["voice", "Voice only"],
-            ["sessions", "Coding sessions only"],
-          ].map(([value, label]) => ({ value, label: t(label) }))}
-          onValueChange={(value) => setScope(value as typeof scope)}
-        />
-        <TextField
-          label={t("Forbidden words")}
-          description={t(
-            "Optional, separated by commas. Text outputs are checked before delivery.",
-          )}
-          value={terms}
-          onChange={(event) => setTerms(event.currentTarget.value)}
-        />
-      </form>
-    </Modal>
   );
 }
 
@@ -3829,7 +3403,6 @@ function NoteEditor({
           minRows={12}
           maxRows={25}
           maxLength={100000}
-          monospace
           disabled={pending || Boolean(draft.intent)}
           onChange={(event) => {
             controller.update({ body: event.currentTarget.value });

@@ -584,14 +584,17 @@ export class HostAssistant {
       await this.setRuntime("automaticPresence", automatic);
       const effective = await this.effectivePresence(),
         absence = await this.runtime<number | null>("presenceAbsenceSince", null);
-      if (effective !== "present") {
+      if (effective === "unknown") {
+        if (absence !== null) await this.setRuntime("presenceAbsenceSince", null);
+      } else if (effective !== "present") {
         if (absence === null) await this.setRuntime("presenceAbsenceSince", this.now());
       } else if (absence !== null) {
         await this.setRuntime("presenceAbsenceSince", null);
         if (this.now() - absence >= 1800000) return absence;
       }
     });
-    if (returnedSince !== undefined) await this.prepareBriefing(returnedSince);
+    if (returnedSince !== undefined)
+      await this.prepareBriefing(returnedSince, undefined, this.now());
   }
   private async queueNotification(value: Omit<PendingNotification, "acknowledgedAt">) {
     if (await this.runtime<PendingNotification | null>(`notification:${value.id}`, null)) return;
@@ -659,7 +662,7 @@ export class HostAssistant {
     );
   }
   /** Notes are a separate worker/database: never await its admission while holding Host SQL. */
-  private async prepareBriefing(since: number, key?: string) {
+  private async prepareBriefing(since: number, key?: string, returnAt?: number) {
     if (key && (await this.runtime(`dailyBriefing:${key}`, false))) return;
     if (!key && (await this.runtime<number>("lastReturnBriefingAt", -1)) >= since) return;
     let notes: AssistantNote[] = [],
@@ -672,7 +675,7 @@ export class HostAssistant {
       this.ports.onError?.(error);
     }
     await this.store.transaction(
-      () => this.createBriefing(since, key, notes, notesAvailable),
+      () => this.createBriefing(since, key, notes, notesAvailable, returnAt),
       "critical",
     );
   }
@@ -681,6 +684,7 @@ export class HostAssistant {
     key: string | undefined,
     notes: AssistantNote[],
     notesAvailable: boolean,
+    returnAt?: number,
   ) {
     if (key && (await this.runtime(`dailyBriefing:${key}`, false))) return;
     if (!key && (await this.runtime<number>("lastReturnBriefingAt", -1)) >= since) return;
@@ -813,6 +817,16 @@ export class HostAssistant {
         ),
       ),
       createdAt: this.now(),
+      ...(!key && returnAt !== undefined
+        ? {
+            voiceReceipt: {
+              reason: "return" as const,
+              returnAt,
+              meaningful: !!(waiting || done || decisions.length || approvals.items.length),
+              important: !!(waiting || decisions.length || approvals.items.length),
+            },
+          }
+        : {}),
       ...(completeScope && projectIds.size <= 1000 ? { projectIds: [...projectIds].sort() } : {}),
     };
     briefing.text = briefing.text.slice(0, 6000);
@@ -2801,7 +2815,7 @@ export class HostAssistant {
           old.state !== "present" &&
           this.now() - old.since >= 30 * 60000
         )
-          await this.prepareBriefing(old.since);
+          await this.prepareBriefing(old.since, undefined, this.now());
         return { ok: true };
       }
       case "briefing.dismiss":

@@ -314,8 +314,18 @@ describe("AttachmentChip image preview", () => {
     expect(container.querySelector('[aria-label^="Insert "]')).toBeNull();
   });
 
-  it("shows no label without a token", () => {
+  it("keeps image filename, type and size visible without a token", () => {
     render();
-    expect(container.textContent).toBe("");
+    expect(container.textContent).toContain("diagram.png");
+    expect(container.textContent).toContain("Image · 42 B");
+    expect(container.querySelector('[aria-label^="Insert "]')).toBeNull();
+  });
+
+  it("falls back to an image identity when thumbnail decoding fails", () => {
+    render();
+    act(() => container.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("diagram.png");
+    expect(container.querySelector('[aria-label="Open diagram.png full screen"]')).not.toBeNull();
   });
 });

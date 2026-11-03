@@ -59,3 +59,7 @@ Provider context, MCP context, thread transfer and WS JSON message bytes are sep
 ## Future paid/live evaluations
 
 No live runner is implemented or silently configured. Any future paid run needs explicit owner authorization for the provider/model and a bounded plan: maximum currency cost, requests/cases, input/output allowance, concurrency and deadline. It must fail closed before a call when the bound or approved credential is missing, stop rather than retry beyond the bound, and write separate sanitized recorded responses with source/model/version/provenance and actual usage or explicitly unknown usage. It must not enter ordinary CI or reuse synthetic pass counts as its baseline quality result. This document itself grants no authority for a paid call.
+
+## Voice decision regression corpus
+
+`voiceQuality.test.ts` exercises sanitized, hand-authored text and event cases against the production speech decision policy, feature search vocabulary, locale labels, and proactive briefing gate. It covers acknowledgement and pending-choice controls, Turkish compounds and corrections, and fresh versus stale or duplicate briefings. Search vocabulary is discovery only; it does not grant action authority. These tests exercise decisions, not a complete voice session, tool dispatch, actual model behavior, microphone input, timing, or acoustic performance. No recorded speech or provider call is involved.

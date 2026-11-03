@@ -29,11 +29,31 @@ Source paths are repository-relative; bare filenames in a row share its director
 | UI/browser checks                          | Adjacent model/UI tests; `tests/browser/voice-visual-styles*` fixtures and current voice settings scenarios                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Recovery and idle sleep                    | `model/voiceReconnect.ts` classifies failures and bounds retries/context; `model/voicePresence.ts` reads native presence; `src-tauri/src/presence.rs` supports Windows idle/lock reads. `ui/VoiceCompanion.tsx` owns retry cancellation and sleep/ready; `ui/VoiceOverlayWindow.tsx` mirrors those states. Paths under model/ui are relative to `src/features/voice/`.                                                                                                                                              |
 
+## Conversation policy and delivery
+
+`voiceSpeechPolicy.ts` intercepts whole acknowledgements after delivered speech,
+without swallowing compound commands or answers to pending questions. Explicit
+wait pauses output, never accepted background work. Local and realtime routes
+intercept before superseding a genuine response.
+
+Generated text is not played history. Realtime response IDs and local utterance
+completion receipts own transcript persistence; cut unaligned text is omitted.
+Suppress only cancellation errors correlated to this client's completed cancel.
+`voicePresence.ts` extends idle capture for admitted speech; raw presence still
+owns return detection. Clear engagement on mute, privacy loss and capture changes.
+`voiceConversationPreset.ts` applies the optional professional preset while
+preserving unrelated preferences and manual-turn revisions. `voiceBriefing.ts`
+requires a fresh Host return receipt and meaningful classified events, preserving
+quiet hours and delivery dedupe separately from saved daily artifacts.
+
 ## Recognition recovery
 
 Local candidate IDs are not the accepted-speech watermark. Preserve onset targets
 while carrying this instance's accepted sequence forward. An empty/rejected later
-candidate cannot erase an earlier pending transcript. Mute/resume invalidates
+candidate cannot erase an earlier pending transcript. A recognized backchannel
+advances the recognition watermark without interrupting playback; late older ASR
+must not become a new command. Explicit wait preserves a pending choice, and only
+a confirmed owner answer can resume its paused continuation. Mute/resume invalidates
 pending recognition and close clears retained bindings. Realtime microphone epochs
 remain stable across acoustic onsets; serialized item matching orders candidates.
 Check local out-of-order ASR, external cancellation and both realtime providers.

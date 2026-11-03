@@ -2292,19 +2292,29 @@ export class HostTasks {
         );
     }
     if (task.status !== "queued") task = await this.move(id, "queued");
-    const ordered = (await this.list()).filter(
-      (item) => item.status === "queued" && item.id !== id,
-    );
-    await this.transaction(async () => {
-      await this.write({ ...task, position: 0, updatedAt: this.now() });
+    const accepted = await this.transaction(async () => {
+      const current = await this.find(id);
+      if (!current || !isDeepStrictEqual(current, JSON.parse(JSON.stringify(task))))
+        throw new Error("Task changed before starting. Refresh and try again.");
+      // Read the queue under the same transaction as its ordering writes. A
+      // previous snapshot could restore another task that was stopped or edited.
+      const ordered = (await this.list()).filter(
+        (item) => item.status === "queued" && item.id !== id,
+      );
+      const accepted = await this.write({ ...current, position: 0, updatedAt: this.now() });
       await forEachAsync(
         ordered,
         async (item, index) =>
           await this.write({ ...item, position: index + 1, updatedAt: this.now() }),
       );
+      return accepted;
     });
-    await this.tick();
-    return (await this.get(id))!;
+    // Acceptance is durable; the scheduler still owns capacity and dependency
+    // gates. Unrelated maintenance must not hold the owner's Start response.
+    void this.tick().catch((error) =>
+      console.error("Task scheduling failed:", errorMessage(error)),
+    );
+    return accepted;
   }
   async reorder(ids: unknown): Promise<HostTask[]> {
     await this.ready;
@@ -4445,11 +4455,9 @@ export class HostTasks {
           timedOut: result.timedOut,
         };
         if (result.timedOut || result.exitCode !== 0) {
-          const workspace = task.continueUntilDone
-            ? readTaskInstructions(task.prompt)?.acceptance.length
-              ? await this.acceptanceFingerprint(task)
-              : await this.workspaceFingerprint(task)
-            : undefined;
+          const workspace = readTaskInstructions(task.prompt)?.acceptance.length
+            ? await this.acceptanceFingerprint(task)
+            : await this.workspaceFingerprint(task);
           const checkFailureFingerprint =
             workspace &&
             createHash("sha256")
@@ -4701,7 +4709,7 @@ export class HostTasks {
       outcome.status === "succeeded" &&
       (review.note === NO_VERDICT ||
         (acceptanceRequired && !hasTaskAcceptanceReport(reply, acceptanceCriteria))) &&
-      task.continueUntilDone &&
+      (!task.reviewOnly || task.continueUntilDone) &&
       (task.reviewer.verdictRepairAttempts ?? 0) < 2
     ) {
       const pending = await this.write({
@@ -4740,9 +4748,7 @@ export class HostTasks {
             review,
           )
         : [];
-    const previous = task.attemptHistory?.at(-1);
-    const repositoryFingerprint =
-      task.continueUntilDone || task.crewRunId ? await this.workspaceFingerprint(task) : undefined;
+    const repositoryFingerprint = await this.workspaceFingerprint(task);
     const acceptanceFingerprint = acceptance ? await this.acceptanceFingerprint(task) : undefined;
     const workspaceFingerprint = acceptanceRequired ? acceptanceFingerprint : repositoryFingerprint;
     const currentReview = await this.find(task.id);
@@ -4802,14 +4808,12 @@ export class HostTasks {
     }
     // Repeating a broad finding while files are still changing is not itself
     // proof of a stalled correction. A repeated contents/finding pair is.
-    const comparable = task.continueUntilDone
-      ? workspaceFingerprint
-        ? task.attemptHistory?.findLast(
-            (attempt) =>
-              attempt.verdict === "fail" && attempt.workspaceFingerprint === workspaceFingerprint,
-          )
-        : undefined
-      : previous;
+    const comparable = workspaceFingerprint
+      ? task.attemptHistory?.findLast(
+          (attempt) =>
+            attempt.verdict === "fail" && attempt.workspaceFingerprint === workspaceFingerprint,
+        )
+      : undefined;
     let repairStop =
       review.verdict === "fail" && outcome.status === "succeeded"
         ? reviewRepairStop(

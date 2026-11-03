@@ -13,6 +13,7 @@ import {
 export type MachineLimits = HostSettingsState & {
   machineId: string;
   machineName: string;
+  stale?: boolean;
 };
 
 /** Machines whose host keeps work limits, this computer's included. Older
@@ -29,21 +30,17 @@ function machineLimits(machine: RemoteMachine, state: HostSettingsState): Machin
   };
 }
 
-/** The limits of each machine that answers. A machine that does not answer is
- * left out. */
+/** A failed read rejects so the query can retain its last answer as stale. */
 export async function listMachineLimits(
   machines: readonly RemoteMachine[],
 ): Promise<MachineLimits[]> {
   const results = await Promise.all(
     machines.map(async (machine) => {
-      try {
-        const state = parseHostSettingsState(
-          await remoteRequest<unknown>(machine.id, "host.settings.get"),
-        );
-        return state ? [machineLimits(machine, state)] : [];
-      } catch {
-        return [];
-      }
+      const state = parseHostSettingsState(
+        await remoteRequest<unknown>(machine.id, "host.settings.get"),
+      );
+      if (!state) throw new Error("The machine sent settings this app cannot read.");
+      return [machineLimits(machine, state)];
     }),
   );
   return results.flat();

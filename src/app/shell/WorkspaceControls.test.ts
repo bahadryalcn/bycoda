@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { WorkspaceControls, WORKSPACE_REFRESH_EVENT } from "./WorkspaceControls";
+import { loadSoundsEnabled, saveSoundsEnabled } from "../../features/settings/model/sounds";
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
@@ -39,6 +40,7 @@ it("opens each destination and refreshes without reloading the app", async () =>
       "Pull requests",
       "Usage",
       "Manage hidden groups",
+      "Sounds",
       "Refresh current view",
       "Full screen",
     ]);
@@ -75,5 +77,49 @@ it("opens each destination and refreshes without reloading the app", async () =>
   } finally {
     await act(async () => root.unmount());
     window.removeEventListener(WORKSPACE_REFRESH_EVENT, reload);
+  }
+});
+
+it("persists the sound toggle, follows Settings changes and retains state on failed saves", async () => {
+  localStorage.clear();
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(WorkspaceControls, {
+          onHiddenGroups: () => {},
+          onPullRequests: () => {},
+          onUsage: () => {},
+        }),
+      ),
+    );
+    const button = host.querySelector<HTMLButtonElement>('[data-workspace-control="sounds"]')!;
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => button.click());
+    expect(loadSoundsEnabled()).toBe(false);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => {
+      saveSoundsEnabled(true);
+    });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("Storage unavailable");
+    });
+    await act(async () => button.click());
+    expect(loadSoundsEnabled()).toBe(true);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(document.body.textContent).toContain("Could not save changes");
+    write.mockRestore();
+    const retry = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent === "Retry",
+    )!;
+    await act(async () => retry.click());
+    expect(loadSoundsEnabled()).toBe(false);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+  } finally {
+    vi.restoreAllMocks();
+    await act(async () => root.unmount());
+    localStorage.clear();
   }
 });

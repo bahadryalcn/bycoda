@@ -27,8 +27,31 @@ semantics. Source paths below are repository-relative.
   existing adoption/navigation routing for remote records; never fabricate IDs.
 - Archive, delete, stop, close and dismiss recovery are different operations.
   Recheck locks/permissions and use existing confirmation and recovery owners.
+- Standard/detailed rows show saved project identity above the title, status at
+  the top right, and branch/provider history below. Reuse the rail label, logo or
+  mascot. Project-local lists keep project identity neutral with no custom ground.
+  Last Sessions combines the last seven days across allowed projects; only that
+  list applies project colors/grounds, preserving ActionHost interaction states.
+  Global New first requires an explicit visible project choice; cancellation must
+  create nothing. Recheck the chosen project’s current visibility/lock gate and
+  create with that project’s defaults/checkout, never a stale active-project closure.
+  Selecting a global row keeps the list open and routes by exact project/session
+  identity; Explorer/Git follow its execution checkout, not a virtual path.
+  Keep direct pin actions outside the selection button and routed through existing
+  local/remote pin owners. Compact density retains its one-line layout.
+- Provider history comes from submitted turn provenance, not the next composer
+  choice. Preserve optional summary metadata through native, Host and remote lists;
+  previous providers are muted and only the last active provider retains its color.
 - Keep pin/order/filter/search/paging persistence and sibling update behavior.
   A filtered subset is not the entire collection for bulk operations or counts.
+- Keep interrupted warnings in local/global/recent lists through partial history
+  loading until continuation. Order/time filters use `lastActivityAt`, falling
+  back to `updatedAt` for old summaries. Quit/recovery preserves activity while
+  `updatedAt` still advances for Host synchronization and conflict checks.
+- Working summarizes the open project's running rows while keeping global header
+  counts and other-project paging. Attention/finished rows stay available; Last
+  Sessions retains the complete list. Compare canonical project keys, including
+  remote machine identity, rather than display names or execution-folder prefixes.
 - Preserve title drafts, focus, drag targets and native tree/menu semantics.
 - Unsent text or attachments use the existing composer-draft subscription,
   including disk-restored drafts. Do not mark the session currently being typed

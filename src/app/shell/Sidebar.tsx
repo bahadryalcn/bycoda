@@ -1,3 +1,6 @@
+import { NewSessionProjectDialog } from "../../features/projects/ui/NewSessionProjectDialog";
+import { useSessionProjectAppearance } from "./useSessionProjectAppearance";
+import { sessionProviderHistory } from "../../features/sessions/model/sessionProviderHistory";
 import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManagedBadge";
 import { Badge, type BadgeTone } from "../../shared/ui/Badge";
 import { localReferenceForSession } from "../../features/sessions/model/localSessionNavigation";
@@ -118,6 +121,7 @@ import { copyText } from "../../platform/tauri/clipboard";
 import { forgetRemoteQueue } from "../../features/connections/model/useRemoteQueue";
 import { RemoteDataStatus } from "../../features/connections/ui/RemoteDataStatus";
 import { RemoteLoadError } from "../../features/connections/ui/RemoteLoadError";
+import { useRemoteConnectionFeedback } from "../../features/connections/ui/RemoteConnectionFeedback";
 import { useRemoteConnection } from "../../features/connections/model/useRemoteConnection";
 import {
   classifyRemoteError,
@@ -125,7 +129,6 @@ import {
 } from "../../features/connections/model/remoteFailure";
 import { resolveModel } from "../../features/sessions/model/models";
 import {
-  shortModelName,
   type SessionListDensity,
   useSessionListDisplay,
 } from "../../features/sessions/model/sessionListDisplay";
@@ -142,7 +145,6 @@ import "./sessionList.css";
 import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
 import { MiddleTruncate } from "../../shared/ui/MiddleTruncate";
-import { folderName as pathFolderName } from "../../features/sync/model/syncProjectId";
 import { ParticleText } from "../../shared/ui/ParticleText";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
 import { orchestrationTaskLabel } from "../../features/orchestration/model/orchestrationSummary";
@@ -219,19 +221,13 @@ import {
   saveSessionSidebarFilters,
   type SessionSidebarFilters,
 } from "../../features/sessions/model/sessionFilters";
+import { HARNESS_TITLE } from "../../features/sessions/model/session";
 import type { HarnessId, LinkedWorkItem } from "../../features/sessions/model/session";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { SettingsSectionId } from "../../features/settings/model/settings";
 import type { InstalledUpdate } from "../model/updateNotice";
-import {
-  loadTabGroupColors,
-  loadTabGroupCustomColors,
-  loadTabGroupLabels,
-  loadTabGroupMascots,
-  TAB_GROUP_COLORS,
-} from "../../features/workspace/model/tabGroups";
-import { useTabGroupLogos } from "../../features/projects/hooks/useTabGroupLogos";
+import { TAB_GROUP_COLORS } from "../../features/workspace/model/tabGroups";
 import { useDragResize } from "../../shared/hooks/useDragResize";
 import { sidePaneMaxWidth } from "./sidePaneWidth";
 import { useGitFileStatuses } from "../../features/source-control/hooks/useGitFileStatuses";
@@ -262,11 +258,7 @@ import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/Exp
 import { FileTree } from "../../features/files/ui/FileTree";
 import { SessionWorkingStatus } from "../../features/sessions/ui/SessionWorkingStatus";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
-import {
-  LastSessionsRows,
-  useLastSessionsRows,
-  type RecentSessionsSource,
-} from "./LastSessionsSection";
+import type { RecentSessionsSource } from "./LastSessionsSection";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectRail } from "./ProjectRail";
 import { RailAction } from "./RailAction";
@@ -339,6 +331,24 @@ function projectPathBusy(paths: Iterable<string> | undefined, cwd: string): bool
 }
 
 type Props = {
+  lastSessionsOpen?: boolean;
+  lastSessionsData?: {
+    rows: SessionSummary[];
+    loading: boolean;
+    error: string | null;
+    refresh: () => void;
+    remoteHistoryLimited?: boolean;
+  };
+  newListedSessionRequest?: number;
+  onNewListedSession?: (projectPath: string) => void | Promise<void>;
+  onOpenLastSessions?: () => void;
+  onCloseLastSessions?: () => void;
+  onSelectListedSession?: (
+    sessionId: string,
+    cwd: string,
+    options?: { keepOpen?: boolean },
+  ) => void;
+  onPinListedSession?: (sessionId: string, cwd: string, pinned: boolean) => void;
   recoveryControl?: ReactNode;
   cwd: string;
   /** Working copy for Changes / explorer git. Falls back to `cwd`. */
@@ -462,8 +472,17 @@ type Props = {
 };
 
 const recentPath = (project: RecentProject) => project.path;
+const GLOBAL_SESSION_FILTERS = { ...DEFAULT_SESSION_SIDEBAR_FILTERS, time: "7d" } as const;
+const GLOBAL_SESSION_TIME_FILTERS = ["today", "7d"] as const;
 
 function SidebarComponent({
+  lastSessionsOpen = false,
+  lastSessionsData,
+  onNewListedSession,
+  newListedSessionRequest = 0,
+  onOpenLastSessions,
+  onSelectListedSession,
+  onPinListedSession,
   recoveryControl,
   cwd,
   gitCwd,
@@ -579,6 +598,7 @@ function SidebarComponent({
     [onFilesSearchOpenChange],
   );
   const remoteConnection = useRemoteConnection(remoteProject ? cwd : undefined);
+  useRemoteConnectionFeedback(remoteProject ? cwd : undefined);
   const remoteConnectionIssue =
     (remoteConnection.status !== "connected" &&
       (remoteConnection.status !== "connecting" || remoteConnection.reconnecting)) ||
@@ -711,12 +731,15 @@ function SidebarComponent({
             id: session.id,
             cwd,
             harness: session.harness,
+            providerHistory: session.providerHistory,
             model: session.model ?? "",
             runtimeMode: session.runtimeMode ?? "supervised",
             providerSessionId: session.providerSessionId ?? undefined,
             title: session.title,
             createdAt: session.createdAt ?? session.updatedAt,
             updatedAt: session.updatedAt,
+            lastActivityAt: session.lastActivityAt,
+            interrupted: session.status === "interrupted",
             archived: session.archived,
             issue: session.issue,
             pinned: session.pinned,
@@ -732,15 +755,26 @@ function SidebarComponent({
   // Count the whole workspace before search, pagination or worktree filters.
   // Local busy IDs also include sessions continued on this desktop's host.
   const workingSessionCount = new Set(
-    [...projectSessions, ...(remoteProject ? [] : openSessions)]
+    (lastSessionsOpen
+      ? (lastSessionsData?.rows ?? [])
+      : [...projectSessions, ...(remoteProject ? [] : openSessions)]
+    )
       .filter(
         (session) =>
-          sameProjectPath(session.cwd, cwd) &&
+          (lastSessionsOpen || sameProjectPath(session.cwd, cwd)) &&
           !session.orchestrationLeadId &&
-          listedBusySessionIds.has(session.id) &&
-          !listedApprovalSessionIds.has(session.id),
+          (lastSessionsOpen
+            ? (busySessionIds.has(session.id) && !approvalSessionIds.has(session.id)) ||
+              liveAgents.some(
+                (agent) =>
+                  sameProjectPath(agent.cwd, session.cwd) &&
+                  (agent.id === session.id || remoteSessionFor(agent.id) === session.id) &&
+                  !agent.done &&
+                  !agent.needsApproval,
+              )
+            : listedBusySessionIds.has(session.id) && !listedApprovalSessionIds.has(session.id)),
       )
-      .map((session) => session.id),
+      .map((session) => `${session.cwd}\0${session.id}`),
   ).size;
   const workingSessionsBadge =
     workingSessionCount > 0 ? (
@@ -835,8 +869,11 @@ function SidebarComponent({
   );
   const [sessionDrop, setSessionDrop] = useState<SessionListDropTarget | null>(null);
   const [sessionFilters, setSessionFilters] = useState(loadSessionSidebarFilters);
+  const [globalSessionFilters, setGlobalSessionFilters] =
+    useState<SessionSidebarFilters>(GLOBAL_SESSION_FILTERS);
   const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sessionSearchExpanded, setSessionSearchExpanded] = useState(false);
   const sessionSearchRef = useRef<ExpandingSearchHandle>(null);
   const pendingFolderSessionIds = useRef(new Set<string>());
   const busyIdsRef = useRef(busySessionIds);
@@ -878,7 +915,10 @@ function SidebarComponent({
     return () => clearTimeout(id);
   }, []);
   const deferredSearchQuery = useDeferredValue(searchQuery);
-  const now = useMinuteNow(tab === "sessions" && sessionFilters.time !== "all");
+  const now = useMinuteNow(
+    tab === "sessions" &&
+      (lastSessionsOpen ? globalSessionFilters.time : sessionFilters.time) !== "all",
+  );
   const [crewManaged, setCrewManaged] = useState<{ cwd: string; ids: Set<string> }>({
     cwd: "",
     ids: new Set(),
@@ -951,7 +991,17 @@ function SidebarComponent({
     unseenFinishedIds,
     deferredSearchQuery,
   ]);
-  const filtersActive = hasActiveSessionFilters(sessionFilters);
+  const filtersActive = hasActiveSessionFilters(
+    lastSessionsOpen ? globalSessionFilters : sessionFilters,
+    lastSessionsOpen ? "7d" : "all",
+  );
+  const [newSessionProjectOpen, setNewSessionProjectOpen] = useState(false);
+  const handledNewSessionRequest = useRef(newListedSessionRequest);
+  useEffect(() => {
+    if (newListedSessionRequest === handledNewSessionRequest.current) return;
+    handledNewSessionRequest.current = newListedSessionRequest;
+    if (newListedSessionRequest > 0) setNewSessionProjectOpen(true);
+  }, [newListedSessionRequest]);
   const [openingSessionId, setOpeningSessionId] = useState<string | null>(null);
   // Once the opened session is the active one, its card stops spinning.
   if (openingSessionId && openingSessionId === activeListedSessionId) setOpeningSessionId(null);
@@ -1095,7 +1145,9 @@ function SidebarComponent({
     cwd,
     listedSessions,
   );
-  const sessionHarnesses = harnessesInSessions(projectSessions);
+  const sessionHarnesses = harnessesInSessions(
+    lastSessionsOpen ? (lastSessionsData?.rows ?? []) : projectSessions,
+  );
   const narrowedByUser = searchNarrowed || filtersActive;
   const visibleTabs = tabOrder.filter((itemId) => itemId !== "inbox");
   const sortable = useAnimatedReorder(
@@ -1144,7 +1196,7 @@ function SidebarComponent({
     !tasksActive &&
     !socialActive &&
     !settingsOpen &&
-    inProject;
+    (inProject || lastSessionsOpen);
   const sidebarVisible = open && sidebarAvailable;
   // With the sidebar collapsed beside the compact rail, its tab shortcuts
   // open the sidebar temporarily until the user clicks away.
@@ -1971,6 +2023,7 @@ function SidebarComponent({
     onArchiveSession,
     setRenamingSessionId,
     onSessionCardDelete,
+    onPinSession,
   });
   cardHandlers.current = {
     onSessionCardSelect,
@@ -1984,6 +2037,7 @@ function SidebarComponent({
     onArchiveSession,
     setRenamingSessionId,
     onSessionCardDelete,
+    onPinSession,
   };
   const cardActions = useMemo(
     () => ({
@@ -2003,6 +2057,8 @@ function SidebarComponent({
         cardHandlers.current.onSessionListDrop(draggedId, target),
       contextMenu: (sessionId: string, e: ReactMouseEvent<HTMLDivElement>) =>
         cardHandlers.current.onSessionContextMenu(sessionId, e),
+      pin: (sessionId: string, pinned: boolean) =>
+        cardHandlers.current.onPinSession?.(sessionId, pinned),
       archive: (sessionId: string, archived: boolean) =>
         cardHandlers.current.onArchiveSession?.(sessionId, archived),
       rename: (sessionId: string) => cardHandlers.current.setRenamingSessionId(sessionId),
@@ -2050,6 +2106,7 @@ function SidebarComponent({
         showModel={listDisplay.showModel}
         showBranch={listDisplay.showBranch}
         inPinnedSection={inPinnedSection}
+        onPin={onPinSession ? cardActions.pin : undefined}
         onSelect={cardActions.select}
         onLongPress={cardActions.longPress}
         onOpenWorkItem={onOpenInboxItem && !remoteProject ? cardActions.openWorkItem : undefined}
@@ -2300,16 +2357,21 @@ function SidebarComponent({
 
   // The session list's own tools sit in the Workspace header row: an inline filter that opens from
   // its icon, bulk select and the filter popover. The global search stays the top-left Search.
-  const showSessionTools = tab === "sessions" && Boolean(cwd) && cwd !== "~";
+  const showSessionTools =
+    tab === "sessions" && (lastSessionsOpen || (Boolean(cwd) && cwd !== "~"));
+  useEffect(() => {
+    if (!showSessionTools) setSessionSearchExpanded(false);
+  }, [showSessionTools]);
   const sessionToolbar = showSessionTools ? (
     <div
       data-session-selection-keep
       data-session-tools=""
-      className="flex shrink-0 items-center gap-0.5"
+      className="ms-auto flex min-w-fit flex-1 items-center justify-end gap-0.5"
       data-tauri-drag-region="false"
     >
-      {remoteProject ? (
+      {remoteProject && !lastSessionsOpen ? (
         <RemoteDataStatus
+          cwd={cwd}
           presentation="indicator"
           state={remote.dataState}
           connectionIssueHandled={remoteConnectionIssue}
@@ -2320,10 +2382,19 @@ function SidebarComponent({
           disabled={!remote.machine && !remote.dataState.error}
         />
       ) : null}
-      <div className="w-(--ui-control-height-compact) shrink-0">
+      <div
+        className="min-w-(--ui-control-height-compact) max-w-[248px] flex-1"
+        style={
+          sessionSearchExpanded
+            ? { minWidth: "calc(var(--ui-control-height-compact) * 3)" }
+            : undefined
+        }
+      >
         <ExpandingSearch
           ref={sessionSearchRef}
           inline
+          constrainToSlot
+          onExpandedChange={setSessionSearchExpanded}
           anchor="end"
           expandedWidth={248}
           items={NO_SEARCH_ITEMS}
@@ -2336,29 +2407,33 @@ function SidebarComponent({
           onQueryChange={setSearchQuery}
         />
       </div>
-      <SessionsHeaderButton
-        label={selectionMode ? t("Stop selecting") : t("Select conversations")}
-        active={selectionMode}
-        onClick={() => {
-          if (selectionMode) {
-            clearSessionSelection();
-            return;
-          }
-          setSessionMenu(null);
-          selection.enterMode();
-        }}
-      >
-        <CheckList className="icon-xs" strokeWidth={1.75} />
-      </SessionsHeaderButton>
-      <SessionsHeaderButton
-        label={t("Filter sessions")}
-        active={filtersActive}
-        open={!!filterMenu}
-        hasPopup
-        onClick={onFilterButtonClick}
-      >
-        <ListFilter className="icon-xs" strokeWidth={1.75} />
-      </SessionsHeaderButton>
+      {!sessionSearchExpanded && !lastSessionsOpen ? (
+        <SessionsHeaderButton
+          label={selectionMode ? t("Stop selecting") : t("Select conversations")}
+          active={selectionMode}
+          onClick={() => {
+            if (selectionMode) {
+              clearSessionSelection();
+              return;
+            }
+            setSessionMenu(null);
+            selection.enterMode();
+          }}
+        >
+          <CheckList className="icon-xs" strokeWidth={1.75} />
+        </SessionsHeaderButton>
+      ) : null}
+      {!sessionSearchExpanded ? (
+        <SessionsHeaderButton
+          label={t("Filter sessions")}
+          active={filtersActive}
+          open={!!filterMenu}
+          hasPopup
+          onClick={onFilterButtonClick}
+        >
+          <ListFilter className="icon-xs" strokeWidth={1.75} />
+        </SessionsHeaderButton>
+      ) : null}
     </div>
   ) : null;
 
@@ -2455,9 +2530,9 @@ function SidebarComponent({
         : TAB_LABELS[itemId];
     const tabDetails =
       isChangesTab && changeFileCount + changeAdditions + changeDeletions > 0
-        ? [changeScopeLabel, changeSummary]
+        ? [lastSessionsOpen ? gitRoot : changeScopeLabel, changeSummary]
         : isChangesTab
-          ? [changeScopeLabel]
+          ? [lastSessionsOpen ? gitRoot : changeScopeLabel]
           : itemId === "sessions" && workingSessionCount > 0
             ? [
                 t(workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions", {
@@ -2574,7 +2649,7 @@ function SidebarComponent({
   // With no title bar above, back/forward and the workspace controls share this one row instead
   // of leaving an empty row over the Workspace selector.
   const workspaceHeader = (withVisitNav = false) => {
-    const switcher = !remoteProject && cwd && cwd !== "~";
+    const switcher = !lastSessionsOpen && !remoteProject && cwd && cwd !== "~";
     return (
       <PaneHeader
         dragRegion
@@ -2589,12 +2664,19 @@ function SidebarComponent({
             />
           ) : undefined
         }
-        title={switcher ? undefined : t("Workspace")}
+        title={switcher ? undefined : t(lastSessionsOpen ? "Last sessions" : "Workspace")}
         titleAs="div"
         actions={
           <>
-            {sessionToolbar}
-            <WorkspaceTitleActions onNew={onNew} />
+            <WorkspaceTitleActions
+              onNew={
+                lastSessionsOpen
+                  ? onNewListedSession
+                    ? () => setNewSessionProjectOpen(true)
+                    : undefined
+                  : onNew
+              }
+            />
           </>
         }
       >
@@ -2607,6 +2689,7 @@ function SidebarComponent({
             switchError={workspaceSwitchError}
           />
         ) : null}
+        {sessionToolbar}
       </PaneHeader>
     );
   };
@@ -2671,7 +2754,9 @@ function SidebarComponent({
             />
           )}
           {compactRailVisible ? workspaceHeader(!titleBarAbove) : null}
-          {onSelectProject && !compactRailVisible ? (
+          {lastSessionsOpen && !compactRailVisible ? (
+            workspaceHeader()
+          ) : onSelectProject && !compactRailVisible ? (
             <SidebarProjectPicker
               cwd={cwd}
               recents={visibleRecents}
@@ -2757,7 +2842,7 @@ function SidebarComponent({
         {sessionToolbar && !railVisible && !compactRailVisible ? (
           <PaneHeader actions={sessionToolbar} />
         ) : null}
-        {tab === "sessions" && cwd && cwd !== "~" && showBulkBar ? (
+        {tab === "sessions" && !lastSessionsOpen && cwd && cwd !== "~" && showBulkBar ? (
           <div
             role="toolbar"
             aria-label={t("Selected conversations")}
@@ -2879,11 +2964,12 @@ function SidebarComponent({
             ) : null}
           </div>
         ) : null}
-        {tab === "sessions" && remoteProject ? (
+        {tab === "sessions" && remoteProject && !lastSessionsOpen ? (
           !remote.machine && remote.dataState.error && remoteConnectionIssue ? (
             <RemoteLoadError cwd={cwd} failure={classifyRemoteError(remote.dataState.error)} />
           ) : (
             <RemoteDataStatus
+              cwd={cwd}
               presentation="notice"
               state={remote.dataState}
               connectionIssueHandled={remoteConnectionIssue}
@@ -2908,7 +2994,103 @@ function SidebarComponent({
             tab === "sessions" ? "" : "hidden"
           }`}
         >
-          {!cwd || cwd === "~" ? (
+          {lastSessionsOpen ? (
+            <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
+              {lastSessionsData?.remoteHistoryLimited ? (
+                <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+                  {t("Remote sessions shown from available history")}
+                </p>
+              ) : null}
+              {lastSessionsData?.error ? (
+                <Alert tone="danger" role="alert">
+                  <p>{t("Couldn’t load sessions")}</p>
+                  <Button
+                    variant="ghost"
+                    motion="none"
+                    type="button"
+                    onClick={lastSessionsData.refresh}
+                  >
+                    {t("Retry")}
+                  </Button>
+                </Alert>
+              ) : null}
+              {lastSessionsData?.loading && !lastSessionsData.rows.length ? (
+                <p role="status" className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
+                  {t("Loading conversations…")}
+                </p>
+              ) : lastSessionsData?.error && !lastSessionsData.rows.length ? null : (
+                (() => {
+                  const rows = filterSessionsByQuery(
+                    filterSessionsByStatus(
+                      filterSessionsByTime(
+                        filterSessionsByHarness(
+                          filterAssistantManagedSessions(
+                            filterSessionsByArchive(
+                              lastSessionsData?.rows ?? [],
+                              globalSessionFilters.showArchived,
+                            ),
+                            globalSessionFilters.assistantManaged,
+                          ),
+                          globalSessionFilters.hiddenHarnesses,
+                        ),
+                        globalSessionFilters.time,
+                        now,
+                      ),
+                      globalSessionFilters.status,
+                      busySessionIds,
+                      approvalSessionIds,
+                      unseenFinishedIds,
+                    ),
+                    deferredSearchQuery,
+                  );
+                  return rows.length ? (
+                    <ul data-session-list className="flex flex-col gap-0.5 p-1.5 pb-10">
+                      {rows.map((session) => (
+                        <li key={`${session.cwd}:${session.id}`}>
+                          <SessionCard
+                            session={session}
+                            isActive={
+                              sameProjectPath(session.cwd, cwd) &&
+                              (session.id === activeSessionId ||
+                                (isRemoteProjectPath(session.cwd) && session.id === activeRemoteId))
+                            }
+                            isSelected={false}
+                            busy={busySessionIds.has(session.id)}
+                            done={unseenFinishedIds.has(session.id)}
+                            linkedUpdate={linkedSessionUpdateIds.has(session.id)}
+                            needsApproval={approvalSessionIds.has(session.id)}
+                            startedAt={liveAgentsById.get(session.id)?.startedAt}
+                            inputKind={liveAgentsById.get(session.id)?.inputKind}
+                            groupDelayMs={listDisplay.groupDelayMs}
+                            density={listDisplay.density}
+                            showModel={listDisplay.showModel}
+                            showBranch={listDisplay.showBranch}
+                            showProjectAppearance
+                            onPin={
+                              !isRemoteProjectPath(session.cwd) && onPinListedSession
+                                ? (id, pinned) => onPinListedSession(id, session.cwd, pinned)
+                                : undefined
+                            }
+                            onSelect={(id, event) =>
+                              onSelectListedSession?.(id, session.cwd, {
+                                keepOpen: (event.detail ?? 0) > 1,
+                              })
+                            }
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <SessionsEmpty
+                      message={
+                        narrowedByUser ? "No matching sessions" : "No sessions in the last 7 days"
+                      }
+                    />
+                  );
+                })()
+              )}
+            </SessionSearchQueryContext.Provider>
+          ) : !cwd || cwd === "~" ? (
             <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
               {t("No project folder")}
             </p>
@@ -3164,6 +3346,7 @@ function SidebarComponent({
             >
               <LiveAgentsPreview
                 agents={liveAgents}
+                currentProject={lastSessionsOpen ? undefined : cwd}
                 activeSessionId={activeSessionId}
                 onSelect={onSelectAgent}
                 bottomSpacing={compactRailVisible}
@@ -3236,6 +3419,13 @@ function SidebarComponent({
           onClose={() => setFolderMenu(null)}
         />
       ) : null}
+      {newSessionProjectOpen && onNewListedSession ? (
+        <NewSessionProjectDialog
+          projects={visibleRecents}
+          onPick={onNewListedSession}
+          onClose={() => setNewSessionProjectOpen(false)}
+        />
+      ) : null}
       {listNotice ? (
         <TransientNotice
           message={listNotice.message}
@@ -3255,8 +3445,10 @@ function SidebarComponent({
           y={filterMenu.y}
           harnesses={sessionHarnesses}
           local={!remoteProject}
-          filters={sessionFilters}
-          onChange={onSessionFiltersChange}
+          filters={lastSessionsOpen ? globalSessionFilters : sessionFilters}
+          allowedTimeFilters={lastSessionsOpen ? GLOBAL_SESSION_TIME_FILTERS : undefined}
+          defaultFilters={lastSessionsOpen ? GLOBAL_SESSION_FILTERS : undefined}
+          onChange={lastSessionsOpen ? setGlobalSessionFilters : onSessionFiltersChange}
           onClose={() => setFilterMenu(null)}
         />
       ) : null}
@@ -3322,6 +3514,8 @@ function SidebarComponent({
     >
       {compactRailVisible ? (
         <CompactProjectRail
+          onOpenLastSessions={onOpenLastSessions}
+          lastSessionsOpen={lastSessionsOpen}
           onPreviewSession={onPreviewSession}
           recoveryControl={recoveryControl}
           cwd={cwd}
@@ -3371,6 +3565,9 @@ function SidebarComponent({
       ) : null}
       {railMounted.current && onSelectProject && onOpenProject ? (
         <ProjectRail
+          onOpenLastSessions={onOpenLastSessions}
+          lastSessionsOpen={lastSessionsOpen}
+          onSelectListedSession={onSelectListedSession}
           onPreviewSession={onPreviewSession}
           onOpenCrewSession={onOpenCrewSession}
           onRenameProjectFolder={onRenameProjectFolder}
@@ -3794,14 +3991,14 @@ function SidebarProjectPicker({
 }
 
 function CompactProjectRail({
-  onPreviewSession,
+  onOpenLastSessions,
+  lastSessionsOpen,
   recoveryControl,
   cwd,
   workingSessionsBadge,
   recents,
   tabShown,
   inboxUnseen,
-  onSelectProject,
   onOpenProjectNavigation,
   projectNavigationOpen,
   onOpenWorkspace,
@@ -3824,10 +4021,9 @@ function CompactProjectRail({
   onTogglePanel,
   onLeaveActive,
   titleBarAbove,
-  recentSessions,
-  activeSessionId,
-  onSelectAgent,
 }: {
+  onOpenLastSessions?: () => void;
+  lastSessionsOpen?: boolean;
   cwd: string;
   workingSessionsBadge?: ReactNode;
   recoveryControl?: ReactNode;
@@ -4002,15 +4198,13 @@ function CompactProjectRail({
             <FolderTree className="icon-md" aria-hidden />
           </Button>
         ) : null}
-        {recentSessions && onSelectProject ? (
-          <CompactLastSessionsAction
-            cwd={cwd}
-            recents={recents}
-            source={recentSessions}
-            activeSessionId={activeSessionId}
-            searchActive={searchActive}
-            onOpenSession={onPreviewSession ?? onSelectAgent}
-            onOpenProject={onSelectProject}
+        {onOpenLastSessions ? (
+          <CompactRailAction
+            label={t("Last sessions")}
+            caption={t("Recent")}
+            icon={Clock}
+            active={lastSessionsOpen}
+            onClick={onOpenLastSessions}
           />
         ) : null}
         {!tabShown || !workspaceActive ? (
@@ -4184,6 +4378,7 @@ function CompactRailAction({
   return (
     <Button
       {...sharedProps}
+      variant="item"
       tooltip={label}
       tooltipWhen={caption && caption !== label ? "always" : "overflow"}
       shortcut={shortcut || undefined}
@@ -4193,7 +4388,7 @@ function CompactRailAction({
     >
       <span className="flex w-full min-w-0 items-center gap-2">
         <Icon className={`icon-md ${dot ? "compact-rail-icon-with-dot" : ""}`} strokeWidth={1.75} />
-        <span className="max-w-full truncate text-ui-body">{caption ?? label}</span>
+        <span className="max-w-full truncate">{caption ?? label}</span>
       </span>
       {marks}
     </Button>
@@ -4214,90 +4409,6 @@ function CompactRailLogo() {
         className="size-6 select-none object-contain"
       />
     </span>
-  );
-}
-
-/** The compact rail's own way into "Last sessions": a button that opens the list in a popover, since there's no room for the full section. */
-function CompactLastSessionsAction({
-  cwd,
-  recents,
-  source,
-  activeSessionId,
-  searchActive,
-  onOpenSession,
-  onOpenProject,
-}: {
-  cwd: string;
-  recents: RecentProject[];
-  source: RecentSessionsSource;
-  activeSessionId?: string;
-  searchActive: boolean;
-  onOpenSession?: (sessionId: string) => void;
-  onOpenProject: (path: string) => void;
-}) {
-  const t = useT();
-  const projectKeys = useMemo(
-    () => new Set(collectRailProjects(recents, cwd).keys()),
-    [recents, cwd],
-  );
-  const { rows, hasRows, togglePin } = useLastSessionsRows({
-    source,
-    projectKeys,
-    enabled: true,
-  });
-  const [groupLabels] = useState(loadTabGroupLabels);
-  const [groupColors] = useState(loadTabGroupColors);
-  const [groupCustomColors] = useState(loadTabGroupCustomColors);
-  const [groupMascots] = useState(loadTabGroupMascots);
-  const groupLogos = useTabGroupLogos();
-  const anchor = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  if (!hasRows) return null;
-
-  return (
-    <>
-      <CompactRailAction
-        ref={anchor}
-        label={t("Last sessions")}
-        caption={t("Recent")}
-        icon={Clock}
-        active={open}
-        onClick={() => setOpen((value) => !value)}
-      />
-      {open ? (
-        <Popover
-          anchor={anchor}
-          side="right"
-          align="start"
-          width={280}
-          onDismiss={() => setOpen(false)}
-          kind="dialog"
-          aria-label={t("Last sessions")}
-          className="p-1"
-        >
-          <LastSessionsRows
-            rows={rows}
-            activeSessionId={activeSessionId}
-            searchActive={searchActive}
-            onOpenSession={(sessionId) => {
-              setOpen(false);
-              onOpenSession?.(sessionId);
-            }}
-            onOpenProject={(path) => {
-              setOpen(false);
-              onOpenProject(path);
-            }}
-            onTogglePin={togglePin}
-            className="flex max-h-80"
-            groupLabels={groupLabels}
-            groupColors={groupColors}
-            groupCustomColors={groupCustomColors}
-            groupLogos={groupLogos}
-            groupMascots={groupMascots}
-          />
-        </Popover>
-      ) : null}
-    </>
   );
 }
 
@@ -4969,6 +5080,7 @@ function SessionSearchText({ text }: { text: string }) {
 const LONG_PRESS_MS = 450;
 
 const SessionCard = memo(function SessionCard({
+  showProjectAppearance = false,
   session,
   isActive,
   isSelected,
@@ -4987,6 +5099,7 @@ const SessionCard = memo(function SessionCard({
   showModel,
   showBranch,
   inPinnedSection = false,
+  onPin,
   onSelect,
   onLongPress,
   onOpenWorkItem,
@@ -5000,6 +5113,7 @@ const SessionCard = memo(function SessionCard({
   onRename,
   onDelete,
 }: {
+  showProjectAppearance?: boolean;
   session: SessionSummary;
   isActive: boolean;
   isSelected: boolean;
@@ -5022,9 +5136,10 @@ const SessionCard = memo(function SessionCard({
   showBranch: boolean;
   /** Listed directly under the Pinned header, which already says it is pinned. */
   inPinnedSection?: boolean;
+  onPin?: (sessionId: string, pinned: boolean) => void;
   onSelect: (
     sessionId: string,
-    event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+    event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; detail?: number },
   ) => void;
   /** Held without moving: start selecting from this card. */
   onLongPress?: (sessionId: string) => void;
@@ -5041,6 +5156,8 @@ const SessionCard = memo(function SessionCard({
 }) {
   "use memo";
   const t = useT();
+  const project = useSessionProjectAppearance(session.cwd);
+  const providerHistory = sessionProviderHistory(session);
   const skipClickUntil = useRef(0);
   const skipNextClick = useRef(false);
   const cancelSessionDrag = useRef<(() => void) | null>(null);
@@ -5078,16 +5195,21 @@ const SessionCard = memo(function SessionCard({
     ? NO_BRANCH_LABEL
     : formatGitLabel(session.repo, session.branch);
   const compact = density === "compact";
-  const model = resolveModel(session.harness, session.model).name;
+  const model = providerHistory.activeModel
+    ? resolveModel(providerHistory.activeHarness, providerHistory.activeModel).name
+    : providerHistory.activeHarness === session.harness
+      ? resolveModel(session.harness, session.model).name
+      : HARNESS_TITLE[providerHistory.activeHarness];
   const worktree = !!session.worktreeCwd && !session.worktreeRemoved;
   // Standard rows name the branch only; the repo prefix needs its own line.
   const branchText =
     density === "detailed" || session.worktreeRemoved ? gitLabel : session.branch || gitLabel;
   const issue = session.issue;
+  const interrupted = !!session.interrupted && !busy && !needsApproval && !opening;
   const statusTone: BadgeTone =
     issue === "failed"
       ? "danger"
-      : issue === "retrying" || needsApproval
+      : issue === "retrying" || interrupted || needsApproval
         ? "warning"
         : busy
           ? "info"
@@ -5097,11 +5219,11 @@ const SessionCard = memo(function SessionCard({
               ? "warning"
               : "neutral";
   const working = !issue && !needsApproval && busy;
-  const idle = !issue && !needsApproval && !busy && !opening && !done && !draft;
+  const idle = !issue && !interrupted && !needsApproval && !busy && !opening && !done && !draft;
   const detailPath = session.worktreeCwd && worktree ? session.worktreeCwd : session.cwd;
   const status = idle ? (
     <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
-      <RelativeSessionTime at={session.updatedAt} />
+      <RelativeSessionTime at={session.lastActivityAt ?? session.updatedAt} />
     </span>
   ) : working ? (
     // Same pill as Done/Failed, so a running session reads at a glance.
@@ -5125,6 +5247,11 @@ const SessionCard = memo(function SessionCard({
         <>
           <CircleAlert className="icon-xs" strokeWidth={1.75} />
           <span>{t(issue === "retrying" ? "Retrying" : "Failed")}</span>
+        </>
+      ) : interrupted ? (
+        <>
+          <CircleAlert className="icon-xs" strokeWidth={1.75} />
+          <span>{t("Interrupted")}</span>
         </>
       ) : needsApproval ? (
         <>
@@ -5151,7 +5278,7 @@ const SessionCard = memo(function SessionCard({
           <span>{t("Draft")}</span>
         </>
       ) : (
-        <RelativeSessionTime at={session.updatedAt} />
+        <RelativeSessionTime at={session.lastActivityAt ?? session.updatedAt} />
       )}
     </Badge>
   );
@@ -5625,21 +5752,25 @@ const SessionCard = memo(function SessionCard({
       : "py-1.5";
 
   const modelLabel = showModel ? (
-    <span
-      data-session-row-model
-      className="flex min-w-0 shrink items-center gap-1 text-ui-caption font-medium text-(--ui-text-secondary)"
-    >
-      <HarnessIcon harness={session.harness} className="icon-xs shrink-0" />
-      {compact ? null : (
-        <span className="session-row-model-full min-w-0 truncate">
-          <SessionSearchText text={model} />
-        </span>
-      )}
-      <span
-        className={`min-w-0 truncate ${compact ? "session-row-compact-model" : "session-row-model-short"}`}
-      >
-        {shortModelName(model)}
+    <span data-session-row-model className="flex shrink-0 items-center gap-1.5" aria-label={model}>
+      <span className="sr-only">
+        <SessionSearchText text={model} />
       </span>
+      {providerHistory.providers.map((harness) => (
+        <span
+          key={harness}
+          data-session-provider={harness}
+          data-provider-active={harness === providerHistory.activeHarness ? "true" : "false"}
+          title={HARNESS_TITLE[harness]}
+          className={
+            harness === providerHistory.activeHarness
+              ? "text-content"
+              : "session-provider-inactive text-(--ui-text-muted)"
+          }
+        >
+          <HarnessIcon harness={harness} className="icon-xs shrink-0" />
+        </span>
+      ))}
     </span>
   ) : null;
   const BranchIcon = worktree ? FolderTree : GitBranch;
@@ -5755,6 +5886,7 @@ const SessionCard = memo(function SessionCard({
     <div ref={detailRootRef} className="group relative">
       <ActionHost
         selected={isSelected || isActive}
+        ground={showProjectAppearance ? project.backgroundColor : undefined}
         data-session-card={session.id}
         data-session-density={density}
         data-orchestration-card={orchestration ? "true" : undefined}
@@ -5795,6 +5927,42 @@ const SessionCard = memo(function SessionCard({
       >
         {/* The landing mark (line, group frame) is drawn on this card by setDropIndicator. */}
         {/* Actions sit beside the row's button, never inside it. */}
+        {!compact ? (
+          <span
+            data-session-row-project
+            className="relative flex min-h-5 min-w-0 items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)"
+          >
+            {showProjectAppearance ? (
+              project.icon
+            ) : (
+              <FolderTree className="icon-xs shrink-0" aria-hidden="true" />
+            )}
+            {onPin ? (
+              <InlineAction
+                reveal="always"
+                label={t(session.pinned ? "Unpin" : "Pin")}
+                tooltip={t(session.pinned ? "Unpin" : "Pin")}
+                aria-pressed={!!session.pinned}
+                motion="none"
+                data-no-drag
+                data-tauri-drag-region="false"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onPin(session.id, !session.pinned);
+                }}
+              >
+                <Pin className="icon-xs" strokeWidth={1.75} />
+              </InlineAction>
+            ) : null}
+            <span className="min-w-0 flex-1 truncate">
+              <SessionSearchText text={project.name} />
+            </span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              {linkedUpdateDot}
+              {status}
+            </span>
+          </span>
+        ) : null}
         <span className="relative flex min-h-5 min-w-0 items-center gap-1.5">
           <div
             role="button"
@@ -5834,7 +6002,7 @@ const SessionCard = memo(function SessionCard({
                 {isSelected ? <Check className="icon-xs" strokeWidth={2} /> : null}
               </span>
             ) : null}
-            {session.pinned && !inPinnedSection ? (
+            {compact && session.pinned && !inPinnedSection ? (
               <Pin className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
             ) : null}
             {titleHit ? (
@@ -5853,54 +6021,42 @@ const SessionCard = memo(function SessionCard({
               local={!isRemoteProjectPath(session.cwd)}
             />
             {compact ? modelLabel : null}
-            {density === "detailed" ? null : (
+            {!compact ? null : (
               <span className="flex shrink-0 items-center gap-1.5">
                 {linkedUpdateDot}
                 {status}
               </span>
             )}
           </div>
+          {compact && showProjectAppearance && onPin ? (
+            <InlineAction
+              reveal="always"
+              label={t(session.pinned ? "Unpin" : "Pin")}
+              tooltip={t(session.pinned ? "Unpin" : "Pin")}
+              aria-pressed={!!session.pinned}
+              motion="none"
+              data-no-drag
+              data-tauri-drag-region="false"
+              onClick={(event) => {
+                event.stopPropagation();
+                onPin(session.id, !session.pinned);
+              }}
+            >
+              <Pin className="icon-xs" strokeWidth={1.75} />
+            </InlineAction>
+          ) : null}
           {compact ? actions : null}
         </span>
-        {density === "detailed"
+        {!compact
           ? metaLine(
-              <>
-                {modelLabel}
-                <span className="min-w-0 flex-1" />
-                <span className="flex shrink-0 items-center gap-1.5">
-                  {linkedUpdateDot}
-                  {status}
-                </span>
-              </>,
-            )
-          : null}
-        {density === "standard"
-          ? metaLine(
-              <>
-                {modelLabel}
-                {modelLabel && branchLabel ? (
-                  <span
-                    aria-hidden
-                    className="session-row-separator size-0.5 shrink-0 rounded-full bg-(--ui-text-muted)"
-                  />
-                ) : null}
-                {branchLabel}
-                <span className="min-w-0 flex-1" />
-                {actions}
-              </>,
-            )
-          : null}
-        {density === "detailed" ? (
-          <>
-            {metaLine(
               <>
                 {branchLabel}
                 <span className="min-w-0 flex-1" />
                 {actions}
+                {modelLabel}
               </>,
-            )}
-          </>
-        ) : null}
+            )
+          : null}
         {orchestrationExpanded ? (
           <OrchestrationSidebarAgents leadId={session.id} summary={orchestration!} />
         ) : null}
@@ -5957,8 +6113,12 @@ const SessionCard = memo(function SessionCard({
           <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 text-ui-caption text-(--ui-text-secondary)">
             <dt className="sr-only">{t("Project")}</dt>
             <dd className="contents">
-              <Folder className="icon-xs shrink-0" strokeWidth={1.75} />
-              <span className="min-w-0 truncate text-content">{pathFolderName(detailPath)}</span>
+              {showProjectAppearance ? (
+                project.icon
+              ) : (
+                <FolderTree className="icon-xs shrink-0" aria-hidden="true" />
+              )}
+              <span className="min-w-0 truncate text-content">{project.name}</span>
               {/* The full location sits under the name; a long path keeps its last folder. */}
               <span
                 className="col-start-2 -mt-1 min-w-0 overflow-hidden text-ui-micro text-(--ui-text-muted)"
@@ -5980,16 +6140,29 @@ const SessionCard = memo(function SessionCard({
             ) : null}
             <dt className="sr-only">{t("Model")}</dt>
             <dd className="contents">
-              <HarnessIcon harness={session.harness} className="icon-xs shrink-0" />
+              <HarnessIcon harness={providerHistory.activeHarness} className="icon-xs shrink-0" />
               <span className="min-w-0 truncate">{model}</span>
             </dd>
+            {providerHistory.handedOffFrom ? (
+              <>
+                <dt className="sr-only">{t("Provider")}</dt>
+                <dd className="contents">
+                  <Share className="icon-xs shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {t("Handed off from {p0}", {
+                      p0: HARNESS_TITLE[providerHistory.handedOffFrom],
+                    })}
+                  </span>
+                </dd>
+              </>
+            ) : null}
           </dl>
           <div className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-(--ui-frosted-divider) pt-2 text-ui-caption text-(--ui-text-secondary)">
             <span className="sr-only">{t("Status")}</span>
             {idle ? (
               <span className="flex min-w-0 items-center gap-1.5 tabular-nums">
                 <Clock className="icon-xs shrink-0" strokeWidth={1.75} />
-                <RelativeSessionTime at={session.updatedAt} />
+                <RelativeSessionTime at={session.lastActivityAt ?? session.updatedAt} />
               </span>
             ) : (
               <>
@@ -5997,7 +6170,7 @@ const SessionCard = memo(function SessionCard({
                 {working ? null : (
                   <span className="ml-auto flex shrink-0 items-center gap-1 tabular-nums text-(--ui-text-muted)">
                     <Clock className="icon-xs shrink-0" strokeWidth={1.75} />
-                    <RelativeSessionTime at={session.updatedAt} />
+                    <RelativeSessionTime at={session.lastActivityAt ?? session.updatedAt} />
                   </span>
                 )}
               </>

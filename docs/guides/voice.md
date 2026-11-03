@@ -30,9 +30,17 @@ Native idle and lock detection currently supports Windows. Browser sessions can
 observe activity within their page only; unsupported native platforms cannot
 establish computer-wide presence for automatic reconnection.
 
+Accepted speech also keeps an already open conversation active while the mouse
+and keyboard are idle. This does not override screen lock, Away, Do not disturb
+or unknown computer presence. Pausing the microphone clears this activity receipt.
+
 Recovery restores up to six recent text turns. It does not replay tool calls or
 generate a new response automatically. A temporary drop can resume a microphone
 you already opened; returning after idle sleep always requires **Talk**.
+
+In **Global** mode, a project missing from the connected Host's directory does
+not prevent listening. Unverified history and summaries remain excluded. Hiding
+or locking a project captured by the conversation still closes the microphone.
 
 ## Identity, language and memory
 
@@ -50,6 +58,12 @@ text match. Ambiguous words preserve the previous language. Room briefings use t
 saved language; if none is known, speak once or choose a language before listening.
 Voice quality and accent
 still require listening on the intended provider and device.
+
+Application-tool search recognizes localized feature labels in the eight UI
+languages. Turkish forms such as “ekiplerim” and “ekipteki”, and mixed terms such
+as “crew”, share the same feature vocabulary. A name such as “Kree” is not silently
+rewritten. This improves feature discovery; it does not bypass confirmations or
+guarantee microphone recognition of every pronunciation.
 
 Say “remember that I prefer short answers” or ask to forget a saved note. Explicit
 corrections such as “never mention bananas to me” save an owner rule with the exact
@@ -77,6 +91,26 @@ The same choice remains available as **I decide when my turn ends**
 in Voice settings, independently of the saved rule.
 Pause length, barge-in and progress announcements remain separate settings.
 
+In **Advanced → Professional conversation**, choose **Apply preset** to
+wait 2.5 seconds at a turn boundary, allow genuine interruptions, hold spoken
+progress announcements and use automatic turn ending. This is an optional preset;
+it changes no provider, microphone, language or voice selection, and each setting
+can still be adjusted afterwards. Existing preferences are not migrated.
+
+A short acknowledgement such as “tamam” after a delivered answer does not request
+another reply. Pending questions and choices still accept your answer normally,
+and “tamam, ekipleri aç” remains a new request. “Bir saniye, düşünüyorum” pauses
+the assistant without stopping background work or dismissing a pending choice;
+answering that choice resumes the conversation. An explicit question such as
+“tamam?” still reaches the assistant. Short listening signals such as
+“hı hı” during speech do not take the floor.
+
+Automatic return briefings require a Host-confirmed return, a meaningful recent
+update, your proactive-speech preference and an available conversation. Routine
+zero-work summaries, old daily artifacts and interrupted or uncertain deliveries
+are not automatically read again. **Important** accepts only classified important
+return updates. Reading a briefing explicitly remains available in the Room.
+
 If the provider cannot confirm cleanup of an unrecognized audio fragment, Voice
 stops capture and asks you to start it again with **Talk**. It does not resend that
 fragment automatically. A brief background sound can produce a recognition candidate
@@ -87,6 +121,12 @@ even before you have spoken; rejected candidates must never start a reply.
 Project scope is the default; **Global** switches to the cross-project thread.
 A selected session remains the captured focus for each accepted spoken turn.
 Transcript text is stored in Host threads; microphone recordings are not stored.
+Assistant speech enters voice history after playback completes. When a reply is
+cut off and word-level playback alignment is unavailable, its unconfirmed text
+is omitted from voice history; verified operation results remain intact. Generated
+text may still be visible in the panel. An incomplete global project directory
+limits reusable context proof without being reported as a failed transcript save;
+actual save failures retain their retry path.
 Recovery uses the thread summary and six recent text turns without replaying tools.
 A failed save retains its request identity and offers **Save conversation**.
 Canonical project identity is checked before a project thread opens. A remote project

@@ -139,11 +139,11 @@ function releaseWs(channel: Channel) {
 /** A WS route that is not ready (connecting or retry-wait) this long is abandoned for HTTP. */
 const WS_NOT_READY_MS = 5_000;
 /** Same fallback for a WS error and for a route that never becomes ready. */
-function failWs(machineId: string, channel: Channel, error: unknown) {
+function failWs(machineId: string, channel: Channel, error: unknown, notify = true) {
   if (channel.stopped || channel.wsFailed) return;
   channel.wsFailed = true;
   releaseWs(channel);
-  for (const subscriber of channel.subscribers) {
+  for (const subscriber of notify ? channel.subscribers : []) {
     try {
       subscriber.onError?.(error);
     } catch {
@@ -164,7 +164,14 @@ function watchWsRoute(machineId: string, channel: Channel) {
     notReadySince ??= Date.now();
     if (Date.now() - notReadySince >= WS_NOT_READY_MS) {
       console.warn(`[remote] Host WebSocket stayed ${transport}; falling back to HTTP`);
-      failWs(machineId, channel, new Error("Host WebSocket did not become ready"));
+      // A slow network route can still be served over HTTP. Report the load as
+      // failed only if that fallback fails; admission failures remain immediate.
+      failWs(
+        machineId,
+        channel,
+        new Error("Host WebSocket did not become ready"),
+        transport === "blocked" || transport === "closed",
+      );
     }
   }, 1_000);
 }

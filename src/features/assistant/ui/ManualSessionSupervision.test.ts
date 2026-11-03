@@ -99,6 +99,16 @@ const click = async (name: string) => {
 const render = async (props: Parameters<typeof Harness>[0] = {}) => {
   await act(() => root.render(createElement(Harness, props)));
 };
+const toggleProject = async (name = "Visible project") => {
+  await act(() => container.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]')!.click());
+  await act(() => {
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((element) =>
+      element.textContent?.includes(name),
+    );
+    expect(option).toBeDefined();
+    option!.click();
+  });
+};
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (error: Error) => void;
   const promise = new Promise<T>((yes, no) => {
@@ -191,10 +201,36 @@ it("shows policy conflicts honestly and retains independent Off for refresh and 
 it("preserves hidden saved scope while editing visible membership without revealing it", async () => {
   await render({ settings: true });
   expect(container.textContent).not.toContain("hidden");
-  await act(() => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await toggleProject();
   await click("Save project scope");
   expect(mocks.request).toHaveBeenCalledWith(
     { op: "manual.policy", expectedVersion: 4, enabled: true, projectIds: ["hidden"] },
+    "host-a",
+  );
+});
+it("distinguishes same-name projects by path and saves their exact IDs", async () => {
+  await render({
+    settings: true,
+    visible: [
+      { id: "one", name: "Same project", path: "/first/checkout" },
+      { id: "two", name: "Same project", path: "/second/checkout" },
+    ],
+  });
+  expect(container.querySelectorAll('[role="option"]')).toHaveLength(0);
+  await act(() => container.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]')!.click());
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  expect(options).toHaveLength(2);
+  expect(options[0].textContent).toContain("/first/checkout");
+  expect(options[1].textContent).toContain("/second/checkout");
+  await act(() => options[1].click());
+  await click("Save project scope");
+  expect(mocks.request).toHaveBeenCalledWith(
+    {
+      op: "manual.policy",
+      expectedVersion: 4,
+      enabled: true,
+      projectIds: ["hidden", "one", "two"],
+    },
     "host-a",
   );
 });
@@ -242,7 +278,7 @@ it("surfaces rejected navigation locally so Open can be retried", async () => {
 });
 it("does not silently replace a newer writer's scope while an owner draft is retained", async () => {
   await render({ settings: true });
-  await act(() => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await toggleProject();
   current = {
     ...current,
     policy: { ...current.policy, version: 9, projectIds: ["hidden", "one"] },

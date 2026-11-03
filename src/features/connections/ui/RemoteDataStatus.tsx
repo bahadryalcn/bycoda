@@ -5,10 +5,13 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Check, RefreshCw } from "../../../shared/ui/icons";
 import type { RemoteDataState } from "../model/remoteDataState";
+import { classifyRemoteError, isConnectionFailure } from "../model/remoteFailure";
+import { useRemoteConnectionFeedback } from "./RemoteConnectionFeedback";
 
 /** Retained content stays visible; this strip explains whether it was verified. */
 export function RemoteDataStatus({
   state,
+  cwd,
   onRefresh,
   label,
   disabled = false,
@@ -16,6 +19,8 @@ export function RemoteDataStatus({
   presentation = "auto",
 }: {
   state: RemoteDataState;
+  /** The data's owning remote project, for the workspace connection notice. */
+  cwd?: string;
   onRefresh?: () => void;
   label?: string;
   disabled?: boolean;
@@ -25,7 +30,14 @@ export function RemoteDataStatus({
   presentation?: "auto" | "indicator" | "notice";
 }) {
   useLocale();
-  if (connectionIssueHandled) return null;
+  const failure = state.error ? classifyRemoteError(state.error) : undefined;
+  const sharedConnectionIssue = useRemoteConnectionFeedback(cwd, failure);
+  // A machine-level notice cannot explain a failed data/service operation.
+  if (
+    (connectionIssueHandled && !failure) ||
+    (failure && isConnectionFailure(failure) && (connectionIssueHandled || sharedConnectionIssue))
+  )
+    return null;
   const dataLabel = label ?? t("conversation");
   const busy = state.phase === "loading" || state.phase === "refreshing";
   const needsAttention = state.phase === "error" || state.phase === "stale";

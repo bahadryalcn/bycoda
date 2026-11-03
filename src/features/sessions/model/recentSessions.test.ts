@@ -53,6 +53,13 @@ function build(rows: StoredSessionRow[], liveInfos: LiveSessionInfo[] = [], limi
 }
 
 describe("buildRecentSessions", () => {
+  it("shows saved interruption until a complete live transcript or active turn supersedes it", () => {
+    const rows = [stored("cut", 100, { interrupted: true })];
+    expect(build(rows)[0].status).toBe("interrupted");
+    expect(build(rows, [live("cut", { interruptionKnown: false })])[0].status).toBe("interrupted");
+    expect(build(rows, [live("cut", { interruptionKnown: true })])[0].status).toBeUndefined();
+    expect(build(rows, [live("cut", { status: "working" })])[0].status).toBe("working");
+  });
   it("preserves Host management from stored and live rows without changing recency or pins", () => {
     const management = {
       assistant: true as const,

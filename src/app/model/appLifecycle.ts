@@ -41,6 +41,7 @@ import {
   setSessionQueue,
   shouldPersistSession,
   upsertSession,
+  upsertSessionPreservingActivity,
   type SessionSummary,
 } from "../../features/sessions/data/sessionStore";
 import {
@@ -601,7 +602,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
               if (!owns()) return;
               const recovered = await recoverInterruptedTurn(markTurnInterrupted(record));
               if (!owns()) return;
-              if (shouldPersistSession(recovered)) await upsertSession(recovered);
+              if (shouldPersistSession(recovered)) await upsertSessionPreservingActivity(recovered);
               publishBootSession(placeholder, recovered);
             } catch {
               failed();
@@ -725,7 +726,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
         // Idle transcripts already came from disk. Rewriting every open chat
         // here serialized/indexed the entire workspace before first paint.
         .filter((session) => interrupted.has(session.id) && shouldPersistSession(session))
-        .map((session) => upsertSession(session).catch(() => null)),
+        .map((session) => upsertSessionPreservingActivity(session).catch(() => null)),
     );
   }
   return workspace;
@@ -911,7 +912,7 @@ export async function persistQuitState(
     sessions.map(async (session) => {
       if (!shouldPersistSession(session)) return;
       const payload = interrupted.has(session.id) ? markTurnInterrupted(session) : session;
-      const saved = await write(upsertSession(payload));
+      const saved = await write(upsertSessionPreservingActivity(payload));
       // A revision conflict resolves without a write. Keep this renderer's
       // unique transcript alive rather than reporting it safely persisted.
       if (mode === "quit" && saved === null) {
@@ -957,7 +958,7 @@ async function persistBootingResume(workspace: ResumedWorkspace): Promise<void> 
   await Promise.all(
     workspace.sessions
       .filter(shouldPersistSession)
-      .map((session) => upsertSession(session).catch(() => null)),
+      .map((session) => upsertSessionPreservingActivity(session).catch(() => null)),
   );
   if (!workspaceSnapshotWriteBlocked())
     await saveWorkspaceSnapshot(

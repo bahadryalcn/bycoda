@@ -1572,6 +1572,7 @@ describe("explicit task workspaces and owner controls", () => {
       status: undefined,
     });
     await tasks.startTask("main");
+    await tasks.tick();
     expect((await tasks.get("main"))?.status).toBe("running");
   }, 60000);
   it("starts an owner-selected todo first while retaining capacity and dependencies", async () => {
@@ -1579,11 +1580,61 @@ describe("explicit task workspaces and owner controls", () => {
     await tasks.limits.save({ maxRunningTasks: 1 });
     await tasks.save(input({ id: "old" }));
     await tasks.save(input({ id: "chosen", status: "todo" }));
-    expect((await tasks.startTask("chosen")).status).toBe("running");
+    expect((await tasks.startTask("chosen")).status).toBe("queued");
+    await tasks.tick();
+    expect((await tasks.get("chosen"))?.status).toBe("running");
     expect((await tasks.get("old"))?.status).toBe("queued");
     await tasks.save(input({ id: "dependent", status: "todo", dependsOn: ["chosen"] }));
     expect((await tasks.startTask("dependent")).status).toBe("queued");
     expect((await tasks.list()).filter((task) => task.status === "running")).toHaveLength(1);
+  });
+  it("preserves queue changes made before Start obtains its transaction", async () => {
+    const { tasks, input } = await setup();
+    await tasks.save(input({ id: "chosen" }));
+    await tasks.save(input({ id: "withdrawn" }));
+    await tasks.save(input({ id: "edited" }));
+    const transaction = tasks.transaction.bind(tasks);
+    vi.spyOn(tasks, "transaction").mockImplementationOnce(async (operation) => {
+      await tasks.move("withdrawn", "todo");
+      await tasks.save({ ...(await tasks.get("edited")), title: "New owner title" });
+      return transaction(operation);
+    });
+    const tick = vi.spyOn(tasks, "tick").mockResolvedValue(undefined);
+    try {
+      expect((await tasks.startTask("chosen")).status).toBe("queued");
+      expect(await tasks.get("withdrawn")).toMatchObject({ status: "todo" });
+      expect(await tasks.get("edited")).toMatchObject({ title: "New owner title" });
+    } finally {
+      tick.mockRestore();
+    }
+  });
+  it("refuses Start when its selected task changes before transaction admission", async () => {
+    const { tasks, input } = await setup();
+    await tasks.save(input());
+    const transaction = tasks.transaction.bind(tasks);
+    vi.spyOn(tasks, "transaction").mockImplementationOnce(async (operation) => {
+      await tasks.move("main", "todo");
+      return transaction(operation);
+    });
+    await expect(tasks.startTask("main")).rejects.toThrow("Task changed before starting");
+    expect(await tasks.get("main")).toMatchObject({ status: "todo" });
+  });
+  it("acknowledges Start while an unrelated scheduler pass remains pending", async () => {
+    const { tasks, input } = await setup();
+    await tasks.save(input({ status: "todo" }));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tick = vi.spyOn(tasks, "tick").mockReturnValue(pending);
+    try {
+      await expect(tasks.startTask("main")).resolves.toMatchObject({ status: "queued" });
+      expect(tick).toHaveBeenCalledOnce();
+      expect(await tasks.get("main")).toMatchObject({ status: "queued", position: 0 });
+    } finally {
+      release();
+      tick.mockRestore();
+    }
   });
   it("retargets a reviewed goal result and its pending tasks without rerunning", async () => {
     const { addRepo, review, tasks, input, store, turns, approve } = await setup();
@@ -2672,7 +2723,16 @@ describe("task verification", () => {
     const s = await setup();
     const started = await s.reviewing({ prompt: acceptancePrompt });
     await s.finish(started.reviewer!.sessionId!, "VERDICT: PASS");
-    // The failed acceptance is corrected automatically with its evidence attached.
+    // Missing structured evidence first goes back to the existing reviewer;
+    // it is not an implementation defect or permission to claim acceptance.
+    expect(await s.task()).toMatchObject({
+      status: "verifying",
+      sessionId: started.sessionId,
+      reviewer: { sessionId: started.reviewer!.sessionId, verdictRepairAttempts: 1 },
+    });
+    expect((await s.task()).repairAttempts).toBeUndefined();
+    await s.finish(started.reviewer!.sessionId!, acceptanceReply("unresolved"));
+    // A concrete unresolved criterion then drives an implementation correction.
     expect(await s.task()).toMatchObject({ status: "running", repairAttempts: 1 });
     expect((await s.task()).attemptHistory?.at(-1)?.verdict).toBe("fail");
     expect((await s.task()).repairNote).toContain("Acceptance evidence is incomplete");
@@ -3113,6 +3173,19 @@ describe("task verification", () => {
     expect((await task()).blockedTakeover).toBeUndefined();
     expect(turns).toHaveLength(count);
   });
+  it("does not stop ordinary correction merely because a broad finding repeats while files change", async () => {
+    const { reviewing, task, finish, turns } = await setup();
+    await reviewing();
+    await finish((await task()).reviewer!.sessionId!, "VERDICT: FAIL - The report is incomplete.");
+    writeFileSync(join(turns.at(-1)!.input.cwd, "report.txt"), "One completed section\n");
+    await finish((await task()).sessionId!, "Completed one section.");
+    await finish((await task()).reviewer!.sessionId!, "VERDICT: FAIL - The report is incomplete.");
+    expect(await task()).toMatchObject({ status: "running", repairAttempts: 2 });
+    await finish((await task()).sessionId!, "No further changes.");
+    await finish((await task()).reviewer!.sessionId!, "VERDICT: FAIL - The report is incomplete.");
+    expect(await task()).toMatchObject({ status: "done", completedWithFindings: true });
+    expect((await task()).ownerNotices!.at(-1)!.message).toContain("stopped making progress");
+  });
   it("does not mistake changing review wording for implementation progress", async () => {
     const { reviewing, task, finish } = await setup();
     await reviewing({ continueUntilDone: true });
@@ -3131,32 +3204,35 @@ describe("task verification", () => {
     expect(await task()).toMatchObject({ status: "done", completedWithFindings: true });
     expect((await task()).ownerNotices!.at(-1)!.message).toContain("stopped making progress");
   });
-  it("repairs a missing reviewer verdict in the same review conversation with a bounded budget", async () => {
-    const { reviewing, task, finish, turns } = await setup();
-    await reviewing({ continueUntilDone: true });
-    const reviewer = (await task()).reviewer!.sessionId!;
-    const worker = (await task()).sessionId;
-    await finish(reviewer, "The implementation appears correct.");
-    expect(await task()).toMatchObject({
-      status: "verifying",
-      sessionId: worker,
-      reviewer: { sessionId: reviewer, verdictRepairAttempts: 1 },
-    });
-    expect(turns.at(-1)!.input.text).toContain("Complete the existing read-only review");
-    await finish(reviewer, "Still reviewing, without a verdict.");
-    expect((await task()).reviewer!.verdictRepairAttempts).toBe(2);
-    await finish(reviewer, "Still no verdict.");
-    expect(await task()).toMatchObject({
-      status: "blocked",
-      error: "Review failed: Reviewer gave no verdict",
-    });
-  });
-  it(
-    "finishes unchanged check failures in continuous mode with owner notices",
-    async () => {
+  it.each([false, true])(
+    "repairs a missing reviewer verdict in the same review conversation (continuous=%s)",
+    async (continueUntilDone) => {
+      const { reviewing, task, finish, turns } = await setup();
+      await reviewing({ continueUntilDone });
+      const reviewer = (await task()).reviewer!.sessionId!;
+      const worker = (await task()).sessionId;
+      await finish(reviewer, "The implementation appears correct.");
+      expect(await task()).toMatchObject({
+        status: "verifying",
+        sessionId: worker,
+        reviewer: { sessionId: reviewer, verdictRepairAttempts: 1 },
+      });
+      expect(turns.at(-1)!.input.text).toContain("Complete the existing read-only review");
+      await finish(reviewer, "Still reviewing, without a verdict.");
+      expect((await task()).reviewer!.verdictRepairAttempts).toBe(2);
+      await finish(reviewer, "Still no verdict.");
+      expect(await task()).toMatchObject({
+        status: "blocked",
+        error: "Review failed: Reviewer gave no verdict",
+      });
+    },
+  );
+  it.each([false, true])(
+    "finishes unchanged check failures with owner notices (continuous=%s)",
+    async (continueUntilDone) => {
       const { run, task, finish, tasks, turns } = await setup();
       await run({
-        continueUntilDone: true,
+        continueUntilDone,
         verifyCommand: 'node -e "console.log(123); process.exit(1)"',
       });
       await finish((await task()).sessionId!);
@@ -3450,7 +3526,7 @@ describe("task verification", () => {
       "Only a blocked task",
     );
   });
-  it.each(["missing verdict", "runtime failure", "owner stop"])(
+  it.each(["runtime failure", "owner stop"])(
     "does not auto-repair a goal review with %s",
     async (failure) => {
       const { tasks, reviewing, task, turns, finish, settled, advance } = await setup();
@@ -3463,7 +3539,7 @@ describe("task verification", () => {
         turns.at(-1)!.fail(new Error("Not signed in"));
         await settled(original.reviewer!.sessionId!);
         await advance();
-      } else await finish(original.reviewer!.sessionId!, "Could not review.");
+      }
       expect((await task()).status).toBe("blocked");
       expect((await task()).repairAttempts).toBeUndefined();
     },
@@ -3678,14 +3754,19 @@ describe("task verification", () => {
     expect(turns.at(-1)!.input.text).toContain("Check command: pnpm test");
     expect(turns.at(-1)!.input.text).toContain("rollback selection failed");
   });
-  it("blocks a task whose reviewer gave no verdict", async () => {
+  it("recovers a missing reviewer verdict without repeating implementation", async () => {
     const { reviewing, task, finish } = await setup();
     const verifying = await reviewing();
     await finish(verifying.reviewer!.sessionId!, "Looks fine to me.");
     expect(await task()).toMatchObject({
-      status: "blocked",
-      error: "Review failed: Reviewer gave no verdict",
-      verification: { review: { verdict: "fail" } },
+      status: "verifying",
+      sessionId: verifying.sessionId,
+      reviewer: { sessionId: verifying.reviewer!.sessionId, verdictRepairAttempts: 1 },
+    });
+    await finish(verifying.reviewer!.sessionId!, "VERDICT: PASS");
+    expect(await task()).toMatchObject({
+      status: "done",
+      verification: { review: { verdict: "pass" } },
     });
   });
   it("holds the reviewer to the task's time limit", async () => {

@@ -28,12 +28,14 @@ describe("saved Servers MCP boundary", () => {
       ).toBe(false);
   });
   it("distinguishes saved inventory from dev servers and advertises only reads as read-only", () => {
-    for (const action of ["servers.list", "servers.get", "devServers.logs"])
+    for (const action of ["servers.list", "servers.get", "servers.ssh.status", "devServers.logs"])
       expect(
         conversationToolCatalog().find((tool) => tool.action === action)?.annotations.readOnlyHint,
       ).toBe(true);
     for (const action of [
       "servers.ssh.save",
+      "servers.ssh.execute",
+      "servers.ssh.cancel",
       "servers.ssh.remove",
       "servers.metadata.update",
       "servers.ssh.identity.set",
@@ -44,6 +46,47 @@ describe("saved Servers MCP boundary", () => {
       expect(
         conversationToolCatalog().find((tool) => tool.action === action)?.annotations.readOnlyHint,
       ).toBe(false);
+  });
+  it("binds SSH commands to saved targets and bounded session-owned operation identities", () => {
+    const input = { id: "ssh-build", requestId: "inspect_1", command: "uname -a" };
+    expect(() => validateConversationTool("servers.ssh.execute", input)).not.toThrow();
+    for (const extra of [
+      { approved: true },
+      { endpoint: { host: "other", port: 22 } },
+      { sessionId: "other" },
+      { identityFile: "/other" },
+      { force: true },
+      { timeoutSeconds: 0 },
+      { timeoutSeconds: 301 },
+      { requestId: "../other" },
+      { command: "" },
+      { command: "x".repeat(16385) },
+    ])
+      expect(() =>
+        validateConversationTool("servers.ssh.execute", { ...input, ...extra }),
+      ).toThrow();
+    expect(() =>
+      validateConversationTool("servers.ssh.status", {
+        requestId: "inspect_1",
+        offset: 0,
+        maxBytes: 65536,
+      }),
+    ).not.toThrow();
+    for (const extra of [
+      { offset: -1 },
+      { maxBytes: 0 },
+      { maxBytes: 65537 },
+      { sessionId: "other" },
+    ])
+      expect(() =>
+        validateConversationTool("servers.ssh.status", { requestId: "inspect_1", ...extra }),
+      ).toThrow();
+    expect(() =>
+      validateConversationTool("servers.ssh.cancel", { requestId: "inspect_1" }),
+    ).not.toThrow();
+    expect(() =>
+      validateConversationTool("servers.ssh.cancel", { requestId: "inspect_1", force: true }),
+    ).toThrow();
   });
   it("accepts public SSH metadata but rejects credential material and identity overrides", () => {
     const input = {

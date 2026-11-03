@@ -218,7 +218,8 @@ pub(super) fn apply_observed(
     let archived_user = super::has_archived_user_block(s.rewind_history.as_ref());
     tx.execute("UPDATE sessions SET cwd=?2,harness=?3,model=?4,model_settings=?5,runtime_mode=?6,title=?7,
       provider_session_id=?8,provider_account_id=?9,context_used=?10,context_window=?11,branch=?12,worktree_cwd=?13,
-      worktree_removed=?14,linked_work_item_json=?15,automation_id=?16,updated_at=?17,
+      worktree_removed=?14,linked_work_item_json=?15,automation_id=?16,
+      last_activity_at=CASE WHEN updated_at != ?17 THEN ?17 ELSE last_activity_at END,updated_at=?17,
       rewind_history_json=?18,pending_context_replay=?19,adopted_divergence=?21,adopted_base=?22,workspace_id=?23,workspace_revision=?24,
       workspace_mode=COALESCE(?25,workspace_mode),
       has_user_message=?20 OR EXISTS(SELECT 1 FROM session_blocks WHERE session_id=?1 AND json_extract(block_json,'$.role')='user'),

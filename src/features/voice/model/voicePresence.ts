@@ -3,6 +3,28 @@ import { useEffect, useState } from "react";
 export type VoicePresence = "active" | "idle" | "away" | "unknown";
 export type UserPresence = { idleMs: number; locked: boolean; supported: boolean };
 
+/** Speech can extend an already-authorized capture through mouse/keyboard idle,
+ * but cannot establish computer presence or override a manual absence. Callers
+ * must discard receipts when capture authority or its generation changes. */
+export function deriveCapturePresence(
+  rawPresence: VoicePresence,
+  manualPresence: string | undefined,
+  latestAdmittedSpeechAt: number | null,
+  idleSleepMinutes: number,
+  now = Date.now(),
+): VoicePresence {
+  if (manualPresence === "away" || manualPresence === "dnd") return "away";
+  if (rawPresence !== "idle") return rawPresence;
+  const age = latestAdmittedSpeechAt === null ? NaN : now - latestAdmittedSpeechAt;
+  return Number.isFinite(idleSleepMinutes) &&
+    idleSleepMinutes > 0 &&
+    Number.isFinite(age) &&
+    age >= 0 &&
+    age < idleSleepMinutes * 60_000
+    ? "active"
+    : rawPresence;
+}
+
 export function classifyVoicePresence(value: UserPresence, minutes: number): VoicePresence {
   if (!value.supported || !Number.isFinite(value.idleMs) || value.idleMs < 0) return "unknown";
   if (value.locked) return "away";

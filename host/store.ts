@@ -1,4 +1,5 @@
 import { ChangeSignal } from "./changeSignal";
+import { sessionProviderHistory } from "../src/features/sessions/model/sessionProviderHistory";
 import { assistantJobSessionBelongs } from "./assistant-job-scope";
 import type { AssistantJob } from "../src/shared/model/host-contracts/assistant";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -1332,7 +1333,8 @@ export class HostStore {
             if (
               typeof cached?.model === "string" &&
               cached.needsInput !== undefined &&
-              cached.providerSessionId !== undefined
+              cached.providerSessionId !== undefined &&
+              cached.providerHistory !== undefined
             )
               return cached;
             const fresh = summary(await this.session(String(row.id)));
@@ -2490,6 +2492,7 @@ export function summary(value: HostSession): HostSessionSummary {
     .sort((a, b) => positions.get(a.id)! - positions.get(b.id)!);
   return {
     ...summaryFromBlocks({ ...value, session: { ...value.session, blocks: representatives } }),
+    providerHistory: sessionProviderHistory(value.session),
     draft: root.draft > 0,
     needsInput:
       !value.session.worktreeRemoved &&

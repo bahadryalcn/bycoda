@@ -1,3 +1,5 @@
+import { normalizeVoiceSearch, voiceSearchClauses } from "./voiceFeatureLexicon";
+
 /** Metadata only. The owning Host remains responsible for validation and authorization. */
 export type VoiceToolFamily = "conversation" | "social" | "runtime-logs";
 
@@ -80,15 +82,27 @@ export function selectVoiceTools(
   catalog: readonly VoiceToolDescriptor[],
   selection: VoiceToolSelection = {},
 ): VoiceToolPage {
-  const terms = (selection.query ?? "").trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const terms = voiceSearchClauses((selection.query ?? "").replace(/['’](?=\p{L})/gu, ""));
   const offset = boundedInteger(selection.offset, 0, 0, catalog.length);
   const limit = boundedInteger(selection.limit, 12, 1, 40);
   const filtered = catalog.filter((tool) => {
     if (selection.family && selection.family !== tool.family) return false;
     if (selection.category && selection.category !== voiceToolCategory(tool)) return false;
-    const searchable =
-      `${tool.family} ${tool.action} ${tool.name} ${tool.description}`.toLocaleLowerCase();
-    return terms.every((term) => searchable.includes(term));
+    const searchable = normalizeVoiceSearch(
+      `${tool.family} ${tool.action} ${tool.name} ${tool.description}`,
+    );
+    const parts = tool.action.toLowerCase().split(/[._-]/);
+    return terms.every(
+      (term) =>
+        (term.feature !== undefined &&
+          (parts.includes(term.feature) ||
+            tool.family === term.feature ||
+            (term.feature === "logs" && tool.family === "runtime-logs") ||
+            searchable.includes(term.feature))) ||
+        (term.action !== undefined &&
+          (parts.includes(term.action) || (term.action === "list" && parts.includes("open")))) ||
+        searchable.includes(term.text),
+    );
   });
   const end = offset + limit;
   return {

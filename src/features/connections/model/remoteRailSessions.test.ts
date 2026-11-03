@@ -81,6 +81,28 @@ it("lists a host session that was never opened here in Last sessions", () => {
   ]);
 });
 
+it("shows interrupted Host sessions and uses their last activity rather than metadata writes", () => {
+  const live = remoteLiveSessionInfos([
+    listed({ id: "cut", status: "interrupted", updatedAt: 900, lastActivityAt: 50 }),
+    listed({ id: "running", status: "running", updatedAt: 100, lastActivityAt: 80 }),
+  ]);
+  expect(live).toMatchObject([
+    { id: "cut", status: "interrupted", activityAt: 50 },
+    { id: "running", status: "working", activityAt: 80 },
+  ]);
+  const rows = buildRecentSessions({
+    stored: [],
+    live,
+    projectKeys: new Set([pathKey(project)]),
+    limit: 10,
+    now: 1000,
+  });
+  expect(rows.find((row) => row.id === "cut")).toMatchObject({
+    status: "interrupted",
+    updatedAt: 50,
+  });
+});
+
 const fresh = (session: Partial<HostSessionSummary> & { id: string }) => ({
   ...listed(session),
   fresh: true,

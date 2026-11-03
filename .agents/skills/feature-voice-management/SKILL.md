@@ -27,6 +27,10 @@ Source paths below are repository-relative.
 - Reuse existing tool validators and dispatchers. Voice grants no new settings,
   provider, skill enable/install, Git publication, Inbox or social send authority.
   Never synthesize owner approval or owner social principals for model calls.
+- `voiceFeatureLexicon` expands localized labels and conservative Turkish suffixes
+  for catalog discovery only. Preserve family/category filtering, exact tool IDs
+  and target validation. Do not rewrite unknown proper names or treat a lexical
+  match as recognition confidence or permission.
 - Management sources are separate from targeted coding sessions. Creating a source
   or normal user session defaults to unsent and submits no first coding turn.
 - Deduplicate identical request IDs; reject changed payloads. Retain unknown

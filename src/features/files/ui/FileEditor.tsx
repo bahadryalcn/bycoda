@@ -1344,6 +1344,7 @@ export function FileEditor({
       )}
       {hasMarkdownShell ? (
         <MarkdownViewShell
+          zoomable={markdown}
           mode={mode}
           onModeChange={setMode}
           leading={

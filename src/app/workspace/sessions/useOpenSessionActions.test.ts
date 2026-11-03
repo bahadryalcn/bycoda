@@ -153,6 +153,8 @@ it("does not replace another project's preview or a busy session", async () => {
 });
 
 it("ignores slow earlier opens and navigation superseded by a project change", async () => {
+  sessions[0].cwd = "/project-a";
+  sessions[1].cwd = "/project-b";
   let resolve!: (value: Session) => void;
   deps.ensureOpenSession = vi.fn((id: string) =>
     id === sessions[0].id
@@ -173,6 +175,8 @@ it("ignores slow earlier opens and navigation superseded by a project change", a
   });
   expect(deps.tabsRef.current).toHaveLength(1);
   expect(deps.tabsRef.current[0].previewSessionId).toBe(sessions[1].id);
+  expect(deps.followProject).toHaveBeenCalledTimes(1);
+  expect(deps.followProject).toHaveBeenLastCalledWith("/project-b");
   act(() => {
     pending = actions.onPreviewHistorySession(sessions[0].id);
   });

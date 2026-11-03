@@ -24,6 +24,9 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Keep the inline frame compact with one toolbar of accessible icon actions for source, reload, side-panel opening and expansion. Reuse the shared resizable Sheet for the side panel, keep the conversation usable, and retain the mounted preview during source disclosure.
+- Keep proactive visual guidance in `src/integrations/harness/core/toolWorkflowGuidance.ts` and Host tool descriptions aligned: use visuals when they clarify an answer, with short subject-based titles and fitted content; simple replies stay text.
+
 - Accept exactly one inline HTML source or confined workspace HTML path. Recheck the original principal before returning a capture.
 - Preview uses an isolated offline context; network/WebSocket/subresource requests, same-origin privileges, nested frames, forms, native APIs and top navigation remain denied.
 - Snapshot images contain their own bounded data, never mutable local/remote asset paths. Read the current serialized/tool-output limits before changing payload size.

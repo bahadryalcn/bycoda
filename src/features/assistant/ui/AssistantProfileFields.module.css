@@ -3,6 +3,8 @@
   display: grid;
   gap: 14px;
   min-inline-size: 0;
+  padding-block-start: 14px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 .roleToggle {
   display: flex;
@@ -12,7 +14,27 @@
   flex-wrap: wrap;
 }
 .fields {
-  gap: 12px;
+  gap: 18px 16px;
+  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+.fields > * {
+  min-inline-size: 0;
+}
+.explainedField {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.explainedField > p {
+  margin: 0;
+  line-height: 1.55;
+}
+.fields > p,
+.fields > [role="alert"] {
+  grid-column: 1 / -1;
+  margin: 0;
+  line-height: 1.55;
 }
 .presetControls {
   display: grid;
@@ -26,7 +48,7 @@
 }
 .hourRange {
   display: grid;
-  gap: 8px;
+  gap: 12px;
   min-inline-size: 0;
   align-content: start;
 }
@@ -40,7 +62,9 @@
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: 12px;
+  gap: 20px;
+  padding-block: 14px;
+  border-block: 1px solid var(--ui-settings-hairline);
 }
 .inlineField {
   grid-column: 1 / -1;
@@ -55,6 +79,10 @@
   align-items: center;
   gap: 6px;
   min-inline-size: 0;
+  flex-wrap: wrap;
+}
+.fields > .inlineControls {
+  grid-column: 1 / -1;
 }
 .actions {
   grid-column: 1 / -1;

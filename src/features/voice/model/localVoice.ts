@@ -17,6 +17,8 @@ type Callbacks = {
   start: () => SpeechBinding;
   /** Promote a snapshot only after recognition accepted actual words. */
   accept?: (binding: SpeechBinding) => SpeechBinding | undefined;
+  /** Consume a recognized backchannel before it interrupts playback or pending work. */
+  interceptTranscript?: (result: LocalVoiceTranscript, binding: SpeechBinding) => boolean;
   transcript: (result: LocalVoiceTranscript, binding: SpeechBinding) => void;
   state: (state: "speaking" | "transcribing" | "listening") => void;
   error: (message: string, fatal?: boolean) => void;
@@ -116,24 +118,7 @@ export class LocalVoice {
           if (this.binding) this.bindings.delete(this.binding);
           this.callbacks.state("listening");
         },
-        // With Smart Turn, a finished sentence ends after ~0.2 s instead of 0.6 s,
-        // and a mid-sentence pause keeps listening up to 1.3 s.
-        this.info.turn && !this.conversation.turnEndSilence && !this.conversation.manualTurnEnd
-          ? {
-              endSilence: 1.3,
-              pause: (audio, pauseId) => {
-                if (this.binding)
-                  void this.endpoint(audio, pauseId, this.binding, this.speechEpoch);
-              },
-            }
-          : {
-              endSilence: this.conversation.turnEndSilence,
-              manualTurnEnd: this.conversation.manualTurnEnd,
-              limit: () =>
-                this.callbacks.error(
-                  "Voice capture reached its limit. Finish this turn before continuing.",
-                ),
-            },
+        this.vadOptions(),
       );
       this.source = this.audio.createMediaStreamSource(this.stream);
       this.capture = new AudioWorkletNode(this.audio, "bycoda-voice-capture");
@@ -171,14 +156,35 @@ export class LocalVoice {
       throw error;
     }
   }
+  private vadOptions() {
+    const smart = Boolean(
+      this.info?.turn &&
+      this.conversation.turnEndSilence === undefined &&
+      !this.conversation.manualTurnEnd,
+    );
+    return {
+      endSilence: smart ? 1.3 : (this.conversation.turnEndSilence ?? 1.2),
+      manualTurnEnd: this.conversation.manualTurnEnd,
+      pause: smart
+        ? (audio: Int16Array, pauseId: number) => {
+            if (this.binding) void this.endpoint(audio, pauseId, this.binding, this.speechEpoch);
+          }
+        : undefined,
+      limit: () =>
+        this.callbacks.error(
+          "Voice capture reached its limit. Finish this turn before continuing.",
+        ),
+    };
+  }
   configureConversation(options: {
     turnEndSilence?: number;
     allowBargeIn?: boolean;
     manualTurnEnd?: boolean;
   }) {
     this.conversation = { ...this.conversation, ...options };
-    this.vad?.setEndSilence(options.turnEndSilence);
-    this.vad?.setManualTurnEnd(options.manualTurnEnd === true);
+    const vadOptions = this.vadOptions();
+    this.vad?.setEndSilence(vadOptions.endSilence, vadOptions.pause);
+    this.vad?.setManualTurnEnd(this.conversation.manualTurnEnd === true);
   }
   finishTurn() {
     if (!this.closed && !this.muted) this.vad?.flush();
@@ -245,6 +251,12 @@ export class LocalVoice {
   private acceptTranscript(result: LocalVoiceTranscript, binding: SpeechBinding, epoch: number) {
     const text = speechTranscript(result.text);
     if (!text || epoch <= this.acceptedSpeechEpoch) return;
+    if (this.callbacks.interceptTranscript?.({ ...result, text }, binding)) {
+      // A consumed spoken turn still supersedes older recognitions. It does not
+      // promote the UI sequence or interrupt the answer being acknowledged.
+      this.acceptedSpeechEpoch = epoch;
+      return;
+    }
     const accepted = this.callbacks.accept ? this.callbacks.accept(binding) : binding;
     if (!accepted) return;
     this.acceptedSpeechEpoch = epoch;
@@ -260,20 +272,22 @@ export class LocalVoice {
   }
 
   /** Speaks `text`, replacing current speech, or after it with `append` (streamed replies). */
-  speak(text: string, append = false): boolean {
+  speak(text: string, append = false, delivered?: () => void): boolean {
     if (this.closed) return false;
+    // A truncated utterance cannot prove delivery of the entire supplied text.
+    if (text.length > 700) delivered = undefined;
     if (this.config?.natural) {
       if (!this.info || !this.audio || this.audio.state === "closed") return false;
       if (!append) {
         this.silence();
-        this.naturalQueue = this.speakNatural(text.slice(0, 700), this.playbackEpoch);
+        this.naturalQueue = this.speakNatural(text.slice(0, 700), this.playbackEpoch, delivered);
         return true;
       }
       const epoch = this.playbackEpoch;
       this.naturalQueue = this.naturalQueue.then(() =>
         this.closed || epoch !== this.playbackEpoch
           ? undefined
-          : this.speakNatural(text.slice(0, 700), epoch),
+          : this.speakNatural(text.slice(0, 700), epoch, delivered),
       );
       return true;
     }
@@ -290,16 +304,24 @@ export class LocalVoice {
     utterance.onstart = () => {
       if (!this.closed && epoch === this.playbackEpoch) this.setPlayback(true);
     };
-    utterance.onend = utterance.onerror = () => {
+    utterance.onend = () => {
+      if (!this.closed && epoch === this.playbackEpoch) {
+        this.setPlayback(false);
+        delivered?.();
+      }
+    };
+    utterance.onerror = () => {
       if (epoch === this.playbackEpoch) this.setPlayback(false);
     };
     speechSynthesis.speak(utterance);
     return true;
   }
 
-  private async speakNatural(text: string, epoch: number) {
+  private async speakNatural(text: string, epoch: number, delivered?: () => void) {
     const lease = this.info!.lease;
     let id: string | undefined;
+    const completed: Promise<void>[] = [];
+    let successful = false;
     try {
       ({ id } = await localVoiceBackend.speak(
         lease,
@@ -317,7 +339,10 @@ export class LocalVoice {
         const chunk = await localVoiceBackend.speechNext(lease, id);
         if (this.closed || epoch !== this.playbackEpoch) break;
         if (chunk.error) throw new Error(chunk.error);
-        if (chunk.done) break;
+        if (chunk.done) {
+          successful = true;
+          break;
+        }
         if (!chunk.audio) continue;
         const rate = chunk.sampleRate ?? 0;
         if (!Number.isInteger(rate) || rate < 16000 || rate > 48000 || chunk.audio.length > 262144)
@@ -332,7 +357,14 @@ export class LocalVoice {
         source.buffer = buffer;
         source.connect(context.destination);
         this.playback.add(source);
+        let finishPlayback!: () => void;
+        completed.push(
+          new Promise<void>((resolve) => {
+            finishPlayback = resolve;
+          }),
+        );
         source.onended = () => {
+          finishPlayback();
           const timer = this.playbackStarts.get(source);
           if (timer !== undefined) clearTimeout(timer);
           this.playbackStarts.delete(source);
@@ -351,6 +383,11 @@ export class LocalVoice {
         source.start(start);
         this.watchPlaybackStart(source, context, start, epoch);
         this.nextTime = start + buffer.duration;
+      }
+      if (successful && completed.length) {
+        void Promise.all(completed).then(() => {
+          if (!this.closed && epoch === this.playbackEpoch) delivered?.();
+        });
       }
     } catch (cause) {
       if (!this.closed && epoch === this.playbackEpoch) {

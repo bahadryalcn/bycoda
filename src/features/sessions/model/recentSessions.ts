@@ -1,4 +1,5 @@
 import { sessionIssue } from "./sessionIssue";
+import { wasTurnInterrupted } from "./inFlight";
 import { sessionActivityAt } from "./sessionActivity";
 import { pathKey } from "../../../shared/lib/paths";
 import { isRemoteProjectPath } from "../../projects/model/recents";
@@ -13,10 +14,18 @@ export type StoredSessionRow = {
   harness: HarnessId;
   model: string;
   updatedAt: number;
+  lastActivityAt?: number;
   pinned?: boolean;
+  interrupted?: boolean;
 };
 
-export type RecentSessionStatus = "working" | "input" | "done" | "retrying" | "failed";
+export type RecentSessionStatus =
+  | "working"
+  | "input"
+  | "done"
+  | "retrying"
+  | "failed"
+  | "interrupted";
 
 /** What the in-memory sessions add to the stored rows. */
 export type LiveSessionInfo = {
@@ -27,6 +36,8 @@ export type LiveSessionInfo = {
   harness: HarnessId;
   model: string;
   status?: RecentSessionStatus;
+  /** False when transcript hydration cannot yet establish the latest turn. */
+  interruptionKnown?: boolean;
   /** Last user turn, for sessions the store does not hold (remote machines). */
   activityAt: number;
 };
@@ -117,9 +128,12 @@ export function liveSessionInfos(
           ? "input"
           : busy
             ? "working"
-            : unseenFinishedIds.has(session.id)
-              ? "done"
-              : undefined),
+            : wasTurnInterrupted(session)
+              ? "interrupted"
+              : unseenFinishedIds.has(session.id)
+                ? "done"
+                : undefined),
+      interruptionKnown: !session.historyPartial && !session.historyLoading,
       activityAt: sessionActivityAt(session),
       managedBy: session.managedBy,
     });
@@ -142,6 +156,7 @@ export function sameLiveSessionInfos(
         left.harness === right.harness &&
         left.model === right.model &&
         left.status === right.status &&
+        left.interruptionKnown === right.interruptionKnown &&
         left.activityAt === right.activityAt &&
         left.managedBy?.jobId === right.managedBy?.jobId &&
         left.managedBy?.managedAt === right.managedBy?.managedAt
@@ -186,11 +201,19 @@ export function buildRecentSessions({
       title: sessionDisplayTitle(info?.title ?? row.title, row.harness),
       harness: row.harness,
       model: info?.model || row.model,
-      updatedAt: Math.max(row.updatedAt, info?.activityAt ?? 0, active ? now : 0),
+      updatedAt: Math.max(
+        row.lastActivityAt ?? row.updatedAt,
+        info?.activityAt ?? 0,
+        active ? now : 0,
+      ),
       pinned: !!row.pinned,
       pinnable: true,
       remote: isRemoteProjectPath(row.cwd),
-      status: info?.status,
+      status:
+        info?.status ??
+        (row.interrupted && (!info || info.interruptionKnown === false)
+          ? "interrupted"
+          : undefined),
       managedBy: info?.managedBy ?? row.managedBy,
     });
   }

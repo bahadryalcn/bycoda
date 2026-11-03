@@ -21,8 +21,23 @@ Paths are repository-root relative. Follow only the lane affected by the change.
 - Context: `host/assistant-chief-context.ts`, `host/assistant-text.ts`,
   `host/assistant-thread-summary.ts`, `src/shared/model/assistantContext.ts`.
 - Room/setup/drafts/notifications: `src/features/assistant/`.
+- Room Sessions: `ui/AssistantSessions.tsx`, `AssistantSessions.module.css` and
+  `ManualSessionSupervision.tsx` in that feature. Keep job-session filters distinct
+  from manual enrollment scope; unconfirmed supervision policy is Unknown, not Off.
+- History: `src/features/assistant/ui/AssistantHistory.tsx` and its CSS module.
+  Groups activity by local calendar day, newest first; Room owns query/type
+  filtering and the existing clear-history confirmation and Host operation.
+- Memory collection and editor: `src/features/assistant/ui/AssistantMemoryPanel.tsx`,
+  `MemoryEditor.tsx` and `AssistantMemoryPanel.module.css`. Room retains Host-bound
+  mutation, version checks, confirmation and undo ownership.
+- Room settings: `src/features/assistant/ui/AssistantSettings.tsx` and its CSS module; shared profile fields remain in `AssistantProfileFields.tsx`. Manual project scope belongs to `ManualSessionSupervision.tsx`; computer permissions and helper setup belong to `src/features/host-tools/DesktopControlSettings.tsx` and `DesktopHelperSetup.tsx`.
+- Notes presentation: `src/features/assistant/ui/AssistantNoteCard.tsx` and its CSS
+  module. Room owns search, daily summaries, Host-bound note drafts, versioned
+  deletion confirmations and undo receipts; cards only present and open notes.
 - Room composition: `src/features/assistant/ui/AssistantView.tsx` and its CSS
-  module. Presence presentation: `model/assistantPresencePresentation.ts` and
+  module. Jobs keeps its creation input before the collection in DOM and focus
+  order; empty-result reset clears collection filters without changing the draft.
+  Presence presentation: `model/assistantPresencePresentation.ts` and
   `ui/AssistantPresenceIndicator.tsx`, `AssistantPresenceStatus.tsx`,
   `AssistantPresenceMenu.tsx` under that feature; TitleBar consumes the same menu.
 - Project display metadata: `host/project-display-names.ts`, `host/desktopLive.ts`,

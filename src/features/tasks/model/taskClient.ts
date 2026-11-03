@@ -74,6 +74,8 @@ export type TaskDraft = {
   workspaceLocked?: boolean;
   workspace?: TaskWorkspace;
   id?: string;
+  /** Stable create receipt, separate from edit mode; retained by form spreads. */
+  creation?: { id: string; target?: string; attempted?: boolean };
   /** Explicit host selected by the owner; edits retain their original host. */
   machineId?: string;
   /** The status of the task being edited. */
@@ -158,6 +160,7 @@ export function todoUnsupportedMessage(
 
 export function newTaskDraft(cwd: string, harness: HarnessId, model: string): TaskDraft {
   return {
+    creation: { id: crypto.randomUUID() },
     title: "",
     prompt: "",
     cwd,
@@ -544,12 +547,44 @@ export async function saveTask(
     if (unsupported) throw new Error(unsupported);
   }
   const project = await hostProjectFor(machine, draft.cwd);
+  // Resolve optional presentation metadata before the write: once saved, the
+  // receipt must survive a later descriptor outage.
+  const workspaceControlsSupported = (await machineCapabilities(machine)).includes(
+    HOST_TASK_WORKSPACES,
+  );
+  const creation = draft.id ? undefined : (draft.creation ??= { id: crypto.randomUUID() });
+  if (creation) {
+    const target = JSON.stringify([machine.id, machine.environmentId, project.id]);
+    if (creation.target && creation.target !== target)
+      throw new Error(
+        "Resolve the previous task creation on its original machine before changing projects.",
+      );
+    if (creation.attempted) {
+      // A failed reply is not evidence that the Host did not persist the task.
+      // Failed reconciliation must not authorize another write.
+      const existing = await remoteRequest<HostTask[]>(machine.id, "tasks.list", {
+        projectId: project.id,
+      });
+      if (!Array.isArray(existing))
+        throw new Error("The previous task creation could not be checked.");
+      const recovered = existing.find(
+        (task) => task.id === creation.id && task.projectId === project.id,
+      );
+      if (recovered)
+        return {
+          ...boardTaskFromHost(machine, hostProjectCwd(machine, project), recovered),
+          workspaceControlsSupported,
+        };
+    }
+    creation.target = target;
+    creation.attempted = true;
+  }
   const saved = await remoteRequest<HostTask>(
     machine.id,
     "tasks.save",
     {
       task: {
-        ...hostTaskFromDraft(draft, draft.id ?? crypto.randomUUID(), project.id),
+        ...hostTaskFromDraft(draft, draft.id ?? creation!.id, project.id),
         // An older host starts every new task queued, and ignores this.
         ...(draft.id ? {} : { status }),
       },
@@ -559,7 +594,7 @@ export async function saveTask(
   );
   return {
     ...boardTaskFromHost(machine, hostProjectCwd(machine, project), saved),
-    workspaceControlsSupported: (await machineCapabilities(machine)).includes(HOST_TASK_WORKSPACES),
+    workspaceControlsSupported,
   };
 }
 

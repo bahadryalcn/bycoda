@@ -22,6 +22,7 @@ export const fixtureVoice = {
   projectLists: 0,
   speech(text: string) {
     const onset = this.callbacks.start();
+    if (this.callbacks.interceptTranscript?.({ text }, onset)) return;
     const binding = this.callbacks.accept?.(onset) ?? onset;
     this.callbacks.transcript({ text }, binding);
   },
@@ -41,7 +42,8 @@ export class LocalVoice {
   close() {
     fixtureVoice.closes++;
   }
-  speak() {
+  speak(_text: string, _append?: boolean, delivered?: () => void) {
+    delivered?.();
     return true;
   }
   mute() {}

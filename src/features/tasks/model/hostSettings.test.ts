@@ -183,14 +183,15 @@ describe("limits client", () => {
     },
   };
 
-  it("lists the machines that answer, naming this computer", async () => {
+  it("rejects failed reads instead of reporting missing limits as empty", async () => {
     invoke.mockImplementation(async (command: string, args: any) => {
       if (command !== "remote_request") return null;
       if (args.machineId === "machine-mac" && args.method === "host.settings.get")
         throw new Error("offline");
       return answers[args.machineId];
     });
-    const limits = await listMachineLimits([local, mac]);
+    await expect(listMachineLimits([local, mac])).rejects.toThrow("offline");
+    const limits = await listMachineLimits([local]);
     expect(limits).toEqual([
       expect.objectContaining({
         machineId: "machine-local",

@@ -1,0 +1,52 @@
+.briefing {
+  display: grid;
+  gap: 14px;
+  padding-block: 0 20px;
+  margin-block-end: 24px;
+  border-block-end: 1px solid var(--ui-pane-border);
+  min-inline-size: 0;
+}
+
+.header,
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.header {
+  justify-content: space-between;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: var(--ui-font-secondary);
+  font-weight: 600;
+}
+
+.copy {
+  margin: 0;
+  max-inline-size: 75ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+}
+
+.approval {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-block: 10px;
+  border-block-end: 1px solid var(--ui-pane-border);
+  min-inline-size: 0;
+}
+
+.approval > span {
+  flex: 1 1 240px;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}

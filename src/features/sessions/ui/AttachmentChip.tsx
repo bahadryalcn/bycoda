@@ -3,10 +3,12 @@ import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { Link, X } from "../../../shared/ui/icons";
-import { attachmentPreviewSrc, isAttachmentFolder } from "../model/attachments";
+import { attachmentPreviewSrc } from "../model/attachments";
 import { tokenLabel } from "../model/attachmentTokens";
+import { attachmentPresentation } from "../model/attachmentPresentation";
+import { AttachmentIdentity } from "./AttachmentIdentity";
+import styles from "./AttachmentChip.module.css";
 import type { Attachment } from "../model/session";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { BrowserAnnotationDetails } from "../../host-tools/BrowserAnnotationDetails";
 import { useAttachmentPreview } from "./useAttachmentPreview";
@@ -36,6 +38,16 @@ export function AttachmentChip({
   onInsertToken,
 }: Props) {
   const t = useT();
+  const presentation = attachmentPresentation(attachment);
+  const [failedThumbnail, setFailedThumbnail] = useState<string>();
+  const size =
+    Number.isFinite(attachment.size) && attachment.size > 0
+      ? attachment.size < 1024
+        ? `${attachment.size} B`
+        : attachment.size < 1024 * 1024
+          ? `${Math.round(attachment.size / 1024)} KB`
+          : `${(attachment.size / (1024 * 1024)).toFixed(1)} MB`
+      : null;
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
   const canOpenFile = canOpenFileAttachment(attachment);
@@ -61,7 +73,7 @@ export function AttachmentChip({
         motion="none"
         variant={image ? "link" : "ghost"}
         layout={image ? "text" : undefined}
-        className={image ? "block w-14 max-w-14 truncate text-center" : undefined}
+        className={image ? "block max-w-full truncate text-center" : undefined}
         type="button"
         tooltip={t("Insert {p0} into the message", { p0: token })}
         aria-label={t("Insert {p0} into the message", { p0: token })}
@@ -75,11 +87,7 @@ export function AttachmentChip({
         <span className={image ? "text-ui-caption leading-5" : undefined}>{label}</span>
       </Button>
     ) : label ? (
-      <span
-        className={
-          image && tokenLabelPlacement === "overlay" ? "attachment-token-overlay" : labelClass
-        }
-      >
+      <span className={image && tokenLabelPlacement === "overlay" ? styles.reference : labelClass}>
         {label}
       </span>
     ) : null;
@@ -88,11 +96,8 @@ export function AttachmentChip({
     <>
       <div
         data-attachment-chip={image ? "image" : "file"}
-        className={`group relative flex min-w-0 items-center gap-1.5 rounded-md ${
-          image
-            ? "w-14 shrink-0 flex-col gap-0"
-            : "shrink-0 self-center max-w-full bg-(--ui-surface-raised) py-0.5 px-1"
-        }`}
+        data-attachment-kind={presentation.kind}
+        className={`group ${styles.card} ${image ? styles.image : styles.file}`}
         title={attachment.path ?? attachment.name}
       >
         {image ? (
@@ -110,15 +115,30 @@ export function AttachmentChip({
                 event.stopPropagation();
                 void show();
               }}
-              className="size-14 shrink-0 overflow-clip"
+              className={styles.thumbnail}
             >
-              <img src={preview} alt="" draggable={false} className="size-full object-cover" />
+              {failedThumbnail !== preview ? (
+                <img
+                  src={preview}
+                  alt=""
+                  draggable={false}
+                  onError={() => setFailedThumbnail(preview)}
+                  className="size-full object-cover"
+                />
+              ) : (
+                <AttachmentIdentity attachment={attachment} />
+              )}
             </Button>
+            <span className={styles.imageName}>{attachment.name}</span>
+            <span className={styles.metadata}>
+              {t(presentation.label)}
+              {size ? ` · ${size}` : ""}
+            </span>
             {labelNode}
           </span>
         ) : (
           <>
-            <span className="min-w-0 max-w-48 text-ui-caption text-(--ui-text-secondary)">
+            <span className={styles.fileBody}>
               {canOpen || canOpenFile ? (
                 <Button
                   motion="none"
@@ -126,6 +146,7 @@ export function AttachmentChip({
                   className="min-w-0 max-w-full"
                   type="button"
                   disabled={loading}
+                  loading={loading}
                   aria-busy={loading}
                   aria-haspopup="dialog"
                   aria-label={t("Open {p0} full screen", { p0: attachment.name })}
@@ -139,24 +160,30 @@ export function AttachmentChip({
                   }}
                 >
                   {labelNode}
-                  <FileTypeIcon
-                    name={attachment.name}
-                    isDir={isAttachmentFolder(attachment)}
-                    size="md"
-                  />
-                  <span className="min-w-0 truncate">
-                    {loading ? t("Loading…") : attachment.name}
+                  <span className={styles.fileIcon}>
+                    <AttachmentIdentity attachment={attachment} />
+                  </span>
+                  <span className={styles.fileDetails}>
+                    <span className={styles.name}>{loading ? t("Loading…") : attachment.name}</span>
+                    <span className={styles.metadata}>
+                      {t(presentation.label)}
+                      {size ? ` · ${size}` : ""}
+                    </span>
                   </span>
                 </Button>
               ) : (
                 <span className="flex min-w-0 items-center gap-1.5">
                   {labelNode}
-                  <FileTypeIcon
-                    name={attachment.name}
-                    isDir={isAttachmentFolder(attachment)}
-                    size="md"
-                  />
-                  <span className="truncate">{attachment.name}</span>
+                  <span className={styles.fileIcon}>
+                    <AttachmentIdentity attachment={attachment} />
+                  </span>
+                  <span className={styles.fileDetails}>
+                    <span className={styles.name}>{attachment.name}</span>
+                    <span className={styles.metadata}>
+                      {t(presentation.label)}
+                      {size ? ` · ${size}` : ""}
+                    </span>
+                  </span>
                 </span>
               )}
             </span>

@@ -36,7 +36,11 @@ import {
 } from "../model/connections";
 import "../model/remoteCommands";
 import { remoteCreateIntent, resetRemoteCreateIntentsForTests } from "../model/remoteCreateIntent";
-import { notifyRemoteRecovered, resetRemoteHealth } from "../model/remoteHealth";
+import {
+  notifyRemoteRecovered,
+  readRemoteConnection,
+  resetRemoteHealth,
+} from "../model/remoteHealth";
 import { resetAutoContinueForTests } from "../../sessions/model/autoContinue";
 import { savePendingRemoteCommand } from "../model/remoteOutbox";
 import { resetRemoteQueuesForTests } from "../model/useRemoteQueue";
@@ -2025,6 +2029,21 @@ it("transport: keeps a first message visible, with Try again, when Send cannot r
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Try again"),
   ).toBe(true);
+});
+
+it("reports a failed conversation command to its machine's shared connection state", async () => {
+  openExistingChat();
+  await render();
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    const request = input as { method?: string; params?: HostCommand } | undefined;
+    if (request?.method === "commands.dispatch" && request.params?.type === "send")
+      throw new Error("RPC_WS_BLOCKED: Host authentication was refused");
+    return original(command, input);
+  });
+  await sendTransport("Keep this unsent message");
+  expect(readRemoteConnection(machine.environmentId).status).toBe("connection-blocked");
+  expect(commands).toEqual([]);
 });
 
 it("transport: reconnects first and then sends when Send is pressed while disconnected", async () => {

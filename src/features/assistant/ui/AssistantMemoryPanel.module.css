@@ -1,0 +1,117 @@
+.panel {
+  inline-size: 100%;
+  max-inline-size: 1000px;
+  min-inline-size: 0;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.header h2 {
+  margin: 0;
+  font-size: var(--ui-font-heading);
+  font-weight: 600;
+}
+.title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.search {
+  inline-size: min(100%, 360px);
+}
+.group,
+.entries {
+  display: grid;
+  gap: 10px;
+  min-inline-size: 0;
+}
+.entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px 20px;
+}
+.text {
+  display: grid;
+  gap: 10px;
+  min-inline-size: 0;
+}
+.body {
+  margin: 0;
+  max-inline-size: 72ch;
+  font-size: var(--ui-font-body);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.metadata time {
+  font-variant-numeric: tabular-nums;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.quote {
+  margin: 0;
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--ui-pane-border);
+  color: var(--ui-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.feedback {
+  grid-column: 1 / -1;
+}
+.feedback:empty {
+  display: none;
+}
+.empty p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+}
+.editor {
+  display: grid;
+  gap: 20px;
+  padding: 12px 20px 24px;
+  min-inline-size: 0;
+}
+.editorOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .actions {
+    justify-content: flex-end;
+    border-block-start: 1px solid var(--ui-pane-border);
+    padding-block-start: 10px;
+  }
+}
+@media (max-width: 540px) {
+  .editorOptions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

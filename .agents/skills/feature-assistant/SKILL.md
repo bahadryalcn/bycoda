@@ -66,6 +66,7 @@ Setup: [controls](references/setup.md).
   Board follow-up counts use confirmed delivery, with unknown outcomes separate.
 - Daily summaries return their saved day artifact, never a mutable return-briefing
   pointer. Retain creation time and contributor privacy; missing stays unavailable.
+- Briefing speech requires its Host return receipt and current delivery gates.
 - Save intent before an external effect. Unknown delivery must be inspected,
   never automatically repeated under a fresh ID. Retain outbox events across
   restart and retry model-only failures with bounded backoff.

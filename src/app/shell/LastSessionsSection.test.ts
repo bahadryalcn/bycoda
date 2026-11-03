@@ -118,9 +118,9 @@ it("keeps selected session open, independent pin and keyboard context actions", 
   const session = container.querySelector<HTMLButtonElement>('button[aria-current="true"]')!;
   expect(session.getAttribute("data-button-selected")).toBe("true");
   await act(async () => session.click());
-  expect(open).toHaveBeenCalledExactlyOnceWith("recent-one");
+  expect(open).toHaveBeenCalledExactlyOnceWith("recent-one", "/work/project");
   await act(async () => session.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-  expect(open).toHaveBeenLastCalledWith("recent-one", { keepOpen: true });
+  expect(open).toHaveBeenLastCalledWith("recent-one", "/work/project", { keepOpen: true });
   const pinButton = container.querySelector<HTMLButtonElement>('button[aria-label="Pin session"]')!;
   await act(async () => pinButton.click());
   expect(pin).toHaveBeenCalledTimes(1);
@@ -132,6 +132,39 @@ it("keeps selected session open, independent pin and keyboard context actions", 
   );
   expect(document.querySelector('[role="menu"]')).toBeTruthy();
   expect(document.querySelector('[role="menu"]')?.textContent).toContain("Open project");
+});
+
+it("opens the global workspace from its title independently of collapse, even when empty", async () => {
+  const original = data.stored;
+  data.stored = [];
+  const open = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(LastSessionsSection, {
+          ...appearance,
+          source: { history: [], live: [], onPin: vi.fn(async () => {}) },
+          projectKeys: new Set([pathKey("/work/project")]),
+          enabled: true,
+          searchActive: false,
+          onOpenProject: vi.fn(),
+          onOpenLastSessions: open,
+          lastSessionsOpen: true,
+        }),
+      ),
+    );
+    const title = container.querySelector<HTMLButtonElement>('button[aria-current="page"]')!;
+    const collapse = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    expect(title.textContent).toContain("Last sessions");
+    await act(async () => collapse.click());
+    expect(open).not.toHaveBeenCalled();
+    expect(collapse.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => title.click());
+    expect(open).toHaveBeenCalledOnce();
+    expect(collapse.getAttribute("aria-expanded")).toBe("false");
+  } finally {
+    data.stored = original;
+  }
 });
 
 it("applies the selected total count to pinned rows and persists the new three-row option", async () => {

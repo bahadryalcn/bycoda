@@ -5,8 +5,13 @@ import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import { isLocalSyncMachine } from "../../connections/model/localSync";
+import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { hostProjectCwd } from "../../automations/model/hostAutomationClient";
+import { projectDisplayName } from "../../projects/model/projectNames";
+import { taskProjectIdentity } from "./taskBoardScope";
 import {
   machineCapabilities,
+  machineProjects,
   invalidateMachineSnapshot,
 } from "../../automations/model/machineSnapshot";
 import {
@@ -35,8 +40,15 @@ const identity = (machine: RemoteMachine) =>
 type Description = { capabilities: string[]; error?: string };
 // Combine tracks data rather than polling timestamps/fetchStatus. Unchanged host
 // answers keep the combined result reference through Query's structural sharing.
-function combine<T>(results: { data: T | undefined; isPending: boolean; error: Error | null }[]) {
-  return results.map(({ data, isPending, error }) => ({ data, isPending, error }));
+function combine<T>(
+  results: { data: T | undefined; isPending: boolean; isFetching: boolean; error: Error | null }[],
+) {
+  return results.map(({ data, isPending, isFetching, error }) => ({
+    data,
+    isPending,
+    isFetching,
+    error,
+  }));
 }
 function useMachineReads<T>(
   machines: RemoteMachine[],
@@ -49,18 +61,21 @@ function useMachineReads<T>(
   return useQueries({
     queries: machines.map((machine, index) => {
       const description = descriptions[index]?.data;
+      const retained = kind === "projects" || kind === "limits";
       return {
         queryKey: [
           "task-board",
           ...identity(machine),
           kind,
-          description?.error ? "unreachable" : "reachable",
+          ...(retained ? [] : [description?.error ? "unreachable" : "reachable"]),
         ],
         queryFn: () => read(machine, !description?.error),
         enabled:
           visible &&
           !!description &&
-          (!!description.error || description.capabilities.includes(capability)),
+          (retained
+            ? !description.error && description.capabilities.includes(capability)
+            : !!description.error || description.capabilities.includes(capability)),
         staleTime: 15_000,
         refetchInterval: 15_000,
         retry: false,
@@ -72,7 +87,7 @@ function useMachineReads<T>(
 
 /** Independent machine/list keys let a fast host publish before a slow peer.
  * Reads retain taskClient's etags, last-good data and machine identity guards. */
-export function useTaskBoardQueries() {
+export function useTaskBoardQueries(projectScope = "all") {
   const client = useQueryClient();
   const visible = useQueryVisible();
   const forceCapabilities = useRef(new Set<string>());
@@ -89,7 +104,22 @@ export function useTaskBoardQueries() {
     refetchInterval: 15_000,
     retry: false,
   });
-  const machines = inventory.data ?? EMPTY_MACHINES;
+  const machines = useMemo(() => {
+    const all = inventory.data ?? EMPTY_MACHINES;
+    if (projectScope === "all") return all;
+    if (projectScope.startsWith("path:")) {
+      const remote = parseRemotePath(projectScope.slice(5));
+      return all.filter((machine) =>
+        remote ? machine.environmentId === remote.environmentId : isLocalSyncMachine(machine),
+      );
+    }
+    try {
+      const [environmentId] = JSON.parse(projectScope);
+      return all.filter((machine) => machine.environmentId === environmentId);
+    } catch {
+      return EMPTY_MACHINES;
+    }
+  }, [inventory.data, projectScope]);
   const descriptions = useQueries({
     queries: machines.map((machine) => ({
       queryKey: ["task-board", ...identity(machine), "capabilities"],
@@ -103,7 +133,9 @@ export function useTaskBoardQueries() {
           };
         } catch (reason) {
           return {
-            capabilities: [],
+            capabilities:
+              client.getQueryData<Description>(["task-board", ...identity(machine), "capabilities"])
+                ?.capabilities ?? [],
             error: reason instanceof Error ? reason.message : String(reason),
           };
         }
@@ -150,7 +182,29 @@ export function useTaskBoardQueries() {
     HOST_SETTINGS,
     "limits",
     visible,
-    (machine, reachable) => (reachable ? listMachineLimits([machine]) : Promise.resolve([])),
+    (machine, reachable) =>
+      reachable ? listMachineLimits([machine]) : Promise.reject(new Error("Machine unavailable")),
+  );
+  const projects = useMachineReads(
+    machines,
+    descriptions,
+    HOST_TASKS,
+    "projects",
+    visible,
+    async (machine, reachable) => {
+      if (!reachable) throw new Error("Machine unavailable");
+      const rows = await machineProjects(machine);
+      if (!Array.isArray(rows)) throw new Error("The machine sent projects this app cannot read.");
+      return rows.map((project) => ({
+        key: taskProjectIdentity(machine.environmentId, project.id),
+        environmentId: machine.environmentId,
+        projectId: project.id,
+        machineId: machine.id,
+        machineName: machine.name,
+        cwd: hostProjectCwd(machine, project),
+        name: project.name || projectDisplayName(project.cwd),
+      }));
+    },
   );
   const subscriptionKey = JSON.stringify(machines.map(identity));
   useEffect(() => {
@@ -159,15 +213,24 @@ export function useTaskBoardQueries() {
     return () => window.removeEventListener("bycoda:remote-machines", changed);
   }, [client]);
   const refresh = useCallback(
-    async (force = false) => {
+    async (force = false, machineId?: string) => {
+      const selected = machines.filter((machine) => !machineId || machine.id === machineId);
       if (force) {
-        invalidateMachineSnapshot();
-        machines.forEach((machine) => {
+        selected.forEach((machine) => {
+          invalidateMachineSnapshot(machine.id);
           forceTasks.current.add(machine.id);
           forceCapabilities.current.add(machine.id);
         });
       }
-      await client.invalidateQueries({ queryKey: ["task-board"] });
+      await client.invalidateQueries(
+        {
+          predicate: (query) =>
+            query.queryKey[0] === "task-board" &&
+            (query.queryKey[1] === "inventory" ||
+              selected.some((machine) => query.queryKey[1] === machine.id)),
+        },
+        { cancelRefetch: false },
+      );
     },
     [client, machines],
   );
@@ -180,7 +243,16 @@ export function useTaskBoardQueries() {
     () => stewardResults.flatMap((result) => result.data),
     [stewardResults],
   );
-  const limitData = useMemo(() => limits.flatMap((result) => result.data ?? []), [limits]);
+  const limitData = useMemo(
+    () =>
+      limits.flatMap((result, index) =>
+        (result.data ?? []).map((entry) => ({
+          ...entry,
+          stale: !!result.error || !!descriptions[index]?.data?.error,
+        })),
+      ),
+    [limits, descriptions],
+  );
   // Capable machine lists change only with the inventory or capabilities, so a
   // confirmed mutation patching one collection does not re-key machine consumers.
   const capableMachines = useMemo(() => {
@@ -198,7 +270,8 @@ export function useTaskBoardQueries() {
     const results: MachineResult<unknown>[] = [...taskResults, ...goalResults, ...stewardResults];
     const pending =
       inventory.isPending ||
-      descriptions.some((result) => result.isPending) ||
+      inventory.isFetching ||
+      descriptions.some((result) => result.isPending || result.isFetching) ||
       machines.some((_, index) => {
         const caps = descriptions[index]?.data?.capabilities ?? [];
         return [
@@ -206,9 +279,14 @@ export function useTaskBoardQueries() {
           [HOST_GOALS, goals],
           [HOST_STEWARDS, stewards],
           [HOST_SETTINGS, limits],
+          [HOST_TASKS, projects],
         ].some(
           ([cap, reads]) =>
-            caps.includes(cap as string) && (reads as { isPending: boolean }[])[index]?.isPending,
+            !descriptions[index]?.data?.error &&
+            caps.includes(cap as string) &&
+            (reads as { isPending: boolean; isFetching: boolean }[])[index] &&
+            ((reads as { isPending: boolean; isFetching: boolean }[])[index].isPending ||
+              (reads as { isPending: boolean; isFetching: boolean }[])[index].isFetching),
         );
       });
     const unreachable = machines
@@ -228,6 +306,26 @@ export function useTaskBoardQueries() {
         (result) =>
           `${result.machineName}: ${descriptions[machines.findIndex((machine) => machine.id === result.machineId)]?.data?.error ?? result.error ?? "request failed"}`,
       );
+    const limitErrors = limits.flatMap((result, index) => {
+      const error =
+        result.error?.message ??
+        (descriptions[index]?.data?.capabilities.includes(HOST_SETTINGS)
+          ? descriptions[index]?.data?.error
+          : undefined);
+      return error
+        ? [{ machineId: machines[index].id, machineName: machines[index].name, error }]
+        : [];
+    });
+    problems.push(...limitErrors.map((entry) => `${entry.machineName}: ${entry.error}`));
+    projects.forEach((result, index) => {
+      if (result.error) problems.push(`${machines[index].name}: ${result.error.message}`);
+    });
+    const taskError =
+      inventory.error?.message ||
+      taskResults.find((result) => result.status === "error")?.error ||
+      (unreachable.length || outdated.length
+        ? missingMachinesNotice({ unreachable, outdated })
+        : undefined);
     for (const name of outdated)
       problems.push(`${name}: update ${PRODUCT_IDENTITY.displayName} Host to refresh its board`);
     const error =
@@ -241,9 +339,12 @@ export function useTaskBoardQueries() {
       goals: goalData,
       stewards: stewardData,
       limits: limitData,
+      limitErrors,
+      projects: projects.flatMap((result) => result.data ?? []),
+      taskError,
       pending,
       error,
-      hasTaskAnswer: taskResults.length > 0,
+      hasTaskAnswer: taskResults.some((result) => result.status === "ok" || result.data.length > 0),
       notice: missingMachinesNotice(
         { outdated, unreachable: [...new Set([...unreachable, ...failedMachineNames(results)])] },
         staleMachineNames(results),
@@ -257,7 +358,9 @@ export function useTaskBoardQueries() {
     goals,
     stewards,
     limits,
+    projects,
     inventory.isPending,
+    inventory.isFetching,
     inventory.error,
     taskResults,
     goalResults,

@@ -366,6 +366,7 @@ it("returns the exact retained daily artifact after another day replaces the glo
   const f = await fixture();
   f.time(10);
   const first = (await f.owner({ op: "briefing.daily", day: "2026-11-02" })).snapshot!.briefing!;
+  expect(first.voiceReceipt).toBeUndefined();
   expect(first.projectIds).toContain(f.project.id);
   expect(first.text.length).toBeLessThanOrEqual(6000);
   f.time(34);
@@ -503,3 +504,18 @@ it.each(["tr-TR", "en-US", "de-DE", "fr-FR", "es-ES", "pt-PT", "zh-CN", "ja-JP"]
     expect(text.length).toBeLessThanOrEqual(6000);
   },
 );
+
+it("classifies a real return with a waiting approval and validates its receipt", async () => {
+  const f = await fixture();
+  f.time(10);
+  await f.owner({ op: "presence.set", state: "away" });
+  f.time(11);
+  await f.owner({ op: "presence.set", state: "present" });
+  const snapshot = await f.snapshot();
+  expect(snapshot.briefing?.voiceReceipt).toMatchObject({
+    reason: "return",
+    meaningful: true,
+    important: true,
+  });
+  expect(AssistantResponseValidationSchema.safeParse({ snapshot }).success).toBe(true);
+});

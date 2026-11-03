@@ -551,7 +551,13 @@ describe("durable assistant ownership and supervision", () => {
     });
     expect((await f.request({ op: "snapshot" })).snapshot!.briefing).toBeNull();
     await f.request({ op: "presence.set", state: "present" });
-    expect((await f.request({ op: "snapshot" })).snapshot!.briefing).not.toBeNull();
+    const briefing = (await f.request({ op: "snapshot" })).snapshot!.briefing;
+    expect(briefing?.voiceReceipt).toEqual({
+      reason: "return",
+      returnAt: now,
+      meaningful: false,
+      important: false,
+    });
   });
   it("uses the budget at 80% to prevent new dispatch and counts worker deltas once", async () => {
     let launches = 0;

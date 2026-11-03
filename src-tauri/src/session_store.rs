@@ -21,6 +21,7 @@ pub(crate) mod native_delivery;
 mod native_projection_join_tests;
 pub(crate) mod native_raw_capture;
 mod provenance;
+mod provider_history;
 pub(crate) mod references;
 #[path = "session_rewind.rs"]
 pub(crate) mod rewind;
@@ -388,6 +389,8 @@ mod search_index_start_tests {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionUpsert {
+    #[serde(skip)]
+    pub preserve_activity_at: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub managed_by: Option<Value>,
     pub id: String,
@@ -449,6 +452,11 @@ pub struct SessionUpsert {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSummary {
+    pub last_activity_at: i64,
+    #[serde(default)]
+    pub interrupted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_history: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub managed_by: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -557,6 +565,7 @@ pub async fn session_upsert(
     expected_revision: Option<i64>,
     expect_missing: Option<bool>,
     capture_output_receipt: Option<bool>,
+    preserve_activity_at: Option<bool>,
 ) -> Result<Option<write_receipts::NativeWriteAck<SessionSummary>>, String> {
     crate::harness::run_blocking("session_upsert", move || {
         let store = app.state::<crate::session_store::SessionStore>();
@@ -566,6 +575,7 @@ pub async fn session_upsert(
         let session_id = session.id.clone();
         crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
             validate_upsert(&session)?;
+            session.preserve_activity_at = preserve_activity_at.unwrap_or(false);
             // Git lookups can spawn processes; never do that while holding the
             // connection every other store command waits on.
             let git = upsert_git_info(&session);
@@ -706,6 +716,13 @@ fn delta_summary(
         return Ok(None);
     };
     Ok(Some(SessionSummary {
+        last_activity_at: stored_activity_at(conn, &session.id)?,
+        interrupted: stored_turn_interrupted(conn, &session.id)?,
+        provider_history: Some(provider_history::stored(
+            conn,
+            &session.id,
+            &session.harness,
+        )?),
         managed_by: provenance::stored_management(conn, &session.id)?,
         transcript_revision: Some(revision),
         id: session.id.clone(),
@@ -1042,6 +1059,18 @@ pub async fn session_list_recent(
     crate::harness::run_blocking("session_list_recent", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         store.with_read_conn(|conn| list_recent(conn, limit).map_err(|e| e.to_string()))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn session_list_recent_since(
+    app: tauri::AppHandle,
+    since: i64,
+) -> Result<Vec<SessionSummary>, String> {
+    crate::harness::run_blocking("session_list_recent_since", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        store.with_read_conn(|conn| list_recent_since(conn, since).map_err(|e| e.to_string()))
     })
     .await
 }
@@ -2176,6 +2205,14 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // legacy prefixes are repaired by the column checks in migrate_versions.
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
     migrate_versions(&tx)?;
+    ensure_column(&tx, "last_activity_at", "INTEGER")?;
+    tx.execute(
+        "UPDATE sessions SET last_activity_at=updated_at WHERE last_activity_at IS NULL",
+        [],
+    )?;
+    tx.execute_batch("CREATE INDEX IF NOT EXISTS sessions_activity_project_idx ON sessions (cwd, last_activity_at DESC, id);
+        CREATE INDEX IF NOT EXISTS sessions_activity_recent_idx ON sessions (pinned, last_activity_at DESC, id) WHERE has_user_message = 1 AND archived = 0;
+        CREATE INDEX IF NOT EXISTS sessions_activity_linked_idx ON sessions (last_activity_at DESC, id) WHERE linked_work_item_json IS NOT NULL;")?;
     tx.commit()?;
 
     // Keep independent schema helpers outside this transaction: some own their
@@ -2472,6 +2509,13 @@ fn upsert_session_in_transaction(
         Some(pieces) if !pieces.is_empty() => legacy_blob::NORMALIZED_BLOB,
         _ => blocks_json.as_str(),
     };
+    let previous_updated: Option<i64> = conn
+        .query_row(
+            "SELECT updated_at FROM sessions WHERE id=?1",
+            [&session.id],
+            |row| row.get(0),
+        )
+        .optional()?;
     let mut result = upsert_session_core(
         conn,
         session,
@@ -2482,6 +2526,8 @@ fn upsert_session_in_transaction(
         normalized_same,
     )?;
     if let Some(summary) = result.as_mut() {
+        conn.execute("UPDATE sessions SET last_activity_at = CASE WHEN (?2 OR ?3) AND last_activity_at IS NOT NULL THEN last_activity_at ELSE updated_at END WHERE id=?1", params![session.id, session.preserve_activity_at, previous_updated == Some(summary.updated_at)])?;
+        summary.last_activity_at = stored_activity_at(conn, &session.id)?;
         if normalized_same {
             // Metadata-only saves still invalidate stale deltas and exact-row receipts.
             conn.execute(
@@ -2756,6 +2802,12 @@ fn upsert_session_core(
         )?;
     }
     Ok(Some(SessionSummary {
+        last_activity_at: updated_at,
+        interrupted: turn_interrupted(session.blocks.as_array().and_then(|blocks| blocks.last())),
+        provider_history: Some(provider_history::derive(
+            session.blocks.as_array().map(Vec::as_slice).unwrap_or(&[]),
+            &session.harness,
+        )),
         managed_by: provenance::stored_management(conn, &session.id)?,
         transcript_revision: None,
         id: session.id.clone(),
@@ -3136,7 +3188,7 @@ fn list_by_project_with_git(
            AND has_user_message = 1
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
            AND id NOT IN (SELECT session_id FROM orchestration_workers)
-         ORDER BY updated_at DESC, id ASC",
+         ORDER BY last_activity_at DESC, id ASC",
     )?;
     let rows = statement.query_map(params![cwd], |row| {
         let stored_branch: Option<String> = row.get(9)?;
@@ -3144,6 +3196,13 @@ fn list_by_project_with_git(
         let pinned: i64 = row.get(11)?;
         let linked_work_item = optional_json(row.get(12)?);
         Ok(SessionSummary {
+            last_activity_at: stored_activity_at(conn, &row.get::<_, String>(0)?)?,
+            interrupted: stored_turn_interrupted(conn, &row.get::<_, String>(0)?)?,
+            provider_history: Some(provider_history::stored(
+                conn,
+                &row.get::<_, String>(0)?,
+                &row.get::<_, String>(2)?,
+            )?),
             managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
             transcript_revision: None,
             id: row.get(0)?,
@@ -3188,12 +3247,12 @@ const LIST_LINKED_SQL: &str = "SELECT id, cwd, harness, model, runtime_mode, tit
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
                 worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode
-         FROM sessions INDEXED BY sessions_linked_idx
+         FROM sessions INDEXED BY sessions_activity_linked_idx
          WHERE has_user_message = 1
            AND linked_work_item_json IS NOT NULL
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
            AND id NOT IN (SELECT session_id FROM orchestration_workers)
-         ORDER BY updated_at DESC, id ASC";
+         ORDER BY last_activity_at DESC, id ASC";
 
 fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
     let mut statement = conn.prepare(LIST_LINKED_SQL)?;
@@ -3201,6 +3260,13 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
         let archived: i64 = row.get(10)?;
         let pinned: i64 = row.get(11)?;
         Ok(SessionSummary {
+            last_activity_at: stored_activity_at(conn, &row.get::<_, String>(0)?)?,
+            interrupted: stored_turn_interrupted(conn, &row.get::<_, String>(0)?)?,
+            provider_history: Some(provider_history::stored(
+                conn,
+                &row.get::<_, String>(0)?,
+                &row.get::<_, String>(2)?,
+            )?),
             managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
             transcript_revision: None,
             id: row.get(0)?,
@@ -3236,11 +3302,22 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
 /// Newest live sessions across every project, plus every pinned one however
 /// old. Read-only and branch-light: it never shells out to git per project.
 fn list_recent(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<SessionSummary>> {
-    let mut rows = recent_rows(conn, true, -1)?;
-    rows.extend(recent_rows(conn, false, limit.clamp(1, 200))?);
+    let mut rows = recent_rows(conn, true, -1, i64::MIN)?;
+    rows.extend(recent_rows(conn, false, limit.clamp(1, 200), i64::MIN)?);
     rows.sort_by(|a, b| {
-        b.updated_at
-            .cmp(&a.updated_at)
+        b.last_activity_at
+            .cmp(&a.last_activity_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(rows)
+}
+
+fn list_recent_since(conn: &Connection, since: i64) -> rusqlite::Result<Vec<SessionSummary>> {
+    let mut rows = recent_rows(conn, true, -1, since)?;
+    rows.extend(recent_rows(conn, false, -1, since)?);
+    rows.sort_by(|a, b| {
+        b.last_activity_at
+            .cmp(&a.last_activity_at)
             .then_with(|| a.id.cmp(&b.id))
     });
     Ok(rows)
@@ -3255,25 +3332,34 @@ const RECENT_ROWS_SQL: &str =
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
                 automation_id, workspace_id, workspace_revision, workspace_mode
-         FROM sessions INDEXED BY sessions_recent_idx
+         FROM sessions INDEXED BY sessions_activity_recent_idx
          WHERE has_user_message = 1
            AND archived = 0
            AND pinned = ?1
+           AND last_activity_at >= ?3
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
            AND id NOT IN (SELECT session_id FROM orchestration_workers)
-         ORDER BY updated_at DESC, id ASC
+         ORDER BY last_activity_at DESC, id ASC
          LIMIT ?2";
 
 fn recent_rows(
     conn: &Connection,
     pinned: bool,
     limit: i64,
+    since: i64,
 ) -> rusqlite::Result<Vec<SessionSummary>> {
     let mut statement = conn.prepare(RECENT_ROWS_SQL)?;
-    let rows = statement.query_map(params![pinned as i64, limit], |row| {
+    let rows = statement.query_map(params![pinned as i64, limit, since], |row| {
         let worktree_removed = row.get::<_, i64>(14)? != 0;
         let branch: Option<String> = row.get(9)?;
         Ok(SessionSummary {
+            last_activity_at: stored_activity_at(conn, &row.get::<_, String>(0)?)?,
+            interrupted: stored_turn_interrupted(conn, &row.get::<_, String>(0)?)?,
+            provider_history: Some(provider_history::stored(
+                conn,
+                &row.get::<_, String>(0)?,
+                &row.get::<_, String>(2)?,
+            )?),
             managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
             transcript_revision: None,
             id: row.get(0)?,
@@ -3308,6 +3394,48 @@ fn recent_rows(
         })
     })?;
     rows.collect()
+}
+
+fn stored_activity_at(conn: &Connection, id: &str) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COALESCE(last_activity_at, updated_at) FROM sessions WHERE id=?1",
+        [id],
+        |row| row.get(0),
+    )
+}
+
+fn turn_interrupted(block: Option<&Value>) -> bool {
+    block.is_some_and(|block| {
+        block.get("role").and_then(Value::as_str) == Some("system")
+            && (block.get("notice").and_then(Value::as_str) == Some("interrupt")
+                || matches!(
+                    block.get("text").and_then(Value::as_str),
+                    Some(
+                        "Turn interrupted when bycoda quit." | "Turn interrupted when Bycoda quit."
+                    )
+                ))
+    })
+}
+
+fn stored_turn_interrupted(conn: &Connection, id: &str) -> rusqlite::Result<bool> {
+    let normalized: Option<String> = conn.query_row(
+        "SELECT block_json FROM session_blocks WHERE session_id=?1 ORDER BY ordinal DESC LIMIT 1",
+        [id], |row| row.get(0),
+    ).optional()?;
+    let block = if let Some(raw) = normalized {
+        serde_json::from_str::<Value>(&raw).ok()
+    } else {
+        let raw: Option<String> = conn
+            .query_row(
+                "SELECT blocks_json FROM sessions WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        raw.and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+            .and_then(|value| value.as_array().and_then(|blocks| blocks.last().cloned()))
+    };
+    Ok(turn_interrupted(block.as_ref()))
 }
 
 /// Mirrors the sidebar's notion of a listable session: a transcript that the
@@ -3793,6 +3921,7 @@ mod tests {
 
     fn sample(id: &str, cwd: &str, title: &str) -> SessionUpsert {
         SessionUpsert {
+            preserve_activity_at: false,
             managed_by: None,
             id: id.into(),
             cwd: cwd.into(),
@@ -3821,6 +3950,50 @@ mod tests {
             created_at: None,
             updated_at: None,
         }
+    }
+
+    #[test]
+    fn interruption_preserves_activity_order_and_new_turn_clears_warning() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut older = sample("older", "/project", "Older");
+        older.updated_at = Some(100);
+        let mut newer = sample("newer", "/project", "Newer");
+        newer.updated_at = Some(200);
+        upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None).unwrap();
+        upsert_session_with_git(&conn, &newer, crate::fs::GitInfo::default(), None).unwrap();
+        older.blocks = json!([{ "id": "b1", "role": "user", "text": "hello" },
+            { "id": "stop", "role": "system", "notice": "interrupt", "text": "stopped" }]);
+        older.preserve_activity_at = true;
+        let saved = upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+        assert!(saved.interrupted);
+        assert_eq!(saved.last_activity_at, 100);
+        assert!(saved.updated_at > 200);
+        let rows = list_recent(&conn, 10).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["newer", "older"]
+        );
+        assert!(rows[1].interrupted);
+        older.preserve_activity_at = false;
+        let unchanged = upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(unchanged.last_activity_at, 100);
+        assert_eq!(list_recent(&conn, 10).unwrap()[0].id, "newer");
+        older
+            .blocks
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "id": "next", "role": "user", "text": "continue" }));
+        let resumed = upsert_session_with_git(&conn, &older, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+        assert!(!resumed.interrupted);
+        assert!(resumed.last_activity_at > 200);
+        assert!(!list_recent(&conn, 10).unwrap()[0].interrupted);
     }
 
     #[test]
@@ -4769,6 +4942,25 @@ mod tests {
         assert!(list_recent(&conn, 10).unwrap().iter().any(|row| row.pinned));
     }
 
+    #[test]
+    fn recent_since_has_no_row_cap_and_includes_cutoff() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        for i in 0..125 {
+            let mut session = sample(&format!("recent-{i}"), "/tmp/a", "Recent");
+            session.updated_at = Some(1_000 + i);
+            upsert_session(&conn, &session).unwrap();
+        }
+        let mut old = sample("old", "/tmp/a", "Old");
+        old.updated_at = Some(999);
+        upsert_session(&conn, &old).unwrap();
+        set_pinned(&conn, "old", true).unwrap();
+        let rows = list_recent_since(&conn, 1_000).unwrap();
+        assert_eq!(rows.len(), 125);
+        assert_eq!(rows.first().unwrap().updated_at, 1_124);
+        assert_eq!(rows.last().unwrap().updated_at, 1_000);
+    }
+
     fn guarded_upsert(
         conn: &Connection,
         session: &SessionUpsert,
@@ -4857,12 +5049,12 @@ mod tests {
         upsert_session(&conn, &linked).unwrap();
         upsert_session(&conn, &sample("s2", "/tmp/b", "Plain")).unwrap();
 
-        let recent = query_plan(&conn, RECENT_ROWS_SQL, &[&0_i64, &50_i64]);
-        assert_indexed_and_presorted(&recent, "sessions_recent_idx");
-        let pinned = query_plan(&conn, RECENT_ROWS_SQL, &[&1_i64, &-1_i64]);
-        assert_indexed_and_presorted(&pinned, "sessions_recent_idx");
+        let recent = query_plan(&conn, RECENT_ROWS_SQL, &[&0_i64, &50_i64, &i64::MIN]);
+        assert_indexed_and_presorted(&recent, "sessions_activity_recent_idx");
+        let pinned = query_plan(&conn, RECENT_ROWS_SQL, &[&1_i64, &-1_i64, &i64::MIN]);
+        assert_indexed_and_presorted(&pinned, "sessions_activity_recent_idx");
         let linked = query_plan(&conn, LIST_LINKED_SQL, &[]);
-        assert_indexed_and_presorted(&linked, "sessions_linked_idx");
+        assert_indexed_and_presorted(&linked, "sessions_activity_linked_idx");
     }
 
     #[test]

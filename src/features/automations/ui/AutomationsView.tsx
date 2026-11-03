@@ -373,11 +373,8 @@ function AutomationsContent({
     setCompactListOpen,
     setDraft,
   });
-  // A failed read is not "no automations": say so, with a retry, instead of offering first use.
-  const readFailed =
-    (localQuery.isError && storedAutomations.length === 0) ||
-    !!host.error ||
-    unreachableNames.length > 0;
+  // Collection failures block first use; one offline machine only makes its own data unknown.
+  const readFailed = (localQuery.isError && storedAutomations.length === 0) || !!host.error;
   const error = actionError ?? (readFailed ? null : (localQuery.error?.message ?? null));
 
   const editorDraft = pickerOpen
@@ -433,7 +430,12 @@ function AutomationsContent({
   const showAssistant = Boolean(onLaunchAssistant) && !pickerOpen;
   const showCreate = !pickerOpen;
   const showHeader = showFilter || showAssistant || showCreate;
-  const firstUse = !revealAutomation && !collectionPending && !readFailed && !hasAutomations;
+  const firstUse =
+    !revealAutomation &&
+    !collectionPending &&
+    !readFailed &&
+    !unreachableNames.length &&
+    !hasAutomations;
 
   return (
     <div
@@ -599,7 +601,20 @@ function AutomationsContent({
         </div>
       ) : null}
       {unreachableNames.length ? (
-        <Alert tone="warning" className="mx-3 mb-2 shrink-0">
+        <Alert
+          tone="warning"
+          className="mx-3 mb-2 shrink-0"
+          action={
+            <Button
+              variant="secondary"
+              disabled={!queryVisible}
+              loading={host.fetching}
+              onClick={() => void refreshHost(true)}
+            >
+              {t("Retry")}
+            </Button>
+          }
+        >
           {unreachableNames.join(", ")} {unreachableNames.length === 1 ? t("isn’t") : t("aren’t")}
           {t(" reachable right now, so its automations may be out of date.")}
         </Alert>
@@ -757,7 +772,7 @@ function AutomationsContent({
                 queryVisible
                   ? () => {
                       void localQuery.refetch();
-                      void refreshHost();
+                      void refreshHost(true);
                     }
                   : undefined
               }

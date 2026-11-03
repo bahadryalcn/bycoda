@@ -12,6 +12,12 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 #[path = "conversation_servers.rs"]
 mod servers;
+#[path = "conversation_ssh_execution.rs"]
+mod ssh_execution;
+
+pub(crate) fn shutdown_ssh_executions() {
+    ssh_execution::shutdown();
+}
 
 struct DesktopOutcome {
     value: Value,
@@ -189,6 +195,12 @@ fn execute_desktop_request_inner(
         DesktopApprovalSubject::parse(request)?;
     }
     let input = &request["input"];
+    if matches!(
+        action,
+        "servers.ssh.execute" | "servers.ssh.status" | "servers.ssh.cancel"
+    ) {
+        return ssh_execution::call(app, request, issuer, taken);
+    }
     if action.starts_with("servers.") {
         return servers::call(app, action, input);
     }

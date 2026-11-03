@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { VoiceCausalGeneration } from "./voiceCausalContext";
+import { VoiceCausalGeneration, VoiceContextScopeUnavailable } from "./voiceCausalContext";
 import {
   AssistantVoiceContextOpenSchema,
   AssistantVoiceContextInvalidateSchema,
@@ -354,5 +354,39 @@ it("rejects a foreign captured source or truncated owner text before context adm
   const generation = f.generation();
   await generation.accept({ ...f.binding, request: vi.fn() }, f.source(), "Owner text");
   expect(await generation.proof()).toBeUndefined();
+  expect(f.request).not.toHaveBeenCalled();
+});
+
+it("reports an incomplete global directory as unavailable without granting proof, until a fresh generation", async () => {
+  const f = fixture();
+  const scope = await f.binding.scope!();
+  const incomplete = {
+    ...f.binding,
+    global: true,
+    scope: async () => ({ ...scope, complete: false }),
+  };
+  const generation = f.generation();
+  await generation.accept(incomplete, f.source(), "Owner text");
+  expect(f.failed).toHaveBeenCalledWith(expect.any(VoiceContextScopeUnavailable));
+  expect(f.request).not.toHaveBeenCalled();
+  expect(await generation.proof()).toBeUndefined();
+  await generation.accept(f.binding, f.source("later"), "Owner text");
+  expect(await generation.proof()).toBeUndefined();
+  const fresh = f.generation();
+  await fresh.accept(f.binding, f.source("fresh"), "Owner text");
+  expect(await fresh.proof()).toBeDefined();
+});
+
+it("does not classify a foreign owner receipt as directory unavailability", async () => {
+  const f = fixture();
+  const scope = await f.binding.scope!();
+  const incomplete = {
+    ...f.binding,
+    global: true,
+    scope: async () => ({ ...scope, complete: false }),
+  };
+  await f.generation().accept(incomplete, f.source(), "different text");
+  expect(f.failed).toHaveBeenCalledOnce();
+  expect(f.failed.mock.calls[0][0]).not.toBeInstanceOf(VoiceContextScopeUnavailable);
   expect(f.request).not.toHaveBeenCalled();
 });

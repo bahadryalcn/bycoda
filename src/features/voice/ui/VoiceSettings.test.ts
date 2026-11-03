@@ -16,6 +16,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: backend.browse }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: backend.openUrl }));
 import { VoiceSettings } from "./VoiceSettings";
 import { loadVoiceSettings, saveVoiceSettings } from "../model/voiceSettings";
+import * as conversationPreset from "../model/voiceConversationPreset";
 import * as turnPolicy from "../model/voiceTurnPolicy";
 let root: Root | undefined;
 let container: HTMLDivElement;
@@ -73,6 +74,56 @@ it("retains the saved automatic pause while disabling its control in manual mode
     manualTurnEndRevision: 11,
     turnEndSilence: 4,
   });
+});
+it("applies the conversation preset in one update while preserving other preferences", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    mode: "openai",
+    device: "cpu",
+    microphoneId: "mic",
+    manualTurnEnd: true,
+    manualTurnEndRevision: 8,
+    turnEndSilence: 4,
+    allowBargeIn: false,
+    holdAnnouncements: false,
+  });
+  await setup();
+  await click("Advanced");
+  const before = loadVoiceSettings();
+  const listener = vi.fn();
+  window.addEventListener("bycoda:voice-settings", listener);
+  await click("Apply preset");
+  window.removeEventListener("bycoda:voice-settings", listener);
+  expect(listener).toHaveBeenCalledTimes(1);
+  expect(loadVoiceSettings()).toEqual({
+    ...before,
+    manualTurnEnd: false,
+    manualTurnEndRevision: 9,
+    turnEndSilence: 2.5,
+    allowBargeIn: true,
+    holdAnnouncements: true,
+  });
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="I may interrupt speech"]')!
+      .click(),
+  );
+  expect(loadVoiceSettings().allowBargeIn).toBe(false);
+});
+
+it("shows a recoverable preset save error", async () => {
+  await setup();
+  await click("Advanced");
+  const save = vi
+    .spyOn(conversationPreset, "saveProfessionalConversationPreset")
+    .mockImplementationOnce(() => {
+      throw new Error("storage unavailable");
+    });
+  await click("Apply preset");
+  expect(container.textContent).toContain("Conversation preset could not be saved. Try again.");
+  save.mockRestore();
+  await click("Apply preset");
+  expect(container.textContent).not.toContain("Conversation preset could not be saved. Try again.");
 });
 async function advance(ms = 501) {
   await act(async () => {

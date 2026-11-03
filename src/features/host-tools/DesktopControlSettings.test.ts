@@ -61,6 +61,66 @@ it("does not observe the desktop or enable an uninstalled helper on mount", asyn
     container.querySelector<HTMLButtonElement>('[role="switch"]')?.getAttribute("aria-checked"),
   ).toBe("false");
 });
+it("distinguishes a verified helper from the saved permission and an ongoing operation", async () => {
+  mock.request.mockResolvedValueOnce({
+    ...state,
+    status: { ...state.status, installed: true, verified: true },
+  });
+  await render();
+  expect(container.textContent).toContain("Verified");
+  expect(container.textContent).toContain("Disabled");
+  expect(container.textContent).toContain("No desktop operation is running.");
+  expect(container.textContent).not.toContain("Desktop operation in progress");
+  mock.request.mockResolvedValueOnce({
+    ...state,
+    status: { ...state.status, installed: true, verified: true, enabled: true, active: true },
+  });
+  await click("Refresh");
+  expect(container.textContent).toContain("Enabled");
+  expect(container.textContent).toContain("Desktop operation in progress");
+});
+it("clears stale status after a failed refresh", async () => {
+  mock.request.mockResolvedValueOnce({
+    ...state,
+    status: { ...state.status, installed: true, verified: true, enabled: true },
+  });
+  await render();
+  expect(container.textContent).toContain("Verified");
+  expect(container.textContent).toContain("Enabled");
+  mock.request.mockRejectedValueOnce(new Error("Status failed"));
+  await click("Refresh");
+  expect(
+    [...container.querySelectorAll('[role="status"]')].some(
+      (node) => node.textContent === "Enabled",
+    ),
+  ).toBe(false);
+  expect(container.textContent).toContain("Unavailable");
+  expect(container.textContent).toContain("Status failed");
+});
+it("reports unsaved options and pending saves to its parent", async () => {
+  const report = vi.fn();
+  await act(async () =>
+    root.render(createElement(DesktopControlSettings, { onDraftStateChange: report })),
+  );
+  expect(report).toHaveBeenLastCalledWith({ dirty: false, pending: false });
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  expect(report).toHaveBeenLastCalledWith({ dirty: true, pending: false });
+  let resolve!: (value: unknown) => void;
+  mock.request.mockImplementation((input) =>
+    input.op === "configure"
+      ? new Promise((done) => {
+          resolve = done;
+        })
+      : Promise.resolve({ ...state, configuration: { ...config, enabled: true, version: 1 } }),
+  );
+  await click("Save computer controls");
+  expect(report).toHaveBeenLastCalledWith({ dirty: true, pending: true });
+  await act(async () =>
+    resolve({ ...state, configuration: { ...config, enabled: true, version: 1 } }),
+  );
+  expect(report).toHaveBeenLastCalledWith({ dirty: false, pending: false });
+  expect(container.textContent).toContain("Computer controls saved.");
+});
 it("keeps emergency Stop available while a settings save is pending", async () => {
   mock.request.mockResolvedValueOnce({
     ...state,

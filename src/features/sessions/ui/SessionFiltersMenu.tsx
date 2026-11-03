@@ -30,6 +30,8 @@ type Props = {
   onChange: (filters: SessionSidebarFilters) => void;
   onClose: () => void;
   local?: boolean;
+  allowedTimeFilters?: readonly SessionTimeFilter[];
+  defaultFilters?: SessionSidebarFilters;
 };
 
 const DENSITY_OPTIONS: { id: SessionListDensity; label: string }[] = [
@@ -88,6 +90,8 @@ export function SessionFiltersMenu({
   onChange,
   onClose,
   local = true,
+  allowedTimeFilters,
+  defaultFilters = DEFAULT_SESSION_SIDEBAR_FILTERS,
 }: Props) {
   const t = useT();
   const hiddenHarnesses = new Set(filters.hiddenHarnesses);
@@ -159,7 +163,9 @@ export function SessionFiltersMenu({
       <SectionLabel as="div" className="px-2">
         {t("Time")}
       </SectionLabel>
-      {TIME_OPTIONS.map((option) => (
+      {TIME_OPTIONS.filter(
+        (option) => !allowedTimeFilters || allowedTimeFilters.includes(option.id),
+      ).map((option) => (
         <FilterItem
           key={option.id}
           label={option.label}
@@ -208,7 +214,7 @@ export function SessionFiltersMenu({
         onClick={() => updateSessionListDisplay({ showBranch: !display.showBranch })}
       />
 
-      {hasActiveSessionFilters(filters) ? (
+      {hasActiveSessionFilters(filters, defaultFilters.time) ? (
         <>
           <Divider />
           <Button
@@ -217,7 +223,7 @@ export function SessionFiltersMenu({
             type="button"
             role="menuitem"
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => onChange(DEFAULT_SESSION_SIDEBAR_FILTERS)}
+            onClick={() => onChange(defaultFilters)}
             className="w-full text-left"
           >
             {t("Clear filters")}

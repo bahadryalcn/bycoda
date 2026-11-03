@@ -1,0 +1,75 @@
+.card {
+  display: flex;
+  position: relative;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 0;
+  padding: 6px;
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
+}
+.image {
+  width: 144px;
+  flex-direction: column;
+}
+.file {
+  width: 272px;
+  align-self: center;
+}
+.thumbnail {
+  width: 100%;
+  height: 72px;
+  overflow: hidden;
+}
+.imageName,
+.name {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-ui-caption);
+  font-weight: 500;
+  color: var(--color-content);
+}
+.imageName {
+  width: 100%;
+  margin-top: 5px;
+  text-align: start;
+}
+.metadata {
+  display: block;
+  font-size: var(--text-ui-caption);
+  color: var(--ui-text-secondary);
+  white-space: nowrap;
+}
+.reference {
+  font-size: var(--text-ui-caption);
+  color: var(--ui-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.fileBody {
+  flex: 1;
+  min-width: 0;
+}
+.fileIcon {
+  display: flex;
+  width: 32px;
+  height: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-text-secondary);
+}
+.fileDetails {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  text-align: start;
+}

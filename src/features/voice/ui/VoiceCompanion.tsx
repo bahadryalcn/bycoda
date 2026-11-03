@@ -21,7 +21,12 @@ import {
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { LocalVoice, type SpeechBinding } from "../model/localVoice";
-import { useVoicePresence, readNativeVoicePresence } from "../model/voicePresence";
+import {
+  useVoicePresence,
+  readNativeVoicePresence,
+  deriveCapturePresence,
+} from "../model/voicePresence";
+import { shouldSilentlyAcknowledgeVoice, shouldWaitForVoice } from "../model/voiceSpeechPolicy";
 import { classifyVoiceFailure, VOICE_RECONNECT_DELAYS } from "../model/voiceReconnect";
 import { RealtimeVoice } from "../model/realtimeVoice";
 import { realtimeSecret, type RealtimeProvider } from "../model/realtimeVoiceClient";
@@ -76,7 +81,7 @@ import {
 } from "../../assistant/model/assistantClient";
 import { voiceLanguageCode } from "../model/voiceLanguage";
 import { VoiceThreadTranscript, voiceThreadSeed, voiceThreadSummary } from "../model/voiceThreads";
-import { VoiceCausalGeneration } from "../model/voiceCausalContext";
+import { VoiceCausalGeneration, VoiceContextScopeUnavailable } from "../model/voiceCausalContext";
 import {
   VoiceHistoryBindings,
   type VoiceHistory,
@@ -135,7 +140,7 @@ import {
   getGroupLockView,
 } from "../../group-lock/model/groupLock";
 import { previewVoice } from "../model/voicePreview";
-import { maySpeakVoiceBriefing } from "../model/voiceBriefing";
+import { mayDeliverVoiceBriefing } from "../model/voiceBriefing";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { isMacMicrophoneBlocked } from "../model/microphoneAccess";
@@ -626,6 +631,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             ownerQuestionDraftScope(source.environmentId, source.question),
             pending.choice.prompt,
           );
+          if (reply.kind === "answered" && client.current instanceof RealtimeVoice)
+            client.current.resumeAfterOwnerAnswer();
           pending.resolve(result.reply);
         })
         .catch((cause) => {
@@ -657,6 +664,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       if (reply.custom?.choice) labels.push(reply.custom.choice);
       transcriptStore.current?.record("user", `${question.prompt}\n${labels.join(", ")}`);
       transcriptStore.current?.finish();
+      if (client.current instanceof RealtimeVoice) client.current.resumeAfterOwnerAnswer();
     }
     pending.resolve(reply);
   }
@@ -700,6 +708,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         );
         pendingChoice.current = null;
         setChoice(null);
+        if (client.current instanceof RealtimeVoice) client.current.resumeAfterOwnerAnswer();
         pending.resolve(result.reply);
       }
     } catch (cause) {
@@ -807,29 +816,63 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     });
   }, [settings.turnEndSilence, settings.allowBargeIn, settings.manualTurnEnd]);
   const detectedPresence = useVoicePresence(open, settings.idleSleepMinutes);
+  const [lastAdmittedSpeechAt, setLastAdmittedSpeechAt] = useState<number | null>(null);
+  const lastDeliveredAssistant = useRef("");
+  const playbackRef = useRef(playback);
+  playbackRef.current = playback;
+  const briefingDeliveries = useRef(
+    new Map<string, "playing" | "delivered" | "interrupted" | "unknown">(),
+  );
+  useEffect(() => {
+    if (lastAdmittedSpeechAt === null) return;
+    const remaining = lastAdmittedSpeechAt + settings.idleSleepMinutes * 60_000 - Date.now();
+    const timer = setTimeout(() => setLastAdmittedSpeechAt(null), Math.max(0, remaining));
+    return () => clearTimeout(timer);
+  }, [lastAdmittedSpeechAt, settings.idleSleepMinutes]);
   const manualPresenceCapture = useRef(false),
     checkingTalkPresence = useRef(false);
   const presence =
     assistantSnapshot?.presence?.state === "away" || assistantSnapshot?.presence?.state === "dnd"
       ? "away"
       : detectedPresence;
-  const capturePresence =
-    manualPresenceCapture.current && detectedPresence === "active" ? detectedPresence : presence;
-  const presenceRef = useRef(presence);
-  presenceRef.current = presence;
+  const capturePresence = deriveCapturePresence(
+    detectedPresence,
+    manualPresenceCapture.current && detectedPresence === "active"
+      ? undefined
+      : assistantSnapshot?.presence?.state,
+    lastAdmittedSpeechAt,
+    settings.idleSleepMinutes,
+  );
+  const presenceRef = useRef(capturePresence);
+  presenceRef.current = capturePresence;
   useEffect(() => {
     const profile = assistantSnapshot?.profile;
     const briefing = assistantSnapshot?.briefing;
+    const receipt = briefing?.voiceReceipt;
     if (
       !profile ||
       !briefing ||
-      !maySpeakVoiceBriefing(
+      !receipt ||
+      !mayDeliverVoiceBriefing({
         profile,
         presence,
         status,
-        settings.holdAnnouncements === true,
-        new Date().getHours(),
-      )
+        hold: settings.holdAnnouncements === true || muted,
+        hour: new Date().getHours(),
+        now: Date.now(),
+        briefing,
+        reason: receipt.reason,
+        returnAt: receipt.returnAt,
+        returnBriefingId: briefing.id,
+        meaningful: receipt.meaningful,
+        important: receipt.important,
+        conversationBusy:
+          playbackRef.current ||
+          phase !== "listening" ||
+          !!pendingChoice.current ||
+          !!pendingJobs.current,
+        delivery: briefingDeliveries.current.get(briefing.id) ?? "pending",
+      })
     )
       return;
     if (
@@ -844,12 +887,22 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     )
       return;
     const key = "bycoda.voice.last-briefing";
+    const attemptKey = "bycoda.voice.last-briefing-attempt";
     try {
-      if (localStorage.getItem(key) === briefing.id) return;
+      if (
+        localStorage.getItem(key) === briefing.id ||
+        localStorage.getItem(attemptKey) === briefing.id
+      )
+        return;
+      // An interrupted/uncertain announcement is not replayed after a remount.
+      localStorage.setItem(attemptKey, briefing.id);
     } catch {
       /* Dedupe still applies in this mounted lifecycle. */
     }
     const abort = new AbortController();
+    briefingDeliveries.current.set(briefing.id, "playing");
+    if (briefingDeliveries.current.size > 64)
+      briefingDeliveries.current.delete(briefingDeliveries.current.keys().next().value!);
     const invitation = t("Press Talk when you want to answer.");
     setMessage(`${briefing.text}\n${invitation}`);
     void previewVoice(
@@ -857,29 +910,29 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       profile.language,
       profile.name,
       abort.signal,
-      () => {
-        if (!abort.signal.aborted) {
-          try {
-            localStorage.setItem(key, briefing.id);
-          } catch {
-            /* Host briefing remains readable. */
-          }
-        }
-      },
+      () => {},
       `${briefing.text}\n${invitation}`,
       (active) => {
         if (!abort.signal.aborted) setPlayback(active);
       },
-      { languageHint: assistantSnapshot.lastSpokenLanguage ?? undefined },
-    ).catch((cause) => {
-      if (!abort.signal.aborted) setError(voiceError(cause, "Voice could not connect."));
-    });
-    const timer = setTimeout(() => {
-      abort.abort();
-      stopCapture("sleeping");
-    }, 60_000);
+      { complete: true, languageHint: assistantSnapshot.lastSpokenLanguage ?? undefined },
+    )
+      .then(() => {
+        if (abort.signal.aborted) return;
+        briefingDeliveries.current.set(briefing.id, "delivered");
+        try {
+          localStorage.setItem(key, briefing.id);
+        } catch {
+          /* Mounted dedupe remains. */
+        }
+      })
+      .catch((cause) => {
+        briefingDeliveries.current.set(briefing.id, "unknown");
+        if (!abort.signal.aborted) setError(voiceError(cause, "Voice could not connect."));
+      });
     return () => {
-      clearTimeout(timer);
+      if (briefingDeliveries.current.get(briefing.id) === "playing")
+        briefingDeliveries.current.set(briefing.id, "interrupted");
       abort.abort();
       setPlayback(false);
     };
@@ -892,6 +945,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     ownerKey,
     presence,
     status,
+    phase,
+    muted,
     settings.holdAnnouncements,
   ]);
   const mutedRef = useRef(muted);
@@ -914,6 +969,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       captureLocalVoiceHistory,
     );
   function rememberTurn(role: "user" | "assistant", text: string, append = false) {
+    if (role === "user") setLastAdmittedSpeechAt(Date.now());
     transcriptStore.current?.record(
       role,
       text,
@@ -1149,6 +1205,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     return result;
   }
   function stopCapture(next: typeof status, preserveDrafts = false) {
+    setLastAdmittedSpeechAt(null);
+    lastDeliveredAssistant.current = "";
     manualPresenceCapture.current = false;
     checkingTalkPresence.current = false;
     if (!preserveDrafts) {
@@ -1172,6 +1230,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     setPhase("listening");
   }
   function close() {
+    setLastAdmittedSpeechAt(null);
+    lastDeliveredAssistant.current = "";
     manualPresenceCapture.current = false;
     checkingTalkPresence.current = false;
     cancelJobReview();
@@ -1250,13 +1310,70 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
   function voiceDisclosureCurrent() {
     return activeHistoryBinding.current?.current?.() ?? true;
   }
-  function reply(text: string, session?: Session, append = false) {
+  function reportContextFailure(cause: unknown) {
+    // An incomplete directory limits causal provenance; it is not a failed
+    // transcript write. Real source/receipt errors and retry failures stay visible.
+    if (cause instanceof VoiceContextScopeUnavailable) return;
+    setHistoryNotice(
+      voiceError(cause, "The voice question context could not be verified for saving."),
+    );
+  }
+  function interceptSpeech(text: string) {
+    if (!voiceDisclosureCurrent()) return true;
+    if (shouldWaitForVoice(text)) {
+      setLastAdmittedSpeechAt(Date.now());
+      if (!pendingChoice.current && !pendingJobs.current) {
+        sequence.current++;
+        sideRequest.current?.abort();
+        sideRequest.current = null;
+      }
+      if (client.current instanceof RealtimeVoice) client.current.pause();
+      else client.current?.silence();
+      setPhase("listening");
+      setTranscript(text);
+      return true;
+    }
+    if (
+      shouldSilentlyAcknowledgeVoice({
+        transcript: text,
+        lastDeliveredAssistant: lastDeliveredAssistant.current,
+        pendingChoice: !!pendingChoice.current || !!pendingJobs.current,
+        pendingQuestion: /[?？]\s*$/.test(lastDeliveredAssistant.current),
+        speaking: playbackRef.current,
+      })
+    ) {
+      setLastAdmittedSpeechAt(Date.now());
+      setTranscript(text);
+      return true;
+    }
+    return false;
+  }
+  function reply(text: string, session?: Session, append = false, played?: () => void) {
     if (!voiceDisclosureCurrent()) return;
-    rememberTurn("assistant", text, append);
+    const epoch = generation.current,
+      turn = sequence.current,
+      binding = activeHistoryBinding.current;
     const spoken =
       !append && session && currentTarget()?.id !== session.id ? `${session.title}: ${text}` : text;
     setMessage((current) => (append && current ? `${current} ${spoken}` : spoken));
-    if (!client.current?.speak(spoken, append) && !append)
+    const delivered = () => {
+      if (
+        generation.current !== epoch ||
+        sequence.current !== turn ||
+        activeHistoryBinding.current !== binding ||
+        !voiceDisclosureCurrent()
+      )
+        return;
+      lastDeliveredAssistant.current = append ? `${lastDeliveredAssistant.current} ${text}` : text;
+      rememberTurn("assistant", text, append);
+      transcriptStore.current?.finish();
+      played?.();
+    };
+    const accepted =
+      client.current instanceof LocalVoice
+        ? client.current.speak(spoken, append, delivered)
+        : client.current?.speak(spoken, append);
+    if (!accepted && !append)
       setError(t("No local voice is available for this language. The reply is shown here."));
   }
   useEffect(() => {
@@ -1379,10 +1496,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           binding.sequence === sequence.current &&
           !controller.signal.aborted &&
           voiceDisclosureCurrent(),
-        (cause) =>
-          setHistoryNotice(
-            voiceError(cause, "The voice question context could not be verified for saving."),
-          ),
+        reportContextFailure,
       );
       void causalGeneration.current.invalidate("unverified-seed");
       promptExchanges = [];
@@ -1424,10 +1538,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             binding.sequence === sequence.current &&
             !controller.signal.aborted &&
             voiceDisclosureCurrent(),
-          (cause) =>
-            setHistoryNotice(
-              voiceError(cause, "The voice question context could not be verified for saving."),
-            ),
+          reportContextFailure,
           undefined,
           summary?.proofId,
         );
@@ -1451,9 +1562,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           seed,
         ).map(({ role, text }) => ({ role, text }));
       } catch (cause) {
-        setHistoryNotice(
-          voiceError(cause, "The voice question context could not be verified for saving."),
-        );
+        reportContextFailure(cause);
       }
     }
     if (
@@ -1526,8 +1635,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           !voiceDisclosureCurrent()
         )
           return;
-        recordResponse({ role: "assistant", text: decision.reply });
-        reply(decision.reply);
+        if (decision.action === "no_reply") return;
+        reply(decision.reply, undefined, false, () =>
+          recordResponse({ role: "assistant", text: decision.reply }),
+        );
         return;
       }
       let streamed = false;
@@ -1539,7 +1650,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         (sentence) => {
           // Speak from the first finished sentence; a newer utterance aborts the rest.
           if (generation.current !== epoch || binding.sequence !== sequence.current) return;
-          reply(sentence, session, streamed);
+          reply(sentence, session, streamed, () =>
+            recordResponse({ role: "assistant", text: sentence }),
+          );
           streamed = true;
         },
         ownerInstructions(),
@@ -1551,6 +1664,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         !voiceDisclosureCurrent()
       )
         return;
+      if (decision.action === "no_reply") return;
       if (decision.action === "silence") {
         client.current?.silence();
         return;
@@ -1576,8 +1690,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           ? decision.reply ||
             t(decision.action === "remember" ? "I'll remember that." : "Forgotten.")
           : t(("error" in result && result.error) || "Memory could not be changed.");
-        recordResponse({ role: "assistant", text: spoken });
-        reply(spoken, session);
+        reply(spoken, session, false, () => recordResponse({ role: "assistant", text: spoken }));
         return;
       }
       if (decision.action === "submit") {
@@ -1631,9 +1744,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             session,
           );
       } else {
-        recordResponse({ role: "assistant", text: decision.reply });
         // A streamed reply is already shown and queued for speech.
-        if (!streamed) reply(decision.reply, session);
+        if (!streamed)
+          reply(decision.reply, session, false, () =>
+            recordResponse({ role: "assistant", text: decision.reply }),
+          );
       }
     } catch (cause) {
       if (!controller.signal.aborted && generation.current === epoch)
@@ -1971,6 +2086,12 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     restoreMuted = false,
   ) {
     const capturedHistory = activeHistoryBinding.current;
+    // Generated text remains visible, but becomes conversation history only
+    // after this exact response has fully played. Unaligned cut text is omitted.
+    const pendingReplies = new Map<
+      string,
+      { text: string; turn: number; binding: VoiceHistoryBinding | undefined }
+    >();
     const voice = new RealtimeVoice(
       provider,
       {
@@ -1979,11 +2100,38 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           if (value === "speaking") setMessage("");
           setPhase(value);
         },
-        reply: (text, append) => {
+        reply: (text, append, responseId) => {
           if (generation.current === epoch && voiceDisclosureCurrent()) {
-            rememberTurn("assistant", text, append);
+            if (responseId) {
+              const previous = pendingReplies.get(responseId);
+              pendingReplies.set(responseId, {
+                text: (append && previous ? previous.text + text : text).slice(0, 16000),
+                turn: previous?.turn ?? sequence.current,
+                binding: previous?.binding ?? activeHistoryBinding.current,
+              });
+              if (pendingReplies.size > 8)
+                pendingReplies.delete(pendingReplies.keys().next().value!);
+            }
             setMessage((current) => (append ? current + text : text));
           }
+        },
+        replyPlayed: (responseId) => {
+          const pending = pendingReplies.get(responseId);
+          pendingReplies.delete(responseId);
+          if (
+            !pending ||
+            generation.current !== epoch ||
+            pending.turn !== sequence.current ||
+            pending.binding !== activeHistoryBinding.current ||
+            !voiceDisclosureCurrent()
+          )
+            return;
+          lastDeliveredAssistant.current = pending.text;
+          rememberTurn("assistant", pending.text);
+          transcriptStore.current?.finish();
+        },
+        replyDiscarded: (responseId) => {
+          pendingReplies.delete(responseId);
         },
         transcript: (text) => {
           if (generation.current === epoch) {
@@ -1997,9 +2145,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
             setTranscript(text);
           }
         },
-        interceptTranscript: consumeChoice,
+        interceptTranscript: (text) =>
+          generation.current !== epoch || interceptSpeech(text) || consumeChoice(text),
         consumeOwnerTranscript: (text) => !voiceDisclosureCurrent() || consumeOwnerRule(text),
-        replyDone: () => transcriptStore.current?.finish(),
         captureTurn: () => {
           const snapshot = currentSpeechTarget();
           return () => captureTurn(snapshot);
@@ -2014,6 +2162,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         diagnostic: (event) => {
           // Connection metadata only: provider reasons may contain private text.
           console.info("[voice.connection]", provider, event);
+        },
+        timing: (event) => {
+          // Bounded metadata only. This measures scheduled output, not audibility.
+          if (generation.current === epoch) console.info("[voice.timing]", provider, event);
         },
         error: (value, fatal, details) => {
           if (generation.current !== epoch) return;
@@ -2084,10 +2236,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         !!seededSummary,
         () => generation.current === epoch && voiceDisclosureCurrent(),
         (cause) => {
-          if (generation.current === epoch)
-            setHistoryNotice(
-              voiceError(cause, "The voice question context could not be verified for saving."),
-            );
+          if (generation.current === epoch) reportContextFailure(cause);
         },
         undefined,
         seededSummary?.proofId,
@@ -2229,9 +2378,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           } satisfies CapturedSpeechBinding;
         },
         accept: (binding) => {
+          if (generation.current !== epoch || binding.sequence !== sequence.current) return;
           if (pendingChoice.current || pendingJobs.current)
             return { ...binding, sequence: sequence.current };
-          if (generation.current !== epoch || binding.sequence !== sequence.current) return;
           sequence.current++;
           sideRequest.current?.abort();
           sideRequest.current = null;
@@ -2239,6 +2388,10 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           captureTurn((binding as CapturedSpeechBinding)[speechTarget]);
           return { ...binding, sequence: sequence.current };
         },
+        interceptTranscript: (result, binding) =>
+          generation.current !== epoch ||
+          binding.sequence !== sequence.current ||
+          interceptSpeech(result.text),
         transcript: (result, binding) => {
           if (generation.current === epoch)
             void spokenLanguage.current!.record(result.text, result.language).catch(() => {});
@@ -2305,6 +2458,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
               : "Ready to connect",
   );
   function toggleMute() {
+    setLastAdmittedSpeechAt(null);
     client.current?.mute(!muted);
     setMuted(!muted);
   }

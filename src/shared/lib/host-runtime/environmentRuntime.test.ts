@@ -1031,17 +1031,66 @@ describe("environment logical runtime", () => {
     expect(runtime.pendingCount).toBe(0);
     expect(release).toHaveBeenCalledOnce();
   });
-  it("marks a retained view unavailable after native authorization is blocked and rejects later data", async () => {
-    const { runtime, receive, emit, calls, port } = fixture();
+  it.each([
+    ["authentication", "auth", "RPC_WS_BLOCKED"],
+    ["identity", "identity", "RPC_WS_IDENTITY"],
+    ["schema", "schema", "RPC_WS_SCHEMA"],
+    [undefined, "schema", "RPC_WS_SCHEMA"],
+  ] as const)(
+    "preserves native blocked category %s and rejects later data",
+    async (category, failure, code) => {
+      const { runtime, receive, emit, calls, port } = fixture();
+      const errors = vi.fn();
+      const commit = vi.fn();
+      runtime.retain(
+        { kind: "session", sessionId: "s" },
+        { parse: (value) => value, commit, onError: errors },
+      );
+      await flush();
+      emit({ data: 1 });
+      await flush();
+      receive({
+        kind: "state",
+        environmentId: "env",
+        generation: 1,
+        phase: "blocked",
+        category,
+      });
+      emit({ data: 2 }, 2);
+      await flush();
+      expect(runtime.state).toMatchObject({
+        transport: "blocked",
+        content: "stale",
+        failure,
+      });
+      expect(errors).toHaveBeenCalledOnce();
+      expect(errors.mock.calls[0][0]).toMatchObject({
+        code,
+        generation: 1,
+        message: `${code}: Host connection admission was refused`,
+      });
+      expect(commit).toHaveBeenCalledOnce();
+      expect(calls("subscriptions.ack")).toHaveLength(1);
+      expect(port.attach).toHaveBeenCalledOnce();
+    },
+  );
+  it("ignores blocked events from another environment or a retired generation", async () => {
+    const { runtime, receive, ready } = fixture();
     const errors = vi.fn();
-    const commit = vi.fn();
     runtime.retain(
       { kind: "session", sessionId: "s" },
-      { parse: (value) => value, commit, onError: errors },
+      { parse: (value) => value, commit: vi.fn(), onError: errors },
     );
     await flush();
-    emit({ data: 1 });
+    ready(2);
     await flush();
+    receive({
+      kind: "state",
+      environmentId: "other",
+      generation: 2,
+      phase: "blocked",
+      category: "identity",
+    });
     receive({
       kind: "state",
       environmentId: "env",
@@ -1049,16 +1098,26 @@ describe("environment logical runtime", () => {
       phase: "blocked",
       category: "authentication",
     });
-    emit({ data: 2 }, 2);
+    expect(runtime.state.transport).toBe("ready");
+    expect(errors).not.toHaveBeenCalled();
+  });
+  it("keeps a closed network route distinct from blocked admission", async () => {
+    const { runtime, receive, port } = fixture();
+    const errors = vi.fn();
+    runtime.retain(
+      { kind: "session", sessionId: "s" },
+      { parse: (value) => value, commit: vi.fn(), onError: errors },
+    );
     await flush();
-    expect(runtime.state).toMatchObject({
-      transport: "blocked",
-      content: "stale",
-      failure: "auth",
+    receive({
+      kind: "state",
+      environmentId: "env",
+      generation: 1,
+      phase: "closed",
     });
     expect(errors).toHaveBeenCalledOnce();
-    expect(commit).toHaveBeenCalledOnce();
-    expect(calls("subscriptions.ack")).toHaveLength(1);
-    expect(port.attach).toHaveBeenCalledOnce();
+    expect(errors.mock.calls[0][0]).not.toHaveProperty("code");
+    expect(runtime.state.transport).toBe("closed");
+    expect(port.detach).toHaveBeenCalledOnce();
   });
 });

@@ -2,7 +2,8 @@
   display: grid;
   gap: 20px;
   min-inline-size: 0;
-  padding: 4px 20px 22px;
+  padding: 4px 24px 24px;
+  line-height: 1.5;
 }
 
 .context {
@@ -29,14 +30,14 @@
 
 .muted {
   margin: 0;
-  color: var(--ui-text-muted);
+  color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
   line-height: 1.5;
 }
 
 .summary {
   display: grid;
-  gap: 14px;
+  gap: 0;
   margin: 0;
 }
 
@@ -45,10 +46,13 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
   gap: 8px 20px;
   align-items: baseline;
+  padding-block: 12px;
+  border-block-end: 1px solid var(--ui-settings-hairline);
 }
 
 .summary dt {
-  color: var(--ui-text-muted);
+  color: var(--ui-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .summary dd {
@@ -60,9 +64,20 @@
 .summary .rules {
   grid-template-columns: 1fr;
   padding-block-start: 14px;
-  border-block-start: 1px solid var(--ui-tone-neutral-border);
+  border-block-end: 0;
 }
 
 .rules dd {
   white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+@media (max-width: 540px) {
+  .setup {
+    padding-inline: 16px;
+  }
+  .summary > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
 }

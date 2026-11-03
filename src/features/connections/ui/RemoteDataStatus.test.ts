@@ -85,10 +85,28 @@ it("defers to the common connection warning instead of duplicating it", () => {
   act(() =>
     root.render(
       createElement(RemoteDataStatus, {
-        state: { phase: "error", error: "Offline" },
+        state: { phase: "error", error: "Machine is unreachable" },
         connectionIssueHandled: true,
       }),
     ),
   );
   expect(container.textContent).toBe("");
+});
+
+it("keeps an independent data error actionable beside a shared connection warning", () => {
+  const onRefresh = vi.fn();
+  act(() =>
+    root.render(
+      createElement(RemoteDataStatus, {
+        state: { phase: "error", error: "Host rejected request: Queue storage unavailable" },
+        connectionIssueHandled: true,
+        onRefresh,
+      }),
+    ),
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Queue storage unavailable",
+  );
+  act(() => container.querySelector("button")!.click());
+  expect(onRefresh).toHaveBeenCalledOnce();
 });

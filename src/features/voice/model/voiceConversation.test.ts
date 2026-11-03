@@ -226,3 +226,8 @@ it("streams a REPLY sentence by sentence while the provider writes, but never a 
   expect(submit).toEqual({ action: "submit", text: "Testleri çalıştır", reply: "" });
   expect(heard).toEqual([]);
 });
+
+it("accepts a silent model decision only for an explicit wait", () => {
+  expect(parseVoiceDecision('{"action":"no_reply"}', "bir saniye").action).toBe("no_reply");
+  expect(() => parseVoiceDecision('{"action":"no_reply"}', "ekipleri aç")).toThrow();
+});

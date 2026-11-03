@@ -5,6 +5,10 @@ import { expect, it, vi } from "vitest";
 import { AgentTranscript } from "./AgentTranscript";
 import { registerHarness } from "../../../integrations/harness/core/registry";
 import { codexAdapter } from "../../../integrations/harness/providers/codex/codexAdapter";
+import { copyMessage } from "../../../platform/tauri/clipboard";
+vi.mock("../../../platform/tauri/clipboard", () => ({
+  copyMessage: vi.fn().mockResolvedValue(undefined),
+}));
 import {
   saveDefaultTranslationChoice,
   saveDefaultRepromptChoice,
@@ -16,6 +20,7 @@ it.each([
 ])(
   "previews %s for selected message text and reverses approved display without changing the saved block",
   async (action, applyLabel) => {
+    vi.mocked(copyMessage).mockClear();
     const saveChoice =
       action === "Reprompt" ? saveDefaultRepromptChoice : saveDefaultTranslationChoice;
     saveChoice({ harness: "codex", model: "codex:gpt-6.1", providerAccountId: "chosen" });
@@ -80,6 +85,18 @@ it.each([
         expect(container.querySelector("pre")?.textContent).toBe(expected);
       }
       expect(block.text).toBe("Before Merhaba after");
+      const copy = [...scroller.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.getAttribute("aria-label") === "Copy",
+      )!;
+      await act(async () => copy.click());
+      expect(copyMessage).toHaveBeenCalledWith("Before Hello after");
+      const close = [...scroller.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.getAttribute("aria-label") === "Close translation",
+      )!;
+      act(() => close.click());
+      expect(container.querySelector("pre")?.textContent).toBe("Before Hello after");
+      expect(scroller.textContent).not.toContain("After applying:");
+      expect(scroller.querySelector('button[aria-label="Close translation"]')).toBeNull();
       expect(run).toHaveBeenCalledWith(expect.objectContaining({ providerAccountId: "chosen" }));
     } finally {
       saveChoice(undefined);

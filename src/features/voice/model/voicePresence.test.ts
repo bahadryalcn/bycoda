@@ -2,7 +2,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-import { classifyVoicePresence, readNativeVoicePresence } from "./voicePresence";
+import {
+  classifyVoicePresence,
+  deriveCapturePresence,
+  readNativeVoicePresence,
+} from "./voicePresence";
 afterEach(() => {
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   vi.resetAllMocks();
@@ -46,5 +50,25 @@ describe("computer presence admission", () => {
       "active",
     );
     expect(classifyVoicePresence({ idleMs: 0, locked: true, supported: true }, 0)).toBe("away");
+  });
+});
+
+describe("conversation capture presence", () => {
+  it("keeps capture active with recent admitted speech despite input idle", () => {
+    expect(deriveCapturePresence("idle", "active", 1_000, 10, 600_999)).toBe("active");
+    expect(deriveCapturePresence("idle", "active", 1_000, 10, 601_000)).toBe("idle");
+    expect(deriveCapturePresence("idle", "active", null, 10, 2_000)).toBe("idle");
+    expect(deriveCapturePresence("idle", "active", 3_000, 10, 2_000)).toBe("idle");
+  });
+  it("never turns lock, unknown or manual absence into active presence", () => {
+    expect(deriveCapturePresence("away", "active", 1_000, 10, 2_000)).toBe("away");
+    expect(deriveCapturePresence("unknown", "active", 1_000, 10, 2_000)).toBe("unknown");
+    expect(deriveCapturePresence("idle", "away", 1_000, 10, 2_000)).toBe("away");
+    expect(deriveCapturePresence("active", "dnd", 1_000, 10, 2_000)).toBe("away");
+  });
+  it("does not extend an idle state when idle sleep is disabled or invalid", () => {
+    expect(deriveCapturePresence("idle", "active", 1_000, 0, 2_000)).toBe("idle");
+    expect(deriveCapturePresence("active", "active", 1_000, 0, 2_000)).toBe("active");
+    expect(deriveCapturePresence("idle", "active", 1_000, NaN, 2_000)).toBe("idle");
   });
 });

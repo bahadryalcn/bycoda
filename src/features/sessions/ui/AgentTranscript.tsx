@@ -55,6 +55,8 @@ import {
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { AttachmentChip } from "./AttachmentChip";
 import { AttachmentTokenText } from "./AttachmentTokenText";
+import { ChatCitationList } from "./ChatCitationText";
+import { extractChatCitations } from "../model/chatCitation";
 import { TranscriptSkills } from "./SkillTokenText";
 import { UserTextPreview } from "./UserTextPreview";
 import { userTextParts } from "../model/userTextPreview";
@@ -297,6 +299,9 @@ function AgentTranscriptComponent({
     Record<string, TranslationHistory & { source: string; translatedVisible: boolean }>
   >({});
   const [activeTranslation, setActiveTranslation] = useState<string | null>(null);
+  const translationCopy = useCopyFeedback({
+    resetKeys: [activeTranslation, translations[activeTranslation ?? ""]?.translatedVisible],
+  });
   const sourceBlocks = useMemo(() => {
     if (!Object.keys(translations).length) return persistedBlocks;
     return persistedBlocks.map((block) => {
@@ -493,6 +498,7 @@ function AgentTranscriptComponent({
     <PerformanceTraceContext.Provider value={performanceTraceId}>
       <div
         ref={setScroller}
+        data-chat-citation-session={sessionId}
         tabIndex={-1}
         onClickCapture={(event) => {
           imageOpen.noteClick(event);
@@ -534,12 +540,13 @@ function AgentTranscriptComponent({
       >
         {activeVersionValid ? (
           // z-10: in-pane sticky bar over the scrolling rows; no in-pane layer scale exists, so the literal stays.
-          <div className="sticky inset-bs-0 z-10 flex flex-wrap items-center justify-end gap-2 bg-(--ui-surface) px-4 py-2 font-sans text-ui-caption text-(--ui-text-secondary)">
-            <span>{t("After applying: ↑ original, ↓ translation.")}</span>
+          <div className="sticky inset-bs-0 z-10 flex flex-wrap items-center justify-end gap-1 bg-(--ui-surface) px-3 py-1 font-sans text-ui-caption text-(--ui-text-secondary)">
             <Button
               motion="none"
+              size="sm"
               variant="ghost"
               type="button"
+              tooltip={t("After applying: ↑ original, ↓ translation.")}
               aria-pressed={!activeVersion.translatedVisible}
               onClick={() => showTranslation(false)}
             >
@@ -547,6 +554,7 @@ function AgentTranscriptComponent({
             </Button>
             <Button
               motion="none"
+              size="sm"
               variant="ghost"
               type="button"
               aria-pressed={activeVersion.translatedVisible}
@@ -554,6 +562,41 @@ function AgentTranscriptComponent({
             >
               {t("Translation")}
             </Button>
+            <Button
+              motion="none"
+              size="sm"
+              variant="ghost"
+              iconOnly
+              label={translationCopy.copied ? t("Copied") : t("Copy")}
+              loading={translationCopy.pending}
+              onClick={() =>
+                translationCopy.copy(() =>
+                  copyMessage(
+                    activeVersion.translatedVisible
+                      ? activeVersion.translated
+                      : activeVersion.original,
+                  ),
+                )
+              }
+            >
+              {translationCopy.copied ? <Check /> : <Copy />}
+            </Button>
+            <Button
+              motion="none"
+              size="sm"
+              variant="ghost"
+              iconOnly
+              label={t("Close translation")}
+              onClick={() => setActiveTranslation(null)}
+            >
+              <X />
+            </Button>
+            {translationCopy.failed ? (
+              <InlineError>
+                {t("Could not complete this action. ")}
+                {translationCopy.error}
+              </InlineError>
+            ) : null}
           </div>
         ) : null}
         <div
@@ -678,14 +721,18 @@ function AgentTranscriptComponent({
           <TranscriptSelectionActions
             root={scrollerEl}
             enabled={visible}
+            sessionId={sessionId}
+            blocks={persistedBlocks}
             onAddToChat={onAddToChat}
             onAddToNotes={onSaveSelectionNote}
             onTranslate={
               canOfferTranslation(translationContext)
                 ? (selection, target) => {
-                    const source = persistedBlocks.find(
+                    const sourceBlock = persistedBlocks.find(
                       (block) => block.id === selection?.responseId,
-                    )?.text;
+                    );
+                    if (target === "reprompt" && sourceBlock?.role !== "user") return;
+                    const source = sourceBlock?.text;
                     const displayed = sourceBlocks.find(
                       (block) => block.id === selection?.responseId,
                     )?.text;
@@ -2097,10 +2144,11 @@ function UserMessageBlock({
       ? deliveryDescription
       : t("Wait for the active turn to finish before retrying or removing this follow-up.");
   const bycoda = isOperatorUserTurn(block);
-  const text =
+  const rawText =
     card && card.kind !== "handoff"
       ? ""
       : visibleUserPrompt(bycoda ? operatorUserPrompt(block) : block.text);
+  const { text, citations } = useMemo(() => extractChatCitations(rawText), [rawText]);
   const messageLink = text ? parseUserMessageLink(text) : null;
   const displayText = messageLink ? `${messageLink.beforeText}${messageLink.afterText}` : text;
   const chat = layout === "chat";
@@ -2215,6 +2263,7 @@ function UserMessageBlock({
           }
           style={{ zIndex: stickyIndex }}
         >
+          <ChatCitationList citations={citations} />
           {block.turnOutcome === "stopped" ? (
             <Badge tone="neutral" className="mb-1">
               {t("Stopped by you")}
@@ -2596,9 +2645,13 @@ const TranscriptSelectionActions = memo(function TranscriptSelectionActions({
   onAddToChat,
   onAddToNotes,
   onTranslate,
+  sessionId,
+  blocks,
 }: {
   root: HTMLElement | null;
   enabled: boolean;
+  sessionId?: string;
+  blocks: Block[];
   onAddToChat?: (text: string) => void;
   onAddToNotes?: (text: string) => void | Promise<void>;
   onTranslate?: (selection: TranscriptSelection, target: TextActionTarget) => void;
@@ -2607,6 +2660,10 @@ const TranscriptSelectionActions = memo(function TranscriptSelectionActions({
   return (
     <TranscriptSelectionMenu
       selection={selection}
+      sessionId={sessionId}
+      allowReprompt={blocks.some(
+        (block) => block.id === selection?.responseId && block.role === "user",
+      )}
       onDismiss={dismissSelection}
       onAddToChat={onAddToChat}
       onAddToNotes={onAddToNotes}

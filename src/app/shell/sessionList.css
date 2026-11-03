@@ -6,12 +6,17 @@
   container: session-list / inline-size;
 }
 
+/* Keep prior providers recognizable while the last active provider retains its brand. */
+.session-provider-inactive {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
 .session-row-model-short {
   display: none;
 }
 
 @container session-list (max-width: 250px) {
-  [data-session-density="standard"] .session-row-branch,
   [data-session-density="standard"] .session-row-separator {
     display: none;
   }

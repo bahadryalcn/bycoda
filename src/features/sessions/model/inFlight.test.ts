@@ -156,7 +156,7 @@ describe("markTurnInterrupted", () => {
     expect(interrupted.blocks).toEqual([
       expect.objectContaining({
         id: "u1",
-        durationMs: expect.any(Number),
+        startedAt: 1_000,
       }),
       expect.objectContaining({
         id: "a1",
@@ -173,12 +173,21 @@ describe("markTurnInterrupted", () => {
         text: INTERRUPT_MESSAGE,
       }),
     ]);
+    expect(interrupted.blocks[0].durationMs).toBeUndefined();
   });
 
   it("does not append the interrupt note twice for the same turn", () => {
     const once = markTurnInterrupted(chat("/tmp/a", { busy: true }));
     const twice = markTurnInterrupted(once);
     expect(twice.blocks.filter((block) => block.text === INTERRUPT_MESSAGE)).toHaveLength(1);
+  });
+
+  it("keeps recorded turn duration when recovery seals an already timed turn", () => {
+    const session = chat("/tmp/a", {
+      busy: true,
+      blocks: [{ id: "u1", role: "user", text: "hello", startedAt: 1_000, durationMs: 250 }],
+    });
+    expect(markTurnInterrupted(session).blocks[0].durationMs).toBe(250);
   });
 
   it("appends a new note when a later turn is quit after Continue", () => {

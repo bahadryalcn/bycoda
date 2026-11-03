@@ -95,6 +95,16 @@ async function mountWith(first: MachineResult<Automation>[]) {
   expect(latest.loaded).toBe(true);
 }
 
+it("forces a capability probe only for an explicit recovery refresh", async () => {
+  await mountWith([]);
+  expect(client.probe).toHaveBeenLastCalledWith("automations", false);
+  client.list.mockResolvedValue([]);
+  await act(async () => latest.refresh(true));
+  expect(client.probe).toHaveBeenLastCalledWith("automations", true);
+  await act(async () => latest.refresh());
+  expect(client.probe).toHaveBeenLastCalledWith("automations", false);
+});
+
 /** Starts a refresh that stays in flight until the returned poll is resolved. */
 async function startInFlightRefresh() {
   const poll = pendingPoll();

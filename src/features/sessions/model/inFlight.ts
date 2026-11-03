@@ -88,7 +88,22 @@ export function quitWhileBusyMessage(count: number): string {
  * resume on the second quit.
  */
 export function markTurnInterrupted(session: Session): Session {
-  const sealed = { ...sealOpenWork(stopStreaming(session)), busy: false };
+  // Sealing after a restart must not turn restart time into conversation activity.
+  // Keep submitted-turn durations as recorded before this maintenance operation.
+  const durations = new Map(
+    session.blocks
+      .filter((block) => block.role === "user")
+      .map((block) => [block.id, block.durationMs]),
+  );
+  const stopped = stopStreaming(session);
+  stopped.blocks = stopped.blocks.map((block) => {
+    if (block.role !== "user" || !durations.has(block.id)) return block;
+    const durationMs = durations.get(block.id);
+    if (durationMs !== undefined) return { ...block, durationMs };
+    const { durationMs: _durationMs, ...withoutDuration } = block;
+    return withoutDuration;
+  });
+  const sealed = { ...sealOpenWork(stopped), busy: false };
   if (lastBlockIsInterrupt(sealed)) return sealed;
   return {
     ...sealed,

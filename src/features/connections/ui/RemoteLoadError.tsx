@@ -3,11 +3,17 @@ import { Button } from "../../../shared/ui/Button";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { OPEN_CONNECTIONS_EVENT, requestMachineEdit } from "../model/connections";
-import { needsSignIn } from "../model/remoteConnection";
+import { connectionOutcome, needsSignIn } from "../model/remoteConnection";
 import type { RemoteFailure } from "../model/remoteFailure";
 import { useRemoteConnection } from "../model/useRemoteConnection";
+import { useRemoteConnectionFeedback } from "./RemoteConnectionFeedback";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import {
+  loadRemoteAutoReconnect,
+  subscribeRemoteAutoReconnect,
+} from "../../settings/model/settings";
 
 /** One compact, inline explanation of why a remote project's data could not be
  * loaded, with what the user can do about it. `stale` says older data is still
@@ -18,16 +24,44 @@ export function RemoteLoadError({
   stale = false,
   onRetry,
   compact = false,
+  coordinated = true,
 }: {
   cwd: string;
   failure: RemoteFailure;
   stale?: boolean;
   onRetry?: () => void;
   compact?: boolean;
+  /** The workspace notice renders the single shared recovery control. */
+  coordinated?: boolean;
 }) {
   useLocale();
   const { machine, status, reconnecting, reconnect } = useRemoteConnection(cwd);
   const [reconnectError, setReconnectError] = useState("");
+  const shared = useRemoteConnectionFeedback(coordinated ? cwd : undefined, failure);
+  const autoReconnect = useSyncExternalStore(
+    subscribeRemoteAutoReconnect,
+    loadRemoteAutoReconnect,
+    () => true,
+  );
+  if (shared) {
+    if (stale) return null;
+    const outcome = connectionOutcome(failure.message).status;
+    const retrying =
+      reconnecting ||
+      (autoReconnect &&
+        (status === "connecting" ||
+          status === "connected" ||
+          status === "unreachable" ||
+          status === "host-not-running") &&
+        (outcome === "unreachable" || outcome === "host-not-running"));
+    return retrying ? (
+      <LoadingText>{t("Connecting…")}</LoadingText>
+    ) : (
+      <p role="status" className="text-ui-caption text-(--ui-text-muted)">
+        {t("Not connected")}
+      </p>
+    );
+  }
   const name = machine?.name ?? t("this machine");
   const title =
     failure.kind === "unreachable"

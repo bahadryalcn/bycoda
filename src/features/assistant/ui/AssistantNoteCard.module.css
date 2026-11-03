@@ -1,0 +1,98 @@
+.page {
+  inline-size: 100%;
+  max-inline-size: 1168px;
+  margin-inline: auto;
+  padding: 24px;
+}
+.page > .toolbar {
+  gap: 12px;
+  margin-block-end: 24px;
+}
+.page > .toolbar > h2 {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  font-size: var(--ui-font-title);
+  font-weight: 600;
+}
+.toolbar h2 span {
+  margin-inline-start: 6px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 400;
+}
+.page > .toolbar > :nth-child(2) {
+  flex: 0 1 220px;
+  min-inline-size: 140px;
+}
+@media (max-width: 900px) {
+  .page > .toolbar > h2 {
+    flex-basis: 100%;
+  }
+  .page {
+    padding: 20px;
+  }
+}
+.collection {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-inline-size: 0;
+  padding: 16px;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
+}
+
+.heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  min-inline-size: 0;
+}
+
+.heading h3 {
+  min-inline-size: 0;
+  margin: 0;
+  font-size: var(--ui-font-body);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.heading h3 > button {
+  max-inline-size: 100%;
+  white-space: normal;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  flex: none;
+}
+
+.date {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.excerpt {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+}

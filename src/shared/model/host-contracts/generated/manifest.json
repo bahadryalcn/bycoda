@@ -2493,7 +2493,22 @@
                         "maxItems": 1000,
                         "type": "array"
                       },
-                      "text": { "type": "string" }
+                      "text": { "type": "string" },
+                      "voiceReceipt": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "important": { "type": "boolean" },
+                          "meaningful": { "type": "boolean" },
+                          "reason": { "const": "return", "type": "string" },
+                          "returnAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": ["reason", "returnAt", "meaningful", "important"],
+                        "type": "object"
+                      }
                     },
                     "required": ["id", "text", "createdAt"],
                     "type": "object"
@@ -28913,6 +28928,7 @@
                 "type": "object"
               },
               "historyLoading": { "type": "boolean" },
+              "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
               "pinned": { "type": "boolean" },
               "projectId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -29039,6 +29055,7 @@
                 "issue": { "enum": ["retrying", "failed"], "type": "string" },
                 "issueMessage": { "type": "string" },
                 "issueTurnId": { "type": "string" },
+                "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                 "linkedWorkItem": {
                   "additionalProperties": false,
                   "properties": {
@@ -29192,6 +29209,11 @@
                     "issue": { "enum": ["retrying", "failed"], "type": "string" },
                     "issueMessage": { "type": "string" },
                     "issueTurnId": { "type": "string" },
+                    "lastActivityAt": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "linkedWorkItem": {
                       "additionalProperties": false,
                       "properties": {
@@ -29428,6 +29450,11 @@
                             "type": "object"
                           },
                           "historyLoading": { "type": "boolean" },
+                          "lastActivityAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
                           "pinned": { "type": "boolean" },
                           "projectId": {
                             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -29577,6 +29604,11 @@
                             "type": "object"
                           },
                           "historyLoading": { "type": "boolean" },
+                          "lastActivityAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
                           "pinned": { "type": "boolean" },
                           "projectId": {
                             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -32485,6 +32517,11 @@
                         "type": "object"
                       },
                       "historyLoading": { "type": "boolean" },
+                      "lastActivityAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
                       "pinned": { "type": "boolean" },
                       "projectId": {
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -32615,6 +32652,11 @@
                         "type": "object"
                       },
                       "historyLoading": { "type": "boolean" },
+                      "lastActivityAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
                       "pinned": { "type": "boolean" },
                       "projectId": {
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -58308,6 +58350,7 @@
         "issue": { "enum": ["retrying", "failed"], "type": "string" },
         "issueMessage": { "type": "string" },
         "issueTurnId": { "type": "string" },
+        "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
         "linkedWorkItem": {
           "additionalProperties": false,
           "properties": {
@@ -58476,6 +58519,11 @@
                       "type": "object"
                     },
                     "historyLoading": { "type": "boolean" },
+                    "lastActivityAt": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "pinned": { "type": "boolean" },
                     "projectId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -58602,6 +58650,11 @@
                       "type": "object"
                     },
                     "historyLoading": { "type": "boolean" },
+                    "lastActivityAt": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "pinned": { "type": "boolean" },
                     "projectId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -58728,6 +58781,7 @@
           "type": "object"
         },
         "historyLoading": { "type": "boolean" },
+        "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
         "pinned": { "type": "boolean" },
         "projectId": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -58837,5 +58891,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "1d1e7fb14f4a98b6cce2f37f9fa597383ad5052cbaa9e3b6fd84f44d6e41b76a"
+  "schemaHash": "9d57fc1449346f5ebe8e5b5a0ce23811bd49e0e8ec892bdf91e9cef682c6c797"
 }

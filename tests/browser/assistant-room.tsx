@@ -18,6 +18,7 @@ import {
 } from "../../src/features/sessions/model/sessionFilters";
 import { AssistantManagedBadge } from "../../src/features/sessions/ui/AssistantManagedBadge";
 import { Button } from "../../src/shared/ui/Button";
+import { Chatting } from "../../src/shared/ui/icons";
 import type { SessionSummary } from "../../src/features/sessions/data/sessionStore";
 import { KeybindingsPage } from "../../src/features/settings/ui/ShortcutSettings";
 import { VoiceJobReview } from "../../src/features/voice/ui/VoiceJobReview";
@@ -75,6 +76,7 @@ const indicatorPort: DesktopIndicatorPort = {
   },
 };
 document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
+if (params.has("chat-launcher")) document.documentElement.dataset.canvasBackground = "pure";
 await setLanguagePreference(params.get("lang") === "tr" ? "tr" : "en");
 document.body.style.margin = "0";
 createRoot(document.getElementById("root")!).render(
@@ -235,6 +237,13 @@ function AssistantRoomFixture() {
       )}
       {params.has("desktop") && <DesktopControlStrip port={indicatorPort} />}
       <AssistantView
+        initialTab={
+          params.has("settings")
+            ? "settings"
+            : params.has("chat-launcher")
+              ? "conversations"
+              : undefined
+        }
         projectPath="/fixture"
         visibleProjectPaths={
           params.has("privacy") && !hidden
@@ -257,6 +266,13 @@ function AssistantRoomFixture() {
           document.body.dataset.openedGoal = target.goalId;
         }}
       />
+      {params.has("chat-launcher") && (
+        <div className={voiceStyles.launcher}>
+          <Button iconOnly label="Open voice companion">
+            <Chatting className="icon-md" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

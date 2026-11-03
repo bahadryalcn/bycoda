@@ -4,6 +4,8 @@ import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 const mock = fileURLToPath(new URL("./voice-visual-styles-mocks.ts", import.meta.url));
 export default defineConfig({
+  // This isolated fixture must not crawl every application HTML entrypoint.
+  optimizeDeps: { noDiscovery: true, include: ["react", "react-dom/client", "react/jsx-runtime"] },
   plugins: [
     react(),
     {

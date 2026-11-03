@@ -197,7 +197,7 @@ export function AssistantProfileFields({
       {section === "identity" && (
         <>
           <TextField
-            label={t("Name")}
+            label={t("Assistant name")}
             value={value.name ?? ""}
             maxLength={80}
             autoComplete="off"
@@ -261,41 +261,67 @@ export function AssistantProfileFields({
       )}
       {section === "autonomy" && (
         <>
-          {choice("autonomy", "Autonomy", [
-            ["report", "Report only"],
-            ["jobs", "Run jobs"],
-            ["chief", "Supervise assigned jobs"],
-          ])}
+          <div className={roleStyles.explainedField}>
+            {choice("autonomy", "Autonomy", [
+              ["report", "Report only"],
+              ["jobs", "Run jobs"],
+              ["chief", "Supervise assigned jobs"],
+            ])}
+            <p className={styles.muted}>
+              {t(
+                "Report only observes work. Run jobs starts assigned work. Supervision also reviews and follows up on assigned workers.",
+              )}
+            </p>
+          </div>
           {workerModelError && (
             <InlineError className={styles.error}>{workerModelError}</InlineError>
           )}
 
-          {choice("planApproval", "Plan approval", [
-            ["always", "Always"],
-            ["large", "Big jobs only"],
-            ["never", "Never"],
-          ])}
+          <div className={roleStyles.explainedField}>
+            {choice("planApproval", "Plan approval", [
+              ["always", "Always"],
+              ["large", "Big jobs only"],
+              ["never", "Never"],
+            ])}
+            <p className={styles.muted}>
+              {t(
+                "Big jobs have four or more tasks or span multiple projects. This setting controls plan approval, not other permissions.",
+              )}
+            </p>
+          </div>
 
-          <Switch
-            label={t("Answer routine worker questions")}
-            checked={value.allowRoutineQuestions ?? false}
-            onCheckedChange={(allowRoutineQuestions) => onChange({ allowRoutineQuestions })}
-          />
+          <div className={roleStyles.explainedField}>
+            <Switch
+              label={t("Answer routine worker questions")}
+              checked={value.allowRoutineQuestions ?? false}
+              onCheckedChange={(allowRoutineQuestions) => onChange({ allowRoutineQuestions })}
+            />
+            <p className={styles.muted}>
+              {t(
+                "Routine answers only address questions within the assigned task. They never approve permissions, publishing, credentials or destructive actions.",
+              )}
+            </p>
+          </div>
 
-          <AssistantPresetNumber
-            label={t("Daily token budget")}
-            value={value.dailyTokenBudget}
-            min={1}
-            max={1_000_000_000}
-            unit={t("tokens/day")}
-            presets={[
-              { value: 100_000, label: `100k ${t("tokens/day")}` },
-              { value: 500_000, label: `500k ${t("tokens/day")}` },
-              { value: 1_000_000, label: `1m ${t("tokens/day")}` },
-              { value: 5_000_000, label: `5m ${t("tokens/day")}` },
-            ]}
-            onChange={(dailyTokenBudget) => onChange({ dailyTokenBudget })}
-          />
+          <div className={roleStyles.explainedField}>
+            <AssistantPresetNumber
+              label={t("Daily token budget")}
+              value={value.dailyTokenBudget}
+              min={1}
+              max={1_000_000_000}
+              unit={t("tokens/day")}
+              presets={[
+                { value: 100_000, label: `100k ${t("tokens/day")}` },
+                { value: 500_000, label: `500k ${t("tokens/day")}` },
+                { value: 1_000_000, label: `1m ${t("tokens/day")}` },
+                { value: 5_000_000, label: `5m ${t("tokens/day")}` },
+              ]}
+              onChange={(dailyTokenBudget) => onChange({ dailyTokenBudget })}
+            />
+            <p className={styles.muted}>
+              {t("This local daily scheduling budget is an estimate, not a provider billing cap.")}
+            </p>
+          </div>
           <fieldset className={styles.modelField}>
             <legend>{t("Worker model")}</legend>
             <ModelPicker
@@ -345,7 +371,9 @@ export function AssistantProfileFields({
             />
           )}
           <p className={styles.muted}>
-            {t("Command approvals, publishing and credentials still require your authorization.")}
+            {t(
+              "Execution permissions control worker access. Existing approval and publishing gates still apply.",
+            )}
           </p>
           <div className={roleStyles.roleSection}>
             <div className={roleStyles.roleToggle}>
@@ -406,6 +434,9 @@ export function AssistantProfileFields({
       )}
       {section === "presence" && (
         <>
+          <p className={styles.muted}>
+            {t("Idle and away are based on inactivity. Away must begin after idle.")}
+          </p>
           <AssistantPresetNumber
             label={t("Become idle after (minutes)")}
             value={value.idleMinutes ?? policy.idleMinutes}
@@ -449,6 +480,11 @@ export function AssistantProfileFields({
               onChange={(quietStart, quietEnd) => onChange({ quietStart, quietEnd })}
             />
           </div>
+          <p className={styles.muted}>
+            {t(
+              "Outside work hours, new work waits and accepted turns can finish. Quiet hours hold notifications for the next briefing.",
+            )}
+          </p>
 
           {choice(
             "notificationPresent",
@@ -507,6 +543,9 @@ export function AssistantProfileFields({
             }))}
             onChange={(stallMinutes) => onChange({ stallMinutes })}
           />
+          <p className={styles.muted}>
+            {t("The stall timeout controls when inactive work needs attention.")}
+          </p>
         </>
       )}
       {section === "cost" && (
@@ -516,6 +555,11 @@ export function AssistantProfileFields({
           </p>
           {number("chiefWakeLimit", "Supervisor reviews per hour", 1, 120, policy.chiefWakeLimit)}
           {number("nudgeLimit", "Follow-ups before worker recovery", 0, 2, policy.nudgeLimit)}
+          <p className={styles.muted}>
+            {t(
+              "Zero disables follow-ups and automatic recovery. Manual conversations always wait for you after their limit.",
+            )}
+          </p>
           {number(
             "summaryRefreshMessages",
             "Conversation summary interval (messages)",
@@ -528,6 +572,11 @@ export function AssistantProfileFields({
 
           {number("chiefSoftContext", "Compact context at", 10_000, 1_000_000)}
           {number("chiefHardContext", "Renew context at", 20_000, 2_000_000)}
+          <p className={styles.muted}>
+            {t(
+              "Context thresholds estimate retained text in tokens. Earlier safety limits may also shorten it.",
+            )}
+          </p>
 
           <div className={roleStyles.actions}>
             <Button

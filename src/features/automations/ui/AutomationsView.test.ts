@@ -151,6 +151,61 @@ it("retries the same reveal after refreshed rows arrive without selecting a same
   }
 });
 
+it("keeps creation available when one remote machine is offline and retries without losing a draft", async () => {
+  invoke.mockResolvedValue([]);
+  const probe = vi.spyOn(hostAutomationClient, "probeMachines").mockResolvedValue({
+    capable: [],
+    outdated: [],
+    unreachable: ["tailm"],
+    unreachableMachines: [],
+  });
+  const lists = vi
+    .spyOn(hostAutomationClient, "listHostAutomationResults")
+    .mockResolvedValue([
+      { machineId: "offline", machineName: "tailm", status: "error", stale: false, data: [] },
+    ]);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(AutomationsView, {
+          cwd: "/work/project",
+          recents: [],
+          onClose: vi.fn(),
+          onLaunch: vi.fn(),
+          onOpenSession: vi.fn(),
+          onOpenBackgroundSession: vi.fn(),
+        }),
+      ),
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("tailm"));
+    expect(container.textContent).not.toContain("Automations unavailable");
+    expect(container.textContent).not.toContain("Create your first automation");
+    const blank = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.includes("Start from scratch"),
+    )!;
+    expect(blank).toBeDefined();
+    await act(async () => blank.click());
+    const name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
+    await changeInput(name, "Offline-safe draft");
+    lists.mockResolvedValue([]);
+    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent === "Retry",
+    )!;
+    await act(async () => retry.click());
+    await vi.waitFor(() => expect(container.textContent).not.toContain("tailm"));
+    expect(probe).toHaveBeenLastCalledWith("automations", true);
+    expect(name.value).toBe("Offline-safe draft");
+    expect(
+      invoke.mock.calls.some(
+        ([command]) => command === "automations_upsert" || command === "automation_run",
+      ),
+    ).toBe(false);
+  } finally {
+    probe.mockRestore();
+    lists.mockRestore();
+  }
+});
+
 it("shows an initial Host-read failure instead of claiming there are no automations", async () => {
   invoke.mockImplementation(async (command) => {
     if (command === "remote_machines") throw new Error("Host read failed");

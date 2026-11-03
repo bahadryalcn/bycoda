@@ -108,9 +108,9 @@ export class VoiceVad {
   setStrict(strict: boolean) {
     this.strict = strict;
   }
-  setEndSilence(seconds?: number) {
+  setEndSilence(seconds?: number, pause?: (audio: Int16Array, pauseId: number) => void) {
     this.options.endSilence = seconds;
-    if (seconds !== undefined) this.options.pause = undefined;
+    this.options.pause = pause;
   }
   setManualTurnEnd(manual: boolean) {
     if (this.options.manualTurnEnd !== manual) this.full = false;
