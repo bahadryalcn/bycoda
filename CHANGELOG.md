@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2]
+
+### Voice and assistant
+
+- Keep voice connected across navigation and bind each spoken request to the conversation it was made in.
+- Start dictation while the recognizer loads, keep it warm for five minutes, and report a dropped connection instead of stopping silently.
+- Keep the dictation connection alive while buffered phrases finish after you stop.
+- Approve desktop actions on an assistant thread without a coding session.
+- Offer a one-million token draft budget and re-check setup before saving.
+- Keep follow-up activity on the original run until its children finish, and resolve bare filenames against a folder named in the same reply.
+- Announce voice errors and speakers reliably to screen readers.
+
+### macOS permissions
+
+- Ask for Screen Recording before quick-composer screenshots and open the right Privacy & Security pane when microphone or screen access is missing.
+- Declare local network, removable and network volume, Apple Events and camera usage so macOS can prompt for them.
+- Sign the app and the desktop-control helper with a Developer ID and notarize them when Apple credentials are configured, so permissions survive updates.
+
+### Security and reliability
+
+- Refuse hidden files such as `.env` in HTML previews and stop previews from sending data to other sites.
+- Reject invalid social webhook signatures instead of accepting them, and keep the Host running when an asynchronous error is not handled.
+- Keep Turkish and other non-ASCII text intact in large formatter and CLI inputs, and refuse to save files that are not UTF-8 or that became symlinks.
+- Retry a failed mobile LAN configuration load, use a free port when the saved one is taken, and start background services independently.
+- Rate-limit MCP requests per token and report rate limiting clearly.
+- Give secondary windows only the permissions they use.
+- Enable the microphone on Linux and bundle the correct Host on Intel Macs.
+
+### Interface
+
+- Add missing translations, translate remaining English messages and keep keyboard focus in translated menus.
+- Follow the light theme during startup, keep SSH jump host order and focus when reordering, and show errors when a link cannot be opened.
+- Use shared icons, errors, tooltips and typography across the assistant, voice and desktop-control screens.
+
+### Build and verification
+
+- Run format, lint, translation, color, UI and documentation checks in CI, and require Node.js 22.12 or newer.
+- Stop tracking the unused npm lockfile and a stray process file.
+
 ## [0.7.1]
 
 ### Personal assistant
