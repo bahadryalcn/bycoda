@@ -306,9 +306,7 @@ def dependency_action(workspace, files, installed_key=None, previous_package=Non
 
 def validate_versions(files):
     version = json.loads(files['package.json'])['version']
-    lockfile = json.loads(files['package-lock.json'])
-    values = [lockfile['version'], lockfile['packages']['']['version'],
-              json.loads(files['src-tauri/tauri.conf.json'])['version'],
+    values = [json.loads(files['src-tauri/tauri.conf.json'])['version'],
               tomllib.loads(files['Cargo.toml'].decode())['workspace']['package']['version']]
     if not re.fullmatch(r'\d+\.\d+\.\d+', version) or any(value != version for value in values):
         raise RuntimeError('Version files disagree; run the existing bump-version script before building')

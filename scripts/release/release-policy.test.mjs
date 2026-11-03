@@ -140,7 +140,6 @@ test("ephemeral version overlays change only version-owned files and refuse unre
   });
   const source = {
     "package.json": '{"version":"0.6.94","scripts":{"build":"fixture"}}',
-    "package-lock.json": '{"version":"0.6.94","packages":{"":{"version":"0.6.94"}}}',
     "src-tauri/tauri.conf.json": '{"version":"0.6.94","identifier":"fixture"}',
     "Cargo.toml": '[workspace.package]\nversion = "0.6.94"\n',
     "Cargo.lock": '[[package]]\nname = "bycoda"\nversion = "0.6.94"\n',

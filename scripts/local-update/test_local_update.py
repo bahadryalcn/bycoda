@@ -1345,7 +1345,6 @@ class LocalUpdateTests(unittest.TestCase):
 
     def test_mixed_version_source_is_rejected_before_build(self):
         files = {'package.json': b'{"version":"0.8.70"}',
-                 'package-lock.json': b'{"version":"0.8.70","packages":{"":{"version":"0.8.70"}}}',
                  'src-tauri/tauri.conf.json': b'{"version":"0.8.71"}',
                  'Cargo.toml': b'[workspace.package]\nversion="0.8.70"'}
         with self.assertRaises(RuntimeError):
@@ -1353,7 +1352,6 @@ class LocalUpdateTests(unittest.TestCase):
 
     def test_matching_version_and_rust_lock_are_accepted(self):
         files = {'package.json': b'{"version":"0.8.70"}',
-                 'package-lock.json': b'{"version":"0.8.70","packages":{"":{"version":"0.8.70"}}}',
                  'src-tauri/tauri.conf.json': b'{"version":"0.8.70"}',
                  'Cargo.toml': b'[workspace.package]\nversion="0.8.70"',
                  'src-tauri/Cargo.toml': b'[package]\nname="bycoda"',
@@ -1362,13 +1360,10 @@ class LocalUpdateTests(unittest.TestCase):
 
     def test_version_only_change_reuses_dependencies_but_dependency_change_does_not(self):
         def files(version, dependency='1.0.0'):
-            return {'package.json': json.dumps({'version': version, 'dependencies': {'a': dependency}}).encode(),
-                    'package-lock.json': json.dumps({'version': version, 'packages': {'': {'version': version},
-                                                   'node_modules/a': {'version': dependency}}}).encode()}
+            return {'package.json': json.dumps({'version': version, 'dependencies': {'a': dependency}}).encode()}
         self.assertEqual(dependency_key(files('0.8.70')), dependency_key(files('0.8.71')))
         self.assertNotEqual(dependency_key(files('0.8.70')), dependency_key(files('0.8.70', '2.0.0')))
         first = files('0.8.70')
-        self.assertEqual(dependency_key(first), dependency_key(dict(first, **{'package-lock.json': b'changed'})))
         reformatted = dict(first, **{'package.json': b'{ "dependencies": { "a": "1.0.0" }, "version": "0.8.71" }'})
         self.assertEqual(dependency_key(first), dependency_key(reformatted))
 

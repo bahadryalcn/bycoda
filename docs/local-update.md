@@ -114,8 +114,7 @@ repository paths. This option cannot be combined with `-SnapshotRequest`,
   `pnpm install --frozen-lockfile --prefer-offline` in the managed build directory.
   Missing build artifacts and `-ForceBuild` do not force dependency installation.
   Older cache markers refresh dependencies once because they did not track all
-  pnpm lock/workspace inputs. `package-lock.json` remains version metadata; pnpm does not use it
-  for dependency resolution.
+  pnpm lock/workspace inputs.
 - `verifyDepsBeforeRun: false` prevents pnpm from automatically installing before
   `run`/`exec`; the coordinator owns installation decisions.
 - Web, Host compilation, Host packaging, and native inputs are tracked separately.
@@ -270,8 +269,7 @@ python -B scripts/local-update/test_local_update.py
 These validate the scripts and plan without starting a build, installation, or SSH
 session. They do not establish actual build or end-to-end installation acceptance.
 
-Local updates and CI use `pnpm-lock.yaml`. `package-lock.json` is retained for the
-existing version script and legacy metadata; it does not drive installation.
+Local updates and CI use `pnpm-lock.yaml`; no npm lockfile is read or written.
 
 ## Installation identity and publishing
 
