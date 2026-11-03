@@ -219,17 +219,15 @@ async function supervised(f: Awaited<ReturnType<typeof setup>>) {
   await f.store.db.exec(
     "CREATE TABLE IF NOT EXISTS goals(id TEXT PRIMARY KEY,value TEXT NOT NULL)",
   );
-  await f.store.db
-    .prepare("INSERT OR REPLACE INTO goals(id,value) VALUES(?,?)")
-    .run(
-      `assistant-${job.id}`,
-      JSON.stringify({
-        id: `assistant-${job.id}`,
-        projectIds: [...new Set([f.project.id, f.workerProject.id])],
-        leadProjectId: f.project.id,
-        taskIds: ["worker"],
-      }),
-    );
+  await f.store.db.prepare("INSERT OR REPLACE INTO goals(id,value) VALUES(?,?)").run(
+    `assistant-${job.id}`,
+    JSON.stringify({
+      id: `assistant-${job.id}`,
+      projectIds: [...new Set([f.project.id, f.workerProject.id])],
+      leadProjectId: f.project.id,
+      taskIds: ["worker"],
+    }),
+  );
   const managed = assistantSessionRuntime(f.store, f.engine, assistant, f.tasks);
   await managed.ready;
   cleanups.push(() => managed.close());
@@ -688,17 +686,15 @@ it("routes the high-context assistant nudge through the real task and engine onc
   await f.store.db.exec(
     "CREATE TABLE IF NOT EXISTS goals(id TEXT PRIMARY KEY,value TEXT NOT NULL)",
   );
-  await f.store.db
-    .prepare("INSERT OR REPLACE INTO goals(id,value) VALUES(?,?)")
-    .run(
-      `assistant-${job.id}`,
-      JSON.stringify({
-        id: `assistant-${job.id}`,
-        projectIds: [...new Set([f.project.id, f.workerProject.id])],
-        leadProjectId: f.project.id,
-        taskIds: ["worker"],
-      }),
-    );
+  await f.store.db.prepare("INSERT OR REPLACE INTO goals(id,value) VALUES(?,?)").run(
+    `assistant-${job.id}`,
+    JSON.stringify({
+      id: `assistant-${job.id}`,
+      projectIds: [...new Set([f.project.id, f.workerProject.id])],
+      leadProjectId: f.project.id,
+      taskIds: ["worker"],
+    }),
+  );
   const managed = assistantSessionRuntime(f.store, f.engine, assistant, f.tasks);
   await managed.ready;
   cleanups.push(() => managed.close());

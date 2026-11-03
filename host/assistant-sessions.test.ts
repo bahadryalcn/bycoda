@@ -21,18 +21,16 @@ async function detachable(f: Awaited<ReturnType<typeof setup>>) {
   await f.store.db.exec(
     "CREATE TABLE IF NOT EXISTS goals(id TEXT PRIMARY KEY,value TEXT NOT NULL)",
   );
-  await f.store.db
-    .prepare("INSERT OR REPLACE INTO goals(id,value) VALUES(?,?)")
-    .run(
-      job.goalId,
-      JSON.stringify({
-        id: job.goalId,
-        leadProjectId: "project",
-        projectIds: ["project"],
-        taskIds: [],
-        plannerSessionId: "owned",
-      }),
-    );
+  await f.store.db.prepare("INSERT OR REPLACE INTO goals(id,value) VALUES(?,?)").run(
+    job.goalId,
+    JSON.stringify({
+      id: job.goalId,
+      leadProjectId: "project",
+      projectIds: ["project"],
+      taskIds: [],
+      plannerSessionId: "owned",
+    }),
+  );
   return job;
 }
 it("withdraws one canonical session durably without stopping its worker or replaying a lost acknowledgement", async () => {
@@ -319,15 +317,13 @@ it("uses persisted worker limits for status and the final nudge admission", asyn
     const row = await currentStore.db
       .prepare("SELECT value FROM assistant_profile WHERE id='profile'")
       .get();
-    await currentStore.db
-      .prepare("UPDATE assistant_profile SET value=? WHERE id='profile'")
-      .run(
-        JSON.stringify({
-          ...JSON.parse(row!.value),
-          workerSoftContext: 10000,
-          workerHardContext: 30000,
-        }),
-      );
+    await currentStore.db.prepare("UPDATE assistant_profile SET value=? WHERE id='profile'").run(
+      JSON.stringify({
+        ...JSON.parse(row!.value),
+        workerSoftContext: 10000,
+        workerHardContext: 30000,
+      }),
+    );
   });
   const g = await setup({ reserveTokens: reserve });
   currentStore = g.store;

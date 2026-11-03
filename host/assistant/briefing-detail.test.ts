@@ -147,26 +147,24 @@ async function fixture() {
       "UPDATE tasks SET value=json_set(value,'$.goalId',?,'$.status','blocked','$.sessionId',?,'$.runId','approval-current-run') WHERE id='approval-child'",
     )
     .run(goalId, sessionId);
-  await store.db
-    .prepare("INSERT INTO goals(id,value) VALUES(?,?)")
-    .run(
-      goalId,
-      JSON.stringify({
-        ...execution,
-        id: goalId,
-        title: job.title,
-        prompt: job.request,
-        projectIds: [project.id],
-        leadProjectId: project.id,
-        verifyDefaults: { review: false },
-        approvePlan: true,
-        autoMerge: false,
-        taskIds: ["approval-child"],
-        status: "blocked",
-        createdAt: now,
-        updatedAt: now,
-      }),
-    );
+  await store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run(
+    goalId,
+    JSON.stringify({
+      ...execution,
+      id: goalId,
+      title: job.title,
+      prompt: job.request,
+      projectIds: [project.id],
+      leadProjectId: project.id,
+      verifyDefaults: { review: false },
+      approvePlan: true,
+      autoMerge: false,
+      taskIds: ["approval-child"],
+      status: "blocked",
+      createdAt: now,
+      updatedAt: now,
+    }),
+  );
   await store.db
     .prepare(
       "UPDATE assistant_jobs SET value=json_set(value,'$.goalId',?,'$.status','waiting','$.summary','Permission is required','$.sessionIds',json(?)) WHERE id=?",

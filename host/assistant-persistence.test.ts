@@ -95,17 +95,15 @@ it("keeps Host provenance through metadata edits, sparse saves, summaries and re
   await store.db.exec(
     "CREATE TABLE goals(id TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE tasks(id TEXT PRIMARY KEY,value TEXT NOT NULL)",
   );
-  await store.db
-    .prepare("INSERT INTO goals(id,value) VALUES(?,?)")
-    .run(
-      job.goalId,
-      JSON.stringify({
-        id: job.goalId,
-        projectIds: [project.id],
-        leadProjectId: project.id,
-        taskIds: ["task"],
-      }),
-    );
+  await store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run(
+    job.goalId,
+    JSON.stringify({
+      id: job.goalId,
+      projectIds: [project.id],
+      leadProjectId: project.id,
+      taskIds: ["task"],
+    }),
+  );
   await store.db
     .prepare("INSERT INTO tasks(id,value) VALUES(?,?)")
     .run(

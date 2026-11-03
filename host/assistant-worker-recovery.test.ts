@@ -155,30 +155,28 @@ async function fixture() {
       "UPDATE tasks SET value=json_set(value,'$.goalId',?,'$.status','running','$.sessionId',?,'$.runId',?,'$.startedAt',?) WHERE id='canonical-task'",
     )
     .run(`assistant-${job.id}`, sessionId, first.runId, Date.now());
-  await store.db
-    .prepare("INSERT INTO goals(id,value) VALUES(?,?)")
-    .run(
-      `assistant-${job.id}`,
-      JSON.stringify({
-        id: `assistant-${job.id}`,
-        title: job.title,
-        prompt: job.request,
-        status: "running",
-        taskIds: ["canonical-task"],
-        projectIds: [project.id],
-        leadProjectId: project.id,
-        harness: "claude",
-        model: "claude:test",
-        modelSettings: {},
-        runtimeMode: "supervised",
-        maxRunMinutes: 0,
-        verifyDefaults: { review: false },
-        approvePlan: true,
-        isolate: false,
-        createdAt: clock.now,
-        updatedAt: clock.now,
-      }),
-    );
+  await store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run(
+    `assistant-${job.id}`,
+    JSON.stringify({
+      id: `assistant-${job.id}`,
+      title: job.title,
+      prompt: job.request,
+      status: "running",
+      taskIds: ["canonical-task"],
+      projectIds: [project.id],
+      leadProjectId: project.id,
+      harness: "claude",
+      model: "claude:test",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      maxRunMinutes: 0,
+      verifyDefaults: { review: false },
+      approvePlan: true,
+      isolate: false,
+      createdAt: clock.now,
+      updatedAt: clock.now,
+    }),
+  );
   await store.db
     .prepare(
       "UPDATE assistant_jobs SET value=json_set(value,'$.goalId',?,'$.status','running','$.dispatchState','submitted','$.sessionIds',json(?),'$.taskIds',json(?)) WHERE id=?",
@@ -534,18 +532,16 @@ it("retains branch metadata, unmerged edits, earlier attempts and notices in the
       },
     ],
     notices = [{ id: "owner-note", at: 1, kind: "info", message: "Keep this owner's notice" }];
-  await f.store.db
-    .prepare("UPDATE tasks SET value=? WHERE id=?")
-    .run(
-      JSON.stringify({
-        ...task,
-        branch: "retained-branch",
-        worktreeCwd: f.directory,
-        attemptHistory: history,
-        ownerNotices: notices,
-      }),
-      task.id,
-    );
+  await f.store.db.prepare("UPDATE tasks SET value=? WHERE id=?").run(
+    JSON.stringify({
+      ...task,
+      branch: "retained-branch",
+      worktreeCwd: f.directory,
+      attemptHistory: history,
+      ownerNotices: notices,
+    }),
+    task.id,
+  );
   await f.twoNudges();
   const result = await f.nudge("retain-branch");
   expect(result.recovery?.state).toBe("queued");

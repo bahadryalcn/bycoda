@@ -69,28 +69,26 @@ async function fixture(enabled = true) {
   ports.createGoal = async ({ job }) => {
     const id = `assistant-${job.id}`,
       now = Date.now();
-    await store.db
-      .prepare("INSERT INTO goals(id,value) VALUES(?,?)")
-      .run(
+    await store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run(
+      id,
+      JSON.stringify({
+        ...execution,
         id,
-        JSON.stringify({
-          ...execution,
-          id,
-          title: job.title,
-          prompt: job.request,
-          projectIds: [project.id],
-          leadProjectId: project.id,
-          verifyDefaults: { review: false },
-          approvePlan: true,
-          autoMerge: false,
-          isolate: false,
-          finalReview: false,
-          taskIds: [],
-          status: "running",
-          createdAt: now,
-          updatedAt: now,
-        }),
-      );
+        title: job.title,
+        prompt: job.request,
+        projectIds: [project.id],
+        leadProjectId: project.id,
+        verifyDefaults: { review: false },
+        approvePlan: true,
+        autoMerge: false,
+        isolate: false,
+        finalReview: false,
+        taskIds: [],
+        status: "running",
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
     return { goalId: id };
   };
   const assistant = new HostAssistant(store, ports);

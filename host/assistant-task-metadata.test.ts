@@ -54,19 +54,17 @@ it("projects only canonical delivered follow-ups, separating unknown delivery an
           JSON.stringify({ operation: { sessionId: "session", action, delivery, state } }),
         );
     }
-    await store.db
-      .prepare("INSERT INTO assistant_session_receipts(id,value) VALUES(?,?)")
-      .run(
-        "foreign:session:six",
-        JSON.stringify({
-          operation: {
-            sessionId: "session",
-            action: "send",
-            delivery: "delivered",
-            state: "settled",
-          },
-        }),
-      );
+    await store.db.prepare("INSERT INTO assistant_session_receipts(id,value) VALUES(?,?)").run(
+      "foreign:session:six",
+      JSON.stringify({
+        operation: {
+          sessionId: "session",
+          action: "send",
+          delivery: "delivered",
+          state: "settled",
+        },
+      }),
+    );
     expect((await withAssistantTaskMetadata(store, [task]))[0].assistantFollowups).toEqual({
       delivered: 1,
       unconfirmed: 1,

@@ -408,20 +408,18 @@ it("keeps an unknown matching config without an atomic creation receipt waiting 
     });
   await helper.ready;
   await f.automations.save(assistantQuickAutomationConfiguration(job));
-  await f.store.db
-    .prepare("INSERT INTO assistant_quick_automations(job_id,value) VALUES(?,?)")
-    .run(
-      job.id,
-      JSON.stringify({
-        jobId: job.id,
-        automationId: assistantQuickAutomationId(job.id),
-        fingerprint: assistantQuickAutomationFingerprint(job),
-        state: "writing",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        message: "Interrupted before a confirmed receipt",
-      }),
-    );
+  await f.store.db.prepare("INSERT INTO assistant_quick_automations(job_id,value) VALUES(?,?)").run(
+    job.id,
+    JSON.stringify({
+      jobId: job.id,
+      automationId: assistantQuickAutomationId(job.id),
+      fingerprint: assistantQuickAutomationFingerprint(job),
+      state: "writing",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      message: "Interrupted before a confirmed receipt",
+    }),
+  );
   const save = vi.spyOn(f.automations, "save");
   expect((await helper.run(job)).state).toBe("waiting");
   expect(save).not.toHaveBeenCalled();

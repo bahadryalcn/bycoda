@@ -196,11 +196,9 @@ for (const theme of ["light", "dark"])
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&question-presentation=1`);
-      const pending = page
-        .getByRole("article")
-        .filter({
-          hasText: "Saving this question is unconfirmed. Retry to verify the original card.",
-        });
+      const pending = page.getByRole("article").filter({
+        hasText: "Saving this question is unconfirmed. Retry to verify the original card.",
+      });
       await expect(pending).toBeVisible();
       expect(await page.evaluate(() => (window as any).__presentationRequest)).toBeUndefined();
       await pending.screenshot({
@@ -267,12 +265,10 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&owner-questions=1`);
       const card = page.getByRole("article", { name: "Recovery scope", exact: true });
       await expect(card).toBeVisible();
-      await page
-        .locator('[aria-label="Questions waiting for you"]')
-        .screenshot({
-          animations: "disabled",
-          path: join(output, `owner-question-open-${theme}-${width}.png`),
-        });
+      await page.locator('[aria-label="Questions waiting for you"]').screenshot({
+        animations: "disabled",
+        path: join(output, `owner-question-open-${theme}-${width}.png`),
+      });
       await card.getByRole("radio", { name: /Small safe change/ }).check();
       await card.locator('button[type="submit"]').click();
       await expect(card).toHaveCount(0);
@@ -1433,12 +1429,10 @@ for (const theme of ["light", "dark"])
       });
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Today's usage");
-      await page
-        .getByRole("group", { name: "Worker cache usage", exact: true })
-        .screenshot({
-          animations: "disabled",
-          path: join(output, `worker-cache-${theme}-${width}.png`),
-        });
+      await page.getByRole("group", { name: "Worker cache usage", exact: true }).screenshot({
+        animations: "disabled",
+        path: join(output, `worker-cache-${theme}-${width}.png`),
+      });
       await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&session-controls=pending`);
       const control = page.getByRole("button", {
         name: "Take assistant off this session",

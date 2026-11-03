@@ -33,30 +33,26 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
       "UPDATE tasks SET value=json_set(value,'$.goalId','assistant-job','$.sessionId','session') WHERE id=?",
     )
     .run(task.id);
-  await f.store.db
-    .prepare("INSERT INTO assistant_jobs(id,value) VALUES(?,?)")
-    .run(
-      "job",
-      JSON.stringify({
-        id: "job",
-        goalId: "assistant-job",
-        projectId: task.projectId,
-        projectIds: [task.projectId],
-        sessionIds: ["session"],
-        taskIds: [task.id],
-      }),
-    );
-  await f.store.db
-    .prepare("INSERT INTO goals(id,value) VALUES(?,?)")
-    .run(
-      "assistant-job",
-      JSON.stringify({
-        id: "assistant-job",
-        leadProjectId: task.projectId,
-        projectIds: [task.projectId],
-        taskIds: [task.id],
-      }),
-    );
+  await f.store.db.prepare("INSERT INTO assistant_jobs(id,value) VALUES(?,?)").run(
+    "job",
+    JSON.stringify({
+      id: "job",
+      goalId: "assistant-job",
+      projectId: task.projectId,
+      projectIds: [task.projectId],
+      sessionIds: ["session"],
+      taskIds: [task.id],
+    }),
+  );
+  await f.store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run(
+    "assistant-job",
+    JSON.stringify({
+      id: "assistant-job",
+      leadProjectId: task.projectId,
+      projectIds: [task.projectId],
+      taskIds: [task.id],
+    }),
+  );
   const original = (await f.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(task.id))!
     .value;
   const etag = await f.tasks.changeEtag(),
@@ -67,19 +63,17 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
   expect(projection).not.toHaveBeenCalled();
   const changed = vi.fn();
   f.tasks.onChange = changed;
-  await f.store.db
-    .prepare("INSERT INTO assistant_session_receipts(id,value) VALUES(?,?)")
-    .run(
-      "job:session:one",
-      JSON.stringify({
-        operation: {
-          sessionId: "session",
-          action: "send",
-          state: "settled",
-          delivery: "delivered",
-        },
-      }),
-    );
+  await f.store.db.prepare("INSERT INTO assistant_session_receipts(id,value) VALUES(?,?)").run(
+    "job:session:one",
+    JSON.stringify({
+      operation: {
+        sessionId: "session",
+        action: "send",
+        state: "settled",
+        delivery: "delivered",
+      },
+    }),
+  );
   await f.tasks.assistantFollowupsChanged();
   expect(changed).toHaveBeenCalledOnce();
   expect(await f.tasks.revision()).toBeGreaterThan(revision);

@@ -141,29 +141,27 @@ async function fixture(mode: "none" | "idle" | "running" = "none", count = 2) {
         )
         .run(sessionId, runId, now, id);
   }
-  await store.db
-    .prepare("INSERT INTO goals(id,value) VALUES(?,?)")
-    .run(
-      goalId,
-      JSON.stringify({
-        ...execution,
-        id: goalId,
-        title: job.title,
-        prompt: job.request,
-        projectIds: [project.id],
-        leadProjectId: project.id,
-        verifyDefaults: { review: false },
-        approvePlan: true,
-        autoMerge: false,
-        isolate: false,
-        continueUntilDone: true,
-        finalReview: false,
-        taskIds: ids,
-        status: "running",
-        createdAt: now,
-        updatedAt: now,
-      }),
-    );
+  await store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run(
+    goalId,
+    JSON.stringify({
+      ...execution,
+      id: goalId,
+      title: job.title,
+      prompt: job.request,
+      projectIds: [project.id],
+      leadProjectId: project.id,
+      verifyDefaults: { review: false },
+      approvePlan: true,
+      autoMerge: false,
+      isolate: false,
+      continueUntilDone: true,
+      finalReview: false,
+      taskIds: ids,
+      status: "running",
+      createdAt: now,
+      updatedAt: now,
+    }),
+  );
   await store.db
     .prepare(
       "UPDATE assistant_jobs SET value=json_set(value,'$.goalId',?,'$.taskIds',json(?),'$.sessionIds',json(?),'$.status','running') WHERE id=?",
@@ -434,26 +432,24 @@ it.each(["task", "goal"])(
         review: false,
       });
     else
-      await f.store.db
-        .prepare("INSERT INTO goals(id,value) VALUES(?,?)")
-        .run(
-          f.goalId,
-          JSON.stringify({
-            ...execution,
-            id: f.goalId,
-            title: "New owner goal",
-            prompt: "Never overwrite",
-            projectIds: [f.project.id],
-            leadProjectId: f.project.id,
-            verifyDefaults: { review: false },
-            approvePlan: true,
-            autoMerge: false,
-            taskIds: [],
-            status: "cancelled",
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          }),
-        );
+      await f.store.db.prepare("INSERT INTO goals(id,value) VALUES(?,?)").run(
+        f.goalId,
+        JSON.stringify({
+          ...execution,
+          id: f.goalId,
+          title: "New owner goal",
+          prompt: "Never overwrite",
+          projectIds: [f.project.id],
+          leadProjectId: f.project.id,
+          verifyDefaults: { review: false },
+          approvePlan: true,
+          autoMerge: false,
+          taskIds: [],
+          status: "cancelled",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }),
+      );
     await expect(f.rpc({ op: "trash.restore", id: `jobs:${f.job.id}` })).rejects.toThrow(
       "occupied",
     );
