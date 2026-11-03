@@ -473,6 +473,7 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "webkit2gtk",
  "webpki-roots 1.0.9",
  "windows",
  "windows-sys 0.61.2",

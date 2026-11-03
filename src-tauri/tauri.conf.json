@@ -54,7 +54,7 @@
     },
     "linux": {
       "rpm": {
-        "depends": ["gtk3", "libappindicator-gtk3", "librsvg2", "openssl-libs", "webkit2gtk4.1"]
+        "depends": ["gtk3", "libappindicator-gtk3", "librsvg2", "webkit2gtk4.1"]
       }
     }
   },
