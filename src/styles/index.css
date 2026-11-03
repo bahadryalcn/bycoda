@@ -2319,6 +2319,8 @@ html.is-resizing {
 }
 
 .composer-field {
+  /* Match the absolute highlight layer without an inline textarea baseline gap. */
+  display: block;
   color: transparent;
   caret-color: var(--color-content);
   -webkit-text-fill-color: transparent;

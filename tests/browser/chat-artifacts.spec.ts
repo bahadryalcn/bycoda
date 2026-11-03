@@ -152,7 +152,16 @@ test("chat messages, attachment references and running work keep a readable hier
         .locator('[data-attachment-chip="image"]')
         .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
       expect(new Set(thumbnailTops).size).toBe(1);
-      expect((await rail.boundingBox())!.height).toBeLessThan(85);
+      const card = rail.locator('[data-attachment-chip="image"]').first();
+      // Image cards retain filename, type/size and reference rows below a 72px
+      // thumbnail. The rail stays one card high, plus its horizontal scrollbar.
+      await expect(card.getByText("screenshot-1.png", { exact: true })).toBeVisible();
+      await expect(card.getByText("Image · 42 B", { exact: true })).toBeVisible();
+      await expect(card.getByText("image1", { exact: true })).toBeVisible();
+      const cardBox = (await card.boundingBox())!;
+      expect(cardBox.width).toBe(144);
+      expect((await image.boundingBox())!.height).toBe(72);
+      expect((await rail.boundingBox())!.height).toBeLessThanOrEqual(cardBox.height + 8);
       const token = bubble.getByRole("button", {
         name: "Open [image1] (screenshot-1.png) full screen",
         exact: true,

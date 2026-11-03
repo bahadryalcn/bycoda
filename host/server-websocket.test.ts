@@ -1088,6 +1088,7 @@ describe("Host HTTP/WS read composition", () => {
     );
     const socket = await host.ready();
     const listed = await host.rpc(socket, "sessions.list", { projectId: host.project.id });
+    expect(listed.error).toBeUndefined();
     const descriptor = listed.result.$bulk;
     expect(descriptor.totalBytes).toBeGreaterThan(1_048_576);
     const url = `http://127.0.0.1:${host.port}/ws-bulk/${descriptor.transferId}?offset=0`;

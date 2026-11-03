@@ -20,6 +20,18 @@ it("keeps the last verified time while a retained board refreshes or fails", asy
   const root = createRoot(container);
   const board = { hasTaskAnswer: true, pending: false, error: undefined, machines: [{}] } as Board;
   try {
+    await act(async () =>
+      root.render(
+        createElement(Probe, { board: { ...board, hasTaskAnswer: false, pending: true } }),
+      ),
+    );
+    expect(answer.boardDataState).toMatchObject({ phase: "loading" });
+    expect(answer.boardDataState.updatedAt).toBeUndefined();
+    await act(async () =>
+      root.render(createElement(Probe, { board: { ...board, pending: true } })),
+    );
+    expect(answer.boardDataState).toMatchObject({ phase: "refreshing" });
+    expect(answer.boardDataState.updatedAt).toBeUndefined();
     await act(async () => root.render(createElement(Probe, { board })));
     expect(answer.boardDataState.updatedAt).toBe(1_000);
     clock.mockReturnValue(2_000);

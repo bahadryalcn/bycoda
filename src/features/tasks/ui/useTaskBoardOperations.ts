@@ -80,7 +80,7 @@ export function useBoardDataState(board: TaskBoard) {
               ? "stale"
               : "error"
             : board.pending
-              ? updatedAt
+              ? updatedAt || board.hasTaskAnswer
                 ? "refreshing"
                 : "loading"
               : board.machines.length

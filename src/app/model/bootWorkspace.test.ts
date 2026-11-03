@@ -8,6 +8,7 @@ const store = vi.hoisted(() => ({
   listInFlightSessions: vi.fn(),
   getSession: vi.fn(),
   upsertSession: vi.fn(),
+  upsertSessionPreservingActivity: vi.fn(),
 }));
 vi.mock("../../features/sessions/data/sessionStore", async (original) => ({
   ...(await original<typeof import("../../features/sessions/data/sessionStore")>()),
@@ -21,6 +22,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   store.listInFlightSessions.mockResolvedValue([]);
   store.upsertSession.mockResolvedValue(null);
+  store.upsertSessionPreservingActivity.mockResolvedValue({ id: "stored" });
 });
 
 function savedWorkspace() {
@@ -48,6 +50,7 @@ it("restores ten idle tabs without rewriting their transcripts before first pain
   );
   expect(restored?.tabs).toHaveLength(10);
   expect(store.upsertSession).not.toHaveBeenCalled();
+  expect(store.upsertSessionPreservingActivity).not.toHaveBeenCalled();
 });
 
 it("still persists the interruption marker for a recovered running turn", async () => {
@@ -55,8 +58,9 @@ it("still persists the interruption marker for a recovered running turn", async 
   store.listInFlightSessions.mockResolvedValue([{ sessionId: sessions[0].id, cwd: "/repo" }]);
   const { loadResumedWorkspace } = await import("./appLifecycle");
   const restored = await loadResumedWorkspace();
-  expect(store.upsertSession).toHaveBeenCalledTimes(1);
-  expect(store.upsertSession).toHaveBeenCalledWith(restored?.sessions[0]);
+  expect(store.upsertSessionPreservingActivity).toHaveBeenCalledTimes(1);
+  expect(store.upsertSessionPreservingActivity).toHaveBeenCalledWith(restored?.sessions[0]);
+  expect(store.upsertSession).not.toHaveBeenCalled();
   expect(restored?.sessions[0].blocks.at(-1)?.notice).toBe("interrupt");
 });
 
@@ -148,6 +152,13 @@ it("does not overwrite a session edited while deferred boot IO is pending", asyn
 
 it("defers an interrupted inactive tab while keeping it blocked until recovery is durable", async () => {
   const sessions = savedWorkspace();
+  let acknowledge!: () => void;
+  store.upsertSessionPreservingActivity.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
   store.listInFlightSessions.mockResolvedValue([{ sessionId: sessions[1].id, cwd: "/repo" }]);
   let release!: (session: (typeof sessions)[number]) => void;
   const held = new Promise<(typeof sessions)[number]>((resolve) => {
@@ -177,11 +188,19 @@ it("defers an interrupted inactive tab while keeping it blocked until recovery i
   );
   try {
     release(sessions[1]);
-    await vi.waitFor(() => expect(store.upsertSession).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(store.upsertSessionPreservingActivity).toHaveBeenCalledTimes(1));
     expect(
       state.getSessions().find((session) => session.id === sessions[1].id)?.historyLoading,
-    ).not.toBe(true);
+    ).toBe(true);
+    expect(store.upsertSession).not.toHaveBeenCalled();
+    acknowledge();
+    await vi.waitFor(() =>
+      expect(
+        state.getSessions().find((session) => session.id === sessions[1].id)?.historyLoading,
+      ).not.toBe(true),
+    );
   } finally {
+    acknowledge?.();
     release(sessions[1]);
     detach();
   }

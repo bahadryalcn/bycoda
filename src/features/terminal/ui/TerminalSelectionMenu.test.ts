@@ -66,7 +66,9 @@ it("subscribes when xterm is ready, waits for drag completion and clears only th
     });
     expect(onAdd).not.toHaveBeenCalled();
     await act(async () =>
-      document.querySelector<HTMLButtonElement>('[role="toolbar"] button')!.click(),
+      document
+        .querySelector<HTMLButtonElement>('[role="toolbar"] button[aria-label="Add to chat"]')!
+        .click(),
     );
     expect((onAdd.mock.calls[0][0] as CustomEvent).detail).toEqual({
       text: "Error: build failed",

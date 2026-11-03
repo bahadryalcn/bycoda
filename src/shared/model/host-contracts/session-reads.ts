@@ -89,6 +89,14 @@ export const SessionSummarySchema = z.strictObject({
   id: IdentifierSchema,
   title: z.string(),
   harness: SessionProviderSchema,
+  providerHistory: z
+    .strictObject({
+      providers: z.array(SessionProviderSchema),
+      activeHarness: SessionProviderSchema,
+      activeModel: z.string().optional(),
+      handedOffFrom: SessionProviderSchema.optional(),
+    })
+    .optional(),
   issue: z.enum(["retrying", "failed"]).optional(),
   issueTurnId: z.string().optional(),
   issueMessage: z.string().optional(),

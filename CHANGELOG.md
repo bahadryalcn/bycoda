@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Reliability
 
+- Validate provider history in remote session reads and retain large-response deletion safeguards.
+
 - Consolidate remote connection notices and fall back to HTTP when a WebSocket connection is slow to become ready.
 - Preserve independent Git subscriptions across windows and validate authenticated subscription requests consistently.
 - Make task starts and queue ordering atomic, preserve board state during pending or failed changes, and improve review recovery.

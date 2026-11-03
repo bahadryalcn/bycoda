@@ -79,6 +79,10 @@ for (const width of [1280, 800])
         });
         await form.getByRole("button", { name: "Cancel", exact: true }).click();
       }
+      const goalList = page.locator("details.task-goals-disclosure");
+      await expect(goalList).toBeVisible();
+      if (!(await goalList.evaluate((node: HTMLDetailsElement) => node.open)))
+        await goalList.locator("summary").first().click();
       await page.getByRole("button", { name: "Edit goal settings", exact: true }).click();
       const settings = page.getByRole("form", { name: "Edit goal settings", exact: true });
       await expect(settings).toContainText("Delivery requires approval");

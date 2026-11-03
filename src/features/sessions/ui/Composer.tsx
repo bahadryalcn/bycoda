@@ -3432,6 +3432,7 @@ export const Composer = memo(function Composer({
         </div>
       ) : null}
       <TranscriptSelectionMenu
+        allowReprompt
         selection={translationSelection.selection}
         onDismiss={translationSelection.dismissSelection}
         onTranslate={(target) => {

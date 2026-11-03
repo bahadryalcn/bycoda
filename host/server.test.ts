@@ -3699,11 +3699,16 @@ describe("shared queued messages", () => {
           type: "session.providerBound",
           providerSessionId: "original-review-thread",
         });
-        s.turn().onEvent({ type: "message.delta", text: "Report is incomplete." });
+        s.turn().onEvent({
+          type: "message.delta",
+          text: "Report is incomplete.\nVERDICT: FAIL - Report is incomplete.",
+        });
         s.turn().onEvent({ type: "message.completed" });
         s.finish();
         await s.engine.waitForRun(sessionId, reviewing.reviewer!.runId);
-        await scheduler.tick();
+        // Ordinary failed reviews now start correction. Owner stop establishes
+        // the blocked continuation case without changing that repair policy.
+        await scheduler.move("blocked-review-continuation", "blocked");
         await scheduler.idle();
         expect(await scheduler.get("blocked-review-continuation")).toMatchObject({
           status: "blocked",

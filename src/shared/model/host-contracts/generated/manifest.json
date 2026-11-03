@@ -29075,6 +29075,65 @@
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
                 },
+                "providerHistory": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "activeHarness": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "activeModel": { "type": "string" },
+                    "handedOffFrom": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "providers": {
+                      "items": {
+                        "enum": [
+                          "codex",
+                          "claude",
+                          "cursor",
+                          "grok",
+                          "opencode",
+                          "pi",
+                          "omp",
+                          "fx",
+                          "hermes",
+                          "antigravity",
+                          "acp"
+                        ],
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": ["providers", "activeHarness"],
+                  "type": "object"
+                },
                 "providerSessionId": { "type": ["string", "null"] },
                 "repo": { "type": "string" },
                 "revision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -29232,6 +29291,65 @@
                     "projectId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                       "type": "string"
+                    },
+                    "providerHistory": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "activeHarness": {
+                          "enum": [
+                            "codex",
+                            "claude",
+                            "cursor",
+                            "grok",
+                            "opencode",
+                            "pi",
+                            "omp",
+                            "fx",
+                            "hermes",
+                            "antigravity",
+                            "acp"
+                          ],
+                          "type": "string"
+                        },
+                        "activeModel": { "type": "string" },
+                        "handedOffFrom": {
+                          "enum": [
+                            "codex",
+                            "claude",
+                            "cursor",
+                            "grok",
+                            "opencode",
+                            "pi",
+                            "omp",
+                            "fx",
+                            "hermes",
+                            "antigravity",
+                            "acp"
+                          ],
+                          "type": "string"
+                        },
+                        "providers": {
+                          "items": {
+                            "enum": [
+                              "codex",
+                              "claude",
+                              "cursor",
+                              "grok",
+                              "opencode",
+                              "pi",
+                              "omp",
+                              "fx",
+                              "hermes",
+                              "antigravity",
+                              "acp"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": ["providers", "activeHarness"],
+                      "type": "object"
                     },
                     "providerSessionId": { "type": ["string", "null"] },
                     "repo": { "type": "string" },
@@ -58370,6 +58488,65 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
           "type": "string"
         },
+        "providerHistory": {
+          "additionalProperties": false,
+          "properties": {
+            "activeHarness": {
+              "enum": [
+                "codex",
+                "claude",
+                "cursor",
+                "grok",
+                "opencode",
+                "pi",
+                "omp",
+                "fx",
+                "hermes",
+                "antigravity",
+                "acp"
+              ],
+              "type": "string"
+            },
+            "activeModel": { "type": "string" },
+            "handedOffFrom": {
+              "enum": [
+                "codex",
+                "claude",
+                "cursor",
+                "grok",
+                "opencode",
+                "pi",
+                "omp",
+                "fx",
+                "hermes",
+                "antigravity",
+                "acp"
+              ],
+              "type": "string"
+            },
+            "providers": {
+              "items": {
+                "enum": [
+                  "codex",
+                  "claude",
+                  "cursor",
+                  "grok",
+                  "opencode",
+                  "pi",
+                  "omp",
+                  "fx",
+                  "hermes",
+                  "antigravity",
+                  "acp"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": ["providers", "activeHarness"],
+          "type": "object"
+        },
         "providerSessionId": { "type": ["string", "null"] },
         "repo": { "type": "string" },
         "revision": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -58891,5 +59068,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "9d57fc1449346f5ebe8e5b5a0ce23811bd49e0e8ec892bdf91e9cef682c6c797"
+  "schemaHash": "f014759dc9f9bfa6be0d9c26dfcf9701ee8c6c2b991e580bf1c6f26b75c53e6d"
 }
