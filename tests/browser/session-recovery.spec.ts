@@ -68,9 +68,10 @@ test("all recovered projects remain searchable, selectable and reopenable", asyn
   const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(6);
-  await expect(dialog.getByRole("status").filter({ hasText: "previous sessions" })).toContainText(
-    "6 need attention",
-  );
+  const filters = dialog.getByRole("radiogroup", { name: "Session filters", exact: true });
+  await expect(filters.getByRole("radio", { name: /^Needs attention/ })).toBeChecked();
+  await expect(filters.getByRole("radio", { name: /^Needs attention/ })).toContainText("6");
+  await expect(filters.getByRole("radio", { name: /^All sessions/ })).toContainText("24");
   await expect(dialog.getByText("Failed", { exact: true })).toHaveCount(1);
   await dialog.getByRole("radio", { name: /All sessions/ }).click();
   await expect(dialog.getByRole("checkbox")).toHaveCount(24);
@@ -117,9 +118,11 @@ test("cleanup updates the list and survives closing the dialog", async ({ page }
     await page.getByRole("menuitem", { name }).click();
   };
   await maintain(/^Remove \d+ completed from list$/);
-  const allSessions = dialog.getByRole("radio", { name: /All sessions/ });
-  await allSessions.click();
-  await expect(allSessions).toBeChecked();
+  // After completed entries are removed every remaining row needs attention.
+  // There is no redundant filter; all six rows must remain directly available.
+  await expect(
+    dialog.getByRole("radiogroup", { name: "Session filters", exact: true }),
+  ).toHaveCount(0);
   await expect(dialog.getByRole("checkbox")).toHaveCount(6);
   await dialog.getByRole("checkbox").first().check();
   await maintain(/^Remove 1 selected from list$/);

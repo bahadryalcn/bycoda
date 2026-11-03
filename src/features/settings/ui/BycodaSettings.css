@@ -335,8 +335,11 @@
   gap: 12px 24px;
   border-radius: 0;
 }
-.settings-group-content > :is(.settings-row, .settings-advanced) ~ :is(.settings-row, .settings-advanced),
-.settings-advanced > .settings-row {
+.settings-group-content
+  > :is(.settings-row, .settings-advanced)
+  ~ :is(.settings-row, .settings-advanced),
+.settings-advanced > .settings-row,
+.settings-advanced > .settings-advanced-content > .settings-row {
   border-block-start: 1px solid var(--ui-settings-hairline);
 }
 .settings-group-content > :first-child {

@@ -419,7 +419,10 @@ test("grouped commit forms retain their height and drafts after disclosure and r
   await toggle.click();
   await toggle.click();
   await expect(message).toHaveValue(draft);
-  expect((await message.boundingBox())!.height).toBeGreaterThan(32);
+  await expect(message).toBeVisible();
+  // Reopening keeps the draft immediately; ResizeObserver fits the revealed
+  // textarea on the next animation frame. Wait for that actual layout result.
+  await expect.poll(async () => (await message.boundingBox())!.height).toBeGreaterThan(32);
 });
 
 test("compact checkout header and branch fetch remain usable across widths and themes", async ({

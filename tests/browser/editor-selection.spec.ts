@@ -2,8 +2,11 @@ import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const mode of ["file", "inline", "split"]) {
-  test(`editor context menu works in ${mode}`, async ({ page, context }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  test(`editor context menu works in ${mode}`, async ({ page, context, browserName }, info) => {
+    // WebKit grants clipboard reads; writes still use the actual Copy gesture.
+    await context.grantPermissions(
+      browserName === "webkit" ? ["clipboard-read"] : ["clipboard-read", "clipboard-write"],
+    );
     await page.addInitScript(() => {
       Object.defineProperty(window, "__TAURI_INTERNALS__", {
         value: {
@@ -22,14 +25,18 @@ for (const mode of ["file", "inline", "split"]) {
     await content.click();
     await page.keyboard.press("Control+a");
     await page.keyboard.insertText("const value={x:1,y:2}");
-    const captureDir = "temp/verification/2026-11-03-editor-format";
+    const editedLine = content.locator(".cm-line").filter({ hasText: "const value={x:1,y:2}" });
+    await expect(editedLine).toHaveCount(1);
+    const captureDir = `temp/verification/2026-11-03-editor-format/${info.project.name}`;
     mkdirSync(captureDir, { recursive: true });
     for (const light of [false, true]) {
       await page.evaluate(
         (light) => document.documentElement.classList.toggle("theme-light", light),
         light,
       );
-      await content.click({ button: "right" });
+      // Inline diffs can place a large, non-editable deleted-chunk widget in
+      // the content midpoint. Open actions on the actual modified line.
+      await editedLine.click({ button: "right" });
       const menu = page.getByRole("menu", { name: "Editor actions" });
       await expect(menu.getByRole("menuitem", { name: "Format document" })).toBeVisible();
       await expect(menu.getByRole("menuitem", { name: "Save", exact: true })).toBeEnabled();
@@ -37,7 +44,7 @@ for (const mode of ["file", "inline", "split"]) {
       await page.keyboard.press("Escape");
       await expect(menu).toHaveCount(0);
     }
-    await content.click();
+    await editedLine.click();
     await page.keyboard.press("Shift+F10");
     await page.getByRole("menuitem", { name: "Format document" }).click();
     await expect(content).toContainText("const value = { x: 1, y: 2 };");

@@ -183,10 +183,7 @@ function InfoSlot({ info }: { info: ReactNode }) {
 }
 
 /** Essential scope and dependencies stay visible beside the setting. */
-function SettingContext({
-  scope,
-  dependency,
-}: Pick<SettingDetails, "scope" | "dependency">) {
+function SettingContext({ scope, dependency }: Pick<SettingDetails, "scope" | "dependency">) {
   return (
     <>
       {scope ? <div className="settings-description settings-scope">{scope}</div> : null}
@@ -298,15 +295,19 @@ export function AdvancedSettings({
   settingIds,
   title,
   defaultOpen = true,
+  keepMounted = false,
 }: {
   children: ReactNode;
   id?: string;
   settingIds?: readonly string[];
   title?: ReactNode;
   defaultOpen?: boolean;
+  /** Retain draft/control identity while making a closed body hidden and inert. */
+  keepMounted?: boolean;
 }) {
   useLocale();
   const headingId = useId();
+  const contentId = useId();
   const revealed = useContext(RevealedSetting);
   const targeted = revealed != null && (revealed === id || !!settingIds?.includes(revealed));
   const [open, setOpen] = useState(defaultOpen || targeted);
@@ -334,6 +335,7 @@ export function AdvancedSettings({
           motion="none"
           className="settings-advanced-toggle"
           aria-expanded={open}
+          aria-controls={keepMounted ? contentId : undefined}
           onClick={() => setOpen((current) => !current)}
         >
           <ChevronRight
@@ -345,7 +347,19 @@ export function AdvancedSettings({
           {title ?? t("Advanced")}
         </Button>
       </h3>
-      {open ? children : null}
+      {keepMounted ? (
+        <div
+          id={contentId}
+          className="settings-advanced-content"
+          hidden={!open}
+          inert={!open}
+          aria-hidden={!open || undefined}
+        >
+          {children}
+        </div>
+      ) : open ? (
+        children
+      ) : null}
     </section>
   );
 }
@@ -471,9 +485,7 @@ export function Group({
             ) : null}
           </div>
           <div id={descriptionId}>
-            {hasInfo ? (
-              <p className="sr-only">{description}</p>
-            ) : null}
+            {hasInfo ? <p className="sr-only">{description}</p> : null}
             {descriptionVisible && description ? (
               <p className="settings-description settings-help-text">{description}</p>
             ) : null}
@@ -484,10 +496,7 @@ export function Group({
         </div>
         {action ? <div className="settings-group-action">{action}</div> : null}
       </div>
-      <div
-        ref={controls}
-        className="settings-group-content"
-      >
+      <div ref={controls} className="settings-group-content">
         {children}
         {feedback ? <div className="settings-group-feedback">{feedback}</div> : null}
       </div>
@@ -585,11 +594,7 @@ export function Row({
       <div className="settings-row-label">
         <div className="settings-title-line">
           {controlId ? (
-            <label
-              id={labelId}
-              htmlFor={controlId}
-              className="settings-row-title"
-            >
+            <label id={labelId} htmlFor={controlId} className="settings-row-title">
               {label}
             </label>
           ) : (
@@ -603,14 +608,10 @@ export function Row({
             </InfoPopover>
           ) : null}
           <InfoSlot info={info} />
-          {modified && onReset ? (
-            <SettingResetButton onReset={onReset} label={resetLabel} />
-          ) : null}
+          {modified && onReset ? <SettingResetButton onReset={onReset} label={resetLabel} /> : null}
         </div>
         <div id={descriptionId}>
-          {hasInfo ? (
-            <p className="sr-only">{description}</p>
-          ) : null}
+          {hasInfo ? <p className="sr-only">{description}</p> : null}
           {descriptionVisible && description ? (
             <p className="settings-description settings-help-text">{description}</p>
           ) : null}

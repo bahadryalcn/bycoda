@@ -25,14 +25,16 @@ for (const theme of ["light", "dark"]) {
   for (const width of [390, 1280]) {
     test(`voice setup keeps install direct and existing files in its action menu: ${theme} ${width}`, async ({
       page,
-    }) => {
+    }, testInfo) => {
       const group = await openVoice(page, "missing", theme, width);
       await expect(group.getByText("Voice setup is needed", { exact: true })).toBeVisible();
       await expect(group.getByRole("button", { name: "Install", exact: true })).toBeVisible();
       const more = group.getByRole("button", { name: "More voice setup actions", exact: true });
       await expect(more).toBeVisible();
       await more.click();
-      await expect(page.getByRole("menuitem", { name: "Locate existing", exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("menuitem", { name: "Locate existing", exact: true }),
+      ).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(group).not.toContainText("faster-whisper");
       await expect(group).not.toContainText("pip install");
@@ -43,13 +45,54 @@ for (const theme of ["light", "dark"]) {
         true,
       );
       await mkdir(captures, { recursive: true });
-      await group.screenshot({ path: join(captures, `voice-missing-${theme}-${width}.png`) });
+      await group.screenshot({ path: testInfo.outputPath(`voice-missing-${theme}-${width}.png`) });
       const bounds = await group.boundingBox();
-      // Conversation provider and speaker are now independent controls. On a
-      // phone, labels and controls stack. The nine-row group (with companion
-      // identity and memory) stays compact without the former technical setup
-      // instructions. The phone budget leaves room for Linux font metrics.
+      await testInfo.attach("setup-bounds", {
+        body: JSON.stringify({ theme, width, height: bounds!.height }),
+        contentType: "application/json",
+      });
+      // Setup/provider/voice/speaker remain direct. Secondary controls are in
+      // a retained, initially closed disclosure; the compact height contract
+      // still allows Linux font metrics without hiding fields or technical recovery.
       expect(bounds!.height).toBeLessThan(width < 600 ? 1040 : 680);
+      const advanced = group.getByRole("button", { name: "Advanced", exact: true });
+      await expect(advanced).toHaveAttribute("aria-expanded", "false");
+      const saved = await page.evaluate(() => localStorage.getItem("bycoda.voice"));
+      await advanced.focus();
+      await page.keyboard.press("Enter");
+      await expect(advanced).toHaveAttribute("aria-expanded", "true");
+      const manual = await group
+        .getByRole("switch", { name: "I decide when my turn ends", exact: true })
+        .elementHandle();
+      await expect(group.getByRole("switch", { name: "Memory", exact: true })).toBeVisible();
+      await expect(
+        group.getByRole("radiogroup", { name: "Visual style", exact: true }),
+      ).toBeVisible();
+      await expect(
+        group.getByRole("radiogroup", { name: "Processing", exact: true }),
+      ).toBeVisible();
+      // Settings owns an inner scroller: viewport captures at both ends show
+      // every expanded row without an element screenshot's clipped blank tail.
+      await advanced.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: testInfo.outputPath(`voice-advanced-top-${theme}-${width}.png`),
+      });
+      await group
+        .getByRole("radiogroup", { name: "Processing", exact: true })
+        .scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: testInfo.outputPath(`voice-advanced-bottom-${theme}-${width}.png`),
+      });
+      await advanced.click();
+      expect(
+        await manual!.evaluate((node) => node.isConnected && !!node.closest("[hidden][inert]")),
+      ).toBe(true);
+      await manual!.evaluate((node) => (node as HTMLElement).focus());
+      expect(await manual!.evaluate((node) => document.activeElement === node)).toBe(false);
+      expect(await page.evaluate(() => localStorage.getItem("bycoda.voice"))).toBe(saved);
+      expect(
+        await page.evaluate(() => sessionStorage.getItem("fixture-voice-install-request")),
+      ).toBeNull();
     });
   }
 }
@@ -126,7 +169,9 @@ test("an ongoing installation resumes with progress and prevents duplicate actio
     group.getByText("You can leave this page. Setup will continue.", { exact: true }),
   ).toBeVisible();
   await expect(group.getByRole("button", { name: "Install", exact: true })).toHaveCount(0);
-  await expect(group.getByRole("button", { name: "More voice setup actions", exact: true })).toHaveCount(0);
+  await expect(
+    group.getByRole("button", { name: "More voice setup actions", exact: true }),
+  ).toHaveCount(0);
   await expect(
     group.getByRole("switch", { name: "Enable voice companion", exact: true }),
   ).toBeDisabled();
@@ -169,6 +214,7 @@ for (const theme of ["light", "dark"]) {
     const gpuCaptures = join(process.cwd(), "temp/verification/2026-10-31-voice-gpu");
     await mkdir(gpuCaptures, { recursive: true });
     await group.screenshot({ path: join(gpuCaptures, `voice-gpu-offer-${theme}-1280.png`) });
+    await group.getByRole("button", { name: "Advanced", exact: true }).click();
     await group.getByRole("radio", { name: "CPU", exact: true }).click();
     await expect(
       group.getByRole("button", { name: "Install GPU support", exact: true }),

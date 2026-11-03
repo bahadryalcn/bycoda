@@ -16,6 +16,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: backend.browse }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: backend.openUrl }));
 import { VoiceSettings } from "./VoiceSettings";
 import { loadVoiceSettings, saveVoiceSettings } from "../model/voiceSettings";
+import * as turnPolicy from "../model/voiceTurnPolicy";
 let root: Root | undefined;
 let container: HTMLDivElement;
 beforeEach(() => {
@@ -44,14 +45,34 @@ async function setup(enabled = true) {
   root = createRoot(container);
   await act(async () => root!.render(createElement(VoiceSettings)));
 }
-it("retains the saved automatic pause while disabling its control in manual mode",async()=>{
-  saveVoiceSettings({...loadVoiceSettings(),manualTurnEnd:false,manualTurnEndRevision:9,turnEndSilence:4});
+it("retains the saved automatic pause while disabling its control in manual mode", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    manualTurnEnd: false,
+    manualTurnEndRevision: 9,
+    turnEndSilence: 4,
+  });
   await setup();
-  const manual=container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="I decide when my turn ends"]')!;
-  expect(manual).not.toBeNull();await act(async()=>manual.click());
-  expect(loadVoiceSettings()).toMatchObject({manualTurnEnd:true,manualTurnEndRevision:10,turnEndSilence:4});
-  expect(container.querySelector('[data-setting-id="voice-turn-silence"] [disabled]')).not.toBeNull();
-  await act(async()=>manual.click());expect(loadVoiceSettings()).toMatchObject({manualTurnEnd:false,manualTurnEndRevision:11,turnEndSilence:4});
+  await click("Advanced");
+  const manual = container.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="I decide when my turn ends"]',
+  )!;
+  expect(manual).not.toBeNull();
+  await act(async () => manual.click());
+  expect(loadVoiceSettings()).toMatchObject({
+    manualTurnEnd: true,
+    manualTurnEndRevision: 10,
+    turnEndSilence: 4,
+  });
+  expect(
+    container.querySelector('[data-setting-id="voice-turn-silence"] [disabled]'),
+  ).not.toBeNull();
+  await act(async () => manual.click());
+  expect(loadVoiceSettings()).toMatchObject({
+    manualTurnEnd: false,
+    manualTurnEndRevision: 11,
+    turnEndSilence: 4,
+  });
 });
 async function advance(ms = 501) {
   await act(async () => {
@@ -81,9 +102,7 @@ it("does not check or install until enabled; shows only the next actions for mis
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), enabled: true }));
   await advance();
   expect(container.textContent).toContain("Voice setup is needed");
-  expect(
-    document.querySelector('button[aria-label="More voice setup actions"]'),
-  ).not.toBeNull();
+  expect(document.querySelector('button[aria-label="More voice setup actions"]')).not.toBeNull();
   expect(container.textContent).not.toMatch(
     /faster-whisper|VoxCPM2|pip install|Python executable|Missing:/,
   );
@@ -256,6 +275,7 @@ it("does not apply a completed background job over newer voice preferences", asy
 it("chooses visual previews with radio arrows and keeps runtime setup unchanged", async () => {
   await setup();
   await advance();
+  await click("Advanced");
   const group = container.querySelector('[role="radiogroup"][aria-label="Visual style"]')!;
   const radios = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
   expect(radios.map((radio) => radio.textContent?.trim())).toEqual([
@@ -308,6 +328,7 @@ it("persists the processing choice and rechecks with it; CPU hides the GPU offer
   await setup();
   await advance();
   expect(container.textContent).toContain("Install GPU support");
+  await click("Advanced");
   await click("CPU");
   expect(loadVoiceSettings().device).toBe("cpu");
   await advance();
@@ -317,6 +338,65 @@ it("persists the processing choice and rechecks with it; CPU hides the GPU offer
     device: "cpu",
   });
   expect(container.textContent).not.toContain("Install GPU support");
+});
+
+it("keeps advanced preferences mounted without changing saved values or starting setup", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    idleSleepMinutes: 30,
+    manualTurnEnd: true,
+    turnEndSilence: 4,
+    allowBargeIn: false,
+    holdAnnouncements: true,
+    visual: "orb",
+    device: "cpu",
+  });
+  await setup();
+  await advance();
+  const saved = localStorage.getItem("bycoda.voice"),
+    calls = backend.inspect.mock.calls.length;
+  const control = container.querySelector(
+    '[data-setting-id="voice-manual-turn-end"] button[role="switch"]',
+  )!;
+  const body = control.closest(".settings-advanced-content") as HTMLElement;
+  expect(body.hidden).toBe(true);
+  expect(body.hasAttribute("inert")).toBe(true);
+  await click("Advanced");
+  expect(body.hidden).toBe(false);
+  await click("Advanced");
+  expect(body.hidden).toBe(true);
+  expect(
+    container.querySelector('[data-setting-id="voice-manual-turn-end"] button[role="switch"]'),
+  ).toBe(control);
+  expect(localStorage.getItem("bycoda.voice")).toBe(saved);
+  expect(backend.inspect).toHaveBeenCalledTimes(calls);
+  expect(backend.setup).not.toHaveBeenCalled();
+});
+
+it("keeps a failed manual-turn save visible on the collapsed advanced summary", async () => {
+  await setup();
+  await advance();
+  await click("Advanced");
+  const saved = localStorage.getItem("bycoda.voice");
+  const refusal = vi.spyOn(turnPolicy, "saveVoiceTurnEndChoice").mockImplementation(() => {
+    throw new Error("preference save refused");
+  });
+  try {
+    const manual = container.querySelector<HTMLButtonElement>(
+      '[data-setting-id="voice-manual-turn-end"] button[role="switch"]',
+    )!;
+    await act(() => manual.click());
+    const advanced = container.querySelector<HTMLButtonElement>(
+      '[data-setting-id="voice-advanced"] h3 button',
+    )!;
+    await act(() => advanced.click());
+    expect(advanced.textContent).toContain("Needs attention");
+    expect(advanced.getAttribute("aria-expanded")).toBe("false");
+    expect(localStorage.getItem("bycoda.voice")).toBe(saved);
+    expect(backend.setup).not.toHaveBeenCalled();
+  } finally {
+    refusal.mockRestore();
+  }
 });
 
 it("chooses the conversation mode; cloud modes hide the local reply voice and processing", async () => {

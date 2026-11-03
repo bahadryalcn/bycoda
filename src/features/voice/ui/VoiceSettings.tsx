@@ -13,6 +13,7 @@ import { Modal } from "../../../shared/ui/Modal";
 import { t, useLocale } from "../../../shared/i18n";
 import { saveVoiceTurnEndChoice, VOICE_TURN_CHOICE_FAILED } from "../model/voiceTurnPolicy";
 import {
+  AdvancedSettings,
   Group,
   Row,
   Segmented,
@@ -74,19 +75,19 @@ function stageLabel(stage: VoiceSetupStatus["stage"]) {
   }
 }
 export function VoiceSettings() {
-  const locale=useLocale();
-  const {snapshot:assistantSnapshot}=useAssistantSnapshot();
-  const assistantName=assistantIdentity(assistantSnapshot?.profile,locale).title;
+  const locale = useLocale();
+  const { snapshot: assistantSnapshot } = useAssistantSnapshot();
+  const assistantName = assistantIdentity(assistantSnapshot?.profile, locale).title;
   const settings = useVoiceSettings();
   const [result, setResult] = useState<VoiceRuntimeStatus>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Failure>();
-  const [turnChoiceError,setTurnChoiceError] = useState(false);
+  const [turnChoiceError, setTurnChoiceError] = useState(false);
   const [checkedKey, setCheckedKey] = useState("");
   const [locating, setLocating] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const persona = useVoicePersona();
-  const [editingStyle,setEditingStyle]=useState(false);
+  const [editingStyle, setEditingStyle] = useState(false);
   const memory = useVoiceMemory();
   const moreAnchor = useRef<HTMLButtonElement>(null);
   const [browsing, setBrowsing] = useState<PathKey | null>(null);
@@ -327,7 +328,10 @@ export function VoiceSettings() {
     </Row>
   ) : null;
   return (
-    <Group title={assistantSnapshot?.profile.name ? assistantName : t("Voice companion")} layout="full">
+    <Group
+      title={assistantSnapshot?.profile.name ? assistantName : t("Voice companion")}
+      layout="full"
+    >
       <Row
         id="voice-companion"
         label={t("Enable voice companion")}
@@ -346,85 +350,6 @@ export function VoiceSettings() {
       </Row>
       {settings.enabled ? (
         <>
-          <Row
-            id="voice-idle-sleep"
-            label={t("Sleep voice when I'm idle")}
-            description={t("Closes the microphone while idle. Returning leaves it off until you press Talk.")}
-          >
-            <Select
-              label={t("Sleep voice when I'm idle")}
-              value={String(settings.idleSleepMinutes)}
-              options={[
-                { value: "0", label: t("Never") },
-                ...[5, 10, 15, 30, 60].map(minutes => ({ value: String(minutes), label: t("{p0} min", { p0: minutes }) })),
-                ...(![0, 5, 10, 15, 30, 60].includes(settings.idleSleepMinutes) ? [{ value: String(settings.idleSleepMinutes), label: t("{p0} min", { p0: settings.idleSleepMinutes }) }] : []),
-              ]}
-              onChange={(value) => change({ idleSleepMinutes: Number(value) })}
-            />
-          </Row>
-          <Row id="voice-manual-turn-end" label={t("I decide when my turn ends")} description={t("Long pauses keep listening. Choose Finish turn to send your speech. You can switch back to automatic replies here.")}>
-            <div className="space-y-1">
-              <Toggle label={t("I decide when my turn ends")} on={settings.manualTurnEnd===true} onChange={(manual)=>{
-                try { saveVoiceTurnEndChoice(manual); setTurnChoiceError(false); } catch { setTurnChoiceError(true); }
-              }}/>
-              {turnChoiceError&&<SettingsFeedback state="error">{t(VOICE_TURN_CHOICE_FAILED)}</SettingsFeedback>}
-            </div>
-          </Row>
-          <Row id="voice-turn-silence" label={t("Wait before replying")} description={settings.manualTurnEnd?t("Automatic pause detection is off. Choose Finish turn when you are ready."):undefined}>
-            <Select label={t("Wait before replying")} disabled={settings.manualTurnEnd===true} value={String(settings.turnEndSilence ?? 1.2)} options={[{value:"1.2",label:t("Natural pause")},{value:"2.5",label:t("Longer pause")},{value:"4",label:t("Extra time")}]}
-              onChange={(value)=>change({turnEndSilence:Number(value)})}/>
-          </Row>
-          <Row id="voice-barge-in" label={t("I may interrupt speech")} description={t("Lets your speech interrupt the assistant's reply.")}>
-            <Toggle label={t("I may interrupt speech")} on={settings.allowBargeIn !== false} onChange={(allowBargeIn)=>change({allowBargeIn})}/>
-          </Row>
-          <Row id="voice-hold-announcements" label={t("Hold spoken progress updates")}>
-            <Toggle label={t("Hold spoken progress updates")} on={settings.holdAnnouncements === true} onChange={(holdAnnouncements)=>change({holdAnnouncements})}/>
-          </Row>
-          <Row
-            id="voice-persona"
-            label={t("Companion identity")}
-            description={t("Name, how it addresses you, tone, tasks and ground rules.")}
-          >
-            <Badge tone="neutral">{assistantSnapshot?.profile.name ? assistantName : voicePersonaSummary(persona)}</Badge>
-            <Button onClick={() => window.dispatchEvent(new CustomEvent("bycoda:open-assistant",{detail:{tab:"settings"}}))}>{t("Customize")}</Button>
-            <Button variant="ghost" onClick={()=>setEditingStyle(true)}>{t("Voice style")}</Button>
-          </Row>
-          {editingStyle?<VoicePersonaDialog purpose="edit" styleOnly onClose={()=>setEditingStyle(false)}/>:null}
-          <Row
-            id="voice-memory"
-            label={t("Memory")}
-            description={t("Keeps short notes about you between conversations on this device.")}
-          >
-            <Button onClick={() => window.dispatchEvent(new CustomEvent("bycoda:open-assistant",{detail:{tab:"memory"}}))}>
-              {t("Manage ({p0})", { p0: assistantSnapshot?.memory.length ?? memory.notes.length })}
-            </Button>
-            <Toggle
-              label={t("Memory")}
-              on={memory.enabled}
-              onChange={(enabled) => saveVoiceMemory({ ...loadVoiceMemory(), enabled })}
-            />
-          </Row>
-          {/* A deliberate full-width chooser: four previews need more room than the control column. */}
-          <Row id="voice-visual-style" label={t("Visual style")} stacked>
-            <SegmentedControl
-              label={t("Visual style")}
-              value={settings.visual}
-              optionIdPrefix="voice-visual"
-              options={(
-                [
-                  ["mark", t("bycoda mark")],
-                  ["wave", t("Wave")],
-                  ["dots", t("Dots")],
-                  ["orb", t("Orb")],
-                ] as [VoiceVisual, string][]
-              ).map(([value, label]) => ({
-                value,
-                label,
-                accessory: <VoiceVisualizer visual={value} state="listening" small preview />,
-              }))}
-              onValueChange={(visual) => change({ visual: visual as VoiceVisual })}
-            />
-          </Row>
           <Row
             id="voice-mode"
             label={t("Conversation")}
@@ -509,26 +434,6 @@ export function VoiceSettings() {
                   </Row>
                 </>
               ) : null}
-              <Row
-                id="voice-device"
-                label={t("Processing")}
-                description={t("Automatic uses a supported NVIDIA GPU when available.")}
-                disabled={installing}
-              >
-                <Segmented
-                  label={t("Processing")}
-                  value={settings.device}
-                  options={[
-                    { value: "auto", label: t("Automatic") },
-                    { value: "gpu", label: t("GPU") },
-                    { value: "cpu", label: t("CPU") },
-                  ]}
-                  onChange={(value) => {
-                    setJob({ state: "idle" });
-                    change({ device: value as VoiceDevice });
-                  }}
-                />
-              </Row>
             </>
           ) : null}
           <Row
@@ -636,6 +541,210 @@ export function VoiceSettings() {
               </>
             ) : null}
           </Row>
+          <AdvancedSettings
+            id="voice-advanced"
+            defaultOpen={false}
+            keepMounted
+            settingIds={[
+              "voice-idle-sleep",
+              "voice-manual-turn-end",
+              "voice-turn-silence",
+              "voice-barge-in",
+              "voice-hold-announcements",
+              "voice-persona",
+              "voice-memory",
+              "voice-visual-style",
+              "voice-device",
+            ]}
+            title={
+              <>
+                {t("Advanced")}
+                {turnChoiceError ? <Badge tone="danger">{t("Needs attention")}</Badge> : null}
+              </>
+            }
+          >
+            <Row
+              id="voice-idle-sleep"
+              label={t("Sleep voice when I'm idle")}
+              description={t(
+                "Closes the microphone while idle. Returning leaves it off until you press Talk.",
+              )}
+            >
+              <Select
+                label={t("Sleep voice when I'm idle")}
+                value={String(settings.idleSleepMinutes)}
+                options={[
+                  { value: "0", label: t("Never") },
+                  ...[5, 10, 15, 30, 60].map((minutes) => ({
+                    value: String(minutes),
+                    label: t("{p0} min", { p0: minutes }),
+                  })),
+                  ...(![0, 5, 10, 15, 30, 60].includes(settings.idleSleepMinutes)
+                    ? [
+                        {
+                          value: String(settings.idleSleepMinutes),
+                          label: t("{p0} min", { p0: settings.idleSleepMinutes }),
+                        },
+                      ]
+                    : []),
+                ]}
+                onChange={(value) => change({ idleSleepMinutes: Number(value) })}
+              />
+            </Row>
+            <Row
+              id="voice-manual-turn-end"
+              label={t("I decide when my turn ends")}
+              description={t(
+                "Long pauses keep listening. Choose Finish turn to send your speech. You can switch back to automatic replies here.",
+              )}
+            >
+              <div className="space-y-1">
+                <Toggle
+                  label={t("I decide when my turn ends")}
+                  on={settings.manualTurnEnd === true}
+                  onChange={(manual) => {
+                    try {
+                      saveVoiceTurnEndChoice(manual);
+                      setTurnChoiceError(false);
+                    } catch {
+                      setTurnChoiceError(true);
+                    }
+                  }}
+                />
+                {turnChoiceError && (
+                  <SettingsFeedback state="error">{t(VOICE_TURN_CHOICE_FAILED)}</SettingsFeedback>
+                )}
+              </div>
+            </Row>
+            <Row
+              id="voice-turn-silence"
+              label={t("Wait before replying")}
+              description={
+                settings.manualTurnEnd
+                  ? t("Automatic pause detection is off. Choose Finish turn when you are ready.")
+                  : undefined
+              }
+            >
+              <Select
+                label={t("Wait before replying")}
+                disabled={settings.manualTurnEnd === true}
+                value={String(settings.turnEndSilence ?? 1.2)}
+                options={[
+                  { value: "1.2", label: t("Natural pause") },
+                  { value: "2.5", label: t("Longer pause") },
+                  { value: "4", label: t("Extra time") },
+                ]}
+                onChange={(value) => change({ turnEndSilence: Number(value) })}
+              />
+            </Row>
+            <Row
+              id="voice-barge-in"
+              label={t("I may interrupt speech")}
+              description={t("Lets your speech interrupt the assistant's reply.")}
+            >
+              <Toggle
+                label={t("I may interrupt speech")}
+                on={settings.allowBargeIn !== false}
+                onChange={(allowBargeIn) => change({ allowBargeIn })}
+              />
+            </Row>
+            <Row id="voice-hold-announcements" label={t("Hold spoken progress updates")}>
+              <Toggle
+                label={t("Hold spoken progress updates")}
+                on={settings.holdAnnouncements === true}
+                onChange={(holdAnnouncements) => change({ holdAnnouncements })}
+              />
+            </Row>
+            <Row
+              id="voice-persona"
+              label={t("Companion identity")}
+              description={t("Name, how it addresses you, tone, tasks and ground rules.")}
+            >
+              <Badge tone="neutral">
+                {assistantSnapshot?.profile.name ? assistantName : voicePersonaSummary(persona)}
+              </Badge>
+              <Button
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("bycoda:open-assistant", { detail: { tab: "settings" } }),
+                  )
+                }
+              >
+                {t("Customize")}
+              </Button>
+              <Button variant="ghost" onClick={() => setEditingStyle(true)}>
+                {t("Voice style")}
+              </Button>
+            </Row>
+            {editingStyle ? (
+              <VoicePersonaDialog purpose="edit" styleOnly onClose={() => setEditingStyle(false)} />
+            ) : null}
+            <Row
+              id="voice-memory"
+              label={t("Memory")}
+              description={t("Keeps short notes about you between conversations on this device.")}
+            >
+              <Button
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("bycoda:open-assistant", { detail: { tab: "memory" } }),
+                  )
+                }
+              >
+                {t("Manage ({p0})", {
+                  p0: assistantSnapshot?.memory.length ?? memory.notes.length,
+                })}
+              </Button>
+              <Toggle
+                label={t("Memory")}
+                on={memory.enabled}
+                onChange={(enabled) => saveVoiceMemory({ ...loadVoiceMemory(), enabled })}
+              />
+            </Row>
+            {/* A deliberate full-width chooser: four previews need more room than the control column. */}
+            <Row id="voice-visual-style" label={t("Visual style")} stacked>
+              <SegmentedControl
+                label={t("Visual style")}
+                value={settings.visual}
+                optionIdPrefix="voice-visual"
+                options={(
+                  [
+                    ["mark", t("bycoda mark")],
+                    ["wave", t("Wave")],
+                    ["dots", t("Dots")],
+                    ["orb", t("Orb")],
+                  ] as [VoiceVisual, string][]
+                ).map(([value, label]) => ({
+                  value,
+                  label,
+                  accessory: <VoiceVisualizer visual={value} state="listening" small preview />,
+                }))}
+                onValueChange={(visual) => change({ visual: visual as VoiceVisual })}
+              />
+            </Row>
+            {settings.mode === "local" ? (
+              <Row
+                id="voice-device"
+                label={t("Processing")}
+                description={t("Automatic uses a supported NVIDIA GPU when available.")}
+                disabled={installing}
+              >
+                <Segmented
+                  label={t("Processing")}
+                  value={settings.device}
+                  options={[
+                    { value: "auto", label: t("Automatic") },
+                    { value: "gpu", label: t("GPU") },
+                    { value: "cpu", label: t("CPU") },
+                  ]}
+                  onChange={(value) => {
+                    setJob({ state: "idle" });
+                    change({ device: value as VoiceDevice });
+                  }}
+                />
+              </Row>
+            ) : null}
+          </AdvancedSettings>
           {locating ? (
             <Modal
               title={t("Locate voice files")}

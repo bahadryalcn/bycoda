@@ -199,6 +199,17 @@ for (const theme of ["dark", "light"]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/merge-conflicts.html${theme === "light" ? "?light&hash" : ""}`);
     const output = page.getByRole("textbox", { name: "Resolved output", exact: true });
+    const expectConflictValues = async (price: string, name: string, state: string) => {
+      // CodeMirror only renders the viewport. Check both distant conflicts by
+      // navigating the real editor, including at the final narrow viewport.
+      await output.focus();
+      await output.press("ControlOrMeta+Home");
+      await expect(output.locator(".cm-line").filter({ hasText: /^price=/ })).toHaveText(price);
+      await output.press("ControlOrMeta+End");
+      await expect(output.locator(".cm-line").filter({ hasText: /^name=/ })).toHaveText(name);
+      await expect(output.locator(".cm-line").filter({ hasText: /^end$/ })).toHaveText("end");
+      await page.screenshot({ path: info.outputPath(`${theme}-${state}-end.png`) });
+    };
     await expect(page.locator(".conflict-provenance")).toContainText("main");
     await expect(page.locator(".conflict-provenance")).toContainText("feature/pricing");
     await expect(page.locator(".conflict-pane-ours .conflict-source-identity")).toContainText(
@@ -217,17 +228,14 @@ for (const theme of ["dark", "light"]) {
     const incoming = page.getByRole("button", { name: "Accept All Incoming", exact: true });
     await incoming.focus();
     await incoming.press("Enter");
-    await expect(output).toContainText("price=120");
-    await expect(output).toContainText("name=incoming");
+    await expectConflictValues("price=120", "name=incoming", "incoming");
     await expect(page.getByRole("button", { name: "Save and stage", exact: true })).toBeEnabled();
     await output.focus();
     await output.press("ControlOrMeta+z");
-    await expect(output).toContainText("price=80");
-    await expect(output).toContainText("name=base");
+    await expectConflictValues("price=80", "name=base", "undo");
     await expect(page.getByRole("button", { name: "Save and stage", exact: true })).toBeDisabled();
     await page.getByRole("button", { name: "Accept All Current", exact: true }).click();
-    await expect(output).toContainText("price=100");
-    await expect(output).toContainText("name=current");
+    await expectConflictValues("price=100", "name=current", "current");
     const writes = await page.evaluate(() =>
       (window as unknown as { mergeCalls: { command: string }[] }).mergeCalls.filter((call) =>
         /write_text_file|git_stage_file/.test(call.command),

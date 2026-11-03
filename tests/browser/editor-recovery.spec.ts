@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { NativeEditorDraftRecord } from "../../src/features/files/data/editorDraftPersistence";
 import type { WorkspaceTab } from "../../src/features/workspace/model/layout";
 
@@ -39,6 +39,21 @@ function snapshot(page: Page) {
 }
 // The fixture module installs its controls after top-level awaits; goto can resolve first.
 const fixtureReady = (page: Page) => page.waitForFunction(() => "editorRecoveryFixture" in window);
+async function capturePrivacyRecovery(page: Page, info: TestInfo, state: string) {
+  for (const light of [true, false]) {
+    await page.evaluate(
+      (value) =>
+        (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setTheme(
+          value,
+        ),
+      light,
+    );
+    await page.screenshot({
+      animations: "disabled",
+      path: info.outputPath(`${state}-${light ? "light" : "dark"}.png`),
+    });
+  }
+}
 const recoveredEditor = (page: Page) => page.locator('[data-workspace="recovered"] .cm-content');
 async function openHostReports(page: Page) {
   await page.getByRole("button", { name: /^Recovered work(?: \(\d+\))?$/ }).click();
@@ -187,7 +202,10 @@ for (const light of [true, false]) {
     });
   }
 }
-test("Host-held read cannot disclose after privacy changes away and back", async ({ page }) => {
+test("Host-held read cannot disclose after privacy changes away and back", async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/tests/browser/editor-recovery.html?hold-host");
   await openHostReports(page);
   await page.getByRole("button", { name: "Inspect report", exact: true }).click();
@@ -202,9 +220,12 @@ test("Host-held read cannot disclose after privacy changes away and back", async
       false,
     ),
   );
-  await expect(
-    page.getByText("Unlock project groups to inspect earlier file reports.", { exact: true }),
-  ).toBeVisible();
+  // Locked reports leave navigation entirely; the unmounted report view's
+  // help copy is not the privacy contract.
+  await expect(page.getByRole("tab", { name: /^Earlier file reports/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Inspect report", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toHaveCount(0);
+  await capturePrivacyRecovery(page, info, "host-locked");
   await page.evaluate(() =>
     (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setPrivacy(
       true,
@@ -217,6 +238,20 @@ test("Host-held read cannot disclose after privacy changes away and back", async
   );
   await expect(page.getByRole("button", { name: "Check reports", exact: true })).toBeVisible();
   await expect(page.getByRole("list", { name: "Reported files", exact: true })).toHaveCount(0);
+  expect(
+    (await snapshot(page)).hostCalls.filter((call) => call.command.endsWith("_read")),
+  ).toHaveLength(1);
+  await capturePrivacyRecovery(page, info, "host-unlocked-late-read");
+  await page.getByRole("radio", { name: "Host reports", exact: true }).click();
+  await page.getByRole("button", { name: "Check reports", exact: true }).click();
+  await page.getByRole("button", { name: "Inspect report", exact: true }).click();
+  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toContainText(
+    "C:\\fixture\\notes.txt",
+  );
+  expect(
+    (await snapshot(page)).hostCalls.filter((call) => call.command.endsWith("_read")),
+  ).toHaveLength(2);
+  await capturePrivacyRecovery(page, info, "host-explicit-reinspection");
   expect((await snapshot(page)).writes).toEqual([]);
 });
 const sourceRow = (page: Page) =>
@@ -490,7 +525,8 @@ for (const width of [1280, 800]) {
 
 test("a late report inspection stays concealed after lock and unlock until another explicit inspection", async ({
   page,
-}) => {
+}, info) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/tests/browser/editor-recovery.html?hold-legacy");
   await openEarlierReports(page);
   await legacyRow(page).getByRole("button", { name: "Inspect report", exact: true }).click();
@@ -500,10 +536,11 @@ test("a late report inspection stays concealed after lock and unlock until anoth
       false,
     ),
   );
-  await expect(
-    page.getByText("Unlock project groups to inspect earlier file reports.", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("tab", { name: /^Earlier file reports/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Inspect report", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toHaveCount(0);
   await expect(page.getByText("Earlier desktop report", { exact: false })).toHaveCount(0);
+  await capturePrivacyRecovery(page, info, "desktop-locked");
   await page.evaluate(() =>
     (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.setPrivacy(
       true,
@@ -514,6 +551,10 @@ test("a late report inspection stays concealed after lock and unlock until anoth
       window as unknown as { editorRecoveryFixture: Controls }
     ).editorRecoveryFixture.releaseLegacyRead(),
   );
+  await expect(page.getByRole("button", { name: "Check reports", exact: true })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Reported files", exact: true })).toHaveCount(0);
+  expect((await snapshot(page)).legacyCalls).toHaveLength(2);
+  await capturePrivacyRecovery(page, info, "desktop-unlocked-late-read");
   await page.getByRole("button", { name: "Check reports", exact: true }).click();
   await expect(
     legacyRow(page).getByRole("button", { name: "Inspect report", exact: true }),
@@ -523,6 +564,7 @@ test("a late report inspection stays concealed after lock and unlock until anoth
   await expect(page.getByRole("list", { name: "Reported files", exact: true })).toContainText(
     "C:\\fixture\\notes.txt",
   );
+  await capturePrivacyRecovery(page, info, "desktop-explicit-reinspection");
   expect((await snapshot(page)).legacyCalls).toEqual([
     "managed_workspace_buffer_recovery_list",
     "managed_workspace_buffer_recovery_read",
