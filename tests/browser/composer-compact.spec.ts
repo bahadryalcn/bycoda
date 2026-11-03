@@ -3,10 +3,16 @@ import { mkdirSync } from "node:fs";
 
 // Fixture evidence for the composer reading mode (V2-001). Captures are written
 // only when V2_CAPTURE is set; the assertions always run.
-const captureDir = "temp/verification/v2-001";
+const captureDir = process.env.V2_CAPTURE_DIR ?? "temp/verification/v2-001";
 if (process.env.V2_CAPTURE) mkdirSync(captureDir, { recursive: true });
 async function capture(page: Page, name: string) {
-  if (process.env.V2_CAPTURE) await page.screenshot({ path: `${captureDir}/${name}.png` });
+  if (process.env.V2_CAPTURE) {
+    const folder = process.env.V2_CAPTURE_DIR
+      ? `${captureDir}/${test.info().project.name}`
+      : captureDir;
+    mkdirSync(folder, { recursive: true });
+    await page.screenshot({ path: `${folder}/${name}.png` });
+  }
 }
 
 type Fixture = { events: { sends: number; stops: number } };
@@ -268,7 +274,7 @@ test("a click on the compact box focuses the input without sending", async ({ pa
 
 test("streaming does not move a reader of history; at the end it keeps following", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page);
   // Following the end while a reply streams.
@@ -291,8 +297,16 @@ test("streaming does not move a reader of history; at the end it keeps following
   // Back at the end: the normal layout returns and following resumes.
   await wheel(page, 20000);
   await expect(reading(page)).toHaveCount(0);
+  // A dispatched wheel and normal composer alone do not prove its off-thread
+  // scroll reached the end. Verify that precondition with the same strict bound.
+  await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
   await stream(page, 40);
   await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
+  await testInfo.attach("following-geometry", {
+    body: JSON.stringify(await state(page)),
+    contentType: "application/json",
+  });
+  await page.screenshot({ path: testInfo.outputPath("streaming-following-end.png") });
 });
 
 test("reduced motion swaps the layout without an animation", async ({ page }) => {
@@ -350,7 +364,10 @@ test("a real Chromium IME composition keeps the full layout and commits into the
   page,
   browserName,
 }) => {
-  test.skip(browserName !== "chromium", "Input.imeSetComposition is a Chromium DevTools protocol command");
+  test.skip(
+    browserName !== "chromium",
+    "Input.imeSetComposition is a Chromium DevTools protocol command",
+  );
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page);
   await readHistory(page);

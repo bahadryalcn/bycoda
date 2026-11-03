@@ -1744,32 +1744,50 @@ describe("host tasks", () => {
     await tasks.tick();
     expect((await task("second")).status).toBe("running");
   });
-  it("runs at most two tasks at once, oldest first", async () => {
-    const { tasks, input, task, turns, settled, clock, addProject, advance } = await setup();
-    expect(MAX_RUNNING_TASKS).toBe(2);
-    for (const id of ["a", "b", "c"]) {
-      await tasks.save(input({ id, projectId: (await addProject(id)).id }));
-      clock.now += 1;
-    }
-    await tasks.tick();
-    await vi.waitFor(() => expect(turns).toHaveLength(2));
-    expect(await mapAsync(["a", "b", "c"], async (id) => (await task(id)).status)).toEqual([
-      "running",
-      "running",
-      "queued",
-    ]);
-    turns.find(async (turn) => turn.input.sessionId === (await task("a")).sessionId)!.finish();
-    await settled((await task("a")).sessionId!);
-    // A task being verified still counts.
-    await advance();
-    expect((await task("c")).status).toBe("queued");
-    await tasks.tick();
-    expect(await mapAsync(["a", "b", "c"], async (id) => (await task(id)).status)).toEqual([
-      "done",
-      "running",
-      "running",
-    ]);
-  });
+  it.each(["a", "b"])(
+    "runs at most two tasks at once, oldest first (%s reaches provider first)",
+    async (firstProviderTask) => {
+      const { tasks, input, task, turns, settled, clock, addProject, advance, engine, store } =
+        await setup();
+      expect(MAX_RUNNING_TASKS).toBe(2);
+      for (const id of ["a", "b", "c"]) {
+        await tasks.save(input({ id, projectId: (await addProject(id)).id }));
+        clock.now += 1;
+      }
+      // Admission order does not guarantee provider arrival order: each accepted
+      // run performs asynchronous preparation before reaching provider.send.
+      const firstProviderProject = (await task(firstProviderTask)).projectId;
+      const firstProviderCwd = (await store.project(firstProviderProject)).cwd;
+      engine.beforeProviderTurn = async ({ sessionId }) => {
+        if ((await store.session(sessionId)).session.cwd !== firstProviderCwd)
+          await vi.waitFor(() => expect(turns[0]?.input.cwd).toBe(firstProviderCwd));
+      };
+      await tasks.tick();
+      await vi.waitFor(() => expect(turns).toHaveLength(2));
+      expect(turns[0].input.cwd).toBe(firstProviderCwd);
+      expect(await mapAsync(["a", "b", "c"], async (id) => (await task(id)).status)).toEqual([
+        "running",
+        "running",
+        "queued",
+      ]);
+      const oldest = await task("a");
+      const oldestTurn = turns.find(
+        (turn) => turn.input.sessionId === oldest.sessionId && turn.runId === oldest.runId,
+      );
+      expect(oldestTurn).toBeDefined();
+      oldestTurn!.finish();
+      await settled(oldest.sessionId!, oldest.runId);
+      // A task being verified still counts.
+      await advance();
+      expect((await task("c")).status).toBe("queued");
+      await tasks.tick();
+      expect(await mapAsync(["a", "b", "c"], async (id) => (await task(id)).status)).toEqual([
+        "done",
+        "running",
+        "running",
+      ]);
+    },
+  );
   it("mirrors whether the running session is waiting on the user", async () => {
     const { tasks, run, task, store, clock } = await setup();
     const started = await run();

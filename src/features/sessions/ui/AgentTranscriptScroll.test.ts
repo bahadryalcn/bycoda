@@ -370,6 +370,74 @@ function mountScroller() {
   return { scroller, geometry, observer };
 }
 
+it.each(["wheel", "keyboard", "touch"])(
+  "keeps following after a recent upward gesture returns to the end, but respects fresh %s input",
+  (gesture) => {
+    let now = 1000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      const { scroller, geometry, observer } = mountScroller();
+      act(() => {
+        scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -400 }));
+        geometry.top = 200;
+        scroller.dispatchEvent(new Event("scroll"));
+      });
+      geometry.height = 2000;
+      act(() => observer.resize());
+      expect(geometry.top).toBe(200);
+      now = 1100;
+      act(() => {
+        scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: 20000 }));
+        geometry.top = 1600;
+        scroller.dispatchEvent(new Event("scroll"));
+      });
+      geometry.height = 2100;
+      now = 1120;
+      act(() => observer.resize());
+      expect(geometry.top).toBe(1700);
+      // An off-thread browser scroll replays an older programmatic bottom.
+      // The preceding upward input is still inside its 1000ms window.
+      now = 1140;
+      geometry.top = 1600;
+      act(() => scroller.dispatchEvent(new Event("scroll")));
+      geometry.height = 2200;
+      act(() => observer.resize());
+      expect(geometry.top).toBe(1800);
+
+      // A new real reader action still outranks automatic bottom following.
+      now = 1160;
+      act(() => {
+        if (gesture === "wheel") scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -4 }));
+        else if (gesture === "keyboard")
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp" }));
+        else scroller.dispatchEvent(new Event("touchstart"));
+        geometry.top = 1796;
+        scroller.dispatchEvent(new Event("scroll"));
+      });
+      geometry.height = 2300;
+      act(() => observer.resize());
+      expect(geometry.top).toBe(1796);
+    } finally {
+      clock.mockRestore();
+    }
+  },
+);
+
+it("does not resume paused history merely because a newer wheel points downward", () => {
+  const { scroller, geometry, observer } = mountScroller();
+  act(() => {
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -400 }));
+    geometry.top = 200;
+    scroller.dispatchEvent(new Event("scroll"));
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
+    geometry.top = 300;
+    scroller.dispatchEvent(new Event("scroll"));
+  });
+  geometry.height = 1100;
+  act(() => observer.resize());
+  expect(geometry.top).toBe(300);
+});
+
 it("keeps following when a queued scroll event lands after content grows", () => {
   const { scroller, geometry, observer } = mountScroller();
   // scrollTop was written by the previous pin, but its event can arrive

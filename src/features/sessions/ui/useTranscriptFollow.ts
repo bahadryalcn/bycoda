@@ -282,6 +282,10 @@ export function useTranscriptFollow({
         setShowJump(true);
         publishReading(scrollerEl);
       } else if (e.deltaY > 0) {
+        // This newer downward gesture supersedes a recent upward/key intent.
+        // While away, following stays paused until a scroll actually reaches
+        // the end. Once there, an old programmatic offset is not a new retreat.
+        input.until = 0;
         // Already at the very end, there is no scroll event to say the reader
         // came back (a compact composer can leave the position clamped there).
         if (

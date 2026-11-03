@@ -390,7 +390,7 @@ test("keeps note controls compact and confirms deletion in a focused dialog", as
 
 test("groups and filters many notes, edits both panes, formats and saves preview changes", async ({
   page,
-}) => {
+}, info) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/tests/browser/notes.html");
@@ -440,14 +440,42 @@ test("groups and filters many notes, edits both panes, formats and saves preview
     .toContain("const preserve = true;");
   await page.getByRole("button", { name: "Filters and options", exact: true }).click();
   await choose(page, "Filter by project", /mobile/i);
-  await expect(page.locator("[data-note-library] li")).toHaveCount(14);
+  // Each note also contains a semantic Tags list; count canonical note cards,
+  // not the nested tag listitems.
+  const cards = page.locator("[data-note-library] [data-note-id]");
+  await expect(cards).toHaveCount(14);
+  expect(
+    await cards.evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-note-id")).sort(),
+    ),
+  ).toEqual(Array.from({ length: 14 }, (_, index) => `note-${index * 3 + 1}`).sort());
+  const capture = async (state: string) => {
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      await page.screenshot({
+        animations: "disabled",
+        path: info.outputPath(`${state}-${light ? "light" : "dark"}.png`),
+      });
+    }
+  };
+  await capture("project-filter");
   await choose(page, "Filter by tag", "#ideas");
-  await expect(page.locator("[data-note-library] li")).toHaveCount(7);
+  await expect(cards).toHaveCount(7);
+  expect(
+    await cards.evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-note-id")).sort(),
+    ),
+  ).toEqual(Array.from({ length: 7 }, (_, index) => `note-${index * 6 + 1}`).sort());
   await choose(page, "Group notes by", "Tags");
   await expect(page.locator(".note-group-heading")).toHaveCount(1);
+  await capture("project-tag-filter");
   await page.keyboard.press("Escape");
   await page.locator(".note-group-heading").click();
-  await expect(page.locator("[data-note-library] li")).toHaveCount(0);
+  await expect(cards).toHaveCount(0);
+  await capture("collapsed-group");
   expect(errors).toEqual([]);
 });
 
