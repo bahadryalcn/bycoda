@@ -138,6 +138,8 @@ import { previewVoice } from "../model/voicePreview";
 import { maySpeakVoiceBriefing } from "../model/voiceBriefing";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { isMacMicrophoneBlocked } from "../model/microphoneAccess";
+import { openPrivacySettings } from "../../../platform/tauri/privacySettings";
 
 /** Cloud speech-to-speech providers, signed in through Grok Build or Codex. */
 const REALTIME: Record<"grok" | "openai", { provider: RealtimeProvider; name: string }> = {
@@ -2838,6 +2840,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           </div>
         )}
         {shownError && <InlineError className={styles.error}>{shownError}</InlineError>}
+        {shownError && isMacMicrophoneBlocked(shownError) ? (
+          <Button onClick={() => void openPrivacySettings("microphone").catch(() => {})}>
+            {t("Open Privacy Settings")}
+          </Button>
+        ) : null}
         {historyNotice && historyNotice !== shownError && (
           <p role="status" className={styles.caption}>
             {historyNotice}

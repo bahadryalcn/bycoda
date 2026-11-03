@@ -10876,5 +10876,9 @@
   "Could not open the link": "Não foi possível abrir o link",
   "Unconfirmed": "Não confirmado",
   "Format document": "Formatar documento",
-  "Editor actions": "Ações do editor"
+  "Editor actions": "Ações do editor",
+  "Open Privacy Settings": "Abrir ajustes de privacidade",
+  "Microphone access is blocked. Allow bycoda in System Settings > Privacy & Security > Microphone, then try again.": "O acesso ao microfone está bloqueado. Permita o bycoda em Ajustes do Sistema > Privacidade e segurança > Microfone e tente novamente.",
+  "Microphone access is blocked. Allow it in your system or browser settings, then try again.": "O acesso ao microfone está bloqueado. Permita-o nos ajustes do sistema ou do navegador e tente novamente.",
+  "Screenshots need Screen Recording access. Allow bycoda in System Settings > Privacy & Security > Screen & System Audio Recording, then restart bycoda and try again.": "As capturas de tela precisam de acesso à gravação de tela. Permita o bycoda em Ajustes do Sistema > Privacidade e segurança > Gravação de tela e áudio do sistema, reinicie o bycoda e tente novamente."
 }

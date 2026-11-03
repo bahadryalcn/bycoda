@@ -10876,5 +10876,9 @@
   "Attachments cannot be added while this conversation changes. Try again.": "Bu konuşma değişirken ek eklenemez. Tekrar deneyin.",
   "Could not copy the path to the clipboard.": "Yol panoya kopyalanamadı.",
   "Could not open the link": "Bağlantı açılamadı",
-  "Unconfirmed": "Doğrulanmadı"
+  "Unconfirmed": "Doğrulanmadı",
+  "Open Privacy Settings": "Gizlilik Ayarlarını Aç",
+  "Microphone access is blocked. Allow bycoda in System Settings > Privacy & Security > Microphone, then try again.": "Mikrofon erişimi engellendi. Sistem Ayarları > Gizlilik ve Güvenlik > Mikrofon bölümünde bycoda'ya izin verin, sonra tekrar deneyin.",
+  "Microphone access is blocked. Allow it in your system or browser settings, then try again.": "Mikrofon erişimi engellendi. Sistem veya tarayıcı ayarlarından izin verin, sonra tekrar deneyin.",
+  "Screenshots need Screen Recording access. Allow bycoda in System Settings > Privacy & Security > Screen & System Audio Recording, then restart bycoda and try again.": "Ekran görüntüsü için Ekran Kaydı erişimi gerekir. Sistem Ayarları > Gizlilik ve Güvenlik > Ekran ve Sistem Ses Kaydı bölümünde bycoda'ya izin verin, ardından bycoda'yı yeniden başlatıp tekrar deneyin."
 }

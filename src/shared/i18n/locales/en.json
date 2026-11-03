@@ -10876,5 +10876,9 @@
   "Attachments cannot be added while this conversation changes. Try again.": "Attachments cannot be added while this conversation changes. Try again.",
   "Could not copy the path to the clipboard.": "Could not copy the path to the clipboard.",
   "Could not open the link": "Could not open the link",
-  "Unconfirmed": "Unconfirmed"
+  "Unconfirmed": "Unconfirmed",
+  "Open Privacy Settings": "Open Privacy Settings",
+  "Microphone access is blocked. Allow bycoda in System Settings > Privacy & Security > Microphone, then try again.": "Microphone access is blocked. Allow bycoda in System Settings > Privacy & Security > Microphone, then try again.",
+  "Microphone access is blocked. Allow it in your system or browser settings, then try again.": "Microphone access is blocked. Allow it in your system or browser settings, then try again.",
+  "Screenshots need Screen Recording access. Allow bycoda in System Settings > Privacy & Security > Screen & System Audio Recording, then restart bycoda and try again.": "Screenshots need Screen Recording access. Allow bycoda in System Settings > Privacy & Security > Screen & System Audio Recording, then restart bycoda and try again."
 }

@@ -12,6 +12,7 @@ import {
   type VoiceFailure,
   type VoiceRecentTurn,
 } from "./voiceReconnect";
+import { openMicrophone } from "./microphoneAccess";
 
 export type VoiceEvent = {
   type: string;
@@ -467,7 +468,7 @@ export class RealtimeVoice {
           throw new Error(
             "Microphone access requires the desktop app or a secure browser context.",
           );
-        this.stream = await navigator.mediaDevices.getUserMedia({
+        this.stream = await openMicrophone({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,

@@ -68,6 +68,7 @@ mod package_smoke;
 mod pasteboard;
 mod pi_usage;
 mod presence;
+mod privacy_settings;
 mod project_logo;
 mod provider_terminal_profiles;
 mod provider_usage;
@@ -620,6 +621,7 @@ pub fn run() {
             notifications::request_notification_permission,
             notifications::show_notification,
             notifications::open_notification_settings,
+            privacy_settings::open_privacy_settings,
             notifications::set_taskbar_attention,
             tray::tray_sessions_update,
             reminders::reminder_list,

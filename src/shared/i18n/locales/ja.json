@@ -10876,5 +10876,9 @@
   "Could not open the link": "リンクを開けませんでした",
   "Unconfirmed": "未確認",
   "Format document": "ドキュメントを整形",
-  "Editor actions": "エディターの操作"
+  "Editor actions": "エディターの操作",
+  "Open Privacy Settings": "プライバシー設定を開く",
+  "Microphone access is blocked. Allow bycoda in System Settings > Privacy & Security > Microphone, then try again.": "マイクへのアクセスがブロックされています。システム設定 > プライバシーとセキュリティ > マイク で bycoda を許可し、もう一度お試しください。",
+  "Microphone access is blocked. Allow it in your system or browser settings, then try again.": "マイクへのアクセスがブロックされています。システムまたはブラウザの設定で許可し、もう一度お試しください。",
+  "Screenshots need Screen Recording access. Allow bycoda in System Settings > Privacy & Security > Screen & System Audio Recording, then restart bycoda and try again.": "スクリーンショットには画面収録へのアクセスが必要です。システム設定 > プライバシーとセキュリティ > 画面とシステムオーディオの収録 で bycoda を許可し、bycoda を再起動してもう一度お試しください。"
 }

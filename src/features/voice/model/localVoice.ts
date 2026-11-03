@@ -8,6 +8,7 @@ import {
 import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
 import { speechTranscript } from "./voiceTranscript";
+import { openMicrophone } from "./microphoneAccess";
 
 export type SpeechBinding = { sessionId?: string; sequence: number };
 type Callbacks = {
@@ -78,7 +79,7 @@ export class LocalVoice {
         await localVoiceBackend.release(this.info.lease);
         return;
       }
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      this.stream = await openMicrophone({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,

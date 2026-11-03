@@ -717,11 +717,18 @@ def worker(request):
             native = {n: b for n, b in shipped.items() if n.startswith(('src-tauri/', 'Cargo.'))}
             profile = {k: v for k, v in env.items() if k.startswith('CARGO_PROFILE_RELEASE_')}
             keys['native'] = ('source-mtime-v2:' + fingerprint(native) + keys['web'] + request['mode'] + toolchain +
-                              json.dumps(profile, sort_keys=True) + ':bundled-host-v1:' + bundled_host_key(archive))
+                              json.dumps(profile, sort_keys=True) + ':bundled-host-v1:' + bundled_host_key(archive) +
+                              ':sign:' + (env.get('BYCODA_MACOS_SIGNING_IDENTITY') or '-'))
         # Web was built explicitly once; Tauri must not run it for a second time.
         override = workspace / 'local-update-tauri.json'
         if build_app:
-            override.write_text('{"build":{"beforeBuildCommand":""}}', encoding='utf-8')
+            # A stable signing identity keeps macOS privacy grants (microphone, screen
+            # recording, folders) across rebuilds; ad-hoc signing changes identity each time.
+            overlay = {'build': {'beforeBuildCommand': ''}}
+            identity = (env.get('BYCODA_MACOS_SIGNING_IDENTITY') or '').strip()
+            if identity and not windows:
+                overlay['bundle'] = {'macOS': {'signingIdentity': identity}}
+            override.write_text(json.dumps(overlay), encoding='utf-8')
         cargo = pathlib.Path(env['CARGO_TARGET_DIR'])
         artifacts = cargo / ('release' if windows else 'aarch64-apple-darwin/release')
         app = artifacts / 'bundle/nsis' / f"{PRODUCT_IDENTITY['productName']}_{version}_x64-setup.exe" if windows else artifacts / 'bundle/macos' / (PRODUCT_IDENTITY['productName']+'.app')

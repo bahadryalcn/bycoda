@@ -50,8 +50,41 @@ secrets. Losing the private key means installed apps can no longer be updated.
 Local coordinator builds remain unsigned and never create updater artifacts.
 
 The updater replaces only the desktop app. Hosts are updated separately. macOS
-builds are ad-hoc signed and not notarized, so Gatekeeper blocks a first manual
-DMG install on another Mac until Developer ID signing is configured.
+builds are ad-hoc signed and not notarized unless the Apple secrets below are set,
+so Gatekeeper blocks a first manual DMG install on another Mac and macOS forgets
+privacy grants (microphone, screen recording, folders) after every update.
+
+### macOS Developer ID signing and notarization
+
+Stable tag builds sign and notarize the macOS app when these repository secrets
+exist; without them the build stays ad-hoc so forks still work. Nightly and
+preview candidates never receive signing secrets and stay ad-hoc.
+
+1. Enroll in the Apple Developer Program and create a **Developer ID
+   Application** certificate (Xcode > Settings > Accounts > Manage Certificates,
+   or developer.apple.com > Certificates).
+2. Export it from Keychain Access as `.p12` with a password, then
+   `base64 -i cert.p12 | pbcopy`.
+3. Add secrets: `APPLE_CERTIFICATE` (that base64), `APPLE_CERTIFICATE_PASSWORD`,
+   `APPLE_SIGNING_IDENTITY` (for example `Developer ID Application: Name (TEAMID)`,
+   from `security find-identity -v -p codesigning`).
+4. For notarization add either `APPLE_API_KEY` (key ID), `APPLE_API_ISSUER` and
+   `APPLE_API_PRIVATE_KEY` (the `.p8` contents) from App Store Connect, or
+   `APPLE_ID`, `APPLE_PASSWORD` (an app-specific password) and `APPLE_TEAM_ID`.
+
+`.github/workflows/desktop-package.yml` imports only complete groups, passes them
+through masked environment variables and never prints them. The app's
+`Entitlements.plist` and `Info.plist` usage strings then apply under the hardened
+runtime. The bundled Host is a separate download extracted at runtime: its Node
+binary is the Node.js-signed official build, and the `agent-desktop` macOS helper
+is only linker ad-hoc signed, so Accessibility and Screen Recording grants for that
+helper are not preserved across Host updates until it is signed too.
+
+Local macOS builds: set `BYCODA_MACOS_SIGNING_IDENTITY` to a certificate in the
+login keychain (a Developer ID, or a self-signed code-signing certificate created
+in Keychain Access > Certificate Assistant) for `scripts/build/build-mac.sh` and
+`scripts/update-local.sh`. A stable identity keeps privacy grants across rebuilds.
+Local builds are never notarized.
 
 Source checks do not prove that packaged applications are installed or host
 services work. Verify real builds and installation separately.

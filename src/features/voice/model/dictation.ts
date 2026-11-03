@@ -2,6 +2,7 @@ import captureUrl from "./voiceCapture.js?url&no-inline";
 import { localVoiceBackend, type VoiceRuntimeConfig } from "./localVoiceClient";
 import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
+import { openMicrophone } from "./microphoneAccess";
 
 export type DictationState = "idle" | "starting" | "listening" | "finishing";
 type Callbacks = {
@@ -45,7 +46,7 @@ export class Dictation {
       const { lease } = await localVoiceBackend.start(this.config, true);
       this.lease = lease;
       if (this.closed) return this.release();
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      this.stream = await openMicrophone({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: false,
       });

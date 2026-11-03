@@ -28,6 +28,39 @@ waiting state or old active-session count is historical evidence. A helper that
 is no longer alive has not completed the installation. Do not launch another
 installer or stop an active session merely to diagnose it.
 
+## macOS permissions
+
+macOS asks for access per app, and commands that run inside bycoda (terminals,
+agent tools, the bundled Host) are attributed to bycoda. Manage grants in
+System Settings > Privacy & Security:
+
+- **Microphone**: voice and dictation. Turn on bycoda, then start voice again.
+- **Screen & System Audio Recording**: the quick composer screenshot. Turn on
+  bycoda and restart it; macOS applies this grant only to a new launch. Without
+  it a capture is blank or only the wallpaper. The error offers an
+  **Open Privacy Settings** button.
+- **Files & Folders** and **Full Disk Access**: projects in Desktop, Documents,
+  Downloads, removable or network volumes. Grant Full Disk Access if a terminal
+  or agent tool keeps hitting prompts.
+- **Local Network**: phone pairing over the LAN and local dev servers.
+- **Automation**: tools that script other apps with AppleScript.
+- **Notifications**: System Settings > Notifications > bycoda.
+
+Grants vanish after every update when the installed app is ad-hoc signed
+(unsigned builds, forks and local builds without a signing identity), because
+each build then has a different code identity. Releases signed with a Developer
+ID keep them. For a stale or stuck grant, reset it and approve again:
+
+```sh
+tccutil reset Microphone com.bycoda.desktop
+tccutil reset ScreenCapture com.bycoda.desktop
+tccutil reset SystemPolicyDocumentsFolder com.bycoda.desktop
+tccutil reset All com.bycoda.desktop   # every category
+```
+
+Quit bycoda before resetting. A permission prompt that names `node` or another
+tool instead of bycoda belongs to the Host or helper process; grant it there.
+
 ## Collect a small, redacted report
 
 Include the action, expected and actual result, approximate time, frequency,

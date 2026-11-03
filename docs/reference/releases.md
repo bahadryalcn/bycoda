@@ -39,7 +39,9 @@ workflow run for a new immutable candidate.
 
 The reusable `desktop-package.yml` builds Windows x64 and macOS arm64. Stable
 signing keys are present only in the stable tag build step. Nonstable jobs do
-not receive those secrets. Trusted tooling is checked out separately from
+not receive those secrets. The stable macOS job also reads the optional Apple
+Developer ID and notarization secrets; setup is in
+[fork operations](fork.md#macos-developer-id-signing-and-notarization). Trusted tooling is checked out separately from
 candidate source; downloaded packages are never executed by the publisher.
 
 Each `desktop-package-<platform>` artifact has `manifest.json` and all referenced

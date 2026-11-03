@@ -31,6 +31,7 @@ import {
   readClipboardFilePaths,
   readClipboardImage,
 } from "../../../platform/tauri/clipboard";
+import { captureFailureMessage } from "../model/screenCaptureAccess";
 import { storeQuickAttachments } from "../model/quickAttachments";
 import type { QuickComposerOwner, QuickPreparation } from "../model/quickComposerClosure";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
@@ -216,7 +217,7 @@ export function useQuickAttachments(
         () => undefined,
         (reason: unknown) => {
           if (!owner) incoming.forEach(revokeAttachment);
-          if (alive.current) onError(reason instanceof Error ? reason.message : String(reason));
+          if (alive.current) onError(captureFailureMessage(reason));
         },
       );
       queue.tail = settled;
