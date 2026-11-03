@@ -8,7 +8,7 @@ import {
   hkdfSync,
   randomBytes,
 } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createLanIdentity } from "./mobile-lan-crypto";
@@ -291,5 +291,56 @@ describe("encrypted mobile LAN access", () => {
     await disabled.start();
     expect(bindings).toHaveLength(2);
     await disabled.close();
+  });
+
+  it("retries a failed saved-state load and falls back when the saved port is busy", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "bycoda-mobile-lan-"));
+    folders.push(folder);
+    const file = join(folder, "mobile-lan.json");
+    await writeFile(file, "{not json");
+    const ports: number[] = [];
+    const make: typeof createLanGateway = () => {
+      const gateway = createServer();
+      vi.spyOn(gateway, "listen").mockImplementation((...args: unknown[]) => {
+        const port = args[0] as number;
+        ports.push(port);
+        if (port === 43210) {
+          queueMicrotask(() =>
+            gateway.emit("error", Object.assign(new Error("busy"), { code: "EADDRINUSE" })),
+          );
+          return gateway;
+        }
+        (args.at(-1) as () => void)();
+        return gateway;
+      });
+      vi.spyOn(gateway, "address").mockReturnValue({
+        address: "192.168.1.20",
+        port: 50000,
+        family: "IPv4",
+      });
+      return gateway;
+    };
+    const access = new MobileLanAccess(
+      file,
+      "pc",
+      () => 3776,
+      () => ["192.168.1.20"],
+      make,
+    );
+    await expect(access.status()).rejects.toThrow();
+    await writeFile(
+      file,
+      JSON.stringify({
+        key: createLanIdentity().encoded,
+        enabled: true,
+        address: "192.168.1.20",
+        port: 43210,
+      }),
+    );
+    await access.start();
+    expect(ports).toEqual([43210, 0]);
+    expect(await access.status()).toMatchObject({ endpoint: "http://192.168.1.20:50000" });
+    expect(JSON.parse(await readFile(file, "utf8")).port).toBe(50000);
+    await access.close();
   });
 });

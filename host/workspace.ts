@@ -18,8 +18,8 @@ import {
   rename,
   rm,
   stat,
-  writeFile,
 } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { GitChangedFile, GitDiffIndex, GitFileDiff } from "../src/platform/tauri/fs";
 import { hostOperationState, hostUnmerged, unmergedMessage } from "./git-conflicts";
@@ -669,10 +669,28 @@ export async function writeHostFile(
   const write = async () => {
     await assertFileWriteAuthority(authorized);
     const current = await readHostFile(root, input);
+    // Editing a non-UTF-8 file (Latin-1, Windows-1254, ...) would silently rewrite every
+    // non-ASCII byte as U+FFFD, which the string comparison below cannot detect.
+    try {
+      new TextDecoder("utf-8", { fatal: true }).decode(await readFile(path));
+    } catch {
+      throw new Error("File is not valid UTF-8 and cannot be saved without corrupting it");
+    }
     if (current !== expected) throw new Error("File changed on the host; reload before saving");
     await assertFileWriteAuthority(authorized);
     try {
-      await writeFile(path, content, "utf8");
+      // The path was resolved earlier; refuse if the final component became a symlink,
+      // and have the kernel refuse to follow one where O_NOFOLLOW exists.
+      if ((await lstat(path)).isSymbolicLink()) throw new Error("Path changed on the host");
+      const handle = await open(
+        path,
+        fsConstants.O_WRONLY | fsConstants.O_TRUNC | (fsConstants.O_NOFOLLOW ?? 0),
+      );
+      try {
+        await handle.writeFile(content, "utf8");
+      } finally {
+        await handle.close();
+      }
     } finally {
       invalidateHostGitIndex(root);
     }
