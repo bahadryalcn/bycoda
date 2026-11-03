@@ -113,7 +113,8 @@ it("round trips multiple files exactly at the combined 20 MiB budget", async () 
   const html = await (await write.mock.calls[0][0][0].getType("text/html")).text();
   const pasted = messageFilesFromClipboard({ getData: () => html });
   expect(pasted?.map((file) => file.size)).toEqual([MAX_EMBED_BYTES / 2, MAX_EMBED_BYTES / 2]);
-});
+  // Encodes 20 MiB of file data; allow headroom when the full suite runs in parallel.
+}, 20_000);
 
 it("rejects too many copied files before touching the clipboard", async () => {
   const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
