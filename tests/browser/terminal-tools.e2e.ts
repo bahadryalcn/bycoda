@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { WEBGL_IDLE_DROP_MS } from "../../src/features/terminal/runtime/terminalWebgl";
+import { terminalScrollbarWidth } from "../../src/features/terminal/model/terminalLayout";
 
 for (const theme of ["light", "dark"]) {
   test(`terminal returns from a hidden panel: ${theme}`, async ({ page }, info) => {
@@ -28,6 +29,43 @@ for (const theme of ["light", "dark"]) {
         .find((call) => call.cols !== undefined && call.rows !== undefined);
       return { cols: last?.cols ?? 0, rows: last?.rows ?? 0 };
     };
+    const geometry = async () => {
+      const reported = await grid();
+      return page.locator(".bycoda-terminal-host").evaluate(
+        (host, data) => {
+          const screen = host.querySelector(".xterm-screen")!.getBoundingClientRect();
+          const cellWidth = screen.width / data.reported.cols;
+          const rowHeight = screen.height / data.reported.rows;
+          return {
+            ...data.reported,
+            cellWidth,
+            rowHeight,
+            availableWidth: host.clientWidth - data.gutter,
+            availableHeight: host.clientHeight,
+            screenWidth: screen.width,
+            screenHeight: screen.height,
+          };
+        },
+        { reported, gutter: terminalScrollbarWidth() },
+      );
+    };
+    const fits = async () => {
+      const actual = await geometry();
+      const gapX = actual.availableWidth - actual.screenWidth;
+      const gapY = actual.availableHeight - actual.screenHeight;
+      return (
+        actual.cols > 0 &&
+        actual.rows > 0 &&
+        Number.isFinite(actual.cellWidth) &&
+        actual.cellWidth > 0 &&
+        Number.isFinite(actual.rowHeight) &&
+        actual.rowHeight > 0 &&
+        gapX >= -1 &&
+        gapX < actual.cellWidth + 1 &&
+        gapY >= -1 &&
+        gapY < actual.rowHeight + 1
+      );
+    };
     await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
     await expect(canvas.first()).toBeVisible();
     await page.evaluate(async () => {
@@ -35,7 +73,30 @@ for (const theme of ["light", "dark"]) {
     });
     await expect.poll(async () => (await grid()).cols).toBeGreaterThan(0);
     let wideGrid = await grid();
+    let wideSpace = { width: 0, height: 0 };
+    let narrowCols = 0;
     for (const [index, width] of [1000, 390, 1000].entries()) {
+      if (index === 2 && theme === "dark") {
+        const before = await geometry();
+        const fontSize = await root
+          .getAttribute("data-terminal-typography")
+          .then((value) => JSON.parse(value!).fontSize as number);
+        await page.locator(".xterm-screen").hover();
+        await page.keyboard.down("Control");
+        await page.mouse.wheel(0, -100);
+        await page.keyboard.up("Control");
+        await expect
+          .poll(() =>
+            root
+              .getAttribute("data-terminal-typography")
+              .then((value) => JSON.parse(value!).fontSize),
+          )
+          .toBe(fontSize + 1);
+        await expect
+          .poll(async () => (await geometry()).cellWidth)
+          .toBeGreaterThan(before.cellWidth);
+        expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
+      }
       const retained = await canvas.elementHandles();
       const previousPrompt = await root.getAttribute("data-terminal-prompt");
       await panel.evaluate((element) => {
@@ -80,12 +141,26 @@ for (const theme of ["light", "dark"]) {
         for (const node of retained)
           expect(await node.evaluate((element) => element.isConnected)).toBe(true);
       }
-      // The first return fits again after the actual font has loaded. Its
-      // steady grid, rather than the startup fallback font, is the reference.
-      if (index === 0) wideGrid = await grid();
-      else if (width === 390)
+      await expect.poll(fits).toBe(true);
+      await info.attach(`return-grid-${index}`, {
+        body: JSON.stringify(await geometry()),
+        contentType: "application/json",
+      });
+      // Restoring the viewport restores physical space, not a cached column
+      // count: current font metrics can legitimately change between returns.
+      if (index === 0) {
+        wideGrid = await grid();
+        const actual = await geometry();
+        wideSpace = { width: actual.availableWidth, height: actual.availableHeight };
+      } else if (width === 390) {
         await expect.poll(async () => (await grid()).cols).toBeLessThan(wideGrid.cols);
-      else await expect.poll(grid).toEqual(wideGrid);
+        expect((await geometry()).availableWidth).toBeLessThan(wideSpace.width);
+        narrowCols = (await grid()).cols;
+      } else {
+        await expect.poll(async () => (await grid()).cols).toBeGreaterThan(narrowCols);
+        const actual = await geometry();
+        expect({ width: actual.availableWidth, height: actual.availableHeight }).toEqual(wideSpace);
+      }
       await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^returned>\s*$/);
       await page.locator(".xterm-helper-textarea").pressSequentially("ok");
       await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^returned> ok$/);

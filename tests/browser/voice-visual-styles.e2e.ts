@@ -2,61 +2,102 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 const captures = join(process.cwd(), "temp/verification/voice-visual-styles");
-for (const theme of ["light", "dark"]) for (const width of [1280, 800])
-  test(`explicit turn ending is discoverable without reconnecting ${theme} ${width}`, async ({ page }) => {
-    const output = join(process.cwd(), "temp/verification/voice-turn-ending");
-    await mkdir(output, { recursive: true });
-    await page.setViewportSize({ width, height: 900 });
-    await page.goto(`/tests/browser/voice-visual-styles.html?theme=${theme}&global`);
-    await page.getByRole("button", { name: "Voice companion", exact: true }).click();
-    const panel = page.locator("section[data-voice-state]");
-    await panel.getByRole("button", { name: "Start voice", exact: true }).click();
-    await expect(panel).toHaveAttribute("data-voice-state", "listening");
-    await panel.screenshot({ path: join(output, `${theme}-${width}-full-automatic.png`) });
-    await panel.getByRole("button", { name: "Wait until I finish", exact: true }).click();
-    await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
-    const selected = await page.evaluate(() => ({ settings: JSON.parse(localStorage.getItem("bycoda.voice")!), runtime: (window as any).fixtureVoice }));
-    expect(selected.settings).toMatchObject({ manualTurnEnd: true, manualTurnEndRevision: 1 });
-    expect(selected.runtime.connects).toBe(1); expect(selected.runtime.finishes).toBe(0); expect(selected.runtime.submits).toBe(0);
-    expect(selected.runtime.turnPolicies.at(-1)).toMatchObject({ manualTurnEnd: true });
-    await panel.screenshot({ path: join(output, `${theme}-${width}-full-manual.png`) });
-    await panel.getByRole("button", { name: "Turn ending", exact: true }).click();
-    await page.screenshot({ path: join(output, `${theme}-${width}-policy-menu.png`) });
-    await page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }).click();
-    await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
-    await expect(panel.getByRole("button", { name: "Wait for me", exact: true })).toBeVisible();
-    await panel.screenshot({ path: join(output, `${theme}-${width}-compact-automatic.png`) });
-    await panel.getByRole("button", { name: "Wait for me", exact: true }).click();
-    await panel.getByRole("button", { name: "Finish turn", exact: true }).click();
-    expect(await page.evaluate(() => (window as any).fixtureVoice.finishes)).toBe(1);
-    expect(await panel.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
-    await panel.screenshot({ path: join(output, `${theme}-${width}-compact-manual.png`) });
-    await page.goto(`/tests/browser/voice-overlay.html?theme=${theme}&compact=0`);
-    await page.locator("#root").evaluate(node => (node as HTMLElement).style.maxWidth = "380px");
-    const floating = page.locator("main[aria-label]");
-    await floating.getByRole("button", { name: "Wait until I finish", exact: true }).click();
-    expect(await page.evaluate(() => (window as any).fixtureOverlay.calls.some((call: any) => call.args?.payload === "manualTurnEnd"))).toBe(true);
-    await page.evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
-    await floating.getByRole("button", { name: "Finish turn", exact: true }).click();
-    expect(await page.evaluate(() => (window as any).fixtureOverlay.calls.some((call: any) => call.args?.payload === "finishTurn"))).toBe(true);
-    await floating.screenshot({ path: join(output, `${theme}-${width}-floating-manual.png`) });
-    await floating.getByRole("button", { name: "Compact voice companion", exact: true }).click();
-    // Native compact WebView is 380x56. Keep that component size inside this fixture viewport.
-    await floating.evaluate(node => (node as HTMLElement).style.height = "56px");
-    await page.evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: false }));
-    await floating.screenshot({ path: join(output, `${theme}-${width}-floating-compact-automatic.png`) });
-    await floating.getByRole("button", { name: "Wait for me", exact: true }).click();
-    expect(await page.evaluate(() => (window as any).fixtureOverlay.calls.filter((call: any) => call.args?.payload === "manualTurnEnd").length)).toBe(2);
-    await page.evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
-    await expect(floating.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
-    expect(await floating.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
-    await floating.screenshot({ path: join(output, `${theme}-${width}-floating-compact.png`) });
-    await page.goto(`/tests/browser/voice-visual-styles.html?theme=${theme}`);
-    const toggle = page.getByRole("switch", { name: "I decide when my turn ends", exact: true });
-    await toggle.scrollIntoViewIfNeeded(); await expect(toggle).toBeChecked();
-    await page.screenshot({ path: join(output, `${theme}-${width}-settings-manual.png`) });
-    expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(0);
-  });
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`explicit turn ending is discoverable without reconnecting ${theme} ${width}`, async ({
+      page,
+    }) => {
+      const output = join(process.cwd(), "temp/verification/voice-turn-ending");
+      await mkdir(output, { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/voice-visual-styles.html?theme=${theme}&global`);
+      await page.getByRole("button", { name: "Voice companion", exact: true }).click();
+      const panel = page.locator("section[data-voice-state]");
+      await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await expect(panel).toHaveAttribute("data-voice-state", "listening");
+      await panel.screenshot({ path: join(output, `${theme}-${width}-full-automatic.png`) });
+      await panel.getByRole("button", { name: "Wait until I finish", exact: true }).click();
+      await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
+      const selected = await page.evaluate(() => ({
+        settings: JSON.parse(localStorage.getItem("bycoda.voice")!),
+        runtime: (window as any).fixtureVoice,
+      }));
+      expect(selected.settings).toMatchObject({ manualTurnEnd: true, manualTurnEndRevision: 1 });
+      expect(selected.runtime.connects).toBe(1);
+      expect(selected.runtime.finishes).toBe(0);
+      expect(selected.runtime.submits).toBe(0);
+      expect(selected.runtime.turnPolicies.at(-1)).toMatchObject({ manualTurnEnd: true });
+      await panel.screenshot({ path: join(output, `${theme}-${width}-full-manual.png`) });
+      await panel.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await page.screenshot({ path: join(output, `${theme}-${width}-policy-menu.png`) });
+      await page.getByRole("menuitemradio", { name: "Automatic replies", exact: true }).click();
+      await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
+      await expect(panel.getByRole("button", { name: "Wait for me", exact: true })).toBeVisible();
+      await panel.screenshot({ path: join(output, `${theme}-${width}-compact-automatic.png`) });
+      await panel.getByRole("button", { name: "Wait for me", exact: true }).click();
+      await panel.getByRole("button", { name: "Finish turn", exact: true }).click();
+      expect(await page.evaluate(() => (window as any).fixtureVoice.finishes)).toBe(1);
+      expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      await panel.screenshot({ path: join(output, `${theme}-${width}-compact-manual.png`) });
+      await page.goto(`/tests/browser/voice-overlay.html?theme=${theme}&compact=0`);
+      await page
+        .locator("#root")
+        .evaluate((node) => ((node as HTMLElement).style.maxWidth = "380px"));
+      const floating = page.locator("main[aria-label]");
+      await floating.getByRole("button", { name: "Wait until I finish", exact: true }).click();
+      expect(
+        await page.evaluate(() =>
+          (window as any).fixtureOverlay.calls.some(
+            (call: any) => call.args?.payload === "manualTurnEnd",
+          ),
+        ),
+      ).toBe(true);
+      await page.evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
+      await floating.getByRole("button", { name: "Finish turn", exact: true }).click();
+      expect(
+        await page.evaluate(() =>
+          (window as any).fixtureOverlay.calls.some(
+            (call: any) => call.args?.payload === "finishTurn",
+          ),
+        ),
+      ).toBe(true);
+      await floating.screenshot({ path: join(output, `${theme}-${width}-floating-manual.png`) });
+      await floating.getByRole("button", { name: "Compact voice companion", exact: true }).click();
+      // Native compact WebView is 380x56. Keep that component size inside this fixture viewport.
+      await floating.evaluate((node) => ((node as HTMLElement).style.height = "56px"));
+      await page.evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: false }));
+      await floating.screenshot({
+        path: join(output, `${theme}-${width}-floating-compact-automatic.png`),
+      });
+      await floating.getByRole("button", { name: "Wait for me", exact: true }).click();
+      expect(
+        await page.evaluate(
+          () =>
+            (window as any).fixtureOverlay.calls.filter(
+              (call: any) => call.args?.payload === "manualTurnEnd",
+            ).length,
+        ),
+      ).toBe(2);
+      await page.evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
+      await expect(
+        floating.getByRole("button", { name: "Finish turn", exact: true }),
+      ).toBeVisible();
+      expect(await floating.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      await floating.screenshot({ path: join(output, `${theme}-${width}-floating-compact.png`) });
+      await page.goto(`/tests/browser/voice-visual-styles.html?theme=${theme}`);
+      const advanced = page.getByRole("button", { name: "Advanced", exact: true });
+      await expect(advanced).toHaveAttribute("aria-expanded", "false");
+      await expect(
+        page.getByRole("switch", { name: "I decide when my turn ends", exact: true }),
+      ).toHaveCount(0);
+      await advanced.focus();
+      await advanced.press("Enter");
+      const toggle = page.getByRole("switch", { name: "I decide when my turn ends", exact: true });
+      await toggle.scrollIntoViewIfNeeded();
+      await expect(toggle).toBeChecked();
+      await page.screenshot({ path: join(output, `${theme}-${width}-settings-manual.png`) });
+      expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(0);
+    });
 async function open(
   page: Page,
   visual = "mark",
@@ -120,6 +161,11 @@ for (const theme of ["light", "dark"])
       }
       await page.getByRole("button", { name: "Expand voice companion", exact: true }).click();
       const picker = page.getByRole("radiogroup", { name: "Visual style", exact: true });
+      await expect(picker).toHaveCount(0);
+      const advanced = page.getByRole("button", { name: "Advanced", exact: true });
+      await expect(advanced).toHaveAttribute("aria-expanded", "false");
+      await advanced.focus();
+      await advanced.press("Enter");
       await picker.scrollIntoViewIfNeeded();
       await picker.getByRole("radio", { name: "Wave", exact: true }).click();
       await expect(
@@ -160,6 +206,10 @@ test("keyboard move, drag, compact double click, viewport clamp, Escape and redu
   await grip.press("ArrowLeft");
   expect((await panel.boundingBox())!.x).toBe(before.x - 16);
   await panel.getByRole("button", { name: "Compact voice companion" }).click();
+  await expect(panel).toHaveAttribute("data-compact", "true");
+  await expect(panel.getByRole("button", { name: "Expand voice companion" })).toBeFocused();
+  // Wait for the changed grip geometry before sending raw pointer coordinates.
+  await grip.click({ trial: true });
   const pos = (await grip.boundingBox())!;
   await page.mouse.move(pos.x + 10, pos.y + 10);
   await page.mouse.down();
@@ -182,5 +232,8 @@ test("keyboard move, drag, compact double click, viewport clamp, Escape and redu
     animations: "disabled",
   });
   await panel.press("Escape");
+  await expect(panel).toHaveAttribute("data-voice-state", "listening");
+  expect(await page.evaluate(() => (window as any).fixtureVoice.closes)).toBe(0);
+  await panel.getByRole("button", { name: "Close voice companion", exact: true }).click();
   await expect(page.getByRole("button", { name: "Voice companion", exact: true })).toBeFocused();
 });

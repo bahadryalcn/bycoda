@@ -4,12 +4,34 @@ import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 const mock = fileURLToPath(new URL("./voice-visual-styles-mocks.ts", import.meta.url));
 export default defineConfig({
-  plugins: [react(), {
-    name:"bounded-voice-fixture-css",enforce:"pre",
-    transform(code,id){if(id.replaceAll("\\","/").endsWith("/src/styles/index.css"))return code.replace('@import "tailwindcss";','@import "tailwindcss" source(none);\n@source "../shared/ui";\n@source "../features/voice";\n@source "../features/assistant";\n@source "../features/sessions/ui/QuestionForm.tsx";').replaceAll(/@source "\.\.\/\.\.\/node_modules[^;]+;/g,"");},
-  },tailwindcss()],
+  plugins: [
+    react(),
+    {
+      name: "bounded-voice-fixture-css",
+      enforce: "pre",
+      transform(code, id) {
+        if (id.replaceAll("\\", "/").endsWith("/src/styles/index.css"))
+          return code
+            .replace(
+              '@import "tailwindcss";',
+              '@import "tailwindcss" source(none);\n@source "../shared/ui";\n@source "../features/voice";\n@source "../features/assistant";\n@source "../features/sessions/ui/QuestionForm.tsx";',
+            )
+            .replaceAll(/@source "\.\.\/\.\.\/node_modules[^;]+;/g, "");
+      },
+    },
+    tailwindcss(),
+  ],
   resolve: {
-    alias: ["localVoice", "localVoiceClient", "voiceConversation", "voiceAssistant", "sessionsStore", "assistantClient","voiceHistoryTransport"].map((name) => ({
+    alias: [
+      "localVoice",
+      "localVoiceClient",
+      "voiceConversation",
+      "voiceAssistant",
+      "sessionsStore",
+      "assistantClient",
+      "voiceHistoryTransport",
+      "assistantHostRead",
+    ].map((name) => ({
       find: new RegExp(`(?:.*\\/)${name}$`),
       replacement: mock,
     })),
