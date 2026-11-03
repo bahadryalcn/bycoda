@@ -76,9 +76,22 @@ preview candidates never receive signing secrets and stay ad-hoc.
 through masked environment variables and never prints them. The app's
 `Entitlements.plist` and `Info.plist` usage strings then apply under the hardened
 runtime. The bundled Host is a separate download extracted at runtime: its Node
-binary is the Node.js-signed official build, and the `agent-desktop` macOS helper
-is only linker ad-hoc signed, so Accessibility and Screen Recording grants for that
-helper are not preserved across Host updates until it is signed too.
+binary is the Node.js-signed official build. The `agent-desktop` helper
+(`agent-desktop` and `agent-desktop-macos-helper`, two bare Mach-O executables, not
+an app bundle) needs Accessibility and Screen Recording, so `host/package.mjs`
+signs each with the same identity (`BYCODA_MACOS_SIGNING_IDENTITY`, falling back to
+`APPLE_SIGNING_IDENTITY`) using `codesign --force --timestamp --options runtime`
+and the stable identifiers `com.bycoda.desktop.agent-desktop` and
+`com.bycoda.desktop.agent-desktop-macos-helper`, then verifies with
+`codesign --verify --strict` and reads back identifier, authority and hardened
+runtime (`scripts/release/sign-desktop-helper.mjs`). It signs only the package copy
+on a macOS machine, records a `macos-codesign` receipt and the signed hashes in the
+helper manifest, and refuses to sign twice. The `package` job in
+`desktop-package.yml` imports the certificate into a temporary keychain before
+packaging. Without an identity, or when packaging darwin targets on Linux
+(`host-packages` job), the helper stays ad-hoc signed and `host/package.mjs` prints a
+notice. The first signed Host update changes the helper's identity once, so grant
+Accessibility and Screen Recording again once; later updates keep the grants.
 
 Local macOS builds: set `BYCODA_MACOS_SIGNING_IDENTITY` to a certificate in the
 login keychain (a Developer ID, or a self-signed code-signing certificate created

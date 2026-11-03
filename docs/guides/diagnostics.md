@@ -49,7 +49,9 @@ System Settings > Privacy & Security:
 Grants vanish after every update when the installed app is ad-hoc signed
 (unsigned builds, forks and local builds without a signing identity), because
 each build then has a different code identity. Releases signed with a Developer
-ID keep them. For a stale or stuck grant, reset it and approve again:
+ID keep them, including the bundled desktop-control helper, which is signed with
+the same identity. After the first signed update, grant Accessibility and Screen
+Recording to the helper once more; later updates keep those grants. For a stale or stuck grant, reset it and approve again:
 
 ```sh
 tccutil reset Microphone com.bycoda.desktop

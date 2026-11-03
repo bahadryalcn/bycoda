@@ -78,6 +78,10 @@ if (
     !args.includes("--desktop-helper"))
 )
   throw new Error("--sign-desktop-helper requires one local Windows target and --desktop-helper.");
+// macOS: sign the bundled helper with a stable identity so Accessibility and Screen
+// Recording grants survive Host updates. codesign exists only on macOS.
+const macosSigningIdentity =
+  process.env.BYCODA_MACOS_SIGNING_IDENTITY?.trim() || process.env.APPLE_SIGNING_IDENTITY?.trim();
 const desktopHelperCacheIndex = args.indexOf("--desktop-helper-cache");
 if (
   desktopHelperCacheIndex >= 0 &&
@@ -251,7 +255,22 @@ for (const target of targets) {
     );
     if (JSON.stringify(copied.manifest) !== JSON.stringify(expected.manifest))
       throw new Error(`Desktop helper changed before packaging ${target}`);
-    if (signDesktopHelper)
+    if (platform === "darwin") {
+      if (process.platform === "darwin" && macosSigningIdentity)
+        await signDesktopHelperBundle(join(folder, "agent-desktop"), {
+          platform,
+          arch,
+          identity: macosSigningIdentity,
+        });
+      else
+        console.log(
+          `Desktop helper for ${target} stays ad-hoc signed (${
+            process.platform === "darwin"
+              ? "set BYCODA_MACOS_SIGNING_IDENTITY or APPLE_SIGNING_IDENTITY"
+              : "codesign requires macOS"
+          }); macOS resets its Accessibility and Screen Recording grants on every Host update.`,
+        );
+    } else if (signDesktopHelper)
       await signDesktopHelperBundle(join(folder, "agent-desktop"), {
         certificateThumbprint: process.env.BYCODA_WINDOWS_SIGNING_CERT_SHA1,
         storeLocation: process.env.BYCODA_WINDOWS_SIGNING_STORE || "CurrentUser",
