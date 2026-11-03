@@ -542,6 +542,10 @@ pub async fn remote_dev_server_url(
                                 drop(socket);
                                 continue;
                             }
+                            // Accepted sockets can inherit the listener's nonblocking mode.
+                            let _ = socket.set_nonblocking(false);
+                            let _ = socket.set_read_timeout(Some(Duration::from_secs(5)));
+                            let _ = socket.set_write_timeout(Some(Duration::from_secs(10)));
                             running.active.fetch_add(1, Ordering::SeqCst);
                             if let Ok(mut touched) = running.touched.lock() {
                                 *touched = Instant::now();

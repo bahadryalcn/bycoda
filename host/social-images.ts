@@ -205,7 +205,9 @@ function codexImages(directory: string, authorize?: () => Promise<void>): Social
       {
         onNotification: (m, p) => handler(m, p),
         onRequest: (requestId) => {
-          void rpc.respond(requestId, { decision: "decline", permissions: {} });
+          void rpc
+            .respond(requestId, { decision: "decline", permissions: {} })
+            .catch(() => undefined);
         },
       },
       { includeJsonrpc: false, defaultRequestTimeoutMs: 15000, label: "social-image" },

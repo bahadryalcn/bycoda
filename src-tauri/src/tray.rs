@@ -203,62 +203,148 @@ fn menu_signature(rows: &[(String, SessionRow)], labels: &Labels, summary: &str)
     )
 }
 
-fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
+/// Snapshot of everything one menu build needs, taken while holding the state
+/// lock so the (main-thread-blocking) native calls can run without it.
+struct Plan {
+    generation: u64,
+    rendered: String,
+    summary: String,
+    rows: Vec<(String, SessionRow)>,
+    labels: Labels,
+    presence: crate::assistant_presence::View,
+}
+
+type Built = (
+    tauri::menu::Menu<tauri::Wry>,
+    BTreeMap<String, (String, String)>,
+    BTreeMap<String, (String, crate::assistant_presence::Choice)>,
+);
+
+impl TrayState {
+    /// Decides whether the menu must be rebuilt. `None` when what it shows is
+    /// unchanged; otherwise a snapshot tagged with a fresh generation.
+    fn plan(&mut self) -> Option<Plan> {
+        let rows = merged_rows(&self.windows);
+        let count = |status| rows.iter().filter(|(_, row)| row.status == status).count();
+        let working = count(SessionStatus::Working) + count(SessionStatus::Retrying);
+        let input = count(SessionStatus::Input) + count(SessionStatus::Failed);
+        let summary = format!(
+            "{} {} · {} {} · {} {} · {} {}",
+            working,
+            self.labels.working,
+            input,
+            self.labels.input,
+            count(SessionStatus::Done),
+            self.labels.done,
+            count(SessionStatus::Active),
+            self.labels.active
+        );
+        let rows = visible_rows(rows);
+        let rendered = format!(
+            "{}{:?}{:?}",
+            menu_signature(&rows, &self.labels, &summary),
+            (
+                &self.presence.source_token,
+                &self.presence.status,
+                self.presence.pending,
+                self.presence.status_error,
+                self.presence.write_error,
+                self.presence.retry
+            ),
+            self.labels.presence
+        );
+        if self.rendered.as_deref() == Some(rendered.as_str()) {
+            return None;
+        }
+        self.generation = self.generation.wrapping_add(1);
+        Some(Plan {
+            generation: self.generation,
+            rendered,
+            summary,
+            rows,
+            labels: self.labels.clone(),
+            presence: self.presence.clone(),
+        })
+    }
+
+    /// Records the installed menu only when no newer plan was made meanwhile.
+    fn commit(
+        &mut self,
+        plan: Plan,
+        targets: BTreeMap<String, (String, String)>,
+        presence_targets: BTreeMap<String, (String, crate::assistant_presence::Choice)>,
+    ) -> bool {
+        if self.generation != plan.generation {
+            return false;
+        }
+        self.targets = targets;
+        self.presence_targets = presence_targets;
+        self.rendered = Some(plan.rendered);
+        true
+    }
+}
+
+fn locked(state: &Mutex<TrayState>) -> std::sync::MutexGuard<'_, TrayState> {
+    state.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+/// Never holds the state lock across native menu calls: those dispatch to the
+/// main thread, which takes the same lock in its event handlers.
+fn refresh(app: &AppHandle, shared: &Mutex<TrayState>) -> tauri::Result<()> {
     let Some(tray) = app.tray_by_id("main") else {
         return Ok(());
     };
-    let rows = merged_rows(&state.windows);
-    let count = |status| rows.iter().filter(|(_, row)| row.status == status).count();
-    let working = count(SessionStatus::Working) + count(SessionStatus::Retrying);
-    let input = count(SessionStatus::Input) + count(SessionStatus::Failed);
-    let summary = format!(
-        "{} {} · {} {} · {} {} · {} {}",
-        working,
-        state.labels.working,
-        input,
-        state.labels.input,
-        count(SessionStatus::Done),
-        state.labels.done,
-        count(SessionStatus::Active),
-        state.labels.active
-    );
-    let name = &app.package_info().name;
-    let rows = visible_rows(rows);
-    let rendered = format!(
-        "{}{:?}{:?}",
-        menu_signature(&rows, &state.labels, &summary),
-        (
-            &state.presence.source_token,
-            &state.presence.status,
-            state.presence.pending,
-            state.presence.status_error,
-            state.presence.write_error,
-            state.presence.retry
-        ),
-        state.labels.presence
-    );
-    if state.rendered.as_deref() == Some(rendered.as_str()) {
-        return Ok(());
+    let name = app.package_info().name.clone();
+    // A racing refresh may install a menu after ours; retry on the latest state.
+    for _ in 0..3 {
+        let Some(plan) = locked(shared).plan() else {
+            return Ok(());
+        };
+        let (menu, targets, presence_targets) = build_menu(app, &name, &plan)?;
+        tray.set_menu(Some(menu))?;
+        tray.set_tooltip(Some(format!("{name} · {}", plan.summary)))?;
+        #[cfg(target_os = "macos")]
+        tray.set_title(Some(""))?;
+        let mut state = locked(shared);
+        if state.commit(plan, targets, presence_targets) {
+            return Ok(());
+        }
+        state.rendered = None;
     }
-    let mut menu = MenuBuilder::new(app)
-        .item(&MenuItemBuilder::with_id(SHOW, format!("Show {name}")).build(app)?);
-    state.generation = state.generation.wrapping_add(1);
+    Ok(())
+}
+
+/// Rebuilds the menu with the current native-language labels.
+pub(crate) fn refresh_language(app: &AppHandle) -> tauri::Result<()> {
+    let Some(state) = app.try_state::<Mutex<TrayState>>() else {
+        return Ok(());
+    };
+    locked(&state).rendered = None;
+    refresh(app, &state)
+}
+
+fn build_menu(app: &AppHandle, name: &str, plan: &Plan) -> tauri::Result<Built> {
+    let mut menu = MenuBuilder::new(app).item(
+        &MenuItemBuilder::with_id(SHOW, crate::native_language::menu_text("Show", name))
+            .build(app)?,
+    );
     let mut targets = BTreeMap::new();
+    let mut presence_targets = BTreeMap::new();
     if rows.is_empty() {
         menu = menu.separator().item(
-            &MenuItemBuilder::new(&state.labels.empty)
+            &MenuItemBuilder::new(&plan.labels.empty)
                 .enabled(false)
                 .build(app)?,
         );
     }
     // Live work stays one click away. Idle history is tucked into a submenu.
     for (status, heading) in [
-        (SessionStatus::Input, &state.labels.input),
-        (SessionStatus::Failed, &state.labels.failed),
-        (SessionStatus::Retrying, &state.labels.retrying),
-        (SessionStatus::Working, &state.labels.working),
-        (SessionStatus::Done, &state.labels.done),
-        (SessionStatus::Active, &state.labels.recent),
+        (SessionStatus::Input, &plan.labels.input),
+        (SessionStatus::Failed, &plan.labels.failed),
+        (SessionStatus::Retrying, &plan.labels.retrying),
+        (SessionStatus::Working, &plan.labels.working),
+        (SessionStatus::Done, &plan.labels.done),
+        (SessionStatus::Active, &plan.labels.recent),
     ] {
         let group: Vec<_> = rows
             .iter()
@@ -272,7 +358,7 @@ fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
         if status == SessionStatus::Active {
             let mut recent = SubmenuBuilder::new(app, &heading);
             for (index, (window, row)) in group {
-                let id = format!("{SESSION_PREFIX}{}_{index}", state.generation);
+                let id = format!("{SESSION_PREFIX}{}_{index}", plan.generation);
                 recent = recent
                     .item(&MenuItemBuilder::with_id(&id, compact_label(&row.label)).build(app)?);
                 targets.insert(id, (window.clone(), row.id.clone()));
@@ -283,15 +369,15 @@ fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
                 .separator()
                 .item(&MenuItemBuilder::new(&heading).enabled(false).build(app)?);
             for (index, (window, row)) in group {
-                let id = format!("{SESSION_PREFIX}{}_{index}", state.generation);
+                let id = format!("{SESSION_PREFIX}{}_{index}", plan.generation);
                 menu = menu
                     .item(&MenuItemBuilder::with_id(&id, compact_label(&row.label)).build(app)?);
                 targets.insert(id, (window.clone(), row.id.clone()));
             }
         }
     }
-    let labels = &state.labels.presence;
-    let effective = if state.presence.status_error {
+    let labels = &plan.labels.presence;
+    let effective = if plan.presence.status_error {
         crate::assistant_presence::Presence::Unknown
     } else {
         state
@@ -309,16 +395,15 @@ fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
         _ => &labels.unknown,
     };
     let mut presence = SubmenuBuilder::new(app, format!("{}: {}", labels.availability, caption));
-    state.presence_targets.clear();
-    let available = state.presence.source_token.is_some()
+    let available = plan.presence.source_token.is_some()
         && state
             .presence
             .status
             .as_ref()
             .is_some_and(|status| status.setup_complete)
-        && !state.presence.pending
-        && !state.presence.status_error
-        && !state.presence.write_error;
+        && !plan.presence.pending
+        && !plan.presence.status_error
+        && !plan.presence.write_error;
     for (index, (choice, label, checked)) in [
         (
             crate::assistant_presence::Choice::Present,
@@ -339,70 +424,69 @@ fn refresh(app: &AppHandle, state: &mut TrayState) -> tauri::Result<()> {
     .into_iter()
     .enumerate()
     {
-        let id = format!("{PRESENCE_PREFIX}{}_{index}", state.generation);
+        let id = format!("{PRESENCE_PREFIX}{}_{index}", plan.generation);
         presence = presence.item(
             &CheckMenuItemBuilder::with_id(&id, label)
                 .checked(checked)
                 .enabled(available)
                 .build(app)?,
         );
-        if let Some(token) = &state.presence.source_token {
-            state.presence_targets.insert(id, (token.clone(), choice));
+        if let Some(token) = &plan.presence.source_token {
+            presence_targets.insert(id, (token.clone(), choice));
         }
     }
-    if state.presence.pending {
+    if plan.presence.pending {
         presence = presence.item(
             &MenuItemBuilder::new(&labels.pending)
                 .enabled(false)
                 .build(app)?,
         );
     }
-    if state.presence.write_error {
+    if plan.presence.write_error {
         presence = presence.item(
             &MenuItemBuilder::new(&labels.failed)
                 .enabled(false)
                 .build(app)?,
         );
-        if let (Some(choice), Some(token)) = (state.presence.retry, &state.presence.source_token) {
-            let id = format!("{PRESENCE_PREFIX}{}_retry", state.generation);
+        if let (Some(choice), Some(token)) = (plan.presence.retry, &plan.presence.source_token) {
+            let id = format!("{PRESENCE_PREFIX}{}_retry", plan.generation);
             presence = presence.item(
                 &MenuItemBuilder::with_id(&id, &labels.retry)
-                    .enabled(!state.presence.pending)
+                    .enabled(!plan.presence.pending)
                     .build(app)?,
             );
-            state.presence_targets.insert(id, (token.clone(), choice));
+            presence_targets.insert(id, (token.clone(), choice));
         }
     }
     presence = presence.separator().item(
         &MenuItemBuilder::with_id(PRESENCE_REFRESH, &labels.refresh)
-            .enabled(!state.presence.pending && !state.presence.write_error)
+            .enabled(!plan.presence.pending && !plan.presence.write_error)
             .build(app)?,
     );
     let menu = menu
         .item(&presence.build()?)
         .separator()
-        .item(&MenuItemBuilder::with_id(NOTIFICATIONS, &state.labels.notifications).build(app)?)
-        .item(&MenuItemBuilder::with_id(QUIT, format!("Quit {name}")).build(app)?)
+        .item(&MenuItemBuilder::with_id(NOTIFICATIONS, &plan.labels.notifications).build(app)?)
+        .item(
+            &MenuItemBuilder::with_id(QUIT, crate::native_language::menu_text("Quit", name))
+                .build(app)?,
+        )
         .build()?;
-    tray.set_menu(Some(menu))?;
-    state.targets = targets;
-    state.rendered = Some(rendered);
-    tray.set_tooltip(Some(format!("{name} · {summary}")))?;
-    #[cfg(target_os = "macos")]
-    tray.set_title(Some(""))?;
-    Ok(())
+    Ok((menu, targets, presence_targets))
 }
 
 pub(crate) fn presence_update(app: &AppHandle, view: crate::assistant_presence::View) {
     let Some(state) = app.try_state::<Mutex<TrayState>>() else {
         return;
     };
-    let mut state = state.lock().unwrap_or_else(|error| error.into_inner());
-    if view.revision < state.presence.revision {
-        return;
+    {
+        let mut guard = locked(&state);
+        if view.revision < guard.presence.revision {
+            return;
+        }
+        guard.presence = view;
     }
-    state.presence = view;
-    if let Err(error) = refresh(app, &mut state) {
+    if let Err(error) = refresh(app, &state) {
         eprintln!("Availability menu refresh failed: {error}");
     }
 }
@@ -416,17 +500,18 @@ pub async fn tray_sessions_update(
     labels: Labels,
 ) -> Result<(), String> {
     let state = app.state::<Mutex<TrayState>>();
-    let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
-    state.windows.insert(window.label().to_string(), rows);
-    state.labels = labels;
-    refresh(&app, &mut state).map_err(|e| e.to_string())
+    {
+        let mut guard = locked(&state);
+        guard.windows.insert(window.label().to_string(), rows);
+        guard.labels = labels;
+    }
+    refresh(&app, &state).map_err(|e| e.to_string())
 }
 
 pub fn window_closed(app: &AppHandle, label: &str) {
     let state = app.state::<Mutex<TrayState>>();
-    let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
-    state.windows.remove(label);
-    if let Err(error) = refresh(app, &mut state) {
+    locked(&state).windows.remove(label);
+    if let Err(error) = refresh(app, &state) {
         eprintln!("Session menu refresh failed: {error}");
     }
 }
@@ -538,13 +623,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     }
 
     tray.build(app)?;
-    refresh(
-        app,
-        &mut app
-            .state::<Mutex<TrayState>>()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()),
-    )?;
+    refresh(app, &app.state::<Mutex<TrayState>>())?;
     Ok(())
 }
 
@@ -581,6 +660,20 @@ mod tests {
             shown(SessionStatus::Working, 1),
             shown(SessionStatus::Input, 1)
         );
+    }
+
+    #[test]
+    fn plan_skips_unchanged_menu_and_commit_requires_latest_generation() {
+        let mut state = TrayState::default();
+        let first = state.plan().expect("first plan renders");
+        assert!(state.plan().is_some(), "uncommitted menu is planned again");
+        // The second plan superseded the first, so committing it must be refused.
+        assert!(!state.commit(first, BTreeMap::new(), BTreeMap::new()));
+        let latest = state.plan().expect("still uncommitted");
+        assert!(state.commit(latest, BTreeMap::new(), BTreeMap::new()));
+        assert!(state.plan().is_none(), "committed menu is not rebuilt");
+        state.rendered = None;
+        assert!(state.plan().is_some(), "cleared memo forces a rebuild");
     }
 
     #[test]

@@ -1,4 +1,14 @@
 import { expect, it, vi } from "vitest";
+
+const spawnOverride = vi.hoisted(() => ({ child: undefined as unknown }));
+vi.mock("node:child_process", async (importActual) => {
+  const actual = await importActual<typeof import("node:child_process")>();
+  return {
+    ...actual,
+    spawn: ((...args: Parameters<typeof actual.spawn>) =>
+      spawnOverride.child ?? actual.spawn(...args)) as typeof actual.spawn,
+  };
+});
 import { DICTATION_WARM_MS, LocalVoiceService, validateVoiceAudio } from "./voice-local";
 import * as runtime from "./voice-runtime";
 it("validates bounded PCM16 and language before starting any worker", () => {
@@ -78,13 +88,11 @@ it("keeps the recognizer warm after dictation, reuses it and unloads after the g
     ensureWorker: () => Promise<unknown>;
     child?: unknown;
   };
-  const worker = vi
-    .spyOn(internals, "ensureWorker")
-    .mockImplementation(async () => {
-      internals.child = { kill: () => {} };
-      (service as unknown as { loading: Promise<unknown> }).loading = Promise.resolve();
-      return { model: "small", device: "cuda" };
-    });
+  const worker = vi.spyOn(internals, "ensureWorker").mockImplementation(async () => {
+    internals.child = { kill: () => {} };
+    (service as unknown as { loading: Promise<unknown> }).loading = Promise.resolve();
+    return { model: "small", device: "cuda" };
+  });
   const close = vi.spyOn(service, "close");
   try {
     const first = await service.start({ natural: false }, true);
@@ -157,6 +165,38 @@ it("reloads a warm recognizer when dictation starts with other settings", async 
     inspect.mockRestore();
     close.mockRestore();
     internals.child = undefined;
+    service.close();
+  }
+});
+
+it("closes the worker and fails pending requests when the worker stdin errors", async () => {
+  const { EventEmitter } = await import("node:events");
+  const { PassThrough } = await import("node:stream");
+  const stdin = Object.assign(new EventEmitter(), { write: vi.fn() });
+  const child = Object.assign(new EventEmitter(), {
+    stdin,
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(),
+  });
+  const service = new LocalVoiceService();
+  const internals = service as unknown as {
+    ensureWorker: () => Promise<unknown>;
+    child?: unknown;
+    requests: Map<string, unknown>;
+  };
+  try {
+    // Mirror the real spawn site: worker startup registers the stdin error handler.
+    spawnOverride.child = child;
+    const starting = internals.ensureWorker();
+    starting.catch(() => undefined);
+    spawnOverride.child = undefined;
+    expect(stdin.listenerCount("error")).toBeGreaterThan(0);
+    expect(() => stdin.emit("error", new Error("EPIPE"))).not.toThrow();
+    await expect(starting).rejects.toThrow("Local voice needs Python");
+    expect(child.kill).toHaveBeenCalled();
+    expect(internals.child).toBeUndefined();
+  } finally {
     service.close();
   }
 });
