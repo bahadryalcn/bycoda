@@ -10865,5 +10865,16 @@
   "Turn ending preference could not be saved. Try again.": "La préférence de fin de tour n’a pas pu être enregistrée. Réessayez.",
   "Assistant status": "État de l’assistant",
   "Read briefing": "Lire le compte rendu",
-  "Related work": "Travail associé"
+  "Related work": "Travail associé",
+  "Could not save group visibility. Please try again.": "Impossible d'enregistrer la visibilité du groupe. Réessayez.",
+  "Refresh and review the pull request before merging.": "Actualisez et examinez la pull request avant de la fusionner.",
+  "Failed at {p0}": "Échec à l'étape {p0}",
+  "took {p0}": "durée : {p0}",
+  "Supervision recorded": "Supervision enregistrée",
+  "Attachments cannot be added while this conversation changes. Try again.": "Impossible d'ajouter des pièces jointes pendant que cette conversation change. Réessayez.",
+  "Could not copy the path to the clipboard.": "Impossible de copier le chemin dans le presse-papiers.",
+  "Could not open the link": "Impossible d'ouvrir le lien",
+  "Unconfirmed": "Non confirmé",
+  "Format document": "Formater le document",
+  "Editor actions": "Actions de l'éditeur"
 }

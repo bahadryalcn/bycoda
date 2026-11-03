@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { useEffect, useMemo, useState } from "react";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { AlertCircle, CircleX, ExternalLink } from "../../../shared/ui/icons";
@@ -111,20 +111,19 @@ function CheckAnnotation({
       : null;
   const location = `${annotation.path}${validLine ? `:${annotation.line}` : ""}`;
   const [messageTitle, ...messageLines] = annotation.message.split(/\r?\n/);
-  const levelLabel = annotation.level === "failure"
-    ? t("Failed")
-    : annotation.level === "warning"
-      ? t("Warning")
-      : annotation.level;
+  const levelLabel =
+    annotation.level === "failure"
+      ? t("Failed")
+      : annotation.level === "warning"
+        ? t("Warning")
+        : annotation.level;
   const Mark = annotation.level === "failure" ? CircleX : AlertCircle;
   return (
     <Surface variant="outline" padding="none" className="overflow-hidden">
       {annotation.path ? (
         <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-fill-subtle) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
           <FileTypeIcon name={annotation.path} isDir={false} />
-          <span className="min-w-0 flex-1 break-all">
-            {location}
-          </span>
+          <span className="min-w-0 flex-1 break-all">{location}</span>
           {fileUrl ? (
             <Button
               iconOnly
@@ -133,7 +132,7 @@ function CheckAnnotation({
               type="button"
               tooltip={t("View source at the checked commit")}
               aria-label={t("View {p0} on GitHub", { p0: location })}
-              onClick={() => void openUrl(fileUrl)}
+              onClick={() => openUrlSafely(fileUrl)}
               className="-my-1 -mr-1 shrink-0"
             >
               <ExternalLink className="icon-xs" strokeWidth={1.75} />
@@ -168,7 +167,13 @@ function CheckAnnotation({
         />
         <div className="min-w-0 flex-1">
           <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
-            {levelLabel ? <><span className="font-medium text-(--ui-tone-neutral-fg)">{levelLabel}</span>{" · "}</> : null}{messageTitle}
+            {levelLabel ? (
+              <>
+                <span className="font-medium text-(--ui-tone-neutral-fg)">{levelLabel}</span>
+                {" · "}
+              </>
+            ) : null}
+            {messageTitle}
           </p>
           {messageLines.length ? (
             <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-ui-micro leading-relaxed text-(--ui-text-secondary)">

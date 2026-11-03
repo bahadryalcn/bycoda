@@ -10865,5 +10865,16 @@
   "Turn ending preference could not be saved. Try again.": "発話終了の設定を保存できませんでした。もう一度お試しください。",
   "Assistant status": "アシスタントの状態",
   "Read briefing": "報告を読む",
-  "Related work": "関連する作業"
+  "Related work": "関連する作業",
+  "Could not save group visibility. Please try again.": "グループの表示設定を保存できませんでした。もう一度お試しください。",
+  "Refresh and review the pull request before merging.": "マージする前にプルリクエストを更新して確認してください。",
+  "Failed at {p0}": "{p0} で失敗",
+  "took {p0}": "所要時間 {p0}",
+  "Supervision recorded": "監督を記録しました",
+  "Attachments cannot be added while this conversation changes. Try again.": "この会話の変更中は添付ファイルを追加できません。もう一度お試しください。",
+  "Could not copy the path to the clipboard.": "パスをクリップボードにコピーできませんでした。",
+  "Could not open the link": "リンクを開けませんでした",
+  "Unconfirmed": "未確認",
+  "Format document": "ドキュメントを整形",
+  "Editor actions": "エディターの操作"
 }

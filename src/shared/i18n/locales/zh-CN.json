@@ -10865,5 +10865,16 @@
   "Turn ending preference could not be saved. Try again.": "无法保存结束发言偏好。请重试。",
   "Assistant status": "助手状态",
   "Read briefing": "阅读简报",
-  "Related work": "相关工作"
+  "Related work": "相关工作",
+  "Could not save group visibility. Please try again.": "无法保存分组可见性。请重试。",
+  "Refresh and review the pull request before merging.": "合并前请刷新并检查拉取请求。",
+  "Failed at {p0}": "在 {p0} 失败",
+  "took {p0}": "耗时 {p0}",
+  "Supervision recorded": "已记录监督",
+  "Attachments cannot be added while this conversation changes. Try again.": "此对话变更期间无法添加附件。请重试。",
+  "Could not copy the path to the clipboard.": "无法将路径复制到剪贴板。",
+  "Could not open the link": "无法打开链接",
+  "Unconfirmed": "未确认",
+  "Format document": "格式化文档",
+  "Editor actions": "编辑器操作"
 }

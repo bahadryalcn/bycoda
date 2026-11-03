@@ -18,7 +18,7 @@ import {
   type RepairGroup,
 } from "./CheckRepairProgress";
 import { CheckEvidence } from "./CheckEvidence";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -258,11 +258,20 @@ function PrCheckRow({
     .find((annotation) => annotation.level === "failure")
     ?.message.split(/\r?\n/)
     .find((line) => line.trim());
-  const subtitle = failureMessage || (failedStep ? `Failed at ${failedStep}` : status);
-  const title = `${check.name} · ${status}${duration ? `, took ${duration}` : ""}${workflow ? `, ${workflow}` : ""}`;
+  const subtitle =
+    failureMessage || (failedStep ? t("Failed at {p0}", { p0: failedStep }) : status);
+  const title = `${check.name} · ${status}${duration ? `, ${t("took {p0}", { p0: duration })}` : ""}${workflow ? `, ${workflow}` : ""}`;
   const rowHint = useTooltip({
-    label: [check.name, workflow, failureMessage || failedStep ? subtitle : undefined, status, duration,
-      failureMessage && failedStep ? t("Failed at {p0}", { p0: failedStep }) : undefined].filter(Boolean).join("\n"),
+    label: [
+      check.name,
+      workflow,
+      failureMessage || failedStep ? subtitle : undefined,
+      status,
+      duration,
+      failureMessage && failedStep ? t("Failed at {p0}", { p0: failedStep }) : undefined,
+    ]
+      .filter(Boolean)
+      .join("\n"),
     when: "overflow",
   });
   const url = check.url;
@@ -310,7 +319,8 @@ function PrCheckRow({
         rowHint.trigger.onPointerEnter(event);
       }}
       onPointerOver={(event) => {
-        if (event.target instanceof Element && event.target.closest("[data-no-drag]")) rowHint.hide();
+        if (event.target instanceof Element && event.target.closest("[data-no-drag]"))
+          rowHint.hide();
         else rowHint.trigger.onPointerEnter(event);
       }}
       onFocus={(event) => {
@@ -346,14 +356,12 @@ function PrCheckRow({
             className="w-full min-w-0 flex-1 text-left"
             type="button"
             aria-label={title}
-            onClick={() => void openUrl(url)}
+            onClick={() => openUrlSafely(url)}
           >
             {body}
           </Button>
         ) : (
-          <div className={className}>
-            {body}
-          </div>
+          <div className={className}>{body}</div>
         )}
         <span className={`shrink-0 text-left ${wideStatus ? "w-24" : "w-14"}`}>
           {repairItem ? (
@@ -420,7 +428,7 @@ function PrCheckRow({
             tooltip={t("View full log")}
             aria-label={t("Open {p0} check", { p0: check.name })}
             data-no-drag=""
-            onClick={() => void openUrl(url)}
+            onClick={() => openUrlSafely(url)}
           >
             <ExternalLink className="icon-xs" strokeWidth={1.75} />
           </Button>
@@ -501,7 +509,9 @@ function PrCheckRow({
                 <EmptyState
                   size="inline"
                   kind="empty"
-                  description={t("No error annotations reported. View the full log at the check URL.")}
+                  description={t(
+                    "No error annotations reported. View the full log at the check URL.",
+                  )}
                 />
               ) : null}
               {details.log ? (
@@ -570,9 +580,7 @@ export function InboxPrChecks({
   );
   if (selection && !selectionValid) setSelection(null);
   if (loading && !checks && !error) {
-    return (
-      <LoadingText className="py-5">{t("Loading checks…")}</LoadingText>
-    );
+    return <LoadingText className="py-5">{t("Loading checks…")}</LoadingText>;
   }
   if (!checks && error) {
     return (
@@ -634,12 +642,17 @@ export function InboxPrChecks({
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
             <h2 className="text-ui-title font-medium leading-snug">{t(headline)}</h2>
             {stale ? (
-              <span className="text-ui-caption text-(--ui-tone-warning-fg)">{t("Saved results")}</span>
+              <span className="text-ui-caption text-(--ui-tone-warning-fg)">
+                {t("Saved results")}
+              </span>
             ) : null}
           </div>
           {checks?.headOid ? (
             <p className="mt-1 break-all text-ui-caption text-(--ui-text-secondary)">
-              {t("Checked commit")}: <span className="font-mono" title={checks.headOid}>{checks.headOid.slice(0, 12)}</span>
+              {t("Checked commit")}:{" "}
+              <span className="font-mono" title={checks.headOid}>
+                {checks.headOid.slice(0, 12)}
+              </span>
             </p>
           ) : null}
           {summary ? (

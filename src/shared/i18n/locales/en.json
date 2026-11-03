@@ -10867,5 +10867,14 @@
   "Editor actions": "Editor actions",
   "Assistant status": "Assistant status",
   "Read briefing": "Read briefing",
-  "Related work": "Related work"
+  "Related work": "Related work",
+  "Could not save group visibility. Please try again.": "Could not save group visibility. Please try again.",
+  "Refresh and review the pull request before merging.": "Refresh and review the pull request before merging.",
+  "Failed at {p0}": "Failed at {p0}",
+  "took {p0}": "took {p0}",
+  "Supervision recorded": "Supervision recorded",
+  "Attachments cannot be added while this conversation changes. Try again.": "Attachments cannot be added while this conversation changes. Try again.",
+  "Could not copy the path to the clipboard.": "Could not copy the path to the clipboard.",
+  "Could not open the link": "Could not open the link",
+  "Unconfirmed": "Unconfirmed"
 }

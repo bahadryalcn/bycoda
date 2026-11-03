@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { t, useLocale } from "../../../shared/i18n";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { useEffect, useState } from "react";
 import {
   linkedWorkItemActivityPrompt,
@@ -111,7 +111,7 @@ export function LinkedWorkItemUpdateNotice({
       onOpenDiscussion();
       return;
     }
-    void openUrl(latest?.url || card.url);
+    openUrlSafely(latest?.url || card.url);
   };
   const dismiss = () => {
     onAcknowledge();
@@ -147,7 +147,7 @@ export function LinkedWorkItemUpdateNotice({
           type="button"
           onClick={() => {
             onAcknowledge();
-            void openUrl(card.url);
+            openUrlSafely(card.url);
           }}
           className="block w-full text-left"
         >
@@ -173,7 +173,7 @@ export function LinkedWorkItemUpdateNotice({
                 onClick={() => {
                   if (entry.url) {
                     onAcknowledge();
-                    void openUrl(entry.url);
+                    openUrlSafely(entry.url);
                   }
                 }}
                 className="w-full text-left"

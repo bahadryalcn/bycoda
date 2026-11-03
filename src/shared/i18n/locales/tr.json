@@ -10867,5 +10867,14 @@
   "Editor actions": "Editör işlemleri",
   "Assistant status": "Asistan durumu",
   "Read briefing": "Özeti oku",
-  "Related work": "İlgili çalışmalar"
+  "Related work": "İlgili çalışmalar",
+  "Could not save group visibility. Please try again.": "Grup görünürlüğü kaydedilemedi. Lütfen tekrar deneyin.",
+  "Refresh and review the pull request before merging.": "Birleştirmeden önce çekme isteğini yenileyip inceleyin.",
+  "Failed at {p0}": "{p0} adımında başarısız",
+  "took {p0}": "{p0} sürdü",
+  "Supervision recorded": "Denetim kaydedildi",
+  "Attachments cannot be added while this conversation changes. Try again.": "Bu konuşma değişirken ek eklenemez. Tekrar deneyin.",
+  "Could not copy the path to the clipboard.": "Yol panoya kopyalanamadı.",
+  "Could not open the link": "Bağlantı açılamadı",
+  "Unconfirmed": "Doğrulanmadı"
 }

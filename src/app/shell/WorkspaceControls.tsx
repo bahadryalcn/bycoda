@@ -61,6 +61,7 @@ export function WorkspaceControls({
           motion="none"
           key={id}
           type="button"
+          data-workspace-control={id}
           aria-pressed={active === id}
           onClick={onClick}
         >

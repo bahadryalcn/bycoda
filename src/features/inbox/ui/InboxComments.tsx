@@ -8,7 +8,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { providerLabel } from "../../../shared/lib/providerLabel";
 import { t, useLocale } from "../../../shared/i18n";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
   useEffect,
   useId,
@@ -180,9 +180,7 @@ export function InboxComments({
             {moreOn}
           </span>
         ) : null}
-        {loading ? (
-          <Spinner size="xs" className="text-(--ui-text-secondary)" />
-        ) : null}
+        {loading ? <Spinner size="xs" className="text-(--ui-text-secondary)" /> : null}
       </div>
       {error ? (
         <Alert tone="info" role="alert">
@@ -240,7 +238,9 @@ const pendingCommentDrafts = new Set<string>();
 const pendingCommentListeners = new Set<() => void>();
 function subscribePendingComments(listener: () => void) {
   pendingCommentListeners.add(listener);
-  return () => { pendingCommentListeners.delete(listener); };
+  return () => {
+    pendingCommentListeners.delete(listener);
+  };
 }
 function setCommentPending(key: string, pending: boolean) {
   if (pending) pendingCommentDrafts.add(key);
@@ -271,8 +271,11 @@ export function InboxCommentForm({
   const localDraftId = useId();
   const draftIdentity = `inbox:comment:${draftKey ?? localDraftId}`;
   const [draft, setDraft] = useRetainedState(draftIdentity, "");
-  const pending = useSyncExternalStore(subscribePendingComments,
-    () => pendingCommentDrafts.has(draftIdentity), () => false);
+  const pending = useSyncExternalStore(
+    subscribePendingComments,
+    () => pendingCommentDrafts.has(draftIdentity),
+    () => false,
+  );
   const busy = posting || pending;
   const submitting = useRef(false);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -454,7 +457,7 @@ function InboxComment({
                           ? t("Open on ADO")
                           : t("Open on GitHub")
                 }
-                onClick={() => void openUrl(comment.url)}
+                onClick={() => openUrlSafely(comment.url)}
               >
                 {part}
               </Button>
@@ -811,7 +814,7 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
           tooltip={commit.url ? t("Open commit") : commit.messageHeadline}
           tooltipWhen={commit.url ? "always" : "overflow"}
           disabled={!commit.url}
-          onClick={() => void openUrl(commit.url)}
+          onClick={() => openUrlSafely(commit.url)}
           className="w-full min-w-0 text-left"
         >
           <span className="min-w-0 flex-1 truncate text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg) group-disabled:text-(--ui-text-secondary)">

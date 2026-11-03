@@ -10865,5 +10865,16 @@
   "Turn ending preference could not be saved. Try again.": "Não foi possível salvar a preferência de fim de turno. Tente novamente.",
   "Assistant status": "Estado do assistente",
   "Read briefing": "Ler o resumo",
-  "Related work": "Trabalho relacionado"
+  "Related work": "Trabalho relacionado",
+  "Could not save group visibility. Please try again.": "Não foi possível salvar a visibilidade do grupo. Tente novamente.",
+  "Refresh and review the pull request before merging.": "Atualize e revise o pull request antes de fazer o merge.",
+  "Failed at {p0}": "Falhou em {p0}",
+  "took {p0}": "levou {p0}",
+  "Supervision recorded": "Supervisão registrada",
+  "Attachments cannot be added while this conversation changes. Try again.": "Não é possível adicionar anexos enquanto esta conversa muda. Tente novamente.",
+  "Could not copy the path to the clipboard.": "Não foi possível copiar o caminho para a área de transferência.",
+  "Could not open the link": "Não foi possível abrir o link",
+  "Unconfirmed": "Não confirmado",
+  "Format document": "Formatar documento",
+  "Editor actions": "Ações do editor"
 }

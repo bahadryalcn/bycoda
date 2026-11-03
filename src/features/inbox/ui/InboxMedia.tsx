@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { t, useLocale } from "../../../shared/i18n";
+import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { fetchInboxMedia, sniffInboxMedia, type InboxMediaType } from "../model/inboxMedia";
 
@@ -14,6 +15,7 @@ type LoadState =
   | { status: "error" };
 
 export function InboxMedia({ src, alt }: Props) {
+  useLocale();
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
@@ -74,7 +76,7 @@ export function InboxMedia({ src, alt }: Props) {
     );
   }
 
-  const label = alt?.trim() || "Image";
+  const label = alt?.trim() || t("Image");
   return (
     <img
       src={state.url}
@@ -85,7 +87,7 @@ export function InboxMedia({ src, alt }: Props) {
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        void openUrl(src);
+        openUrlSafely(src);
       }}
     />
   );
@@ -99,7 +101,7 @@ function MediaFallback({ src, alt }: { src: string; alt?: string }) {
       className="text-(--ui-tone-info-fg) hover:text-(--ui-tone-info-fg) hover:underline"
       onClick={(event) => {
         event.preventDefault();
-        void openUrl(src);
+        openUrlSafely(src);
       }}
     >
       {label}

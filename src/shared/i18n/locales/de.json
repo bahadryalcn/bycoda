@@ -10865,5 +10865,16 @@
   "Turn ending preference could not be saved. Try again.": "Die Einstellung zum Gesprächsende konnte nicht gespeichert werden. Versuche es erneut.",
   "Assistant status": "Assistentenstatus",
   "Read briefing": "Bericht lesen",
-  "Related work": "Zugehörige Arbeit"
+  "Related work": "Zugehörige Arbeit",
+  "Could not save group visibility. Please try again.": "Die Gruppensichtbarkeit konnte nicht gespeichert werden. Versuche es erneut.",
+  "Refresh and review the pull request before merging.": "Aktualisiere den Pull Request und prüfe ihn, bevor du ihn zusammenführst.",
+  "Failed at {p0}": "Fehlgeschlagen bei {p0}",
+  "took {p0}": "dauerte {p0}",
+  "Supervision recorded": "Überwachung aufgezeichnet",
+  "Attachments cannot be added while this conversation changes. Try again.": "Anhänge können nicht hinzugefügt werden, solange sich diese Unterhaltung ändert. Versuche es erneut.",
+  "Could not copy the path to the clipboard.": "Der Pfad konnte nicht in die Zwischenablage kopiert werden.",
+  "Could not open the link": "Der Link konnte nicht geöffnet werden",
+  "Unconfirmed": "Unbestätigt",
+  "Format document": "Dokument formatieren",
+  "Editor actions": "Editor-Aktionen"
 }

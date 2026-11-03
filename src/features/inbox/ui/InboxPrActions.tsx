@@ -164,7 +164,7 @@ export function GithubPrActions({
       ["merge", "squash", "rebase"].includes(action) &&
       !/^[a-f0-9]{40}$/i.test(reviewedHeadOid ?? "")
     ) {
-      setActionError("Refresh and review the pull request before merging.");
+      setActionError(t("Refresh and review the pull request before merging."));
       return;
     }
     setConfirmation({ action, anchor, expectedHeadOid: reviewedHeadOid });
