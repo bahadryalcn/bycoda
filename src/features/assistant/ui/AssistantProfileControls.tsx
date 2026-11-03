@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Field } from "../../../shared/ui/Field";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -101,10 +101,12 @@ export function AssistantHourRange({
   onChange: (start: number, end: number) => void;
 }) {
   const work = kind === "work";
-  const remembered = useRef(
+  // The last non-empty range, restored when the range is switched back on.
+  const [remembered, setRemembered] = useState(() =>
     start !== end ? { start, end } : work ? { start: 9, end: 17 } : { start: 22, end: 8 },
   );
-  if (start !== end) remembered.current = { start, end };
+  if (start !== end && (remembered.start !== start || remembered.end !== end))
+    setRemembered({ start, end });
   const enabled = start !== end;
   const [editingRange, setEditingRange] = useState(enabled);
   return (
@@ -115,7 +117,7 @@ export function AssistantHourRange({
         onCheckedChange={(checked) => {
           const rangeEnabled = work ? !checked : checked;
           setEditingRange(rangeEnabled);
-          if (rangeEnabled) onChange(remembered.current.start, remembered.current.end);
+          if (rangeEnabled) onChange(remembered.start, remembered.end);
           else onChange(start, start);
         }}
       />
