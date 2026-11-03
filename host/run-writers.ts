@@ -5,7 +5,9 @@ import { canonicalWorkspacePath, workspacePathKey } from "./workspace-paths";
 
 function isBrokenPipe(error: unknown): boolean {
   const code = (error as { code?: unknown } | undefined)?.code;
-  return code === "EPIPE" || code === "ERR_STREAM_DESTROYED" || code === "ERR_STREAM_WRITE_AFTER_END";
+  return (
+    code === "EPIPE" || code === "ERR_STREAM_DESTROYED" || code === "ERR_STREAM_WRITE_AFTER_END"
+  );
 }
 
 export type HostRunSource = Readonly<{
@@ -533,7 +535,7 @@ export class HostRunWriters {
     for (const group of run.bindings.values())
       for (const binding of group) binding.accepting = false;
     const finishing = (async () => {
-      while (run.work.size) await Promise.allSettled([...run.work]);
+      while (run.work.size) await Promise.allSettled(run.work);
       if (run.errors.length)
         throw new AggregateError(
           // Reported once; the same failure must not poison every later finish.
@@ -616,7 +618,7 @@ export class HostRunWriters {
 
   private async drainBinding(binding: Binding): Promise<void> {
     const ready = await Promise.allSettled([binding.ready]);
-    while (binding.work.size) await Promise.allSettled([...binding.work]);
+    while (binding.work.size) await Promise.allSettled(binding.work);
     const errors = [
       ...binding.errors,
       ...(binding.process.errors.length

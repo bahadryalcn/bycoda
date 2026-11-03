@@ -121,7 +121,7 @@ export function useEditorDraftRecovery(dependencies: Dependencies) {
           });
           if (
             !mounted.current ||
-            !Boolean(latest.current.enabled ?? true) ||
+            !(latest.current.enabled ?? true) ||
             !latest.current.allowPath(prepared.target.path)
           )
             throw new Error("Recovery path unavailable");

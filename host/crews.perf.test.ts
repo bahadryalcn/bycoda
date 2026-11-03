@@ -8,11 +8,11 @@ import type { HostEngine } from "./engine";
 const stores: HostStore[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
-  await await forEachAsync(await stores.splice(0), async (store) => await store.close());
+  await forEachAsync(stores.splice(0), async (store) => await store.close());
 });
 async function setup() {
   const store = new HostStore(":memory:");
-  await stores.push(store);
+  stores.push(store);
   await store.addProject("/crew-idle", "Idle");
   const tasks = { list: () => [], tick: vi.fn() };
   const engine = { command: vi.fn(), updateSession: vi.fn() };

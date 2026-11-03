@@ -12,7 +12,7 @@ let unsubscribe: (() => void) | null = null;
 
 function settle(): void {
   const sessions = getSessions();
-  for (const [sessionId, picks] of [...waiting]) {
+  for (const [sessionId, picks] of Array.from(waiting)) {
     const session = sessions.find((entry) => entry.id === sessionId);
     // A closed conversation takes no pick; nothing is lost with it.
     if (session && isPreparingHandoff(session)) continue;

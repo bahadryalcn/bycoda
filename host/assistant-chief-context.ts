@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import type { HostStore } from "./store";
 import type { AssistantPorts } from "./assistant/service";
 import { AssistantRepository, type RecordValue } from "./assistant/repository";
-import { chiefActions,chiefReadRequests, type AssistantTextRunner } from "./assistant-text";
+import { chiefActions, chiefReadRequests, type AssistantTextRunner } from "./assistant-text";
 import { assistantTextLimits } from "./assistant-text-budget";
-import {chiefBriefingCycle,chiefContextLimits} from "./assistant-chief-policy";
-import {modelContextWindow} from "../src/features/sessions/model/models";
+import { chiefBriefingCycle, chiefContextLimits } from "./assistant-chief-policy";
+import { modelContextWindow } from "../src/features/sessions/model/models";
 
 type Wake = Parameters<NonNullable<AssistantPorts["chiefWake"]>>[0];
 type Result = Awaited<ReturnType<NonNullable<AssistantPorts["chiefWake"]>>>;
@@ -33,7 +33,7 @@ type Context = {
     epoch: string;
     threadId?: string;
     estimatedTokens: number;
-    contextWindow?:number;
+    contextWindow?: number;
     estimateSource?: "text-estimate" | "compacted-handoff-estimate";
     lastCompaction?: { operationId: string; at: number };
   };
@@ -162,7 +162,7 @@ export function createAssistantChiefContext(
       SUMMARY_BYTES,
     );
   }
-  function compact(context: Context, renew: boolean, day=context.day): Context {
+  function compact(context: Context, renew: boolean, day = context.day): Context {
     return {
       ...context,
       summary: summarize(context),
@@ -249,8 +249,8 @@ export function createAssistantChiefContext(
       current = await reconcile((await read<Context>(CONTEXT)) ?? initial());
       const previousGeneration = current.generation,
         previousCompactions = current.compactions;
-      const schedule=await read<{time:string}>("briefingSchedule");
-      const day = chiefBriefingCycle(now(),schedule?.time);
+      const schedule = await read<{ time: string }>("briefingSchedule");
+      const day = chiefBriefingCycle(now(), schedule?.time);
       dispatchPrompt = prompt(input, current);
       const retainedEstimate = estimatedTokens(dispatchPrompt);
       const executionBinding = createHash("sha256")
@@ -258,18 +258,29 @@ export function createAssistantChiefContext(
         .digest("hex");
       const providerEstimate =
         current.provider?.binding === executionBinding ? current.provider.estimatedTokens : 0;
-      const execution=input.profile.execution;
-      const catalogWindow=execution?modelContextWindow(execution.model):undefined;
-      const explicitWindow=execution?.harness==="claude"?({"200k":200000,"1m":1000000} as Record<string,number>)[execution.modelSettings.context]:undefined;
-      const observedWindow=current.provider?.binding===executionBinding?current.provider.contextWindow:undefined;
-      const windows=[explicitWindow??catalogWindow,observedWindow].filter((value):value is number=>Number.isSafeInteger(value)&&value!>0);
-      const limits=chiefContextLimits(input.contextPolicy,windows.length?Math.min(...windows):undefined);
+      const execution = input.profile.execution;
+      const catalogWindow = execution ? modelContextWindow(execution.model) : undefined;
+      const explicitWindow =
+        execution?.harness === "claude"
+          ? ({ "200k": 200000, "1m": 1000000 } as Record<string, number>)[
+              execution.modelSettings.context
+            ]
+          : undefined;
+      const observedWindow =
+        current.provider?.binding === executionBinding ? current.provider.contextWindow : undefined;
+      const windows = [explicitWindow ?? catalogWindow, observedWindow].filter(
+        (value): value is number => Number.isSafeInteger(value) && value! > 0,
+      );
+      const limits = chiefContextLimits(
+        input.contextPolicy,
+        windows.length ? Math.min(...windows) : undefined,
+      );
       if (
         current.day !== day ||
         Math.max(retainedEstimate, providerEstimate) >= limits.hard ||
         bytes(dispatchPrompt) > CHIEF_CONTEXT_MAX_BYTES
       )
-        current = compact(current, true,day);
+        current = compact(current, true, day);
       else if (
         Math.max(retainedEstimate, providerEstimate) >= limits.soft ||
         current.journal.length >= 256
@@ -411,7 +422,9 @@ export function createAssistantChiefContext(
       const actions = chiefActions(response.text);
       const result: Result = {
         actions,
-        ...(chiefReadRequests(response.text).length?{reads:chiefReadRequests(response.text)}:{}),
+        ...(chiefReadRequests(response.text).length
+          ? { reads: chiefReadRequests(response.text) }
+          : {}),
         ...(response.tokens === undefined ? {} : { tokens: response.tokens }),
       };
       await store.transaction(async () => {
@@ -438,7 +451,9 @@ export function createAssistantChiefContext(
             ? {
                 provider: {
                   ...latest.provider,
-                  ...(Number.isSafeInteger(response.contextWindow)&&response.contextWindow!>0?{contextWindow:response.contextWindow}:{}),
+                  ...(Number.isSafeInteger(response.contextWindow) && response.contextWindow! > 0
+                    ? { contextWindow: response.contextWindow }
+                    : {}),
                   estimatedTokens:
                     latest.provider.estimatedTokens +
                     estimatedTokens(dispatchPrompt) +
@@ -487,10 +502,10 @@ export function createAssistantChiefContext(
             ...(operation?.compaction ? { compaction: operation.compaction } : {}),
           });
         }, "critical");
-      } finally {
+      } catch {
         // A failed final write still leaves the durable started receipt; it is never replayable.
-        throw new AssistantChiefContextUnknownError(input.operationId);
       }
+      throw new AssistantChiefContextUnknownError(input.operationId);
     }
   }
   return {

@@ -17,6 +17,7 @@ import {
   type DesktopControlRequest,
   type DesktopControlResponse,
 } from "../src/shared/model/host-contracts/desktop-control";
+import { hasControlCharacters } from "../src/shared/lib/controlCharacters";
 
 export type DesktopControlPrincipal = { kind: "owner" | "assistant" | "chief"; id: string };
 export type DesktopRunner = (
@@ -256,15 +257,26 @@ export class HostDesktopControl {
     return this.auditDraining;
   }
   /** Cheap owner-only indicator data: no binary hashing, helper command or app contents. */
-  async indicatorStatus(principal:DesktopControlPrincipal,authorized:()=>boolean|Promise<boolean>){
+  async indicatorStatus(
+    principal: DesktopControlPrincipal,
+    authorized: () => boolean | Promise<boolean>,
+  ) {
     this.owner(principal);
-    if(!principal.id||principal.id.length>200)throw new Error("A captured desktop principal is required.");
-    return this.requestAuthorities.run(authorized,async()=>{
-      await this.ready;if(this.closing)throw new Error("Desktop control is closing.");
+    if (!principal.id || principal.id.length > 200)
+      throw new Error("A captured desktop principal is required.");
+    return this.requestAuthorities.run(authorized, async () => {
+      await this.ready;
+      if (this.closing) throw new Error("Desktop control is closing.");
       await this.authorize(principal);
-      const configuration=await this.configuration();
-      const status={enabled:configuration.enabled,active:!!this.active,stopped:this.halted,...(this.currentAction?{currentAction:{...this.currentAction}}:{})};
-      await this.authorize(principal);return status;
+      const configuration = await this.configuration();
+      const status = {
+        enabled: configuration.enabled,
+        active: !!this.active,
+        stopped: this.halted,
+        ...(this.currentAction ? { currentAction: { ...this.currentAction } } : {}),
+      };
+      await this.authorize(principal);
+      return status;
     });
   }
   async request(
@@ -522,7 +534,7 @@ export class HostDesktopControl {
     if (input.op === "launch") {
       if (
         input.app.startsWith("-") ||
-        /[\x00-\x1f]/.test(input.app) ||
+        hasControlCharacters(input.app, false) ||
         !configuration.allowedApps.includes(input.app)
       )
         throw new Error("The app is outside the owner's desktop allowlist.");
@@ -689,7 +701,7 @@ export class HostDesktopControl {
         this.owner(principal);
         if (
           input.configuration.allowedApps.some(
-            (app) => app.startsWith("-") || /[\x00-\x1f]/.test(app),
+            (app) => app.startsWith("-") || hasControlCharacters(app, false),
           )
         )
           throw new Error("Desktop app names must be plain non-option names.");
@@ -1035,7 +1047,7 @@ export class HostDesktopControl {
           input.action === "press" &&
           (!input.text ||
             input.text.length > 100 ||
-            /[\x00-\x1f]/.test(input.text) ||
+            hasControlCharacters(input.text, false) ||
             isForbiddenDesktopShortcut(input.text))
         )
           throw new Error("Invalid scoped keyboard shortcut.");

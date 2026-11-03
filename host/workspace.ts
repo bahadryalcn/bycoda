@@ -194,7 +194,7 @@ export async function listHostFiles(root: string, input: unknown): Promise<HostF
       /* no ignored entries or a non-Git folder */
     }
   }
-  const out: HostFileEntry[] = new Array(visible.length);
+  const out = Array.from<HostFileEntry>({ length: visible.length });
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(8, visible.length) }, async () => {
@@ -1153,7 +1153,7 @@ async function cachedHostNumstat(root: string, head: string, status: string): Pr
     }
     // Avoid turning a very large refresh into another unbounded metadata walk.
     if (paths.length > 512) return read();
-    const stamps: string[] = new Array(paths.length);
+    const stamps = Array.from<string>({ length: paths.length });
     let next = 0;
     await Promise.all(
       Array.from({ length: Math.min(8, paths.length) }, async () => {

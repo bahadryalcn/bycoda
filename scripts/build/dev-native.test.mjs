@@ -151,6 +151,7 @@ test("failed build reports its bounded diagnostic tail and redacts common creden
     assert.match(error.message, /error: native build failed/);
     assert.match(error.message, /Bearer \[redacted\]/);
     assert.match(error.message, /api_key=\[redacted\]/);
+    // oxlint-disable-next-line no-control-regex -- ANSI escapes must be stripped
     assert.doesNotMatch(error.message, /private-token|private-key|\x1b/);
     assert(error.message.length < 4100);
     return true;

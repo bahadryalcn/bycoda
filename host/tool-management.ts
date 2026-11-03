@@ -278,7 +278,7 @@ export function createManagedToolCatalog(
         group === "conversation" &&
         requestFields.length &&
         (/^crews\.(start|assign|request|resolve|respond|answer)$/.test(action) ||
-          /^inbox\./.test(action) ||
+          action.startsWith("inbox.") ||
           action === "devices.preview" ||
           action === "terminals.create" ||
           [
@@ -354,7 +354,7 @@ export function createManagedToolCatalog(
                   "desktop.screenshot",
                 ].includes(action)
               ? "image"
-              : /^ui\./.test(action) || action === "browser.preview"
+              : action.startsWith("ui.") || action === "browser.preview"
                 ? "native-panel"
                 : "none";
       const capability: ManagedTool["capability"] = !supported

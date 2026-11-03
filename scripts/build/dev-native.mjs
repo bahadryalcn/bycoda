@@ -116,6 +116,7 @@ export function supervisedChild(command, args, { cwd, env, children }) {
 
 function childFailureDetail(child) {
   return String(child.failure ?? "")
+    // oxlint-disable-next-line no-control-regex -- strip ANSI escape sequences
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[redacted]")
     .replace(

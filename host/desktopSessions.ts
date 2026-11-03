@@ -419,11 +419,11 @@ export class DesktopSessions {
     this.stamps.clear();
     this.metadataCache.clear();
     this.listSnapshots.clear();
-    for (const path of [...this.handles.keys()]) this.drop(path);
+    for (const path of Array.from(this.handles.keys())) this.drop(path);
   }
   /** Read workers release OS handles before replying; metadata stays cached. */
   releaseReadHandles(): void {
-    for (const path of [...this.handles.keys()]) this.drop(path);
+    for (const path of Array.from(this.handles.keys())) this.drop(path);
   }
   async closeAsync(): Promise<void> {
     const reader = this.metadataReader;
@@ -556,7 +556,9 @@ export class DesktopSessions {
   private summaryOf({ row, inFlight }: Found, projectId: string): HostSessionSummary {
     const updatedAt = Number(row.updated_at);
     return {
-      ...(assistantSessionManagement(parse(row.assistant_management_json))?{managedBy:assistantSessionManagement(parse(row.assistant_management_json))}:{}),
+      ...(assistantSessionManagement(parse(row.assistant_management_json))
+        ? { managedBy: assistantSessionManagement(parse(row.assistant_management_json)) }
+        : {}),
       projectId,
       revision: updatedAt,
       status: inFlight ? "running" : "idle",
@@ -1312,7 +1314,9 @@ export class DesktopSessions {
     // The transcript this desktop last agreed on with the host; an older app has no column.
     const adoptedBase = parseHead(parse(row.adopted_base));
     const session: Omit<Session, "blocks"> = {
-      ...(assistantSessionManagement(parse(row.assistant_management_json))?{managedBy:assistantSessionManagement(parse(row.assistant_management_json))}:{}),
+      ...(assistantSessionManagement(parse(row.assistant_management_json))
+        ? { managedBy: assistantSessionManagement(parse(row.assistant_management_json)) }
+        : {}),
       id: String(row.id),
       harness: String(row.harness) as Session["harness"],
       model: String(row.model ?? ""),
@@ -1334,7 +1338,7 @@ export class DesktopSessions {
     };
     return {
       session,
-      ...(session.managedBy?{managedBy:session.managedBy}:{}),
+      ...(session.managedBy ? { managedBy: session.managedBy } : {}),
       ...(row.block_revisions
         ? { blockRevisions: row.block_revisions as Record<string, number> }
         : {}),

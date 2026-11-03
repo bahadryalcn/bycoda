@@ -771,8 +771,8 @@ function teardownBridge() {
   const pending = bridge;
   bridge = null;
   bridgeAttempt = null;
-  for (const routes of [...processRoutes.values()])
-    for (const state of [...routes]) {
+  for (const routes of Array.from(processRoutes.values()))
+    for (const state of Array.from(routes)) {
       state.cancelled = true;
       if (state.phase === "new" || state.phase === "preparing")
         state.reject(new Error("Harness bridge retired"));
@@ -987,7 +987,7 @@ export async function spawnChild(
       if (group && attempt) group.published = attempt.generation;
       // Retain the witness on every older original, including pending replies.
       // A successor exiting before that reply arrives cannot resurrect it.
-      for (const previous of [...(processRoutes.get(sessionId) ?? [])])
+      for (const previous of Array.from(processRoutes.get(sessionId) ?? []))
         if (previous !== state && previous.order > 0 && previous.order < state.order) {
           previous.retired = true;
           detachProcess(previous);
@@ -1119,22 +1119,27 @@ export function killChild(handle: ChildProcessHandle): Promise<void> {
             // to stop the original session instead of treating validation as exit.
             // Without a valid construction id native answers CONSTRUCTION_REQUIRED
             // (there is nothing addressable to stop); that is not a kill failure.
-            return state.invoke<void>("harness_kill", { sessionId: handle.sessionId }).catch(
-              (killError: unknown) => {
+            return state
+              .invoke<void>("harness_kill", { sessionId: handle.sessionId })
+              .catch((killError: unknown) => {
                 if (/NATIVE_PROCESS_CONSTRUCTION_REQUIRED/.test(String(killError))) {
                   console.warn("[child] kill skipped, spawn receipt was invalid", killError);
                   return;
                 }
                 throw killError;
-              },
-            );
+              });
           }
           console.warn("[child] kill skipped, spawn invoke rejected", error);
         })
   ).catch((error: unknown) => {
     // Do not cache a rejection; unknown/exited constructions are already gone.
     if (state.kill === run) state.kill = undefined;
-    if (state.exited || /^NATIVE_PROCESS_CONSTRUCTION_STALE$/.test(error instanceof Error ? error.message : String(error))) {
+    if (
+      state.exited ||
+      /^NATIVE_PROCESS_CONSTRUCTION_STALE$/.test(
+        error instanceof Error ? error.message : String(error),
+      )
+    ) {
       console.warn("[child] kill target already gone", error);
       return;
     }
@@ -1148,8 +1153,8 @@ export function killAllChildren(): Promise<void> {
   // A naturally ended child can still have undelivered buffered output here.
   // Native kill_all cannot cancel that already-removed lifetime for us.
   invalidateNativeOutputDelivery("children-reset");
-  for (const routes of [...processRoutes.values()])
-    for (const state of [...routes]) {
+  for (const routes of Array.from(processRoutes.values()))
+    for (const state of Array.from(routes)) {
       state.cancelled = true;
       if (state.phase === "new" || state.phase === "preparing")
         state.reject(new Error("Harness children reset"));

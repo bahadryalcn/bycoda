@@ -212,8 +212,10 @@ const request=JSON.parse(line); if(request.id!==undefined)console.log(JSON.strin
     await backend.close();
     releaseBridge();
     await store.close();
-    if (!directory.startsWith(base) || !directory.includes("bycoda-engine-run-wire-"))
-      throw new Error("Unsafe test cleanup");
+    expect(
+      directory.startsWith(base) && directory.includes("bycoda-engine-run-wire-"),
+      "Unsafe test cleanup",
+    ).toBe(true);
     rmSync(directory, { recursive: true, force: true, maxRetries: 5 });
   }
 });

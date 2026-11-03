@@ -1,5 +1,5 @@
+"use client";
 import { OverflowTooltip } from "../../Tooltip";
-("use client");
 
 import { useT } from "../../../i18n";
 

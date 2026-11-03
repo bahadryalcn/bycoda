@@ -777,7 +777,7 @@ it("continues one original bulk-delete across closure for twenty undrafted rows 
     await vi.waitFor(() =>
       expect(invoke.mock.calls.filter(([command]) => command === "notes_delete")).toHaveLength(1),
     );
-    const gate = close();
+    close();
     await expect(captureNotesInputs("target")).rejects.toMatchObject({ code: "busy" });
     await expect(deleteNote("fresh-closed-row", 1)).rejects.toThrow("Preparing checkpoint");
     await act(async () => firstResult.resolve());

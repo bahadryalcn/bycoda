@@ -178,7 +178,7 @@ export class HostCrews {
     this.stop();
     this.disposal = (async () => {
       await this.ready;
-      while (this.pending.size) await Promise.allSettled([...this.pending]);
+      while (this.pending.size) await Promise.allSettled(this.pending);
     })();
     return this.disposal;
   }

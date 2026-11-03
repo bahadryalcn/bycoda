@@ -352,14 +352,27 @@ export class StoreDatabase {
     return this.authorizations.run(guard, work);
   }
   /** Capture only authority, never an SQL owner or recovery/internal admission. */
-  async captureAuthorization():Promise<()=>Promise<void>>{
-    const owner=this.owners.getStore();if(owner&&owner.phase!=="open")throw new Error("Database operation escaped its closed owner scope.");
-    const original=this.authorizations.getStore();
-    if(original&&typeof original!=="function"&&this.ownsScope)throw new Error("Prepare structured authorization before SQL admission.");
-    const prepared=original&&typeof original!=="function"?await this.authorizations.exit(()=>original.prepare()):undefined;
-    const check=typeof original==="function"?original:original?.check;
-    const captured=async()=>{const current=this.owners.getStore();if(current&&current.phase!=="open")throw new Error("Database operation escaped its closed owner scope.");await this.authorize(check);if(prepared&&prepared!==check)await this.authorize(prepared);};
-    await captured();return captured;
+  async captureAuthorization(): Promise<() => Promise<void>> {
+    const owner = this.owners.getStore();
+    if (owner && owner.phase !== "open")
+      throw new Error("Database operation escaped its closed owner scope.");
+    const original = this.authorizations.getStore();
+    if (original && typeof original !== "function" && this.ownsScope)
+      throw new Error("Prepare structured authorization before SQL admission.");
+    const prepared =
+      original && typeof original !== "function"
+        ? await this.authorizations.exit(() => original.prepare())
+        : undefined;
+    const check = typeof original === "function" ? original : original?.check;
+    const captured = async () => {
+      const current = this.owners.getStore();
+      if (current && current.phase !== "open")
+        throw new Error("Database operation escaped its closed owner scope.");
+      await this.authorize(check);
+      if (prepared && prepared !== check) await this.authorize(prepared);
+    };
+    await captured();
+    return captured;
   }
   /** @internal Only an already-owned failure's blocked-state/operation bookkeeping.
    * Keeps the current SQL owner; never use for new effects, retries or normal commands. */
@@ -420,33 +433,36 @@ export class StoreDatabase {
       return this.owners.run(owner, async () => {
         await this.request("enter", undefined, [], owner);
         let primary: unknown;
+        let result: Awaited<ReturnType<typeof work>> | undefined;
+        let workFailed = false;
         try {
           await this.authorize(authorization);
-          return await work();
+          result = await work();
         } catch (error) {
           primary = error;
-          throw error;
-        } finally {
-          owner.phase = "closing";
-          try {
-            if (!this.failed) {
-              try {
-                await this.request("leave", undefined, [], owner);
-              } catch (cleanupError) {
-                if (primary === undefined) throw cleanupError;
-                if (primary instanceof Error) {
-                  try {
-                    Object.defineProperty(primary, "cleanupError", { value: cleanupError });
-                  } catch {
-                    console.error("Database owner cleanup failed:", cleanupError);
-                  }
-                } else console.error("Database owner cleanup failed:", cleanupError);
-              }
-            }
-          } finally {
-            owner.phase = "closed";
-          }
+          workFailed = true;
         }
+        owner.phase = "closing";
+        try {
+          if (!this.failed) {
+            try {
+              await this.request("leave", undefined, [], owner);
+            } catch (cleanupError) {
+              if (primary === undefined) throw cleanupError;
+              if (primary instanceof Error) {
+                try {
+                  Object.defineProperty(primary, "cleanupError", { value: cleanupError });
+                } catch {
+                  console.error("Database owner cleanup failed:", cleanupError);
+                }
+              } else console.error("Database owner cleanup failed:", cleanupError);
+            }
+          }
+        } finally {
+          owner.phase = "closed";
+        }
+        if (workFailed) throw primary;
+        return result as Awaited<ReturnType<typeof work>>;
       });
     });
     this.tail = pending.catch(() => undefined);
@@ -533,13 +549,16 @@ export class StoreDatabase {
       primary = error;
       throw error;
     } finally {
-      if (owner.phase === "open" && !this.failed) {
-        try {
-          await this.request("cursorClose", undefined, [cursor], owner);
-        } catch (error) {
-          if (primary === undefined) throw error;
-        }
-      }
+      await this.closeCursor(owner, cursor, primary);
+    }
+  }
+  /** Closes a cursor; a close failure is reported only when iteration itself did not fail. */
+  private async closeCursor(owner: Owner, cursor: SQLInputValue, primary: unknown): Promise<void> {
+    if (owner.phase !== "open" || this.failed) return;
+    try {
+      await this.request("cursorClose", undefined, [cursor], owner);
+    } catch (error) {
+      if (primary === undefined) throw error;
     }
   }
   close(beforeClose?: () => Promise<void>): Promise<void> {

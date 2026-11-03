@@ -61,7 +61,6 @@ import {
   cancelHarnessTurn,
   captureHarnessControlTurn,
   stopHarnessBackgroundWork,
-  stopHarnessSession,
   retainedHarnessWriters,
   retireHarnessWriter,
   type HarnessAdapter,

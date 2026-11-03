@@ -60,7 +60,7 @@ function failWorker(failed: Worker, reason: string) {
   } catch {
     // Already gone.
   }
-  for (const [id, request] of [...pending]) {
+  for (const [id, request] of Array.from(pending)) {
     if (request.owner !== failed) continue;
     pending.delete(id);
     clearTimeout(request.timer);

@@ -515,7 +515,7 @@ async function main(args) {
         "Usage: node scripts/setup/agent-desktop.mjs [--plan|--status|--prepare|--import BUNDLE] [--cache-root DIRECTORY]",
       );
   }
-  const options = { ...(cacheRoot ? { cacheRoot } : {}) };
+  const options = cacheRoot ? { cacheRoot } : {};
   const result =
     mode === "prepare"
       ? await prepareDesktopHelper(options)

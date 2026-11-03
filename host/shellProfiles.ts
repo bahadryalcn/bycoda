@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
+import { hasControlCharacters } from "../src/shared/lib/controlCharacters";
 
 /**
  * The shells this machine can run a `!command` in, listed and chosen the same
@@ -180,13 +181,23 @@ export function listShellProfiles(path = choicePath()): ShellProfiles {
 }
 
 /** Compare the single saved preference before a remotely reviewed update. */
-export function setReviewedProfile(input: Record<string, unknown>, path = choicePath()): ShellProfiles {
+export function setReviewedProfile(
+  input: Record<string, unknown>,
+  path = choicePath(),
+): ShellProfiles {
   // Unix shell IDs are absolute executable paths; selection still requires an
   // exact match in the detected installed profiles below.
   const valid = (value: unknown): value is string | null =>
-    value === null || typeof value === "string" && value.length <= 4096 &&
-      value.trim().length > 0 && !/[\x00-\x1f\x7f]/.test(value);
-  if (Object.keys(input).some((key) => !["profile", "expectedChosenId"].includes(key)) || !valid(input.profile) || !valid(input.expectedChosenId))
+    value === null ||
+    (typeof value === "string" &&
+      value.length <= 4096 &&
+      value.trim().length > 0 &&
+      !hasControlCharacters(value));
+  if (
+    Object.keys(input).some((key) => !["profile", "expectedChosenId"].includes(key)) ||
+    !valid(input.profile) ||
+    !valid(input.expectedChosenId)
+  )
     throw new Error("Invalid reviewed shell preference");
   if (chosenProfileId(path) !== input.expectedChosenId)
     throw new Error("The command shell preference changed. Refresh and review again.");
