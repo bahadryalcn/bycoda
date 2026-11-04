@@ -47,6 +47,13 @@ normalize every other line. Draft recovery retains the same separator informatio
 If separators cannot be matched safely, saving stops and keeps the edited buffer
 for review and retry instead of changing the rest of the file.
 
+Saving a connected Host file checks that its contents, target and access permission
+still match before replacing it. Unsupported text encodings, multiple hard links
+or permissions that cannot be preserved stop the save and retain the editor text.
+If replacement cannot be confirmed, the error names recovery candidates. Inspect
+the saved file and those candidates before retrying; an uncertain result is not
+a confirmed failed write.
+
 Use the eye and code icons in the upper right to switch modes; their tooltips
 show Preview and Source. In a Markdown preview, hold Ctrl and scroll the mouse
 wheel to zoom between 50% and 200%, or use the minus and plus controls. Click

@@ -24,6 +24,8 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- `src-tauri/src/provider_terminal_profiles.rs` retains invalid/unreadable registry evidence and writes through the synced native state helper. Missing, corrupt and dangling-linked profile registries are distinct; failed persistence cannot claim a connection or erase CLI-home references.
+
 - Preserve source output/copy bytes, scrollback, PTY/SSH/process identity and active work. Never recolor by rewriting escape bytes, NO_COLOR or shell prompts.
 - Typography and effective canvas/contrast are separate policies; an optional line-height prop must not silently change transparency.
 - Keep saved terminal font/size/weight/lineHeight, stored migration and scoped Ctrl+wheel behavior. Reset returns to saved preference without respawn.

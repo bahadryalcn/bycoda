@@ -1,5 +1,11 @@
 # Skill availability and owner preferences
 
+Host and native policy writers preserve the shared lock/schema and sync staged
+state before replacement. An unreadable, corrupt or dangling-linked policy stays
+unavailable with its original bytes retained; it never becomes the unrestricted
+default. Repair the owning machine's stored policy before retrying discovery or
+invocation. Source edits and tests do not grant permission to enable skills.
+
 Skill files, provider discovery, provider permissions, and bycoda preferences are
 separate states. Installation and same-name precedence never grant enablement.
 

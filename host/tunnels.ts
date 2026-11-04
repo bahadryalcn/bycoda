@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { writeFileAtomic } from "./storage/atomic-write";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   TUNNEL_PROVIDERS,
@@ -133,19 +134,23 @@ export class ExternalTunnels {
         throw new TunnelError("storage-unavailable");
       }
     })();
-    await this.initialization;
-    this.initialized = true;
+    try {
+      await this.initialization;
+      this.initialized = true;
+    } catch (error) {
+      this.initialization = undefined;
+      throw error;
+    }
   }
 
   private async persist(): Promise<void> {
     try {
       const path = join(this.directory, "state.json");
-      await writeFile(
-        `${path}.tmp`,
+      await writeFileAtomic(
+        path,
         JSON.stringify({ version: 1, environmentId: this.environmentId, tunnels: this.records }),
         { mode: 0o600 },
       );
-      await rename(`${path}.tmp`, path);
     } catch {
       throw new TunnelError("storage-unavailable");
     }

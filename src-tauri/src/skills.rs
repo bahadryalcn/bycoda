@@ -77,7 +77,17 @@ fn read_policy(file: &Path) -> Result<SkillPolicy, String> {
             validate_policy(&policy)?;
             Ok(policy)
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(SkillPolicy::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !policy_exists(file)? => {
+            Ok(SkillPolicy::default())
+        }
+        Err(_) => Err("Could not read bycoda skill restrictions".into()),
+    }
+}
+
+fn policy_exists(file: &Path) -> Result<bool, String> {
+    match std::fs::symlink_metadata(file) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(_) => Err("Could not read bycoda skill restrictions".into()),
     }
 }
@@ -119,13 +129,10 @@ fn write_policy(file: &Path, policy: &SkillPolicy) -> Result<(), String> {
     validate_policy(policy)?;
     let parent = file.parent().ok_or("Invalid skill policy location")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let temporary = parent.join(format!("skill-policy-{}.tmp", uuid::Uuid::new_v4()));
-    std::fs::write(
-        &temporary,
-        serde_json::to_vec(policy).map_err(|e| e.to_string())?,
+    crate::file_access::durable_write(
+        file,
+        &serde_json::to_vec(policy).map_err(|e| e.to_string())?,
     )
-    .map_err(|e| e.to_string())?;
-    std::fs::rename(&temporary, file).map_err(|e| e.to_string())
 }
 
 /// Owner UI only. Never expose mutation through conversation tools.
@@ -133,11 +140,11 @@ fn write_policy(file: &Path, policy: &SkillPolicy) -> Result<(), String> {
 pub fn skill_policy_get(legacy_disabled_paths: Option<Vec<String>>) -> Result<SkillPolicy, String> {
     let _guard = SKILL_POLICY_LOCK.lock().map_err(|e| e.to_string())?;
     let file = policy_file()?;
-    if file.exists() {
+    if policy_exists(&file)? {
         return read_policy(&file);
     }
     let _file_guard = lock_policy(&file)?;
-    if file.exists() {
+    if policy_exists(&file)? {
         return read_policy(&file);
     }
     let paths: Vec<String> = legacy_disabled_paths
@@ -1224,6 +1231,8 @@ mod tests {
         assert!(read_policy(&file).unwrap().disabled_names.is_empty());
         std::fs::write(&file, "broken").unwrap();
         assert!(read_policy(&file).is_err());
+        assert!(read_policy(&file).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "broken");
         assert!(write_policy(
             &file,
             &SkillPolicy {
@@ -1232,6 +1241,32 @@ mod tests {
             }
         )
         .is_err());
+    }
+
+    #[test]
+    fn skill_policy_failed_replacement_preserves_existing_target() {
+        let root = tmp("policy-write-failure");
+        let file = root.0.join("skill-policy.json");
+        std::fs::create_dir(&file).unwrap();
+        let evidence = file.join("original");
+        std::fs::write(&evidence, "keep").unwrap();
+        assert!(write_policy(&file, &SkillPolicy::default()).is_err());
+        assert_eq!(std::fs::read_to_string(evidence).unwrap(), "keep");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_policy_symlink_is_not_treated_as_missing() {
+        use std::os::unix::fs::symlink;
+        let root = tmp("policy-dangling");
+        let file = root.0.join("skill-policy.json");
+        symlink(root.0.join("missing"), &file).unwrap();
+        assert!(policy_exists(&file).unwrap());
+        assert!(read_policy(&file).is_err());
+        assert!(std::fs::symlink_metadata(&file)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     #[test]

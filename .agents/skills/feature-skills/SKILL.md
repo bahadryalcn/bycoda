@@ -19,6 +19,8 @@ Use for Skills management UI, catalog/policy state, document edit/preview/split,
 
 ## Preserve
 
+- Host/native policy writers share their existing lock and schema and sync before replacement. Retain corrupt/unreadable policy in place; a dangling link or failed read must not become an empty policy or re-enable disabled skills on the next read.
+
 - Installation inventory, same-name active copy, owner machine enable policy, invocation metadata and provider restrictions are separate states; enabled in one layer is not permission in another.
 - Disabled names apply across sources on the owning machine. Reads/search/invocation and late results must respect fresh authority; no shadowed-copy bypass or local overwrite of remote policy.
 - Preserve local/remote/managed source identity and allowed edit/raw-view access; YAML frontmatter, supporting assets and document/cwd context survive preview/edit/split.

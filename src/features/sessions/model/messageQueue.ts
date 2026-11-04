@@ -1,6 +1,6 @@
 import { isPreparingHandoff } from "./handoff";
 import type { FollowUpBehavior } from "../../settings/model/settings";
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 import { moveItem, orderByIds } from "../../../shared/lib/reorder";
 import { mergeModelSettings, modelEffortLabel, resolveModel } from "./models";
 import { hasMissingAttachment } from "./queuePersistence";

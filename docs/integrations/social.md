@@ -1,5 +1,10 @@
 # Social Media host integration
 
+The Host syncs encrypted credential state before replacement and creates Windows
+vault keys exclusively with a completed file sync. Invalid or undecryptable vault
+state remains intact and blocks mutation. Repair storage or restore the correct
+key through the owner workflow before retrying; no read failure creates a blank vault.
+
 The global Social Media screen opens from the project rail or session composer. Accounts belong to a host authority; campaigns and conversations refer to projects. UI, session MCP and host CLI operations use the same `SocialService`, SQLite queue and authorization checks.
 
 ## Manage the workspace

@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -97,6 +97,32 @@ it("fails closed on corrupt persistent state and rejects tool-pattern injection"
   expect(() => setSkillEnabled("*", false, home)).toThrow();
   writeFileSync(join(home, ".bycoda-host", "skill-policy.json"), "broken");
   expect(() => readSkillPolicy(home)).toThrow("Could not read");
+  expect(() => setSkillEnabled("synthetic", true, home)).toThrow("Could not read");
+  expect(() => readSkillPolicy(home)).toThrow("Could not read");
+  expect(readFileSync(join(home, ".bycoda-host", "skill-policy.json"), "utf8")).toBe("broken");
+});
+
+it.skipIf(process.platform === "win32")(
+  "does not treat a dangling policy symlink as absent",
+  () => {
+    const { home } = fixture();
+    const directory = join(home, ".bycoda-host");
+    mkdirSync(directory, { recursive: true });
+    symlinkSync(join(directory, "missing"), join(directory, "skill-policy.json"));
+    expect(() => readSkillPolicy(home)).toThrow("Could not read");
+    expect(() => migrateSkillPolicy([], home)).toThrow("Could not read");
+  },
+);
+
+it("reports a failed policy replacement without deleting the existing target", () => {
+  const { home } = fixture();
+  const target = join(home, ".bycoda-host", "skill-policy.json");
+  mkdirSync(target, { recursive: true });
+  writeFileSync(join(target, "evidence"), "keep");
+  expect(() =>
+    saveSkillPolicy({ disabledNames: ["synthetic"], disabledPaths: [] }, home),
+  ).toThrow();
+  expect(readFileSync(join(target, "evidence"), "utf8")).toBe("keep");
 });
 
 it("does not overwrite or remove another process's preference lock", () => {

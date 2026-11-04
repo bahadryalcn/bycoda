@@ -1,9 +1,9 @@
 import {
   existsSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
-  renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -17,6 +17,7 @@ import {
   type SkillPolicy,
 } from "../src/integrations/harness/core/skillPolicy";
 import { skillNameForPath } from "./skills";
+import { readStateFileSync, writeFileAtomicSync } from "./storage/atomic-write";
 
 function withPolicyLock<T>(home: string, run: () => T): T {
   const dir = join(home, ".bycoda-host");
@@ -68,12 +69,26 @@ export function readSkillPolicy(home = homedir()): SkillPolicy {
   const file = join(home, ".bycoda-host", "skill-policy.json");
   // Corrupt/unreadable preferences must not silently re-enable every skill.
   try {
-    return parseSkillPolicy(JSON.parse(readFileSync(file, "utf8")));
+    const result = readStateFileSync(file, (text) => parseSkillPolicy(JSON.parse(text)), {
+      quarantine: false,
+    });
+    if (result.status === "ok") return result.value;
+    if (result.status === "missing" && !policyExists(file)) return { ...EMPTY_SKILL_POLICY };
+  } catch {
+    // Unreadable metadata or data is an unknown policy, not an empty one.
+  }
+  throw new Error(
+    "Could not read bycoda skill restrictions. Repair the skill policy before continuing.",
+  );
+}
+
+function policyExists(file: string): boolean {
+  try {
+    lstatSync(file);
+    return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ...EMPTY_SKILL_POLICY };
-    throw new Error(
-      "Could not read bycoda skill restrictions. Repair the skill policy before continuing.",
-    );
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
   }
 }
 
@@ -82,9 +97,7 @@ export function saveSkillPolicy(value: unknown, home = homedir()): SkillPolicy {
   const dir = join(home, ".bycoda-host");
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "skill-policy.json");
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  writeFileSync(temporary, JSON.stringify(policy), { mode: 0o600 });
-  renameSync(temporary, file);
+  writeFileAtomicSync(file, JSON.stringify(policy), { mode: 0o600 });
   return policy;
 }
 
@@ -107,9 +120,9 @@ export function setSkillEnabled(name: unknown, enabled: unknown, home = homedir(
 }
 
 export function migrateSkillPolicy(legacyPaths: unknown, home = homedir()): SkillPolicy {
-  if (existsSync(join(home, ".bycoda-host", "skill-policy.json"))) return readSkillPolicy(home);
+  if (policyExists(join(home, ".bycoda-host", "skill-policy.json"))) return readSkillPolicy(home);
   return withPolicyLock(home, () => {
-    if (existsSync(join(home, ".bycoda-host", "skill-policy.json"))) return readSkillPolicy(home);
+    if (policyExists(join(home, ".bycoda-host", "skill-policy.json"))) return readSkillPolicy(home);
     const disabledPaths = Array.isArray(legacyPaths)
       ? legacyPaths.filter(
           (value): value is string =>

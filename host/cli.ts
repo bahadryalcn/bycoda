@@ -5,7 +5,6 @@ import {
   existsSync,
   mkdirSync,
   openSync,
-  readFileSync,
   renameSync,
   rmSync,
   statSync,
@@ -20,6 +19,8 @@ import { version } from "../package.json";
 import { readHostBuildIdentity } from "./build-identity";
 import { createNativeAuthorityBootstrap } from "./native-authority/bootstrap";
 import { writeFileAtomic } from "./storage/atomic-write";
+import { readRunningHost, verifyHostStopped, type RunningHost as Running } from "./lifecycle-state";
+import { probeHostOwner } from "./owner";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -41,39 +42,7 @@ const directory = resolve(
 );
 const port = Number(option("port", process.env.BYCODA_DEV_HOST_PORT ?? "3776"));
 const statePath = join(directory, "running.json");
-type Running = { pid: number; port: number; secret: string };
-const isRunning = (value: unknown): value is Running =>
-  !!value &&
-  typeof value === "object" &&
-  Number.isSafeInteger((value as Running).pid) &&
-  Number.isSafeInteger((value as Running).port) &&
-  typeof (value as Running).secret === "string";
-/** The running host's state, or nothing. An empty or unparsable file (a crash
- * mid-write) is moved aside as `running.json.corrupt-<timestamp>` so status and
- * stop keep working; the callers poll this synchronously, hence no readStateFile. */
-const readRunning = (): Running | undefined => {
-  let text: string;
-  try {
-    text = readFileSync(statePath, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw error;
-  }
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (isRunning(parsed)) return parsed;
-  } catch {
-    // Quarantined below.
-  }
-  const quarantined = `${statePath}.corrupt-${Date.now()}`;
-  try {
-    renameSync(statePath, quarantined);
-    console.error(`Host state ${statePath} was unreadable; moved aside to ${quarantined}.`);
-  } catch {
-    // Already moved by a concurrent command.
-  }
-  return;
-};
+const readRunning = (): Running | undefined => readRunningHost(directory);
 class HostUnreachableError extends Error {}
 const safeEqual = (a: string, b: string): boolean => {
   const left = Buffer.from(a);
@@ -226,9 +195,10 @@ Connect another computer using an SSH forward to the loopback port.`);
     // Check before sending stop: a failed upgrade must leave the old host serving.
     if (process.platform === "win32") await preflightWindowsHostUninstall();
     // Windows owns a launcher tree and its log handle. Drain work first.
-    let notes = process.platform === "win32" ? [] : await uninstallService();
     // Also stops a manually started host, or one the service manager left.
     const state = readRunning();
+    if (!state) await verifyHostStopped(directory);
+    let notes = process.platform === "win32" ? [] : await uninstallService();
     let exitedState: Running | undefined;
     if (state) {
       if (process.platform === "win32") {
@@ -250,9 +220,9 @@ Connect another computer using an SSH forward to the loopback port.`);
     if (exitedState && readRunning()?.pid === exitedState.pid) rmSync(statePath, { force: true });
     console.log(
       [
-        existsSync(statePath)
-          ? "The host service was removed, but the host is still running. Run stop, or end its process."
-          : "The host is stopped and will not start automatically.",
+        (await probeHostOwner(directory)) === "stopped"
+          ? "The host is stopped and will not start automatically."
+          : "The host service was removed, but Host shutdown is not confirmed. Inspect its status before further changes.",
         `Sessions, logs and device credentials are kept in ${directory}. Delete that directory only if you want to erase them.`,
         ...notes,
       ].join("\n"),
@@ -276,6 +246,7 @@ Connect another computer using an SSH forward to the loopback port.`);
   if (command === "status" || command === "stop") {
     const state = readRunning();
     if (!state) {
+      await verifyHostStopped(directory);
       console.log("Host is stopped");
       return;
     }
@@ -286,7 +257,10 @@ Connect another computer using an SSH forward to the loopback port.`);
           if (process.platform !== "darwin") return;
           // cleanup removes this state only after all provider work has drained.
           for (let i = 0; i < 200; i++) {
-            if (readRunning()?.pid !== state.pid) return;
+            if (readRunning()?.pid !== state.pid) {
+              await verifyHostStopped(directory);
+              return;
+            }
             await new Promise((resolve) => setTimeout(resolve, 100));
           }
           throw new Error(
@@ -296,6 +270,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       else await lifecycle(state, command);
     } catch (error) {
       if (!(error instanceof HostUnreachableError)) throw error;
+      await verifyHostStopped(directory);
       console.log("Host is stopped");
       return;
     }

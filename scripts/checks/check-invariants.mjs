@@ -91,14 +91,44 @@ export function scanOxlint(root, files) {
   ]);
   if (result.status !== 0 && result.status !== 1)
     throw new Error(`oxlint failed (${result.status}): ${result.stderr}`);
-  const { diagnostics } = JSON.parse(result.stdout);
-  return diagnostics.map((diagnostic) => ({
-    file: normalize(diagnostic.filename),
-    rule: diagnostic.code.replace(/^eslint\(/, "oxlint(").replace(/^(\w[\w-]*)\((.+)\)$/, "$1/$2"),
-    line: diagnostic.labels?.[0]?.span?.line ?? 0,
-    text: diagnostic.message.slice(0, 160),
-    message: diagnostic.help ?? diagnostic.message,
-  }));
+  return parseOxlintOutput(result.stdout, result.status);
+}
+
+/** Tool-level diagnostics cannot be assigned to a baseline bucket. */
+export function parseOxlintOutput(stdout, status) {
+  let output;
+  try {
+    output = JSON.parse(stdout);
+  } catch {
+    throw new Error(`oxlint returned invalid JSON: ${stdout.slice(0, 500)}`);
+  }
+  if (!output || !Array.isArray(output.diagnostics))
+    throw new Error("oxlint returned malformed output: missing diagnostics array");
+  if (status !== 0 && output.diagnostics.length === 0)
+    throw new Error(`oxlint failed (${status}) without diagnostics`);
+  return output.diagnostics.map((diagnostic) => {
+    if (
+      !diagnostic ||
+      typeof diagnostic.filename !== "string" ||
+      !diagnostic.filename ||
+      typeof diagnostic.code !== "string" ||
+      !diagnostic.code ||
+      typeof diagnostic.message !== "string"
+    ) {
+      const detail =
+        typeof diagnostic?.message === "string" ? diagnostic.message : JSON.stringify(diagnostic);
+      throw new Error(`oxlint reported a tool diagnostic: ${detail}`);
+    }
+    return {
+      file: normalize(diagnostic.filename),
+      rule: diagnostic.code
+        .replace(/^eslint\(/, "oxlint(")
+        .replace(/^(\w[\w-]*)\((.+)\)$/, "$1/$2"),
+      line: diagnostic.labels?.[0]?.span?.line ?? 0,
+      text: diagnostic.message.slice(0, 160),
+      message: diagnostic.help ?? diagnostic.message,
+    };
+  });
 }
 
 export function scanAll(root, files) {

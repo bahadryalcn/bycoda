@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { writeFileAtomic } from "./storage/atomic-write";
+import { readFile, open, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
@@ -96,7 +97,15 @@ export class OsSocialCredentials implements SocialCredentialStore {
           ],
           raw,
         );
-        await writeFile(path, wrapped, { mode: 0o600, flag: "wx" });
+        // Never replace an existing key or remove a possibly adopted key on failure.
+        // Windows does not expose directory fsync through Node.
+        const handle = await open(path, "wx", 0o600);
+        try {
+          await handle.writeFile(wrapped);
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
       }
       const raw = await secretCommand(
         "powershell.exe",
@@ -156,22 +165,37 @@ export class OsSocialCredentials implements SocialCredentialStore {
     try {
       bytes = await readFile(join(this.directory, "tokens.enc"));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return Object.create(null);
       throw new Error("Social vault unavailable.");
     }
     try {
       const cipher = createDecipheriv("aes-256-gcm", key, bytes.subarray(0, 12));
       cipher.setAAD(Buffer.from(this.environmentId));
       cipher.setAuthTag(bytes.subarray(12, 28));
-      return JSON.parse(
+      const parsed: unknown = JSON.parse(
         Buffer.concat([cipher.update(bytes.subarray(28)), cipher.final()]).toString("utf8"),
       );
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      const values: Record<string, SocialCredential> = Object.create(null);
+      for (const [id, value] of Object.entries(parsed)) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
+        const credential = value as Record<string, unknown>;
+        if (
+          typeof credential.accessToken !== "string" ||
+          (credential.refreshToken !== undefined && typeof credential.refreshToken !== "string") ||
+          (credential.expiresAt !== undefined &&
+            (typeof credential.expiresAt !== "number" || !Number.isFinite(credential.expiresAt)))
+        )
+          throw new Error();
+        values[id] = value as SocialCredential;
+      }
+      return values;
     } catch {
       throw new Error("Social vault could not be decrypted.");
     }
   }
   async get(id: string): Promise<SocialCredential | undefined> {
-    await this.queue;
+    await this.queue.catch(() => undefined);
     return (await this.read())[id];
   }
   private mutate(action: (values: Record<string, SocialCredential>) => void): Promise<void> {
@@ -184,14 +208,11 @@ export class OsSocialCredentials implements SocialCredentialStore {
         const cipher = createCipheriv("aes-256-gcm", await this.key(), iv);
         cipher.setAAD(Buffer.from(this.environmentId));
         const encrypted = Buffer.concat([cipher.update(JSON.stringify(values)), cipher.final()]);
-        // Atomic replacement prevents a crash from truncating the only credential copy.
-        const temporary = join(this.directory, `tokens-${randomBytes(8).toString("hex")}.enc`);
-        await writeFile(temporary, Buffer.concat([iv, cipher.getAuthTag(), encrypted]), {
-          mode: 0o600,
-          flag: "wx",
-        });
-        const { rename } = await import("node:fs/promises");
-        await rename(temporary, join(this.directory, "tokens.enc"));
+        await writeFileAtomic(
+          join(this.directory, "tokens.enc"),
+          Buffer.concat([iv, cipher.getAuthTag(), encrypted]),
+          { mode: 0o600 },
+        );
       });
     this.queue = run;
     return run;

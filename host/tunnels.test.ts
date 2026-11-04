@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExternalTunnels } from "./tunnels";
+import * as atomicWrite from "./storage/atomic-write";
 import type { TunnelEvent } from "./tunnel-providers";
 import type { SocialCredential } from "./social-credentials";
 
@@ -205,6 +206,35 @@ describe("external tunnels host ownership", () => {
     await s.service.close();
     expect(await readFile(join(s.directory, "state.json"), "utf8")).toBe(content);
     expect(s.launch).not.toHaveBeenCalled();
+  });
+  it("retries initialization after invalid or foreign state is repaired without forgetting it", async () => {
+    const s = await setup();
+    const path = join(s.directory, "state.json");
+    for (const original of [
+      "",
+      "{",
+      JSON.stringify({ version: 1, environmentId: "foreign", tunnels: [] }),
+    ]) {
+      await writeFile(path, original);
+      await expect(s.service.status()).rejects.toThrow("storage-unavailable");
+      expect(await readFile(path, "utf8")).toBe(original);
+    }
+    await writeFile(path, JSON.stringify({ version: 1, environmentId: "host-a", tunnels: [] }));
+    expect((await s.service.status()).tunnels).toEqual([]);
+    expect(s.launch).not.toHaveBeenCalled();
+  });
+  it("does not launch or retry a tunnel when its starting state write has uncertain publication", async () => {
+    const s = await setup();
+    const error = Object.assign(new Error("directory sync failed"), { published: true });
+    const write = vi.spyOn(atomicWrite, "writeFileAtomic").mockRejectedValueOnce(error);
+    try {
+      const result = await s.service.start(dev);
+      expect(result).toMatchObject({ state: "error", issue: "storage-unavailable" });
+      expect(s.launch).not.toHaveBeenCalled();
+      expect((await s.service.status()).tunnels).toHaveLength(1);
+    } finally {
+      write.mockRestore();
+    }
   });
   it("retains ownership after a failed stop so only that same child can be retried", async () => {
     const s = await setup();

@@ -8,6 +8,7 @@ import {
   withHostGitMutation,
 } from "./git-mutations";
 import { withWorkspaceMutation } from "./workspace-mutations";
+import { publishWorkspaceFile } from "./storage/workspace-publication";
 import {
   lstat,
   mkdir,
@@ -19,7 +20,7 @@ import {
   rm,
   stat,
 } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
+import type { Stats } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { GitChangedFile, GitDiffIndex, GitFileDiff } from "../src/platform/tauri/fs";
 import { hostOperationState, hostUnmerged, unmergedMessage } from "./git-conflicts";
@@ -671,36 +672,50 @@ export async function writeHostFile(
     content.includes("\0")
   )
     throw new Error("Invalid file content");
-  const path = await existingPath(root, input);
   const write = async () => {
     await assertFileWriteAuthority(authorized);
-    const current = await readHostFile(root, input);
-    // Editing a non-UTF-8 file (Latin-1, Windows-1254, ...) would silently rewrite every
-    // non-ASCII byte as U+FFFD, which the string comparison below cannot detect.
+    const rootReal = await realpath(root);
+    const rootInfo = await stat(root);
+    const path = await existingPath(root, input);
+    const linkInfo = await lstat(path);
+    if (linkInfo.isSymbolicLink() || !linkInfo.isFile())
+      throw new Error("Path changed on the host");
+    const handle = await open(path, "r");
+    let info: Stats;
+    let bytes: Buffer;
     try {
-      new TextDecoder("utf-8", { fatal: true }).decode(await readFile(path));
+      info = await handle.stat();
+      if (!sameWorkspaceFile(linkInfo, info) || info.nlink !== 1)
+        throw new Error("File identity changed or file has multiple hard links");
+      if (info.size > MAX_FILE) throw new Error("File is too large to preview");
+      bytes = await handle.readFile();
+      if (bytes.length > MAX_FILE) throw new Error("File is too large to preview");
+      if (!sameWorkspaceFile(info, await handle.stat()))
+        throw new Error("File changed on the host; reload before saving");
+    } finally {
+      await handle.close();
+    }
+    if (bytes.includes(0)) throw new Error("Binary file cannot be previewed");
+    try {
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     } catch {
       throw new Error("File is not valid UTF-8 and cannot be saved without corrupting it");
     }
+    const current = bytes.toString("utf8");
     if (current !== expected) throw new Error("File changed on the host; reload before saving");
-    await assertFileWriteAuthority(authorized);
     try {
-      // The path was resolved earlier; refuse if the final component became a symlink,
-      // and have the kernel refuse to follow one where O_NOFOLLOW exists.
-      if ((await lstat(path)).isSymbolicLink()) throw new Error("Path changed on the host");
-      // Windows has no O_NOFOLLOW and rejects these numeric flags with EINVAL; the lstat
-      // check above is the guard there.
-      const handle = await open(
-        path,
-        fsConstants.O_NOFOLLOW === undefined
-          ? "w"
-          : fsConstants.O_WRONLY | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW,
-      );
-      try {
-        await handle.writeFile(content, "utf8");
-      } finally {
-        await handle.close();
-      }
+      await publishWorkspaceFile(path, content, info, async () => {
+        await assertFileWriteAuthority(authorized);
+        if (
+          (await realpath(root)) !== rootReal ||
+          !sameWorkspaceFileIdentity(rootInfo, await stat(root))
+        )
+          throw new Error("Workspace root changed on the host");
+        if ((await existingPath(root, input)) !== path) throw new Error("Path changed on the host");
+        const now = await lstat(path);
+        if (now.isSymbolicLink() || !sameWorkspaceFile(info, now))
+          throw new Error("Path changed on the host");
+      });
     } finally {
       invalidateHostGitIndex(root);
     }
@@ -708,6 +723,20 @@ export async function writeHostFile(
   // The comparison belongs inside the queue: two clients may read the same
   // version, but only the first write may replace that version.
   await withWorkspaceMutation(root, write);
+}
+
+function sameWorkspaceFileIdentity(a: Stats, b: Stats): boolean {
+  return a.dev === b.dev && a.ino === b.ino;
+}
+
+function sameWorkspaceFile(a: Stats, b: Stats): boolean {
+  return (
+    sameWorkspaceFileIdentity(a, b) &&
+    a.size === b.size &&
+    a.mtimeMs === b.mtimeMs &&
+    a.ctimeMs === b.ctimeMs &&
+    a.nlink === b.nlink
+  );
 }
 
 /** Create a new file or folder under an existing workspace directory. */

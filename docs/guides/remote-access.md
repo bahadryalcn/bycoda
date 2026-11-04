@@ -1,5 +1,12 @@
 # Remote access (experimental)
 
+Host `status` and `stop` verify ownership when lifecycle metadata is unavailable
+or the endpoint does not respond. An active owner reports unconfirmed shutdown;
+unverifiable legacy ownership reports unknown. Neither result means work stopped.
+Keep corrupt state for inspection and repair instead of deleting it to force a start.
+Tunnel storage errors likewise preserve recorded tunnels and prevent a new launch;
+after the stored state is repaired, the same Host can retry initialization.
+
 Development Host input changes keep a stopped operation's cleanup separate from
 permission to send another prompt. If its original target or cleanup cannot be
 verified, the operation remains unresolved. This work has not enabled automatic

@@ -2,8 +2,10 @@ import { afterEach, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
+  linkSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -43,6 +45,83 @@ it("rejects one of two concurrent saves based on the same file version", async (
   await writeHostFile(root, "file.txt", current, "retried");
   expect(readFileSync(join(root, "file.txt"), "utf8")).toBe("retried");
 });
+
+it("preserves a UTF-8 BOM in the expected-content comparison and saved bytes", async () => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-write-bom-"));
+  roots.push(root);
+  writeFileSync(join(root, "file.txt"), "\ufeffbefore");
+  await writeHostFile(root, "file.txt", "\ufeffbefore", "\ufeffafter");
+  expect(readFileSync(join(root, "file.txt"), "utf8")).toBe("\ufeffafter");
+});
+
+it("refuses to replace a hard-linked file without changing either link", async () => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-write-hardlink-"));
+  roots.push(root);
+  writeFileSync(join(root, "file.txt"), "before");
+  linkSync(join(root, "file.txt"), join(root, "other.txt"));
+  await expect(writeHostFile(root, "file.txt", "before", "after")).rejects.toThrow(/hard links/);
+  expect(readFileSync(join(root, "file.txt"), "utf8")).toBe("before");
+  expect(readFileSync(join(root, "other.txt"), "utf8")).toBe("before");
+});
+
+it("rejects target replacement during final authority check", async () => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-write-swap-"));
+  roots.push(root);
+  const target = join(root, "file.txt");
+  writeFileSync(target, "before");
+  let calls = 0;
+  await expect(
+    writeHostFile(root, "file.txt", "before", "after", async () => {
+      if (++calls === 2) {
+        rmSync(target);
+        writeFileSync(target, "before");
+      }
+      return true;
+    }),
+  ).rejects.toThrow(/changed on the host/);
+  expect(readFileSync(target, "utf8")).toBe("before");
+});
+
+it("retains the original when authority is revoked before publication", async () => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-write-revoked-"));
+  roots.push(root);
+  writeFileSync(join(root, "file.txt"), "before");
+  let calls = 0;
+  await expect(
+    writeHostFile(root, "file.txt", "before", "after", async () => ++calls === 1),
+  ).rejects.toThrow("authorization was revoked");
+  expect(readFileSync(join(root, "file.txt"), "utf8")).toBe("before");
+  expect(readdirSync(root)).toEqual(["file.txt"]);
+});
+
+it.skipIf(process.platform !== "win32")(
+  "preserves a protected Windows DACL on replacement",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "bycoda-write-acl-"));
+    roots.push(root);
+    const path = join(root, "Türkçe.txt");
+    writeFileSync(path, "before");
+    const command = (script: string) =>
+      execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+        windowsHide: true,
+        encoding: "utf8",
+        env: { ...process.env, BYCODA_TEST_PATH: path },
+      }).trim();
+    command(
+      "$acl = [System.IO.File]::GetAccessControl($env:BYCODA_TEST_PATH); $acl.SetAccessRuleProtection($true, $true); [System.IO.File]::SetAccessControl($env:BYCODA_TEST_PATH, $acl)",
+    );
+    const before = command(
+      "[System.IO.File]::GetAccessControl($env:BYCODA_TEST_PATH).GetSecurityDescriptorSddlForm('All')",
+    );
+    await writeHostFile(root, "Türkçe.txt", "before", "after");
+    expect(
+      command(
+        "[System.IO.File]::GetAccessControl($env:BYCODA_TEST_PATH).GetSecurityDescriptorSddlForm('All')",
+      ),
+    ).toBe(before);
+    expect(readFileSync(path, "utf8")).toBe("after");
+  },
+);
 
 function reviewRepo() {
   const root = mkdtempSync(join(tmpdir(), "bycoda-git-regression-"));

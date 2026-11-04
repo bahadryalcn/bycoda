@@ -13,6 +13,8 @@ Code paths below are repository-root relative.
 
 - `host/engine.ts`
 - `host/server.ts`
+- `host/owner.ts`, `host/lifecycle-state.ts` and `host/storage/atomic-write.ts`
+- `host/workspace.ts` and `host/storage/workspace-publication.ts`
 - `src/integrations/harness/core/`
 
 ## Workflow
@@ -24,6 +26,9 @@ Code paths below are repository-root relative.
 5. Choose focused contract/service/provider/native tests for the altered seam, then exercise isolated adapters/reconnect/recovery as applicable. Report source, fixture, native and serving-build evidence separately.
 
 ## Preserve
+
+- Missing/corrupt lifecycle metadata or an unreachable endpoint never proves a Host stopped. Probe the kernel lease; live legacy owners without verified identity remain unknown. Keep corrupt policy, tunnel and credential state until explicitly repaired.
+- Workspace saves retain expected-content checks, permission checks at publication, rooted target identity and original file permissions. Preserve uncertain replacement candidates; private-state atomic helpers do not preserve arbitrary workspace ACLs.
 
 - One execution/history authority per environment/session. A socket or authenticated connection grants no new scope; credentials remain with their existing native/Host owners.
 - Normal admission, accepted physical I/O lifetime, permission revocation, process retirement and provider protocol ACK are distinct. An observer timeout cannot settle work or certify cleanup.

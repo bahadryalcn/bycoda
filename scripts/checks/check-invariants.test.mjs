@@ -18,6 +18,7 @@ import {
   checkInvariants,
   formatRegressions,
   oxlintConfig,
+  parseOxlintOutput,
   scanAll,
   writeBaseline,
 } from "./check-invariants.mjs";
@@ -128,4 +129,28 @@ test("shared helpers and tests are exempt, and only counts above the baseline fa
   assert.match(formatRegressions(result.regressions), /ast-grep-ignore/);
   write(root, "src/features/demo/sample.ts", "void tasks.tick().catch(() => {});\n");
   assert.equal(checkInvariants({ root }).improvements.length, 1);
+});
+
+test("oxlint tool diagnostics and malformed output fail with useful detail", () => {
+  const global = { message: "Failed to open file: invalid UTF-8", severity: "error", labels: [] };
+  assert.throws(
+    () => parseOxlintOutput(JSON.stringify({ diagnostics: [global] }), 1),
+    /Failed to open file: invalid UTF-8/,
+  );
+  assert.throws(() => parseOxlintOutput("{", 1), /invalid JSON/);
+  assert.throws(() => parseOxlintOutput("{}", 1), /missing diagnostics array/);
+  assert.throws(() => parseOxlintOutput('{"diagnostics":[]}', 1), /without diagnostics/);
+  assert.throws(
+    () => parseOxlintOutput('{"diagnostics":[{"filename":"x.ts"}]}', 1),
+    /tool diagnostic/,
+  );
+  assert.deepEqual(
+    parseOxlintOutput(
+      JSON.stringify({
+        diagnostics: [{ filename: "src\\x.ts", code: "eslint(no-test)", message: "finding" }],
+      }),
+      1,
+    ),
+    [{ file: "src/x.ts", rule: "oxlint/no-test", line: 0, text: "finding", message: "finding" }],
+  );
 });

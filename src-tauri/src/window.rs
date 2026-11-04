@@ -939,6 +939,7 @@ pub fn forget_quit_window(app: &AppHandle, label: &str) {
         Next::Exit => confirm_quit(app.clone()),
         Next::Abort => {
             clear_run(id);
+            // ast-grep-ignore: rust-emit-broadcast -- Quit cancellation must release every participating window's local quit state.
             let _ = app.emit(QUIT_ABORTED, ());
         }
         Next::Wait => {}
@@ -1012,6 +1013,7 @@ fn start_commit(app: &AppHandle, id: u32) {
         .collect();
     let Ok(owners) = owners else {
         clear_run(id);
+        // ast-grep-ignore: rust-emit-broadcast -- Failed owner capture cancels the shared quit attempt in every participating window.
         let _ = app.emit(QUIT_ABORTED, ());
         return;
     };
@@ -1130,6 +1132,7 @@ fn watch_stage(app: &AppHandle, id: u32, stage: Stage, wait: Duration) {
                         return;
                     }
                     CommitDeadline::Abort => {
+                        // ast-grep-ignore: rust-emit-broadcast -- A shared quit deadline abort must release all participants, not only the originating window.
                         let _ = app.emit(QUIT_ABORTED, ());
                         return;
                     }

@@ -21,6 +21,8 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Preserve
 
+- `host/social-credentials.ts` preserves encrypted vault bytes on read/decrypt/schema failures. Sync ciphertext and exclusive Windows key creation before acknowledging persistence; a failed save may be retried after repair but never authorizes replacing unreadable credentials with an empty vault.
+
 - Keep Host/account/project/thread identity, isolated queries, stale-result rejection, retained panels and independent drafts across navigation.
 - Capability, configured connection, verified account, project access, sending enabled and approval are distinct facts; preserve their effective-policy gates.
 - Draft/AI suggestion/preview prepares content only. Sending, activating rules and changing consent require their existing explicit authority.

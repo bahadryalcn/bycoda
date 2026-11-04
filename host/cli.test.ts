@@ -5,6 +5,7 @@ import { createServer, type AddressInfo } from "node:net";
 import {
   copyFileSync,
   mkdtempSync,
+  mkdirSync,
   existsSync,
   readFileSync,
   rmSync,
@@ -58,14 +59,39 @@ it(
     const run = (...args: string[]) =>
       exec(process.execPath, [cli, ...args, "--data-dir", directory, "--port", String(port)], {
         timeout: process.platform === "win32" ? 25_000 : 10_000,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          HOME: join(directory, "home"),
+          USERPROFILE: join(directory, "home"),
+          APPDATA: join(directory, "home", "AppData", "Roaming"),
+          LOCALAPPDATA: join(directory, "home", "AppData", "Local"),
+        },
       });
     try {
-      // A stale legacy PID now belongs to this unrelated test process.
-      writeFileSync(join(directory, "owner.lock"), String(process.pid));
+      mkdirSync(join(directory, "home", "AppData", "Roaming"), { recursive: true });
+      mkdirSync(join(directory, "home", "AppData", "Local"), { recursive: true });
+      // Only confirmed process absence permits reclaiming a legacy sentinel.
+      const departedPid = 2_147_483_647;
+      expect(() => process.kill(departedPid, 0)).toThrow();
+      writeFileSync(join(directory, "owner.lock"), String(departedPid));
       expect((await run("start")).stdout).toContain("Host started");
       expect((await run("status")).stdout).toContain("Host is running");
       await expect(run("serve")).rejects.toThrow("A host already owns");
       const before = JSON.parse((await run("connection-info")).stdout);
+      const runningPath = join(directory, "running.json");
+      const originalRunning = readFileSync(runningPath);
+      try {
+        writeFileSync(runningPath, "{broken");
+        await expect(run("status")).rejects.toThrow("still owns");
+        await expect(run("stop")).rejects.toThrow("still owns");
+        expect(readFileSync(runningPath, "utf8")).toBe("{broken");
+        rmSync(runningPath);
+        await expect(run("status")).rejects.toThrow("still owns");
+      } finally {
+        writeFileSync(runningPath, originalRunning);
+      }
+      expect((await run("status")).stdout).toContain("Host is running");
       // Connecting to an existing host must not install a service or restart it.
       expect(JSON.parse((await run("service", "install")).stdout)).toEqual(before);
       const device = JSON.parse((await run("pair", "--name", "Test laptop")).stdout) as {

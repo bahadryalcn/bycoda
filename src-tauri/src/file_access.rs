@@ -106,7 +106,7 @@ fn alias_key(path: &Path) -> PathBuf {
     }
 }
 
-fn durable_write(file: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn durable_write(file: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
     let parent = file.parent().ok_or("Missing registry directory")?;
     let next = parent.join(format!("{}.tmp", uuid::Uuid::new_v4()));

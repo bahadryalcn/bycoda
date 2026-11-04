@@ -95,9 +95,6 @@
     "host/native-devices.test-support.ts": {
       "oxlint/no-restricted-imports": 1
     },
-    "host/owner.ts": {
-      "oxlint/no-restricted-imports": 1
-    },
     "host/package.mjs": {
       "oxlint/no-restricted-imports": 1
     },
@@ -141,9 +138,6 @@
     "host/social-browser.ts": {
       "oxlint/no-restricted-imports": 1,
       "ts-void-promise-without-catch": 4
-    },
-    "host/social-credentials.ts": {
-      "oxlint/no-restricted-imports": 1
     },
     "host/social-program-schedule.ts": {
       "oxlint/no-restricted-properties": 1,
@@ -253,9 +247,6 @@
     "src-tauri/src/project_logo.rs": {
       "rust-rename-without-fsync": 1
     },
-    "src-tauri/src/provider_terminal_profiles.rs": {
-      "rust-rename-without-fsync": 1
-    },
     "src-tauri/src/provider_usage.rs": {
       "rust-rename-without-fsync": 1
     },
@@ -293,7 +284,7 @@
       "rust-rename-without-fsync": 2
     },
     "src-tauri/src/skills.rs": {
-      "rust-rename-without-fsync": 5
+      "rust-rename-without-fsync": 4
     },
     "src-tauri/src/ssh_configuration.rs": {
       "rust-emit-broadcast": 3
