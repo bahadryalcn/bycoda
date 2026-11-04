@@ -372,13 +372,19 @@ function TitleTabItem({
     ...((tab.doneHarnesses?.length ?? 0) > 0 ? ["Response complete"] : []),
   ].join(" · ");
 
+  const setItemRef = sortable.setItemRef;
+  const setNode = useCallback(
+    (el: HTMLDivElement | null) => {
+      setItemRef(tab.id, el);
+      itemRef?.(el);
+    },
+    [tab.id, setItemRef, itemRef],
+  );
+
   return (
     <ActionHost
       selected={active}
-      ref={(el) => {
-        sortable.setItemRef(tab.id, el);
-        itemRef?.(el);
-      }}
+      ref={setNode}
       className="reorder-item tab-motion group @container relative flex h-(--ui-control-height-compact) w-full min-w-0 cursor-default touch-none items-center self-center"
       data-tauri-drag-region="false"
       data-tab-draggable={canDrag || undefined}
@@ -844,7 +850,7 @@ function TitleBarComponent({
     }
   };
   const tabIds = tabs.map((tab) => tab.id);
-  const { displayed, setTabNode, finishMotion } = useTabCloseMotion(tabs);
+  const { displayed, tabRef, finishMotion } = useTabCloseMotion(tabs);
   const popOutTab = useCallback(
     (tabId: string) => {
       const tab = tabs.find((entry) => entry.id === tabId);
@@ -1015,6 +1021,12 @@ function TitleBarComponent({
     tabs,
     dragging: Boolean(sortable.draggingId),
   });
+  const setActiveTabNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      activeTabRef.current = node;
+    },
+    [activeTabRef],
+  );
   const canDrag = tabs.length > 1 || Boolean(onMoveToNewWindow);
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeId), [activeId, tabs]);
@@ -1300,9 +1312,7 @@ function TitleBarComponent({
               const tab = entry.item;
               const shell = (
                 <div
-                  ref={(el) => {
-                    if (!entry.closing) setTabNode(tab.id, el);
-                  }}
+                  ref={entry.closing ? undefined : tabRef(tab.id)}
                   className={
                     entry.closing || entry.opening
                       ? "relative flex h-full w-full min-w-0 overflow-hidden items-center"
@@ -1337,13 +1347,7 @@ function TitleBarComponent({
                         y: event.clientY,
                       })
                     }
-                    itemRef={
-                      !entry.closing && tab.id === activeId
-                        ? (el) => {
-                            activeTabRef.current = el;
-                          }
-                        : undefined
-                    }
+                    itemRef={!entry.closing && tab.id === activeId ? setActiveTabNode : undefined}
                   />
                 </div>
               );
