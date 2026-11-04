@@ -6016,6 +6016,7 @@ export async function createHostServer(
       drain(() => attachmentOwnership.close());
       drain(async () => await terminals.close());
       drain(() => devServerAccess.close());
+      drain(() => devServers.close());
       drain(() => gitWatches.close());
       drain(() => diagnostics.close());
       drain(() => perfMetrics.close());

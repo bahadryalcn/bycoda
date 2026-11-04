@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute, relative, resolve, win32 } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { monotonicNow } from "../src/shared/lib/time/timestamps";
 import type {
   DevProcess,
   DevProcessIdentity,
@@ -51,6 +52,9 @@ type ManagedServer = {
   expectedPort?: number;
   failedPort?: number;
   exitCode?: number | null;
+  exited?: boolean;
+  shutdownUnverified?: boolean;
+  treeRetired?: boolean;
 };
 
 export type DevServersOptions = {
@@ -63,6 +67,7 @@ export type DevServersOptions = {
   scanTimeoutMs?: number;
   maxConcurrent?: number;
   queueTimeoutMs?: number;
+  closeTimeoutMs?: number;
   runtimeLogs?: RuntimeLogsService;
   portLeases?: DevPortLeases;
   startActivity?(cwd: string, ownerId: string): Promise<() => Promise<void>>;
@@ -213,6 +218,9 @@ export class DevServersService {
   private readonly managed = new Map<string, ManagedServer>();
   private readonly observed = new Map<string, DevServer>();
   private readonly busy = new Set<string>();
+  private readonly operations = new Set<Promise<unknown>>();
+  private closing = false;
+  private closePromise?: Promise<void>;
   readonly portLeases: DevPortLeases;
   private readonly serverLeases = new Map<string, string>();
   private readonly workspaceLaunches = new Map<string, WorkspaceDevServerRequest>();
@@ -299,6 +307,7 @@ export class DevServersService {
     projects: DevServerProject[],
     authorize?: () => Promise<void>,
   ) {
+    if (this.closing) throw new Error("Development server service is closing.");
     if (this.active >= (this.options.maxConcurrent ?? 4)) {
       if (this.waiting.length >= 16)
         throw new Error("Dev server operations are busy; try again shortly.");
@@ -317,6 +326,7 @@ export class DevServersService {
       });
     } else this.active++;
     try {
+      if (this.closing) throw new Error("Development server service is closing.");
       await authorize?.();
       switch (method) {
         case "devServers.list":
@@ -373,13 +383,126 @@ export class DevServersService {
   }
 
   private async exclusive<T>(key: string, work: () => Promise<T>) {
+    if (this.closing) throw new Error("Development server service is closing.");
     if (this.busy.has(key)) throw new Error("This dev server operation is already in progress.");
     this.busy.add(key);
+    const operation = Promise.resolve().then(work);
+    this.operations.add(operation);
     try {
-      return await work();
+      return await operation;
     } finally {
+      this.operations.delete(operation);
       this.busy.delete(key);
     }
+  }
+
+  /** Drain only children admitted by this service; discovery alone grants no ownership. */
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closing = true;
+    this.closePromise = (async () => {
+      const errors: Error[] = [];
+      const deadline = monotonicNow() + (this.options.closeTimeoutMs ?? 20_000);
+      const bounded = async <T>(work: Promise<T>, ms: number): Promise<T> => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          return await Promise.race([
+            work,
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () =>
+                  reject(
+                    new Error("Development server shutdown timed out; ownership remains unknown."),
+                  ),
+                ms,
+              );
+            }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      };
+      try {
+        await bounded(Promise.allSettled(this.operations), Math.max(1, deadline - monotonicNow()));
+      } catch (error) {
+        errors.push(new Error(failure(error)));
+      }
+      for (const [id, record] of this.managed) {
+        try {
+          if (this.busy.has(id) || this.busy.has("start"))
+            throw new Error("An owned operation is still running; shutdown is unverified.");
+          if (monotonicNow() >= deadline)
+            throw new Error("Development server shutdown timed out; ownership remains unknown.");
+          if (!record.server.process) {
+            throw new Error("Owned process identity is unavailable; shutdown is unverified.");
+          }
+          const root = await bounded(
+            this.discovery.identity(record.server.process.pid),
+            Math.max(1, deadline - monotonicNow()),
+          );
+          if (!same(root, record.server.process) && !record.treeRetired)
+            throw new Error(
+              "Owned process tree is no longer observable; descendant shutdown is unverified.",
+            );
+          if (
+            record.treeRetired &&
+            (record.exited || record.child.exitCode != null || record.child.signalCode != null)
+          )
+            continue;
+          const result = await bounded(
+            this.stop({ id, tree: true }, [], false, undefined, true),
+            Math.max(1, deadline - monotonicNow()),
+          );
+          if (result.requiresForce) {
+            if (monotonicNow() >= deadline)
+              throw new Error("Development server shutdown timed out; ownership remains unknown.");
+            const forced = await bounded(
+              this.stop({ id, tree: true }, [], true, undefined, true),
+              Math.max(1, deadline - monotonicNow()),
+            );
+            if (forced.requiresForce) throw new Error("Owned process shutdown remains unverified.");
+          }
+          if (!record.exited && record.child.exitCode == null && record.child.signalCode == null) {
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(
+                done,
+                Math.max(1, Math.min(this.options.graceMs ?? 3_000, deadline - monotonicNow())),
+              );
+              function done() {
+                clearTimeout(timer);
+                record.child.off("exit", done);
+                resolve();
+              }
+              record.child.once("exit", done);
+              if (record.exited || record.child.exitCode != null || record.child.signalCode != null)
+                done();
+            });
+            if (!record.exited && record.child.exitCode == null && record.child.signalCode == null)
+              throw new Error("Owned child exit was not observed; shutdown is unverified.");
+          }
+          if (this.serverLeases.has(id)) {
+            await bounded(
+              this.portLeases.release(this.serverLeases.get(id)!),
+              Math.max(1, deadline - monotonicNow()),
+            );
+            this.serverLeases.delete(id);
+          }
+          await bounded(
+            Promise.resolve(this.activityReleases.get(id)?.()),
+            Math.max(1, deadline - monotonicNow()),
+          );
+          this.activityReleases.delete(id);
+        } catch (error) {
+          record.shutdownUnverified = true;
+          record.server.state = "error";
+          record.server.error = failure(error);
+          errors.push(new Error(`${id}: ${failure(error)}`));
+        }
+      }
+      if (errors.length)
+        throw new AggregateError(errors, "Development server shutdown was not fully verified.");
+    })();
+    return this.closePromise;
   }
 
   private id(params: Record<string, unknown>) {
@@ -672,6 +795,7 @@ export class DevServersService {
     projects: DevServerProject[],
     force: boolean,
     authorize?: () => Promise<void>,
+    retainUntilExit = false,
   ): Promise<DevServerStop> {
     const selected = await this.selection(params, projects, true);
     if (params.expectedImpact !== undefined && params.expectedImpact !== this.impact(selected))
@@ -725,12 +849,19 @@ export class DevServersService {
         if (!alive.length || Date.now() >= until) break;
         await sleep(this.options.pollMs ?? 100);
       }
-      if (selected.managed) selected.managed.server.state = alive.length ? "running" : "stopped";
-      if (!alive.length && this.serverLeases.has(selected.server.id)) {
+      if (selected.managed && !selected.managed.shutdownUnverified)
+        selected.managed.server.state = alive.length ? "running" : "stopped";
+      if (
+        selected.managed &&
+        !alive.length &&
+        selected.targets.some((process) => same(process, selected.managed!.server.process))
+      )
+        selected.managed.treeRetired = true;
+      if (!alive.length && !retainUntilExit && this.serverLeases.has(selected.server.id)) {
         await this.portLeases.release(this.serverLeases.get(selected.server.id)!);
         this.serverLeases.delete(selected.server.id);
       }
-      if (!alive.length) {
+      if (!alive.length && !retainUntilExit) {
         await this.activityReleases.get(selected.server.id)?.();
         this.activityReleases.delete(selected.server.id);
       }
@@ -844,6 +975,7 @@ export class DevServersService {
           verbatim: false,
         };
     await authorize?.();
+    if (this.closing) throw new Error("Development server service is closing.");
     const child = (this.options.spawnProcess ?? spawn)(invocation.file, invocation.args, {
       cwd,
       env: { ...process.env, ...invocation.env, ...environment },
@@ -976,6 +1108,9 @@ export class DevServersService {
       captureStderr(`${error.message}\n`);
       this.options.runtimeLogs?.setSource(this.logSource(record.server));
       this.invalidate();
+    });
+    child.once("exit", () => {
+      record.exited = true;
     });
     child.on("close", (code) => {
       if (closed) return;

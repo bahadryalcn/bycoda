@@ -83,6 +83,125 @@ function fixture(options: Partial<DevServersOptions> = {}) {
   return { discovery, children, spawnProcess, service, list, selected, target };
 }
 
+it("drains only owned exact process identities on close and rejects new starts", async () => {
+  const f = fixture();
+  const external: DevProcess = { ...root, pid: 202, startedAt: "external-birth", parentPid: 1 };
+  f.discovery.live.set(external.pid, external);
+  const started = (await f.service.handle(
+    "devServers.start",
+    { command: "node server.js", projectId: "project" },
+    projects,
+  )) as DevServerStartResult;
+  expect(started.server?.process?.pid).toBe(root.pid);
+  f.discovery.signal.mockImplementation(async (identity) => {
+    f.discovery.live.delete(identity.pid);
+    f.children[0].emit("exit", 0, null);
+  });
+  await f.service.close();
+  expect(f.discovery.signal).toHaveBeenCalledWith(
+    expect.objectContaining({ pid: root.pid, startedAt: root.startedAt }),
+    false,
+  );
+  expect(f.discovery.live.has(external.pid)).toBe(true);
+  await expect(
+    f.service.handle(
+      "devServers.start",
+      { command: "node server.js", projectId: "project" },
+      projects,
+    ),
+  ).rejects.toThrow("closing");
+});
+
+it("drains independently owned children across projects", async () => {
+  const f = fixture();
+  const first = { ...root, pid: 211, startedAt: "one" };
+  const second = { ...root, pid: 212, startedAt: "two", cwd: process.cwd() };
+  f.discovery.live.clear();
+  f.discovery.live.set(first.pid, first);
+  f.discovery.live.set(second.pid, second);
+  let next = first.pid;
+  f.spawnProcess.mockImplementation(() => {
+    const child = Object.assign(new EventEmitter(), {
+      pid: next++,
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+    }) as unknown as ChildProcess;
+    f.children.push(child);
+    return child;
+  });
+  const twoProjects = [...projects, { id: "other", name: "Other", path: process.cwd() }];
+  await f.service.handle(
+    "devServers.start",
+    { command: "first", projectId: "project" },
+    twoProjects,
+  );
+  await f.service.handle(
+    "devServers.start",
+    { command: "second", projectId: "other" },
+    twoProjects,
+  );
+  f.discovery.signal.mockImplementation(async (identity) => {
+    f.discovery.live.delete(identity.pid);
+    f.children.find((child) => child.pid === identity.pid)?.emit("exit", 0, null);
+  });
+  await f.service.close();
+  expect(f.discovery.signal.mock.calls.map(([identity]) => identity.pid).sort()).toEqual([
+    211, 212,
+  ]);
+});
+
+it("retains unknown shutdown when original child exit is not observed", async () => {
+  const f = fixture();
+  await f.service.handle(
+    "devServers.start",
+    { command: "node server.js", projectId: "project" },
+    projects,
+  );
+  await expect(f.service.close()).rejects.toThrow("not fully verified");
+  const result = await f.list().catch(() => undefined);
+  expect(result).toBeUndefined();
+});
+
+it("never signals a reused owned PID during shutdown", async () => {
+  const f = fixture();
+  await f.service.handle(
+    "devServers.start",
+    { command: "node server.js", projectId: "project" },
+    projects,
+  );
+  f.discovery.live.set(root.pid, { ...root, startedAt: "replacement" });
+  f.children[0].emit("exit", 0, null);
+  await expect(f.service.close()).rejects.toThrow("not fully verified");
+  expect(f.discovery.signal).not.toHaveBeenCalled();
+  expect(f.discovery.live.get(root.pid)?.startedAt).toBe("replacement");
+});
+
+it("bounds a pending admission and refuses a late spawn after shutdown begins", async () => {
+  let resume!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const entered = vi.fn();
+  const f = fixture({
+    closeTimeoutMs: 20,
+    startActivity: async () => {
+      entered();
+      await gate;
+      return async () => {};
+    },
+  });
+  const start = f.service.handle(
+    "devServers.start",
+    { command: "node server.js", projectId: "project" },
+    projects,
+  );
+  await vi.waitFor(() => expect(entered).toHaveBeenCalled());
+  await expect(f.service.close()).rejects.toThrow("not fully verified");
+  resume();
+  await expect(start).rejects.toThrow("closing");
+  expect(f.spawnProcess).not.toHaveBeenCalled();
+});
+
 it("rejects reserved workspace starts before spawning and releases attempted port allocations", async () => {
   const startActivity = vi.fn(async () => {
     throw new Error("Workspace reservation is active");
@@ -728,6 +847,56 @@ afterEach(async () => {
       child.kill("SIGKILL");
     });
   }
+});
+
+it("drains a real owned command on Host close without signalling an unrelated child", async () => {
+  const windows = process.platform === "win32";
+  const quote = (value: string) =>
+    windows ? `'${value.replaceAll("'", "''")}'` : `'${value.replaceAll("'", "'\\''")}'`;
+  const script = `setInterval(()=>{},1000)`;
+  const command = `${windows ? "& " : ""}${quote(process.execPath)} -e ${quote(script)}`;
+  const unrelated = spawn(process.execPath, ["-e", script], { windowsHide: true, stdio: "ignore" });
+  realChildren.push(unrelated);
+  const discovery = new DevServerDiscovery();
+  const service = new DevServersService({
+    discovery,
+    graceMs: 200,
+    shellProfile: {
+      id: "test-shell",
+      name: "Test shell",
+      kind: windows ? "powershell" : "sh",
+      path: windows
+        ? `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+        : "/bin/sh",
+    },
+    spawnProcess: ((...args: Parameters<typeof spawn>) => {
+      const child = spawn(...args);
+      realChildren.push(child);
+      return child;
+    }) as typeof spawn,
+  });
+  const result = (await service.handle(
+    "devServers.start",
+    { command, projectId: "project" },
+    projects,
+  )) as DevServerStartResult;
+  expect(result.server?.process?.startedAt).toBeTruthy();
+  const details = (await service.handle(
+    "devServers.details",
+    { id: result.server!.id },
+    projects,
+  )) as { descendants: DevProcess[] };
+  expect(details.descendants.length).toBeGreaterThan(0);
+  await service.close();
+  for (const child of details.descendants) {
+    const current = await discovery.identity(child.pid);
+    expect(current?.startedAt).not.toBe(child.startedAt);
+  }
+  expect(realChildren.at(-1)!.exitCode !== null || realChildren.at(-1)!.signalCode !== null).toBe(
+    true,
+  );
+  expect(unrelated.exitCode).toBeNull();
+  expect(unrelated.signalCode).toBeNull();
 });
 
 it("discovers and manages only a real test-owned server listening on two random ports", async () => {
