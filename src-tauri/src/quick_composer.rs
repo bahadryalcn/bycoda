@@ -73,7 +73,29 @@ pub struct QuickComposerState {
     pending: Mutex<delivery::LaunchQueue>,
     launches: std::sync::Arc<Mutex<LaunchLedger>>,
     capturing: std::sync::Arc<AtomicBool>,
+    persistence: std::sync::Arc<Mutex<()>>,
+    presentation: Mutex<uuid::Uuid>,
     shortcut: Mutex<Option<Shortcut>>,
+}
+
+fn presentation_stamp(app: &AppHandle) -> Option<uuid::Uuid> {
+    let state = app.state::<QuickComposerState>();
+    let stamp = state.presentation.lock().ok()?;
+    Some(*stamp)
+}
+
+fn presentation_matches(app: &AppHandle, original: Option<uuid::Uuid>) -> bool {
+    same_presentation(original, presentation_stamp(app))
+}
+
+fn same_presentation(original: Option<uuid::Uuid>, current: Option<uuid::Uuid>) -> bool {
+    original.is_some() && current == original
+}
+
+fn advance_presentation(app: &AppHandle) {
+    let state = app.state::<QuickComposerState>();
+    let Ok(mut stamp) = state.presentation.lock() else { return; };
+    *stamp = uuid::Uuid::new_v4();
 }
 
 // Hidden Quick webviews retain their unknown/current raw draft until explicit
@@ -202,6 +224,7 @@ pub fn quick_composer_set_enabled(
             .map_err(|err| err.to_string())?;
         *current = None;
         if let Some(panel) = app.get_webview_window(QUICK_COMPOSER_LABEL) {
+            advance_presentation(&app);
             git_popup::dismiss(&app, false);
             let _ = panel.hide();
         }
@@ -236,6 +259,57 @@ pub fn quick_composer_fit(window: WebviewWindow, height: f64) -> Result<(), Stri
         .map_err(|err| err.to_string())
 }
 
+fn if_launch_capacity<T>(available: bool, prepare: impl FnOnce() -> Result<T, String>) -> Result<Option<T>, String> {
+    if available { prepare().map(Some) } else { Ok(None) }
+}
+
+/// Main-thread-only UI preflight. Preserve the original recipient before I/O.
+fn prepare_launch_target(
+    app: &AppHandle, window: &WebviewWindow, owner: &QuickWindowOwner,
+    scope: &crate::quick_native::LaunchScope, instance: uuid::Uuid,
+    presentation: Option<uuid::Uuid>, reveal: bool,
+) -> Result<Option<(WebviewWindow, QuickWindowOwner, bool)>, String> {
+    current_launch_scope(window, owner, scope, instance)?;
+    let available = app.state::<QuickComposerState>().pending.lock()
+        .map_err(|err| err.to_string())?.has_capacity();
+    if_launch_capacity(available, || {
+        let reveal = reveal && presentation_matches(app, presentation);
+        let target = target_or_create(launch_target(app), reveal, |reveal| crate::window::open_session_window(app, reveal))?;
+        let recipient = launch_recipient_owner(&target)?;
+        Ok((target, recipient, reveal))
+    })
+}
+
+/// Recipient authority is physical-window identity, not its first page-load incarnation.
+fn launch_recipient_owner(target: &WebviewWindow) -> Result<QuickWindowOwner, String> {
+    let (owner, installed) = {
+        let physical = target.as_ref().window();
+        let mut resources = physical.resources_table();
+        match QuickWindowOwner::get(&resources) {
+            Ok(owner) => (owner, false),
+            Err(_) => (QuickWindowOwner::install(&mut resources)?, true),
+        }
+    };
+    if installed {
+        let retirement = owner.clone();
+        target.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) { retirement.retire(); }
+        });
+    }
+    Ok(owner)
+}
+
+fn finish_launch_presentation(app: &AppHandle, window: &WebviewWindow, target: &WebviewWindow,
+    presentation: Option<uuid::Uuid>, reveal: bool) {
+    if !presentation_matches(app, presentation) { return; }
+    git_popup::dismiss(app, false);
+    let _ = window.hide();
+    if reveal && presentation_matches(app, presentation) {
+        let _ = target.unminimize(); let _ = target.show(); let _ = target.set_focus();
+    }
+    if presentation_matches(app, presentation) { advance_presentation(app); }
+}
+
 #[tauri::command]
 pub async fn quick_composer_submit(
     app: AppHandle,
@@ -257,51 +331,56 @@ pub async fn quick_composer_submit(
 
     validate_workspace(&request)?;
     validate_attachments(&request.attachments, &request.harness)?;
+    let owner = launch_owner(&window)?;
+    let instance = app.state::<crate::session_store::SessionStore>().native_instance_id();
+    let scope = owner.scope(instance)?.scope;
+    let presentation = presentation_stamp(&app);
     let admission =
         crate::native_window_lifecycle::admit_window_buffers(&window.as_ref().window())?;
     let (tx, mut rx) = tauri::async_runtime::channel(1);
     let handle = app.clone();
     app.run_on_main_thread(move || {
-        let result = (|| {
-            let state = handle.state::<QuickComposerState>();
-            if !state
-                .pending
-                .lock()
-                .map_err(|err| err.to_string())?
-                .has_capacity()
-            {
-                return Err(
-                    "Too many sessions are waiting to start. Please try again shortly.".into(),
-                );
+        let target = prepare_launch_target(&handle, &window, &owner, &scope, instance, presentation, request.reveal);
+        let (target, recipient, reveal) = match target {
+            Ok(Some(target)) => target,
+            result => {
+                let error = result.err().unwrap_or_else(|| "Too many sessions are waiting to start. Please try again shortly.".into());
+                let _ = tx.try_send(admission.finish(Err(error)));
+                return;
             }
-            // Window creation and enqueueing are serialized on the main thread:
-            // a second submission sees the first submission's mounting window.
-            let target = target_or_create(launch_target(&handle), request.reveal, |reveal| {
-                crate::window::open_session_window(&handle, reveal)
-            })?;
-            screenshots::persist(&handle, &mut request.attachments)?;
-            let reveal = request.reveal;
-            state
-                .pending
-                .lock()
-                .map_err(|err| err.to_string())?
-                .push(request, target.label().to_string());
-            git_popup::dismiss(&handle, false);
-            let _ = window.hide();
-            if reveal {
-                let _ = target.unminimize();
-                let _ = target.show();
-                let _ = target.set_focus();
-            }
-            let _ = handle.emit_to(target.label(), LAUNCH, ());
-            Ok(())
-        })();
-        let _ = tx.try_send(admission.finish(result));
-    })
-    .map_err(|err| err.to_string())?;
-    rx.recv()
-        .await
-        .ok_or_else(|| "Session submission was interrupted.".to_string())?
+        };
+        let persistence = handle.state::<QuickComposerState>().persistence.clone();
+        // The actual worker, not the detachable IPC waiter, owns admission.
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let prepared = (|| -> Result<(), String> {
+                let _persistence = persistence.lock().map_err(|err| err.to_string())?;
+                current_launch_scope(&window, &owner, &scope, instance)?;
+                screenshots::persist(&handle, &mut request.attachments)
+            })();
+            let scheduling = handle.clone();
+            let _ = scheduling.run_on_main_thread(move || {
+                let result = (|| -> Result<(), String> {
+                    prepared?;
+                    current_launch_scope(&window, &owner, &scope, instance)?;
+                    let state = handle.state::<QuickComposerState>();
+                    {
+                        let current_target = handle.get_webview_window(target.label()).ok_or("Quick launch recipient closed.")?;
+                        let physical = current_target.as_ref().window();
+                        let resources = physical.resources_table();
+                        if !recipient.matches(&resources) { return Err("Quick launch recipient changed.".into()); }
+                        let mut pending = state.pending.lock().map_err(|err| err.to_string())?;
+                        if !pending.has_capacity() { return Err("Quick launch capacity changed after preparation; outcome is unknown.".into()); }
+                        pending.push(request, target.label().to_string());
+                    }
+                    finish_launch_presentation(&handle, &window, &target, presentation, reveal);
+                    let _ = handle.emit_to(target.label(), LAUNCH, ());
+                    Ok(())
+                })();
+                let _ = tx.try_send(admission.finish(result));
+            });
+        });
+    }).map_err(|err| err.to_string())?;
+    rx.recv().await.ok_or_else(|| "Session submission was interrupted.".to_string())?
 }
 
 fn launch_owner(window: &WebviewWindow) -> Result<QuickWindowOwner, String> {
@@ -414,60 +493,54 @@ pub async fn quick_composer_submit_intent(
     if validation.is_err() {
         return work.finish(ReceiptState::Failed);
     }
+    let presentation = presentation_stamp(&app);
     let (tx, mut rx) = tauri::async_runtime::channel(1);
     let handle = app.clone();
     app.run_on_main_thread(move || {
         let mut request = submission.request;
-        let result = (|| {
-            current_launch_scope(&window, &owner, work.scope(), instance)?;
-            let state = handle.state::<QuickComposerState>();
-            if !state
-                .pending
-                .lock()
-                .map_err(|err| err.to_string())?
-                .has_capacity()
-            {
-                // Callback executed and verified capacity before creating a
-                // window, copying captures or enqueueing. Explicit exact retry
-                // can recover once the queue drains; no ambiguity is inferred.
-                return work.finish(ReceiptState::Failed);
-            }
-            let target = target_or_create(launch_target(&handle), request.reveal, |reveal| {
-                crate::window::open_session_window(&handle, reveal)
-            })?;
-            screenshots::persist(&handle, &mut request.attachments)?;
-            current_launch_scope(&window, &owner, work.scope(), instance)?;
-            let reveal = request.reveal;
-            state
-                .pending
-                .lock()
-                .map_err(|err| err.to_string())?
-                .push_reserved(
-                    request,
-                    target.label().to_string(),
-                    work.delivery_id().to_owned(),
-                    Some(instance),
-                );
-            // Publish queued before emitting: an immediate real workspace ACK
-            // may now acknowledge this existing delivery, never just a timeout.
-            let receipt = work.finish(ReceiptState::Queued)?;
-            git_popup::dismiss(&handle, false);
-            let _ = window.hide();
-            if reveal {
-                let _ = target.unminimize();
-                let _ = target.show();
-                let _ = target.set_focus();
-            }
-            let _ = handle.emit_to(target.label(), LAUNCH, ());
-            Ok(receipt)
-        })();
-        // Any post-scheduling error drops LaunchWork as unknown; no resend.
-        let _ = tx.try_send(result);
-    })
-    .map_err(|err| err.to_string())?;
-    rx.recv()
-        .await
-        .ok_or_else(|| "Quick launch outcome is unknown.".to_string())?
+        let target = prepare_launch_target(&handle, &window, &owner, work.scope(), instance, presentation, request.reveal);
+        let (target, recipient, reveal) = match target {
+            Ok(Some(target)) => target,
+            Ok(None) => { let _ = tx.try_send(work.finish(ReceiptState::Failed)); return; }
+            Err(error) => { let _ = tx.try_send(Err(error)); return; }
+        };
+        let persistence = handle.state::<QuickComposerState>().persistence.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let prepared = (|| -> Result<(), String> {
+                let _persistence = persistence.lock().map_err(|err| err.to_string())?;
+                current_launch_scope(&window, &owner, work.scope(), instance)?;
+                screenshots::persist(&handle, &mut request.attachments)
+            })();
+            let scheduling = handle.clone();
+            let _ = scheduling.run_on_main_thread(move || {
+                let result = (|| -> Result<Receipt, String> {
+                    prepared?;
+                    current_launch_scope(&window, &owner, work.scope(), instance)?;
+                    let state = handle.state::<QuickComposerState>();
+                    {
+                        let current_target = handle.get_webview_window(target.label()).ok_or("Quick launch recipient closed.")?;
+                        let physical = current_target.as_ref().window();
+                        let resources = physical.resources_table();
+                        if !recipient.matches(&resources) { return Err("Quick launch recipient changed.".into()); }
+                        let mut pending = state.pending.lock().map_err(|err| err.to_string())?;
+                        if !pending.has_capacity() {
+                            return Err("Quick launch capacity changed after attachment preparation; outcome is unknown.".into());
+                        }
+                        pending.push_reserved(request, target.label().to_string(), work.delivery_id().to_owned(), Some(instance));
+                    }
+                    // Publish queued before emitting: a real workspace ACK can now
+                    // acknowledge this existing delivery, never a timeout alone.
+                    let receipt = work.finish(ReceiptState::Queued)?;
+                    finish_launch_presentation(&handle, &window, &target, presentation, reveal);
+                    let _ = handle.emit_to(target.label(), LAUNCH, ());
+                    Ok(receipt)
+                })();
+                // Any post-scheduling failure drops the original work as unknown.
+                let _ = tx.try_send(result);
+            });
+        });
+    }).map_err(|err| err.to_string())?;
+    rx.recv().await.ok_or_else(|| "Quick launch outcome is unknown.".to_string())?
 }
 
 fn validate_workspace(request: &QuickLaunch) -> Result<(), String> {
@@ -730,6 +803,7 @@ fn toggle(app: &AppHandle) {
     let _ = app.run_on_main_thread(move || {
         if let Some(panel) = handle.get_webview_window(QUICK_COMPOSER_LABEL) {
             if panel.is_visible().unwrap_or(false) {
+                advance_presentation(&handle);
                 git_popup::dismiss(&handle, false);
                 let _ = panel.hide();
                 // A dismissed draft lives only in this webview; keep it.
@@ -798,6 +872,7 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 }
 
 fn show(app: &AppHandle, panel: &WebviewWindow) {
+    advance_presentation(app);
     place(app, panel);
     present(panel);
     let _ = app.emit_to(panel.label(), SHOWN, ());
@@ -927,10 +1002,27 @@ fn make_panel(window: &WebviewWindow) {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_shortcut, target_or_create, validate_attachments, validate_workspace, QuickLaunch,
+        parse_shortcut, if_launch_capacity, same_presentation, target_or_create, validate_attachments, validate_workspace, QuickLaunch,
         DEFAULT_SHORTCUT,
     };
     use tauri_plugin_global_shortcut::{Code, Modifiers};
+
+    #[test]
+    fn old_launch_presentation_cannot_hide_or_focus_a_reopened_composer() {
+        let original = uuid::Uuid::new_v4();
+        let reopened = uuid::Uuid::new_v4();
+        assert!(same_presentation(Some(original), Some(original)));
+        assert!(!same_presentation(Some(original), Some(reopened)));
+        assert!(!same_presentation(Some(original), None));
+        assert!(!same_presentation(None, None));
+    }
+
+    #[test]
+    fn full_queue_preflight_cannot_start_screenshot_io_or_report_prepared() {
+        assert_eq!(if_launch_capacity::<()>(false, || panic!("no copy when queue is full")), Ok(None));
+        assert!(if_launch_capacity::<()>(true, || Err("copy failed".into())).is_err());
+        assert_eq!(if_launch_capacity(true, || Ok(())), Ok(Some(())));
+    }
 
     #[test]
     fn quick_composer_shortcut_requires_a_non_shift_modifier() {
