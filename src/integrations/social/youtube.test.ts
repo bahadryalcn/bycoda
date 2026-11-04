@@ -249,11 +249,53 @@ describe("YouTube official API adapter", () => {
     });
     const second = await adapter.poll(account, "token", [], first.cursor);
     expect(second.events.map((e) => e.eventId)).toEqual(["reply-3"]);
-    expect(new URL(String(fetcher.mock.calls[4][0])).searchParams.get("parentId")).toBe("root-id");
+    expect(new URL(String(fetcher.mock.calls[5][0])).searchParams.get("parentId")).toBe("root-id");
     expect(JSON.parse(second.cursor!)).toEqual({
       page: "threads-next",
       replies: [],
+      recent: ["root-id"],
     });
+  });
+  it("reads the newest thread page on every poll, deduping seen threads, with a separate backfill cursor", async () => {
+    const thread = (id: string, replies = 0) => ({
+      id: `wrapper-${id}`,
+      snippet: {
+        channelId: "UCowner",
+        videoId: "owned-video",
+        canReply: true,
+        totalReplyCount: replies,
+        topLevelComment: {
+          id,
+          snippet: {
+            authorChannelId: { value: "UCperson" },
+            textOriginal: `Comment ${id}`,
+            publishedAt: "2026-10-10T09:00:00Z",
+          },
+        },
+      },
+    });
+    let newest = [thread("old-a", 1)];
+    const requests: string[] = [];
+    const fetcher = vi.fn(async (raw: string | URL | Request) => {
+      const url = new URL(String(raw));
+      requests.push(`${url.pathname.split("/").pop()}?${url.searchParams.get("pageToken") ?? ""}`);
+      if (url.pathname.endsWith("/comments")) return Response.json({ items: [] });
+      if (url.searchParams.get("pageToken") === "older")
+        return Response.json({ items: [thread("ancient")] });
+      return Response.json({ nextPageToken: "older", items: newest });
+    });
+    const adapter = createSocialAdapters(new SocialHttp(fetcher)).youtube;
+    const first = await adapter.poll(account, "token", []);
+    expect(first.events.map((e) => e.eventId)).toEqual(["old-a", "ancient"]);
+    expect(JSON.parse(first.cursor!)).toMatchObject({ done: true });
+    // A new top-level comment arrives after history has been exhausted.
+    newest = [thread("fresh"), thread("old-a", 1)];
+    const second = await adapter.poll(account, "token", [], first.cursor);
+    expect(second.events.map((e) => e.eventId)).toEqual(["fresh"]);
+    expect(requests.filter((request) => request === "commentThreads?older")).toHaveLength(1);
+    const third = await adapter.poll(account, "token", [], second.cursor);
+    expect(third.events).toEqual([]);
+    expect(JSON.parse(third.cursor!)).toMatchObject({ done: true });
   });
   it("classifies quota, disabled comments, expiry and uncertain upload without exposing error bodies", async () => {
     for (const [status, reason, code] of [

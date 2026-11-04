@@ -1101,6 +1101,20 @@ export class HostEngine {
     };
   }
 
+  /** Minimal session identity for `workspaceForSession` (project, id, workspace, worktree), without the transcript. */
+  private async managedIdentity(id: string, workspaceId: string): Promise<HostSession | undefined> {
+    const row = await this.store.db
+      .prepare(
+        "SELECT project_id, json_extract(snapshot, '$.session.worktreeCwd') AS worktree_cwd FROM sessions WHERE id=?",
+      )
+      .get(id);
+    if (!row?.project_id || !row.worktree_cwd) return undefined;
+    return {
+      projectId: String(row.project_id),
+      session: { id, workspaceId, worktreeCwd: String(row.worktree_cwd) },
+    } as unknown as HostSession;
+  }
+
   private async initialize(managedOnly = false): Promise<void> {
     await this.store.ready;
     const store = this.store;
@@ -1112,14 +1126,27 @@ export class HostEngine {
     for (const state of await store.startupStates()) {
       if (!this.managedTurns && state.workspaceId) continue;
       if (managedOnly && !state.workspaceId) continue;
-      const snapshot =
-        this.managedTurns || state.running || state.shellRunning || !state.hasDesktop
+      // An idle, desktop-shared managed session only needs its workspace identity
+      // validated and its provider bound: read that identity from two columns instead
+      // of parsing and normalizing the whole transcript. A missing column falls back
+      // to the full snapshot, so validation is never skipped.
+      const lean =
+        this.managedTurns &&
+        state.workspaceId &&
+        state.hasDesktop &&
+        !state.running &&
+        !state.shellRunning
+          ? await this.managedIdentity(state.id, state.workspaceId)
+          : undefined;
+      const snapshot = lean
+        ? undefined
+        : this.managedTurns || state.running || state.shellRunning || !state.hasDesktop
           ? await store.session(state.id)
           : undefined;
       // The CLI creates the engine before the shared recovery graph. Never run legacy
       // recovery against a durable managed conversation in that interval.
       if (!this.managedTurns && snapshot?.session.workspaceId) continue;
-      const managedValue = this.managedTurns ? snapshot : undefined;
+      const managedValue = this.managedTurns ? (snapshot ?? lean) : undefined;
       let managed:
         | Awaited<ReturnType<ManagedTurnHistoryAdapter["workspaceForSession"]>>
         | undefined;
@@ -1151,7 +1178,7 @@ export class HostEngine {
           );
         continue;
       }
-      let value = managedValue ?? (await store.session(state.id));
+      let value = snapshot ?? (await store.session(state.id));
       // Sessions started here before they were shared with this machine's
       // desktop app become shared too, so the app on this machine lists them.
       if (!value.desktop)

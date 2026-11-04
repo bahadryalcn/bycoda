@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "./listenWindow";
 import { IS_MAC } from "./platform";
 
 const claims: { handler: (delta: number) => void }[] = [];
@@ -10,7 +11,9 @@ function reconcile() {
   tail = tail.catch(() => undefined).then(async () => {
     if (claims.length && !stop) {
       const subscription = {};
-      const release = await listen<number>("trackpad_magnify", event => {
+      // Rust emits the magnification to the window under the trackpad; a plain
+      // listener would pinch-zoom every window.
+      const release = await listenWindowAsync<number>("trackpad_magnify", event => {
         if (owner === subscription && Number.isFinite(event.payload)) claims[claims.length - 1]?.handler(event.payload);
       });
       owner = subscription;

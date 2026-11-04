@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   mac: true,
   native: true,
   callbacks: new Map<string, (event: { payload: string }) => void>(),
+  targets: new Map<string, unknown>(),
   releases: [] as ReturnType<typeof vi.fn>[],
 }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -15,12 +16,16 @@ vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => api.native,
 }));
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async (name, callback) => {
+  listen: vi.fn(async (name, callback, options) => {
     api.callbacks.set(name, callback);
+    api.targets.set(name, options);
     const release = vi.fn();
     api.releases.push(release);
     return release;
   }),
+}));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "workspace-2" }),
 }));
 vi.mock("../../platform/tauri/platform", () => ({
   get IS_MAC() {
@@ -67,6 +72,7 @@ beforeEach(() => {
   api.mac = true;
   api.native = true;
   api.callbacks.clear();
+  api.targets.clear();
   api.releases = [];
   projectKeys = new Set(["/project"]);
   container = document.createElement("div");
@@ -82,7 +88,14 @@ it("publishes status and canonical ownership and routes only visible selections"
   expect(api.invoke).toHaveBeenCalledWith(
     "tray_sessions_update",
     expect.objectContaining({
-      labels:expect.objectContaining({presence:expect.objectContaining({availability:"Availability",here:"Here",away:"Away",dnd:"Do not disturb"})}),
+      labels: expect.objectContaining({
+        presence: expect.objectContaining({
+          availability: "Availability",
+          here: "Here",
+          away: "Away",
+          dnd: "Do not disturb",
+        }),
+      }),
       rows: [
         expect.objectContaining({
           id: "local",
@@ -96,6 +109,10 @@ it("publishes status and canonical ownership and routes only visible selections"
   api.callbacks.get(TRAY_OPEN_EVENT)?.({ payload: "local" });
   expect(onOpen).toHaveBeenCalledWith("local");
   onOpen.mockClear();
+  // The native menu addresses the window that published the row: both tray
+  // subscriptions are scoped to this window instead of a process-wide listener.
+  expect(api.targets.get(TRAY_OPEN_EVENT)).toEqual({ target: "workspace-2" });
+  expect(api.targets.get("bycoda:tray-notifications")).toEqual({ target: "workspace-2" });
   projectKeys = new Set();
   await act(async () => root.render(createElement(Probe)));
   api.callbacks.get(TRAY_OPEN_EVENT)?.({ payload: "local" });
@@ -104,19 +121,14 @@ it("publishes status and canonical ownership and routes only visible selections"
   api.callbacks.get("bycoda:tray-notifications")?.({ payload: "" });
   expect(onSettings).toHaveBeenCalledOnce();
   await act(async () => root.unmount());
-  expect(api.releases.every((release) => release.mock.calls.length === 1)).toBe(
-    true,
-  );
+  expect(api.releases.every((release) => release.mock.calls.length === 1)).toBe(true);
   root = createRoot(container);
 });
 
 it("publishes native snapshots on Windows and skips IPC in browsers", async () => {
   api.mac = false;
   await act(async () => root.render(createElement(Probe)));
-  expect(api.invoke).toHaveBeenCalledWith(
-    "tray_sessions_update",
-    expect.any(Object),
-  );
+  expect(api.invoke).toHaveBeenCalledWith("tray_sessions_update", expect.any(Object));
   expect(api.callbacks.size).toBe(2);
   vi.clearAllMocks();
   api.callbacks.clear();

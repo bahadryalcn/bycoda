@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const native = vi.hoisted(() => ({ invoke: vi.fn(async () => []) }));
-vi.mock("@tauri-apps/api/core", () => native);
+const native = vi.hoisted(() => ({
+  invoke: vi.fn(async () => []),
+  listen: vi.fn(async () => vi.fn()),
+}));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: native.listen }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "workspace-6" }),
+}));
 import {
   cancelSftp,
   downloadSftp,
@@ -11,8 +18,33 @@ import {
   validSftpProgress,
   resumeSftp,
   discardSftp,
+  subscribeSftpProgress,
 } from "./sshSftp";
 beforeEach(() => vi.clearAllMocks());
+
+it("subscribes to transfer progress on this window only and forwards valid events", async () => {
+  const release = vi.fn();
+  let deliver!: (payload: unknown) => void;
+  native.listen.mockImplementationOnce(
+    async (_name: string, callback: (event: { payload: unknown }) => void) => {
+      deliver = (payload) => callback({ payload });
+      return release;
+    },
+  );
+  const callback = vi.fn();
+  const unlisten = await subscribeSftpProgress(callback);
+  // Rust emits progress to the window that started the transfer; a process-wide
+  // listener showed every window the same bytes.
+  expect(native.listen).toHaveBeenCalledExactlyOnceWith("ssh-sftp-progress", expect.any(Function), {
+    target: "workspace-6",
+  });
+  const progress = { operationId: "op", phase: "upload", transferredBytes: 1, state: "running" };
+  deliver(progress);
+  deliver({ ...progress, transferredBytes: -1 });
+  expect(callback).toHaveBeenCalledExactlyOnceWith(progress);
+  unlisten();
+  expect(release).toHaveBeenCalledOnce();
+});
 
 describe("SFTP literal remote paths", () => {
   it("preserves remote Unicode and spaces without interpreting local paths", () => {

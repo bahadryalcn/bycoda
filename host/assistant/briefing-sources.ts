@@ -2,6 +2,7 @@ import type {HostStore} from "../store";
 import type {AssistantJob,AssistantNote} from "../../src/shared/model/host-contracts/assistant";
 import type {HostGoal} from "../../src/features/tasks/model/hostGoals";
 import type {HostTask} from "../../src/features/tasks/model/hostTasks";
+import {legacyUtcDayKey,ownerDayKey} from "../owner-day";
 import {assertAssistantGoalProjects} from "../assistant-job-scope";
 import {assistantJobProjectIds} from "../../src/shared/model/assistantProjects";
 
@@ -27,10 +28,11 @@ export async function readBriefingApprovals(store:HostStore,jobs:readonly Assist
  }
  return{items,complete};
 }
-const localDay=(at:number)=>{const date=new Date(at);return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;};
+const localDay=(at:number)=>ownerDayKey(at);
 /** Actual daily notes; title date remains valid after an assistant rename. */
 export function recentBriefingNotes(notes:readonly AssistantNote[],now:number):AssistantNote[]{
- const yesterday=new Date(now);yesterday.setDate(yesterday.getDate()-1);const days=new Set([localDay(now),localDay(yesterday.getTime())]);
+ const yesterday=new Date(now);yesterday.setDate(yesterday.getDate()-1);// Notes titled before owner-day keys used the UTC day; read both for the transition.
+ const days=new Set([localDay(now),localDay(yesterday.getTime()),legacyUtcDayKey(now),legacyUtcDayKey(yesterday.getTime())]);
  return notes.filter(note=>note.tags.includes("assistant")&&days.has(note.title.match(/(?:^| · )(\d{4}-\d{2}-\d{2})$/)?.[1]??"")).sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,4);
 }
 export function briefingNoteLines(note:AssistantNote):{text:string;eventIds:string[]}[]{

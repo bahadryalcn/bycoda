@@ -5,6 +5,9 @@ import { createTauriHostConnection, NativeHostConnectionError } from "./hostConn
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "workspace-3" }),
+}));
 afterEach(() => {
   vi.resetAllMocks();
 });
@@ -78,6 +81,10 @@ it("filters other machines and malformed native events and releases listening on
   });
   const listener = vi.fn();
   const release = await createTauriHostConnection("machine").listen(listener);
+  // Rust emits to the attaching window; the listener must not be process-wide.
+  expect(listen).toHaveBeenCalledExactlyOnceWith("host-connection-event", expect.any(Function), {
+    target: "workspace-3",
+  });
   const state = {
     kind: "state",
     environmentId: "env",
@@ -257,10 +264,20 @@ it("does not trust malformed native failure metadata or an altered durable comma
 });
 it.each([
   ["goals.list", {}],
-  ["tasks.save", { task: {
-    id: "task", title: "Fixture", prompt: "Work", projectId: "p",
-    harness: "codex", model: "fixture", runtimeMode: "auto",
-  } }],
+  [
+    "tasks.save",
+    {
+      task: {
+        id: "task",
+        title: "Fixture",
+        prompt: "Work",
+        projectId: "p",
+        harness: "codex",
+        model: "fixture",
+        runtimeMode: "auto",
+      },
+    },
+  ],
   ["files.write", { projectId: "p", path: "file", expected: "before", content: "after" }],
   ["devServers.bridgeRead", { projectId: "p", streamId: "bridge" }],
 ] as const)(

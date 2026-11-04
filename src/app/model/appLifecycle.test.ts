@@ -235,6 +235,22 @@ describe("project choices through lifecycle saves", () => {
   });
 });
 
+describe("page unload", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("stops only this window's chats and never the app-wide child set", async () => {
+    const { reapUnloadRuntime } = await import("./appLifecycle");
+    const session = newSession("cursor", "C:/test");
+    session.busy = true;
+    await reapUnloadRuntime([session]);
+    expect(forgetHarnessSession).toHaveBeenCalledWith("cursor", session.id);
+    // `harness_kill_all` would stop the providers running in every other window.
+    expect(killAllChildren).not.toHaveBeenCalled();
+  });
+});
+
 describe("closing a busy window", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -432,6 +448,120 @@ describe("coordinated quit", () => {
     }
   });
 
+  it("calls the quit off instead of letting native exit under an open close dialog", async () => {
+    vi.useFakeTimers();
+    const session = newSession("cursor", "C:/test");
+    session.blocks = [{ id: "user", role: "user", text: "test" }];
+    const tab = newTab(session.id);
+    tab.terminalPanes = [
+      {
+        id: "term-pane",
+        activeFileId: "term",
+        files: [{ id: "term", path: "Terminal", cwd: session.cwd, terminal: true }],
+      },
+    ];
+    vi.mocked(invoke).mockImplementation((name) =>
+      name === "pty_status"
+        ? Promise.resolve({ foreground: "npm", supported: true })
+        : nativeSuccess(name),
+    );
+    let decide!: (ok: boolean) => void;
+    vi.mocked(platformConfirm).mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          decide = resolve;
+        }),
+    );
+    const release = setQuitWorkspace(
+      () => [session],
+      () => [tab],
+      () => tab.id,
+      () => session.cwd,
+      () => [],
+      () => new Map(),
+      vi.fn(),
+    );
+    try {
+      const quitting = commitQuit(12);
+      // `vi.waitFor` advances the fake clock by up to a second while it polls.
+      await vi.waitFor(() => expect(decide).toBeTypeOf("function"));
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(invokedWith("quit_ready")).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(3_000);
+      // Reported before native's 10 s commit deadline, so the app stays open.
+      expect(invokedWith("quit_ready")).toEqual({ id: 12, persisted: false });
+      const { isAppQuitting } = await import("./appLifecycle");
+      expect(isAppQuitting()).toBe(false);
+      // The person answers after the quit was called off: nothing is marked
+      // interrupted for a quit that is not happening, and no second reply.
+      decide(true);
+      await quitting;
+      expect(
+        vi.mocked(invoke).mock.calls.filter(([name]) => name === "quit_ready"),
+      ).toHaveLength(1);
+      expect(invokedWith("workspace_set_snapshot")).toBeUndefined();
+      expect(invokedWith("session_set_in_flight")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+      vi.mocked(platformConfirm).mockResolvedValue(true);
+      vi.mocked(invoke).mockImplementation(nativeSuccess);
+      release();
+    }
+  });
+
+  it("answers a close dialog settled within the grace period as a normal quit", async () => {
+    vi.useFakeTimers();
+    const session = newSession("cursor", "C:/test");
+    session.blocks = [{ id: "user", role: "user", text: "test" }];
+    const tab = newTab(session.id);
+    tab.terminalPanes = [
+      {
+        id: "term-pane",
+        activeFileId: "term",
+        files: [{ id: "term", path: "Terminal", cwd: session.cwd, terminal: true }],
+      },
+    ];
+    vi.mocked(invoke).mockImplementation((name) =>
+      name === "pty_status"
+        ? Promise.resolve({ foreground: "npm", supported: true })
+        : nativeSuccess(name),
+    );
+    let decide!: (ok: boolean) => void;
+    vi.mocked(platformConfirm).mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          decide = resolve;
+        }),
+    );
+    const release = setQuitWorkspace(
+      () => [session],
+      () => [tab],
+      () => tab.id,
+      () => session.cwd,
+      () => [],
+      () => new Map(),
+      vi.fn(),
+    );
+    try {
+      const quitting = commitQuit(13);
+      await vi.waitFor(() => expect(decide).toBeTypeOf("function"));
+      await vi.advanceTimersByTimeAsync(3_000);
+      decide(true);
+      await quitting;
+      expect(invokedWith("quit_ready")).toEqual({ id: 13, persisted: true });
+      expect(invokedWith("workspace_set_snapshot")).toBeDefined();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(
+        vi.mocked(invoke).mock.calls.filter(([name]) => name === "quit_ready"),
+      ).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      vi.mocked(platformConfirm).mockResolvedValue(true);
+      vi.mocked(invoke).mockImplementation(nativeSuccess);
+      release();
+    }
+  });
+
   // The whole point of the handshake: no window exits on its own.
   it("persists and reports ready without exiting the app", async () => {
     const release = busyWorkspace();
@@ -454,13 +584,13 @@ describe("confirming reload", () => {
     vi.mocked(platformConfirm).mockResolvedValue(true);
   });
 
-  it("reloads without prompting when files are clean", async () => {
-    await expect(confirmReload(false)).resolves.toBe(true);
+  it("reloads without prompting when files are clean and no chat is running", async () => {
+    await expect(confirmReload({ unsavedFiles: false, runningChats: 0 })).resolves.toBe(true);
     expect(platformConfirm).not.toHaveBeenCalled();
   });
 
   it("allows reload after unsaved changes are confirmed", async () => {
-    await expect(confirmReload(true)).resolves.toBe(true);
+    await expect(confirmReload({ unsavedFiles: true, runningChats: 0 })).resolves.toBe(true);
     expect(platformConfirm).toHaveBeenCalledWith({
       title: "Reload bycoda?",
       message: "Unsaved changes in open files will be discarded.",
@@ -469,9 +599,28 @@ describe("confirming reload", () => {
     });
   });
 
+  it("asks before a reload stops running chats, even with every file saved", async () => {
+    await expect(confirmReload({ unsavedFiles: false, runningChats: 2 })).resolves.toBe(true);
+    expect(platformConfirm).toHaveBeenCalledWith({
+      title: "Reload bycoda?",
+      message: "Running chats in this window stop. Other windows stay open.",
+      confirmLabel: "Reload",
+      tone: "danger",
+    });
+  });
+
+  it("names both running chats and unsaved files in one dialog", async () => {
+    vi.mocked(platformConfirm).mockResolvedValue(false);
+    await expect(confirmReload({ unsavedFiles: true, runningChats: 1 })).resolves.toBe(false);
+    expect(platformConfirm).toHaveBeenCalledOnce();
+    expect(vi.mocked(platformConfirm).mock.calls[0]?.[0].message).toBe(
+      "Running chats in this window stop. Other windows stay open.\n\nUnsaved changes in open files will be discarded.",
+    );
+  });
+
   it("cancels reload when unsaved changes are kept", async () => {
     vi.mocked(platformConfirm).mockResolvedValue(false);
-    await expect(confirmReload(true)).resolves.toBe(false);
+    await expect(confirmReload({ unsavedFiles: true, runningChats: 0 })).resolves.toBe(false);
   });
 });
 

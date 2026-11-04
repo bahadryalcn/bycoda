@@ -13,6 +13,8 @@ import {
   zoomOutUiScale,
 } from "../../../features/settings/model/uiScale";
 import { confirmReload } from "../../model/appLifecycle";
+import { isInFlightSession } from "../../../features/sessions/model/inFlight";
+import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 
 export interface WindowChromeActionDeps {
   /** Committed values, so the toggles persist outside a state updater. */
@@ -126,7 +128,13 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
   }, []);
   const onReload = useCallback(() => {
     void (async () => {
-      if (!(await confirmReload(dirtyFilesRef.current.size > 0))) return;
+      // A reload stops this window's provider processes, so running chats are
+      // as much a reason to ask as unsaved files.
+      const confirmed = await confirmReload({
+        unsavedFiles: dirtyFilesRef.current.size > 0,
+        runningChats: sessionsRef.current.filter(isInFlightSession).length,
+      });
+      if (!confirmed) return;
       window.location.reload();
     })();
   }, []);

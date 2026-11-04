@@ -12,8 +12,14 @@ export interface AutomationRecoveryDeps {
 
 // Startup recovery of pending automation runs and the 30s due-run scheduler.
 // Verbatim from Workspace.
+//
+// Recovery settles runs left over from an earlier process. Rust performs that
+// pass once per process: the first window to mount gets the pending runs to
+// relaunch, and every later window (a pop-out, a reload) gets an empty list,
+// so the runs live in other windows are neither cancelled nor started twice.
 export function useAutomationRecovery({ launchAutomation }: AutomationRecoveryDeps) {
   const automationRecoveryRef = useRef<Promise<void> | null>(null);
+  // Only bounds the cutoff from below; Rust uses its process epoch.
   const automationRecoveryCutoffRef = useRef(Date.now());
 
   const ensureAutomationRecovery = useCallback(() => {

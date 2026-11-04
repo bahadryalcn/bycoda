@@ -119,13 +119,8 @@ async fn connect(
                     return Err(("schema", true));
                 }
                 if value.get("error").is_some() {
-                    return Err((
-                        match value["error"]["data"]["category"].as_str() {
-                            Some("authentication") => "authentication",
-                            Some("identity") => "identity",
-                            _ => "schema",
-                        },
-                        true,
+                    return Err(classify_error_category(
+                        value["error"]["data"]["category"].as_str(),
                     ));
                 }
                 let result = &value["result"];
@@ -200,6 +195,20 @@ fn deliver(mut request: Request, mut response: Result<WsReply, WsFailure>) {
     // Otherwise an immediate next attempt can race the previous Request's Drop.
     drop(request);
     let _ = reply.send(response);
+}
+
+/// Maps a Host error category to `(failure category, blocks the lane)`.
+/// Only authentication, identity and protocol (`schema`) failures block the
+/// lane. Overload, cursor and unknown or missing categories are transient and
+/// reconnect with back-off instead of blocking every later request.
+pub(super) fn classify_error_category(category: Option<&str>) -> (&'static str, bool) {
+    match category {
+        Some("authentication") => ("authentication", true),
+        Some("identity") => ("identity", true),
+        Some("schema") => ("schema", true),
+        Some("overload") => ("overload", false),
+        _ => ("unavailable", false),
+    }
 }
 
 pub(super) async fn worker(
@@ -743,17 +752,12 @@ impl SubscriptionWork {
         {
             let effects = self.union.failed(&pending.operation);
             self.effects(shared, contracts, generation, effects)?;
-            let category = value["error"]["data"]["category"]
-                .as_str()
-                .unwrap_or("schema");
-            return Err((
-                match category {
-                    "authentication" => "authentication",
-                    "identity" => "identity",
-                    _ => "schema",
-                },
-                true,
-            ));
+            if value.get("error").is_some() {
+                return Err(classify_error_category(
+                    value["error"]["data"]["category"].as_str(),
+                ));
+            }
+            return Err(("schema", true));
         }
         let effects = self
             .union

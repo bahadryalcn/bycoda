@@ -3,15 +3,37 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { sprintDateNumber, sprintDateValue, SprintGoalDescription } from "./SprintManagement";
 
-it("round-trips calendar dates without shifting at positive or negative UTC offsets", () => {
-  const date = "2026-10-26";
-  const encoded = sprintDateNumber(date)!;
-  expect(new Date(encoded).toISOString()).toBe("2026-10-26T00:00:00.000Z");
-  expect(sprintDateValue(encoded)).toBe(date);
-  expect(new Date(encoded).toLocaleDateString("en-CA", { timeZone: "Europe/Istanbul" })).toBe(date);
-  expect(sprintDateValue(sprintDateNumber(sprintDateValue(encoded)))).toBe(date);
+function withZone<T>(zone: string, run: () => T): T {
+  const previous = process.env.TZ;
+  process.env.TZ = zone;
+  try {
+    return run();
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
+}
+
+it("stores local midnight and round-trips calendar dates at positive and negative UTC offsets", () => {
+  for (const zone of ["Europe/Istanbul", "America/Los_Angeles", "Pacific/Auckland", "UTC"]) {
+    withZone(zone, () => {
+      const encoded = sprintDateNumber("2026-10-26")!;
+      const local = new Date(encoded);
+      expect([local.getFullYear(), local.getMonth(), local.getDate(), local.getHours()]).toEqual([
+        2026, 9, 26, 0,
+      ]);
+      expect(sprintDateValue(encoded)).toBe("2026-10-26");
+      expect(sprintDateValue(sprintDateNumber(sprintDateValue(encoded)))).toBe("2026-10-26");
+    });
+  }
   expect(sprintDateNumber("")).toBeUndefined();
   expect(sprintDateValue(undefined)).toBe("");
+});
+
+it("still reads sprints saved as UTC midnight as the day that was picked", () => {
+  const legacy = Date.UTC(2026, 9, 26);
+  for (const zone of ["America/Los_Angeles", "Europe/Istanbul", "Pacific/Auckland"])
+    withZone(zone, () => expect(sprintDateValue(legacy)).toBe("2026-10-26"));
 });
 
 it("keeps a long sprint goal collapsed while preserving all of its content", () => {

@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { sharedBrowserUrl, sharedBrowserViewport } from "./shared-browser";
+import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
+
+/** A settled receipt outlives any client retry window; pending receipts never expire. */
+export const PREVIEW_RECEIPT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type ConversationPreviewInput = {
   requestId: string;
@@ -64,19 +68,47 @@ export class ConversationPreviewWorkflow {
       scopeKey: string;
       pending: boolean;
       value: Promise<ConversationPreviewResult>;
+      /** Monotonic reading taken when the outcome settled; set once, never for pending work. */
+      settledAt?: number;
     }
   >();
   private closed = false;
 
-  /** Call only when this transport authority is retired, never to retry a request. */
-  revoke(principalId: string) {
+  constructor(
+    /** Monotonic clock; injected by tests so TTL eviction never sleeps. */
+    private readonly now: () => number = monotonicNow,
+  ) {}
+
+  /**
+   * Retire every receipt of one transport authority (its token hash). Call it when the
+   * credential is revoked, its conversation token expires or the provider child that
+   * issued it ends; never to retry a request.
+   */
+  retire(principalId: string) {
     for (const [key, entry] of this.requests)
       if (entry.principalId === principalId) this.requests.delete(key);
+  }
+
+  /** Alias of `retire` kept for the existing `devices.revokeSelf` path. */
+  revoke(principalId: string) {
+    this.retire(principalId);
   }
 
   close() {
     this.closed = true;
     this.requests.clear();
+  }
+
+  /** Settled receipts past their TTL cannot be replayed by any client retry window. */
+  private evictSettled() {
+    const now = this.now();
+    for (const [key, entry] of this.requests)
+      if (
+        !entry.pending &&
+        entry.settledAt !== undefined &&
+        elapsedSince(entry.settledAt, now) >= PREVIEW_RECEIPT_TTL_MS
+      )
+        this.requests.delete(key);
   }
 
   async run(
@@ -104,13 +136,15 @@ export class ConversationPreviewWorkflow {
     const signature = createHash("sha256")
       .update(JSON.stringify([url, viewport, input.show !== false]))
       .digest("hex");
+    this.evictSettled();
     const previous = this.requests.get(key);
     if (previous && previous.signature !== signature)
       throw new Error(
         "Preview requestId was already used with different input. Inspect the original result.",
       );
-    // Retain compact outcome fences until authority retirement. No eviction can
-    // turn an uncertain request into a fresh navigation. JPEG bytes are never cached.
+    // Retain compact outcome fences until authority retirement or, once settled, the
+    // receipt TTL. A pending request is never evicted, so no eviction can turn an
+    // uncertain request into a fresh navigation. JPEG bytes are never cached.
     const scopeEntries = [...this.requests.values()].filter(
       (entry) => entry.scopeKey === scopeKey,
     ).length;
@@ -147,6 +181,7 @@ export class ConversationPreviewWorkflow {
       void current
         .then((result) => {
           entry.pending = false;
+          entry.settledAt = this.now();
           const compact = structuredClone(result);
           if (compact.evidence.browser) delete compact.evidence.browser.data;
           if (compact.evidence.frame) delete compact.evidence.frame.data;
@@ -154,6 +189,7 @@ export class ConversationPreviewWorkflow {
         })
         .catch(() => {
           entry.pending = false;
+          entry.settledAt = this.now();
         });
     }
     const result = await request.value;

@@ -3,7 +3,9 @@ import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { serverTerminalRestoreState } from "../../features/connections/model/serverTerminalRestoreState";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { ask, message } from "@tauri-apps/plugin-dialog";
+import { isWorkspaceWindowLabel } from "../../features/notifications/hooks/useBackgroundNotifications";
 import { prepareEditorsToClose } from "../../features/files/model/editorClose";
 import { confirmCloseTerminals } from "../../features/terminal/model/terminalClose";
 import {
@@ -144,6 +146,60 @@ async function readWorkspaceSnapshot(): Promise<{ ok: boolean; raw: unknown }> {
 let bootPromise: Promise<BootWorkspace> | null = null;
 let quitting = false;
 let quitDialogOpen = false;
+/** A "Save changes?" or "Close terminals?" dialog of this window's quit is open. */
+let closePromptPending = false;
+/**
+ * Native exits `COMMIT_TIMEOUT` (10 s) after the commit starts, whether or not a
+ * person is still reading a close dialog. Shortly before that, a dialog that is
+ * still open calls the quit off instead, so the app never exits under it.
+ */
+const QUIT_DIALOG_GRACE_MS = 8_000;
+/**
+ * The workspace snapshot and the in-flight list are one row for the whole app.
+ * Only the window that restored them at boot writes them back: the primary
+ * workspace (`main`, or the first workspace window when none was open). A
+ * window opened beside it (Cmd+N, a pop-out, a tool window) would otherwise
+ * replace them with its own tabs, and an empty in-flight list from one window
+ * would drop the other window's turn recovery. `null` until boot has decided.
+ */
+let sharedStateOwner: boolean | null = null;
+
+/** True when this window writes the app-wide workspace snapshot and in-flight list. */
+export function ownsSharedWorkspaceState(): boolean {
+  if (sharedStateOwner !== null) return sharedStateOwner;
+  try {
+    return getCurrentWindow().label === "main";
+  } catch {
+    // No desktop window authority (tests, browser development): one window.
+    return true;
+  }
+}
+
+/**
+ * `main` always owns the shared state. Another workspace window owns it only
+ * when it is the sole one, which is how a dock click reopens the app after
+ * every window was closed (`show_hidden_or_open_new` in `window.rs`).
+ */
+async function detectSharedStateOwner(): Promise<boolean> {
+  let own: string;
+  try {
+    own = getCurrentWindow().label;
+  } catch {
+    return true;
+  }
+  if (own === "main") return true;
+  if (!isWorkspaceWindowLabel(own)) return false;
+  try {
+    const others = (await getAllWebviewWindows())
+      .map((window) => window.label)
+      .filter((label) => label !== own && isWorkspaceWindowLabel(label));
+    return others.length === 0;
+  } catch {
+    // Enumeration unavailable: a window that cannot prove it is alone must not
+    // take over the primary window's layout.
+    return false;
+  }
+}
 let bootingResumed: ResumedWorkspace | null = null;
 /** One hidden chat's history read; `timedOut` publishes the retryable error state. */
 type DeferredBootRead = { run: () => Promise<void>; timedOut: () => void };
@@ -272,7 +328,16 @@ export async function handleQuitRequested(): Promise<boolean> {
     liveWorkspace.flush();
     quitting = true;
     try {
-      if (!(await prepareWindowToClose(liveWorkspace.tabs(), liveWorkspace.projectTerminals()))) {
+      closePromptPending = true;
+      let proceed: boolean;
+      try {
+        proceed = await prepareWindowToClose(liveWorkspace.tabs(), liveWorkspace.projectTerminals());
+      } finally {
+        closePromptPending = false;
+      }
+      // Called off while the dialog was open (`abortQuit`): the app stays
+      // open, so the live turns must not be recorded as interrupted.
+      if (!proceed || !quitting) {
         quitting = false;
         return false;
       }
@@ -346,10 +411,29 @@ export async function askQuitConfirmation(id: number, inFlight: number): Promise
 }
 
 export async function commitQuit(id: number): Promise<void> {
-  const persisted = await handleQuitRequested();
-  await invoke("quit_ready", { id, persisted }).catch((error) => {
-    console.warn("appLifecycle operation failed", error);
-  });
+  let answered = false;
+  const answer = (persisted: boolean) => {
+    if (answered) return Promise.resolve();
+    answered = true;
+    return invoke("quit_ready", { id, persisted }).catch((error) => {
+      console.warn("appLifecycle operation failed", error);
+    });
+  };
+  // A person still reading "Save changes?" or "Close terminals?" when the
+  // native commit deadline is near: report "not persisted", which calls the
+  // quit off for every window and leaves the dialog where it is. Its answer
+  // still saves or closes; the next Quit then goes through without it.
+  const grace = setTimeout(() => {
+    if (!closePromptPending) return;
+    abortQuit();
+    void answer(false);
+  }, QUIT_DIALOG_GRACE_MS);
+  try {
+    const persisted = await handleQuitRequested();
+    await answer(persisted);
+  } finally {
+    clearTimeout(grace);
+  }
 }
 
 /**
@@ -392,12 +476,14 @@ export function loadResumedWorkspace(): Promise<ResumedWorkspace | null> {
 /** Transfer and restore run once; callers share the same promise. */
 export function loadBootWorkspace(): Promise<BootWorkspace> {
   if (readToolWindow()) {
+    sharedStateOwner = false;
     return Promise.resolve({ windowTransfer: null, resumed: null, history: [], historyCwd: null });
   }
   if (!bootPromise) {
     bootPromise = (async () => {
       const windowTransfer = await loadWindowTransfer();
       if (windowTransfer) {
+        sharedStateOwner = false;
         // The transfer already contains everything needed to paint its tab.
         // Workspace.refreshHistory loads the sidebar after mounting.
         return {
@@ -466,6 +552,15 @@ function reconcileRestoredProject(workspace: ResumedWorkspace): void {
 }
 
 async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
+  sharedStateOwner = await detectSharedStateOwner();
+  if (!sharedStateOwner) {
+    // A second workspace window (Cmd+N, a reloaded window beside `main`)
+    // starts blank. Restoring the saved layout here opened the same chats
+    // twice, treated the primary window's live turns as interrupted and could
+    // auto-continue them a second time.
+    console.info("[boot] secondary workspace window: starting without the saved layout");
+    return null;
+  }
   let serverRestoreOwner = false;
   try {
     serverRestoreOwner = getCurrentWindow().label === "main";
@@ -865,12 +960,21 @@ export async function closeCurrentWindow(): Promise<void> {
   await invoke("destroy_window");
 }
 
-export async function confirmReload(hasUnsavedFiles: boolean): Promise<boolean> {
-  if (!hasUnsavedFiles) return true;
+export type ReloadConcerns = {
+  unsavedFiles: boolean;
+  /** Chats with a live local turn in this window; a reload stops their processes. */
+  runningChats: number;
+};
+
+export async function confirmReload({ unsavedFiles, runningChats }: ReloadConcerns): Promise<boolean> {
+  if (!unsavedFiles && runningChats <= 0) return true;
+  const lines: string[] = [];
+  if (runningChats > 0) lines.push(t("Running chats in this window stop. Other windows stay open."));
+  if (unsavedFiles) lines.push(t("Unsaved changes in open files will be discarded."));
   // The native dialog cannot hang behind page state while the window is going away.
   return platformConfirm({
     title: t("Reload {p0}?", { p0: PRODUCT_IDENTITY.displayName }),
-    message: t("Unsaved changes in open files will be discarded."),
+    message: lines.join("\n\n"),
     confirmLabel: t("Reload"),
     tone: "danger",
   });
@@ -929,6 +1033,10 @@ export async function persistQuitState(
       .filter((session) => shouldPersistSession(session) && session.queuedMessages?.length)
       .map((session) => write(setSessionQueue(session.id, session.queuedMessages))),
   );
+  // The snapshot and the in-flight list are app-wide rows: a secondary window
+  // leaves them to the primary one. Its transcripts, drafts and queues above
+  // are still saved, so its chats stay in history.
+  if (!ownsSharedWorkspaceState()) return;
   // A window whose saved layout was unreadable keeps the stored one.
   if (!workspaceSnapshotWriteBlocked())
     await write(
@@ -958,6 +1066,7 @@ async function persistBootingResume(workspace: ResumedWorkspace): Promise<void> 
       .filter(shouldPersistSession)
       .map((session) => upsertSession(session).catch(() => null)),
   );
+  if (!ownsSharedWorkspaceState()) return;
   if (!workspaceSnapshotWriteBlocked())
     await saveWorkspaceSnapshot(
       collectWorkspaceSnapshot(
@@ -1089,13 +1198,14 @@ export async function reapWindowRuntime(
  * Page unload. Unlike `reapWindowRuntime` this leaves terminals running: a
  * reload (or macOS restarting a crashed web process) restores them under the
  * same ids and reattaches, and the backend reaps them when the window itself
- * is destroyed.
+ * is destroyed. Only this window's chats are stopped, one by one
+ * (`harness_kill` per session): `killAllChildren` is `harness_kill_all`, which
+ * is app-wide, so reloading one window took the providers running in every
+ * other window with it. Native probes this window started (catalog, title)
+ * end on their own or with the app.
  */
 export async function reapUnloadRuntime(sessions: Session[]): Promise<void> {
   await forgetSessionChildren(sessions);
-  await killAllChildren().catch((error) => {
-    console.warn("appLifecycle operation failed", error);
-  });
 }
 
 async function forgetSessionChildren(sessions: Session[]): Promise<void> {

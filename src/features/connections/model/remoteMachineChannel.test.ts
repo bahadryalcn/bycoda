@@ -713,7 +713,8 @@ it("bounds logical resnapshot recovery before HTTP fallback without a physical r
   await flushNative();
   expect(calls("subscriptions.open")).toHaveLength(3);
   expect(calls("subscriptions.ack")).toHaveLength(0);
-  expect(errors).toHaveBeenCalledOnce();
+  // The WebSocket fallback is not reported as the machine being offline.
+  expect(errors).not.toHaveBeenCalled();
   await vi.advanceTimersByTimeAsync(0);
   expect(remoteRequest).toHaveBeenCalledWith(
     "ws-failure",
@@ -743,7 +744,7 @@ it("abandons a WebSocket route that never becomes ready and polls over HTTP", as
   expect(errors).not.toHaveBeenCalled();
   await vi.advanceTimersByTimeAsync(3000);
   await flushNative();
-  expect(errors).toHaveBeenCalledOnce();
+  expect(errors).not.toHaveBeenCalled();
   expect(port.detach).toHaveBeenCalled();
   expect(remoteRequest).toHaveBeenCalledWith(
     "ws-stuck",

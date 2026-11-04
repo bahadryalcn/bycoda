@@ -3,6 +3,10 @@ import { sameProjectPath } from "../../projects/model/recents";
 
 const KEY = "bycoda.inboxSeen";
 const LEGACY_KEY = "bycoda.inboxSeenAt";
+/** Newest entries (by the item's update time) kept on every write. */
+export const INBOX_SEEN_MAX_ENTRIES = 2000;
+/** Entries whose item update time is older than this are dropped on write. */
+export const INBOX_SEEN_MAX_AGE_MS = 90 * 86_400_000;
 
 export type InboxSeenEntry = {
   key: string;
@@ -67,30 +71,64 @@ function isSeenMap(value: unknown): value is SeenMap {
   return Object.values(value).every((entry) => typeof entry === "number" && Number.isFinite(entry));
 }
 
+const EMPTY_STORE: SeenStore = { seeded: false, items: {} };
+
+function parseInboxSeenStore(raw: string | null): SeenStore {
+  if (!raw) return EMPTY_STORE;
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return EMPTY_STORE;
+  const record = parsed as { seeded?: unknown; items?: unknown };
+  if (typeof record.seeded === "boolean" && isSeenMap(record.items)) {
+    return { seeded: record.seeded, items: record.items };
+  }
+  if (isSeenMap(parsed)) return { seeded: true, items: parsed };
+  return EMPTY_STORE;
+}
+
+// Parsed store keyed on the raw stored string: every list, poll and row read goes
+// through here, but only a changed string (this window's write, or another
+// window's through the `storage` event) is parsed again.
+let cachedRaw: string | null | undefined;
+let cachedStore: SeenStore = EMPTY_STORE;
+
 function loadInboxSeenStore(): SeenStore {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { seeded: false, items: {} };
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { seeded: false, items: {} };
-    }
-    const record = parsed as { seeded?: unknown; items?: unknown };
-    if (typeof record.seeded === "boolean" && isSeenMap(record.items)) {
-      return { seeded: record.seeded, items: record.items };
-    }
-    if (isSeenMap(parsed)) {
-      return { seeded: true, items: parsed };
-    }
-    return { seeded: false, items: {} };
+    if (raw === cachedRaw) return cachedStore;
+    const store = parseInboxSeenStore(raw);
+    cachedRaw = raw;
+    cachedStore = store;
+    return store;
   } catch {
-    return { seeded: false, items: {} };
+    return EMPTY_STORE;
   }
 }
 
+/**
+ * Bounded store: entries for items that left the Inbox long ago carry no
+ * information, so the newest `INBOX_SEEN_MAX_ENTRIES` by item update time are
+ * kept and anything older than `INBOX_SEEN_MAX_AGE_MS` is dropped. Items the
+ * app currently lists keep their entry whatever their age, otherwise a stale
+ * open issue would flip back to "new" after each prune.
+ */
+function pruneSeenMap(items: SeenMap, now = Date.now()): SeenMap {
+  const entries = Object.entries(items);
+  const cutoff = now - INBOX_SEEN_MAX_AGE_MS;
+  let kept = entries.filter(([key, updatedAt]) => updatedAt >= cutoff || knownItems.has(key));
+  if (kept.length > INBOX_SEEN_MAX_ENTRIES) {
+    kept = kept.sort((a, b) => b[1] - a[1]).slice(0, INBOX_SEEN_MAX_ENTRIES);
+  }
+  if (kept.length === entries.length) return items;
+  return Object.fromEntries(kept);
+}
+
 function saveInboxSeenStore(store: SeenStore): boolean {
+  const next: SeenStore = { seeded: store.seeded, items: pruneSeenMap(store.items) };
   try {
-    localStorage.setItem(KEY, JSON.stringify({ seeded: store.seeded, items: store.items }));
+    const raw = JSON.stringify(next);
+    localStorage.setItem(KEY, raw);
+    cachedRaw = raw;
+    cachedStore = next;
   } catch {
     return false;
   }
@@ -137,6 +175,15 @@ export function isInboxEntryUnseen(entry: InboxSeenEntry): boolean {
   return entryIsUnseen(entry, store.items);
 }
 
+/** Keys of the unseen entries, read from one store snapshot for a whole list. */
+export function unseenInboxKeys(entries: readonly InboxSeenEntry[]): ReadonlySet<string> {
+  const unseen = new Set<string>();
+  const store = loadInboxSeenStore();
+  if (!store.seeded) return unseen;
+  for (const entry of entries) if (entryIsUnseen(entry, store.items)) unseen.add(entry.key);
+  return unseen;
+}
+
 export function markInboxItemSeen(entry: InboxSeenEntry): boolean {
   const store = loadInboxSeenStore();
   return saveInboxSeenStore({
@@ -169,10 +216,28 @@ export function inboxHasUnseenItems(items: readonly InboxSeenEntry[]): boolean {
   return items.some((item) => entryIsUnseen(item, store.items));
 }
 
+// One `storage` listener for the module, held while anyone subscribes: another
+// window's write invalidates the parsed cache and wakes the subscribers.
+let stopStorageListener: (() => void) | undefined;
+
+function onStorage(event: StorageEvent) {
+  if (event.key !== null && event.key !== KEY) return;
+  cachedRaw = undefined;
+  notifyInboxSeen();
+}
+
 export function subscribeInboxSeen(listener: Listener): () => void {
   listeners.add(listener);
+  if (!stopStorageListener && typeof window !== "undefined") {
+    window.addEventListener("storage", onStorage);
+    stopStorageListener = () => window.removeEventListener("storage", onStorage);
+  }
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0 && stopStorageListener) {
+      stopStorageListener();
+      stopStorageListener = undefined;
+    }
   };
 }
 

@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it, vi } from "vitest";
+const tauri = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(async () => () => undefined) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: tauri.listen }));
 import {
   applyTriggers,
   automationScheduleLabel,
   automationTriggers,
+  claimDueAutomations,
   createAutomationTrigger,
   draftFromAutomation,
   draftFromTemplate,
@@ -10,14 +15,20 @@ import {
   formatAutomationRunDuration,
   gmtOffsetLabel,
   newAutomationDraft,
+  newestOverdueOccurrence,
   nextAutomationRunAt,
   nextRunPreview,
   nextTriggersRunAt,
   overdueTriggerOccurrences,
   type Automation,
+  type DueAutomationRun,
 } from "./automations";
 
 const at = (value: string) => new Date(value).getTime();
+
+afterEach(() => {
+  tauri.invoke.mockReset();
+});
 
 describe("automation schedules", () => {
   it("moves hourly schedules to the next occurrence", () => {
@@ -143,6 +154,73 @@ describe("automation schedules", () => {
         (occurrence) => occurrence.scheduledFor,
       ),
     ).toEqual([firstRunAt, at("2026-09-19T10:00:00")]);
+  });
+
+  it("finds the newest overdue occurrence beyond the per-pass listing bound", () => {
+    const hourly = createAutomationTrigger("time", "hourly", { minute: 0 });
+    const firstRunAt = at("2026-09-19T00:00:00");
+    const now = at("2026-09-25T10:30:00");
+    expect(overdueTriggerOccurrences([hourly], firstRunAt, now)).toHaveLength(100);
+    expect(newestOverdueOccurrence([hourly], firstRunAt, now)).toEqual({
+      scheduledFor: at("2026-09-25T10:00:00"),
+      nextRunAt: at("2026-09-25T11:00:00"),
+    });
+    expect(newestOverdueOccurrence([hourly], now + 1, now)).toBeNull();
+    expect(newestOverdueOccurrence([], firstRunAt, now)?.scheduledFor).toBe(firstRunAt);
+  });
+
+  it("claims only the newest overdue occurrence per automation after a long sleep", async () => {
+    const hourly = createAutomationTrigger("time", "hourly", { minute: 0 });
+    const firstRunAt = at("2026-09-19T01:00:00");
+    const now = at("2026-09-19T10:05:00");
+    const sleeper: Automation = {
+      ...applyTriggers(newAutomationDraft("/repo", "codex", "model"), [hourly]),
+      id: "sleeper",
+      nextRunAt: firstRunAt,
+      createdAt: firstRunAt,
+      updatedAt: firstRunAt,
+    };
+    const later: Automation = { ...sleeper, id: "later", nextRunAt: now + 60_000 };
+    const disabled: Automation = { ...sleeper, id: "off", enabled: false };
+    const claims: unknown[] = [];
+    tauri.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "automations_list") return [sleeper, later, disabled];
+      if (command === "automations_claim_due") {
+        claims.push(args);
+        const { automationId, scheduledFor, nextRunAt } = args as {
+          automationId: string;
+          scheduledFor: number;
+          nextRunAt: number;
+        };
+        const due: DueAutomationRun = {
+          automation: { ...sleeper, id: automationId, nextRunAt },
+          run: {
+            id: "run",
+            automationId,
+            trigger: "scheduled",
+            scheduledFor,
+            createdAt: now,
+            status: "pending",
+          },
+        };
+        return due;
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    const claimed = await claimDueAutomations(now);
+
+    expect(claims).toEqual([
+      {
+        automationId: "sleeper",
+        expectedNextRunAt: firstRunAt,
+        scheduledFor: at("2026-09-19T10:00:00"),
+        nextRunAt: at("2026-09-19T11:00:00"),
+        now,
+      },
+    ]);
+    expect(claimed.map((item) => item.run.scheduledFor)).toEqual([at("2026-09-19T10:00:00")]);
+    expect(claimed[0]?.automation.nextRunAt).toBe(at("2026-09-19T11:00:00"));
   });
 
   it("labels the timezone offset and next run", () => {

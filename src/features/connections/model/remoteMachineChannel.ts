@@ -143,13 +143,11 @@ function failWs(machineId: string, channel: Channel, error: unknown) {
   if (channel.stopped || channel.wsFailed) return;
   channel.wsFailed = true;
   releaseWs(channel);
-  for (const subscriber of channel.subscribers) {
-    try {
-      subscriber.onError?.(error);
-    } catch {
-      /* consumer isolation */
-    }
-  }
+  // A WebSocket failure only switches this channel to HTTP polling. It is not
+  // reported to subscribers: that would mark a reachable machine offline and the
+  // next HTTP success would be taken for a recovery that resets and reloads
+  // every view. The HTTP poll reports a genuinely unreachable machine itself.
+  console.warn("[remote] Host WebSocket failed; falling back to HTTP", error);
   schedule(machineId, channel);
 }
 function watchWsRoute(machineId: string, channel: Channel) {

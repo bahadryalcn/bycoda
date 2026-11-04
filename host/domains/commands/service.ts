@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   CommandDispatchParamsSchema,
   CommandsStatusParamsSchema,
@@ -32,6 +33,10 @@ export interface CommandQueueSnapshot {
 export interface CommandServicePorts<View> {
   repository: {
     receiptStatus(commandId: string): Promise<CommandReceipt | null | undefined>;
+    /** Durable receipt write (store.recordReceipt). Optional so a host without it keeps the in-memory behavior. */
+    recordReceipt?(signature: string, receipt: CommandReceipt): Promise<void>;
+    /** Receipt lookup that rejects when the command ID was used with another signature (store.receipt). */
+    receipt?(commandId: string, signature: string): Promise<CommandReceipt | undefined>;
     transaction<T>(operation: () => Promise<T>): Promise<T>;
     readView(sessionId: string): Promise<View>;
     modelTarget(sessionId: string): Promise<ModelTarget>;
@@ -207,6 +212,25 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         throw new Error("Clear the queued messages before rewinding the conversation.");
 
       if (command.type === "cancel" || command.type === "approve" || command.type === "answer") {
+        // Desktop-routed controls get a durable receipt so `commands.status` finds
+        // them and a retry after a Host restart re-queues instead of answering "unknown".
+        const desktopSignature = createHash("sha256")
+          .update(`desktop-control:${JSON.stringify(command)}`)
+          .digest("hex");
+        const prior = await ports.repository
+          .receipt?.(command.commandId, desktopSignature)
+          .catch(() => undefined);
+        if (prior) {
+          const live = await ports.nativeProjection.watch(sessionId);
+          if (live?.running && ports.nativeProjection.alive()) {
+            try {
+              ports.nativeProjection.enqueue(command);
+            } catch {
+              // Already delivered, or no longer deliverable: the receipt stands.
+            }
+          }
+          return prior;
+        }
         if (command.type === "approve" && (await accepted())) {
           // A move to desktop execution cannot bypass the original Host receipt's
           // exact command signature or enqueue the same identity as a new effect.
@@ -223,7 +247,12 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
             );
           await assertDomainAuthority(context);
           ports.nativeProjection.enqueue(command);
-          return { commandId: command.commandId, sessionId, revision: watch.revision };
+          const receipt = { commandId: command.commandId, sessionId, revision: watch.revision };
+          if (!(await accepted())) {
+            // The command is already queued; a failed receipt write must not fail the dispatch.
+            await ports.repository.recordReceipt?.(desktopSignature, receipt).catch(() => {});
+          }
+          return receipt;
         }
       }
       if (

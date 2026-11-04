@@ -1850,6 +1850,38 @@ describe("managed turn boundaries", () => {
       ).toBeTruthy();
     },
   );
+  it("startup binds an idle managed desktop session without loading its transcript", async () => {
+    const { store, id, provider, directory } = await setup();
+    const original = await store.session(id);
+    await store.save(
+      {
+        ...original,
+        revision: original.revision + 1,
+        desktop: { updatedAt: 1 },
+        session: {
+          ...original.session,
+          workspaceId: "managed",
+          worktreeCwd: directory,
+          providerSessionId: "provider-session",
+        },
+      },
+      { type: "test.idle-managed" },
+    );
+    const { adapter } = managedHistory();
+    adapter.workspaceForSession = vi.fn(async () => ({ workspaceId: "managed", path: directory }));
+    const load = vi.spyOn(store, "session");
+    const restarted = new HostEngine(store, { codex: provider }, undefined, adapter);
+    cleanups.push(() => restarted.close());
+    await restarted.ready;
+    expect(load.mock.calls.filter(([sessionId]) => sessionId === id)).toEqual([]);
+    expect(adapter.workspaceForSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: original.projectId,
+        session: expect.objectContaining({ workspaceId: "managed", worktreeCwd: directory }),
+      }),
+    );
+    expect(provider.bind).toHaveBeenCalledWith(id, "provider-session", directory);
+  });
   it.each(["unset", "off"])(
     "runs three lightweight worktree sends without capture, admission or retirement (%s)",
     async (setting) => {

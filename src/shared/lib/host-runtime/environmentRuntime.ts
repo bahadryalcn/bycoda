@@ -28,6 +28,9 @@ import {
 import { SubscriptionRegistry, type CursorCommit, type SubscriptionLease } from "./subscriptions";
 import { hostRpcHasEffect } from "./requestPolicy";
 
+/** Upper bound for requests waiting for a lane slot; beyond it callers fail fast. */
+const MAX_QUEUED_REQUESTS_PER_LANE = 512;
+
 type Target = ReturnType<typeof SubscriptionTargetSchema.parse>;
 type CommitInput = Parameters<CursorCommit>[0];
 export type RuntimeStreamMetadata = {
@@ -141,6 +144,11 @@ export class EnvironmentRuntime {
   private readonly registry = new SubscriptionRegistry();
   private readonly entries = new Map<string, Entry>();
   private readonly pending = new Map<string, { cancel(): void; cost: "read" | "control" }>();
+  private readonly laneActive = { read: 0, control: 0 };
+  private readonly laneQueue: Record<"read" | "control", Array<() => void>> = {
+    read: [],
+    control: [],
+  };
   private readonly id = `runtime-${++runtimeSequence}`;
   private sequence = 0;
   private stateValue: ConnectionState;
@@ -190,6 +198,13 @@ export class EnvironmentRuntime {
     this.scopeVersion++;
     this.stateValue = reduceConnectionState(this.stateValue, { type: "close" });
     for (const { cancel } of this.pending.values()) cancel();
+    for (const lane of ["read", "control"] as const) {
+      // Queued requests wake up, observe `disposed` and reject.
+      for (const wake of this.laneQueue[lane].splice(0)) {
+        this.laneActive[lane]++;
+        wake();
+      }
+    }
     for (const entry of this.entries.values()) {
       entry.closed = true;
       for (const consumer of entry.consumers) consumer.lease.release();
@@ -220,8 +235,8 @@ export class EnvironmentRuntime {
     const cost = hostRpcCost(method, parsed);
     const laneLimit =
       cost === "control" ? WS_LIMITS.maxControlJobsPerDevice : WS_LIMITS.maxPendingRpc;
-    if ([...this.pending.values()].filter((value) => value.cost === cost).length >= laneLimit)
-      throw new Error(`Host pending ${cost} request limit reached`);
+    const wait = this.acquireLane(cost, laneLimit, options.signal);
+    if (wait) await wait;
     const requestId = `${this.id}-${++this.sequence}`;
     const version = this.scopeVersion;
     let submitted = false;
@@ -303,6 +318,70 @@ export class EnvironmentRuntime {
     } finally {
       releaseSignal?.();
       this.pending.delete(requestId);
+      this.laneActive[cost]--;
+      this.drainLane(cost, laneLimit);
+    }
+  }
+
+  /**
+   * Waits for a free slot in the lane. Requests beyond the limit are queued in FIFO
+   * order instead of failing, so a burst (for example every live view reopening on
+   * `ready`) is dispatched as slots free up.
+   */
+  private acquireLane(
+    cost: "read" | "control",
+    laneLimit: number,
+    signal: RuntimeRequestOptions["signal"],
+  ): Promise<void> | undefined {
+    const queue = this.laneQueue[cost];
+    if (queue.length === 0 && this.laneActive[cost] < laneLimit) {
+      this.laneActive[cost]++;
+      return undefined;
+    }
+    if (queue.length >= MAX_QUEUED_REQUESTS_PER_LANE)
+      throw new Error(`Host pending ${cost} request limit reached`);
+    return this.waitForLane(cost, laneLimit, signal);
+  }
+
+  private async waitForLane(
+    cost: "read" | "control",
+    laneLimit: number,
+    signal: RuntimeRequestOptions["signal"],
+  ): Promise<void> {
+    const queue = this.laneQueue[cost];
+    await new Promise<void>((resolve, reject) => {
+      let releaseSignal: (() => void) | undefined;
+      const entry = () => {
+        releaseSignal?.();
+        resolve();
+      };
+      const abandon = (message: string) => {
+        const index = queue.indexOf(entry);
+        if (index >= 0) queue.splice(index, 1);
+        releaseSignal?.();
+        reject(
+          Object.assign(new Error(message), {
+            code: "RPC_WS_CANCELLED",
+            uncertain: false,
+          }),
+        );
+      };
+      queue.push(entry);
+      releaseSignal = signal?.subscribe(() => abandon("Host request is cancelled"));
+      if (signal?.aborted) abandon("Host request is cancelled");
+    });
+    if (this.disposed) {
+      this.laneActive[cost]--;
+      this.drainLane(cost, laneLimit);
+      throw new Error("Host request is cancelled");
+    }
+  }
+
+  private drainLane(cost: "read" | "control", laneLimit: number): void {
+    const queue = this.laneQueue[cost];
+    while (queue.length > 0 && this.laneActive[cost] < laneLimit) {
+      this.laneActive[cost]++;
+      queue.shift()!();
     }
   }
 

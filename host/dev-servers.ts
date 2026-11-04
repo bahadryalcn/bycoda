@@ -230,6 +230,70 @@ export class DevServersService {
     this.portLeases = options.portLeases ?? new DevPortLeases();
   }
 
+  /**
+   * Stop every managed process tree and release leases. On POSIX the servers are
+   * detached, so without this they would outlive the Host. Only identities this
+   * service verified (root pid + birth identity, known and current descendants) are
+   * signalled, never the Host itself; bounded by a deadline so shutdown cannot hang.
+   */
+  async close(deadlineMs = 8000): Promise<void> {
+    const deadline = Date.now() + deadlineMs;
+    const records = [...this.managed.values()].filter(
+      (record) => record.exitCode === undefined && record.server.state !== "stopped",
+    );
+    this.discovery.invalidate?.();
+    const processes = await this.discovery.processes().catch(() => [] as DevProcess[]);
+    const targets: DevProcess[] = [];
+    for (const record of records) {
+      const rootIdentity = record.server.process
+        ? await this.discovery.identity(record.server.process.pid).catch(() => undefined)
+        : undefined;
+      if (!rootIdentity || !same(record.server.process, rootIdentity)) continue;
+      const known = processes.filter((entry) => {
+        const seen = record.identities.get(entry.pid);
+        return !!seen && same(seen, entry);
+      });
+      for (const entry of [
+        rootIdentity,
+        ...devServerDescendants(rootIdentity, processes),
+        ...known,
+      ])
+        if (entry.pid !== process.pid && !targets.some((t) => t.pid === entry.pid))
+          targets.push(entry);
+    }
+    const signalAll = async (force: boolean) => {
+      // Children first; re-verify the birth identity so a reused PID is never signalled.
+      for (const target of [...targets].reverse()) {
+        if (Date.now() >= deadline) return;
+        const current = await this.discovery.identity(target.pid).catch(() => undefined);
+        if (!same(target, current)) continue;
+        await this.discovery.signal(target, force).catch(() => {});
+      }
+    };
+    const aliveCount = async () => {
+      let alive = 0;
+      for (const target of targets)
+        if (same(target, await this.discovery.identity(target.pid).catch(() => undefined))) alive++;
+      return alive;
+    };
+    await signalAll(false);
+    const graceUntil = Math.min(deadline, Date.now() + (this.options.graceMs ?? 1500));
+    while ((await aliveCount()) && Date.now() < graceUntil) await sleep(this.options.pollMs ?? 100);
+    if (await aliveCount()) await signalAll(true);
+    for (const record of records) {
+      if (record.server.state !== "error") record.server.state = "stopped";
+      const id = record.server.id;
+      const lease = this.serverLeases.get(id);
+      if (lease) await this.portLeases.release(lease).catch(() => {});
+      this.serverLeases.delete(id);
+      await this.activityReleases
+        .get(id)?.()
+        .catch(() => {});
+      this.activityReleases.delete(id);
+    }
+    this.invalidate();
+  }
+
   /** Internal workspace adapter. The authenticated Host resolves cwd before invoking this method. */
   async startWorkspace(
     request: WorkspaceDevServerRequest,

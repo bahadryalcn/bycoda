@@ -1,7 +1,8 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { writeFileAtomicSync } from "./storage/atomic-write";
 import { runPowerShell } from "./windows";
 
 /** Kernel-backed SQLite locking survives neither crashes nor PID reuse. The
@@ -16,17 +17,22 @@ export async function acquireHostOwner(directory: string): Promise<() => void> {
       throw new Error("A host already owns this data directory");
     }
     if (existsSync(path)) {
-      const contents = readFileSync(path, "utf8");
+      const contents = readFileSync(path, "utf8").trim();
       // Version 2 owners hold the SQLite lock we just acquired. Their leftover
       // PID file is therefore stale, regardless of which process owns that PID.
-      let modern = false;
-      try {
-        modern = JSON.parse(contents)?.version === 2;
-      } catch {
-        /* legacy PID file */
+      // The same holds for an empty or unparsable file: only a legacy host,
+      // which wrote a bare PID and takes no SQLite lock, can still be alive.
+      let legacyPid: number | undefined;
+      if (/^\d+$/.test(contents)) legacyPid = Number(contents);
+      else if (contents) {
+        try {
+          JSON.parse(contents);
+        } catch {
+          console.error(`Ignoring unreadable host lock ${path}; replacing it.`);
+        }
       }
-      if (!modern) {
-        const pid = Number(contents);
+      if (legacyPid !== undefined) {
+        const pid = legacyPid;
         if (!Number.isSafeInteger(pid) || pid < 1)
           throw new Error("Host lock is incomplete; inspect owner.lock before removing it");
         let alive = true;
@@ -53,8 +59,10 @@ export async function acquireHostOwner(directory: string): Promise<() => void> {
         }
       }
     }
-    // Old clients cannot mistake this for a dead PID and take ownership.
-    writeFileSync(path, JSON.stringify({ version: 2, pid: process.pid }), {
+    // Old clients cannot mistake this for a dead PID and take ownership. The
+    // file is fsynced before it replaces the old one: a crash cannot leave an
+    // empty lock that stops the next start.
+    writeFileAtomicSync(path, JSON.stringify({ version: 2, pid: process.pid }), {
       mode: 0o600,
     });
   } catch (error) {

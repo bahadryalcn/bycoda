@@ -104,9 +104,10 @@ import {
   relatedSessionsForInboxItem,
 } from "../../sessions/model/sessionWorkItem";
 import {
-  isInboxEntryUnseen,
+  inboxHasUnseenItems,
   markInboxItemSeen,
   markInboxItemsSeen,
+  unseenInboxKeys,
   useInboxSeenTick,
 } from "../model/inboxSeen";
 import { LIST_PAGE_SIZE, listWindowSize } from "../../../shared/lib/listWindow";
@@ -521,7 +522,7 @@ export function InboxView({
     [items, source, sourceAvailable],
   );
   const sourceHasUnseen = useMemo(
-    () => sourceEntries.some(isInboxEntryUnseen),
+    () => inboxHasUnseenItems(sourceEntries),
     [inboxSeenTick, sourceEntries],
   );
 
@@ -549,8 +550,20 @@ export function InboxView({
     [updateItem, patchTargetItem],
   );
   const shownItemCount = listWindowSize(visibleItems.length, listLimit);
-  const shownItems = visibleItems.slice(0, shownItemCount);
+  const shownItems = useMemo(
+    () => visibleItems.slice(0, shownItemCount),
+    [visibleItems, shownItemCount],
+  );
   const hasMoreItems = shownItemCount < visibleItems.length;
+  // One read of the seen store per list; rows get a boolean so a mark-read only
+  // re-renders the rows whose state changed.
+  const unseenKeys = useMemo(
+    () =>
+      unseenInboxKeys(
+        shownItems.map((item) => ({ key: inboxItemKey(item), updatedAt: item.updatedAt })),
+      ),
+    [inboxSeenTick, shownItems],
+  );
   const retainedListScroll = useRetainedScroll<HTMLDivElement>(listScope, { ready: !loading });
   const setListScrollRef = useCallback(
     (element: HTMLDivElement | null) => {
@@ -874,6 +887,7 @@ export function InboxView({
                   <InboxCard
                     item={item}
                     active={selected != null && key === inboxItemKey(selected)}
+                    unseen={unseenKeys.has(key)}
                     logoPath={resolveTabGroupLogo(projectId, logos)}
                     mascotName={resolveTabGroupMascot(projectId, groupMascots)}
                     mascotColor={resolveTabGroupColor(
@@ -1274,6 +1288,7 @@ function InboxDetailBody({
 const InboxCard = memo(function InboxCard({
   item,
   active,
+  unseen,
   logoPath,
   mascotName,
   mascotColor,
@@ -1282,6 +1297,7 @@ const InboxCard = memo(function InboxCard({
 }: {
   item: InboxItem;
   active: boolean;
+  unseen: boolean;
   logoPath: string | null;
   mascotName: string | null;
   mascotColor: string;
@@ -1289,7 +1305,6 @@ const InboxCard = memo(function InboxCard({
   onSelect: (item: InboxItem) => void;
 }) {
   useLocale();
-  useInboxSeenTick();
   const status = inboxStatusMark(item);
   const kindLabel =
     item.kind === "pr" ? (item.provider === "gitlab" ? "Merge request" : "Pull request") : "Issue";
@@ -1301,10 +1316,6 @@ const InboxCard = memo(function InboxCard({
     item.provider === "gitlab" || item.provider === "azuredevops"
       ? gitlabAttentionLabel(item.attentionReason ?? "")
       : "";
-  const unseen = isInboxEntryUnseen({
-    key: inboxItemKey(item),
-    updatedAt: item.updatedAt,
-  });
 
   // The label badges hold their own "+N" button, which cannot sit inside the row button: with
   // labels the source line is a sibling laid over the row (clicks outside the badges fall through

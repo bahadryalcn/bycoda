@@ -991,8 +991,8 @@ fn machine_rpc_for_consumer(
                     }
                     Ok(value)
                 }
-                // This flag is possible only before the request was dispatched.
-                Err(error) if error.unsupported => rpc(
+                // Both cases are possible only before the request was dispatched.
+                Err(error) if ws_failure_allows_http_fallback(&error) => rpc(
                     endpoint,
                     &machine.token,
                     Some(&machine.environment_id),
@@ -1039,6 +1039,14 @@ fn machine_rpc_for_consumer(
         }
         response
     })
+}
+
+/// True when the WebSocket request provably never left this process: the Host
+/// does not advertise the method, or the connection is in reconnect back-off
+/// (`RPC_WS_UNAVAILABLE`, never dispatched). HTTP can take over without any risk of
+/// repeating an effect.
+fn ws_failure_allows_http_fallback(error: &WsFailure) -> bool {
+    error.unsupported || (error.code == "RPC_WS_UNAVAILABLE" && !error.uncertain)
 }
 
 fn native_ws_failure(error: WsFailure) -> String {
@@ -3176,6 +3184,23 @@ mod recovery_ws_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reconnect_backoff_failures_fall_back_to_http_but_remote_failures_do_not() {
+        use crate::host_ws::WsFailure;
+        let unavailable = WsFailure::local("RPC_WS_UNAVAILABLE", "reconnecting");
+        assert!(super::ws_failure_allows_http_fallback(&unavailable));
+        assert!(super::ws_failure_allows_http_fallback(
+            &WsFailure::unsupported()
+        ));
+        let mut sent = WsFailure::local("RPC_WS_UNAVAILABLE", "reconnecting");
+        sent.uncertain = true;
+        assert!(!super::ws_failure_allows_http_fallback(&sent));
+        assert!(!super::ws_failure_allows_http_fallback(&WsFailure::local(
+            "RPC_WS_REMOTE",
+            "rejected"
+        )));
+    }
+
     #[test]
     fn public_device_reply_retirement_preserves_post_effect_unknown_classification() {
         use crate::host_ws::tests::{accept, hello, next, result, Server};

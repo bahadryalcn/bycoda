@@ -73,6 +73,8 @@ impl Effects {
 }
 struct Member {
     waiting: bool,
+    /// Cursor the caller sent with its open; the resume point until it applies an event.
+    requested: Option<Cursor>,
     applied: Option<Cursor>,
     baseline: Option<Cursor>,
     delivered: BTreeSet<u64>,
@@ -193,7 +195,25 @@ impl DemandUnion {
         }
         let mut params = demand.shape.clone();
         params["subscriptionId"] = demand.wire.clone().into();
+        // Resume from the cursor every member already holds instead of
+        // re-downloading the stream; members that disagree get a full snapshot.
+        if let Some(cursor) = Self::shared_cursor(demand) {
+            params["cursor"] = cursor.value();
+        }
         Self::operation(key, demand, OperationKind::Open, params)
+    }
+    /// The one cursor all members agree on, if any.
+    fn shared_cursor(demand: &Demand) -> Option<Cursor> {
+        let mut shared: Option<Cursor> = None;
+        for member in demand.members.values() {
+            let cursor = member.applied.as_ref().or(member.requested.as_ref())?;
+            match &shared {
+                Some(existing) if existing != cursor => return None,
+                Some(_) => {}
+                None => shared = Some(cursor.clone()),
+            }
+        }
+        shared
     }
     fn begin_close(key: &str, demand: &mut Demand, refresh: bool, effects: &mut Effects) {
         demand.refresh |= refresh;
@@ -265,6 +285,9 @@ impl DemandUnion {
             member_id.clone(),
             Member {
                 waiting: true,
+                requested: params
+                    .get("cursor")
+                    .and_then(|value| Cursor::parse(value).ok()),
                 applied: None,
                 baseline: None,
                 delivered: BTreeSet::new(),

@@ -7,24 +7,37 @@ import type {
 import { listShellProfiles, type ShellProfiles } from "./shellProfiles";
 import { resolveHostWorktreeAsync } from "./git-worktrees";
 import { startTerminalProcess, type OwnedTerminalProcess } from "./terminal-process";
+import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 
 export const TERMINAL_OUTPUT_LIMIT = 256 * 1024;
 const MAX_TERMINALS = 32;
 const MAX_CREATIONS = 256;
+/** A settled creation receipt outlives any client retry window, not the host process. */
+export const TERMINAL_CREATION_RECEIPT_TTL_MS = 24 * 60 * 60 * 1000;
+/** An exited terminal keeps its last output readable this long before it is reaped. */
+export const EXITED_TERMINAL_GRACE_MS = 10 * 60 * 1000;
 type TerminalEntry = {
   value: HostTerminal;
   process?: OwnedTerminalProcess;
   output: string;
   end: number;
+  /** Monotonic reading taken when the terminal left the running state. */
+  exitedAt?: number;
   releaseActivity?: () => Promise<void>;
   releasingActivity?: Promise<void>;
+};
+type CreationReceipt = {
+  fingerprint: string;
+  result: Promise<HostTerminal>;
+  /** Monotonic reading taken when the result settled; pending receipts are never evicted. */
+  settledAt?: number;
 };
 type Project = { id: string; cwd: string };
 
 /** In-memory ownership only: persisted PIDs never authorize reads or process signals. */
 export class HostTerminals {
   private entries = new Map<string, TerminalEntry>();
-  private creations = new Map<string, { fingerprint: string; result: Promise<HostTerminal> }>();
+  private creations = new Map<string, CreationReceipt>();
   private closed = false;
   private activityGate?: (cwd: string, terminalId: string) => Promise<() => Promise<void>>;
   setActivityGate(gate: (cwd: string, terminalId: string) => Promise<() => Promise<void>>) {
@@ -34,9 +47,12 @@ export class HostTerminals {
     private readonly launch = startTerminalProcess,
     private readonly profiles: () => ShellProfiles = listShellProfiles,
     private readonly locate = resolveHostWorktreeAsync,
+    /** Monotonic clock; injected by tests so TTL eviction never sleeps. */
+    private readonly now: () => number = monotonicNow,
   ) {}
 
   list(projectId: string): HostTerminalList {
+    this.reapExited();
     return {
       terminals: [...this.entries.values()]
         .filter((entry) => entry.value.projectId === projectId)
@@ -74,23 +90,73 @@ export class HostTerminals {
       return existing.result.then((value) => ({ ...value }));
     }
     if (this.closed) throw new Error("Host terminals are stopping");
-    // Retain creation receipts for the host lifetime: eviction could replay an old mutation.
+    // A receipt is kept until it settled AND its TTL passed, so replaying an old
+    // mutation inside any retry window is impossible; the cap bounds the rest.
+    this.evictSettledReceipts();
+    this.reapExited();
     if (this.creations.size >= MAX_CREATIONS)
       throw new Error("Terminal creation limit reached for this host runtime");
-    const result = this.open(project, params, authorized);
-    this.creations.set(key, { fingerprint, result });
+    const attempt = { spawned: false };
+    const result = this.open(project, params, authorized, attempt);
+    const receipt: CreationReceipt = { fingerprint, result };
+    this.creations.set(key, receipt);
+    void result.then(
+      () => {
+        receipt.settledAt = this.now();
+      },
+      () => {
+        // Nothing was mutated before a spawn, so the same requestId may retry at once.
+        if (!attempt.spawned && this.creations.get(key) === receipt) this.creations.delete(key);
+        else receipt.settledAt = this.now();
+      },
+    );
     return result.then((value) => ({ ...value }));
+  }
+
+  private evictSettledReceipts(): void {
+    const now = this.now();
+    for (const [key, receipt] of this.creations)
+      if (
+        receipt.settledAt !== undefined &&
+        elapsedSince(receipt.settledAt, now) >= TERMINAL_CREATION_RECEIPT_TTL_MS
+      )
+        this.creations.delete(key);
+  }
+
+  /** Exited terminals stay readable for a grace period and never count against the cap. */
+  private reapExited(): void {
+    const now = this.now();
+    for (const [id, entry] of this.entries)
+      if (
+        entry.exitedAt !== undefined &&
+        !entry.releasingActivity &&
+        elapsedSince(entry.exitedAt, now) >= EXITED_TERMINAL_GRACE_MS
+      )
+        this.entries.delete(id);
+  }
+
+  private runningCount(): number {
+    let running = 0;
+    for (const entry of this.entries.values()) if (entry.value.state === "running") running++;
+    return running;
+  }
+
+  private markExited(entry: TerminalEntry, code: number | null = entry.value.exitCode): void {
+    entry.value.state = "exited";
+    entry.value.exitCode = code;
+    entry.exitedAt ??= this.now();
   }
 
   private async open(
     project: Project,
     params: Record<string, unknown>,
     authorized: () => boolean | Promise<boolean>,
+    attempt: { spawned: boolean },
   ): Promise<HostTerminal> {
     const cwd = await this.locate(project.cwd, params.cwd);
     if (!(await authorized())) throw new Error("Device credential is invalid or revoked");
     if (this.closed) throw new Error("Host terminals are stopping");
-    if (this.entries.size >= MAX_TERMINALS)
+    if (this.runningCount() >= MAX_TERMINALS)
       throw new Error("Close a terminal before creating another");
     const profiles = this.profiles();
     const profile =
@@ -121,7 +187,7 @@ export class HostTerminals {
       if (!(await authorized())) throw new Error("Device credential is invalid or revoked");
       if (this.closed) throw new Error("Host terminals are stopping");
     } catch (error) {
-      entry.value.state = "exited";
+      this.markExited(entry);
       await this.releaseActivity(entry);
       throw error;
     }
@@ -134,13 +200,13 @@ export class HostTerminals {
           entry.output = (entry.output + data).slice(-TERMINAL_OUTPUT_LIMIT);
         },
         (code) => {
-          entry.value.state = "exited";
-          entry.value.exitCode = code;
+          this.markExited(entry, code);
           void this.releaseActivity(entry).catch(() => {});
         },
       );
+      attempt.spawned = true;
     } catch {
-      entry.value.state = "exited";
+      this.markExited(entry);
       await this.releaseActivity(entry);
       throw new Error("Could not start terminal shell");
     }
@@ -192,7 +258,7 @@ export class HostTerminals {
     const entry = this.owned(projectId, id);
     // Anonymous pipes cannot deliver console Ctrl+C reliably on Windows. Stop the owned tree.
     await entry.process?.stop();
-    entry.value.state = "exited";
+    this.markExited(entry);
     await this.releaseActivity(entry);
     return { accepted: true as const };
   }
@@ -200,7 +266,7 @@ export class HostTerminals {
   async remove(projectId: string, id: unknown) {
     const entry = this.owned(projectId, id);
     await entry.process?.stop();
-    entry.value.state = "exited";
+    this.markExited(entry);
     await this.releaseActivity(entry);
     this.entries.delete(entry.value.id);
     return { closed: true as const };

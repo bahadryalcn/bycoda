@@ -1,12 +1,4 @@
-import {
-  existsSync,
-  linkSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -17,6 +9,7 @@ import {
   type SkillPolicy,
 } from "../src/integrations/harness/core/skillPolicy";
 import { skillNameForPath } from "./skills";
+import { writeFileAtomicSync } from "./storage/atomic-write";
 
 function withPolicyLock<T>(home: string, run: () => T): T {
   const dir = join(home, ".bycoda-host");
@@ -42,7 +35,8 @@ function withPolicyLock<T>(home: string, run: () => T): T {
       unlinkSync(lock);
     }
     const temporary = join(dir, `skill-policy-lock-${randomUUID()}.tmp`);
-    writeFileSync(temporary, marker, { mode: 0o600 });
+    // The marker is read back above; a crash must not publish an empty sentinel.
+    writeFileAtomicSync(temporary, marker, { mode: 0o600 });
     try {
       // Atomic exclusive publication of initialized metadata also excludes old
       // writers. A crash cannot leave a newly created anonymous/empty sentinel.
@@ -64,27 +58,55 @@ function withPolicyLock<T>(home: string, run: () => T): T {
   }
 }
 
+const UNREADABLE_POLICY =
+  "Could not read bycoda skill restrictions. Repair the skill policy before continuing.";
+
+/**
+ * A missing policy means "no restrictions" (every skill enabled). An empty or
+ * unparsable file is the signature of a crash mid-save, not of a preference: it
+ * is moved aside to `skill-policy.json.corrupt-<timestamp>` for inspection and
+ * logged, and the read continues as if the file were missing, so one truncated
+ * file does not fail every message send. Only a file that cannot be read or
+ * moved (permissions, EIO) still fails closed, because nothing proves what it
+ * held and the bytes would otherwise be overwritten by the next save.
+ */
 export function readSkillPolicy(home = homedir()): SkillPolicy {
   const file = join(home, ".bycoda-host", "skill-policy.json");
-  // Corrupt/unreadable preferences must not silently re-enable every skill.
+  let text: string;
   try {
-    return parseSkillPolicy(JSON.parse(readFileSync(file, "utf8")));
+    text = readFileSync(file, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ...EMPTY_SKILL_POLICY };
-    throw new Error(
-      "Could not read bycoda skill restrictions. Repair the skill policy before continuing.",
-    );
+    throw new Error(UNREADABLE_POLICY);
   }
+  let problem: string;
+  try {
+    if (!text.trim()) throw new Error("the file is empty");
+    return parseSkillPolicy(JSON.parse(text));
+  } catch (error) {
+    problem = error instanceof Error ? error.message : String(error);
+  }
+  // Synchronous twin of readStateFile's quarantine (host/storage/atomic-write.ts);
+  // the skill readers that call this are synchronous.
+  const quarantined = `${file}.corrupt-${Date.now()}`;
+  try {
+    renameSync(file, quarantined);
+  } catch (error) {
+    // Another reader moved it aside first.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ...EMPTY_SKILL_POLICY };
+    throw new Error(UNREADABLE_POLICY);
+  }
+  console.error(
+    `Skill policy ${file} could not be read (${problem}); moved aside to ${quarantined}. Skills disabled there are enabled again until they are disabled once more.`,
+  );
+  return { ...EMPTY_SKILL_POLICY };
 }
 
 export function saveSkillPolicy(value: unknown, home = homedir()): SkillPolicy {
   const policy = parseSkillPolicy(value);
   const dir = join(home, ".bycoda-host");
   mkdirSync(dir, { recursive: true });
-  const file = join(dir, "skill-policy.json");
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  writeFileSync(temporary, JSON.stringify(policy), { mode: 0o600 });
-  renameSync(temporary, file);
+  writeFileAtomicSync(join(dir, "skill-policy.json"), JSON.stringify(policy), { mode: 0o600 });
   return policy;
 }
 

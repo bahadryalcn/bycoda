@@ -18,6 +18,8 @@ import {
   sessionNeedsKeptTab,
 } from "../../../features/workspace/model/sessionPreview";
 import type { orchestrator } from "../../../features/orchestration/model/orchestration";
+import type { LiveAgent } from "../../../features/sessions/model/liveAgents";
+import { focusWindowLiveAgent } from "../../model/useWindowLiveAgents";
 import { type Session } from "../../../features/sessions/model/session";
 import { type LinkedSessionUpdate } from "../../../features/inbox/model/linkedSessionUpdates";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
@@ -44,6 +46,21 @@ export interface OpenSessionActionsDeps {
   revealLinkedSessionUpdate: (sessionId: string, update: LinkedSessionUpdate) => void;
   orchestrator: typeof orchestrator;
   workspaceNavigation: { cancel: () => void; captureRequest?: () => () => boolean };
+  /** Merged live agents across app windows. A session whose agent carries an
+   * `ownerWindowLabel` is live in another window and is focused there instead
+   * of being opened here a second time. */
+  liveAgents?: readonly LiveAgent[];
+}
+
+/** Brings the owning window forward; the open request ends with this. */
+async function focusSessionInOwnerWindow(agent: LiveAgent): Promise<void> {
+  try {
+    await focusWindowLiveAgent(agent);
+  } catch (error) {
+    await message(error instanceof Error ? error.message : String(error), {
+      title: t("Open conversation window"),
+    });
+  }
 }
 
 /** Opens a history session in the workspace, or several side by side in one tab. */
@@ -65,8 +82,16 @@ export function useOpenSessionActions({
   revealLinkedSessionUpdate,
   orchestrator,
   workspaceNavigation,
+  liveAgents,
 }: OpenSessionActionsDeps) {
   const openRequest = useRef(0);
+  const liveAgentsRef = useRef(liveAgents);
+  liveAgentsRef.current = liveAgents;
+  const ownedElsewhere = useCallback(
+    (sessionId: string) =>
+      liveAgentsRef.current?.find((agent) => agent.id === sessionId && agent.ownerWindowLabel),
+    [],
+  );
   useEffect(
     () => () => {
       openRequest.current++;
@@ -101,6 +126,13 @@ export function useOpenSessionActions({
 
   const onSelectHistorySession = useCallback(
     async (sessionId: string, options?: { preview?: boolean; isCurrent?: () => boolean }) => {
+      // Opening a session a second window would let a send here retire the
+      // owner's running turn; the owning window takes the request instead.
+      const elsewhere = ownedElsewhere(sessionId);
+      if (elsewhere) {
+        await focusSessionInOwnerWindow(elsewhere);
+        return;
+      }
       const request = ++openRequest.current;
       workspaceNavigation.cancel();
       const navigationCurrent = workspaceNavigation.captureRequest?.() ?? (() => true);
@@ -166,6 +198,7 @@ export function useOpenSessionActions({
       replaceBlankPaneWithSession,
       revealLinkedSessionUpdate,
       onKeepSession,
+      ownedElsewhere,
       tabsRef,
       setTabs,
       setActiveTabId,
@@ -179,7 +212,14 @@ export function useOpenSessionActions({
   /** Open several history sessions together as a grid in one new tab. */
   const onOpenSessionsSideBySide = useCallback(
     async (sessionIds: string[], options?: { isCurrent?: () => boolean }) => {
-      const wanted = [...new Set(sessionIds)];
+      const requested = [...new Set(sessionIds)];
+      // Sessions live in another window stay there; the composition holds the rest.
+      const wanted = requested.filter((id) => !ownedElsewhere(id));
+      if (wanted.length === 0 && requested.length > 0) {
+        const elsewhere = ownedElsewhere(requested[0]);
+        if (elsewhere) await focusSessionInOwnerWindow(elsewhere);
+        return;
+      }
       if (wanted.length > SIDE_BY_SIDE_LIMIT) {
         await message(
           t("Select at most {p0} conversations to open side by side.", { p0: SIDE_BY_SIDE_LIMIT }),
@@ -222,6 +262,7 @@ export function useOpenSessionActions({
       followProject,
       insertBesideActive,
       onSelectHistorySession,
+      ownedElsewhere,
       tabsRef,
       setTabs,
       setActiveTabId,

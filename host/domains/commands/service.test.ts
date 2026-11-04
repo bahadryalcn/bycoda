@@ -7,6 +7,7 @@ import {
 } from "./service";
 import { DesktopLive } from "../../desktopLive";
 
+type SessionReceipt = { commandId: string; sessionId: string; revision: number };
 const send: SessionCommand = { type: "send", commandId: "c", sessionId: "s", text: "hello" };
 const contextual: SessionCommand = {
   type: "contextual",
@@ -368,6 +369,29 @@ describe("command domain admission", () => {
     vi.mocked(ports.nativeProjection.alive).mockReturnValue(false);
     await expect(service.dispatch(cancel, auth)).rejects.toThrow("isn't responding");
     expect(ports.nativeProjection.enqueue).toHaveBeenCalledOnce();
+  });
+  it("persists a receipt for a desktop-routed stop so status finds it and a retry re-queues", async () => {
+    const { ports, auth } = setup();
+    const rows = new Map<string, { signature: string; receipt: SessionReceipt }>();
+    ports.repository.receiptStatus = vi.fn(async (id) => rows.get(id)?.receipt);
+    ports.repository.recordReceipt = vi.fn(async (signature, receipt) => {
+      rows.set(receipt.commandId, { signature, receipt });
+    });
+    ports.repository.receipt = vi.fn(async (id, signature) => {
+      const row = rows.get(id);
+      if (row && row.signature !== signature) throw new Error("different payload");
+      return row?.receipt;
+    });
+    const service = createCommandService(ports);
+    vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });
+    const cancel = { type: "cancel", sessionId: "s", commandId: "c", runId: "run" };
+    const first = await service.dispatch(cancel, auth);
+    expect(rows.get("c")?.receipt).toEqual(first);
+    expect(await service.status({ commandId: "c" }, auth)).toEqual(first);
+    // A retry (for example after a Host restart) finds the receipt and re-queues idempotently.
+    expect(await service.dispatch(cancel, auth)).toEqual(first);
+    expect(ports.repository.recordReceipt).toHaveBeenCalledOnce();
+    expect(ports.nativeProjection.enqueue).toHaveBeenCalledTimes(2);
   });
   it.each([false, true])(
     "preserves the exact original approval occurrence through %s legacy admission",

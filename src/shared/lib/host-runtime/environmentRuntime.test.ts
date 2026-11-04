@@ -110,10 +110,20 @@ describe("environment logical runtime", () => {
   });
   it.each([
     ["goals.list", {}],
-    ["tasks.save", { task: {
-      id: "task", title: "Captured owner payload", prompt: "Work", projectId: "p",
-      harness: "codex", model: "fixture", runtimeMode: "auto",
-    } }],
+    [
+      "tasks.save",
+      {
+        task: {
+          id: "task",
+          title: "Captured owner payload",
+          prompt: "Work",
+          projectId: "p",
+          harness: "codex",
+          model: "fixture",
+          runtimeMode: "auto",
+        },
+      },
+    ],
     ["files.write", { projectId: "p", path: "file", expected: "before", content: "after" }],
     ["devServers.bridgeRead", { projectId: "p", streamId: "bridge" }],
   ] as const)(
@@ -848,9 +858,9 @@ describe("environment logical runtime", () => {
     );
     await flush();
     expect(calls("sessions.get")).toHaveLength(64);
-    await expect(runtime.request("sessions.get", { sessionId: "overflow" })).rejects.toThrow(
-      "pending read",
-    );
+    const overflow = runtime
+      .request("sessions.get", { sessionId: "overflow" })
+      .catch((error) => error);
     const status = runtime
       .request("commands.status", { commandId: "original" })
       .catch((error) => error);
@@ -872,7 +882,58 @@ describe("environment logical runtime", () => {
     expect(runtime.pendingCount).toBe(67);
     await runtime.close();
     await Promise.all([...normal, status, stop, cancellation]);
+    expect(await overflow).toBeInstanceOf(Error);
+    expect(calls("sessions.get")).toHaveLength(64);
     expect(runtime.pendingCount).toBe(0);
+  });
+  it("queues control requests beyond the lane limit in order and never throws", async () => {
+    const { runtime, port } = fixture();
+    const resolvers: Array<() => void> = [];
+    const order: string[] = [];
+    vi.mocked(port.request).mockImplementation(
+      (_method, params) =>
+        new Promise((resolve) => {
+          order.push((params as { requestId: string }).requestId);
+          resolvers.push(() => resolve({ generation: 1, result: { accepted: true } }));
+        }),
+    );
+    const results = Array.from({ length: 12 }, (_, index) =>
+      runtime.request("requests.cancel", { requestId: `r-${index}` }).then(
+        () => "ok",
+        (error: Error) => error.message,
+      ),
+    );
+    await flush();
+    expect(order).toEqual(Array.from({ length: 8 }, (_, index) => `r-${index}`));
+    for (let released = 0; released < 12; released++) {
+      resolvers[released]!();
+      await flush();
+    }
+    expect(order).toEqual(Array.from({ length: 12 }, (_, index) => `r-${index}`));
+    expect(await Promise.all(results)).toEqual(Array.from({ length: 12 }, () => "ok"));
+  });
+  it("drops an aborted queued request without dispatching it", async () => {
+    const { runtime, port } = fixture();
+    vi.mocked(port.request).mockImplementation(() => new Promise(() => {}));
+    for (let index = 0; index < 8; index++)
+      void runtime.request("requests.cancel", { requestId: `r-${index}` }).catch(() => {});
+    await flush();
+    const listeners: Array<() => void> = [];
+    const signal = {
+      aborted: false,
+      subscribe(callback: () => void) {
+        listeners.push(callback);
+        return () => {};
+      },
+    };
+    const queued = runtime
+      .request("requests.cancel", { requestId: "late" }, { signal })
+      .catch((error: Error) => error);
+    await flush();
+    signal.aborted = true;
+    listeners.forEach((callback) => callback());
+    expect(await queued).toMatchObject({ code: "RPC_WS_CANCELLED" });
+    expect(port.request).toHaveBeenCalledTimes(8);
   });
   it("preserves a validated definite native failure instead of changing it into uncertainty", async () => {
     const { runtime, port, calls } = fixture();

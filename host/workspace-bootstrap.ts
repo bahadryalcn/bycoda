@@ -1,7 +1,18 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, copyFile, lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
+import {
+  access,
+  copyFile,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  realpath,
+  rename,
+  stat,
+  unlink,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import type { WorkspaceBootstrap } from "./workspace-service-contracts.ts";
@@ -22,6 +33,10 @@ export interface WorkspaceBootstrapOptions {
   toolchain?: string;
   profile?: string;
   buildLeasePollMs?: number;
+  /** Give up waiting for the build lease after this long (default 10 minutes). */
+  buildLeaseTimeoutMs?: number;
+  /** A lease older than this is stale even if its PID cannot be checked (default 1 hour). */
+  buildLeaseMaxAgeMs?: number;
   onBuildCacheState?(workspaceId: string, state: "waitingForBuildCache" | "building"): void;
 }
 type Operation = {
@@ -33,6 +48,15 @@ const hash = (text: string | Buffer) => createHash("sha256").update(text).digest
 const safeId = (text: string) => hash(text).slice(0, 24);
 const cancelled = () =>
   Object.assign(new Error("Workspace preparation was cancelled."), { code: "ABORT_ERR" });
+const pidAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but belongs to another user.
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+};
 const snapshot = (operation: Operation): WorkspaceBootstrapStatus =>
   structuredClone(operation.status);
 
@@ -329,12 +353,21 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
     await mkdir(cargoTargetDir, { recursive: true });
     const path = join(cargoTargetDir, ".bycoda-build-lease");
     let handle: Awaited<ReturnType<typeof open>> | undefined;
+    const basePoll = this.options.buildLeasePollMs ?? 100;
+    const giveUpAt = Date.now() + (this.options.buildLeaseTimeoutMs ?? 10 * 60_000);
+    let poll = basePoll;
     while (!handle) {
       signal.throwIfAborted();
       try {
         handle = await open(path, "wx");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        // A crashed builder leaves its lease behind; reclaim it when its PID is gone or it is ancient.
+        if (await this.reclaimStaleLease(path)) continue;
+        if (Date.now() >= giveUpAt)
+          throw new Error(
+            `Timed out waiting for the build cache lease (${path}). Another build may be stuck; remove the lease file if no build is running.`,
+          );
         this.options.onBuildCacheState?.(workspaceId, "waitingForBuildCache");
         await new Promise<void>((done, reject) => {
           const abort = () => {
@@ -344,10 +377,12 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
           const timer = setTimeout(() => {
             signal.removeEventListener("abort", abort);
             done();
-          }, this.options.buildLeasePollMs ?? 100);
+          }, poll);
           signal.addEventListener("abort", abort, { once: true });
           if (signal.aborted) abort();
         });
+        // Back off 100 ms -> 1 s (never below the configured base).
+        poll = Math.min(Math.max(basePoll, 1000), poll * 2);
       }
     }
     try {
@@ -364,6 +399,39 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
       await handle.close();
       await unlink(path);
     }
+  }
+
+  /** Remove a lease whose owner PID is not alive or that is older than the max age. Returns true when removed. */
+  private async reclaimStaleLease(path: string): Promise<boolean> {
+    const maxAge = this.options.buildLeaseMaxAgeMs ?? 60 * 60_000;
+    let text: string;
+    let mtimeMs: number;
+    try {
+      [text, mtimeMs] = [await readFile(path, "utf8"), (await stat(path)).mtimeMs];
+    } catch {
+      return true; // Vanished between open and read: retry immediately.
+    }
+    let pid: number | undefined;
+    try {
+      const parsed = (JSON.parse(text) as { pid?: unknown }).pid;
+      if (typeof parsed === "number" && Number.isInteger(parsed) && parsed > 0) pid = parsed;
+    } catch {
+      // The owner may still be between open() and writeFile(); fall back to age.
+    }
+    const stale =
+      Date.now() - mtimeMs > maxAge || (pid !== undefined && pid !== process.pid && !pidAlive(pid));
+    if (!stale) return false;
+    // Claim by rename so only one reclaimer removes it, then confirm it is the lease we judged.
+    const claimed = `${path}.stale-${randomUUID()}`;
+    try {
+      await rename(path, claimed);
+    } catch {
+      return true;
+    }
+    if ((await readFile(claimed, "utf8").catch(() => text)) !== text)
+      await rename(claimed, path).catch(() => {});
+    else await unlink(claimed).catch(() => {});
+    return true;
   }
 
   /** Call inside withBuildCache, after the compiler exits, before releasing the output lease. */

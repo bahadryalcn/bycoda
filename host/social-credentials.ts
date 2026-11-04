@@ -1,7 +1,8 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdir, open, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
+import { writeFileAtomic } from "./storage/atomic-write";
 
 export type SocialCredential = {
   accessToken: string;
@@ -96,7 +97,15 @@ export class OsSocialCredentials implements SocialCredentialStore {
           ],
           raw,
         );
-        await writeFile(path, wrapped, { mode: 0o600, flag: "wx" });
+        // Exclusive create keeps a concurrent first initialization from replacing
+        // a key that already protects tokens; the bytes are flushed before use.
+        const handle = await open(path, "wx", 0o600);
+        try {
+          await handle.writeFile(wrapped);
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
       }
       const raw = await secretCommand(
         "powershell.exe",
@@ -184,14 +193,13 @@ export class OsSocialCredentials implements SocialCredentialStore {
         const cipher = createCipheriv("aes-256-gcm", await this.key(), iv);
         cipher.setAAD(Buffer.from(this.environmentId));
         const encrypted = Buffer.concat([cipher.update(JSON.stringify(values)), cipher.final()]);
-        // Atomic replacement prevents a crash from truncating the only credential copy.
-        const temporary = join(this.directory, `tokens-${randomBytes(8).toString("hex")}.enc`);
-        await writeFile(temporary, Buffer.concat([iv, cipher.getAuthTag(), encrypted]), {
-          mode: 0o600,
-          flag: "wx",
-        });
-        const { rename } = await import("node:fs/promises");
-        await rename(temporary, join(this.directory, "tokens.enc"));
+        // Atomic, fsynced replacement: a crash or power loss can neither truncate
+        // nor empty the only credential copy.
+        await writeFileAtomic(
+          join(this.directory, "tokens.enc"),
+          Buffer.concat([iv, cipher.getAuthTag(), encrypted]),
+          { mode: 0o600 },
+        );
       });
     this.queue = run;
     return run;

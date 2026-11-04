@@ -71,7 +71,7 @@ import type {
 } from "../src/features/tasks/model/hostSprints";
 import { HostLimits } from "./limits";
 import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
-import { HostTaskBudgets } from "./task-budgets";
+import { HostTaskBudgets, sameBudgetUsageTotals } from "./task-budgets";
 import { checkTaskPreflight } from "./task-preflight";
 import { evaluateTaskPreflight } from "../src/features/tasks/model/taskPreflight";
 import { parseTaskEvaluation } from "../src/features/tasks/model/taskMetrics";
@@ -409,6 +409,20 @@ function questionContinuationCount(task: HostTask): number {
 /** Works through this machine's task backlog with no desktop open. Explicit
  * direct tasks share the selected checkout; other tasks require an isolated
  * Git worktree and wait for approval before delivery to the project checkout. */
+const TASK_HISTORY_UPDATE_MARKER = "WHEN OLD.value IS NOT NEW.value";
+const TASK_HISTORY_UPDATE_TRIGGER = `
+  CREATE TRIGGER IF NOT EXISTS task_history_update AFTER UPDATE ON tasks
+  ${TASK_HISTORY_UPDATE_MARKER} AND (
+    json_extract(OLD.value,'$.status') IS NOT json_extract(NEW.value,'$.status')
+    OR json_extract(OLD.value,'$.title') IS NOT json_extract(NEW.value,'$.title')
+    OR json_extract(OLD.value,'$.projectId') IS NOT json_extract(NEW.value,'$.projectId')
+    OR json_extract(OLD.value,'$.goalId') IS NOT json_extract(NEW.value,'$.goalId')
+  ) BEGIN
+    INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+      json_extract(NEW.value,'$.projectId'),NEW.id,json_extract(NEW.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),0,
+      json_object('id',NEW.id,'projectId',json_extract(NEW.value,'$.projectId'),'title',json_extract(NEW.value,'$.title'),'status',json_extract(NEW.value,'$.status'),'updatedAt',json_extract(NEW.value,'$.updatedAt'),'goalId',json_extract(NEW.value,'$.goalId')));
+  END;
+`;
 export class HostTasks {
   /** Internal runtime composition, never accepted from an RPC request. */
   assistantRecoveryAdmission?: (task:HostTask,stage?:{sessionId:string;runId?:string;phase:"command"|"provider"})=>Promise<void>;
@@ -899,11 +913,6 @@ export class HostTasks {
               json_extract(NEW.value,'$.projectId'),NEW.id,json_extract(NEW.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),0,
               json_object('id',NEW.id,'projectId',json_extract(NEW.value,'$.projectId'),'title',json_extract(NEW.value,'$.title'),'status',json_extract(NEW.value,'$.status'),'updatedAt',json_extract(NEW.value,'$.updatedAt'),'goalId',json_extract(NEW.value,'$.goalId')));
           END;
-          CREATE TRIGGER IF NOT EXISTS task_history_update AFTER UPDATE ON tasks BEGIN
-            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
-              json_extract(NEW.value,'$.projectId'),NEW.id,json_extract(NEW.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),0,
-              json_object('id',NEW.id,'projectId',json_extract(NEW.value,'$.projectId'),'title',json_extract(NEW.value,'$.title'),'status',json_extract(NEW.value,'$.status'),'updatedAt',json_extract(NEW.value,'$.updatedAt'),'goalId',json_extract(NEW.value,'$.goalId')));
-          END;
           CREATE TRIGGER IF NOT EXISTS task_history_transfer BEFORE UPDATE ON tasks
           WHEN json_extract(OLD.value,'$.projectId') IS NOT json_extract(NEW.value,'$.projectId') BEGIN
             INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
@@ -916,6 +925,17 @@ export class HostTasks {
               json_object('id',OLD.id,'projectId',json_extract(OLD.value,'$.projectId'),'title',json_extract(OLD.value,'$.title'),'status',json_extract(OLD.value,'$.status'),'updatedAt',json_extract(OLD.value,'$.updatedAt'),'goalId',json_extract(OLD.value,'$.goalId')));
           END;
         `);
+        // Versioned trigger: only history-relevant changes (status, title, project,
+        // goal) are journaled. Scheduler bookkeeping rewrites (budget usage, needsInput,
+        // updatedAt) no longer grow task_history. Databases that hold the original
+        // unconditional trigger are migrated once, detected by the WHEN marker.
+        const historyTrigger = await store.db
+          .prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='task_history_update'")
+          .get();
+        if (!String(historyTrigger?.sql ?? "").includes(TASK_HISTORY_UPDATE_MARKER))
+          await store.transaction(async () => {
+            await store.db.exec(`DROP TRIGGER IF EXISTS task_history_update; ${TASK_HISTORY_UPDATE_TRIGGER}`);
+          }, "critical");
         await store.db
           .prepare("INSERT OR IGNORE INTO task_history_meta VALUES (1, ?)")
           .run(this.now());
@@ -2130,7 +2150,11 @@ export class HostTasks {
           task.budget ??
           parent?.budget ??
           (activeStatus && goalId ? (await this.owningGoal(goalId))?.budget : undefined);
-        if (activeStatus && configuredBudget && task.budgetUsage?.measuredAt !== now) {
+        if (
+          activeStatus &&
+          configuredBudget &&
+          !sameBudgetUsageTotals(task.budgetUsage, await this.budgets.read({ taskId: task.id }))
+        ) {
           const fresh = await this.unchangedTask(task.id, maintenanceRows.get(task.id));
           if (!fresh) continue;
           // This scheduler-owned refresh advances the exact expected row. Owner

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { isSingleLineCommand } from "./terminalSuggestions";
 
 export type RemoteSuggestionSource = "commands" | "paths" | "history";
@@ -60,6 +61,64 @@ export function validSshShellState(value: unknown, id: string): value is SshShel
       command.startsWith(state.prefix!) &&
       command !== state.prefix,
   );
+}
+
+type ShellStateHandler = (payload: unknown) => void;
+
+/**
+ * One window-scoped `ssh-shell-state` listener per window, shared by every SSH
+ * terminal and dispatched by terminal id. Rust emits the event to the owner
+ * window only, so a plain listener per terminal both leaked across windows and
+ * multiplied native registrations by the number of open terminals.
+ */
+const shellStateHandlers = new Map<string, Set<ShellStateHandler>>();
+let shellStateBridge: Promise<UnlistenFn> | null = null;
+
+function dispatchShellState(event: { payload: unknown }): void {
+  const payload = event.payload;
+  const id = payload && typeof payload === "object" ? (payload as { id?: unknown }).id : undefined;
+  if (typeof id !== "string") return;
+  const handlers = shellStateHandlers.get(id);
+  if (!handlers) return;
+  // Set iteration tolerates a handler unsubscribing while the event is delivered.
+  for (const handler of handlers) handler(payload);
+}
+
+/**
+ * Registers `handler` for the terminal `id`. `ready` rejects when the native
+ * listener could not be registered; the registration is not cached in that
+ * case, so a later terminal retries it. The last disposer releases the listener.
+ */
+export function subscribeShellState(
+  id: string,
+  handler: ShellStateHandler,
+): { ready: Promise<void>; dispose: () => void } {
+  let handlers = shellStateHandlers.get(id);
+  if (!handlers) {
+    handlers = new Set();
+    shellStateHandlers.set(id, handlers);
+  }
+  handlers.add(handler);
+  const bridge =
+    shellStateBridge ??
+    (shellStateBridge = listenWindowAsync<unknown>("ssh-shell-state", dispatchShellState));
+  void bridge.catch(() => {
+    if (shellStateBridge === bridge) shellStateBridge = null;
+  });
+  let disposed = false;
+  return {
+    ready: bridge.then(() => undefined),
+    dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      handlers.delete(handler);
+      if (handlers.size === 0) shellStateHandlers.delete(id);
+      if (shellStateHandlers.size === 0 && shellStateBridge === bridge) {
+        shellStateBridge = null;
+        void bridge.then((unlisten) => unlisten()).catch(() => undefined);
+      }
+    },
+  };
 }
 
 export type SshShellController = ReturnType<typeof useSshShellIntegration>;
@@ -158,9 +217,9 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     cancelPassive();
     if (!enabled) return;
     let disposed = false;
-    const listener = listen<unknown>("ssh-shell-state", (event) => {
-      if (disposed || !validSshShellState(event.payload, id)) return;
-      const value = event.payload;
+    const subscription = subscribeShellState(id, (payload) => {
+      if (disposed || !validSshShellState(payload, id)) return;
+      const value = payload;
       if (value.status === "ready") {
         const previousScope = trustedScope.current;
         trustedScope.current = { host: value.host, user: value.user };
@@ -216,7 +275,7 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
       setSnapshotRevision(preferences.current.revision);
       setState(value);
     });
-    void listener.catch(() => {
+    void subscription.ready.catch(() => {
       if (!disposed) setFailure({ id, message: "Remote shell integration is unavailable" });
     });
     return () => {
@@ -227,7 +286,7 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
       epoch.current += 1;
       clearTimer();
       clearPreview();
-      void listener.then((unlisten) => unlisten()).catch(() => undefined);
+      subscription.dispose();
     };
   }, [id, enabled, clearTimer, cancelPassive, clearPreview]);
 

@@ -368,3 +368,20 @@ fn resnapshot_of_an_already_committed_cursor_still_acknowledges_the_new_host_reg
     );
     assert_eq!(acknowledgement.params["cursor"], cursor(1));
 }
+
+#[test]
+fn reopen_sends_the_cursor_only_when_every_member_agrees() {
+    let mut union = union();
+    let mut a = params("a", "s");
+    a["cursor"] = cursor(7);
+    let (_, agreed) = union.open("a", &a).unwrap();
+    assert_eq!(agreed.operations[0].params["cursor"], cursor(7));
+
+    let mut other = DemandUnion::new(64, 64, 512, 32, 2_097_152, 8_388_608);
+    let (_, plain) = other.open("a", &params("a", "s")).unwrap();
+    assert!(plain.operations[0].params.get("cursor").is_none());
+    let mut b = params("b", "t");
+    b["cursor"] = cursor(3);
+    let (_, single) = other.open("b", &b).unwrap();
+    assert_eq!(single.operations[0].params["cursor"], cursor(3));
+}

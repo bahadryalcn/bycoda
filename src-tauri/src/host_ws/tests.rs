@@ -420,6 +420,29 @@ fn native_profile_recovery_cannot_use_a_renderer_selected_generic_ws_route() {
     }
     assert!(broker.connections.lock().unwrap().is_empty());
 }
+
+#[test]
+fn only_authentication_identity_and_protocol_errors_block_the_lane() {
+    use connection::classify_error_category;
+    assert_eq!(
+        classify_error_category(Some("authentication")),
+        ("authentication", true)
+    );
+    assert_eq!(
+        classify_error_category(Some("identity")),
+        ("identity", true)
+    );
+    assert_eq!(classify_error_category(Some("schema")), ("schema", true));
+    assert_eq!(
+        classify_error_category(Some("overload")),
+        ("overload", false)
+    );
+    assert_eq!(
+        classify_error_category(Some("internal")),
+        ("unavailable", false)
+    );
+    assert_eq!(classify_error_category(None), ("unavailable", false));
+}
 use futures_util::{SinkExt, StreamExt};
 use std::io::{Read, Write};
 use std::{future::Future, sync::atomic::AtomicUsize};

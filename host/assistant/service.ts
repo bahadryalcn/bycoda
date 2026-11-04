@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { AssistantTextPreflightError } from "../assistant-text-budget";
 import { DesktopOperationAuditSchema, desktopOperationAuditId, type DesktopOperationAudit } from "../desktop-control-audit";
 import type { HostStore } from "../store";
+import { ownerDayKey } from "../owner-day";
 import {
   AssistantRequestValidationSchema, AssistantResponseValidationSchema,
   type AssistantRequest, type AssistantResponse, type AssistantProfile,
@@ -464,7 +465,7 @@ export class HostAssistant {
         },"critical");
       }
       // A cleared History row stays cleared; a retry must not restore owner-deleted content.
-      if(activity)await this.appendDailyNote(await this.profile(),[activity],{strict:true,day:new Date(event.at).toISOString().slice(0,10)});
+      if(activity)await this.appendDailyNote(await this.profile(),[activity],{strict:true,day:ownerDayKey(event.at)});
       await this.store.transaction(()=>this.setRuntime(key,{...recorded!,noteDelivered:true}),"critical");
       this.ports.onChange?.();
     }));
@@ -1023,7 +1024,7 @@ export class HostAssistant {
     },"critical");
   }
   private async usage(profile:AssistantProfile,includeCache=false):Promise<AssistantUsage> {
-    const day=new Date(this.now()).toISOString().slice(0,10);
+    const day=ownerDayKey(this.now());
     const old=await this.runtime<AssistantUsage>(`usage:${day}`,{day,chiefTokens:0,workerTokens:0,total:0,mode:"run",estimated:false});
     if(!includeCache)return {...old,mode:tokenBudgetMode(old.total,profile.dailyTokenBudget)};
     const rows=await this.store.db.prepare("SELECT value FROM assistant_runtime WHERE id LIKE 'workerTurn:%' AND json_extract(value,'$.value.day')=?").all(day);
@@ -1078,11 +1079,11 @@ export class HostAssistant {
       const key=`workerTurn:${turn.key}`;
       const previous=await this.runtime<{tokens:number;day:string;settled:boolean;cacheMetrics?:AssistantCacheMeasurement;cacheTimeKnown?:boolean}|null>(key,null);
       const timestamp=turn.at===undefined?this.now():turn.at;
-      const day=previous?.day??new Date(timestamp).toISOString().slice(0,10);
+      const day=previous?.day??ownerDayKey(timestamp);
       const observed=Math.max(previous?.tokens??0,turn.tokens);
       const delta=observed-(previous?.tokens??0);
       const cacheMetrics=assistantCacheMeasurement(turn.cacheMetrics)??previous?.cacheMetrics;
-      const cacheTimeKnown=previous?.cacheTimeKnown===true||turn.at!==undefined&&Number.isSafeInteger(turn.at)&&turn.at>=0&&turn.at<=this.now()&&new Date(turn.at).toISOString().slice(0,10)===day;
+      const cacheTimeKnown=previous?.cacheTimeKnown===true||turn.at!==undefined&&Number.isSafeInteger(turn.at)&&turn.at>=0&&turn.at<=this.now()&&ownerDayKey(turn.at)===day;
       if(previous&&delta===0&&previous.settled===turn.settled&&JSON.stringify(previous.cacheMetrics)===JSON.stringify(cacheMetrics)&&previous.cacheTimeKnown===cacheTimeKnown)continue;
       if(delta)await this.adjustWorkerUsage(day,delta,0);
       let uncovered=delta;
@@ -1284,7 +1285,7 @@ export class HostAssistant {
     await this.store.transaction(()=>this.queueOwnerQuestionReminders(),"critical");
     const profile=await this.profile();
     if(profile.enabled&&profile.setupComplete)await this.syncPresence();
-    if(profile.enabled&&profile.setupComplete){const schedule=await this.runtime("briefingSchedule",{enabled:true,time:"09:00"}),date=new Date(this.now()),time=`${String(date.getHours()).padStart(2,"0")}:${String(date.getMinutes()).padStart(2,"0")}`,day=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;if(schedule.enabled&&time>=schedule.time)await this.prepareBriefing(this.now()-DAY,day);}
+    if(profile.enabled&&profile.setupComplete){const schedule=await this.runtime("briefingSchedule",{enabled:true,time:"09:00"}),date=new Date(this.now()),time=`${String(date.getHours()).padStart(2,"0")}:${String(date.getMinutes()).padStart(2,"0")}`,day=ownerDayKey(this.now());if(schedule.enabled&&time>=schedule.time)await this.prepareBriefing(this.now()-DAY,day);}
     await this.syncHoursHolds(profile);
     if(this.emergencyStop||!profile.enabled||!profile.setupComplete||await this.runtime("paused",false))return;
     await this.store.transaction(()=>this.setRuntime("heartbeat",this.now()));
@@ -1359,7 +1360,7 @@ export class HostAssistant {
   }
   private async appendDailyNote(profile:AssistantProfile,events:AssistantActivity[],options:{strict?:boolean;day?:string}={}) {
     if(!this.ports.listNotes||!this.ports.saveNote){if(options.strict)throw new Error("Global assistant notes are unavailable on this Host.");return;}
-    const title=`${profile.name||"Computer use"} · ${options.day??new Date(this.now()).toISOString().slice(0,10)}`;
+    const title=`${profile.name||"Computer use"} · ${options.day??ownerDayKey(this.now())}`;
     if(await this.runtime(`notebookSuppressed:${title}`,false))return;
     for(let attempt=0;attempt<2;attempt++) {
       try {

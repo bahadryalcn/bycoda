@@ -10,8 +10,10 @@ import {
   LOCKED_PROJECT_SKIP,
   automationLimits,
   dailyRunLimitSkip,
+  previousRunSkip,
   runLimitBreach,
 } from "../../../features/automations/model/automationLimits";
+import { monotonicNow } from "../../../shared/lib/time/timestamps";
 import {
   HARNESS_LABEL,
   formatSessionTitle,
@@ -99,16 +101,18 @@ export function useAutomationLaunch({
       let breach: string | null = null;
       try {
         await earlier;
+        // The stored history is shared by every window of this app, so an
+        // earlier run still going in another window holds this one back too.
+        const history = await listAutomationRuns(automation.id);
+        const stored = history.find((entry) => entry.id === run.id);
+        // Another launcher or the startup recovery pass already settled it.
+        if (stored && stored.status !== "pending") return;
         const skip = isProjectPasswordLocked(automation.cwd)
           ? LOCKED_PROJECT_SKIP
-          : run.trigger === "manual"
-            ? null
-            : dailyRunLimitSkip(
-                limits,
-                limits.maxRunsPerDay > 0 ? await listAutomationRuns(automation.id) : [],
-                run.id,
-                Date.now(),
-              );
+          : (previousRunSkip(history, run.id) ??
+            (run.trigger === "manual"
+              ? null
+              : dailyRunLimitSkip(limits, history, run.id, Date.now())));
         if (skip) {
           await updateAutomationRun(run.id, "skipped", { error: skip });
           return;
@@ -207,15 +211,19 @@ export function useAutomationLaunch({
           setSidebarTab("sessions", session.cwd);
         }
 
-        await updateAutomationRun(run.id, "running", {
+        const running = await updateAutomationRun(run.id, "running", {
           sessionId: session.id,
         });
+        // A run settled meanwhile keeps its outcome; nothing starts for it.
+        if (running.status !== "running") return;
         started();
         if (limits.maxRunMinutes > 0) {
-          const startedAt = Date.now();
+          // Monotonic readings: time the machine spends asleep does not count
+          // toward the limit, so a run is not stopped the moment it wakes.
+          const startedAt = monotonicNow();
           const sessionId = session.id;
           watchdog = window.setInterval(() => {
-            breach = runLimitBreach(limits, { startedAt, now: Date.now() });
+            breach = runLimitBreach(limits, { startedAt, now: monotonicNow() });
             if (!breach) return;
             window.clearInterval(watchdog);
             onStopRef.current(sessionId);

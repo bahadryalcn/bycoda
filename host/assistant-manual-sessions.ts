@@ -44,30 +44,48 @@ export class HostAssistantManualSessions {
   async listAllForUsage():Promise<ManualSupervisionGrant[]>{
     await this.ready;const rows=await this.store.db.prepare("SELECT value FROM (SELECT value FROM assistant_manual_supervision UNION ALL SELECT value FROM assistant_manual_supervision_history) ORDER BY json_extract(value,'$.enrolledAt') DESC LIMIT 10000").all();return rows.map(row=>JSON.parse(row.value) as ManualSupervisionGrant);
   }
-  private async canonicalOwner(record:HostSession):Promise<string|undefined>{
+  /** One query per table: every session id referenced by a canonical owner, so a listing checks membership instead of scanning per candidate. */
+  private async ownerIndex():Promise<{crew:Set<string>;owned:Set<string>}>{
+    const crew=new Set<string>(),owned=new Set<string>();
+    for(const row of await this.store.db.prepare("SELECT node.value AS value FROM metadata,json_tree(metadata.value,'$.runs') AS node WHERE metadata.key='crews.v1' AND node.type='text' AND node.key='coordinatorSessionId'").all())crew.add(String(row.value));
+    const tables=await this.store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('tasks','goals','automations','automation_runs','stewards','crew_runs','crew_run_members')").all();
+    for(const row of tables){
+      const table=String(row.name);const columns=await this.store.db.prepare(`PRAGMA table_info(${table})`).all();if(!columns.some(column=>column.name==="value"))continue;
+      for(const hit of await this.store.db.prepare(`SELECT DISTINCT node.value AS value FROM ${table},json_tree(${table}.value) AS node WHERE node.type='text' AND lower(CAST(node.key AS TEXT)) IN ('sessionid','workersessionid','reviewersessionid','previoussessionid','plannersessionid','lastsessionid')`).all())owned.add(String(hit.value));
+    }
+    return{crew,owned};
+  }
+  private async canonicalOwner(record:HostSession,index?:{crew:Set<string>;owned:Set<string>}):Promise<string|undefined>{
     const management=record.session.managedBy??record.managedBy;
     if(management&&"jobId" in management)return "This conversation belongs to an assistant job.";
     if(record.session.orchestrationLeadId)return "This conversation is an internal orchestration worker.";
-    const crew=await this.store.db.prepare("SELECT 1 FROM metadata,json_tree(metadata.value,'$.runs') AS node WHERE metadata.key='crews.v1' AND node.type='text' AND node.value=? AND node.key='coordinatorSessionId' LIMIT 1").get(record.session.id);
+    const crew=index?index.crew.has(record.session.id):await this.store.db.prepare("SELECT 1 FROM metadata,json_tree(metadata.value,'$.runs') AS node WHERE metadata.key='crews.v1' AND node.type='text' AND node.value=? AND node.key='coordinatorSessionId' LIMIT 1").get(record.session.id);
     if(crew)return "This conversation is a canonical Crew coordinator.";
+    if(index){if(index.owned.has(record.session.id))return "This conversation has a canonical task, planner, review, automation, steward or Crew owner.";}
+    else{
     const tables=await this.store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('tasks','goals','automations','automation_runs','stewards','crew_runs','crew_run_members')").all();
     for(const row of tables){
       const table=String(row.name);const columns=await this.store.db.prepare(`PRAGMA table_info(${table})`).all();if(!columns.some(column=>column.name==="value"))continue;
       const owned=await this.store.db.prepare(`SELECT 1 FROM ${table},json_tree(${table}.value) AS node WHERE node.type='text' AND node.value=? AND lower(CAST(node.key AS TEXT)) IN ('sessionid','workersessionid','reviewersessionid','previoussessionid','plannersessionid','lastsessionid') LIMIT 1`).get(record.session.id);
       if(owned)return "This conversation has a canonical task, planner, review, automation, steward or Crew owner.";
     }
+    }
     if(record.session.blocks.some(block=>block.author&&["task","automation","steward"].includes(block.author.kind)))return "This conversation retains a canonical unattended-run author.";
   }
-  private async candidate(record:HostSession):Promise<ManualSessionCandidate>{
-    const reason=await this.canonicalOwner(record),grant=await this.read(record.session.id);
+  private async candidate(record:HostSession,index?:{crew:Set<string>;owned:Set<string>}):Promise<ManualSessionCandidate>{
+    const reason=await this.canonicalOwner(record,index),grant=await this.read(record.session.id);
     const sourceToken=digest({source:source(record),runId:record.runId??null,status:record.status,owner:reason??null});
     return{sessionId:record.session.id,projectId:record.projectId,title:record.session.title.slice(0,300),sourceToken,eligible:!reason,...(reason?{reason}:{}),...(grant?.active?{enrolledSourceChanged:grant.sourceToken!==digest(source(record))}:{})};
   }
   async listCandidates(principal:"owner"):Promise<ManualSessionCandidate[]>{
     this.owner(principal);await this.ready;await this.store.db.checkAuthorization();
-    const values:ManualSessionCandidate[]=[];
+    const values:ManualSessionCandidate[]=[];let index:{crew:Set<string>;owned:Set<string>}|undefined;
     for(const project of await this.store.projects())if(await this.ports.visibleProject(project.id)){
-      for(const record of await this.store.sessions(project.id)){values.push(await this.candidate(record));if(values.length>=100)return values;}
+      // Cached summaries order the project without loading transcripts; only the candidates actually returned load a full record (the source token needs it).
+      for(const row of await this.store.summaries(project.id)){
+        index??=await this.ownerIndex();
+        values.push(await this.candidate(await this.store.session(row.id),index));if(values.length>=100)return values;
+      }
     }
     return values;
   }

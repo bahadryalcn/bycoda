@@ -1,5 +1,13 @@
-import { afterEach, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, expect, it, vi } from "vitest";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -91,12 +99,36 @@ it("preserves an alternative explicitly enabled by the provider without reading 
   );
 });
 
-it("fails closed on corrupt persistent state and rejects tool-pattern injection", () => {
+it("moves a corrupt or empty policy aside, continues unrestricted and rejects tool-pattern injection", () => {
   const { home } = fixture();
+  const dir = join(home, ".bycoda-host");
+  const file = join(dir, "skill-policy.json");
   saveSkillPolicy({ disabledNames: [], disabledPaths: [] }, home);
   expect(() => setSkillEnabled("*", false, home)).toThrow();
-  writeFileSync(join(home, ".bycoda-host", "skill-policy.json"), "broken");
-  expect(() => readSkillPolicy(home)).toThrow("Could not read");
+  const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    writeFileSync(file, "broken");
+    expect(readSkillPolicy(home)).toEqual({ disabledNames: [], disabledPaths: [] });
+    expect(existsSync(file)).toBe(false);
+    let aside = readdirSync(dir).filter((name) => name.startsWith("skill-policy.json.corrupt-"));
+    expect(aside).toHaveLength(1);
+    expect(readFileSync(join(dir, aside[0]), "utf8")).toBe("broken");
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(String(errors.mock.calls[0][0])).toContain(aside[0]);
+    // The crash signature of an in-place write: a zero-byte file.
+    writeFileSync(file, "");
+    expect(readSkillPolicy(home)).toEqual({ disabledNames: [], disabledPaths: [] });
+    expect(existsSync(file)).toBe(false);
+    // Two quarantines in the same millisecond share a name, so at least one remains.
+    aside = readdirSync(dir).filter((name) => name.startsWith("skill-policy.json.corrupt-"));
+    expect(aside.length).toBeGreaterThanOrEqual(1);
+    // Saving afterwards works and leaves only the policy file (no temp files).
+    expect(setSkillEnabled("other", false, home).disabledNames).toEqual(["other"]);
+    expect(readSkillPolicy(home).disabledNames).toEqual(["other"]);
+    expect(readdirSync(dir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  } finally {
+    errors.mockRestore();
+  }
 });
 
 it("does not overwrite or remove another process's preference lock", () => {

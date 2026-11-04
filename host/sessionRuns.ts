@@ -3,6 +3,7 @@ import { runLimitBreach } from "../src/features/automations/model/automationLimi
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
 import { sessionNeedsInput, type RuntimeMode, type SessionMessageAuthor } from "../src/features/sessions/model/session";
 import type { HostEngine } from "./engine";
+import { runClock, runClockKey } from "./run-clock";
 import type { HostStore } from "./store";
 
 export const STOPPED_BY_USER = "Stopped by you.";
@@ -112,15 +113,21 @@ export async function sessionRunState(
     };
   }
   if (session.status === "running" && session.runId === run.runId) {
+    // Only active time counts toward the limit: a host that slept between
+    // ticks must not cancel a run that was never given that time.
+    const clockKey = runClockKey(run);
+    const activeNow = clockKey ? run.startedAt + runClock.activeMs(clockKey, run.startedAt, now) : now;
     const breach = run.error
       ? null
-      : runLimitBreach({ maxRunMinutes, maxRunsPerDay: 0 }, { startedAt: run.startedAt, now });
+      : runLimitBreach({ maxRunMinutes, maxRunsPerDay: 0 }, { startedAt: run.startedAt, now: activeNow });
     const activity=session.runActivity;
     const lastActivityAt=activity&&activity.runId===run.runId&&Number.isSafeInteger(activity.lastActivityAt)&&activity.lastActivityAt>=run.startedAt&&activity.lastActivityAt<=now?activity.lastActivityAt:undefined;
     return breach
       ? { state: "overLimit", error: breach }
       : { state: "running", needsInput: sessionNeedsInput(session.session),...(lastActivityAt===undefined?{}:{lastActivityAt}) };
   }
+  const finishedKey = runClockKey(run);
+  if (finishedKey) runClock.forget(finishedKey);
   if (run.error) return { state: "finished", status: "failed", error: run.error };
   if (session.status === "interrupted")
     return {

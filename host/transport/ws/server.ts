@@ -227,15 +227,15 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     return !peer.closed && (await executionAuthorized(peer));
   }
 
+  /**
+   * Authorization checks run outside the work budget: they are cheap, and charging them
+   * to the per-device control lane (shared by every socket of the device) let heartbeats
+   * and live-view refreshes starve or overload real work and close healthy sockets.
+   */
   async function executionAuthorized(peer: Peer): Promise<boolean> {
     try {
-      return await workBudget.run(
-        peer.principal.id,
-        async () => await peer.principal.authorized(),
-        "control",
-      );
-    } catch (error) {
-      if (error instanceof HostDispatchError && error.code === "overloaded") throw error;
+      return await peer.principal.authorized();
+    } catch {
       return false;
     }
   }
@@ -493,7 +493,9 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
                 retryable: false,
                 delivery: "unknown",
               }
-            : error.details,
+            : error.code === "overloaded"
+              ? { category: "overload", retryable: true, ...error.details }
+              : error.details,
         );
         if (error.code === "unauthorized") closePeer(peer);
       } else if (error instanceof HostStreamError)
@@ -502,6 +504,11 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           request.id,
           error.code === "limit" ? RPC_ERROR_CODES.overloaded : RPC_ERROR_CODES.invalidParams,
           error.message,
+          error.code === "limit"
+            ? { category: "overload", retryable: true }
+            : error.code === "cursor"
+              ? { category: "internal", retryable: true }
+              : { category: "validation", retryable: false },
         );
       else if (error instanceof HostBulkError)
         failure(
@@ -763,7 +770,13 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         limits.heartbeatResponseTimeoutMs,
       );
       authDeadline.unref();
-      void waitFor(authorized(peer), controller.signal)
+      // A failed or slow check is not proof of revocation: postpone it and still
+      // ping, so liveness is judged by the pong and a healthy socket stays open.
+      void waitFor(
+        Promise.resolve(peer.closed ? false : peer.principal.authorized()),
+        controller.signal,
+      )
+        .catch(() => true)
         .then((permitted) => {
           if (!permitted) {
             closePeer(peer);
@@ -777,10 +790,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           peer.pongTimer.unref();
           peer.socket.ping();
         })
-        .catch(() => {
-          closePeer(peer, 1001, "Connection authorization timed out.");
-          peer.socket.terminate();
-        })
+        .catch(() => {})
         .finally(() => {
           clearTimeout(authDeadline);
           if (peer.heartbeatCheck === controller) peer.heartbeatCheck = undefined;

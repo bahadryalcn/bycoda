@@ -133,3 +133,12 @@ it("rechecks grant revocation after the engine queue while preserving owner draf
  const renewed=await f.enroll(),record=await f.store.session(f.sessionId);await f.store.save({...record,revision:record.revision+1,session:{...record.session,blocks:[...record.session.blocks,{id:"owner-draft",role:"user",text:"Do not send or erase this draft",draft:true}]}},{type:"fixture.draft"});
  const result=await f.nudge(renewed.id,"owner-draft-present");expect(result.operation?.delivery).toBe("unknown");expect((await f.store.session(f.sessionId)).session.blocks.find(block=>block.id==="owner-draft")?.text).toBe("Do not send or erase this draft");expect(f.turns).toHaveLength(0);
 });
+
+it("lists candidates from summaries without loading every transcript and marks canonically owned sessions ineligible",async()=>{
+ const f=await setup(),sessions=vi.spyOn(f.store,"sessions"),summaries=vi.spyOn(f.store,"summaries");
+ const before=await f.candidate();expect(before.eligible).toBe(true);
+ await f.store.db.exec("CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,value TEXT NOT NULL)");
+ await f.store.db.prepare("INSERT INTO tasks(id,value) VALUES(?,?)").run("t1",JSON.stringify({id:"t1",plannerSessionId:f.sessionId}));
+ const after=await f.candidate();expect(after.eligible).toBe(false);expect(after.reason).toContain("canonical task");
+ expect(sessions).not.toHaveBeenCalled();expect(summaries).toHaveBeenCalled();
+});

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "./listenWindow";
 
 type DataPayload = { id: string; data: string; flow?: { generation: number; sequence: number } };
 type ExitPayload = { id: string; code: number | null };
@@ -11,9 +12,11 @@ const dataHandlers = new Map<string, DataHandler>();
 const exitHandlers = new Map<string, ExitHandler>();
 const dataBuffer = new Map<string, Uint8Array[]>();
 const dataBufferBytes = new Map<string, number>();
-/** PTYs this window opened. Global `pty-data` still fires for every terminal
- * in the process; decoding those in a window that never mounted them was
- * megabytes of base64 work and a 256KB replay buffer per stranger id. */
+/** PTYs this window opened. The `pty-data` listener is scoped to this window,
+ * but a local terminal whose owner window closed is still broadcast to every
+ * window (Rust `emit_to_owner` fallback); decoding those in a window that never
+ * mounted them was megabytes of base64 work and a 256KB replay buffer per
+ * stranger id, so the filter stays. */
 const openedPtys = new Set<string>();
 const flowControlled = new Set<string>();
 
@@ -152,8 +155,10 @@ function flushAcks() {
 
 function ensureBridge() {
   if (bridge) return bridge;
+  // Window-scoped: Rust emits `pty-data`/`pty-exit` to the owner window, so a
+  // plain listener would decode (and acknowledge) every other window's output.
   const pending = Promise.allSettled([
-    listen<DataPayload>("pty-data", (event) => {
+    listenWindowAsync<DataPayload>("pty-data", (event) => {
       const { id, data, flow } = event.payload;
       const acknowledge = pendingAck(id, flow);
       const handler = dataHandlers.get(id);
@@ -173,7 +178,7 @@ function ensureBridge() {
         acknowledge();
       }
     }),
-    listen<ExitPayload>("pty-exit", (event) => {
+    listenWindowAsync<ExitPayload>("pty-exit", (event) => {
       const { id, code } = event.payload;
       const slot = ackSlots.get(id);
       if (slot) flushAck(id, slot);

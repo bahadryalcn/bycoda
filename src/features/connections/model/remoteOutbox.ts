@@ -10,6 +10,16 @@ type AttachmentCommand =
 
 const PREFIX = "bycoda.remote-command.v1:";
 const ARCHIVE_PREFIX = "bycoda.remote-command-quarantine.v1:";
+/** When each quarantined request was set aside; the entries themselves keep their original bytes. */
+const ARCHIVE_INDEX_KEY = "bycoda.remote-command-quarantine-index.v1";
+/** A quarantined request stays available for inspection this long, then its key is removed. */
+export const REMOTE_OUTBOX_QUARANTINE_TTL_MS = 7 * 86_400_000;
+/**
+ * Pending requests all together. WebKit allows ~5 MB per origin and the outbox
+ * shares it with the session owners, histories and preferences, so the budget
+ * stays well below that.
+ */
+export const REMOTE_OUTBOX_BUDGET_BYTES = 3 * 1024 * 1024;
 const CHANGE = "bycoda:remote-outbox-change";
 const pendingPrefix = (project: string, environment: string) =>
   `${PREFIX}${JSON.stringify([project, environment])}:`;
@@ -297,14 +307,82 @@ function changed() {
   window.dispatchEvent(new Event(CHANGE));
 }
 
+function readArchiveIndex(): Record<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(ARCHIVE_INDEX_KEY) ?? "{}");
+    if (!object(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, number] =>
+          typeof entry[1] === "number" && Number.isFinite(entry[1]),
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeArchiveIndex(index: Record<string, number>) {
+  try {
+    localStorage.setItem(ARCHIVE_INDEX_KEY, JSON.stringify(index));
+  } catch {
+    // The stamp is retried on the next sweep; an entry without one is dated then.
+  }
+}
+
+/**
+ * Removes quarantined requests older than `REMOTE_OUTBOX_QUARANTINE_TTL_MS`.
+ * Entries archived before the index existed are dated at first sight, so they
+ * get the full window from now rather than disappearing at once.
+ */
+export function sweepRemoteOutboxQuarantine(now = Date.now()): void {
+  const index = readArchiveIndex();
+  const present = new Set<string>();
+  let dirty = false;
+  const keys: string[] = [];
+  for (let position = 0; position < localStorage.length; position++) {
+    const key = localStorage.key(position);
+    if (key?.startsWith(ARCHIVE_PREFIX)) keys.push(key);
+  }
+  for (const key of keys) {
+    const archivedAt = index[key];
+    if (archivedAt === undefined) {
+      index[key] = now;
+      present.add(key);
+      dirty = true;
+      continue;
+    }
+    if (now - archivedAt < REMOTE_OUTBOX_QUARANTINE_TTL_MS) {
+      present.add(key);
+      continue;
+    }
+    try {
+      localStorage.removeItem(key);
+      delete index[key];
+      dirty = true;
+    } catch {
+      present.add(key);
+    }
+  }
+  for (const key of Object.keys(index)) {
+    if (present.has(key)) continue;
+    delete index[key];
+    dirty = true;
+  }
+  if (dirty) writeArchiveIndex(index);
+}
+
 /** Only called after the person checked the host; archive first, then release. */
 export function archiveRemoteOutboxIssue(key: string) {
   if (!remoteOutboxIssues().some((issue) => issue.key === key))
     throw new Error("This request no longer needs recovery.");
   const value = localStorage.getItem(key);
   if (value === null) return;
-  localStorage.setItem(`${ARCHIVE_PREFIX}${key}`, value);
+  sweepRemoteOutboxQuarantine();
+  const archiveKey = `${ARCHIVE_PREFIX}${key}`;
+  localStorage.setItem(archiveKey, value);
   localStorage.removeItem(key);
+  writeArchiveIndex({ ...readArchiveIndex(), [archiveKey]: Date.now() });
   changed();
 }
 
@@ -421,6 +499,7 @@ export function savePendingRemoteCommand(
   const json = JSON.stringify(entry);
   if (json.length * 2 > 2 * 1024 * 1024)
     throw new Error(t("Remote request is too large to save safely."));
+  sweepRemoteOutboxQuarantine();
   let pendingBytes = 0;
   let pendingCount = 0;
   for (let index = 0; index < localStorage.length; index++) {
@@ -433,7 +512,7 @@ export function savePendingRemoteCommand(
     pendingCount++;
     pendingBytes += (localStorage.getItem(key)?.length ?? 0) * 2;
   }
-  if (pendingCount >= 100 || pendingBytes + json.length * 2 > 8 * 1024 * 1024)
+  if (pendingCount >= 100 || pendingBytes + json.length * 2 > REMOTE_OUTBOX_BUDGET_BYTES)
     throw new Error(t("Remote outbox is full. Recover pending requests before sending more."));
   if (!readPendingEntry(json, command.commandId))
     throw new Error(t("Cannot save an invalid remote request."));

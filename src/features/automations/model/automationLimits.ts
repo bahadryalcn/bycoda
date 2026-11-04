@@ -1,3 +1,4 @@
+import { elapsedSince } from "../../../shared/lib/time/timestamps";
 import type { Automation, AutomationRun } from "./automations";
 
 /** Limits on an unattended run. Zero means the limit is off. */
@@ -12,6 +13,7 @@ export const NO_LIMITS: AutomationLimits = {
 };
 
 export const LOCKED_PROJECT_SKIP = "Skipped: the project is in a locked group.";
+export const PREVIOUS_RUN_SKIP = "Skipped: the previous run is still going.";
 
 export function automationLimits(
   automation: Pick<Automation, "maxRunMinutes" | "maxRunsPerDay">,
@@ -22,18 +24,32 @@ export function automationLimits(
   };
 }
 
-/** Why a running run must stop now, or null while it is within its limits. */
+/** Why a running run must stop now, or null while it is within its limits.
+ * `startedAt` and `now` are `monotonicNow()` readings, so time the machine
+ * spent asleep does not count toward the limit; `now` defaults to the current
+ * reading. */
 export function runLimitBreach(
   limits: AutomationLimits,
-  progress: { startedAt: number; now: number },
+  progress: { startedAt: number; now?: number },
 ): string | null {
   if (
     limits.maxRunMinutes > 0 &&
-    progress.now - progress.startedAt >= limits.maxRunMinutes * 60_000
+    elapsedSince(progress.startedAt, progress.now) >= limits.maxRunMinutes * 60_000
   ) {
     return `Stopped: reached the ${formatMinutes(limits.maxRunMinutes)} time limit.`;
   }
   return null;
+}
+
+/** Why a claimed run must wait for the automation's earlier run, or null when
+ * no other run of it is still going. `runs` is the automation's history. */
+export function previousRunSkip(
+  runs: readonly Pick<AutomationRun, "id" | "status">[],
+  runId: string,
+): string | null {
+  return runs.some((run) => run.id !== runId && run.status === "running")
+    ? PREVIOUS_RUN_SKIP
+    : null;
 }
 
 /** Why a claimed run must not start, or null when today's allowance has room.

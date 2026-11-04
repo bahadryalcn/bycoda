@@ -233,6 +233,38 @@ it("rejects an unreviewed child process before force signalling", async () => {
   expect(test.discovery.signal).not.toHaveBeenCalled();
 });
 
+it("close() stops managed process trees, spares the host, and marks servers stopped", async () => {
+  const test = fixture();
+  await test.service.handle(
+    "devServers.start",
+    { command: "npm run dev", projectId: "project" },
+    projects,
+  );
+  test.discovery.live.set(202, {
+    pid: 202,
+    parentPid: root.pid,
+    startedAt: "child-202",
+    name: "worker",
+  });
+  test.discovery.live.set(process.pid, {
+    pid: process.pid,
+    parentPid: 1,
+    startedAt: "host",
+    name: "node",
+  });
+  await test.service.close();
+  expect(test.discovery.live.has(root.pid)).toBe(false);
+  expect(test.discovery.live.has(202)).toBe(false);
+  expect(test.discovery.live.has(process.pid)).toBe(true);
+  const scan = (await test.service.handle(
+    "devServers.list",
+    {},
+    projects,
+    undefined,
+  )) as DevServerScan;
+  expect(scan.servers.find((server) => server.managed)?.state).toBe("stopped");
+});
+
 describe("host dev server management", () => {
   it("associates dot-prefixed children without accepting parent or sibling paths", () => {
     for (const [base, child, sibling] of [

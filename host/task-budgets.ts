@@ -25,6 +25,28 @@ type LedgerRun = BudgetRunRegistration & {
   costBaseline: number | null;
   costUsd: number | null;
 };
+/** Whether two usage reads hold the same totals. `measuredAt` and the running
+ * `agentMinutes` clock are excluded on purpose: they advance on every read, and
+ * rewriting a task row (and its history/change signal) for them alone is churn.
+ * Budget enforcement reads usage live; this only decides when to persist it. */
+export function sameBudgetUsageTotals(
+  left: TaskRunBudgetUsage | undefined,
+  right: TaskRunBudgetUsage | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  return (
+    left.historyComplete === right.historyComplete &&
+    left.attempts === right.attempts &&
+    left.completedRuns === right.completedRuns &&
+    left.runningRuns === right.runningRuns &&
+    left.reportedTokens === right.reportedTokens &&
+    left.tokens === right.tokens &&
+    left.tokensComplete === right.tokensComplete &&
+    left.unknownTokenRuns === right.unknownTokenRuns &&
+    left.reportedCostUsd === right.reportedCostUsd &&
+    left.estimatedCostUsd === right.estimatedCostUsd
+  );
+}
 const roles: BudgetRunRole[] = [
   "planner",
   "worker",

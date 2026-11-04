@@ -23,3 +23,23 @@ it("counts actual repeated output but excludes telemetry and periodic background
   expect(isSessionRunActivity({type:"status",text:"working"},true)).toBe(false);
   expect(isSessionRunActivity({type:"tool.updated",callId:"shell",status:"running"},false)).toBe(false);
 });
+it("does not fire the run time limit across a one hour host sleep", async()=>{
+  const record={status:"running",runId:"sleepy",updatedAt:0,session:{blocks:[]},runActivity:undefined};
+  const store={session:async()=>record} as unknown as HostStore;
+  const run={sessionId:"s",runId:"sleepy",startedAt:0};
+  const minute=60_000,limit=30;
+  expect(await sessionRunState(store,run,limit,0)).toMatchObject({state:"running"});
+  expect(await sessionRunState(store,run,limit,10*minute)).toMatchObject({state:"running"});
+  // The laptop sleeps for an hour; the wall clock is now 70 minutes past the start.
+  expect(await sessionRunState(store,run,limit,70*minute)).toMatchObject({state:"running"});
+  // Awake and ticking: active time reaches the limit only after real activity.
+  let now=70*minute,state=await sessionRunState(store,run,limit,now);
+  while(state.state==="running"&&now<200*minute){now+=30_000;state=await sessionRunState(store,run,limit,now);}
+  expect(state).toMatchObject({state:"overLimit"});
+  expect(now).toBeGreaterThan(90*minute);
+});
+it("keeps counting wall-clock time for a run without a run id",async()=>{
+  const record={status:"running",runId:undefined,updatedAt:0,session:{blocks:[]},runActivity:undefined};
+  const store={session:async()=>record} as unknown as HostStore;
+  expect(await sessionRunState(store,{sessionId:"s",startedAt:0},30,31*60_000)).toMatchObject({state:"overLimit"});
+});

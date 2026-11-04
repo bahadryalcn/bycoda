@@ -683,7 +683,7 @@ describe("WS framing and orderly disposal", () => {
     });
   });
 
-  it("bounds heartbeat authorization before starting another check", async () => {
+  it("postpones a stuck heartbeat authorization instead of closing a healthy socket", async () => {
     const finish = deferred<boolean>();
     let block = false;
     let checks = 0;
@@ -700,9 +700,27 @@ describe("WS framing and orderly disposal", () => {
     });
     const client = await host.ready();
     block = true;
-    await client.closed;
-    expect(checks).toBe(1);
+    let closed = false;
+    void client.closed.then(() => {
+      closed = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(checks).toBeGreaterThan(1);
+    expect(closed).toBe(false);
     finish.resolve(true);
+  });
+
+  it("answers an overloaded dispatch with a retryable overload category", async () => {
+    const host = await fixture({
+      dispatch: async () => {
+        throw new HostDispatchError("overloaded", "Host read capacity is busy; retry later.");
+      },
+    });
+    const client = await host.ready();
+    const response = await client.request("busy", "projects.list");
+    expect(response).toMatchObject({
+      error: { code: RPC_ERROR_CODES.overloaded, data: { category: "overload", retryable: true } },
+    });
   });
 
   it("drains peer sockets, aborts active work and removes its upgrade handler", async () => {

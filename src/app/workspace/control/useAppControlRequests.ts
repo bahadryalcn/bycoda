@@ -1,7 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { flushSync } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindow } from "../../../platform/tauri/listenWindow";
 import { handleAgentApp, type AppSessionListing } from "../../../features/agent-app/model/agentApp";
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
 import { localReferenceForSession } from "../../../features/sessions/model/localSessionNavigation";
@@ -39,7 +39,9 @@ export function useAppControlRequests({
   const appReceipts = useRef(new Map<string, { signature: string; promise: Promise<unknown> }>());
 
   useEffect(() => {
-    const listening = listen<{
+    // Rust emits each request to the window holding the grant; a plain listener
+    // would run the side effects (and reply) once per open window.
+    const dispose = listenWindow<{
       id: string;
       namespace: string;
       sessionId: string;
@@ -327,8 +329,6 @@ export function useAppControlRequests({
         )
         .catch(console.error);
     });
-    return () => {
-      void listening.then((unlisten) => unlisten());
-    };
+    return dispose;
   }, []);
 }

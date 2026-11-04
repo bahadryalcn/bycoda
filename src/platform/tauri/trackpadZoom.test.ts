@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, isTauri: () => true }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () => ({ label: "workspace-4" }) }));
 vi.mock("./platform", () => ({ IS_MAC: true }));
 beforeEach(() => { vi.resetModules(); vi.clearAllMocks(); mocks.invoke.mockResolvedValue(undefined); });
 describe("native image pinch claims", () => {
@@ -11,6 +12,8 @@ describe("native image pinch claims", () => {
     const { claimTrackpadMagnify } = await import("./trackpadZoom");
     const first = vi.fn(), second = vi.fn(); const releaseFirst = claimTrackpadMagnify(first), releaseSecond = claimTrackpadMagnify(second);
     await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("set_trackpad_zoom_enabled", { enabled: true }));
+    // Rust emits the magnification to the window under the trackpad; a process-wide listener would zoom every window.
+    expect(mocks.listen).toHaveBeenCalledExactlyOnceWith("trackpad_magnify", expect.any(Function), { target: "workspace-4" });
     callbacks[0]({ payload: .2 }); expect(second).toHaveBeenCalledWith(.2); expect(first).not.toHaveBeenCalled();
     releaseSecond(); callbacks[0]({ payload: .3 }); expect(first).toHaveBeenCalledWith(.3);
     releaseFirst(); await vi.waitFor(() => expect(stops[0]).toHaveBeenCalledOnce());

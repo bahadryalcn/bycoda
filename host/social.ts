@@ -104,6 +104,7 @@ import {
   parsePublishingSchedule,
 } from "./social-schedule";
 import type { SocialPolicies, SocialPolicy } from "../src/features/social/model/social";
+import { ownerDayKey } from "./owner-day";
 import { SocialPrograms } from "./social-programs";
 import {
   createSocialImageAdapters,
@@ -3945,12 +3946,12 @@ export class SocialService {
       }
       if ((await this.get<SocialAccount>("account", rule.accountId)).platform === "linkedin")
         reason = "LinkedIn third-party API content cannot feed automatic reply generation.";
-      const day = new Date(this.now()).toISOString().slice(0, 10);
+      const day = ownerDayKey(this.now());
       if (
         (await this.jobs()).filter(
           (job) =>
             job.ruleId === rule.id &&
-            new Date(job.createdAt).toISOString().slice(0, 10) === day &&
+            ownerDayKey(job.createdAt) === day &&
             job.status !== "cancelled",
         ).length >= rule.dailyLimit
       )
@@ -3975,7 +3976,7 @@ export class SocialService {
         (await this.list<SocialDraft>("draft")).filter(
           (item) =>
             item.generation?.ruleId === rule.id &&
-            new Date(item.createdAt).toISOString().slice(0, 10) === day,
+            ownerDayKey(item.createdAt) === day,
         ).length >= rule.dailyLimit
       )
         reason = "Daily AI generation limit reached.";
@@ -4915,14 +4916,14 @@ export class SocialService {
             throw new Error("Automatic rule was paused or changed.");
           if (draft.ruleId) {
             const rule = await this.get<SocialRule>("rule", draft.ruleId);
-            const day = new Date(this.now()).toISOString().slice(0, 10);
+            const day = ownerDayKey(this.now());
             if (
               (await this.jobs()).filter(
                 (other) =>
                   other.id !== job.id &&
                   other.ruleId === rule.id &&
                   other.dispatchedAt &&
-                  new Date(other.dispatchedAt).toISOString().slice(0, 10) === day,
+                  ownerDayKey(other.dispatchedAt) === day,
               ).length >= rule.dailyLimit
             )
               throw new Error("Daily automatic send limit reached.");

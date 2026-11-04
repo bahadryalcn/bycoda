@@ -48,8 +48,12 @@ export function useHarnessLifecycle({
   useEffect(() => {
     if (resumed?.sessions.length) bindResumedSessions(resumed.sessions);
     const stopBridge = startHarnessBridge();
+    // `pagehide` and `beforeunload` both fire on a reload; the second run
+    // persisted the same state again and stopped already-stopped children.
+    let reaped = false;
     const reap = () => {
-      if (isAppQuitting()) return;
+      if (reaped || isAppQuitting()) return;
+      reaped = true;
       void persistQuitState(
         sessionsRef.current,
         tabsRef.current,

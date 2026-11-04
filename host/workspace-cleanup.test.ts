@@ -28,6 +28,18 @@ import type {
 } from "./workspace-contracts";
 import type { WorkspaceCleanupDependencies } from "./workspace-cleanup";
 
+const readStreams = vi.hoisted(() => ({ paths: [] as string[] }));
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    createReadStream: ((path: string, ...rest: unknown[]) => {
+      readStreams.paths.push(String(path));
+      return (actual.createReadStream as (...args: unknown[]) => unknown)(path, ...rest);
+    }) as typeof actual.createReadStream,
+  };
+});
+
 const roots: string[] = [];
 
 it("retains revoked removal's original failure and durable blocked ledger without restarting filesystem work", async () => {
@@ -676,4 +688,43 @@ it("recovery never force-removes newly dirty intact source after its earlier pre
   writeFileSync(join(s.path, "later-owner-draft.txt"), "new work");
   await expect(s.service.recover(op.id)).rejects.toThrow("owner preview");
   expect(readFileSync(join(s.path, "later-owner-draft.txt"), "utf8")).toBe("new work");
+}, 120_000);
+
+it("plan reports ignored private inputs as dirty without reading ignored file bodies", async () => {
+  const s = await setup();
+  writeFileSync(join(s.project, ".gitignore"), "/temp/\n/node_modules\n/dist/\n");
+  mkdirSync(join(s.path, "dist"));
+  writeFileSync(join(s.path, "dist", "bundle.js"), "first");
+  // The worktree shares the committed .gitignore; ignore dist locally through the info/exclude file.
+  const exclude = join(
+    git(s.path, "rev-parse", "--path-format=absolute", "--git-common-dir"),
+    "info",
+  );
+  mkdirSync(exclude, { recursive: true });
+  writeFileSync(join(exclude, "exclude"), "/dist/\n");
+  readStreams.paths.length = 0;
+  const first = await s.plan();
+  expect(first.dirty).toBe(true);
+  expect(first.blockers).toEqual([]);
+  const ignoredReads = readStreams.paths.filter((p) => p.includes("dist"));
+  expect(ignoredReads).toEqual([]);
+  // The cheap fingerprint still reacts to ignored-file changes.
+  writeFileSync(join(s.path, "dist", "bundle.js"), "second, longer");
+  expect((await s.plan()).statusFingerprint).not.toBe(first.statusFingerprint);
+}, 120_000);
+
+it("an unchanged clean workspace is not re-hashed on the next scan, and a change invalidates the memo", async () => {
+  const s = await setup();
+  readStreams.paths.length = 0;
+  const first = await s.plan();
+  expect(first.dirty).toBe(false);
+  const firstReads = readStreams.paths.length;
+  expect(firstReads).toBeGreaterThan(0);
+  const second = await s.plan();
+  expect(second.statusFingerprint).toBe(first.statusFingerprint);
+  expect(readStreams.paths.length).toBe(firstReads);
+  writeFileSync(join(s.path, "source.txt"), "changed");
+  const third = await s.plan();
+  expect(third.dirty).toBe(true);
+  expect(third.statusFingerprint).not.toBe(first.statusFingerprint);
 }, 120_000);

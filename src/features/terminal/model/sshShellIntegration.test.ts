@@ -4,25 +4,102 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({
   invoke: vi.fn(async () => "request-1"),
+  listen: vi.fn(),
   listeners: [] as ((event: { payload: unknown }) => void)[],
+  targets: [] as unknown[],
   unlisten: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async (_: string, listener: (event: { payload: unknown }) => void) => {
-    native.listeners.push(listener);
-    return native.unlisten;
-  }),
+vi.mock("@tauri-apps/api/event", () => ({ listen: native.listen }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "workspace-8" }),
 }));
 import {
+  subscribeShellState,
   useSshShellIntegration,
   validSshShellState,
   type SshShellController,
 } from "./sshShellIntegration";
+function registerListeners() {
+  native.listen.mockImplementation(
+    async (_: string, listener: (event: { payload: unknown }) => void, options: unknown) => {
+      native.listeners.push(listener);
+      native.targets.push(options);
+      return native.unlisten;
+    },
+  );
+}
+registerListeners();
 afterEach(() => {
   vi.clearAllMocks();
+  registerListeners();
   native.listeners.length = 0;
+  native.targets.length = 0;
   vi.unstubAllGlobals();
+});
+
+it("shares one window-scoped ssh-shell-state listener across terminals and routes by id", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const controllers: Record<string, SshShellController> = {};
+  function Harness({ id }: { id: string }) {
+    controllers[id] = useSshShellIntegration(id, true);
+    return null;
+  }
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(Harness, { id: "tab-a" }),
+          createElement(Harness, { id: "tab-b" }),
+        ),
+      ),
+    );
+    // Rust emits the event to the owner window only; one listener per window
+    // (not one global listener per terminal) receives it.
+    expect(native.listen).toHaveBeenCalledOnce();
+    expect(native.targets).toEqual([{ target: "workspace-8" }]);
+    await act(async () =>
+      native.listeners[0]({ payload: { ...snapshot, id: "tab-b", status: "ready" } }),
+    );
+    expect(controllers["tab-a"].state).toBeUndefined();
+    expect(controllers["tab-b"].state?.status).toBe("ready");
+    // Closing one terminal keeps the listener for the other.
+    await act(async () =>
+      root.render(createElement("div", null, createElement(Harness, { id: "tab-a" }))),
+    );
+    expect(native.unlisten).not.toHaveBeenCalled();
+    expect(native.listen).toHaveBeenCalledOnce();
+    await act(async () => root.render(null));
+    // The last terminal releases the shared listener.
+    expect(native.unlisten).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("does not cache a failed listener registration, so a later terminal retries", async () => {
+  native.listen.mockRejectedValueOnce(new Error("offline"));
+  const first = subscribeShellState("tab-x", vi.fn());
+  await expect(first.ready).rejects.toThrow("offline");
+  first.dispose();
+  const handler = vi.fn();
+  const second = subscribeShellState("tab-x", handler);
+  await second.ready;
+  expect(native.listen).toHaveBeenCalledTimes(2);
+  native.listeners.at(-1)!({ payload: { id: "tab-x" } });
+  native.listeners.at(-1)!({ payload: { id: "tab-y" } });
+  native.listeners.at(-1)!({ payload: "not an object" });
+  expect(handler).toHaveBeenCalledExactlyOnceWith({ id: "tab-x" });
+  second.dispose();
+  second.dispose();
+  // The native release follows the registration promise: one microtask later.
+  await Promise.resolve();
+  expect(native.unlisten).toHaveBeenCalledOnce();
 });
 const snapshot = {
   id: "ssh-tab",

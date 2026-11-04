@@ -52,6 +52,7 @@ import {
   type LineEnding,
   normalizeLineBreaks,
   restoreLineEnding,
+  restoreLineEndings,
 } from "../editor/editorDoc";
 
 import { FilePreviewSearch } from "./FilePreviewSearch";
@@ -459,6 +460,16 @@ export function FileEditor({
     },
     [documentId, path, editorClosure],
   );
+
+  // Serialize the LF document for disk. Against the baseline the document was
+  // edited from, a mixed file keeps the breaks of its unchanged lines; without
+  // a baseline the detected majority convention applies (see editorDoc.ts).
+  const serializeForDisk = useCallback((content: string) => {
+    const baseline = draftBaselineRef.current ?? diskTextRef.current;
+    return baseline === null
+      ? restoreLineEnding(content, eolRef.current)
+      : restoreLineEndings(content, baseline);
+  }, []);
 
   const applyDiskContent = useCallback(
     (raw: string) => {
@@ -883,7 +894,7 @@ export function FileEditor({
       // Do not let an older watcher read replace the baseline of this save.
       loadGeneration.current += 1;
       setSaveState({ status: "saving" });
-      const serializedContent = restoreLineEnding(content, eolRef.current);
+      const serializedContent = serializeForDisk(content);
       const operation = saveQueue.current.then(() => {
         if (pendingDiskRef.current && allowedOverwrite !== diskChangeVersion.current) {
           setDiskConflict(true);
@@ -934,7 +945,7 @@ export function FileEditor({
         settled();
       }
     },
-    [cwd, path, documentId, captureDraft, editorClosure],
+    [cwd, path, documentId, captureDraft, editorClosure, serializeForDisk],
   );
 
   // Another editor on this file, showing the same text, wrote `content`: adopt
@@ -943,7 +954,7 @@ export function FileEditor({
   const peerSaved = useCallback(
     (content: string) => {
       const latest = latestDocumentRef.current;
-      const serializedContent = restoreLineEnding(content, eolRef.current);
+      const serializedContent = serializeForDisk(content);
       loadGeneration.current += 1;
       recoveryReviewRef.current = false;
       diskTextRef.current = serializedContent;
@@ -961,7 +972,7 @@ export function FileEditor({
       if (latest !== null && latest.toString() !== content) captureDraft(latest);
       setSaveState({ status: "saved" });
     },
-    [captureDraft],
+    [captureDraft, serializeForDisk],
   );
 
   const stageGit = useCallback(

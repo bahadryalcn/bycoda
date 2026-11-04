@@ -4,6 +4,9 @@ const listen = vi.hoisted(() => vi.fn());
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "workspace-5" }),
+}));
 
 type Callback = (event: { payload: unknown }) => void;
 

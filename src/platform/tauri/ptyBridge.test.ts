@@ -4,6 +4,9 @@ const listen = vi.hoisted(() => vi.fn());
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "workspace-5" }),
+}));
 
 afterEach(() => {
   vi.useRealTimers();
@@ -11,6 +14,17 @@ afterEach(() => {
   listen.mockReset();
   invoke.mockReset();
   vi.resetModules();
+});
+
+it("scopes the pty-data and pty-exit bridge to the current window", async () => {
+  listen.mockResolvedValue(vi.fn());
+  const { readyPtyBridge } = await import("./pty");
+  await readyPtyBridge();
+  // Rust emits output to the owner window; a process-wide listener decoded and
+  // acknowledged every other window's terminals as well.
+  expect(listen).toHaveBeenCalledTimes(2);
+  expect(listen).toHaveBeenCalledWith("pty-data", expect.any(Function), { target: "workspace-5" });
+  expect(listen).toHaveBeenCalledWith("pty-exit", expect.any(Function), { target: "workspace-5" });
 });
 
 it("returns native credits exactly once after the controlled parser completes and protects replacement subscribers", async () => {

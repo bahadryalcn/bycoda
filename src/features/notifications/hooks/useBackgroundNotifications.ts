@@ -20,6 +20,19 @@ import { loadNotificationsEnabled, notifyBackground } from "../model/notificatio
 
 const POLL_MS = 60_000;
 
+/**
+ * A window that hosts a workspace: `main`, the `window-N` windows that Cmd+N,
+ * pop-outs and tool windows open, and the hidden `quick-session-*` windows the
+ * quick composer starts a chat in (`build_session_window` in
+ * `src-tauri/src/window.rs`). The always-present hidden desktop-control
+ * indicator, voice overlays and the quick composer are not: they sort before
+ * `main`, and letting them into the election left no window elected at all.
+ * Mirrors `is_workspace_window` in `src-tauri/src/window.rs`.
+ */
+export function isWorkspaceWindowLabel(label: string): boolean {
+  return label === "main" || /^window-\d+$/.test(label) || label.startsWith("quick-session-");
+}
+
 /** Only one workspace window watches, so each change is announced once. */
 export async function isLeadWindow(): Promise<boolean> {
   let own: string;
@@ -28,10 +41,11 @@ export async function isLeadWindow(): Promise<boolean> {
   } catch {
     return false;
   }
+  if (!isWorkspaceWindowLabel(own)) return false;
   try {
     const labels = (await getAllWebviewWindows())
       .map((window) => window.label)
-      .filter((label) => !label.startsWith("quick-composer"))
+      .filter(isWorkspaceWindowLabel)
       .sort();
     return (labels[0] ?? own) === own;
   } catch {

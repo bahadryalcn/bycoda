@@ -7,8 +7,12 @@ import type {
 } from "../src/shared/model/host-contracts/native-devices";
 import { expoManifest, expoPreviewUrl } from "./expo-go";
 import { scrubRuntimeLogText } from "./runtime-logs";
+import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 
 const OPEN_LABELS = ["Open", "Aç", "Öffnen", "Ouvrir", "Abrir", "打开", "開く"];
+/** A finished preview (and its frame) is kept this long for request deduplication. */
+export const PREVIEW_RETENTION_TTL_MS = 60 * 60 * 1000;
+const PREVIEW_HISTORY_LIMIT = 128;
 
 /** Bounded, observable setup jobs. Request IDs prevent duplicate launch/install attempts. */
 export class DevicePreviews {
@@ -18,12 +22,21 @@ export class DevicePreviews {
   private owners = new Map<string, string>();
   private authorizations = new Map<string, () => boolean | Promise<boolean>>();
   private resultAuthorizations = new Map<string, () => Promise<boolean>>();
+  /** Monotonic readings: when a job finished, and when it was last read (LRU order). */
+  private finishedAt = new Map<string, number>();
+  private touchedAt = new Map<string, number>();
   private work = new Set<Promise<void>>();
+  private readonly now: () => number;
+  private readonly historyLimit: number;
   constructor(
     private host: DeviceHost,
     private manifest = expoManifest,
     private readonly outsideScope: <T>(action: () => T) => T = (action) => action(),
-  ) {}
+    options: { now?: () => number; historyLimit?: number } = {},
+  ) {
+    this.now = options.now ?? monotonicNow;
+    this.historyLimit = options.historyLimit ?? PREVIEW_HISTORY_LIMIT;
+  }
   start(
     input: PreviewInput,
     owner: string,
@@ -53,8 +66,10 @@ export class DevicePreviews {
     if (this.disposed) throw new Error("PREVIEW_HOST_STOPPED: The device host is stopping.");
     if ([...this.jobs.values()].some((job) => job.state === "queued" || job.state === "running"))
       throw new Error("PREVIEW_BUSY: Wait for the active device preview before starting another.");
-    // Keep outcomes for request deduplication; only screenshots need large memory.
-    if (this.jobs.size >= 128)
+    // Finished outcomes stay for request deduplication until their TTL passes; when
+    // the history is still full, the least recently read finished job makes room.
+    this.evictFinished();
+    if (this.jobs.size >= this.historyLimit)
       throw new Error(
         "PREVIEW_HISTORY_FULL: Restart the idle host before starting additional previews.",
       );
@@ -68,6 +83,7 @@ export class DevicePreviews {
       updatedAt: new Date().toISOString(),
     };
     this.jobs.set(job.id, job);
+    this.touchedAt.set(job.id, this.now());
     const acceptedInput = Object.freeze({ ...input });
     this.inputs.set(job.id, acceptedInput);
     this.owners.set(job.id, owner);
@@ -106,8 +122,36 @@ export class DevicePreviews {
       );
     if (this.owners.get(id) !== owner)
       throw new Error("PREVIEW_SCOPE_MISMATCH: This preview belongs to another conversation.");
+    this.touchedAt.set(id, this.now());
     const { frame, ...summary } = job;
     return structuredClone({ ...summary, ...(includeFrame && frame ? { frame } : {}) });
+  }
+  /** Drop finished jobs past their TTL, then the least recently read ones while over the cap. */
+  private evictFinished(): void {
+    const now = this.now();
+    for (const [id, finished] of this.finishedAt)
+      if (elapsedSince(finished, now) >= PREVIEW_RETENTION_TTL_MS) this.drop(id);
+    while (this.jobs.size >= this.historyLimit) {
+      let victim: string | undefined;
+      for (const id of this.finishedAt.keys())
+        if (
+          victim === undefined ||
+          (this.touchedAt.get(id) ?? 0) < (this.touchedAt.get(victim) ?? 0)
+        )
+          victim = id;
+      if (victim === undefined) break;
+      this.drop(victim);
+    }
+  }
+  /** Retire a finished job with its frame data and every authority that disclosed it. */
+  private drop(id: string): void {
+    this.jobs.delete(id);
+    this.owners.delete(id);
+    this.inputs.delete(id);
+    this.authorizations.delete(id);
+    this.resultAuthorizations.delete(id);
+    this.finishedAt.delete(id);
+    this.touchedAt.delete(id);
   }
   /** Stable original-job disclosure capability; invoking it never copies a frame. */
   resultAuthority(id: string, owner: string): () => Promise<boolean> {
@@ -338,6 +382,7 @@ export class DevicePreviews {
       job.updatedAt = new Date().toISOString();
       // Retain the original callback with the bounded outcome history. A fresh
       // caller/re-enrollment must not resurrect disclosure of this old job.
+      if (this.jobs.get(job.id) === job) this.finishedAt.set(job.id, this.now());
     }
   }
 }

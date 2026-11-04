@@ -105,7 +105,7 @@ export type Automation = {
 export type AutomationHost = {
   machineId: string;
   /** Captured with the guarded Host list response; absent on legacy cache rows. */
-  environmentId?:string;
+  environmentId?: string;
   machineName: string;
   /** The host's ID for the project folder. */
   projectId: string;
@@ -313,6 +313,27 @@ export function overdueTriggerOccurrences(
   return occurrences;
 }
 
+/** The latest occurrence at or before `now`, with the schedule's following run,
+ * starting from `firstRunAt`. After a long sleep the newest occurrence is the
+ * one worth running; the ones before it are missed, not queued. The walk is
+ * bounded; a schedule overdue beyond the bound advances on the next pass. */
+export function newestOverdueOccurrence(
+  triggers: readonly AutomationTrigger[],
+  firstRunAt: number,
+  now: number,
+  limit = 10_000,
+): { scheduledFor: number; nextRunAt: number } | null {
+  let newest: { scheduledFor: number; nextRunAt: number } | null = null;
+  let scheduledFor = firstRunAt;
+  for (let steps = 0; scheduledFor <= now && steps < limit; steps++) {
+    const nextRunAt = nextTriggersRunAt(triggers, scheduledFor);
+    if (nextRunAt <= scheduledFor) break;
+    newest = { scheduledFor, nextRunAt };
+    scheduledFor = nextRunAt;
+  }
+  return newest;
+}
+
 export function gmtOffsetLabel(date = new Date()): string {
   const minutes = -date.getTimezoneOffset();
   const sign = minutes >= 0 ? "+" : "-";
@@ -516,25 +537,26 @@ export async function claimDueAutomations(now = Date.now()): Promise<DueAutomati
   const claimed: DueAutomationRun[] = [];
   for (const automation of due) {
     const triggers = automationTriggers(automation);
-    // Bound each polling pass so a long offline period cannot monopolize the
-    // webview. Any remaining overdue occurrences stay due for the next pass.
-    for (const occurrence of overdueTriggerOccurrences(triggers, automation.nextRunAt, now)) {
-      let result: DueAutomationRun | null;
-      try {
-        result = await invoke<DueAutomationRun | null>("automations_claim_due", {
-          automationId: automation.id,
-          expectedNextRunAt: occurrence.scheduledFor,
-          nextRunAt: occurrence.nextRunAt,
-          now,
-        });
-      } catch {
-        // Keep earlier successful claims launchable. This occurrence remains
-        // due because the backend transaction did not accept it.
-        break;
-      }
-      if (!result) break;
-      if (result.run.status === "pending") claimed.push(result);
+    // One run per automation per pass: the newest overdue occurrence. After
+    // sleep or a morning launch the schedule advances past every occurrence
+    // missed in between instead of launching each of them concurrently.
+    const occurrence = newestOverdueOccurrence(triggers, automation.nextRunAt, now);
+    if (!occurrence) continue;
+    let result: DueAutomationRun | null;
+    try {
+      result = await invoke<DueAutomationRun | null>("automations_claim_due", {
+        automationId: automation.id,
+        expectedNextRunAt: automation.nextRunAt,
+        scheduledFor: occurrence.scheduledFor,
+        nextRunAt: occurrence.nextRunAt,
+        now,
+      });
+    } catch {
+      // Keep earlier successful claims launchable. This occurrence remains
+      // due because the backend transaction did not accept it.
+      continue;
     }
+    if (result && result.run.status === "pending") claimed.push(result);
   }
   if (due.length > 0) emitLocalChange();
   return claimed;

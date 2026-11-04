@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { access, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { readStateFile, writeFileAtomic } from "./storage/atomic-write";
 import {
   TUNNEL_PROVIDERS,
   TUNNEL_ISSUES,
@@ -81,71 +82,89 @@ export class ExternalTunnels {
     return task;
   }
 
+  /** The records of a saved manifest written by this host, or a throw. */
+  private parseManifest(text: string): ExternalTunnel[] {
+    if (text.length > 128 * 1024) throw new Error("Tunnel manifest is too large");
+    const saved = JSON.parse(text);
+    if (
+      saved.version !== 1 ||
+      saved.environmentId !== this.environmentId ||
+      !Array.isArray(saved.tunnels) ||
+      saved.tunnels.length > MAX_RECORDS
+    )
+      throw new Error("Tunnel manifest belongs to another host or version");
+    return saved.tunnels.map((record: ExternalTunnel) => {
+      if (
+        !record ||
+        !/^[a-f0-9-]{36}$/.test(record.id) ||
+        !TUNNEL_PROVIDERS.includes(record.provider) ||
+        !["host", "dev-server"].includes(record.target) ||
+        !["starting", "ready", "stopping", "stopped", "error", "interrupted"].includes(
+          record.state,
+        ) ||
+        !Number.isFinite(record.startedAt)
+      )
+        throw new Error("Tunnel manifest record is invalid");
+      // Copy only the public contract, never deserialize process ownership.
+      return {
+        id: record.id,
+        provider: record.provider,
+        target: record.target,
+        localUrl: tunnelLocalUrl(record.localUrl),
+        startedAt: record.startedAt,
+        state: tunnelActive(record.state) ? "interrupted" : record.state,
+        ...(tunnelActive(record.state)
+          ? { issue: "host-restarted" as const }
+          : record.issue && TUNNEL_ISSUES.includes(record.issue)
+            ? { issue: record.issue }
+            : {}),
+      };
+    });
+  }
+
   private async initialize(): Promise<void> {
+    // A failed initialization is not cached: the next call retries, so a
+    // transient storage problem does not disable tunnels until a host restart.
     this.initialization ??= (async () => {
       try {
         await mkdir(this.directory, { recursive: true, mode: 0o700 });
-        let text: string;
-        try {
-          text = await readFile(join(this.directory, "state.json"), "utf8");
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-          throw error;
+        // An empty, truncated or foreign manifest (another environment id) is
+        // moved aside as `state.json.corrupt-<timestamp>` by readStateFile and
+        // the host starts with no records; only real I/O errors stay fatal.
+        const manifest = await readStateFile(join(this.directory, "state.json"), (text) =>
+          this.parseManifest(text),
+        );
+        if (manifest.status === "missing") return;
+        if (manifest.status === "corrupt") {
+          console.error(
+            `Tunnel manifest in ${this.directory} was unreadable or belonged to another host; ${
+              manifest.quarantined ? `moved aside to ${manifest.quarantined}` : "it could not be moved aside"
+            }. Starting without saved tunnels.`,
+          );
+          if (!manifest.quarantined) throw new Error("Tunnel manifest could not be moved aside");
+          this.records = [];
+          return;
         }
-        if (text.length > 128 * 1024) throw new Error();
-        const saved = JSON.parse(text);
-        if (
-          saved.version !== 1 ||
-          saved.environmentId !== this.environmentId ||
-          !Array.isArray(saved.tunnels) ||
-          saved.tunnels.length > MAX_RECORDS
-        )
-          throw new Error();
-        this.records = saved.tunnels.map((record: ExternalTunnel) => {
-          if (
-            !record ||
-            !/^[a-f0-9-]{36}$/.test(record.id) ||
-            !TUNNEL_PROVIDERS.includes(record.provider) ||
-            !["host", "dev-server"].includes(record.target) ||
-            !["starting", "ready", "stopping", "stopped", "error", "interrupted"].includes(
-              record.state,
-            ) ||
-            !Number.isFinite(record.startedAt)
-          )
-            throw new Error();
-          // Copy only the public contract, never deserialize process ownership.
-          return {
-            id: record.id,
-            provider: record.provider,
-            target: record.target,
-            localUrl: tunnelLocalUrl(record.localUrl),
-            startedAt: record.startedAt,
-            state: tunnelActive(record.state) ? "interrupted" : record.state,
-            ...(tunnelActive(record.state)
-              ? { issue: "host-restarted" as const }
-              : record.issue && TUNNEL_ISSUES.includes(record.issue)
-                ? { issue: record.issue }
-                : {}),
-          };
-        });
+        this.records = manifest.value;
         await this.persist();
       } catch {
         throw new TunnelError("storage-unavailable");
       }
-    })();
+    })().catch((error) => {
+      this.initialization = undefined;
+      throw error;
+    });
     await this.initialization;
     this.initialized = true;
   }
 
   private async persist(): Promise<void> {
     try {
-      const path = join(this.directory, "state.json");
-      await writeFile(
-        `${path}.tmp`,
+      await writeFileAtomic(
+        join(this.directory, "state.json"),
         JSON.stringify({ version: 1, environmentId: this.environmentId, tunnels: this.records }),
         { mode: 0o600 },
       );
-      await rename(`${path}.tmp`, path);
     } catch {
       throw new TunnelError("storage-unavailable");
     }
@@ -272,7 +291,7 @@ export class ExternalTunnels {
       const config = join(this.directory, `${provider}.yml`);
       try {
         // Configs isolate global CLI settings and contain no credentials.
-        await writeFile(
+        await writeFileAtomic(
           config,
           provider === "ngrok"
             ? 'version: "3"\nagent:\n  web_addr: false\n  update_check: false\n'

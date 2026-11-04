@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -273,4 +274,63 @@ it("cancels a queued cross-process build lease without entering or removing the 
   expect(build).not.toHaveBeenCalled();
   release();
   await first;
+});
+
+async function leasePath(service: WorkspaceBootstrapService) {
+  let path = "";
+  await service.withBuildCache(
+    "workspace",
+    new AbortController().signal,
+    async ({ cargoTargetDir }) => {
+      path = join(cargoTargetDir, ".bycoda-build-lease");
+    },
+  );
+  return path;
+}
+
+it("reclaims a build lease left by a dead PID instead of waiting forever", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+  });
+  const path = await leasePath(service);
+  const { pid } = spawnSync(process.execPath, ["-e", ""]);
+  await writeFile(path, JSON.stringify({ pid, workspaceId: "workspace", createdAt: Date.now() }));
+  const build = vi.fn(async () => "built");
+  await expect(
+    service.withBuildCache("workspace", new AbortController().signal, build),
+  ).resolves.toBe("built");
+  expect(build).toHaveBeenCalledOnce();
+});
+
+it("reclaims a build lease older than the max age even when its PID is alive", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 10,
+    buildLeaseMaxAgeMs: 1,
+  });
+  const path = await leasePath(service);
+  await writeFile(path, JSON.stringify({ pid: process.ppid, createdAt: 0 }));
+  await new Promise((done) => setTimeout(done, 20));
+  await expect(
+    service.withBuildCache("workspace", new AbortController().signal, async () => "ok"),
+  ).resolves.toBe("ok");
+});
+
+it("keeps a live holder's lease and gives up with a clear error after the timeout", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 5,
+    buildLeaseTimeoutMs: 80,
+  });
+  const path = await leasePath(service);
+  await writeFile(path, JSON.stringify({ pid: process.ppid, createdAt: Date.now() }));
+  const build = vi.fn(async () => {});
+  await expect(
+    service.withBuildCache("workspace", new AbortController().signal, build),
+  ).rejects.toThrow("Timed out waiting for the build cache lease");
+  expect(build).not.toHaveBeenCalled();
 });

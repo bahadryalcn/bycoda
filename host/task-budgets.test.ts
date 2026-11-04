@@ -1,7 +1,7 @@
 import { forEachAsync } from "./async-collections";
 import { afterEach, describe, expect, it } from "vitest";
 import { HostStore } from "./store";
-import { HostTaskBudgets, type BudgetRunRegistration } from "./task-budgets";
+import { HostTaskBudgets, sameBudgetUsageTotals, type BudgetRunRegistration } from "./task-budgets";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -458,4 +458,16 @@ describe("durable task/goal family budgets", () => {
     });
     expect((await restarted.read({ goalId: "goal" })).historyComplete).toBe(false);
   });
+});
+
+it("ignores measuredAt and the running agent clock when comparing usage totals", () => {
+  const base = {
+    historyComplete: true, agentMinutes: 1, attempts: 1, completedRuns: 0, runningRuns: 1,
+    reportedTokens: 10, tokens: null, tokensComplete: false, unknownTokenRuns: 0,
+    reportedCostUsd: null, estimatedCostUsd: null as null, measuredAt: 1,
+  };
+  expect(sameBudgetUsageTotals(base, { ...base, measuredAt: 99, agentMinutes: 5 })).toBe(true);
+  expect(sameBudgetUsageTotals(base, { ...base, reportedTokens: 11 })).toBe(false);
+  expect(sameBudgetUsageTotals(undefined, base)).toBe(false);
+  expect(sameBudgetUsageTotals(undefined, undefined)).toBe(true);
 });

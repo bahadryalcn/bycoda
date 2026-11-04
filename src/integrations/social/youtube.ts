@@ -21,14 +21,20 @@ type ReplyPage = {
   allowed: boolean;
   page?: string;
 };
-type Cursor = { page?: string; replies: ReplyPage[] };
+/** `page` is the backfill cursor into older threads; `recent` dedupes the always-fetched newest page. */
+type Cursor = { page?: string; done?: boolean; replies: ReplyPage[]; recent?: string[] };
+const RECENT_LIMIT = 200;
 function cursorState(cursor?: string): Cursor {
   try {
     const value = JSON.parse(cursor ?? "{}");
     if (
       Array.isArray(value.replies) &&
       value.replies.length <= 100 &&
-      (!value.page || typeof value.page === "string")
+      (!value.page || typeof value.page === "string") &&
+      (value.recent === undefined ||
+        (Array.isArray(value.recent) &&
+          value.recent.length <= RECENT_LIMIT &&
+          value.recent.every((id: unknown) => typeof id === "string")))
     )
       return value;
   } catch {
@@ -213,18 +219,18 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): SocialAd
         });
       };
       let budget = 4;
-      if (!state.replies.length) {
+      const recent = new Set(state.recent ?? []);
+      const threads = async (pageToken?: string) => {
         const params = new URLSearchParams({
           part: "snippet",
           allThreadsRelatedToChannelId: identity(account.platformId),
           maxResults: "100",
           order: "time",
           textFormat: "plainText",
-          ...(state.page ? { pageToken: state.page } : {}),
+          ...(pageToken ? { pageToken } : {}),
         });
         const { value } = await http.request(`${endpoint}commentThreads?${params}`, token);
         budget--;
-        state.page = typeof value.nextPageToken === "string" ? value.nextPageToken : undefined;
         for (const thread of value.items ?? []) {
           const snippet = thread.snippet;
           // Only this channel's videos; channel-level/foreign threads need a separate product contract.
@@ -236,10 +242,25 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): SocialAd
             continue;
           const root = identity(snippet.topLevelComment.id),
             video = identity(snippet.videoId);
+          if (recent.has(root)) continue;
+          const hasReplies = snippet.totalReplyCount > 0;
+          // The durable reply queue is bounded; leave the thread unseen so a later poll retries it.
+          if (hasReplies && state.replies.length >= 100) continue;
           const allowed = snippet.canReply === true;
           add(snippet.topLevelComment, root, video, allowed);
-          if (snippet.totalReplyCount > 0) state.replies.push({ root, video, allowed });
+          recent.add(root);
+          if (hasReplies) state.replies.push({ root, video, allowed });
         }
+        return typeof value.nextPageToken === "string" && value.nextPageToken
+          ? (value.nextPageToken as string)
+          : undefined;
+      };
+      // New top-level comments are never starved by history or by the reply queue:
+      // the newest page is read on every poll and deduped against the recent-id set.
+      const newest = await threads();
+      if (!state.page && !state.done) {
+        state.page = newest;
+        if (!newest) state.done = true;
       }
       while (budget-- > 0 && state.replies.length) {
         const current = state.replies[0];
@@ -257,6 +278,13 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): SocialAd
           current.page = value.nextPageToken;
         else state.replies.shift();
       }
+      // Older history is backfilled with the remaining budget once the reply queue is drained.
+      if (budget > 0 && state.page && !state.replies.length) {
+        const next = await threads(state.page);
+        state.page = next;
+        if (!next) state.done = true;
+      }
+      state.recent = [...recent].slice(-RECENT_LIMIT);
       return { events, cursor: JSON.stringify(state) };
     },
   };
