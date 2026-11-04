@@ -327,14 +327,6 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         await assertDomainAuthority(context);
         return receipt;
       }
-      // Utility generation can wait for a provider; never hold an SQL transaction
-      // across that wait. The engine atomically records its title and receipt.
-      if (command.type === "regenerateTitle") {
-        await assertDomainAuthority(context);
-        const receipt = await ports.execution.command(command);
-        await assertDomainAuthority(context);
-        return receipt;
-      }
       const dispatch = () =>
         ports.repository.transaction(async () => {
           await assertDomainAuthority(context);
