@@ -19,6 +19,10 @@ import {
 
 const owner = vi.hoisted(() => ({ update: vi.fn(), delete: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../../connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("../../connections/model/sessionExecutionBinding")>()),
+  flushHostSessionBindings: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("../../connections/model/connections", async (original) => ({
   ...(await original<typeof import("../../connections/model/connections")>()),
   sessionAccessForMachine: () => owner,

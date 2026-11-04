@@ -86,6 +86,11 @@ async function tooltipText(element: HTMLElement): Promise<string> {
 const transportProbe = vi.hoisted(() => ({
   current: undefined as RemoteSessionOverrides | undefined,
 }));
+vi.mock("../model/sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("../model/sessionExecutionBinding")>()),
+  // Real owner hydration/publication is exercised by the Chromium storage suite.
+  flushHostSessionBindings: vi.fn().mockResolvedValue(undefined),
+}));
 // UI tests use an isolated transaction fixture; real IndexedDB races are checked in Chromium.
 const outboxFixture = vi.hoisted(() => ({
   entries: new Map<string, string>(),
@@ -1283,12 +1288,19 @@ it("keeps admitted evidence when Stop arrives before the original dispatch", asy
   openExistingChat();
   await renderRemoteProbe();
   let release!: () => void;
-  outboxFixture.afterCommit = new Promise<void>((resolve) => { release = resolve; });
+  outboxFixture.afterCommit = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   await act(async () => remoteOverrides.onSubmit!("shell", "Keep original identity", []));
   await vi.waitFor(() => expect(outboxFixture.entries.size).toBe(1));
-  const original = (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command!;
+  const original = (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell"))
+    .command!;
   await act(async () => remoteOverrides.onStop!("shell"));
-  await vi.waitFor(async () => expect((await readDurableRemoteEntry(projectKey, "env", original.commandId)).entry?.stopRequested).toBe(true));
+  await vi.waitFor(async () =>
+    expect(
+      (await readDurableRemoteEntry(projectKey, "env", original.commandId)).entry?.stopRequested,
+    ).toBe(true),
+  );
   await act(async () => release());
   await settle();
   const held = (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command;
@@ -1299,20 +1311,35 @@ it("keeps admitted evidence when Stop arrives before the original dispatch", asy
 
 it("keeps an existing unknown command when a second-window retry is stopped during admission", async () => {
   openExistingChat();
-  const original: HostCommand = { type: "send", commandId: "already-unknown", sessionId: "host-session", text: "Original" };
+  const original: HostCommand = {
+    type: "send",
+    commandId: "already-unknown",
+    sessionId: "host-session",
+    text: "Original",
+  };
   await admitDurableRemoteCommand(projectKey, "env", original, "shell");
   await render();
   let release!: () => void;
-  outboxFixture.afterCommit = new Promise<void>((resolve) => { release = resolve; });
-  const retry = [...container.querySelectorAll("button")].find((button) => button.textContent === "Retry");
+  outboxFixture.afterCommit = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Retry",
+  );
   expect(retry).toBeDefined();
   await act(async () => retry!.click());
   await vi.waitFor(() => expect(outboxFixture.afterCommit).toBeUndefined());
   await act(async () => transportProbe.current!.onStop!("shell"));
-  await vi.waitFor(async () => expect((await readDurableRemoteEntry(projectKey, "env", original.commandId)).entry?.stopRequested).toBe(true));
+  await vi.waitFor(async () =>
+    expect(
+      (await readDurableRemoteEntry(projectKey, "env", original.commandId)).entry?.stopRequested,
+    ).toBe(true),
+  );
   await act(async () => release());
   await settle();
-  expect((await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command).toEqual(original);
+  expect(
+    (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+  ).toEqual(original);
   expect(outboxFixture.settlements.size).toBe(0);
   expect(commands.filter((command) => command.type === "send")).toHaveLength(0);
 });

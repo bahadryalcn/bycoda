@@ -115,6 +115,13 @@ uses local storage, so new requests can be refused when that storage budget is
 full. A refused request is not sent; retain its draft while recovering earlier
 requests.
 
+Session owner records also use IndexedDB. Startup waits for their routing fences
+before loading conversations; a loading or unreadable owner is never treated as
+an ordinary local conversation. New ownership is reserved before a tab can send,
+and commands wait for its durable publication. If saving fails, sending stays
+held and the original owner and draft remain available for retry. Compatibility
+records and distinct original bytes are retained while older writers may exist.
+
 This is an explicit option for new conversations. Existing local conversations
 and the ordinary new-conversation action keep their current execution behavior.
 It does not migrate an existing conversation.

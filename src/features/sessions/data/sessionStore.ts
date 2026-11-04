@@ -14,6 +14,7 @@ import {
   patchHostSessionShellMetadata,
   forgetHostSessionShell,
   saveHostSessionBinding,
+  flushHostSessionBindings,
 } from "../../connections/model/sessionExecutionBinding";
 import {
   captureSessionOutputWrite,
@@ -1536,6 +1537,7 @@ export function backfillCodexShellCommands(blocks: Block[]): Block[] {
 }
 
 export async function deleteSession(sessionId: string, imagePaths: string[] = []): Promise<void> {
+  await flushHostSessionBindings();
   const owner = hostSessionBinding({ id: sessionId });
   if (owner) {
     if (!owner.created)
@@ -1547,6 +1549,7 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
       owner.authorityGeneration ?? undefined,
     );
     forgetHostSessionShell(sessionId);
+    await flushHostSessionBindings();
     clearComposerDraft(sessionId);
     return;
   }
@@ -1629,6 +1632,7 @@ export async function updateOwnedSessionMetadata(
     linkedWorkItem?: LinkedWorkItem | null;
   },
 ): Promise<boolean> {
+  await flushHostSessionBindings();
   const owner = hostSessionBinding({ id: sessionId });
   if (!owner) return false;
   if (!owner.created)
@@ -1660,6 +1664,7 @@ export async function updateOwnedSessionMetadata(
       },
       owner,
     );
+  await flushHostSessionBindings();
   return true;
 }
 

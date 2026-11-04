@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 export default defineConfig({
   testDir: ".",
-  testMatch: "s31-outbox-storage.spec.ts",
+  testMatch: ["s31-outbox-storage.spec.ts", "s31-session-bindings.spec.ts"],
   outputDir: "../../temp/test-results/s31-outbox-storage",
   workers: 1,
   timeout: 120_000,

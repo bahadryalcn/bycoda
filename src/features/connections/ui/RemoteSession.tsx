@@ -15,6 +15,7 @@ import {
   hostExecutionProject,
   hostSessionBinding,
   saveHostSessionBinding,
+  flushHostSessionBindings,
 } from "../model/sessionExecutionBinding";
 import { applySessionSync } from "../model/protocol";
 import { mergePreviewBlocks } from "../model/mergePreviewBlocks";
@@ -374,9 +375,17 @@ function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSessio
   const issues = useDurableRemoteOutboxIssues(project.key, machine.environmentId);
   useEffect(() => {
     let active = true;
-    const owner = hostSessionBinding(shell);
-    const session = owner?.created ? owner.sessionId : remoteSessionFor(shell.id);
-    void readDurableRemoteCommand(project.key, machine.environmentId, session ?? null, shell.id)
+    void flushHostSessionBindings()
+      .then(() => {
+        const owner = hostSessionBinding(shell);
+        const session = owner?.created ? owner.sessionId : remoteSessionFor(shell.id);
+        return readDurableRemoteCommand(
+          project.key,
+          machine.environmentId,
+          session ?? null,
+          shell.id,
+        );
+      })
       .then((result) => {
         if (active) setState({ ready: true, pending: result.command });
       })
@@ -1550,6 +1559,7 @@ function ConnectedRemoteSession({
     // response is retried explicitly instead of silently sending a new prompt.
     try {
       if (!recoveredReceipt) {
+        await flushHostSessionBindings();
         await admitDurableRemoteCommand(
           project.key,
           machine.environmentId,
@@ -1590,6 +1600,7 @@ function ConnectedRemoteSession({
       if (!receipt) throw new Error(t("The host did not confirm the request."));
       if (owner)
         acknowledgeHostSessionBinding(shell, receipt.sessionId, receipt.authorityGeneration);
+      if (owner) await flushHostSessionBindings();
       if (command.type === "create" && command.sessionId && receipt.sessionId !== command.sessionId)
         throw new Error(t("The host did not confirm the request."));
       recordPerformanceEvent("host-ack", { revision: receipt.revision }, traceId);

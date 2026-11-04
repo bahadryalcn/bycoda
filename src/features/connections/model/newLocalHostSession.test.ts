@@ -12,6 +12,10 @@ import { setWorktreeFocus } from "../../source-control/model/worktreeFocus";
 import { newDefaultSession } from "../../sessions/model/session";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("./sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("./sessionExecutionBinding")>()),
+  flushHostSessionBindings: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("./connections", () => ({ remoteRequest: vi.fn(), refreshRemoteMachines: vi.fn() }));
 const machine = {
   id: "local",

@@ -1,5 +1,11 @@
 import type { Session } from "../../sessions/model/session";
 import type { RemoteProject } from "./remoteProjects";
+import {
+  readBindingEvidencePage,
+  writeBindingEvidence,
+  preserveBindingSource,
+  type StoredBindingEvidence,
+} from "./hostSessionBindingDatabase";
 
 export type HostSessionBinding = {
   kind: "local-host";
@@ -14,6 +20,87 @@ export type HostSessionBinding = {
   created: boolean;
 };
 const PREFIX = "bycoda.host-session-binding.v1:";
+const canonical = new Map<string, StoredBindingEvidence>();
+let hydrated = false;
+let hydrating: Promise<void> | undefined;
+const writes: Array<{ previous: StoredBindingEvidence | undefined; next: StoredBindingEvidence }> =
+  [];
+let saving: Promise<void> | undefined;
+
+/** Synchronous acceptance can retain the draft while publication is pending. */
+export function hostSessionBindingsPending(): boolean {
+  return !hydrated || writes.length > 0;
+}
+
+/** Resolve every stored routing fence before absence can authorize Native execution. */
+export function hydrateHostSessionBindings(): Promise<void> {
+  if (hydrated) return Promise.resolve();
+  if (hydrating) return hydrating;
+  hydrating = (async () => {
+    const loaded = new Map<string, StoredBindingEvidence>();
+    let after: string | undefined;
+    for (;;) {
+      const page = await readBindingEvidencePage(after);
+      for (const row of page) loaded.set(row.shellId, row);
+      if (page.length < 128) break;
+      after = page[page.length - 1].shellId;
+    }
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(PREFIX)) continue;
+      const shellId = key.slice(PREFIX.length);
+      const raw = localStorage.getItem(key);
+      if (raw === null) continue;
+      if (loaded.has(shellId)) {
+        await preserveBindingSource(shellId, raw);
+        continue;
+      }
+      const row = { shellId, raw, legacyRaw: raw };
+      await writeBindingEvidence(undefined, row);
+      loaded.set(shellId, row);
+    }
+    canonical.clear();
+    for (const [id, row] of loaded) canonical.set(id, row);
+    hydrated = true;
+  })().finally(() => {
+    hydrating = undefined;
+  });
+  return hydrating;
+}
+
+/** Await durable owner publication before command admission or Native fallback. */
+export async function flushHostSessionBindings(): Promise<void> {
+  await hydrateHostSessionBindings();
+  do {
+    await drain();
+  } while (writes.length);
+}
+
+function drain(): Promise<void> {
+  if (saving) return saving;
+  saving = (async () => {
+    while (writes.length) {
+      const { previous, next } = writes[0];
+      await writeBindingEvidence(previous, next);
+      writes.shift();
+    }
+  })().finally(() => {
+    saving = undefined;
+  });
+  return saving;
+}
+
+function publish(shellId: string, raw: string): void {
+  // Publish compatibility fence first. Old clients cannot see an unowned shell
+  // while the IndexedDB transaction is pending or has failed.
+  localStorage.setItem(PREFIX + shellId, raw);
+  if (!hydrated) return;
+  const previous = canonical.get(shellId);
+  const next = { shellId, raw, legacyRaw: raw };
+  canonical.set(shellId, next);
+  writes.push({ previous, next });
+  void drain().catch(() => {});
+}
 
 type StoredHostShell = {
   binding: HostSessionBinding;
@@ -31,7 +118,15 @@ class InvalidStoredSessionOwner extends Error {
 }
 function read(shellId: string): StoredHostShell | undefined {
   if (typeof localStorage === "undefined") return;
-  const raw = localStorage.getItem(PREFIX + shellId);
+  const legacy = localStorage.getItem(PREFIX + shellId);
+  const evidence = canonical.get(shellId);
+  if (hydrated && evidence && legacy !== evidence.legacyRaw)
+    throw new Error("The stored session owner changed. Reload before continuing.");
+  if (!hydrated && typeof indexedDB !== "undefined")
+    throw new Error("Session owner storage is still loading. Sending is held.");
+  if (hydrated && !evidence && legacy !== null)
+    throw new Error("A session owner appeared in another window. Reload before continuing.");
+  const raw = hydrated ? (evidence?.raw ?? null) : legacy;
   if (raw === null) return;
   let value: ReturnType<typeof JSON.parse>;
   try {
@@ -67,7 +162,10 @@ export function hasHostSessionOwnerFence(shellId: string): boolean {
 export function hostSessionBinding(
   session: Pick<Session, "id" | "hostBinding">,
 ): HostSessionBinding | undefined {
-  return read(session.id)?.binding ?? session.hostBinding;
+  const stored = read(session.id);
+  if (hydrated && !stored && session.hostBinding)
+    throw new Error("The session owner has no durable record. Reconnect before sending.");
+  return stored?.binding ?? session.hostBinding;
 }
 
 /** Must succeed before making the new tab available. No transcript is written
@@ -94,8 +192,8 @@ export function saveHostSessionBinding(shell: Session, binding: HostSessionBindi
     throw new Error("The session authority changed while the request was in flight.");
   if (previous?.binding.created && !binding.created)
     throw new Error("An acknowledged Host conversation cannot become uncreated.");
-  localStorage.setItem(
-    PREFIX + shell.id,
+  publish(
+    shell.id,
     JSON.stringify({
       ...previous,
       createdAt: previous?.createdAt ?? Date.now(),
@@ -176,8 +274,10 @@ export function hostSessionShellSummaries() {
     }
   > = [];
   if (typeof localStorage === "undefined") return summaries;
-  for (let index = 0; index < localStorage.length; index++) {
-    const key = localStorage.key(index);
+  const keys = hydrated
+    ? [...canonical.keys()].map((id) => PREFIX + id)
+    : Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+  for (const key of keys) {
     if (!key?.startsWith(PREFIX)) continue;
     let stored: StoredHostShell | undefined;
     try {
@@ -213,13 +313,13 @@ export function patchHostSessionShellMetadata(
 ): void {
   const stored = read(shellId);
   if (!stored) throw new Error("Missing session owner");
-  localStorage.setItem(PREFIX + shellId, JSON.stringify({ ...stored, ...patch }));
+  publish(shellId, JSON.stringify({ ...stored, ...patch }));
 }
 
 export function forgetHostSessionShell(shellId: string): void {
   // A stale saved workspace must retain the routing fence after deletion.
   const stored = read(shellId);
-  if (stored) localStorage.setItem(PREFIX + shellId, JSON.stringify({ ...stored, deleted: true }));
+  if (stored) publish(shellId, JSON.stringify({ ...stored, deleted: true }));
 }
 
 export function hostExecutionProject(shell: Session): RemoteProject | undefined {

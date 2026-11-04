@@ -1,3 +1,4 @@
+import { flushHostSessionBindings } from "../../features/connections/model/sessionExecutionBinding";
 import { t } from "../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { serverTerminalRestoreState } from "../../features/connections/model/serverTerminalRestoreState";
@@ -431,6 +432,7 @@ export function loadBootWorkspace(): Promise<BootWorkspace> {
   }
   if (!bootPromise) {
     bootPromise = (async () => {
+      await flushHostSessionBindings();
       const windowTransfer = await loadWindowTransfer();
       if (windowTransfer) {
         // The transfer already contains everything needed to paint its tab.

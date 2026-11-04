@@ -69,7 +69,10 @@ import { beginNativeManagedTurn } from "../../../../features/workspaces/model/na
 import { t } from "../../../../shared/i18n";
 import { getExactGitRewindEnabled } from "../../../../features/settings/model/exactGitRewind";
 import { getSendWorkspaceCapabilities } from "../../../../features/workspaces/model/workspaceClient";
-import { hostSessionBinding } from "../../../../features/connections/model/sessionExecutionBinding";
+import {
+  hostSessionBinding,
+  flushHostSessionBindings,
+} from "../../../../features/connections/model/sessionExecutionBinding";
 
 export async function runSubmitDispatch(
   ctx: SubmitDeps,
@@ -81,6 +84,7 @@ export async function runSubmitDispatch(
   events: SubmitTurnEvents,
 ): Promise<void> {
   const { sessionId, attachments, options } = input;
+  await flushHostSessionBindings();
   if (hostSessionBinding(pre.current))
     throw new Error("Host-owned conversations cannot execute through Native.");
   const { enqueueHarnessEvent, flushHarnessEvents, deferWorkspaceWork } = ctx;

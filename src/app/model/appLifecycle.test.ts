@@ -30,6 +30,10 @@ import {
 } from "../../features/sessions/data/sessionStore";
 import { reconcileProjectReturn } from "../../features/projects/model/projectReturn";
 
+vi.mock("../../features/connections/model/sessionExecutionBinding", async (original) => ({
+  ...(await original<typeof import("../../features/connections/model/sessionExecutionBinding")>()),
+  flushHostSessionBindings: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockImplementation((command: string) => nativeSuccess(command)),
 }));
