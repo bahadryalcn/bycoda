@@ -24,6 +24,7 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
+- Hermes background completion waits have a deadline. A timeout is unknown completion; never mark delegated rows complete or continue from late manifest results. Retain original read ownership until settlement and retire the captured provider through its existing lifecycle.
 - Parent reply completion does not prove delegated work finished. Keep the original
   execution and child tracking alive until real terminal evidence arrives; follow-up
   and Stop must still target that execution while the parent is idle.

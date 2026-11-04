@@ -126,6 +126,7 @@ const SESSION_TIMEOUT_MS = 45_000;
 const CONTROL_TIMEOUT_MS = 20_000;
 const PROMPT_TIMEOUT_MS = 30 * 60_000;
 const BACKGROUND_POLL_MS = 500;
+const BACKGROUND_TIMEOUT_MS = PROMPT_TIMEOUT_MS;
 const TRANSCRIPT_TAIL_CHARS = 6_000;
 
 const CLIENT_CAPABILITIES = {
@@ -676,9 +677,10 @@ function handleNotification(live: Live, method: string, params: unknown): void {
 }
 
 async function waitForBackground(live: Live): Promise<RetainedBackgroundDispatch[]> {
-  return runNativeOutputWork(
+  let expired = false;
+  const work = runNativeOutputWork(
     async () => {
-      while (!live.cancelled && live.background.size > 0) {
+      while (!expired && !live.cancelled && live.background.size > 0) {
         const entries = [...live.background.values()];
         const states = await Promise.all(
           entries.map(async (entry) => ({
@@ -687,6 +689,9 @@ async function waitForBackground(live: Live): Promise<RetainedBackgroundDispatch
           })),
         );
         const finished = states.filter((state) => state.finished).map((state) => state.entry);
+        // A timed-out read still owns its input until it physically settles.
+        // Its late result cannot complete rows or start a continuation prompt.
+        if (expired || live.cancelled) return [];
         if (finished.length > 0) {
           for (const entry of finished) live.background.delete(entry.delegationId);
           return finished;
@@ -697,6 +702,22 @@ async function waitForBackground(live: Live): Promise<RetainedBackgroundDispatch
     },
     { additionalInput: true },
   );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      expired = true;
+      reject(
+        new Error(
+          "Hermes background tasks did not finish within 30 minutes. Their completion is unknown.",
+        ),
+      );
+    }, BACKGROUND_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function backgroundFinished(dispatch: HermesBackgroundDispatch): Promise<boolean> {
