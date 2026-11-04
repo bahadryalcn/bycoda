@@ -11,7 +11,8 @@ export class MarkdownParseQueue {
   private flight: { stream: string; text: string; sequence: number } | null = null;
   private sequence = 0;
   private failed = false;
-  constructor(private readonly create: () => Port) {}
+  private deadline?: ReturnType<typeof setTimeout>;
+  constructor(private readonly create: () => Port, private readonly timeoutMs = 15_000) {}
 
   subscribe(stream: string, listener: Listener) {
     this.listeners.set(stream, listener);
@@ -24,6 +25,8 @@ export class MarkdownParseQueue {
         this.worker?.terminate();
         this.worker = null;
         this.flight = null;
+        clearTimeout(this.deadline);
+        this.deadline = undefined;
       }
     };
   }
@@ -49,10 +52,12 @@ export class MarkdownParseQueue {
           if (this.worker !== worker || this.flight?.sequence !== event.data.sequence) return;
           const completed = this.flight;
           this.flight = null;
+          clearTimeout(this.deadline);
+          this.deadline = undefined;
           const desired = this.latest.get(completed.stream);
           const listener = this.listeners.get(completed.stream);
-          if (event.data.failed) listener?.error();
-          else if (event.data.blocks && desired?.startsWith(completed.text))
+          if (event.data.failed || !Array.isArray(event.data.blocks) || event.data.blocks.some((block) => typeof block !== "string")) listener?.error();
+          else if (desired?.startsWith(completed.text))
             listener?.result(completed.text, event.data.blocks);
           this.pump();
         };
@@ -65,6 +70,7 @@ export class MarkdownParseQueue {
     const [stream, text] = this.queued.entries().next().value!;
     this.queued.delete(stream);
     this.flight = { stream, text, sequence: ++this.sequence };
+    this.deadline = setTimeout(() => this.fail(), this.timeoutMs);
     try {
       this.worker!.postMessage(this.flight);
     } catch {
@@ -74,6 +80,8 @@ export class MarkdownParseQueue {
 
   private fail() {
     this.failed = true;
+    clearTimeout(this.deadline);
+    this.deadline = undefined;
     this.worker?.terminate();
     this.worker = null;
     this.flight = null;

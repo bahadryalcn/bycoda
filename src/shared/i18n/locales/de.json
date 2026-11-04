@@ -10981,5 +10981,7 @@
   "Archive reviewed request": "Geprüfte Anfrage archivieren",
   "Could not save this draft. It is kept in this window.": "Dieser Entwurf konnte nicht gespeichert werden. Er bleibt in diesem Fenster erhalten.",
   "Could not save this request locally. Your draft is kept in this window; retry saving before continuing.": "Diese Anfrage konnte nicht lokal gespeichert werden. Ihr Entwurf bleibt in diesem Fenster erhalten; versuchen Sie vor dem Fortfahren erneut zu speichern.",
-  "Recent sessions changed while loading. Retry shortly.": "Die letzten Sitzungen haben sich beim Laden geändert. Versuchen Sie es gleich erneut."
+  "Recent sessions changed while loading. Retry shortly.": "Die letzten Sitzungen haben sich beim Laden geändert. Versuchen Sie es gleich erneut.",
+  "Rendering Markdown…": "Markdown wird gerendert…",
+  "Formatted preview unavailable. Showing source.": "Formatierte Vorschau nicht verfügbar. Quelltext wird angezeigt."
 }

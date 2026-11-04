@@ -1,5 +1,7 @@
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Button } from "../../../shared/ui/Button";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Alert } from "../../../shared/ui/Alert";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -1130,7 +1132,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   // memoized former tail retain its fading plugin after a new block arrives.
   // Each message keeps its own parse, so a growing reply only lexes its open tail.
   const markdownStream = useId();
-  const { blocks: markdownBlocks, pending: markdownPending } = useParsedMarkdown(
+  const { blocks: markdownBlocks, pending: markdownPending, sourceFallback } = useParsedMarkdown(
     paced.text,
     markdownStream,
   );
@@ -1200,8 +1202,11 @@ export const AgentMarkdown = memo(function AgentMarkdown({
         <FileOpenContext.Provider value={fileOpen}>
           <BlockPluginContext.Provider value={blockPlugins}>
             <div ref={fadeRoot} className="min-w-0" aria-busy={markdownPending || undefined}>
-              {markdownPending && !markdownBlocks.length ? (
-                <div className="whitespace-pre-wrap">{paced.text}</div>
+              {sourceFallback ? (
+                <>
+                  <Alert tone="warning" inline>{t("Formatted preview unavailable. Showing source.")}</Alert>
+                  <div className="whitespace-pre-wrap">{paced.text}</div>
+                </>
               ) : (
                 <Streamdown
                   BlockComponent={DirectionalBlock}
@@ -1218,6 +1223,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
                   {paced.text}
                 </Streamdown>
               )}
+              {markdownPending ? <LoadingText>{t("Rendering Markdown…")}</LoadingText> : null}
             </div>
             {fileMenu ? (
               <ExplorerMenu
