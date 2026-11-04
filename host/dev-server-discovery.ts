@@ -350,7 +350,7 @@ export class DevServerDiscovery implements ProcessDiscovery {
               windowsHide: true,
               timeout: this.commandTimeoutMs,
               maxBuffer: OUTPUT_LIMIT,
-              env: { ...process.env, LC_ALL: "C", LANG: "C" },
+              env: { ...process.env, LC_ALL: "C.UTF-8", LANG: "C" },
             }),
           )
           .then(resolve, reject)

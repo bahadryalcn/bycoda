@@ -1,12 +1,21 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { StringDecoder } from "node:string_decoder";
-import type { ShellProfile } from "./shellProfiles";
+import { windowsUtf8ConsoleSetup, type ShellProfile } from "./shellProfiles";
 
 export type OwnedTerminalProcess = {
   write(data: string): Promise<void>;
   stop(): Promise<void>;
 };
+
+/** Input written before the first user command; empty where the shell needs no setup. */
+export function terminalStartupInput(
+  kind: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const setup = windowsUtf8ConsoleSetup(kind, platform);
+  return setup ? `${setup}\r\n` : "";
+}
 
 /** Use the existing watchdog guardian: only its owned child's tree can be stopped. */
 export function startTerminalProcess(
@@ -43,6 +52,9 @@ export function startTerminalProcess(
   child.stdout.on("data", (chunk: Buffer) => output(stdout.write(chunk)));
   child.stderr.on("data", (chunk: Buffer) => output(stderr.write(chunk)));
   child.stdin.on("error", () => {});
+  // Queued ahead of any user input, so the first command already runs in UTF-8.
+  const startup = terminalStartupInput(profile.kind);
+  if (startup) child.stdin.write(startup, "utf8");
   const complete = (code: number | null) => {
     if (ended) return;
     ended = true;

@@ -31,6 +31,8 @@ const options = {
   stored: [],
 };
 
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
 describe("session menu rows", () => {
   it("keeps interrupted conversations compatible with native tray status and activity order", () => {
     const rows = traySessions({
@@ -49,6 +51,15 @@ describe("session menu rows", () => {
     expect(row.label).toBe(`Fix ${"ş".repeat(43)}… — visible · Codex`);
     expect(row.label).not.toContain("\n");
     expect(row.label).not.toMatch(/^(Working|Active|Done|Needs input)/);
+  });
+  it("cuts a title at a grapheme boundary instead of inside an emoji", () => {
+    const [row] = traySessions({
+      ...options,
+      stored: [stored("emoji", { title: `${"a".repeat(46)}🚀🚀b` })],
+    });
+    // 47 graphemes of title plus the ellipsis fill the 48-grapheme budget.
+    expect(row.label).toBe(`${"a".repeat(46)}🚀… — visible · Codex`);
+    expect(row.label).not.toMatch(LONE_SURROGATE);
   });
   it("uses the provider as a fallback title without repeating it", () => {
     const [row] = traySessions({

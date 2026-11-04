@@ -1,3 +1,4 @@
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { stripAttachmentTokens } from "./attachmentTokens";
 import type { InlineVisualSnapshot } from "./inlineVisual";
 import type { ToolInspection } from "./toolInspection";
@@ -916,7 +917,7 @@ export function titleFromPrompt(
   const seed = line || fromFiles;
   if (!seed) return HARNESS_LABEL[harness];
   const max = 72;
-  const short = seed.length > max ? `${seed.slice(0, max - 1)}…` : seed;
+  const short = truncateGraphemes(seed, max);
   return formatSessionTitle(harness, short);
 }
 

@@ -201,6 +201,34 @@ it("searches untracked files while respecting ignore rules", async () => {
   ).toEqual(["new.txt"]);
 });
 
+it("skips binary matches so they cannot corrupt NUL-separated search records", async () => {
+  const root = reviewRepo();
+  writeFileSync(
+    join(root, "image.png"),
+    Buffer.from([0x89, 0x50, 0x00, 0x6e, 0x65, 0x65, 0x64, 0x6c, 0x65]),
+  );
+  writeFileSync(join(root, "notes.txt"), "needle in text\n");
+  const result = await searchHostContent(root, { query: "needle" });
+  expect(result.matches).toEqual([
+    expect.objectContaining({
+      relative: "notes.txt",
+      line: 1,
+      column: 1,
+      preview: "needle in text",
+    }),
+  ]);
+});
+
+it("matches non-ASCII letters case-insensitively in Git repositories", async () => {
+  const root = reviewRepo();
+  writeFileSync(join(root, "sample.txt"), "ŞEKER\nşeker\nİSTANBUL\n");
+  const lines = async (query: string) =>
+    (await searchHostContent(root, { query })).matches.map((match) => match.line);
+  expect(await lines("şeker")).toEqual([1, 2]);
+  expect(await lines("Ş")).toEqual([1, 2]);
+  expect(await lines("İstanbul")).toEqual([3]);
+});
+
 it.each([false, true])("preserves literal search whitespace (Git: %s)", async (gitRepo) => {
   const root = gitRepo ? reviewRepo() : mkdtempSync(join(tmpdir(), "bycoda-search-spaces-"));
   if (!gitRepo) roots.push(root);

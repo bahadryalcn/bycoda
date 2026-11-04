@@ -6,6 +6,7 @@ import {
   type Session,
 } from "../../sessions/model/session";
 import { t } from "../../../shared/i18n";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { deriveActivityDock } from "../../sessions/model/activityDock";
 import { isProviderFailureText } from "../../sessions/model/plan";
 import type { NotificationPermission } from "./notifications";
@@ -87,7 +88,7 @@ export function lastLine(text: string, max = SUMMARY_MAX): string {
       )
       .filter((part) => part && !part.startsWith("```"))
       .pop() ?? "";
-  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+  return truncateGraphemes(line, max);
 }
 
 function firstLine(text: string, max = SUMMARY_MAX): string {
@@ -96,7 +97,7 @@ function firstLine(text: string, max = SUMMARY_MAX): string {
       .split(/\r?\n/)
       .map((part) => part.replace(/\s+/g, " ").trim())
       .find(Boolean) ?? "";
-  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+  return truncateGraphemes(line, max);
 }
 
 export type SessionPhase = "idle" | "working" | "waiting" | "background" | "needs-input";

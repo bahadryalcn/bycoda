@@ -106,7 +106,12 @@ async function git(
           maxBuffer,
           encoding: "utf8",
           windowsHide: true,
-          env: { ...process.env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+          env: {
+            ...process.env,
+            LC_ALL: "C.UTF-8",
+            GIT_TERMINAL_PROMPT: "0",
+            GIT_OPTIONAL_LOCKS: "0",
+          },
         },
       )
     ).stdout;
@@ -131,7 +136,7 @@ function gitWithInput(
       cwd: root,
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+      env: { ...process.env, LC_ALL: "C.UTF-8", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -408,7 +413,8 @@ export async function searchHostContent(
   signal?.throwIfAborted();
   const options = searchOptions(input);
   if (!options.query) return { matches: [], truncated: false };
-  const args = ["grep", "--untracked", "-z", "-n", "--column"];
+  // -I keeps "Binary file ... matches" notices out of the NUL-separated records.
+  const args = ["grep", "--untracked", "-I", "-z", "-n", "--column"];
   if (!options.caseSensitive) args.push("-i");
   if (options.wholeWord && options.regex) args.push("-w");
   args.push(options.regex ? "-E" : "-F", "-e", options.query, "--");
@@ -539,7 +545,7 @@ async function searchGitOutput(
       windowsHide: true,
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+      env: { ...process.env, LC_ALL: "C.UTF-8", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
     });
     const chunks: Buffer[] = [];
     const filterWords = options.wholeWord && !options.regex;

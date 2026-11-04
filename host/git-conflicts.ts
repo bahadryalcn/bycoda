@@ -75,7 +75,7 @@ async function run<T extends string | Buffer>(
       maxBuffer,
       encoding,
       windowsHide: true,
-      env: { ...process.env, LC_ALL: "C", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+      env: { ...process.env, LC_ALL: "C.UTF-8", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
     },
   );
   return stdout as T;

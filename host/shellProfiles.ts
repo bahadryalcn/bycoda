@@ -215,6 +215,25 @@ export function resolveShellProfile(path = choicePath()): ShellProfile | undefin
   );
 }
 
+/** cmd's console code page is OEM by default; Host decodes shell output as UTF-8. */
+const WINDOWS_CMD_UTF8_SETUP = "chcp 65001>nul";
+const WINDOWS_POWERSHELL_UTF8_SETUP =
+  "[Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); $OutputEncoding=[Console]::OutputEncoding";
+
+/**
+ * Statement that moves a Windows console shell to UTF-8 before the user's command,
+ * or undefined where no setup is needed. Other platforms are never touched.
+ */
+export function windowsUtf8ConsoleSetup(
+  kind: string,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  if (platform !== "win32") return undefined;
+  if (kind === "cmd") return WINDOWS_CMD_UTF8_SETUP;
+  if (kind === "powershell" || kind === "pwsh") return WINDOWS_POWERSHELL_UTF8_SETUP;
+  return undefined;
+}
+
 /** How to run one command line in `profile`. */
 export function shellInvocation(
   profile: ShellProfile,
@@ -236,13 +255,20 @@ export function shellInvocation(
           "-NoProfile",
           "-NonInteractive",
           "-Command",
-          `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${line}`,
+          `${windowsUtf8ConsoleSetup(profile.kind) ?? "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8"}; ${line}`,
         ],
         env: {},
         verbatim: false,
       };
-    case "cmd":
-      return { file: profile.path, args: ["/d", "/s", "/c", `"${line}"`], env: {}, verbatim: true };
+    case "cmd": {
+      const setup = windowsUtf8ConsoleSetup(profile.kind);
+      return {
+        file: profile.path,
+        args: ["/d", "/s", "/c", `"${setup ? `${setup} & ` : ""}${line}"`],
+        env: {},
+        verbatim: true,
+      };
+    }
     case "wsl":
       return { file: profile.path, args: ["-e", "bash", "-lc", line], env: {}, verbatim: false };
     case "csh":

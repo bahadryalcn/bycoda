@@ -127,7 +127,7 @@ async function git(
           windowsHide: true,
           env: {
             ...process.env,
-            LC_ALL: "C",
+            LC_ALL: "C.UTF-8",
             GIT_OPTIONAL_LOCKS: "0",
             GIT_TERMINAL_PROMPT: "0",
           },
