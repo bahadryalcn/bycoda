@@ -161,6 +161,8 @@ fn git_grep_capped(
     let mut args = vec![
         "grep".to_string(),
         "--untracked".to_string(),
+        // Binary matches would print "Binary file ... matches" instead of a record.
+        "-I".to_string(),
         "-z".to_string(),
         "-n".to_string(),
     ];
@@ -677,6 +679,31 @@ mod tests {
             .matches
             .iter()
             .all(|found| found.preview == "find me" && found.line > 0));
+    }
+
+    #[test]
+    fn git_grep_skips_binary_matches_without_corrupting_records() {
+        let dir = tmp("git-grep-binary");
+        if !git(&dir.0, &["init", "--quiet"]) {
+            return;
+        }
+        std::fs::write(dir.0.join("image.png"), b"\x89PNG\0needle\0").unwrap();
+        std::fs::write(dir.0.join("notes.txt"), "needle in text\n").unwrap();
+        assert!(git(&dir.0, &["add", "image.png", "notes.txt"]));
+
+        let result = git_grep_capped(
+            &dir.0,
+            &options(&dir.0, "needle"),
+            "needle",
+            MAX_GIT_GREP_BYTES,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].relative, "notes.txt");
+        assert_eq!(result.matches[0].line, 1);
+        assert_eq!(result.matches[0].preview, "needle in text");
     }
 
     #[test]

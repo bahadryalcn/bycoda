@@ -10,8 +10,11 @@ import {
   resolveShellProfile,
   setChosenProfile,
   setReviewedProfile,
+  shellInvocation,
+  windowsUtf8ConsoleSetup,
 } from "./shellProfiles";
 import { runHostShell } from "./shell";
+import type { ShellProfile } from "./shellProfiles";
 
 const cleanups: Array<() => void> = [];
 
@@ -75,6 +78,33 @@ describe("host shell profiles", () => {
     expect(() => setChosenProfile("uninstalled-shell", join(scratch(), "choice.json"))).toThrow(
       "not installed",
     );
+  });
+
+  it("moves Windows cmd and PowerShell consoles to UTF-8 only on Windows", () => {
+    expect(windowsUtf8ConsoleSetup("cmd", "win32")).toBe("chcp 65001>nul");
+    for (const kind of ["powershell", "pwsh"]) {
+      const setup = windowsUtf8ConsoleSetup(kind, "win32") ?? "";
+      expect(setup).toContain(
+        "[Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new()",
+      );
+      expect(setup).toMatch(/\$OutputEncoding=\[Console\]::OutputEncoding$/);
+    }
+    for (const kind of ["cmd", "powershell", "pwsh", "bash", "zsh", "wsl"])
+      expect(windowsUtf8ConsoleSetup(kind, "linux")).toBeUndefined();
+    expect(windowsUtf8ConsoleSetup("bash", "win32")).toBeUndefined();
+  });
+
+  it("keeps PowerShell -Command semantics and runs the user command after the UTF-8 setup", () => {
+    const pwsh: ShellProfile = { id: "pwsh", name: "PowerShell 7", path: "pwsh.exe", kind: "pwsh" };
+    const invocation = shellInvocation(pwsh, "Get-ChildItem");
+    expect(invocation.args.slice(0, 4)).toEqual([
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+    ]);
+    expect(invocation.args[4]).toMatch(/; Get-ChildItem$/);
+    expect(invocation.verbatim).toBe(false);
   });
 
   it("runs a command in every listed shell", async () => {

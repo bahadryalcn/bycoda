@@ -1,5 +1,6 @@
 import { projectDisplayName } from "../../features/projects/model/projectNames";
 import { pathKey } from "../../shared/lib/paths";
+import { truncateGraphemes } from "../../shared/lib/text/truncate";
 import { HARNESS_TITLE } from "../../features/sessions/model/session";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { LiveSessionInfo } from "../../features/sessions/model/recentSessions";
@@ -16,8 +17,7 @@ export type TraySession = {
 
 // Bound each part separately so a long title never hides the project or agent.
 function menuText(value: string, limit: number): string {
-  const chars = [...value.replace(/\s+/g, " ").trim()];
-  return chars.length > limit ? `${chars.slice(0, limit - 1).join("")}…` : chars.join("");
+  return truncateGraphemes(value.replace(/\s+/g, " ").trim(), limit);
 }
 
 /** Idle history is Active, not Done: a saved transcript does not prove success. */
