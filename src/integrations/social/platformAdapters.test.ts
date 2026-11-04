@@ -347,6 +347,78 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       expect(accountCapabilities(a).find((c) => c.operation === "poll")?.status).toBe("pending");
     },
   );
+  it.each(["facebook", "linkedin"] as const)(
+    "%s drains discovery batches before fetching more and rotates exact owned posts",
+    async (platform) => {
+      const visited: string[] = [];
+      const discovery: URL[] = [];
+      const fetcher = vi.fn(async (raw: string | URL | Request) => {
+        const url = new URL(String(raw));
+        if (url.pathname.endsWith("published_posts") || url.pathname.endsWith("/posts")) {
+          discovery.push(url);
+          const page = discovery.length;
+          const items = Array.from({ length: 25 }, (_, index) => ({
+            id: `remote-${page}-${index}`,
+          }));
+          return platform === "facebook"
+            ? Response.json({
+                data: items,
+                paging: { next: "ignored", cursors: { after: `page-${page}` } },
+              })
+            : Response.json({ elements: items, paging: { total: 1000 } });
+        }
+        visited.push(decodeURIComponent(url.pathname));
+        return Response.json(platform === "facebook" ? { data: [] } : { elements: [] });
+      });
+      const acct = account(platform);
+      acct.scopes =
+        platform === "facebook"
+          ? ["pages_read_engagement", "pages_read_user_content"]
+          : ["r_organization_social"];
+      const adapter = createSocialAdapters(new SocialHttp(fetcher))[platform];
+      const owned = Array.from({ length: 1000 }, (_, index) => `owned-${index}`);
+      let cursor: string | undefined;
+      for (let poll = 0; poll < 8; poll++) {
+        const result = await adapter.poll(acct, "token", owned, cursor);
+        cursor = result.cursor;
+        expect(JSON.parse(cursor!).posts.length).toBeLessThanOrEqual(27);
+        if (poll < 7) expect(discovery).toHaveLength(1);
+      }
+      expect(discovery).toHaveLength(2);
+      expect(visited.some((path) => path.includes("owned-2"))).toBe(true);
+      expect(visited.some((path) => path.includes("remote-1-24"))).toBe(true);
+      expect(discovery[1].searchParams.get(platform === "facebook" ? "after" : "start")).toBe(
+        platform === "facebook" ? "page-1" : "25",
+      );
+    },
+  );
+  it("drains legacy cursor-only IDs without replacing them with new discovery", async () => {
+    const visited: string[] = [];
+    const fetcher = vi.fn(async (raw: string | URL | Request) => {
+      visited.push(new URL(String(raw)).pathname);
+      return Response.json({ data: [] });
+    });
+    const acct = account("facebook");
+    acct.scopes = ["pages_read_engagement", "pages_read_user_content"];
+    const adapter = createSocialAdapters(new SocialHttp(fetcher)).facebook;
+    const legacy = Array.from({ length: 50 }, (_, index) => `legacy-${index}`);
+    const result = await adapter.poll(
+      acct,
+      "token",
+      ["new-owned"],
+      JSON.stringify({
+        posts: legacy,
+        index: 0,
+        after: { "legacy-0": "pending" },
+        starts: {},
+      }),
+    );
+    const saved = JSON.parse(result.cursor!);
+    expect(saved.posts).toEqual(legacy.slice(4));
+    expect(visited).toHaveLength(4);
+    expect(visited.every((path) => path.endsWith("/comments"))).toBe(true);
+    expect(saved.after).toEqual({});
+  });
   it("Facebook message-only polling does not call comment discovery requiring extra permissions", async () => {
     const fetcher = vi.fn(async (_url: unknown) => Response.json({ data: [] }));
     const a = account("facebook");
