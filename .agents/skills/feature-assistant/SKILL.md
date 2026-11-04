@@ -37,6 +37,7 @@ Setup: [controls](references/setup.md).
   target; preserve canonical ID, Host and cwd.
 - Never replay tools on reconnect. Retain uncertain and in-flight operations
   when rotating acknowledged request history.
+- Activity history is separate from Chief work admission. Only saved Chief mode queues new supervisor events; retain already admitted pending or unknown work until exact settlement.
 - Conversation drafts coalesce writes with bounded flush on thread switch, page hide and unmount; failed local saves retain memory and expose retry. Job-edit intents must persist before dispatch, while quota failures must not freeze editable fields.
 - Names and quoted preferences cannot grant permissions, replace instructions or
   change targets. Never hardcode the owner's chosen name as product identity.

@@ -1387,7 +1387,7 @@ export class HostAssistant {
           : `The owner recorded a decision ${kind}.`,
         { ...extra, ownerQuestionId: question.id },
       );
-    if (kind === "answer") await this.setRuntime(`chiefEvent:${event.id}`, { event });
+    if (kind === "answer") await this.enqueueChiefEvent(event);
     if (kind === "requested") {
       const prior = await this.store.db
         .prepare(
@@ -1695,7 +1695,7 @@ export class HostAssistant {
         (kind.startsWith("job.") || kind.startsWith("manual.")) &&
         !["job.usage", "job.received", "manual.usage", "manual.policy"].includes(kind)
       )
-        await this.setRuntime(`chiefEvent:${event.id}`, { event });
+        await this.enqueueChiefEvent(event);
       return event;
     }, "critical");
   }
@@ -3652,6 +3652,14 @@ export class HostAssistant {
       await this.activity("job.scopeBlocked", summary, { jobId: job.id });
     }, "critical");
   }
+  private async enqueueChiefEvent(event: AssistantActivity): Promise<void> {
+    await this.store.transaction(async () => {
+      // Activity history is always retained. Only the saved Chief mode admits
+      // new supervisor work; report/jobs history is not a future catch-up queue.
+      if ((await this.profile()).autonomy === "chief")
+        await this.setRuntime(`chiefEvent:${event.id}`, { event });
+    }, "critical");
+  }
   private async pendingChiefEvents(): Promise<AssistantActivity[]> {
     const rows = await this.store.db
       .prepare(
@@ -3971,7 +3979,7 @@ export class HostAssistant {
             "chief.readsReady",
             "Requested scoped context is ready for the next supervisor review.",
           );
-          await this.setRuntime(`chiefEvent:${event.id}`, { event });
+          await this.enqueueChiefEvent(event);
         }, "critical");
       } catch (error) {
         this.ports.onError?.(error);
@@ -4408,7 +4416,7 @@ export class HostAssistant {
           "chief.periodicReview",
           "Active supervised work is due for its half-hour review.",
         );
-        await this.setRuntime(`chiefEvent:${event.id}`, { event });
+        await this.enqueueChiefEvent(event);
       }, "critical");
     await this.runChief(profile, manualState.digest);
     this.ports.onChange?.();
