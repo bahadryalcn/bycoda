@@ -14,6 +14,7 @@ import {
   RemoteConnectionNotices,
 } from "../features/connections/ui/RemoteConnectionFeedback";
 import { AssistantNotifications } from "../features/assistant/ui/AssistantNotifications";
+import { AssistantBackgroundRoom } from "../features/assistant/model/AssistantBackgroundRoom";
 import { useVoiceAppBridge, voiceRailProjects } from "./workspace/bridges/useVoiceAppBridge";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
 import {
@@ -152,7 +153,7 @@ import { setAdditionalDirsResolver } from "../integrations/harness/core/addition
 import { leafIds, newTab } from "../features/workspace/model/layout";
 import { idleWorkspaceTabIds } from "../features/workspace/model/idleTabs";
 import { useCloseForeignEmptyTabs } from "./workspace/tabs/useCloseForeignEmptyTabs";
-import { composerDraftOf } from "../features/sessions/model/draftCache";
+import { composerDraftOf, composerDraftRevision } from "../features/sessions/model/draftCache";
 import { type WindowTransferPayload } from "./model/windowTransfer";
 import { paneDropFromPoint } from "../features/workspace/model/paneDrop";
 import {
@@ -517,10 +518,11 @@ function Workspace({
     history,
     setHistory,
   } = useWorkspaceUiState({ windowTransfer, bootHistory });
-  useManagedWorkspaceBuffers(
-    [...filesInWorkspaceTabs(tabs), ...projectTerminals.flatMap((dock) => dock.pane.files)],
-    dirtyFiles,
+  const workspaceBufferFiles = useMemo(
+    () => [...filesInWorkspaceTabs(tabs), ...projectTerminals.flatMap((dock) => dock.pane.files)],
+    [tabs, projectTerminals],
   );
+  useManagedWorkspaceBuffers(workspaceBufferFiles, dirtyFiles);
   const {
     storedLinkedSessions,
     setStoredLinkedSessions,
@@ -1098,21 +1100,27 @@ function Workspace({
   });
 
   // Idle tabs close without prompts: the active, moving, dirty and terminal tabs stay.
-  const idleTabIds = () =>
+  const idleTabIds = useCallback((selectedId = activeTabIdRef.current, dirtyIds = dirtyFilesRef.current) =>
     idleWorkspaceTabIds({
       tabs,
       sessions,
-      activeTabId: activeTabIdRef.current,
+      activeTabId: selectedId,
       busySessionIds,
       unseenFinishedIds,
-      dirtyFileIds: dirtyFilesRef.current,
+      dirtyFileIds: dirtyIds,
       movingTabIds: movingTabIds.current,
       hasComposerDraft: (sessionId) => {
         const draft = composerDraftOf(sessionId);
         return draft.text.trim().length > 0 || draft.attachments.length > 0;
       },
-    });
-  const idleTabCount = idleTabIds().length;
+    }), [tabs, sessions, busySessionIds, unseenFinishedIds, activeTabIdRef, dirtyFilesRef, movingTabIds]);
+  // Read cheap mutable revisions without subscribing the entire app to typing.
+  const draftRevision = composerDraftRevision();
+  const movingTabsKey = [...movingTabIds.current].join("\0");
+  const idleTabCount = useMemo(
+    () => idleTabIds(activeTabId, dirtyFiles).length,
+    [idleTabIds, activeTabId, dirtyFiles, draftRevision, movingTabsKey],
+  );
   const onCloseIdleTabs = () => {
     const ids = idleTabIds();
     if (ids.length > 0) onCloseTabs(ids, activeTabIdRef.current);
@@ -3093,6 +3101,7 @@ function Workspace({
               {!detachedSessionWindow && <DesktopControlStrip />}
               <RemoteConnectionNotices />
               {!detachedSessionWindow && <AssistantNotifications />}
+              {!detachedSessionWindow && !toolWindow && !windowTransfer && <AssistantBackgroundRoom />}
               <VoiceCompanionGate
                 {...voiceApp}
                 activeId={activeSessionId}

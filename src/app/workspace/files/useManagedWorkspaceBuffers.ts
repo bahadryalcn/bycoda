@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { isRemoteProjectPath } from "../../../features/projects/model/recents";
 import { isFilesystemTab, type FilePaneTab } from "../../../features/workspace/model/layout";
 
@@ -47,7 +47,10 @@ export function useManagedWorkspaceBuffers(
   dirtyIds: ReadonlySet<string>,
 ) {
   const [report] = useState(createWorkspaceBufferReporter);
-  const snapshot = JSON.stringify(managedWorkspaceBuffers(files, dirtyIds));
+  const snapshot = useMemo(
+    () => JSON.stringify(managedWorkspaceBuffers(files, dirtyIds)),
+    [files, dirtyIds],
+  );
   useEffect(() => {
     const send = () => {
       // Failed/unsupported transport remains unknown to the native/Host gate.
