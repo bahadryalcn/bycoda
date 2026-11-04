@@ -1,3 +1,5 @@
+import { HttpStreamScope } from "./http-stream-scope";
+import { voicePlaybackTimeoutMs } from "../src/features/voice/model/voicePlaybackDeadline";
 /** ElevenLabs reply voice: only the reply text is sent; PCM streams back. */
 export const ELEVENLABS_MODEL = "eleven_flash_v2_5";
 /** "George", a default (premade) voice available to every account; multilingual models
@@ -24,52 +26,58 @@ export async function streamElevenLabs(
   },
   chunk: (pcm: Buffer) => void,
 ): Promise<void> {
-  const voice = options.voiceId || ELEVENLABS_DEFAULT_VOICE;
-  let response: Response;
+  const scope = new HttpStreamScope(options.signal, {
+    firstMs: 30_000, idleMs: 15_000,
+    totalMs: 30_000 + voicePlaybackTimeoutMs(options.text), label: "ElevenLabs",
+  });
   try {
-    response = await (options.request ?? fetch)(
-      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}/stream?output_format=pcm_24000`,
-      {
-        method: "POST",
-        headers: { "xi-api-key": options.key, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: options.text,
-          model_id: ELEVENLABS_MODEL,
-          ...(options.language && LANGUAGES.has(options.language)
-            ? { language_code: options.language }
-            : {}),
-        }),
-        signal: options.signal,
-      },
-    );
-  } catch (error) {
-    if (options.signal.aborted) return;
-    throw new Error("ElevenLabs could not be reached. Check the connection and try again.", {
-      cause: error,
-    });
-  }
-  if (!response.ok || !response.body) throw new Error(elevenLabsFailure(response.status));
-  let pending = Buffer.alloc(0);
-  const reader = response.body.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      pending = Buffer.concat([pending, Buffer.from(value)]);
-      while (pending.length >= CHUNK_BYTES) {
-        chunk(pending.subarray(0, CHUNK_BYTES));
-        pending = pending.subarray(CHUNK_BYTES);
-      }
+    const voice = options.voiceId || ELEVENLABS_DEFAULT_VOICE;
+    let response: Response;
+    try {
+      response = await scope.request((signal) => (options.request ?? fetch)(
+        `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}/stream?output_format=pcm_24000`,
+        {
+          method: "POST",
+          headers: { "xi-api-key": options.key, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: options.text,
+            model_id: ELEVENLABS_MODEL,
+            ...(options.language && LANGUAGES.has(options.language)
+              ? { language_code: options.language }
+              : {}),
+          }),
+          signal,
+        },
+      ));
+    } catch (error) {
+      if (options.signal.aborted) return;
+      throw new Error("ElevenLabs could not be reached. Check the connection and try again.", {
+        cause: error,
+      });
     }
-  } catch (error) {
-    if (options.signal.aborted) return;
-    throw new Error("ElevenLabs stopped while speaking. Try again.", { cause: error });
+    if (!response.ok || !response.body) throw new Error(elevenLabsFailure(response.status));
+    let pending = Buffer.alloc(0);
+    scope.body(response);
+    try {
+      while (true) {
+        const { done, value } = await scope.read();
+        if (done) break;
+        pending = Buffer.concat([pending, Buffer.from(value)]);
+        while (pending.length >= CHUNK_BYTES && !scope.signal.aborted) {
+          chunk(pending.subarray(0, CHUNK_BYTES));
+          pending = pending.subarray(CHUNK_BYTES);
+        }
+      }
+    } catch (error) {
+      if (options.signal.aborted) return;
+      throw new Error("ElevenLabs stopped while speaking. Try again.", { cause: error });
+    }
+    // PCM16 needs whole samples; a stray final byte cannot be played.
+    const whole = pending.subarray(0, pending.length - (pending.length % 2));
+    if (whole.length && !scope.signal.aborted) chunk(whole);
   } finally {
-    reader.releaseLock();
+    scope.close();
   }
-  // PCM16 needs whole samples; a stray final byte cannot be played.
-  const whole = pending.subarray(0, pending.length - (pending.length % 2));
-  if (whole.length && !options.signal.aborted) chunk(whole);
 }
 
 function elevenLabsFailure(status: number): string {

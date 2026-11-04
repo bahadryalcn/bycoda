@@ -77,3 +77,52 @@ it("ends quietly when cancelled", async () => {
   ).resolves.toBeUndefined();
   expect(chunk).not.toHaveBeenCalled();
 });
+
+
+it("slow continuing PCM still obeys speech-sized total budget and aborts actual stream", async () => {
+  vi.useFakeTimers();
+  let writer!: ReadableStreamDefaultController<Uint8Array>;
+  const cancel = vi.fn();
+  let signal!: AbortSignal;
+  const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
+    signal = init!.signal!;
+    return new Response(new ReadableStream({ start(value) { writer = value; }, cancel }));
+  });
+  const pending = streamElevenLabs({ key: "private-key", text: "Hi", signal: new AbortController().signal, request }, () => {});
+  const failed = expect(pending).rejects.toThrow("stopped while speaking");
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    for (let index = 0; index < 11; index++) {
+      await vi.advanceTimersByTimeAsync(10_000);
+      writer.enqueue(new Uint8Array([0, 0]));
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_001);
+    await failed;
+    expect(signal.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledOnce();
+  } finally { vi.useRealTimers(); }
+});
+
+it("explicit cancel during a large PCM chunk prevents later chunks from being published", async () => {
+  const abort = new AbortController();
+  const chunks: Buffer[] = [];
+  const request = vi.fn(async () => pcmResponse([72_000]));
+  await streamElevenLabs({ key: "key", text: "Hi", signal: abort.signal, request }, (value) => {
+    chunks.push(value);
+    abort.abort();
+  });
+  expect(chunks).toHaveLength(1);
+});
+
+
+it("cancels unread provider error bodies without exposing private error content", async () => {
+  const cancel = vi.fn();
+  const request = vi.fn(async () => new Response(new ReadableStream({ cancel }), { status: 429 }));
+  const chunk = vi.fn();
+  await expect(streamElevenLabs({ key: "private-key", text: "Hi", signal: new AbortController().signal, request }, chunk))
+    .rejects.toThrow("busy or over its limit");
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(chunk).not.toHaveBeenCalled();
+});
