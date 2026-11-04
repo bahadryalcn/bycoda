@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import {
   chmod,
+  link,
   mkdir,
   mkdtemp,
   readFile,
@@ -273,6 +274,34 @@ async function setup() {
   );
   return { root, projects, commands };
 }
+
+it.each([false, true])("preserves requested case when renaming an existing leaf (folder: %s)", async (folder) => {
+  const { projects, commands } = await setup();
+  const cwd = projects[104].cwd;
+  const from = join(cwd, folder ? "folder" : "file.txt");
+  const name = folder ? "FOLDER" : "FILE.txt";
+  if (folder) {
+    await mkdir(from);
+    await writeFile(join(from, "retained.txt"), "retained");
+  } else await writeFile(from, "retained");
+  expect(await commands.run("rename_path", { path: from, name })).toBe(join(cwd, name).replaceAll("\\", "/"));
+  const names = await readdir(cwd);
+  expect(names).toContain(name);
+  expect(names).not.toContain(folder ? "folder" : "file.txt");
+  expect(await readFile(folder ? join(cwd, name, "retained.txt") : join(cwd, name), "utf8")).toBe("retained");
+});
+
+it("does not mistake an existing hard-link name for a case-insensitive spelling alias", async () => {
+  const { projects, commands } = await setup();
+  const cwd = projects[104].cwd;
+  const from = join(cwd, "source.txt");
+  const target = join(cwd, "other.txt");
+  await writeFile(from, "retained");
+  await link(from, target);
+  await expect(commands.run("rename_path", { path: from, name: "other.txt" })).rejects.toThrow("already exists");
+  expect(await readFile(from, "utf8")).toBe("retained");
+  expect(await readFile(target, "utf8")).toBe("retained");
+});
 
 it("admits a registered junction project and its worktree by physical root while rejecting escaping links", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-linked-project-")));

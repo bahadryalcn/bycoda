@@ -921,18 +921,29 @@ export class WorkspaceCommands {
       throw new Error("A file or folder name must be provided.");
     const { root, path: from } = await this.existing(input);
     const target = joined(dirname(input as string), name);
-    const { root: targetRoot, relative: rel } = await this.locate(target);
+    // Canonicalize the parent only: resolving an existing case-insensitive leaf
+    // would replace the requested spelling with the source's current spelling.
+    const { root: targetRoot, relative: rel } = await this.locate(dirname(target));
     if (targetRoot !== root) throw new Error("Cannot move a file between working copies.");
-    const to = workspacePath(root, rel);
+    const to = workspacePath(root, resolve(workspacePath(root, rel, true), basename(target)));
     if (to === from) return input as string;
-    if (
-      await lstat(to).then(
-        () => true,
-        () => false,
-      )
-    )
-      throw new Error(alreadyExists(name));
-    if (!relative(from, to).startsWith("..")) throw new Error("Cannot move a folder into itself.");
+    let spellingAlias = false;
+    const destination = await lstat(to, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (destination) {
+      const source = await lstat(from, { bigint: true });
+      spellingAlias =
+        dirname(from) === dirname(to) && source.ino !== 0n &&
+        source.dev === destination.dev && source.ino === destination.ino &&
+        !(await readdir(dirname(to))).includes(basename(to));
+      // Only a proven filesystem spelling alias may reuse an existing target.
+      // A distinct directory entry (even a hard link) must never be overwritten.
+      if (!spellingAlias) throw new Error(alreadyExists(name));
+    }
+    if (!spellingAlias && !relative(from, to).startsWith(".."))
+      throw new Error("Cannot move a folder into itself.");
     await mkdir(dirname(to), { recursive: true });
     await this.verifyExpectedPath(root, input, from, expectedHash);
     await rename(from, to);

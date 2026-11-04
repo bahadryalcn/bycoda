@@ -21,6 +21,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Preserve
 
+- Host rename canonicalizes the target parent while preserving requested leaf spelling. Case-insensitive aliases require exact filesystem identity; distinct existing entries, hard links and cross-workspace moves retain collision gates.
 - Keep project identity, displayed tree root and execution cwd distinct. Retain root event/hit-test ownership when moving header DOM.
 - Header, root/empty-area and item menus share create/rename admission; preserve the selected-file parent versus selected-folder target, name drafts, validation and duplicate-submit guard.
 - Retain range/multiple selection, keyboard/typeahead, context menus, drag/drop, clipboard, root exclusions and hidden-selection scope.
