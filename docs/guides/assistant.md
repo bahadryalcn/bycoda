@@ -77,6 +77,10 @@ left, grouped by day. Press **Enter** to send or **Shift+Enter** for a new line.
 Unsent drafts stay with their conversation. Message deletion, recorded actions
 and related work remain available beside each message; conversation actions live
 in the chat header. The voice launcher has its own space beside the composer.
+If a draft cannot be saved locally, the Room keeps it in this window and offers
+**Retry saving**. Save it before closing the window: an unsaved draft held only
+in memory cannot survive a full app exit. Job priority and replan requests wait
+until their original request can be saved locally before dispatch.
 
 Enter several requests in the Room or say them during voice chat. Review each
 request and its project before choosing **Start**. Keep the same request when

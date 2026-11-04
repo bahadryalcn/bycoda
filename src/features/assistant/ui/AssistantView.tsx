@@ -1,6 +1,6 @@
 import { AssistantMemoryPanel } from "./AssistantMemoryPanel";
 import { MemoryEditor } from "./MemoryEditor";
-import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import sessionStyles from "./AssistantSessions.module.css";
 import { AssistantSettings } from "./AssistantSettings";
 import { AssistantHistory } from "./AssistantHistory";
@@ -2223,6 +2223,12 @@ export function AssistantView(props: AssistantViewProps) {
 }
 
 type JobOwnerEditInput = Extract<AssistantRequest, { op: "jobs.replan" | "jobs.priority" }>;
+type JobOwnerDraft = {
+  feedback: string;
+  priority: "low" | "normal" | "high";
+  intent?: JobOwnerEditInput;
+};
+const unsavedJobOwnerDrafts = new Map<string, JobOwnerDraft>();
 function JobOwnerEditDialog({
   job,
   mode,
@@ -2242,11 +2248,9 @@ function JobOwnerEditDialog({
 }) {
   const formId = useId(),
     key = `bycoda.assistant.job-edit:${environmentId}:${job.id}:${mode}`;
-  const [draft, setDraft] = useState<{
-    feedback: string;
-    priority: "low" | "normal" | "high";
-    intent?: JobOwnerEditInput;
-  }>(() => {
+  const [draft, setDraft] = useState<JobOwnerDraft>(() => {
+    const unsaved = unsavedJobOwnerDrafts.get(key);
+    if (unsaved) return unsaved;
     try {
       const saved = JSON.parse(localStorage.getItem(key) ?? "null");
       if (
@@ -2264,6 +2268,7 @@ function JobOwnerEditDialog({
   const [pending, setPending] = useState(false),
     busy = useRef(false),
     [error, setError] = useState("");
+  const [draftStorageError, setDraftStorageError] = useState(() => unsavedJobOwnerDrafts.has(key));
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -2273,9 +2278,19 @@ function JobOwnerEditDialog({
   }, []);
   const live = useRef(current);
   live.current = current;
-  function retain(next: typeof draft) {
-    localStorage.setItem(key, JSON.stringify(next));
-    setDraft(next);
+  function retain(next: typeof draft, requirePersistence = false) {
+    if (!requirePersistence) setDraft(next);
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+      unsavedJobOwnerDrafts.delete(key);
+      setDraftStorageError(false);
+      if (requirePersistence) setDraft(next);
+      return true;
+    } catch {
+      if (!requirePersistence) unsavedJobOwnerDrafts.set(key, next);
+      setDraftStorageError(true);
+      return false;
+    }
   }
   function verify(next: AssistantJob | undefined) {
     if (
@@ -2333,7 +2348,12 @@ function JobOwnerEditDialog({
             };
       if (input.op === "jobs.replan" && !input.feedback)
         throw new Error("Describe the change before replanning.");
-      retain({ ...draft, intent: input });
+      if (!retain({ ...draft, intent: input }, true))
+        throw new Error(
+          t(
+            "Could not save this request locally. Your draft is kept in this window; retry saving before continuing.",
+          ),
+        );
       const next = verify((await request(input, environmentId)).job);
       if (
         next.version <= job.version ||
@@ -2414,6 +2434,14 @@ function JobOwnerEditDialog({
           </p>
         )}
         {error && <InlineError className={styles.error}>{error}</InlineError>}
+        {draftStorageError && (
+          <InlineError className={styles.error}>
+            {t("Could not save this draft. It is kept in this window.")}{" "}
+            <Button type="button" onClick={() => retain(draft)}>
+              {t("Retry saving")}
+            </Button>
+          </InlineError>
+        )}
       </form>
     </Modal>
   );
@@ -2551,6 +2579,9 @@ function JobRow({
   );
 }
 
+let unsavedConversationDrafts: Record<string, string> | undefined;
+const emptyAssistantMessages: AssistantMessage[] = [];
+
 function ConversationPanel({
   request,
   environmentId,
@@ -2658,12 +2689,20 @@ function ConversationPanel({
   const [project, setProject] = useState(initialProject);
   const [messages, setMessages] = useState<Record<string, AssistantMessage[]>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>(() => {
+    if (unsavedConversationDrafts) return { ...unsavedConversationDrafts };
     try {
       return JSON.parse(localStorage.getItem("bycoda.assistant.thread-drafts") ?? "{}");
     } catch {
       return {};
     }
   });
+  const draftsRef = useRef(drafts);
+  const [initialSavedDrafts] = useState<string | null>(() =>
+    unsavedConversationDrafts ? null : JSON.stringify(drafts),
+  );
+  const savedDrafts = useRef(initialSavedDrafts);
+  const maximumDraftTimer = useRef<number | undefined>(undefined);
+  const [draftSaveError, setDraftSaveError] = useState(!!unsavedConversationDrafts);
   const [pending, setPending] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [threadMenu, setThreadMenu] = useState<HTMLElement | null>(null);
@@ -2686,24 +2725,47 @@ function ConversationPanel({
   const [hasMore, setHasMore] = useState<Record<string, boolean>>({});
   const selected = useRef(threadId);
   selected.current = threadId;
-  const requestKey = useRef<
+  const [initialRequestKeys] = useState<
     Record<string, { text: string; key: string; environmentId?: string; sessionId?: string }>
-  >(
-    (() => {
-      try {
-        return JSON.parse(localStorage.getItem("bycoda.assistant.send-intents") ?? "{}");
-      } catch {
-        return {};
-      }
-    })(),
-  );
-  useEffect(() => {
+  >(() => {
     try {
-      localStorage.setItem("bycoda.assistant.thread-drafts", JSON.stringify(drafts));
+      return JSON.parse(localStorage.getItem("bycoda.assistant.send-intents") ?? "{}");
     } catch {
-      /* Keep editable memory. */
+      return {};
     }
-  }, [drafts]);
+  });
+  const requestKey = useRef(initialRequestKeys);
+  const flushDrafts = useCallback((report = true) => {
+    if (maximumDraftTimer.current !== undefined) {
+      window.clearTimeout(maximumDraftTimer.current);
+      maximumDraftTimer.current = undefined;
+    }
+    const serialized = JSON.stringify(draftsRef.current);
+    if (serialized === savedDrafts.current) return;
+    try {
+      localStorage.setItem("bycoda.assistant.thread-drafts", serialized);
+      savedDrafts.current = serialized;
+      unsavedConversationDrafts = undefined;
+      if (report) setDraftSaveError(false);
+    } catch {
+      unsavedConversationDrafts = { ...draftsRef.current };
+      if (report) setDraftSaveError(true);
+    }
+  }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => flushDrafts(), 400);
+    maximumDraftTimer.current ??= window.setTimeout(() => flushDrafts(), 2000);
+    return () => window.clearTimeout(timer);
+  }, [drafts, flushDrafts]);
+  useEffect(() => {
+    const flush = () => flushDrafts();
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flushDrafts(false);
+    };
+  }, [flushDrafts]);
+  useEffect(() => () => flushDrafts(false), [threadId, flushDrafts]);
   async function load(id: string, cursor?: Pick<AssistantMessage, "id" | "createdAt">) {
     if (!id || !threadVisible(id)) return;
     setPending(true);
@@ -2866,10 +2928,14 @@ function ConversationPanel({
           ],
         };
       });
-      setDrafts((current) => ({
-        ...current,
-        [threadId]: (current[threadId] ?? "").trim() === text ? "" : current[threadId],
-      }));
+      const currentDrafts = draftsRef.current;
+      const nextDrafts = {
+        ...currentDrafts,
+        [threadId]: (currentDrafts[threadId] ?? "").trim() === text ? "" : currentDrafts[threadId],
+      };
+      draftsRef.current = nextDrafts;
+      setDrafts(nextDrafts);
+      flushDrafts();
       delete requestKey.current[threadId];
       try {
         localStorage.setItem("bycoda.assistant.send-intents", JSON.stringify(requestKey.current));
@@ -2951,10 +3017,10 @@ function ConversationPanel({
       clearTimeout(timer);
     };
   }, [query]);
-  const visible = visibleAssistantMessages(
-    searchResults ?? messages[threadId] ?? [],
-    source,
-    privacy,
+  const currentMessages = searchResults ?? messages[threadId] ?? emptyAssistantMessages;
+  const visible = useMemo(
+    () => visibleAssistantMessages(currentMessages, source, privacy),
+    [currentMessages, source, privacy],
   );
   const supported = snapshot.capabilities.conversations;
   const currentThread = newerThread(
@@ -2993,6 +3059,122 @@ function ConversationPanel({
     });
   const time = (timestamp: number) =>
     new Date(timestamp).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  const messageElements = useMemo(
+    () =>
+      visible.map((message, index) => (
+        <Fragment key={message.id}>
+          {(index === 0 || day(visible[index - 1].createdAt) !== day(message.createdAt)) && (
+            <div className={styles.dayDivider}>{day(message.createdAt)}</div>
+          )}
+          <article className={styles.message} key={message.id} data-author={message.role}>
+            <div className={styles.messageMeta}>
+              <span>{message.role === "user" ? t("You") : snapshot.profile.name}</span>
+              <span>{t(message.via === "voice" ? "Voice" : "Text")}</span>
+              <time
+                dateTime={new Date(message.createdAt).toISOString()}
+                title={date(message.createdAt)}
+              >
+                {time(message.createdAt)}
+              </time>
+              <Button
+                iconOnly
+                label={t("Delete message")}
+                disabled={clearing}
+                onClick={() =>
+                  setConfirm({
+                    title: t("Delete message?"),
+                    message: message.text,
+                    confirmLabel: t("Delete"),
+                    onConfirm: async () => {
+                      if (!messageVisible(message)) return;
+                      await assistantRequest({
+                        op: "messages.delete",
+                        id: message.id,
+                        expectedVersion: message.version,
+                      });
+                      setMessages((current) => ({
+                        ...current,
+                        [message.threadId]: (current[message.threadId] ?? []).filter(
+                          (item) => item.id !== message.id,
+                        ),
+                      }));
+                      setSearchResults(
+                        (current) => current?.filter((item) => item.id !== message.id) ?? null,
+                      );
+                    },
+                  })
+                }
+              >
+                <Trash2 className="icon-xs" />
+              </Button>
+            </div>
+            {message.ownerQuestionId && (
+              <p className={styles.muted}>
+                {t(
+                  message.ownerQuestionAction === "snooze"
+                    ? "Question postponed"
+                    : "Answer recorded",
+                )}
+              </p>
+            )}
+            <p className={styles.prewrap}>{message.text}</p>
+            {!!message.toolActions?.length && (
+              <details className={styles.muted}>
+                <summary>
+                  {t("Recorded actions")} ({message.toolActions.length})
+                </summary>
+                <ul>
+                  {message.toolActions.map((action) => (
+                    <li key={action.id}>
+                      {action.family} · {action.action} —{" "}
+                      {t(action.status === "completed" ? "Completed" : "Outcome unknown")}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            {message.sessionId && onOpenSession && (
+              <Button variant="link" onClick={() => onOpenSession(message.sessionId!)}>
+                {t("Open session")}
+              </Button>
+            )}
+            {!!message.jobIds.length && (
+              <details className={styles.relatedWork}>
+                <summary>
+                  {t("Jobs")} ({message.jobIds.length})
+                </summary>
+                <div className={styles.stack}>
+                  {message.jobIds.map((id) => {
+                    const job = snapshot.jobs.find((job) => job.id === id);
+                    return job ? (
+                      <Button key={id} variant="link" onClick={() => onJob(id)}>
+                        {job.title}
+                      </Button>
+                    ) : (
+                      <span key={id} className={styles.muted}>
+                        {id}
+                      </span>
+                    );
+                  })}
+                </div>
+              </details>
+            )}
+          </article>
+        </Fragment>
+      )),
+    [
+      visible,
+      locale,
+      clearing,
+      snapshot.profile.name,
+      snapshot.jobs,
+      onOpenSession,
+      onJob,
+      privacy.key,
+      environmentId,
+      assistantRequest,
+    ],
+  );
   const threadLabel = currentThread?.projectId
     ? (projects.find((project) => (project.id ?? project.path) === currentThread.projectId)?.name ??
       currentThread.projectId)
@@ -3148,107 +3330,7 @@ function ConversationPanel({
               {t(threadId ? "No messages to display" : "Open a conversation to begin")}
             </p>
           )}
-          {visible.map((message, index) => (
-            <Fragment key={message.id}>
-              {(index === 0 || day(visible[index - 1].createdAt) !== day(message.createdAt)) && (
-                <div className={styles.dayDivider}>{day(message.createdAt)}</div>
-              )}
-              <article className={styles.message} key={message.id} data-author={message.role}>
-                <div className={styles.messageMeta}>
-                  <span>{message.role === "user" ? t("You") : snapshot.profile.name}</span>
-                  <span>{t(message.via === "voice" ? "Voice" : "Text")}</span>
-                  <time
-                    dateTime={new Date(message.createdAt).toISOString()}
-                    title={date(message.createdAt)}
-                  >
-                    {time(message.createdAt)}
-                  </time>
-                  <Button
-                    iconOnly
-                    label={t("Delete message")}
-                    disabled={clearing}
-                    onClick={() =>
-                      setConfirm({
-                        title: t("Delete message?"),
-                        message: message.text,
-                        confirmLabel: t("Delete"),
-                        onConfirm: async () => {
-                          if (!messageVisible(message)) return;
-                          await assistantRequest({
-                            op: "messages.delete",
-                            id: message.id,
-                            expectedVersion: message.version,
-                          });
-                          setMessages((current) => ({
-                            ...current,
-                            [message.threadId]: (current[message.threadId] ?? []).filter(
-                              (item) => item.id !== message.id,
-                            ),
-                          }));
-                          setSearchResults(
-                            (current) => current?.filter((item) => item.id !== message.id) ?? null,
-                          );
-                        },
-                      })
-                    }
-                  >
-                    <Trash2 className="icon-xs" />
-                  </Button>
-                </div>
-                {message.ownerQuestionId && (
-                  <p className={styles.muted}>
-                    {t(
-                      message.ownerQuestionAction === "snooze"
-                        ? "Question postponed"
-                        : "Answer recorded",
-                    )}
-                  </p>
-                )}
-                <p className={styles.prewrap}>{message.text}</p>
-                {!!message.toolActions?.length && (
-                  <details className={styles.muted}>
-                    <summary>
-                      {t("Recorded actions")} ({message.toolActions.length})
-                    </summary>
-                    <ul>
-                      {message.toolActions.map((action) => (
-                        <li key={action.id}>
-                          {action.family} · {action.action} —{" "}
-                          {t(action.status === "completed" ? "Completed" : "Outcome unknown")}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-                {message.sessionId && onOpenSession && (
-                  <Button variant="link" onClick={() => onOpenSession(message.sessionId!)}>
-                    {t("Open session")}
-                  </Button>
-                )}
-                {!!message.jobIds.length && (
-                  <details className={styles.relatedWork}>
-                    <summary>
-                      {t("Jobs")} ({message.jobIds.length})
-                    </summary>
-                    <div className={styles.stack}>
-                      {message.jobIds.map((id) => {
-                        const job = snapshot.jobs.find((job) => job.id === id);
-                        return job ? (
-                          <Button key={id} variant="link" onClick={() => onJob(id)}>
-                            {job.title}
-                          </Button>
-                        ) : (
-                          <span key={id} className={styles.muted}>
-                            {id}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </details>
-                )}
-              </article>
-            </Fragment>
-          ))}
+          {messageElements}
           {error && (
             <div className={styles.feedback} role="alert">
               <span>{error}</span>
@@ -3258,6 +3340,14 @@ function ConversationPanel({
             </div>
           )}
         </div>
+        {draftSaveError && (
+          <InlineError className={`${styles.error} shrink-0 px-5 py-2`}>
+            {t("Could not save this draft. It is kept in this window.")}{" "}
+            <Button type="button" onClick={() => flushDrafts()}>
+              {t("Retry saving")}
+            </Button>
+          </InlineError>
+        )}
         <div className={styles.composer}>
           <TextareaField
             label={t("Message {p0}", { p0: snapshot.profile.name })}
@@ -3285,6 +3375,7 @@ function ConversationPanel({
             }}
             onChange={(event) => {
               const value = event.currentTarget.value;
+              draftsRef.current = { ...draftsRef.current, [threadId]: value };
               setDrafts((current) => ({ ...current, [threadId]: value }));
             }}
           />

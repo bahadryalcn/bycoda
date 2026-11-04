@@ -10978,5 +10978,7 @@
   "Saved requests cannot be read. Sending is held until storage is available.": "Gespeicherte Anfragen können nicht gelesen werden. Das Senden wird angehalten, bis der Speicher verfügbar ist.",
   "1 saved request could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "1 gespeicherte Anfrage konnte nicht sicher abgeglichen werden. Prüfen Sie vor dem erneuten Senden die Unterhaltungen auf dem Host; die Anfrage wurde möglicherweise bereits ausgeführt.",
   "{p0} saved requests could not be safely reconciled. Check the conversations on the host before sending again; a request may already have run.": "{p0} gespeicherte Anfragen konnten nicht sicher abgeglichen werden. Prüfen Sie vor dem erneuten Senden die Unterhaltungen auf dem Host; eine Anfrage wurde möglicherweise bereits ausgeführt.",
-  "Archive reviewed request": "Geprüfte Anfrage archivieren"
+  "Archive reviewed request": "Geprüfte Anfrage archivieren",
+  "Could not save this draft. It is kept in this window.": "Dieser Entwurf konnte nicht gespeichert werden. Er bleibt in diesem Fenster erhalten.",
+  "Could not save this request locally. Your draft is kept in this window; retry saving before continuing.": "Diese Anfrage konnte nicht lokal gespeichert werden. Ihr Entwurf bleibt in diesem Fenster erhalten; versuchen Sie vor dem Fortfahren erneut zu speichern."
 }

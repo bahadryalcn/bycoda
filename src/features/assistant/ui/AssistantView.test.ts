@@ -67,6 +67,7 @@ vi.mock("../../../shared/i18n", () => ({
   translateAt: (_locale: string, key: string) => key,
 }));
 import { AssistantView } from "./AssistantView";
+import * as privacyModel from "../model/assistantPrivacy";
 import { AssistantSetup } from "./AssistantSetup";
 let root: Root | undefined, container: HTMLDivElement;
 function snapshot(): AssistantSnapshot {
@@ -839,6 +840,112 @@ async function renderConversationDraft() {
   await render({ initialTab: "conversations" });
   return container.querySelector<HTMLTextAreaElement>("textarea")!;
 }
+
+it("coalesces conversation draft writes while keeping current input", async () => {
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementation((input, environment) =>
+    input.op === "threads.messages"
+      ? Promise.resolve({
+          messages: Array.from({ length: 100 }, (_, index) => ({
+            id: `message-${index}`,
+            threadId: "keyboard-thread",
+            version: 1,
+            createdAt: index + 1,
+            updatedAt: index + 1,
+            role: "user",
+            via: "text",
+            text: `Message ${index}`,
+            jobIds: [],
+          })),
+        })
+      : base(input, environment),
+  );
+  const textarea = await renderConversationDraft();
+  expect(container.querySelectorAll("article")).toHaveLength(100);
+  const writes = vi.spyOn(localStorage, "setItem");
+  const project = vi.spyOn(privacyModel, "projectAssistantSnapshot");
+  const messages = vi.spyOn(privacyModel, "visibleAssistantMessages");
+  const formatDates = vi.spyOn(Date.prototype, "toLocaleDateString");
+  for (let index = 1; index <= 5; index++) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        textarea,
+        `draft ${index}`,
+      );
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+  expect(textarea.value).toBe("draft 5");
+  expect(
+    writes.mock.calls.filter(([key]) => key === "bycoda.assistant.thread-drafts"),
+  ).toHaveLength(0);
+  expect(project).toHaveBeenCalledTimes(0);
+  expect(messages).toHaveBeenCalledTimes(0);
+  expect(formatDates).toHaveBeenCalledTimes(0);
+  await click("Jobs");
+  expect(
+    writes.mock.calls.filter(([key]) => key === "bycoda.assistant.thread-drafts"),
+  ).toHaveLength(1);
+  expect(
+    JSON.parse(localStorage.getItem("bycoda.assistant.thread-drafts")!)["keyboard-thread"],
+  ).toBe("draft 5");
+  writes.mockRestore();
+  project.mockRestore();
+  messages.mockRestore();
+  formatDates.mockRestore();
+});
+
+it("retains an unsaved conversation draft across tab changes and retries storage", async () => {
+  const textarea = await renderConversationDraft();
+  const originalSet = localStorage.setItem.bind(localStorage);
+  const denied = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (key === "bycoda.assistant.thread-drafts") throw new Error("quota");
+    originalSet(key, value);
+  });
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      textarea,
+      "Unsaved reply",
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    window.dispatchEvent(new Event("pagehide"));
+  });
+  expect(document.body.textContent).toContain("Could not save this draft");
+  await click("Jobs");
+  await click("Conversations");
+  expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Unsaved reply");
+  denied.mockRestore();
+  await click("Retry saving");
+  expect(
+    JSON.parse(localStorage.getItem("bycoda.assistant.thread-drafts")!)["keyboard-thread"],
+  ).toBe("Unsaved reply");
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "threads.send")).toHaveLength(0);
+});
+
+it("flushes a continuously edited conversation draft within two seconds", async () => {
+  const textarea = await renderConversationDraft();
+  await act(async () => window.dispatchEvent(new Event("pagehide")));
+  vi.useFakeTimers();
+  const writes = vi.spyOn(localStorage, "setItem");
+  for (let index = 1; index <= 6; index++) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        textarea,
+        `continuous ${index}`,
+      );
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(350);
+    });
+  }
+  await act(async () => vi.advanceTimersByTime(300));
+  expect(
+    writes.mock.calls.filter(([key]) => key === "bycoda.assistant.thread-drafts"),
+  ).toHaveLength(1);
+  expect(
+    JSON.parse(localStorage.getItem("bycoda.assistant.thread-drafts")!)["keyboard-thread"],
+  ).toBe("continuous 6");
+  writes.mockRestore();
+});
 
 it("sends the retained chat draft with Enter and clears it only after a confirmed reply", async () => {
   const base = mock.request.getMockImplementation()!;
@@ -1960,6 +2067,76 @@ it("saves project priority through its captured Host and preserves exact uncerta
   expect(localStorage.getItem("bycoda.assistant.job-edit:room-fixture:job-one:replan")).toContain(
     frozen.feedback,
   );
+});
+
+it("keeps replan input editable and blocks dispatch while local storage is unavailable", async () => {
+  mock.snapshot!.jobs = [job()];
+  await render({ initialTab: "jobs" });
+  await click("Job actions");
+  await click("Replan");
+  const originalSet = localStorage.setItem.bind(localStorage);
+  const denied = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (key.includes("job-edit:")) throw new Error("quota");
+    originalSet(key, value);
+  });
+  const textarea =
+    document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Replan feedback"]') ??
+    document.querySelector<HTMLTextAreaElement>("[role=dialog] textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      textarea,
+      "Keep this feedback",
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(textarea.value).toBe("Keep this feedback");
+  expect(document.body.textContent).toContain("Could not save this draft");
+  await click("Replan");
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "jobs.replan")).toHaveLength(0);
+  await click("Close");
+  await click("Job actions");
+  await click("Replan");
+  expect(document.querySelector<HTMLTextAreaElement>("[role=dialog] textarea")?.value).toBe(
+    "Keep this feedback",
+  );
+  denied.mockRestore();
+  await click("Retry saving");
+  expect(
+    JSON.parse(localStorage.getItem("bycoda.assistant.job-edit:room-fixture:job-one:replan")!)
+      .feedback,
+  ).toBe("Keep this feedback");
+});
+
+it("keeps priority selection and blocks dispatch until its intent can be saved", async () => {
+  mock.snapshot!.jobs = [job()];
+  await render({ initialTab: "jobs" });
+  await click("Job actions");
+  await click("Priority");
+  const originalSet = localStorage.setItem.bind(localStorage);
+  const denied = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (key.includes("job-edit:")) throw new Error("quota");
+    originalSet(key, value);
+  });
+  await click("Priority: Normal");
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (item) => item.textContent === "High",
+  )!;
+  expect(option).toBeTruthy();
+  await act(async () => option.click());
+  expect(document.querySelector('[aria-label="Priority: High"]')).toBeTruthy();
+  expect(document.body.textContent).toContain("Could not save this draft");
+  await click("Save");
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "jobs.priority")).toHaveLength(0);
+  await click("Close");
+  await click("Job actions");
+  await click("Priority");
+  expect(document.querySelector('[aria-label="Priority: High"]')).toBeTruthy();
+  denied.mockRestore();
+  await click("Retry saving");
+  expect(
+    JSON.parse(localStorage.getItem("bycoda.assistant.job-edit:room-fixture:job-one:priority")!)
+      .priority,
+  ).toBe("high");
 });
 it("opens project goal and task links through the canonical job source and excludes quick actions", async () => {
   const original = job();
