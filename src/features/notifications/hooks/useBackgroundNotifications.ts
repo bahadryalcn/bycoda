@@ -1,5 +1,5 @@
-import { getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
+export { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
 import { useEffect, useRef } from "react";
 import {
   backgroundMachines,
@@ -19,39 +19,6 @@ import {
 import { loadNotificationsEnabled, notifyBackground } from "../model/notifications";
 
 const POLL_MS = 60_000;
-
-// Keep in sync with src-tauri/src/window.rs::is_workspace_window.
-function isWorkspaceWindow(label: string): boolean {
-  return (
-    label !== "quick-composer" &&
-    label !== "quick-composer-git" &&
-    !label.startsWith("voice-overlay-") &&
-    label !== "desktop-control-indicator"
-  );
-}
-
-/** Only one workspace window watches, so each change is announced once. */
-export async function isLeadWindow(): Promise<boolean> {
-  let own: string;
-  try {
-    own = getCurrentWindow().label;
-  } catch {
-    return false;
-  }
-  if (!isWorkspaceWindow(own)) return false;
-  try {
-    const labels = (await getAllWebviewWindows())
-      .map((window) => window.label)
-      .filter(isWorkspaceWindow)
-      .sort();
-    return (labels[0] ?? own) === own;
-  } catch {
-    // Window labels are unique. The canonical workspace remains a single
-    // fallback owner when enumeration is unavailable; unidentified windows
-    // cannot safely claim ownership.
-    return own === "main";
-  }
-}
 
 /** Watches every machine's task board, goals and background automations, with
  * or without their views open, and raises an OS notification when one

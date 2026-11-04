@@ -8,7 +8,9 @@ const api = vi.hoisted(() => ({
   }),
   claim: vi.fn(async () => []),
   queue: vi.fn(async () => {}),
+  lead: vi.fn(async () => true),
 }));
+vi.mock("../../../platform/tauri/workspaceWindows", () => ({ isLeadWindow: api.lead }));
 vi.mock("../../../features/automations/model/automations", () => ({
   recoverAutomationRuns: api.recover,
   claimDueAutomations: api.claim,

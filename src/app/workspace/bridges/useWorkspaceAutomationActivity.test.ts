@@ -6,7 +6,9 @@ const api = vi.hoisted(() => ({
   list: vi.fn(),
   tasks: vi.fn(),
   claim: vi.fn(),
+  lead: vi.fn(async () => true),
 }));
+vi.mock("../../../platform/tauri/workspaceWindows", () => ({ isLeadWindow: api.lead }));
 vi.mock("../../../features/automations/model/automations", () => ({
   listAutomations: api.list,
   automationTriggers: () => [{ kind: "tasks", event: "task_created" }],
@@ -20,6 +22,58 @@ vi.mock("../../../features/automations/model/workspaceAutomationEvents", async (
   claimWorkspaceAutomationRuns: api.claim,
 }));
 import { useWorkspaceAutomationActivity } from "./useWorkspaceAutomationActivity";
+
+it("skips follower source polling and resumes after leader transfer", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.lead.mockResolvedValue(false);
+  api.list.mockReset().mockResolvedValue([{ id: "automation", enabled: true }]);
+  api.tasks.mockReset().mockResolvedValue([]);
+  api.claim.mockReset().mockResolvedValue([]);
+  const recover = vi.fn(async () => {}), launch = vi.fn(async () => {});
+  function Probe() { useWorkspaceAutomationActivity({ ensureAutomationRecovery: recover, launchAutomation: launch }); return null; }
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    expect(api.list).not.toHaveBeenCalled();
+    expect(api.tasks).not.toHaveBeenCalled();
+    api.lead.mockResolvedValue(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(api.list).toHaveBeenCalledTimes(1);
+    expect(api.tasks).toHaveBeenCalledTimes(1);
+    api.lead.mockResolvedValue(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(api.list).toHaveBeenCalledTimes(1);
+    expect(launch).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    api.lead.mockResolvedValue(true);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("does not start source reads after an original leader check outlives unmount", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let release!: (lead: boolean) => void;
+  api.lead.mockImplementationOnce(() => new Promise<boolean>((resolve) => { release = resolve; }));
+  api.list.mockClear(); api.tasks.mockClear();
+  const recover = vi.fn(async () => {}), launch = vi.fn(async () => {});
+  function Probe() { useWorkspaceAutomationActivity({ ensureAutomationRecovery: recover, launchAutomation: launch }); return null; }
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () => root.unmount());
+    await act(async () => { release(true); });
+    expect(api.list).not.toHaveBeenCalled();
+    expect(api.tasks).not.toHaveBeenCalled();
+  } finally {
+    api.lead.mockResolvedValue(true);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("launches successful claims immediately and retains only failed events for the next poll", async () => {
   vi.useFakeTimers();

@@ -18,6 +18,8 @@ Source paths below are repository-relative.
 
 ## Workflow and contracts
 
+Automatic event/due/recovery polling belongs to one canonical workspace window, including background scheduling while hidden. Tool/overlay windows never own it. Leader election only reduces duplicate reads; persisted claim, recovery and execution admission remain authoritative, including explicit launches from another window.
+
 1. Trace schedule selection through occurrence claim, run admission, session creation
    and completion. Preserve timezone, project, provider, limits and native permissions.
 2. After an offline interval, claim only the newest overdue occurrence using the
