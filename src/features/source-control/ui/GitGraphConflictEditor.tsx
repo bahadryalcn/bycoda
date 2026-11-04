@@ -21,11 +21,7 @@ import { GitFeedback } from "./GitFeedback";
 import type { GraphRun } from "./GitGraphBranches";
 import { ConflictLayout, conflictSourcesFromMarkers } from "./ConflictLayout";
 import { MergeConflictEditor } from "./MergeConflictEditor";
-import {
-  detectLineEnding,
-  normalizeLineBreaks,
-  restoreLineEnding,
-} from "../../files/editor/editorDoc";
+import { restoreMixedLineEndings } from "../../files/editor/editorDoc";
 
 export function GitGraphConflictEditor({
   cwd,
@@ -145,10 +141,7 @@ export function GitGraphConflictEditor({
     const success = await runConflict("save", "Saving conflict resolution…", async () => {
       if ((await readTextFile(path)) !== loaded.disk)
         throw new Error(t("The file changed on disk. Reopen it before saving your resolution."));
-      const serialized = restoreLineEnding(
-        normalizeLineBreaks(draft),
-        detectLineEnding(loaded.disk),
-      );
+      const serialized = restoreMixedLineEndings(draft, loaded.disk);
       await writeTextFile(path, serialized);
       // Keep the editor aligned with disk even if staging subsequently fails.
       setLoaded({ ...loaded, disk: serialized });
@@ -188,10 +181,7 @@ export function GitGraphConflictEditor({
             throw new Error(
               t("The file changed on disk. Reopen it before saving your resolution."),
             );
-          const serialized = restoreLineEnding(
-            normalizeLineBreaks(text),
-            detectLineEnding(loaded.disk!),
-          );
+          const serialized = restoreMixedLineEndings(text, expectedDisk.current ?? loaded.disk!);
           await writeTextFile(path, serialized);
           expectedDisk.current = serialized;
         }}

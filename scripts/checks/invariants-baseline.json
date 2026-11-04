@@ -209,9 +209,6 @@
     "src-tauri/src/desktop_shortcut.rs": {
       "rust-emit-broadcast": 1
     },
-    "src-tauri/src/file_access.rs": {
-      "rust-rename-without-fsync": 2
-    },
     "src-tauri/src/fs.rs": {
       "rust-bufreader-lines-on-stream": 3,
       "rust-command-output-without-timeout": 5,

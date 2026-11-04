@@ -181,10 +181,11 @@ function fixture(
           size(payload.documentId + payload.path + value.metadata.windowLabel) +
           512,
         serializedTextDigest: hash(
-          payload.text.replace(
-            /\n/g,
-            payload.eol === "crlf" ? "\r\n" : payload.eol === "cr" ? "\r" : "\n",
-          ),
+          payload.serializedText ??
+            payload.text.replace(
+              /\n/g,
+              payload.eol === "crlf" ? "\r\n" : payload.eol === "cr" ? "\r" : "\n",
+            ),
         ),
       };
       rows.set(key, value);
@@ -323,6 +324,44 @@ describe("local Native editor recovery catalog and copy", () => {
       expect(f.puts()).toHaveLength(0);
     },
   );
+
+  it("restores an exact mixed-separator native draft and rejects tampered bytes", async () => {
+    const f = fixture();
+    const base = record("mixed", "a\nb\nc\n");
+    const payload = {
+      documentId: base.payload.documentId,
+      path: base.payload.path,
+      text: base.payload.text,
+      eol: base.payload.eol,
+      serializedText: "a\r\nb\nc\r",
+      diskBaseline: base.payload.diskBaseline,
+      revision: base.payload.revision,
+    };
+    const raw = JSON.stringify(payload);
+    const mixed = {
+      payload,
+      metadata: {
+        ...base.metadata,
+        payloadDigest: hash(raw),
+        serializedTextDigest: hash(payload.serializedText),
+        retainedBytes:
+          size(raw) + size(payload.documentId + payload.path + base.metadata.windowLabel) + 512,
+      },
+    };
+    f.rows.set(`${mixed.metadata.ownerId}:mixed`, mixed);
+    const source = locator(mixed);
+    const read = await f.readEditorDraftRecovery(source);
+    expect(read.payload.serializedText).toBe(payload.serializedText);
+    const prepared = await f.prepareEditorDraftRestore(source, { documentId: targetId });
+    expect(prepared.payload.serializedText).toBe(payload.serializedText);
+    f.rows.set(`${mixed.metadata.ownerId}:mixed`, {
+      ...mixed,
+      payload: { ...payload, serializedText: "wrong\r\n" },
+    });
+    await expect(f.readEditorDraftRecovery(source)).rejects.toMatchObject({
+      code: "invalid-response",
+    });
+  });
 
   it.each([
     "text",

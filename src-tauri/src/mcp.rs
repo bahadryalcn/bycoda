@@ -6,6 +6,8 @@ use tauri::State;
 
 use crate::dirs_home;
 use crate::fs::expand_home;
+#[path = "mcp_jsonc.rs"]
+mod jsonc;
 
 fn claude_desktop_config(home: &Path) -> PathBuf {
     #[cfg(target_os = "macos")]
@@ -363,15 +365,172 @@ fn write_json_server(path: &Path, name: &str, server: Value) -> Result<(), Strin
     })
 }
 
+fn same_config_identity(first: &std::fs::Metadata, next: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        first.dev() == next.dev() && first.ino() == next.ino() && first.mode() == next.mode()
+    }
+    #[cfg(not(unix))]
+    {
+        first.file_type() == next.file_type()
+            && first.len() == next.len()
+            && first.modified().ok() == next.modified().ok()
+            && first.permissions().readonly() == next.permissions().readonly()
+    }
+}
+
+#[cfg(unix)]
+fn config_file_identity(path: &Path, nofollow: bool) -> std::io::Result<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = if nofollow {
+        std::fs::symlink_metadata(path)?
+    } else {
+        std::fs::metadata(path)?
+    };
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(windows)]
+fn config_file_identity(path: &Path, nofollow: bool) -> std::io::Result<(u64, u64)> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_FLAG_OPEN_REPARSE_POINT,
+    };
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(if nofollow {
+            FILE_FLAG_OPEN_REPARSE_POINT
+        } else {
+            0
+        })
+        .open(path)?;
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, &mut info) } == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok((
+        info.dwVolumeSerialNumber as u64,
+        ((info.nFileIndexHigh as u64) << 32) | info.nFileIndexLow as u64,
+    ))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn config_file_identity(path: &Path, nofollow: bool) -> std::io::Result<(u64, u64)> {
+    let metadata = if nofollow {
+        std::fs::symlink_metadata(path)?
+    } else {
+        std::fs::metadata(path)?
+    };
+    Ok((
+        metadata.len(),
+        metadata
+            .modified()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64,
+    ))
+}
+
+fn publish_new_config(
+    temp: &Path,
+    target: &Path,
+    cleanup: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    std::fs::hard_link(temp, target)?;
+    if let Err(error) = cleanup(temp) {
+        eprintln!(
+            "MCP config saved; temporary cleanup failed at {}: {error}",
+            temp.display()
+        );
+    }
+    Ok(())
+}
+
+fn publish_config(temp: &Path, target: &Path, existed: bool) -> std::io::Result<()> {
+    if !existed {
+        return publish_new_config(temp, target, |path| std::fs::remove_file(path));
+    }
+    #[cfg(windows)]
+    if existed {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::ReplaceFileW;
+        let backup_path = target.with_file_name(format!(
+            ".{}.{}.backup",
+            target
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("mcp"),
+            uuid::Uuid::new_v4()
+        ));
+        let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+        let temp: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
+        let backup: Vec<u16> = backup_path
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        // ReplaceFileW preserves the existing target's ACL and metadata; failures
+        // are surfaced rather than silently dropping the security descriptor.
+        if unsafe {
+            ReplaceFileW(
+                target.as_ptr(),
+                temp.as_ptr(),
+                backup.as_ptr(),
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        } == 0
+        {
+            let error = std::io::Error::last_os_error();
+            return Err(std::io::Error::other(format!(
+                "Config replacement outcome unknown: {error}; recovery backup: {}",
+                backup_path.display()
+            )));
+        }
+        if let Err(error) = std::fs::remove_file(&backup_path) {
+            eprintln!(
+                "MCP config saved; backup cleanup failed at {}: {error}",
+                backup_path.display()
+            );
+        }
+        return Ok(());
+    }
+    // ast-grep-ignore: rust-rename-without-fsync -- caller syncs the temporary file before publication
+    std::fs::rename(temp, target)
+}
+
 fn write_json_config(
     path: &Path,
     update: impl FnOnce(&mut Value) -> Result<(), String>,
 ) -> Result<(), String> {
-    let parent = path.parent().ok_or("Invalid config path")?;
-    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    write_json_config_inner(path, update, || {}, publish_config)
+}
+
+fn write_json_config_inner(
+    path: &Path,
+    update: impl FnOnce(&mut Value) -> Result<(), String>,
+    before_publish: impl FnOnce(),
+    publish: impl FnOnce(&Path, &Path, bool) -> std::io::Result<()>,
+) -> Result<(), String> {
+    let selected_parent = path.parent().ok_or("Invalid config path")?;
+    std::fs::create_dir_all(selected_parent).map_err(|e| e.to_string())?;
+    let selected_metadata = std::fs::symlink_metadata(path).ok();
+    let target = match &selected_metadata {
+        Some(_) => std::fs::canonicalize(path)
+            .map_err(|e| format!("Cannot resolve existing config: {e}"))?,
+        None => selected_parent
+            .canonicalize()
+            .map_err(|e| e.to_string())?
+            .join(path.file_name().ok_or("Invalid config path")?),
+    };
+    let parent = target.parent().ok_or("Invalid config path")?;
     let lock_path = parent.join(format!(
         ".{}.lock",
-        path.file_name()
+        target
+            .file_name()
             .and_then(|part| part.to_str())
             .unwrap_or("mcp")
     ));
@@ -383,23 +542,53 @@ fn write_json_config(
         .open(lock_path)
         .map_err(|e| e.to_string())?;
     lock.lock().map_err(|e| e.to_string())?;
-    let mut root: Value = if path.exists() {
-        let raw = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        serde_json::from_str(&raw)
-            .or_else(|_| serde_json::from_str(&strip_jsonc(&raw)))
-            .map_err(|e| format!("Existing config is invalid JSON: {e}"))?
-    } else {
-        serde_json::json!({})
+    let selected_metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if std::fs::canonicalize(path)
+                .map_err(|e| format!("Cannot resolve existing config: {e}"))?
+                != target
+            {
+                return Err("Config target changed while waiting for the lock".into());
+            }
+            Some(metadata)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.to_string()),
     };
-    update(&mut root)?;
-    let encoded = serde_json::to_vec_pretty(&root).map_err(|e| e.to_string())?;
+    let original = match std::fs::read_to_string(&target) {
+        Ok(raw) => Some(raw),
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound && selected_metadata.is_none() =>
+        {
+            None
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    let metadata = if original.is_some() {
+        Some(std::fs::metadata(&target).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    let selected_identity = if selected_metadata.is_some() {
+        Some(config_file_identity(path, true).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    let target_identity = if metadata.is_some() {
+        Some(config_file_identity(&target, false).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    let encoded = jsonc::edit(original.as_deref().unwrap_or("{}"), update)?;
     let temporary = parent.join(format!(
         ".{}.{}.tmp",
-        path.file_name()
+        target
+            .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("mcp"),
         uuid::Uuid::new_v4()
     ));
+    let mut publication_attempted = false;
     let result = (|| -> std::io::Result<()> {
         use std::io::Write;
         let mut options = std::fs::OpenOptions::new();
@@ -410,14 +599,46 @@ fn write_json_config(
             options.mode(0o600);
         }
         let mut file = options.open(&temporary)?;
-        file.write_all(&encoded)?;
+        if let Some(metadata) = &metadata {
+            file.set_permissions(metadata.permissions())?;
+        }
+        file.write_all(encoded.as_bytes())?;
         file.sync_all()?;
-        std::fs::rename(&temporary, path)
+        drop(file);
+        before_publish();
+        let selected_now = std::fs::symlink_metadata(path).ok();
+        if selected_now.is_some() != selected_metadata.is_some()
+            || selected_identity.is_some()
+                && config_file_identity(path, true).ok() != selected_identity
+            || selected_now
+                .as_ref()
+                .is_some_and(|now| !same_config_identity(selected_metadata.as_ref().unwrap(), now))
+            || (selected_metadata.is_some()
+                && std::fs::canonicalize(path).ok().as_ref() != Some(&target))
+            || metadata.as_ref().is_some_and(|before| {
+                std::fs::metadata(&target)
+                    .ok()
+                    .is_none_or(|now| !same_config_identity(before, &now))
+            })
+            || target_identity.is_some()
+                && config_file_identity(&target, false).ok() != target_identity
+            || std::fs::read_to_string(&target).ok().as_deref() != original.as_deref()
+        {
+            return Err(std::io::Error::other("Config changed while saving; retry"));
+        }
+        publication_attempted = true;
+        publish(&temporary, &target, metadata.is_some())
     })();
-    if result.is_err() {
+    if result.is_err() && !(cfg!(windows) && publication_attempted && metadata.is_some()) {
         let _ = std::fs::remove_file(&temporary);
     }
-    result.map_err(|e| e.to_string())
+    result.map_err(|e| {
+        if cfg!(windows) && publication_attempted && metadata.is_some() {
+            format!("{e}; replacement recovery file: {}", temporary.display())
+        } else {
+            e.to_string()
+        }
+    })
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -788,7 +1009,9 @@ mod tests {
             r#"{"type":"local","command":["npx","-y","docs"],"environment":{"TOKEN":"{env:DOCS_TOKEN}"},"enabled":true}"#,
         ).unwrap();
         write_opencode_server(&path, "docs", server, 1).unwrap();
-        let config: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("// keep this setting"));
+        let config: Value = serde_json::from_str(&strip_jsonc(&raw)).unwrap();
         assert_eq!(config["theme"], "dark");
         assert_eq!(config["mcp"]["existing"]["url"], "https://example.com");
         assert_eq!(
@@ -991,7 +1214,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn replacing_config_restricts_permissions() {
+    fn replacing_config_preserves_permissions() {
         use std::os::unix::fs::PermissionsExt;
 
         let root = std::env::temp_dir().join(format!("bycoda-mcp-mode-{}", uuid::Uuid::new_v4()));
@@ -1002,7 +1225,7 @@ mod tests {
         write_json_server(&path, "new", serde_json::json!({"command":"npx"})).unwrap();
         assert_eq!(
             std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
+            0o644
         );
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1037,9 +1260,235 @@ mod tests {
         )
         .unwrap();
         write_json_server(&path, "new", serde_json::json!({"command":"npx"})).unwrap();
-        let value: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("// existing server"));
+        let value: Value = serde_json::from_str(&strip_jsonc(&raw)).unwrap();
         assert_eq!(value["mcpServers"]["old"]["command"], "node");
         assert_eq!(value["mcpServers"]["new"]["command"], "npx");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn jsonc_preserves_comments_order_crlf_and_string_markers() {
+        let root = std::env::temp_dir().join(format!("bycoda-mcp-cst-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        let original = "{\r\n  // leave this comment\r\n  \"url\": \"https://example.test/a//b\",\r\n  \"mcpServers\": {\r\n    \"old\": { \"command\": \"node\" }, // old server\r\n  },\r\n  \"after\": true\r\n}\r\n";
+        std::fs::write(&path, original).unwrap();
+        write_json_server(&path, "new", serde_json::json!({"command":"npx"})).unwrap();
+        let output = std::fs::read_to_string(&path).unwrap();
+        assert!(output.contains("// leave this comment\r\n"));
+        assert!(output.contains("https://example.test/a//b"));
+        assert!(output.contains("// old server\r\n"));
+        assert!(output.find("\"url\"").unwrap() < output.find("\"mcpServers\"").unwrap());
+        assert!(output.find("\"mcpServers\"").unwrap() < output.find("\"after\"").unwrap());
+        assert!(!output.replace("\r\n", "").contains('\n'));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn duplicate_or_invalid_jsonc_is_not_rewritten() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-mcp-invalid-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        for raw in [
+            r#"{"mcpServers":{},"mcpServers":{}}"#,
+            r#"{"other":{"same":1,"same":2}}"#,
+            r#"{"mcpServers": {"#,
+        ] {
+            std::fs::write(&path, raw).unwrap();
+            assert!(write_json_server(&path, "new", serde_json::json!({"command":"npx"})).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), raw);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn external_change_before_publication_is_not_overwritten() {
+        let root = std::env::temp_dir().join(format!("bycoda-mcp-race-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        std::fs::write(&path, r#"{"mcpServers":{}}"#).unwrap();
+        let result = write_json_config_inner(
+            &path,
+            |root| {
+                root["mcpServers"]["new"] = serde_json::json!({"command":"npx"});
+                Ok(())
+            },
+            || {
+                std::fs::write(&path, r#"{"external":true}"#).unwrap();
+            },
+            publish_config,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            r#"{"external":true}"#
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn publication_failure_does_not_report_success() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-mcp-publish-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        let original = r#"{"mcpServers":{}}"#;
+        std::fs::write(&path, original).unwrap();
+        let error = write_json_config_inner(
+            &path,
+            |value| {
+                value["mcpServers"]["new"] = serde_json::json!({"command":"npx"});
+                Ok(())
+            },
+            || {},
+            |_, _, _| Err(std::io::Error::other("injected replacement failure")),
+        )
+        .unwrap_err();
+        assert!(error.contains("injected replacement failure"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        #[cfg(windows)]
+        assert!(std::fs::read_dir(&root).unwrap().any(|entry| entry
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|ext| ext == "tmp")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn successful_new_publication_survives_temporary_cleanup_failure() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-mcp-cleanup-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let temporary = root.join("config.tmp");
+        let target = root.join("config.json");
+        std::fs::write(&temporary, b"saved").unwrap();
+        publish_new_config(&temporary, &target, |_| {
+            Err(std::io::Error::other("injected cleanup failure"))
+        })
+        .unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"saved");
+        assert_eq!(std::fs::read(&temporary).unwrap(), b"saved");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn replacement_preserves_existing_windows_alternate_stream() {
+        let root = std::env::temp_dir().join(format!("bycoda-mcp-stream-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        let stream = format!("{}:bycoda-mcp-test", path.display());
+        std::fs::write(&path, r#"{"mcpServers":{}}"#).unwrap();
+        std::fs::write(&stream, b"keep-stream").unwrap();
+        write_json_server(&path, "new", serde_json::json!({"command":"npx"})).unwrap();
+        assert_eq!(std::fs::read(&stream).unwrap(), b"keep-stream");
+        assert!(!std::fs::read_dir(&root).unwrap().any(|entry| entry
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|ext| ext == "backup")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn uncertain_replacement_keeps_original_backup_and_new_temporary_file() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-mcp-recovery-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("mcp.json");
+        let backup = root.join("simulated-replacement.backup");
+        let original = r#"{"mcpServers":{}}"#;
+        std::fs::write(&path, original).unwrap();
+        let error = write_json_config_inner(
+            &path,
+            |value| {
+                value["mcpServers"]["new"] = serde_json::json!({"command":"npx"});
+                Ok(())
+            },
+            || {},
+            |_, target, _| {
+                // ast-grep-ignore: rust-rename-without-fsync -- fault injection simulates a partial replacement
+                std::fs::rename(target, &backup)?;
+                Err(std::io::Error::other("injected partial replacement"))
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("replacement recovery file"));
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
+        let temp = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "tmp"))
+            .unwrap();
+        assert!(std::fs::read_to_string(temp).unwrap().contains("\"new\""));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn follows_existing_symlink_and_refuses_dangling_link() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("bycoda-mcp-link-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let target = root.join("target.json");
+        let link = root.join("mcp.json");
+        std::fs::write(&target, "{\"mcpServers\":{}} ").unwrap();
+        symlink(&target, &link).unwrap();
+        write_json_server(&link, "new", serde_json::json!({"command":"npx"})).unwrap();
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(std::fs::read_to_string(&target)
+            .unwrap()
+            .contains("\"new\""));
+        std::fs::remove_file(&target).unwrap();
+        assert!(write_json_server(&link, "other", serde_json::json!({"command":"npx"})).is_err());
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_swap_before_publication() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("bycoda-mcp-swap-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let first = root.join("first.json");
+        let second = root.join("second.json");
+        let link = root.join("mcp.json");
+        std::fs::write(&first, r#"{"mcpServers":{}}"#).unwrap();
+        std::fs::write(&second, r#"{"other":true}"#).unwrap();
+        symlink(&first, &link).unwrap();
+        let result = write_json_config_inner(
+            &link,
+            |value| {
+                value["mcpServers"]["new"] = serde_json::json!({"command":"npx"});
+                Ok(())
+            },
+            || {
+                std::fs::remove_file(&link).unwrap();
+                symlink(&second, &link).unwrap();
+            },
+            publish_config,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(&first).unwrap(),
+            r#"{"mcpServers":{}}"#
+        );
+        assert_eq!(
+            std::fs::read_to_string(&second).unwrap(),
+            r#"{"other":true}"#
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

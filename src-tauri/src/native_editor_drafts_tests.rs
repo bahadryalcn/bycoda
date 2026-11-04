@@ -75,6 +75,7 @@ fn capture(revision: u64, expected: Option<u64>, text: &str) -> PutDraft {
             .into_owned(),
         text: text.into(),
         eol: DraftEol::Crlf,
+        serialized_text: None,
         disk_baseline: "original\r\n".into(),
         revision,
         expected_revision: expected,
@@ -93,6 +94,41 @@ fn all(store: &SessionStore) -> DraftInventory {
         },
     )
     .unwrap()
+}
+
+#[test]
+fn mixed_serialized_text_is_retained_and_bound_to_normalized_text() {
+    let f = Fixture::new();
+    let mut input = capture(1, None, "one\ntwo\nthree\n");
+    input.serialized_text = Some("one\r\ntwo\nthree\r".into());
+    let receipt = f.put(input).unwrap();
+    assert_eq!(
+        receipt.record.serialized_text_digest,
+        sha(b"one\r\ntwo\nthree\r")
+    );
+    assert_eq!(
+        f.read().record.unwrap().payload.serialized_text.as_deref(),
+        Some("one\r\ntwo\nthree\r")
+    );
+    let mut invalid = capture(2, Some(1), "one\ntwo\nthree\n");
+    invalid.serialized_text = Some("different\r\n".into());
+    assert!(f.put(invalid).is_err());
+    assert_eq!(f.read().record.unwrap().payload.revision, 1);
+}
+
+#[test]
+fn oversized_mixed_capture_is_rejected_without_replacing_retained_draft() {
+    let f = Fixture::new();
+    f.put(capture(1, None, "retained")).unwrap();
+    let text = "a\nb\n".repeat(250_000);
+    let raw = "a\r\nb\n".repeat(250_000);
+    let mut large = capture(2, Some(1), &text);
+    large.disk_baseline = raw.clone();
+    large.serialized_text = Some(raw);
+    assert!(f.put(large).is_err());
+    let retained = f.read().record.unwrap();
+    assert_eq!(retained.payload.text, "retained");
+    assert_eq!(retained.payload.revision, 1);
 }
 
 #[test]
@@ -742,6 +778,7 @@ fn recovery_read_discloses_exact_active_foreign_record_without_mutation_or_retir
                 path: payload.path,
                 text: payload.text,
                 eol: payload.eol,
+                serialized_text: payload.serialized_text.clone(),
                 disk_baseline: payload.disk_baseline,
                 revision: 1,
                 expected_revision: None,

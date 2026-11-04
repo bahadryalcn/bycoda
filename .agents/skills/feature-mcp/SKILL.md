@@ -24,6 +24,7 @@ Use for Settings MCP list/discovery/add/login/remove/config and External MCP acc
 - Configured/Disabled are configuration evidence; do not relabel them Connected from a saved file or unsupported health probe.
 - Continuous rendering reveals cached full-array matches, preserving search, focus, expanded rows and scroll; it must not add network pages or repeat discovery/health per batch.
 - Add/login/remove/config actions retain explicit intent, native confirmation/scope selection, validation, locked write/merge protection, duplicate guards and draft recovery.
+- JSON/JSONC configuration edits preserve unrelated comments, property order and line endings through `src-tauri/src/mcp_jsonc.rs`. Resolve the existing symlink target, retain permissions, revalidate identity/content before publication, and keep recovery candidates after an uncertain native replacement. Invalid or duplicate-key configuration is never silently rewritten.
 - Incoming grants retain owning local Host, project/tool/read-write scope, expiry validation and owner credential gates. Write scope is not send/publish approval.
 - Secrets appear once in guarded memory, are absent from list results and stored hashed by the Host. Preserve loopback/header/env-var examples and private error handling.
 - Unknown create outcome blocks blind resubmission until reconciled; revoke changes local state only on confirmed success. Retain expired/revoked history and last-good data after failed reads.

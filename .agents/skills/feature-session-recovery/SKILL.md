@@ -36,6 +36,7 @@ Code paths below are repository-root relative.
 - Restore concerns saved chat splits, preserving unrelated new work; do not silently recreate stale editor/terminal panes or promise the entire workbench.
 - Preserve alias/existing-tab dedup, exact remote cwd/session identity, authored titles and provider context without restarting. A missing local session must not become a fabricated shell.
 - Retain serialized journal writes/rollback, pending duplicate guards and lock/privacy rechecks. Conversation maintenance cannot clear original file copies; unknown file-open/save outcomes retain their original identity.
+- Native editor copies may carry exact `serializedText` for mixed line endings. Validate its normalized text, digest and byte charge through capture, recovery and checkpoint proof; missing legacy values retain their original uniform-EOL interpretation. Existing record limits still apply, and rejected captures cannot claim durable recovery or a completed save.
 
 ## Verification and references
 

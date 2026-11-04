@@ -41,6 +41,12 @@ completed move, delete, paste or duplication. Clipboard failures remain local so
 you can retry deliberately. Empty, loading and failed folders have distinct states.
 
 Preview and Source keep their mounted document state when you switch modes.
+Saving preserves the existing LF, CRLF or CR separators, including mixed files.
+New line breaks use the file's most common separator; editing one line does not
+normalize every other line. Draft recovery retains the same separator information.
+If separators cannot be matched safely, saving stops and keeps the edited buffer
+for review and retry instead of changing the rest of the file.
+
 Use the eye and code icons in the upper right to switch modes; their tooltips
 show Preview and Source. In a Markdown preview, hold Ctrl and scroll the mouse
 wheel to zoom between 50% and 200%, or use the minus and plus controls. Click

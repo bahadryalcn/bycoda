@@ -1,5 +1,5 @@
-import { diff } from "@codemirror/merge";
-import type { Annotation, ChangeSpec } from "@codemirror/state";
+import { Chunk, diff } from "@codemirror/merge";
+import { Text, type Annotation, type ChangeSpec } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
 const DOC_DIFF = { scanLimit: 5_000, timeout: 100 };
@@ -16,15 +16,96 @@ export function normalizeLineBreaks(value: string): string {
 
 export type LineEnding = "\n" | "\r\n" | "\r";
 
-/** The convention a file used before normalization; mixed files report the
- * first flavor matched (CRLF wins over lone CR). */
+/** Most common separator, with first occurrence breaking ties; no breaks defaults to LF. */
 export function detectLineEnding(value: string): LineEnding {
-  return value.includes("\r\n") ? "\r\n" : value.includes("\r") ? "\r" : "\n";
+  const counts = new Map<LineEnding, number>();
+  for (const match of value.matchAll(/\r\n|\r|\n/g)) {
+    const ending = match[0] as LineEnding;
+    counts.set(ending, (counts.get(ending) ?? 0) + 1);
+  }
+  let best: LineEnding = "\n";
+  let maximum = 0;
+  for (const [ending, count] of counts)
+    if (count > maximum) {
+      best = ending;
+      maximum = count;
+    }
+  return best;
 }
 
-/** Re-apply a file's own line-ending convention to LF document text. */
+/** Re-apply a uniform convention where no per-break source exists. */
 export function restoreLineEnding(value: string, eol: LineEnding): string {
   return eol === "\n" ? value : value.replace(/\n/g, eol);
+}
+
+/** Preserve separators on unchanged characters; new separators use the source majority. */
+export function restoreMixedLineEndings(
+  value: string,
+  original: string,
+  fallback = detectLineEnding(original),
+): string {
+  const target = normalizeLineBreaks(value);
+  const baseline = normalizeLineBreaks(original);
+  if (target === baseline) return original;
+  const originalBreaks = new Map<number, LineEnding>();
+  let normalizedPosition = 0;
+  for (let i = 0; i < original.length; i++, normalizedPosition++) {
+    if (original[i] === "\r") {
+      const ending: LineEnding = original[i + 1] === "\n" ? "\r\n" : "\r";
+      originalBreaks.set(normalizedPosition, ending);
+      if (ending === "\r\n") i++;
+    } else if (original[i] === "\n") originalBreaks.set(normalizedPosition, "\n");
+  }
+  if (new Set(originalBreaks.values()).size <= 1) return restoreLineEnding(target, fallback);
+  const mapped = new Map<number, LineEnding>();
+  // Use deterministic limits for both passes: presentation chunks may expand changes.
+  const preservationDiff = { scanLimit: 5_000 };
+  const chunks = Chunk.build(
+    Text.of(baseline.split("\n")),
+    Text.of(target.split("\n")),
+    preservationDiff,
+  );
+  if (chunks.some((chunk) => !chunk.precise)) {
+    throw new Error(
+      "Cannot safely preserve mixed line endings for this edit. Keep the draft and retry with smaller edits.",
+    );
+  }
+  const changes = diff(baseline, target, preservationDiff);
+  let oldPosition = 0;
+  let newPosition = 0;
+  for (const change of [
+    ...changes,
+    { fromA: baseline.length, toA: baseline.length, fromB: target.length, toB: target.length },
+  ]) {
+    for (let i = oldPosition; i < change.fromA; i++) {
+      const ending = originalBreaks.get(i);
+      if (ending) mapped.set(newPosition + i - oldPosition, ending);
+    }
+    // Diff can place an insertion before the old line break. Keep that break
+    // attached to its original line rather than the newly inserted line.
+    if (
+      change.fromA === change.toA &&
+      baseline[change.fromA] === "\n" &&
+      target[change.fromB] === "\n" &&
+      change.toB > change.fromB
+    ) {
+      const ending = originalBreaks.get(change.fromA);
+      if (ending) {
+        mapped.set(change.fromB, ending);
+        originalBreaks.delete(change.fromA);
+      }
+    }
+    oldPosition = change.toA;
+    newPosition = change.toB;
+  }
+  let result = "";
+  let start = 0;
+  for (let i = 0; i < target.length; i++)
+    if (target[i] === "\n") {
+      result += target.slice(start, i) + (mapped.get(i) ?? fallback);
+      start = i + 1;
+    }
+  return result + target.slice(start);
 }
 
 export function editorDocChanges(from: string, to: string): ChangeSpec[] {

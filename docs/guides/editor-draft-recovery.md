@@ -5,6 +5,11 @@ edited in a local file. This is separate from saving the file. A failed recovery
 copy does not repeat a filesystem write, and retrying the copy does not save the
 file. Keep the editor open when it says that the copy could not be confirmed.
 
+Recovery copies retain mixed line endings along with the text. Restoring a copy
+keeps those separators for the next manual save instead of converting the entire
+file to one convention. A copy whose exact bytes cannot be verified remains an
+error rather than being treated as a confirmed save.
+
 During Native checkpoint preparation, affected file editors can temporarily
 become read-only. An already accepted format or save can finish. Preparation does
 not force-save your edits or commit unfinished IME input; external file changes

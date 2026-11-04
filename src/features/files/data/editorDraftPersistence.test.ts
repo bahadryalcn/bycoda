@@ -48,9 +48,10 @@ function nativeFixture() {
       payloadDigest: hash(JSON.stringify(payload)),
       textDigest: hash(payload.text),
       serializedTextDigest: hash(
-        payload.eol === "lf"
-          ? payload.text
-          : payload.text.replace(/\n/g, payload.eol === "crlf" ? "\r\n" : "\r"),
+        payload.serializedText ??
+          (payload.eol === "lf"
+            ? payload.text
+            : payload.text.replace(/\n/g, payload.eol === "crlf" ? "\r\n" : "\r")),
       ),
       baselineDigest: hash(payload.diskBaseline),
       retainedBytes: 1024,
@@ -229,6 +230,22 @@ describe("Native editor full capture ownership", () => {
     expect(f.row?.payload.text).toBe("");
     expect((await empty.persisted).record.revision).toBe(2);
     expect(f.row?.metadata.state).toBe("retained");
+  });
+
+  it("persists mixed separators and validates the exact saved-byte digest", async () => {
+    const f = nativeFixture();
+    await f.doc.ready;
+    const source = "first\r\nsecond\nthird\rfourth\r\n";
+    const ticket = f.doc.capture({
+      ...input("FIRST\nsecond\nthird\nfourth\n"),
+      diskBaseline: source,
+      lineEndingSource: source,
+    });
+    await f.doc.flush();
+    expect(f.row?.payload.serializedText).toBe("FIRST\r\nsecond\nthird\rfourth\r\n");
+    expect((await ticket.persisted).record.serializedTextDigest).toBe(
+      hash("FIRST\r\nsecond\nthird\rfourth\r\n"),
+    );
   });
 
   it("preserves leading BOM, JSON controls and line separators accepted by Native UTF8 strings", async () => {

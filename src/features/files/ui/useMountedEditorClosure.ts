@@ -129,6 +129,7 @@ export function exactMountedEditorDraftReceipt(
     path: string;
     text: string | null;
     eol: string;
+    serializedText?: string;
     diskBaseline: string | null;
   },
 ): NativeEditorDraftMetadata | null {
@@ -160,7 +161,13 @@ export function exactMountedEditorDraftReceipt(
     record.payload.path !== input.path ||
     record.payload.text !== input.text ||
     record.payload.diskBaseline !== input.diskBaseline ||
-    record.payload.eol !== input.eol
+    record.payload.eol !== input.eol ||
+    (input.serializedText !== undefined &&
+      (record.payload.serializedText ??
+        record.payload.text.replace(
+          /\n/g,
+          record.payload.eol === "crlf" ? "\r\n" : record.payload.eol === "cr" ? "\r" : "\n",
+        )) !== input.serializedText)
   )
     return null;
   return ack;

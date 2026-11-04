@@ -26,6 +26,7 @@ Use for privacy/masking preferences, password/lock options, hidden-group managem
 - Preserve password validation, explicit remove/reset consequences, cooldown, durable-write requirements and fingerprint revalidation across concurrent completion.
 - Unavailable/corrupt reads must not become no-password/empty/unprotected success. Keep drafts, pending ownership and recovery after partial write or dismissed dialogs.
 - Native file access remains local consent with canonical/private/path guards. Read-only Refresh differs from consent; preserve known/unknown outcome and readback after uncertain writes.
+- Native grant and access-mode writes sync before publication. Corrupt local files retain unique recovery evidence and reopen without deriving consent from their bytes; valid independent consent remains authoritative. I/O or quarantine failures stay explicit, and fresh access still requires the existing owner chooser/consent flow.
 - UI privacy does not encrypt files or stop background work; restyling grants no new Host/file/auth authority. Cached downstream summaries must apply current lock/visibility policy.
 
 ## Workflow and checks

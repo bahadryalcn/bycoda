@@ -58,6 +58,8 @@ struct EditorSnapshot {
     origin: String,
     text: String,
     eol: DraftEol,
+    #[serde(default)]
+    serialized_text: Option<String>,
     disk_baseline: String,
     dirty: bool,
     read_only: bool,
@@ -246,6 +248,12 @@ pub(crate) fn validate_capture_at(
             || record.payload.path != snapshot.path
             || record.payload.text != snapshot.text
             || record.payload.eol != snapshot.eol
+            || snapshot
+                .serialized_text
+                .as_ref()
+                .map_or(record.payload.serialized_text.is_some(), |text| {
+                    *text != super::serialized_text(&record.payload)
+                })
             || record.payload.disk_baseline != snapshot.disk_baseline
             || binding.known_revision != metadata.revision
             || binding.known_state != metadata.state

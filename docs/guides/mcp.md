@@ -31,6 +31,13 @@ Some MCP services use API keys or environment variables instead
 of OAuth; follow the service's setup instructions in the owning provider's config.
 The **Connection details** disclosure identifies that config file.
 
+Adding a Cursor, Claude Desktop or OpenCode server keeps unrelated JSON/JSONC
+settings, comments and property order. Existing symbolic links continue to point to the
+edited target. If the configuration is invalid, contains duplicate keys or changes
+while saving, the operation stops so you can inspect the file before retrying.
+An uncertain native replacement reports its retained recovery files; inspect the
+configuration before submitting the same change again.
+
 **External MCP access** is separate: its tokens allow another client to access
 bycoda's local Host. Creating one does not sign in to Cloudflare, Hostinger or any
 other outgoing MCP service.
