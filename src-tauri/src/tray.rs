@@ -330,7 +330,7 @@ fn build_menu(app: &AppHandle, name: &str, plan: &Plan) -> tauri::Result<Built> 
     );
     let mut targets = BTreeMap::new();
     let mut presence_targets = BTreeMap::new();
-    if rows.is_empty() {
+    if plan.rows.is_empty() {
         menu = menu.separator().item(
             &MenuItemBuilder::new(&plan.labels.empty)
                 .enabled(false)
@@ -346,7 +346,8 @@ fn build_menu(app: &AppHandle, name: &str, plan: &Plan) -> tauri::Result<Built> 
         (SessionStatus::Done, &plan.labels.done),
         (SessionStatus::Active, &plan.labels.recent),
     ] {
-        let group: Vec<_> = rows
+        let group: Vec<_> = plan
+            .rows
             .iter()
             .enumerate()
             .filter(|(_, (_, row))| row.status == status)
@@ -380,8 +381,7 @@ fn build_menu(app: &AppHandle, name: &str, plan: &Plan) -> tauri::Result<Built> 
     let effective = if plan.presence.status_error {
         crate::assistant_presence::Presence::Unknown
     } else {
-        state
-            .presence
+        plan.presence
             .status
             .as_ref()
             .map(|status| status.state.clone())
@@ -396,7 +396,7 @@ fn build_menu(app: &AppHandle, name: &str, plan: &Plan) -> tauri::Result<Built> 
     };
     let mut presence = SubmenuBuilder::new(app, format!("{}: {}", labels.availability, caption));
     let available = plan.presence.source_token.is_some()
-        && state
+        && plan
             .presence
             .status
             .as_ref()
@@ -674,6 +674,33 @@ mod tests {
         assert!(state.plan().is_none(), "committed menu is not rebuilt");
         state.rendered = None;
         assert!(state.plan().is_some(), "cleared memo forces a rebuild");
+    }
+
+    #[test]
+    fn plan_captures_rows_and_presence_before_state_changes() {
+        let mut state = TrayState::default();
+        state.windows.insert(
+            "main".into(),
+            vec![row("one", "one", SessionStatus::Working, true, 1)],
+        );
+        state.presence.source_token = Some("first".into());
+        state.presence.status = Some(crate::assistant_presence::Status {
+            state: crate::assistant_presence::Presence::Present,
+            setup_complete: true,
+            assistant_name: None,
+        });
+        let plan = state.plan().expect("menu plan");
+        state.windows.clear();
+        state.presence.source_token = Some("second".into());
+        state.presence.status = None;
+        assert_eq!(plan.rows.len(), 1);
+        assert_eq!(plan.rows[0].1.id, "one");
+        assert_eq!(plan.presence.source_token.as_deref(), Some("first"));
+        assert!(plan
+            .presence
+            .status
+            .as_ref()
+            .is_some_and(|status| status.setup_complete));
     }
 
     #[test]

@@ -139,3 +139,26 @@ test("only counts above the baseline fail, per file and rule", (t) => {
   const fixed = new Map([["src/features/demo/A.tsx", '<p className="text-ui-caption" />\n']]);
   assert.equal(checkUiDrift({ root, overrides: fixed }).improvements.length, 1);
 });
+
+test("alert container findings use a separate budget from p and span", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-ui-alert-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = "src/features/demo/A.tsx";
+  mkdirSync(dirname(join(root, file)), { recursive: true });
+  mkdirSync(join(root, "src/styles"), { recursive: true });
+  writeFileSync(join(root, "src/styles/arc.css"), arcCss);
+  writeFileSync(
+    join(root, file),
+    '<p role="alert" />\n<span role="alert" />\n<div role="alert" />\n<small role="alert" />\n<li role="alert" />\n<section role="alert" />\n',
+  );
+  mkdirSync(dirname(join(root, baselineFile)), { recursive: true });
+  writeFileSync(
+    join(root, baselineFile),
+    JSON.stringify({ schemaVersion: 1, counts: { [file]: { "role-alert-text": 2 } } }),
+  );
+  const result = checkUiDrift({ root });
+  assert.deepEqual(
+    result.regressions.map(({ rule, baseline, count }) => [rule, baseline, count]),
+    [["role-alert-container", 0, 4]],
+  );
+});

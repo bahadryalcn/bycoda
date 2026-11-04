@@ -17,6 +17,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { compareCounts, countFindings, sortedCounts } from "./check-ui-drift.mjs";
 
@@ -41,23 +42,20 @@ function run(root, command, args) {
   return result;
 }
 
-function binary(root, name) {
-  const file = path.join(
-    root,
-    "node_modules",
-    ".bin",
-    process.platform === "win32" ? `${name}.cmd` : name,
-  );
-  if (!fs.existsSync(file))
-    throw new Error(`${name} is not installed; run pnpm install before the invariants check`);
-  return file;
+function astGrepBinary(root) {
+  const installer = path.join(root, "node_modules", "@ast-grep", "cli", "postinstall.js");
+  if (!fs.existsSync(installer))
+    throw new Error("ast-grep is not installed; run pnpm install before the invariants check");
+  const binary = createRequire(import.meta.url)(installer).resolveBinaryPath();
+  if (!binary) throw new Error("ast-grep native binary is missing; install optional dependencies");
+  return binary;
 }
 
 /** ast-grep findings as { file, rule, line, text, message }. */
 export function scanAstGrep(root, files) {
   const targets = files ?? astGrepRoots.filter((dir) => fs.existsSync(path.join(root, dir)));
   if (!targets.length) return [];
-  const result = run(root, binary(root, "ast-grep"), [
+  const result = run(root, astGrepBinary(root), [
     "scan",
     "--config",
     astGrepConfig,

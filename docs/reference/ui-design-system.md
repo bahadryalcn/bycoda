@@ -858,7 +858,7 @@ and `bycoda.css`. The rules cover:
 - loaders without reduced-motion handling;
 - base-hue colour utilities;
 - native `title=` on actions;
-- hand-written `role="alert"` and `aria-live` on DOM elements, and `role=` passed to `<Alert>`;
+- hand-written `role="alert"` on `p`/`span` (`role-alert-text`) or `div`/`small`/`li`/`section` (`role-alert-container`), `aria-live` on DOM elements, and `role=` passed to `<Alert>`;
 - feature `createPortal` and `Popover role=menu`;
 - `hover:bg-*` recipes, opacity used as the disabled state, and fixed control heights;
 - raw `<button>`, `<input>`, `<select>`, `<textarea>`, `<a href>` and `target="_blank"` in

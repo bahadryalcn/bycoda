@@ -26,7 +26,8 @@ const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 /** A throwaway repository with the real rule set, configs and installed tools. */
 function fixtureRoot(t) {
-  const root = mkdtempSync(join(tmpdir(), "bycoda-invariants-"));
+  // Exercise direct process invocation with spaces in the working directory.
+  const root = mkdtempSync(join(tmpdir(), "bycoda invariants-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   cpSync(join(repoRoot, dirname(astGrepConfig)), join(root, dirname(astGrepConfig)), {
     recursive: true,

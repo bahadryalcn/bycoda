@@ -90,7 +90,6 @@ const readStdinText = async (limit?: number, message = "Input is too large."): P
     chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString("utf8");
-
 };
 const lifecycle = async (state: Running, action: "status" | "stop") => {
   let response: Response;
