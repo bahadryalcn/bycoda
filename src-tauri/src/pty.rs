@@ -193,7 +193,7 @@ struct LivePty {
     completion_shell: Option<String>,
     writer: Mutex<Box<dyn Write + Send>>,
     #[cfg(unix)]
-    master_fd: i32,
+    master_fd: std::fs::File,
     #[cfg(windows)]
     master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     pid: u32,
@@ -421,7 +421,6 @@ fn reap(kids: Vec<Arc<LivePty>>) {
         #[cfg(unix)]
         {
             hangup(live.pid);
-            close_fd(live.master_fd);
         }
         #[cfg(not(unix))]
         drop(live);
@@ -769,9 +768,9 @@ fn spawn_private_program(
 fn reattach(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
     #[cfg(unix)]
     {
-        resize_fd(live.master_fd, cols, rows)?;
+        resize_fd(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), cols, rows)?;
         let mut pgrp: libc::pid_t = 0;
-        if unsafe { libc::ioctl(live.master_fd, libc::TIOCGPGRP, &mut pgrp) } == 0 && pgrp > 1 {
+        if unsafe { libc::ioctl(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), libc::TIOCGPGRP, &mut pgrp) } == 0 && pgrp > 1 {
             unsafe {
                 libc::kill(-pgrp, libc::SIGWINCH);
             }
@@ -890,7 +889,7 @@ pub async fn pty_resize(
 fn resize_live(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
     #[cfg(unix)]
     {
-        resize_fd(live.master_fd, cols.max(2), rows.max(2))
+        resize_fd(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), cols.max(2), rows.max(2))
     }
     #[cfg(windows)]
     {
@@ -936,7 +935,7 @@ pub fn pty_status(
     }
     #[cfg(unix)]
     {
-        let foreground = foreground_label(live.master_fd, live.pid);
+        let foreground = foreground_label(std::os::fd::AsRawFd::as_raw_fd(&live.master_fd), live.pid);
         Ok(PtyStatus {
             foreground,
             supported: true,
@@ -1019,8 +1018,6 @@ pub fn pty_kill(window: tauri::Window, host: State<PtyHost>, id: String) -> Resu
         #[cfg(not(windows))]
         {
             terminate(live.pid);
-            #[cfg(unix)]
-            close_fd(live.master_fd);
         }
     }
     Ok(())
@@ -1058,11 +1055,13 @@ fn spawn_unix(
         crate::native_workspace::Activity::start(&app, &workdir, "terminal", None)?
     };
     use std::fs::File;
-    use std::os::unix::io::FromRawFd;
+    use std::os::unix::io::{AsRawFd, FromRawFd};
     use std::os::unix::process::CommandExt;
     use std::process::Command;
 
-    let (master, slave) = open_pty(cols, rows)?;
+    let (master_fd, slave_fd) = open_pty(cols, rows)?;
+    let master = unsafe { File::from_raw_fd(master_fd) };
+    let slave = unsafe { File::from_raw_fd(slave_fd) };
 
     let mut cmd = Command::new(&shell);
     if let Some(proxy) = &http_proxy {
@@ -1071,9 +1070,9 @@ fn spawn_unix(
     cmd.envs(env.iter().copied());
     cmd.args(&args)
         .current_dir(&workdir)
-        .stdin(dup_stdio(slave)?)
-        .stdout(dup_stdio(slave)?)
-        .stderr(dup_stdio(slave)?)
+        .stdin(dup_stdio(slave.as_raw_fd())?)
+        .stdout(dup_stdio(slave.as_raw_fd())?)
+        .stderr(dup_stdio(slave.as_raw_fd())?)
         .env("TERM", "xterm-256color")
         .env("COLORTERM", "truecolor")
         .env("COLORFGBG", "15;0")
@@ -1087,7 +1086,7 @@ fn spawn_unix(
     // setsid() already creates a new session and process group. Calling
     // process_group(0) first makes the child a group leader, so setsid()
     // fails with EPERM ("Operation not permitted").
-    let slave_fd = slave;
+    let slave_fd = slave.as_raw_fd();
     unsafe {
         cmd.pre_exec(move || {
             if libc::setsid() < 0 {
@@ -1102,26 +1101,23 @@ fn spawn_unix(
         });
     }
 
-    set_cloexec(master);
+    set_cloexec(master.as_raw_fd());
     let io = (|| -> Result<_, String> {
-        let reader = unsafe { File::from_raw_fd(dup_fd(master)?) };
-        let writer = unsafe { File::from_raw_fd(dup_fd(master)?) };
+        let reader = unsafe { File::from_raw_fd(dup_fd(master.as_raw_fd())?) };
+        let writer = unsafe { File::from_raw_fd(dup_fd(master.as_raw_fd())?) };
         Ok((reader, writer))
     })();
     let (reader, writer) = match io {
         Ok(io) => io,
         Err(error) => {
-            close_fd(slave);
-            close_fd(master);
             return Err(error);
         }
     };
     let spawned = cmd.spawn();
-    close_fd(slave);
+    drop(slave);
     let mut child = match spawned {
         Ok(child) => child,
         Err(error) => {
-            close_fd(master);
             return Err(format!("Failed to start {shell}: {error}"));
         }
     };
@@ -1251,10 +1247,7 @@ fn spawn_unix(
         // or yank the replacement out of the host map.
         let owner = if let Some(host) = wait_app.try_state::<PtyHost>() {
             release_held_output(&host, &wait_app, &wait_id, pid);
-            host.remove_if_pid(&wait_id, pid).map(|live| {
-                close_fd(live.master_fd);
-                live.owner_label()
-            })
+            host.remove_if_pid(&wait_id, pid).map(|live| live.owner_label())
         } else {
             None
         };
@@ -2248,11 +2241,25 @@ mod tests {
             cwd: std::path::PathBuf::from("/test"),
             completion_shell: None,
             writer: Mutex::new(Box::new(std::io::sink())),
-            master_fd: -1,
+            master_fd: std::fs::File::open("/dev/null").unwrap(),
             pid,
             owner: Arc::new(Mutex::new(owner.to_string())),
             output: Arc::default(),
         })
+    }
+
+    #[test]
+    fn master_descriptor_stays_owned_until_last_operation_finishes() {
+        use std::os::fd::AsRawFd;
+        let host = PtyHost::new();
+        let live = fake_pty(42, "owner");
+        let operation = Arc::clone(&live);
+        let fd = live.master_fd.as_raw_fd();
+        host.insert("held".to_string(), live);
+        drop(host.remove_if_pid("held", 42).unwrap());
+        assert_ne!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
+        assert_eq!(operation.master_fd.as_raw_fd(), fd);
+        drop(operation);
     }
 
     #[test]
@@ -2561,7 +2568,7 @@ mod queued_writer_tests {
             completion_shell: None,
             writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(Capture(tx))))),
             #[cfg(unix)]
-            master_fd: -1,
+            master_fd: std::fs::File::open("/dev/null").unwrap(),
             #[cfg(windows)]
             master: Mutex::new(pair.master),
             pid: 0,
@@ -2639,7 +2646,7 @@ mod queued_writer_tests {
                 release: release_rx,
             })),
             #[cfg(unix)]
-            master_fd: -1,
+            master_fd: std::fs::File::open("/dev/null").unwrap(),
             #[cfg(windows)]
             master: Mutex::new(pair.master),
             pid: 0,
@@ -2709,7 +2716,7 @@ mod queued_writer_tests {
                 completion_shell: None,
                 writer: Mutex::new(Box::new(Capture(tx))),
                 #[cfg(unix)]
-                master_fd: -1,
+                master_fd: std::fs::File::open("/dev/null").unwrap(),
                 #[cfg(windows)]
                 master: Mutex::new(pair.master),
                 pid: 0,
