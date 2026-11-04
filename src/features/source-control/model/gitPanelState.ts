@@ -1,3 +1,4 @@
+import { CheckoutCache } from "./checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
 import { pathKey } from "../../../shared/lib/paths";
 
@@ -48,7 +49,13 @@ function createEntry() {
 // Work and drafts belong to the checkout, not the lifetime of its visible panel.
 // Controllers and queues stay in memory; restarting the app never restores a
 // loading flag for a process that is no longer running.
-const entries = new Map<string, ReturnType<typeof createEntry>>();
+const entries = new CheckoutCache<string, ReturnType<typeof createEntry>>(
+  (entry) => entry.listeners.size > 0 || !!entry.backgroundFetch || !!entry.generateAbort.current ||
+    entry.fileActions.current.size > 0 || !!entry.state.busy || !!entry.state.pending ||
+    !!entry.state.status || !!entry.state.message || entry.state.generating ||
+    !!entry.state.stashAction || !!entry.state.amendTarget || !!entry.state.feedback,
+  (entry) => entry.state,
+);
 
 export function gitPanelRuntime(cwd: string) {
   cwd = pathKey(cwd);
@@ -60,10 +67,36 @@ export function gitPanelRuntime(cwd: string) {
   return entry;
 }
 
+/** Pin an actual asynchronous owner until its original work really settles. */
+export function retainGitPanelRuntime(cwd: string) {
+  const key = pathKey(cwd);
+  const release = entries.retain(key);
+  return { runtime: gitPanelRuntime(key), release };
+}
+
+export async function withGitPanelRuntime<T>(cwd: string, work: () => Promise<T>): Promise<T> {
+  const original = retainGitPanelRuntime(cwd);
+  try { return await work(); } finally { original.release(); }
+}
+
+/** Commit-time subscription rechecks canonical identity after an interrupted render. */
+export function useGitPanelRuntime(cwd: string) {
+  const checkout = pathKey(cwd);
+  const subscribe = useCallback((listener: () => void) => {
+    const entry = gitPanelRuntime(checkout);
+    entry.listeners.add(listener);
+    return () => { entry.listeners.delete(listener); entries.prune(); };
+  }, [checkout]);
+  const snapshot = useCallback(() => gitPanelRuntime(checkout), [checkout]);
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
+}
+
 export function setGitFeedback(cwd: string, feedback: GitOperationFeedback | null) {
   const entry = gitPanelRuntime(cwd);
   entry.state = { ...entry.state, feedback };
   entry.listeners.forEach((listener) => listener());
+  entries.refresh(pathKey(cwd));
+  entries.prune();
 }
 
 /** A remote-ref refresh does not own the local index/commit UI lease. */
@@ -74,6 +107,8 @@ export function withGitBackgroundFetch<T>(cwd: string, work: () => Promise<T>): 
     .then(work)
     .finally(() => {
       if (entry.backgroundFetch === pending) entry.backgroundFetch = null;
+      entries.refresh(pathKey(cwd));
+      entries.prune();
     });
   entry.backgroundFetch = pending;
   return pending;
@@ -95,31 +130,38 @@ export async function withGitOperation<T>(
   } finally {
     entry.state = { ...entry.state, busy: null, pending: null };
     entry.listeners.forEach((listener) => listener());
+    entries.refresh(pathKey(cwd));
+    entries.prune();
   }
 }
 
 export function useGitPanelState<K extends keyof PanelState>(cwd: string, key: K) {
-  const entry = gitPanelRuntime(cwd);
+  const checkout = pathKey(cwd);
   const subscribe = useCallback(
     (listener: () => void) => {
+      const entry = gitPanelRuntime(checkout);
       entry.listeners.add(listener);
       return () => {
         entry.listeners.delete(listener);
+        entries.prune();
       };
     },
-    [entry],
+    [checkout],
   );
-  const snapshot = useCallback(() => entry.state[key], [entry, key]);
+  const snapshot = useCallback(() => gitPanelRuntime(checkout).state[key], [checkout, key]);
   const value = useSyncExternalStore(subscribe, snapshot);
-  // Async continuations retain the entry they started with, even if the same
-  // component has since switched to another checkout.
+  // Capture checkout identity, not the component's next checkout. Clean idle
+  // entries may be re-created; drafts and original operations stay pinned.
   const setValue = useCallback(
     (next: PanelState[K]) => {
+      const entry = gitPanelRuntime(checkout);
       if (Object.is(entry.state[key], next)) return;
       entry.state = { ...entry.state, [key]: next };
       entry.listeners.forEach((listener) => listener());
+      entries.refresh(checkout);
+      entries.prune();
     },
-    [entry, key],
+    [checkout, key],
   );
   return [value, setValue] as const;
 }

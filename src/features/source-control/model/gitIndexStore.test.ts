@@ -25,6 +25,7 @@ import {
   notifyGitChangedWith,
   resetGitIndexStore,
 } from "./gitIndexStore";
+import { CHECKOUT_CACHE_ENTRIES } from "./checkoutCache";
 
 const index = (head: string) => ({ head, files: [] }) as never;
 
@@ -50,6 +51,37 @@ afterEach(() => {
 });
 
 describe("fetchGitIndex", () => {
+  it("re-reads evicted checkout snapshots but preserves original pending owners", async () => {
+    const gate = deferred<unknown>();
+    api.files.mockImplementation((cwd: string) => cwd === "/held" ? gate.promise : Promise.resolve(index(cwd)));
+    const original = fetchGitIndex("/held");
+    await fetchGitIndex("/idle");
+    for (let i = 0; i <= CHECKOUT_CACHE_ENTRIES; i++) await fetchGitIndex(`/other-${i}`);
+    const before = api.files.mock.calls.length;
+    expect(fetchGitIndex("/held")).toBe(original);
+    expect(api.files).toHaveBeenCalledTimes(before);
+    await fetchGitIndex("/idle");
+    expect(api.files).toHaveBeenCalledTimes(before + 1);
+    gate.resolve(index("settled"));
+    await original;
+  });
+  it("keeps superseded original flights owned across invalidation and cache pressure", async () => {
+    const old = deferred<unknown>(), current = deferred<unknown>();
+    api.files.mockImplementation((cwd: string) => cwd === "/held" ? old.promise : Promise.resolve(index(cwd)));
+    api.full.mockReturnValue(current.promise);
+    const first = fetchGitIndex("/held");
+    invalidateGitIndex("/held");
+    const second = fetchGitIndex("/held", { full: true });
+    current.resolve(index("current"));
+    await second;
+    for (let i = 0; i <= CHECKOUT_CACHE_ENTRIES; i++) await fetchGitIndex(`/other-${i}`);
+    const count = api.full.mock.calls.length;
+    expect(await fetchGitIndex("/held", { full: true })).toEqual(index("current"));
+    expect(api.full).toHaveBeenCalledTimes(count);
+    old.resolve(index("stale"));
+    await first;
+    expect(await fetchGitIndex("/held", { full: true })).toEqual(index("current"));
+  });
   it("shares a slow pending read after the completed-result freshness window", async () => {
     const gate = deferred<unknown>();
     api.files.mockReturnValue(gate.promise);

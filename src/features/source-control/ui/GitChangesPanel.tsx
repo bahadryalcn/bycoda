@@ -123,6 +123,8 @@ import { useConflictActions } from "../hooks/useConflictActions";
 import {
   gitPanelRuntime,
   useGitPanelState,
+  useGitPanelRuntime,
+  withGitPanelRuntime,
   setGitFeedback,
   withGitOperation,
   withGitBackgroundFetch,
@@ -782,7 +784,7 @@ function ChangedFiles({
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const failure = useRemoteLoadFailure(cwd, "changes");
   const messageRef = useRef<HTMLTextAreaElement>(null);
-  const runtime = gitPanelRuntime(cwd);
+  const runtime = useGitPanelRuntime(cwd);
   const generateAbortRef = runtime.generateAbort;
   const generationMutation = runtime.generationIndex;
   const fileActions = runtime.fileActions;
@@ -918,6 +920,7 @@ function ChangedFiles({
   };
 
   const confirmDefault = async (kind: "push" | "pr") => {
+    return withGitPanelRuntime(cwd, async () => {
     if (!onDefault || !index?.branch) return true;
     const branch = index.branch;
     return confirmNative(
@@ -925,6 +928,7 @@ function ChangedFiles({
         ? `Create a pull request from default branch "${branch}"?`
         : `Push to default branch "${branch}"?`,
     );
+    });
   };
 
   const run = async (
@@ -933,6 +937,7 @@ function ChangedFiles({
     confirmed = false,
     optimisticIndex?: GitDiffIndex,
   ) => {
+    return withGitPanelRuntime(cwd, async () => {
     const queue = fileActions.current;
     // File actions queue behind each other; any other action holds them off.
     if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
@@ -974,12 +979,14 @@ function ChangedFiles({
     onMutated(queue.paths.splice(0), "index");
     setBusy(null);
     setPending(null);
+    });
   };
 
   const runSelection = async (
     selectedFiles: GitChangedFile[],
     action: "stage" | "unstage" | "discard",
   ) => {
+    return withGitPanelRuntime(cwd, async () => {
     if (!selectedFiles.length) return;
     if (selectedFiles.length === 1) return run(selectedFiles[0], action);
     const queue = fileActions.current;
@@ -1026,9 +1033,11 @@ function ChangedFiles({
     onMutated(queue.paths.splice(0), "index");
     setBusy(null);
     setPending(null);
+    });
   };
 
   const runAll = async (action: "stage" | "unstage" | "discard") => {
+    return withGitPanelRuntime(cwd, async () => {
     if (gitPanelRuntime(cwd).state.busy) return;
     if (action === "discard") {
       const n = unstaged.length;
@@ -1069,9 +1078,11 @@ function ChangedFiles({
     } finally {
       setBusy(null);
     }
+    });
   };
 
   const runFolder = async (relative: string, action: "stage" | "unstage") => {
+    return withGitPanelRuntime(cwd, async () => {
     const queue = fileActions.current;
     if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
     if (queue.size === 0) setGitFeedback(cwd, null);
@@ -1099,19 +1110,24 @@ function ChangedFiles({
     onMutated(queue.paths.splice(0), "index");
     setBusy(null);
     setPending(null);
+    });
   };
 
   const toggleAmend = async () => {
+    return withGitPanelRuntime(cwd, async () => {
     setMenuOpen(false);
     await toggleAmendDraft();
+    });
   };
 
   const confirmAmend = async (amending: boolean) => {
+    return withGitPanelRuntime(cwd, async () => {
     if (!amending || !index?.headPushed) return true;
     return confirmNative(
       `Amend a commit that is already pushed? ${PRODUCT_IDENTITY.displayName} cannot push the result. You will need a force push from the terminal.`,
       "Amend",
     );
+    });
   };
 
   /**
@@ -1119,6 +1135,7 @@ function ChangedFiles({
    * amend, and whether to sign off. Without them this is the Commit button.
    */
   const commit = async (push: boolean, createPr = false, options?: CommitMenuOptions) => {
+    return withGitPanelRuntime(cwd, async () => {
     const amending = options ? options.amend : amend;
     if (runtime.state.generating || generateAbortRef.current) return;
     if (options ? busy : !canCommit) return;
@@ -1182,6 +1199,7 @@ function ChangedFiles({
       setBusy(null);
       setPending(null);
     }
+    });
   };
 
   useLayoutEffect(() => {
@@ -1193,6 +1211,7 @@ function ChangedFiles({
   });
 
   const sync = async () => {
+    return withGitPanelRuntime(cwd, async () => {
     if (!index || !(canSync || canPublish)) return;
     const pushesCommits = index.ahead > 0;
     if (gitPanelRuntime(cwd).state.busy) return;
@@ -1209,9 +1228,11 @@ function ChangedFiles({
     } finally {
       setBusy(null);
     }
+    });
   };
 
   async function openCreatedPr() {
+    return withGitPanelRuntime(cwd, async () => {
     const content = isRemoteProjectPath(cwd)
       ? await remotePrContent(cwd)
       : generationChoice
@@ -1241,9 +1262,11 @@ function ChangedFiles({
         url: url.trim(),
       });
     }
+    });
   }
 
   async function retryPublication(push: boolean, createPr: boolean, branch: string | null) {
+    return withGitPanelRuntime(cwd, async () => {
     let remainingPush = push;
     try {
       await withGitOperation(cwd, push ? "Pushing…" : "Creating pull request…", async () => {
@@ -1278,9 +1301,11 @@ function ChangedFiles({
       onMutated();
       reloadPr();
     }
+    });
   }
 
   const createPr = async () => {
+    return withGitPanelRuntime(cwd, async () => {
     if (!canCreatePr) return;
     if (!(await confirmDefault("pr"))) return;
     if (gitPanelRuntime(cwd).state.busy) return;
@@ -1312,6 +1337,7 @@ function ChangedFiles({
       setBusy(null);
       setPending(null);
     }
+    });
   };
 
   return (

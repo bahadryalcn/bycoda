@@ -4,7 +4,43 @@ import {
   resetGitPanelState,
   withGitOperation,
   withGitBackgroundFetch,
+  withGitPanelRuntime,
 } from "./gitPanelState";
+import { CHECKOUT_CACHE_ENTRIES } from "./checkoutCache";
+
+it("retains clean original runtime while an actual confirmation/preflight is pending", async () => {
+  resetGitPanelState();
+  const original = gitPanelRuntime("/confirmation");
+  let release!: () => void;
+  const work = withGitPanelRuntime("/confirmation", () => new Promise<void>((resolve) => { release = resolve; }));
+  for (let i = 0; i <= CHECKOUT_CACHE_ENTRIES; i++) gitPanelRuntime(`/other-${i}`);
+  expect(gitPanelRuntime("/confirmation")).toBe(original);
+  release();
+  await work;
+  for (let i = 0; i <= CHECKOUT_CACHE_ENTRIES; i++) gitPanelRuntime(`/after-${i}`);
+  expect(gitPanelRuntime("/confirmation")).not.toBe(original);
+});
+
+it("evicts clean idle runtimes while retaining drafts, selection and original operations", async () => {
+  resetGitPanelState();
+  const idle = gitPanelRuntime("/idle");
+  const draft = gitPanelRuntime("/draft");
+  draft.state.message = "Owner draft";
+  draft.state.amendTarget = { branch: "main", head: "original" };
+  let release!: () => void;
+  const original = gitPanelRuntime("/busy");
+  const work = withGitOperation("/busy", "Staging", () => new Promise<void>((resolve) => { release = resolve; }));
+  for (let i = 0; i <= CHECKOUT_CACHE_ENTRIES; i++) gitPanelRuntime(`/other-${i}`);
+  expect(gitPanelRuntime("/idle")).not.toBe(idle);
+  expect(gitPanelRuntime("/draft")).toBe(draft);
+  expect(draft.state.message).toBe("Owner draft");
+  expect(draft.state.amendTarget?.head).toBe("original");
+  expect(gitPanelRuntime("/busy")).toBe(original);
+  await expect(withGitOperation("/busy", "Reset", async () => {})).rejects.toThrow("Another Git operation");
+  release();
+  await work;
+  expect(original.state.busy).toBeNull();
+});
 
 it("shares background fetch without blocking or clearing an active local operation", async () => {
   resetGitPanelState();
