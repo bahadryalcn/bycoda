@@ -50,7 +50,7 @@ describe("host crews idle tick (perf)", () => {
     expect(read).toHaveBeenCalledOnce();
     expect(engine.command).not.toHaveBeenCalled();
   });
-  // Idle polling still checks authoritative bytes so another writer can activate a run.
+  // Idle polling still checks authoritative projection so another writer can activate a run.
   it("rechecks crew state without parsing unchanged idle history", async () => {
     const { store, crews, engine } = await setup();
     // Whatever the first tick needs to learn that nothing is running.
@@ -59,7 +59,7 @@ describe("host crews idle tick (perf)", () => {
     for (let i = 0; i < 5; i++) await crews.tick();
     expect(prepare).toHaveBeenCalledTimes(5);
     expect(
-      prepare.mock.calls.every(([sql]) => sql === "SELECT value FROM metadata WHERE key=?"),
+      prepare.mock.calls.every(([sql]) => sql.includes("FROM crew_scheduler_source_v1 source")),
     ).toBe(true);
     expect(engine.command).not.toHaveBeenCalled();
   });

@@ -24,7 +24,7 @@ Code paths below are repository-root relative.
 
 ## Preserve
 
-- Scheduler caches use exact persisted bytes and private cloned active snapshots only within bounded history-dominated rows. Recheck storage each tick; uncommitted and ineligible rows stay fresh.
+- Scheduler reads use a transactionally backfilled SQLite active-run projection maintained by metadata insert/update/delete triggers, including legacy writers. Invalid source fails closed; history remains canonical. Delivery updates preserve original coordinator and persisted command identity. SQLite JSON write/trigger traversal still scales with canonical state; active payloads are never truncated.
 
 - Retain every role/instruction, fixed/custom and automatic model choices, independent model settings, candidate ratings, scope/groups and defaults tombstones.
 - Saved-definition edits do not rewrite existing run/member/model snapshots. Device-local appearance must not change execution settings.
