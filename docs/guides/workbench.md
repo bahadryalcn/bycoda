@@ -63,6 +63,10 @@ recovery preserves its last activity time, so that maintenance alone does not
 move it to the top of the recent list. Existing timestamps changed by older
 versions cannot be reconstructed reliably.
 
+Menu actions apply to the focused workspace. Tray session actions open their owning
+window; terminal output, pinch zoom and reminder navigation stay with their target
+window. Shared preferences and reminder lists still update across workspaces.
+
 Reload asks for confirmation when this window has running local conversations or
 unsaved file changes. It interrupts this window's local conversations; work on a
 remote Host and work in other windows continue. Cancelling keeps the window open.

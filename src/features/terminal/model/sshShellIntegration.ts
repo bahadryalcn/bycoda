@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isSingleLineCommand } from "./terminalSuggestions";
 
@@ -70,6 +70,60 @@ export type SshShellController = ReturnType<typeof useSshShellIntegration>;
  * accepted, and native code still verifies every insertion.
  */
 export type SshShellPreview = { prefix: string; suggestions: string[] };
+
+type ShellSubscriber = { receive: (payload: unknown) => void; failed: () => void };
+const shellSubscribers = new Map<string, Set<ShellSubscriber>>();
+type ShellBridge = { ready: Promise<void>; stop?: () => void };
+let shellBridge: ShellBridge | undefined;
+
+function ensureShellBridge() {
+  if (!shellBridge) {
+    const bridge: ShellBridge = { ready: Promise.resolve() };
+    shellBridge = bridge;
+    bridge.ready = listenWindowAsync<unknown>("ssh-shell-state", ({ payload }) => {
+      if (shellBridge !== bridge || !payload || typeof payload !== "object") return;
+      const id = (payload as { id?: unknown }).id;
+      if (typeof id !== "string") return;
+      for (const entry of shellSubscribers.get(id) ?? []) entry.receive(payload);
+    }).then(
+      (stop) => {
+        if (shellBridge !== bridge) stop();
+        else bridge.stop = stop;
+      },
+      (error: unknown) => {
+        if (shellBridge === bridge) {
+          shellBridge = undefined;
+          for (const group of shellSubscribers.values()) for (const entry of group) entry.failed();
+        }
+        throw error;
+      },
+    );
+    void bridge.ready.catch(() => {});
+  }
+  return shellBridge!;
+}
+
+function subscribeShellState(id: string, subscriber: ShellSubscriber) {
+  const entries = shellSubscribers.get(id) ?? new Set<ShellSubscriber>();
+  entries.add(subscriber);
+  shellSubscribers.set(id, entries);
+  const bridge = ensureShellBridge();
+  let disposed = false;
+  return {
+    ready: bridge.ready,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      entries.delete(subscriber);
+      if (!entries.size && shellSubscribers.get(id) === entries) shellSubscribers.delete(id);
+      if (!shellSubscribers.size && shellBridge) {
+        const current = shellBridge;
+        shellBridge = undefined;
+        current.stop?.();
+      }
+    },
+  };
+}
 
 const PREVIEW_RETENTION_MS = 1500;
 
@@ -146,6 +200,7 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     state?.status !== "suggestions"
       ? { prefix: retained.prefix, suggestions: retained.suggestions }
       : undefined;
+  const listenerReady = useRef<Promise<void> | undefined>(undefined);
   const stateRef = useRef(state);
   useLayoutEffect(() => {
     stateRef.current = state;
@@ -158,67 +213,70 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     cancelPassive();
     if (!enabled) return;
     let disposed = false;
-    const listener = listen<unknown>("ssh-shell-state", (event) => {
-      if (disposed || !validSshShellState(event.payload, id)) return;
-      const value = event.payload;
-      if (value.status === "ready") {
-        const previousScope = trustedScope.current;
-        trustedScope.current = { host: value.host, user: value.user };
-        if (
-          previousScope &&
-          (previousScope.host !== value.host || previousScope.user !== value.user)
-        ) {
-          cancelPassive();
-          epoch.current += 1;
-          pending.current = false;
-          acknowledgement.current = undefined;
-          buffered.current = undefined;
-          clearTimer();
-          setWaitingFor(null);
-          setFailure(undefined);
-          clearPreview();
-          const reset = {
-            ...preferences.current,
-            revision: preferences.current.revision + 1,
-            automatic: false,
-            source: "commands" as const,
-          };
-          preferences.current = reset;
-          updatePreferences(reset);
-        }
-        if (pending.current) return;
-        passiveAllowed.current = true;
-        setSnapshotRevision(preferences.current.revision);
-        setState(value);
-        return;
-      }
-      if (value.status === "suggestions") {
-        if (!pending.current) return;
-        if (!acknowledgement.current) {
-          buffered.current = value;
+    const listener = subscribeShellState(id, {
+      receive: (payload) => {
+        if (disposed || !validSshShellState(payload, id)) return;
+        const value = payload;
+        if (value.status === "ready") {
+          const previousScope = trustedScope.current;
+          trustedScope.current = { host: value.host, user: value.user };
+          if (
+            previousScope &&
+            (previousScope.host !== value.host || previousScope.user !== value.user)
+          ) {
+            cancelPassive();
+            epoch.current += 1;
+            pending.current = false;
+            acknowledgement.current = undefined;
+            buffered.current = undefined;
+            clearTimer();
+            setWaitingFor(null);
+            setFailure(undefined);
+            clearPreview();
+            const reset = {
+              ...preferences.current,
+              revision: preferences.current.revision + 1,
+              automatic: false,
+              source: "commands" as const,
+            };
+            preferences.current = reset;
+            updatePreferences(reset);
+          }
+          if (pending.current) return;
+          passiveAllowed.current = true;
+          setSnapshotRevision(preferences.current.revision);
+          setState(value);
           return;
         }
-        if (value.requestId !== acknowledgement.current) return;
-      } else {
-        passiveAllowed.current = value.promptReady === true;
-        cancelPassive();
-      }
-      pending.current = false;
-      buffered.current = undefined;
-      clearTimer();
-      setWaitingFor(null);
-      clearPreview();
-      setFailure(
-        value.status === "unavailable"
-          ? { id, message: "No safe matching suggestions." }
-          : undefined,
-      );
-      setSnapshotRevision(preferences.current.revision);
-      setState(value);
+        if (value.status === "suggestions") {
+          if (!pending.current) return;
+          if (!acknowledgement.current) {
+            buffered.current = value;
+            return;
+          }
+          if (value.requestId !== acknowledgement.current) return;
+        } else {
+          passiveAllowed.current = value.promptReady === true;
+          cancelPassive();
+        }
+        pending.current = false;
+        buffered.current = undefined;
+        clearTimer();
+        setWaitingFor(null);
+        clearPreview();
+        setFailure(
+          value.status === "unavailable"
+            ? { id, message: "No safe matching suggestions." }
+            : undefined,
+        );
+        setSnapshotRevision(preferences.current.revision);
+        setState(value);
+      },
+      failed: () => {
+        if (!disposed) setFailure({ id, message: "Remote shell integration is unavailable" });
+      },
     });
-    void listener.catch(() => {
-      if (!disposed) setFailure({ id, message: "Remote shell integration is unavailable" });
-    });
+    listenerReady.current = listener.ready;
     return () => {
       disposed = true;
       passiveAllowed.current = false;
@@ -227,7 +285,8 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
       epoch.current += 1;
       clearTimer();
       clearPreview();
-      void listener.then((unlisten) => unlisten()).catch(() => undefined);
+      listenerReady.current = undefined;
+      listener.dispose();
     };
   }, [id, enabled, clearTimer, cancelPassive, clearPreview]);
 
@@ -259,6 +318,10 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
         }
       }, 2500);
       try {
+        if (!listenerReady.current) throw new Error("Remote shell integration is unavailable");
+        listenerReady.current = ensureShellBridge().ready;
+        await listenerReady.current;
+        if (current !== epoch.current || !pending.current) return;
         const requestId = await invoke<string>("ssh_terminal_suggestions_request", {
           id,
           ...(requestedSource ? { source: requestedSource } : {}),

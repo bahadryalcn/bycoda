@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { message } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { loadNotificationsEnabled, NOTIFICATIONS_CHANGE_EVENT } from "../model/notifications";
@@ -166,7 +166,9 @@ export function useSessionReminders(
       }
     };
     const subscribe = async (event: string, handler: () => void) => {
-      const unlisten = await listen(event, handler);
+      const unlisten = await listenWindowAsync(event, () => {
+        if (!disposed) handler();
+      });
       if (disposed) unlisten();
       else subscriptions.push(unlisten);
     };

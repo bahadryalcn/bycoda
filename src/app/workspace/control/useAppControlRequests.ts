@@ -1,7 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { flushSync } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindow } from "../../../platform/tauri/listenWindow";
 import { handleAgentApp, type AppSessionListing } from "../../../features/agent-app/model/agentApp";
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
 import { localReferenceForSession } from "../../../features/sessions/model/localSessionNavigation";
@@ -39,7 +39,8 @@ export function useAppControlRequests({
   const appReceipts = useRef(new Map<string, { signature: string; promise: Promise<unknown> }>());
 
   useEffect(() => {
-    const listening = listen<{
+    let disposed = false;
+    const unlisten = listenWindow<{
       id: string;
       namespace: string;
       sessionId: string;
@@ -47,6 +48,7 @@ export function useAppControlRequests({
       action: string;
       input: Record<string, unknown>;
     }>("bycoda-control-request", ({ payload }) => {
+      if (disposed) return;
       const receivedAt = Date.now();
       const handle = async () => {
         if (payload.namespace === "control") {
@@ -568,7 +570,8 @@ export function useAppControlRequests({
         .catch(console.error);
     });
     return () => {
-      void listening.then((unlisten) => unlisten());
+      disposed = true;
+      unlisten();
     };
   }, []);
 }

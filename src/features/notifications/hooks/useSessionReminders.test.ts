@@ -18,6 +18,9 @@ const { invoke, listen, message } = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "main" }),
+}));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ message }));
 vi.mock("../../settings/model/sounds", () => ({
   loadSoundsEnabled: () => false,
@@ -34,6 +37,7 @@ let api: ReturnType<typeof useSessionReminders>;
 let stored: SessionReminder[];
 let pending: ReminderTarget | null;
 let listeners: Map<string, Set<() => void>>;
+let listenerTargets: Map<() => void, string | undefined>;
 const onOpen = vi.fn();
 const ensureSaved = vi.fn();
 const reminder: SessionReminder = {
@@ -70,9 +74,12 @@ async function mount() {
   await act(async () => root.render(createElement(StrictMode, null, createElement(Harness))));
 }
 
-async function emit(event: string) {
+async function emit(event: string, target?: string) {
   await act(async () => {
-    listeners.get(event)?.forEach((listener) => listener());
+    listeners.get(event)?.forEach((listener) => {
+      const owner = listenerTargets.get(listener);
+      if (!target || !owner || owner === target) listener();
+    });
   });
 }
 
@@ -82,6 +89,7 @@ beforeEach(() => {
   stored = [{ ...reminder }];
   pending = null;
   listeners = new Map();
+  listenerTargets = new Map();
   onOpen.mockReset().mockResolvedValue(undefined);
   ensureSaved.mockReset().mockResolvedValue(undefined);
   message.mockReset();
@@ -112,11 +120,19 @@ beforeEach(() => {
       );
     }
   });
-  listen.mockReset().mockImplementation(async (event: string, handler: () => void) => {
-    if (!listeners.has(event)) listeners.set(event, new Set());
-    listeners.get(event)!.add(handler);
-    return () => listeners.get(event)?.delete(handler);
-  });
+  listen
+    .mockReset()
+    .mockImplementation(
+      async (event: string, handler: () => void, options?: { target?: string }) => {
+        if (!listeners.has(event)) listeners.set(event, new Set());
+        listeners.get(event)!.add(handler);
+        listenerTargets.set(handler, options?.target);
+        return () => {
+          listenerTargets.delete(handler);
+          listeners.get(event)?.delete(handler);
+        };
+      },
+    );
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -126,6 +142,30 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("opens only the addressed window while shared reminder changes still refresh", async () => {
+  await mount();
+  pending = { sessionId: reminder.sessionId, dueAt: reminder.dueAt };
+  const reads = () => invoke.mock.calls.filter(([command]) => command === "reminder_take_open");
+  const initialReads = reads().length;
+  await emit(REMINDER_OPEN, "other-window");
+  expect(reads()).toHaveLength(initialReads);
+  expect(onOpen).not.toHaveBeenCalled();
+  await emit(REMINDER_OPEN, "main");
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(reminder.sessionId);
+  stored = [{ ...reminder, title: "Changed in another window" }];
+  await emit(REMINDERS_CHANGED);
+  expect(api.reminders[0].title).toBe("Changed in another window");
+});
+
+it("ignores a queued reminder callback after its workspace unmounts", async () => {
+  await mount();
+  const receive = [...listeners.get(REMINDER_OPEN)!][0];
+  await act(async () => root.render(null));
+  invoke.mockClear();
+  await act(async () => receive());
+  expect(invoke).not.toHaveBeenCalled();
 });
 
 describe("saved session reminders", () => {

@@ -1,5 +1,6 @@
 import { useEffect, type Dispatch, type SetStateAction } from "react";
-import { emit, listen } from "@tauri-apps/api/event";
+import { emit } from "@tauri-apps/api/event";
+import { listenWindow, listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import type { HarnessId } from "../../sessions/model/session";
 import {
   applyQuickCatalog,
@@ -46,9 +47,7 @@ export function useQuickNativeListeners({
   setAvailableHarnesses,
 }: QuickNativeListeners) {
   useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void listen(QUICK_COMPOSER_SHOWN_EVENT, () => {
+    const unlisten = listenWindow(QUICK_COMPOSER_SHOWN_EVENT, () => {
       onShown();
       if (!owner.canMutate()) return;
       const nextProjects = loadQuickProjects();
@@ -62,17 +61,11 @@ export function useQuickNativeListeners({
       setChoice(nextChoice);
       setModelSettings({});
       resetTransient();
-      void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, nextChoice.harness);
+      void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, nextChoice.harness).catch(() => undefined);
       focusPrompt();
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
     });
     focusPrompt();
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
+    return unlisten;
   }, [
     focusPrompt,
     onShown,
@@ -88,17 +81,21 @@ export function useQuickNativeListeners({
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listen(QUICK_COMPOSER_CATALOG_EVENT, (event) => {
-      const available = applyQuickCatalog(event.payload);
-      if (available) setAvailableHarnesses(available);
-    }).then((stop) => {
-      if (disposed) {
-        stop();
-        return;
+    void listenWindowAsync(QUICK_COMPOSER_CATALOG_EVENT, (event) => {
+      if (!disposed) {
+        const available = applyQuickCatalog(event.payload);
+        if (available) setAvailableHarnesses(available);
       }
-      unlisten = stop;
-      void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, initialQuickChoice().harness);
-    });
+    })
+      .then(async (stop) => {
+        if (disposed) {
+          stop();
+          return;
+        }
+        unlisten = stop;
+        await emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, initialQuickChoice().harness);
+      })
+      .catch(() => undefined);
     return () => {
       disposed = true;
       unlisten?.();

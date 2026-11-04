@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "window-a" }),
+}));
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, isTauri: () => true }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
@@ -28,6 +31,9 @@ describe("native image pinch claims", () => {
     expect(second).toHaveBeenCalledWith(0.2);
     expect(first).not.toHaveBeenCalled();
     releaseSecond();
+    expect(mocks.listen).toHaveBeenCalledWith("trackpad_magnify", expect.any(Function), {
+      target: "window-a",
+    });
     callbacks[0]({ payload: 0.3 });
     expect(first).toHaveBeenCalledWith(0.3);
     releaseFirst();
@@ -66,6 +72,23 @@ describe("native image pinch claims", () => {
     await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce());
     expect(mocks.invoke).toHaveBeenCalledWith("set_trackpad_zoom_enabled", { enabled: false });
     release();
+    warning.mockRestore();
+  });
+  it("retries a failed scoped registration on the next claim", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const stop = vi.fn();
+    mocks.listen.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(stop);
+    const { claimTrackpadMagnify } = await import("./trackpadZoom");
+    const first = claimTrackpadMagnify(vi.fn());
+    await vi.waitFor(() => expect(warning).toHaveBeenCalled());
+    expect(mocks.invoke).not.toHaveBeenCalledWith("set_trackpad_zoom_enabled", { enabled: true });
+    const second = claimTrackpadMagnify(vi.fn());
+    await vi.waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("set_trackpad_zoom_enabled", { enabled: true }),
+    );
+    first();
+    second();
+    await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce());
     warning.mockRestore();
   });
 });

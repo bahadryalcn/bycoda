@@ -2,7 +2,8 @@ import { probeHarnessAvailability } from "../../../integrations/harness/core/ava
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit, listen, type Event } from "@tauri-apps/api/event";
+import { emit, type Event } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import {
   loadQuickComposerEnabled,
   subscribeQuickComposerEnabled,
@@ -69,7 +70,9 @@ export function useQuickComposerLaunches(
     const onFocus = () => void take();
     const subscriptions: Array<() => void> = [];
     const subscribe = async (event: string, handler: (event: Event<unknown>) => void) => {
-      const stop = await listen(event, handler);
+      const stop = await listenWindowAsync(event, (message) => {
+        if (!disposed) handler(message);
+      });
       if (disposed) stop();
       else subscriptions.push(stop);
     };
@@ -79,11 +82,11 @@ export function useQuickComposerLaunches(
         void probeHarnessAvailability()
           .then(async () => {
             if (disposed) return;
-            void emit(QUICK_COMPOSER_CATALOG_EVENT, liveQuickCatalog());
+            await emit(QUICK_COMPOSER_CATALOG_EVENT, liveQuickCatalog());
             // Only probe the provider the user opened, like the workspace picker.
             if (isHarnessId(event.payload)) {
               await refreshHarnessCatalogs([event.payload]);
-              if (!disposed) void emit(QUICK_COMPOSER_CATALOG_EVENT, liveQuickCatalog());
+              if (!disposed) await emit(QUICK_COMPOSER_CATALOG_EVENT, liveQuickCatalog());
             }
           })
           .catch(() => undefined);

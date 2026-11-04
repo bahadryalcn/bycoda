@@ -1,4 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "window-a" }),
+}));
 
 const listen = vi.hoisted(() => vi.fn());
 const invoke = vi.hoisted(() => vi.fn());
@@ -101,15 +104,13 @@ it.each([0, 1])(
     listen.mockImplementationOnce(() =>
       failed === 1 ? Promise.reject(new Error("offline")) : Promise.resolve(partialCleanup),
     );
-    const { subscribePty } = await import("./pty");
+    const { subscribePty, readyPtyBridge } = await import("./pty");
     const first = subscribePty("first", vi.fn(), vi.fn());
-    await Promise.resolve();
-    await Promise.resolve();
+    await expect(readyPtyBridge()).rejects.toThrow();
     expect(partialCleanup).toHaveBeenCalledOnce();
     listen.mockResolvedValueOnce(completeCleanup[0]).mockResolvedValueOnce(completeCleanup[1]);
     const second = subscribePty("second", vi.fn(), vi.fn());
-    await Promise.resolve();
-    await Promise.resolve();
+    await readyPtyBridge();
     expect(listen).toHaveBeenCalledTimes(4);
     first();
     second();
@@ -169,4 +170,67 @@ it("refuses an unobserved spawn after partial failure, retries and recreates aft
   expect(listen).toHaveBeenCalledTimes(6);
   next();
   await vi.advanceTimersByTimeAsync(500);
+});
+
+it("registers both PTY events for the owning window and ignores foreign-target delivery", async () => {
+  vi.useFakeTimers();
+  const callbacks = new Map<
+    string,
+    { target: string; deliver: (event: { payload: unknown }) => void }
+  >();
+  listen.mockImplementation(async (name, deliver, options) => {
+    callbacks.set(name, { target: options.target, deliver });
+    return vi.fn();
+  });
+  invoke.mockResolvedValue(undefined);
+  const { subscribePty, readyPtyBridge } = await import("./pty");
+  const data = vi.fn();
+  const stop = subscribePty("owned", data, vi.fn(), true);
+  await readyPtyBridge();
+  expect([...callbacks.values()].map((entry) => entry.target)).toEqual(["window-a", "window-a"]);
+  const emit = (target: string) => {
+    const listener = callbacks.get("pty-data")!;
+    if (listener.target === target)
+      listener.deliver({
+        payload: { id: "owned", data: btoa("x"), flow: { generation: 1, sequence: 1 } },
+      });
+  };
+  emit("window-b");
+  expect(data).not.toHaveBeenCalled();
+  expect(invoke).not.toHaveBeenCalledWith("pty_output_ack", expect.anything());
+  emit("window-a");
+  expect(data).toHaveBeenCalledOnce();
+  data.mock.calls[0][1]();
+  await vi.advanceTimersByTimeAsync(32);
+  expect(invoke).toHaveBeenCalledWith("pty_output_ack", {
+    id: "owned",
+    generation: 1,
+    sequence: 1,
+  });
+  stop();
+  await vi.advanceTimersByTimeAsync(500);
+});
+
+it("removes late registrations after teardown and suppresses their stale events", async () => {
+  vi.useFakeTimers();
+  invoke.mockResolvedValue(undefined);
+  const callbacks: ((event: { payload: unknown }) => void)[] = [];
+  const resolves: ((stop: () => void) => void)[] = [];
+  const cleanup = [vi.fn(), vi.fn()];
+  listen.mockImplementation((_name, callback) => {
+    callbacks.push(callback);
+    return new Promise((resolve) => resolves.push(resolve));
+  });
+  const { subscribePty } = await import("./pty");
+  const data = vi.fn();
+  const release = subscribePty("old", data, vi.fn(), true);
+  release();
+  await vi.advanceTimersByTimeAsync(500);
+  resolves[0](cleanup[0]);
+  resolves[1](cleanup[1]);
+  await vi.runAllTimersAsync();
+  cleanup.forEach((stop) => expect(stop).toHaveBeenCalledOnce());
+  callbacks[0]({ payload: { id: "old", data: btoa("x"), flow: { generation: 2, sequence: 1 } } });
+  expect(data).not.toHaveBeenCalled();
+  expect(invoke).not.toHaveBeenCalledWith("pty_output_ack", expect.anything());
 });

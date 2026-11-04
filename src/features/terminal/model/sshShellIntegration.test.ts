@@ -1,4 +1,8 @@
 // @vitest-environment happy-dom
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "window-a" }),
+}));
+import { listen } from "@tauri-apps/api/event";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -391,4 +395,73 @@ it("keeps the passive list as a display-only preview across text edits and drops
     await act(async () => root.unmount());
     host.remove();
   }
+});
+
+it("shares one window-targeted listener and routes terminal IDs independently", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  let first!: SshShellController;
+  let second!: SshShellController;
+  function Fixture({ showSecond }: { showSecond: boolean }) {
+    first = useSshShellIntegration("first", true);
+    return showSecond ? createElement(Other) : null;
+  }
+  function Other() {
+    second = useSshShellIntegration("second", true);
+    return null;
+  }
+  await act(async () => root.render(createElement(Fixture, { showSecond: true })));
+  expect(listen).toHaveBeenCalledTimes(1);
+  expect(listen).toHaveBeenCalledWith("ssh-shell-state", expect.any(Function), {
+    target: "window-a",
+  });
+  await act(async () =>
+    native.listeners[0]({ payload: { ...snapshot, id: "second", status: "ready" } }),
+  );
+  expect(first.state).toBeUndefined();
+  expect(second.state?.id).toBe("second");
+  await act(async () => root.render(createElement(Fixture, { showSecond: false })));
+  expect(native.unlisten).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+  expect(native.unlisten).toHaveBeenCalledOnce();
+});
+
+it("reports failed registration and retries before requesting suggestions", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.mocked(listen).mockRejectedValueOnce(new Error("listener unavailable"));
+  const root = createRoot(document.createElement("div"));
+  let controller!: SshShellController;
+  function Fixture() {
+    controller = useSshShellIntegration("retry", true);
+    return null;
+  }
+  await act(async () => root.render(createElement(Fixture)));
+  expect(controller.error).toBe("Remote shell integration is unavailable");
+  expect(native.invoke).not.toHaveBeenCalled();
+  await act(async () => controller.request());
+  expect(listen).toHaveBeenCalledTimes(2);
+  expect(native.invoke).toHaveBeenCalledWith("ssh_terminal_suggestions_request", { id: "retry" });
+  await act(async () => root.unmount());
+});
+
+it("cleans up a registration that resolves after the final terminal unmounts", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let resolve!: (stop: () => void) => void;
+  vi.mocked(listen).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const root = createRoot(document.createElement("div"));
+  function Fixture() {
+    useSshShellIntegration("early", true);
+    return null;
+  }
+  await act(async () => root.render(createElement(Fixture)));
+  await act(async () => root.unmount());
+  await act(async () => {
+    resolve(native.unlisten);
+  });
+  expect(native.unlisten).toHaveBeenCalledOnce();
 });

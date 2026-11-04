@@ -1,9 +1,8 @@
 import { useEffect, type MutableRefObject } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindow } from "../../../platform/tauri/listenWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { retainAsyncSubscription } from "../../../shared/lib/asyncSubscription";
 import {
   applyUiScale,
   loadUiScale,
@@ -34,23 +33,24 @@ export interface NativeMenuEventDeps {
 /** Subscribes to native menu and app-level Tauri events for the workspace. */
 export function useNativeMenuEvents({ actions, run }: NativeMenuEventDeps): void {
   useEffect(() => {
-    const unlisten: Array<Promise<() => void>> = [
-      listen("new_tab", () => run("new", actions.current.onNew)),
-      listen("close_other_tabs", () => run("close-others", actions.current.onCloseOtherTabs)),
-      listen("close_all_tabs", () => run("close-all", actions.current.onCloseAllTabs)),
-      listen("close_tab", () => run("close", actions.current.onClosePane)),
-      listen<boolean>("toggle_autosave", ({ payload }) => {
+    const unlisten = [
+      listenWindow("new_tab", () => run("new", actions.current.onNew)),
+      listenWindow("close_other_tabs", () => run("close-others", actions.current.onCloseOtherTabs)),
+      listenWindow("close_all_tabs", () => run("close-all", actions.current.onCloseAllTabs)),
+      listenWindow("close_tab", () => run("close", actions.current.onClosePane)),
+      // Autosave is a shared setting; every workspace applies the broadcast.
+      listenWindow<boolean>("toggle_autosave", ({ payload }) => {
         const saved = saveAutosave(payload);
         if (saved !== payload && IS_MAC) {
           void invoke("autosave_set_enabled", { enabled: saved });
         }
       }),
-      listen("next_tab", () => run("next", actions.current.onNext)),
-      listen("prev_tab", () => run("prev", actions.current.onPrev)),
-      listen("back_tab", () => run("back", actions.current.onVisitBack)),
-      listen("forward_tab", () => run("forward", actions.current.onVisitForward)),
-      listen("split_right", () => run("split-right", () => actions.current.onSplit("right"))),
-      listen("split_down", () => run("split-down", () => actions.current.onSplit("down"))),
+      listenWindow("next_tab", () => run("next", actions.current.onNext)),
+      listenWindow("prev_tab", () => run("prev", actions.current.onPrev)),
+      listenWindow("back_tab", () => run("back", actions.current.onVisitBack)),
+      listenWindow("forward_tab", () => run("forward", actions.current.onVisitForward)),
+      listenWindow("split_right", () => run("split-right", () => actions.current.onSplit("right"))),
+      listenWindow("split_down", () => run("split-down", () => actions.current.onSplit("down"))),
       ...(
         [
           ["layout_columns", "columns"],
@@ -61,49 +61,53 @@ export function useNativeMenuEvents({ actions, run }: NativeMenuEventDeps): void
           ["layout_equalize", "equalize"],
         ] as const
       ).map(([event, preset]) =>
-        listen(event, () => run(event, () => actions.current.onArrangeActiveTab(preset))),
+        listenWindow(event, () => run(event, () => actions.current.onArrangeActiveTab(preset))),
       ),
-      listen("new_terminal", () => run("new-terminal", actions.current.onNewTerminal)),
-      listen("new_terminal_tab", () => run("new-terminal-tab", actions.current.onNewTerminalTab)),
-      listen("toggle_terminal", () =>
+      listenWindow("new_terminal", () => run("new-terminal", actions.current.onNewTerminal)),
+      listenWindow("new_terminal_tab", () =>
+        run("new-terminal-tab", actions.current.onNewTerminalTab),
+      ),
+      listenWindow("toggle_terminal", () =>
         run("toggle-terminal", actions.current.onToggleProjectTerminal),
       ),
-      listen("focus_left", () => run("focus-left", () => actions.current.onFocusDir("left"))),
-      listen("focus_right", () => run("focus-right", () => actions.current.onFocusDir("right"))),
-      listen("focus_up", () => run("focus-up", () => actions.current.onFocusDir("up"))),
-      listen("focus_down", () => run("focus-down", () => actions.current.onFocusDir("down"))),
-      listen("toggle_sidebar", () => run("toggle_sidebar", actions.current.onToggleSidebar)),
-      listen("toggle_session_sidebar", () =>
+      listenWindow("focus_left", () => run("focus-left", () => actions.current.onFocusDir("left"))),
+      listenWindow("focus_right", () =>
+        run("focus-right", () => actions.current.onFocusDir("right")),
+      ),
+      listenWindow("focus_up", () => run("focus-up", () => actions.current.onFocusDir("up"))),
+      listenWindow("focus_down", () => run("focus-down", () => actions.current.onFocusDir("down"))),
+      listenWindow("toggle_sidebar", () => run("toggle_sidebar", actions.current.onToggleSidebar)),
+      listenWindow("toggle_session_sidebar", () =>
         run("toggle_session_sidebar", actions.current.onToggleSessionSidebar),
       ),
-      listen("open_project", () => {
+      listenWindow("open_project", () => {
         void actions.current.pickProject();
       }),
-      listen("go_to_file", () => run("go_to_file", actions.current.onGoToFile)),
-      listen("open_command_palette", () =>
+      listenWindow("go_to_file", () => run("go_to_file", actions.current.onGoToFile)),
+      listenWindow("open_command_palette", () =>
         run("open_command_palette", actions.current.onOpenCommandPalette),
       ),
-      listen("reload", () => run("reload", actions.current.onReload)),
-      listen("open_search", () => actions.current.onOpenSearch()),
-      listen("open_inbox", () => actions.current.onOpenInbox()),
-      listen("open_notes", () => actions.current.onOpenNotes()),
-      listen("usage_guide", openUsageGuide),
-      listen("open_settings", () => actions.current.openSettings()),
-      listen("check_for_updates", () => {
+      listenWindow("reload", () => run("reload", actions.current.onReload)),
+      listenWindow("open_search", () => actions.current.onOpenSearch()),
+      listenWindow("open_inbox", () => actions.current.onOpenInbox()),
+      listenWindow("open_notes", () => actions.current.onOpenNotes()),
+      listenWindow("usage_guide", openUsageGuide),
+      listenWindow("open_settings", () => actions.current.openSettings()),
+      listenWindow("check_for_updates", () => {
         void runUpdateFlow(true);
       }),
-      listen("sidebar_opacity", () => {
+      listenWindow("sidebar_opacity", () => {
         actions.current.openSettings("appearance");
       }),
-      listen("find_in_project", () => actions.current.onFindInProject()),
-      listen("find", () => {
+      listenWindow("find_in_project", () => actions.current.onFindInProject()),
+      listenWindow("find", () => {
         openFindInActiveEditor();
       }),
-      listen("open_model_picker", () => {
+      listenWindow("open_model_picker", () => {
         window.dispatchEvent(new Event("open_model_picker"));
       }),
       // Every window hears the click; only the one holding the session acts.
-      listen<string>(NOTIFICATION_CLICK_EVENT, ({ payload: sessionId }) => {
+      listenWindow<string>(NOTIFICATION_CLICK_EVENT, ({ payload: sessionId }) => {
         const background =
           sessionId === BACKGROUND_NOTIFICATION_TARGETS.tasks
             ? actions.current.onOpenTasks
@@ -141,26 +145,21 @@ export function useNativeMenuEvents({ actions, run }: NativeMenuEventDeps): void
         });
         actions.current.onOpenApprovalSession(sessionId);
       }),
-      listen("zoom_in", () => {
+      listenWindow("zoom_in", () => {
         const next = zoomInUiScale(loadUiScale());
         saveUiScale(next);
         void applyUiScale(next);
       }),
-      listen("zoom_out", () => {
+      listenWindow("zoom_out", () => {
         const next = zoomOutUiScale(loadUiScale());
         saveUiScale(next);
         void applyUiScale(next);
       }),
-      listen("zoom_reset", () => {
+      listenWindow("zoom_reset", () => {
         saveUiScale(UI_SCALE_DEFAULT);
         void applyUiScale(UI_SCALE_DEFAULT);
       }),
     ];
-    const releases = unlisten.map((registration) =>
-      retainAsyncSubscription(registration, (error) =>
-        console.warn("Menu subscription failed", error),
-      ),
-    );
-    return () => releases.forEach((release) => release());
+    return () => unlisten.forEach((release) => release());
   }, [run]);
 }

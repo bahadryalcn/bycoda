@@ -131,7 +131,7 @@ fn publish(app: &AppHandle) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         for window in crate::window::workspace_windows(&handle) {
-            let _ = window.emit(EVENT, &view);
+            let _ = handle.emit_to(window.label(), EVENT, &view);
         }
         crate::tray::presence_update(&handle, view);
     });

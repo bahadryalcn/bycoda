@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindow } from "../../platform/tauri/listenWindow";
 import { t, useLocale } from "../../shared/i18n";
-import { retainAsyncSubscription } from "../../shared/lib/asyncSubscription";
 import { useRecentSessions } from "../../features/sessions/hooks/useRecentSessions";
 import { traySessions } from "./traySessions";
 
@@ -35,21 +34,15 @@ export function useTraySessions(
 
   useEffect(() => {
     if (!enabled) return;
-    return retainAsyncSubscription(
-      listen<string>(TRAY_OPEN_EVENT, ({ payload }) => {
-        // Check current visibility again: a menu click can race a group lock.
-        if (currentRows.current.some((row) => row.id === payload)) onOpen.current(payload);
-      }),
-      (error) => console.warn("Session menu subscription failed", error),
-    );
+    return listenWindow<string>(TRAY_OPEN_EVENT, ({ payload }) => {
+      // Check current visibility again: a menu click can race a group lock.
+      if (currentRows.current.some((row) => row.id === payload)) onOpen.current(payload);
+    });
   }, [enabled]);
 
   useEffect(() => {
     if (!enabled) return;
-    return retainAsyncSubscription(
-      listen("bycoda:tray-notifications", () => onSettings.current()),
-      (error) => console.warn("Session menu settings subscription failed", error),
-    );
+    return listenWindow("bycoda:tray-notifications", () => onSettings.current());
   }, [enabled]);
 
   useEffect(() => {

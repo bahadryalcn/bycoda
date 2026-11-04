@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "./listenWindow";
 
 type DataPayload = { id: string; data: string; flow?: { generation: number; sequence: number } };
 type ExitPayload = { id: string; code: number | null };
@@ -11,9 +12,7 @@ const dataHandlers = new Map<string, DataHandler>();
 const exitHandlers = new Map<string, ExitHandler>();
 const dataBuffer = new Map<string, Uint8Array[]>();
 const dataBufferBytes = new Map<string, number>();
-/** PTYs this window opened. Global `pty-data` still fires for every terminal
- * in the process; decoding those in a window that never mounted them was
- * megabytes of base64 work and a 256KB replay buffer per stranger id. */
+/** PTYs this window opened; ignore data for unmounted, unrelated terminals. */
 const openedPtys = new Set<string>();
 const flowControlled = new Set<string>();
 
@@ -25,6 +24,7 @@ const flowControlled = new Set<string>();
 const MAX_BUFFERED_BYTES = 256 * 1024;
 const MAX_BUFFERED = 200;
 let bridge: Promise<UnlistenFn[]> | null = null;
+let bridgeGeneration = 0;
 let users = 0;
 let teardownTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -152,8 +152,10 @@ function flushAcks() {
 
 function ensureBridge() {
   if (bridge) return bridge;
+  const generation = ++bridgeGeneration;
   const pending = Promise.allSettled([
-    listen<DataPayload>("pty-data", (event) => {
+    listenWindowAsync<DataPayload>("pty-data", (event) => {
+      if (bridgeGeneration !== generation) return;
       const { id, data, flow } = event.payload;
       const acknowledge = pendingAck(id, flow);
       const handler = dataHandlers.get(id);
@@ -173,7 +175,8 @@ function ensureBridge() {
         acknowledge();
       }
     }),
-    listen<ExitPayload>("pty-exit", (event) => {
+    listenWindowAsync<ExitPayload>("pty-exit", (event) => {
+      if (bridgeGeneration !== generation) return;
       const { id, code } = event.payload;
       const slot = ackSlots.get(id);
       if (slot) flushAck(id, slot);
@@ -190,6 +193,7 @@ function ensureBridge() {
     );
     const failure = results.find((result) => result.status === "rejected");
     if (!failure) return listeners;
+    if (bridgeGeneration === generation) bridgeGeneration++;
     // A partly registered bridge must not leak its successful listener or cache
     // a rejected promise forever. A subsequent terminal subscription can retry.
     for (const unlisten of listeners) {
@@ -230,6 +234,7 @@ function release() {
     teardownTimer = undefined;
     if (users > 0) return;
     flushAcks();
+    bridgeGeneration++;
     bridge = null;
     void pending.then((fns) => fns.forEach((fn) => fn())).catch(() => undefined);
   }, 500);

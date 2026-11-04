@@ -364,7 +364,7 @@ fn queue_open(app: &AppHandle, session_id: String, due_at: i64) -> Result<(), St
             let _ = window.unminimize();
             let _ = window.show();
             let _ = window.set_focus();
-            let _ = window.emit(OPEN, ());
+            let _ = handle.emit_to(window.label(), OPEN, ());
         } else {
             let _ = crate::window::open_new_window(&handle);
         }

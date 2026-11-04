@@ -134,8 +134,8 @@ pub async fn quick_git_open(
                 let _ = previous.work.finish(Ok::<_, ()>(()));
             }
             // A newly booting webview retrieves the same request with quick_git_state.
-            let emitted = popup
-                .emit("quick_git_request", request)
+            let emitted = handle
+                .emit_to(popup.label(), "quick_git_request", request)
                 .map_err(|err| err.to_string());
             if emitted.is_err() {
                 retire(&handle, &owner(&popup)?);
@@ -317,7 +317,8 @@ fn complete(
                         over_trigger(window.frame(), &request.anchor, NSEvent::mouseLocation())
                     })
             });
-        let emitted = parent.emit(
+        let emitted = app.emit_to(
+            parent.label(),
             "quick_git_result",
             serde_json::json!({ "id": request.id, "choice": choice, "restoreFocus": restore_focus,
             "triggerKind": if trigger_click { Some(request.kind) } else { None } }),

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 
 export type SftpEntry = { name: string; kind: "file" | "directory" | "symlink" };
 
@@ -96,7 +96,7 @@ export function validSftpProgress(value: unknown): value is SftpProgress {
   );
 }
 export const subscribeSftpProgress = (callback: (event: SftpProgress) => void) =>
-  listen<unknown>("ssh-sftp-progress", (event) => {
+  listenWindowAsync<unknown>("ssh-sftp-progress", (event) => {
     if (validSftpProgress(event.payload)) callback(event.payload);
   });
 export async function loadSftpRecoveries(connectionId: string): Promise<SftpRecovery[]> {

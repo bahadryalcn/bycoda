@@ -293,7 +293,7 @@ pub async fn quick_composer_submit(
                 let _ = target.show();
                 let _ = target.set_focus();
             }
-            let _ = target.emit(LAUNCH, ());
+            let _ = handle.emit_to(target.label(), LAUNCH, ());
             Ok(())
         })();
         let _ = tx.try_send(admission.finish(result));
@@ -458,7 +458,7 @@ pub async fn quick_composer_submit_intent(
                 let _ = target.show();
                 let _ = target.set_focus();
             }
-            let _ = target.emit(LAUNCH, ());
+            let _ = handle.emit_to(target.label(), LAUNCH, ());
             Ok(receipt)
         })();
         // Any post-scheduling error drops LaunchWork as unknown; no resend.
@@ -800,7 +800,7 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 fn show(app: &AppHandle, panel: &WebviewWindow) {
     place(app, panel);
     present(panel);
-    let _ = panel.emit(SHOWN, ());
+    let _ = app.emit_to(panel.label(), SHOWN, ());
     if let Err(err) = git_popup::prepare(app, panel) {
         // Opening the picker retries; a failed preload must not block drafting.
         eprintln!("bycoda: prepare git picker: {err}");

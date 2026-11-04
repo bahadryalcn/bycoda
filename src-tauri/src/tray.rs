@@ -565,7 +565,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
                     let _ = window.unminimize();
                     let _ = window.show();
                     let _ = window.set_focus();
-                    let _ = window.emit("bycoda:tray-notifications", ());
+                    let _ = app.emit_to(window.label(), "bycoda:tray-notifications", ());
                 }
             }
             id if id.starts_with(SESSION_PREFIX) => {
@@ -581,7 +581,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
                         let _ = window.unminimize();
                         let _ = window.show();
                         let _ = window.set_focus();
-                        let _ = window.emit(OPEN_EVENT, session_id);
+                        let _ = app.emit_to(window.label(), OPEN_EVENT, session_id);
                     }
                 }
             }

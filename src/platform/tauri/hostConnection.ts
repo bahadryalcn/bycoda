@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listenWindowAsync } from "./listenWindow";
 import { z } from "zod";
 import {
   BulkDescriptorSchema,
@@ -105,7 +105,7 @@ export function createTauriHostConnection(
   IdentifierSchema.parse(machineId);
   return {
     async listen(listener) {
-      const unlisten = await listen<unknown>("host-connection-event", ({ payload }) => {
+      const unlisten = await listenWindowAsync<unknown>("host-connection-event", ({ payload }) => {
         const parsed = nativeEnvelopeSchema.safeParse(payload);
         if (parsed.success && parsed.data.machineId === machineId)
           listener(parsed.data.event as ManagedHostEvent);

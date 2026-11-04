@@ -187,9 +187,6 @@
     "host/workspace-commands.ts": {
       "ts-text-truncate-utf16": 1
     },
-    "src-tauri/src/assistant_presence.rs": {
-      "rust-emit-broadcast": 1
-    },
     "src-tauri/src/azure_devops.rs": {
       "rust-command-output-without-timeout": 2
     },
@@ -244,7 +241,7 @@
       "rust-command-output-without-timeout": 1
     },
     "src-tauri/src/menu.rs": {
-      "rust-emit-broadcast": 3
+      "rust-emit-broadcast": 1
     },
     "src-tauri/src/native_workspace.rs": {
       "rust-accept-inherits-nonblocking": 1,
@@ -273,7 +270,7 @@
       "rust-command-output-without-timeout": 1
     },
     "src-tauri/src/reminders.rs": {
-      "rust-emit-broadcast": 4
+      "rust-emit-broadcast": 3
     },
     "src-tauri/src/remote.rs": {
       "rust-accept-inherits-nonblocking": 3,
@@ -322,9 +319,6 @@
     "src-tauri/src/termius_reader.rs": {
       "rust-command-output-without-timeout": 2
     },
-    "src-tauri/src/tray.rs": {
-      "rust-emit-broadcast": 2
-    },
     "src-tauri/src/window.rs": {
       "rust-emit-broadcast": 3
     },
@@ -358,9 +352,6 @@
     },
     "src/app/model/useAppUpdater.ts": {
       "ts-void-promise-without-catch": 2
-    },
-    "src/app/model/useTraySessions.ts": {
-      "oxlint/no-restricted-imports": 1
     },
     "src/app/model/useWindowLiveAgents.ts": {
       "oxlint/no-restricted-imports": 1
@@ -459,10 +450,6 @@
     "src/app/workspace/bridges/useWorkspaceAutomationActivity.ts": {
       "ts-void-promise-without-catch": 1
     },
-    "src/app/workspace/control/useAppControlRequests.ts": {
-      "oxlint/no-restricted-imports": 1,
-      "ts-void-promise-without-catch": 1
-    },
     "src/app/workspace/control/useGuideActions.ts": {
       "ts-void-promise-without-catch": 1
     },
@@ -485,7 +472,6 @@
       "ts-void-promise-without-catch": 2
     },
     "src/app/workspace/input/useNativeMenuEvents.ts": {
-      "oxlint/no-restricted-imports": 1,
       "ts-void-promise-without-catch": 7
     },
     "src/app/workspace/input/useWindowChromeActions.ts": {
@@ -733,9 +719,6 @@
     "src/features/connections/model/serverInventory.ts": {
       "oxlint/no-restricted-imports": 1,
       "ts-void-promise-without-catch": 1
-    },
-    "src/features/connections/model/sshSftp.ts": {
-      "oxlint/no-restricted-imports": 1
     },
     "src/features/connections/model/useDesktopLive.ts": {
       "ts-void-promise-without-catch": 2
@@ -1096,7 +1079,6 @@
       "ts-void-promise-without-catch": 1
     },
     "src/features/notifications/hooks/useSessionReminders.ts": {
-      "oxlint/no-restricted-imports": 1,
       "ts-void-promise-without-catch": 6
     },
     "src/features/notifications/ui/ProjectNotificationSettings.tsx": {
@@ -1183,8 +1165,7 @@
       "ts-void-promise-without-catch": 1
     },
     "src/features/quick-composer/hooks/useQuickComposerLaunches.ts": {
-      "oxlint/no-restricted-imports": 1,
-      "ts-void-promise-without-catch": 4
+      "ts-void-promise-without-catch": 2
     },
     "src/features/quick-composer/main.tsx": {
       "ts-void-promise-without-catch": 2
@@ -1195,9 +1176,6 @@
       "jsx-a11y/role-supports-aria-props": 1,
       "ts-void-promise-without-catch": 5
     },
-    "src/features/quick-composer/ui/QuickGitPopup.tsx": {
-      "oxlint/no-restricted-imports": 1
-    },
     "src/features/quick-composer/ui/QuickModelSelector.tsx": {
       "jsx-a11y/no-noninteractive-element-interactions": 1,
       "ts-void-promise-without-catch": 1
@@ -1206,15 +1184,10 @@
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/features/quick-composer/ui/QuickWorkspaceControls.tsx": {
-      "oxlint/no-restricted-imports": 1,
       "ts-void-promise-without-catch": 2
     },
     "src/features/quick-composer/ui/useQuickAttachments.ts": {
       "ts-void-promise-without-catch": 7
-    },
-    "src/features/quick-composer/ui/useQuickNativeListeners.ts": {
-      "oxlint/no-restricted-imports": 1,
-      "ts-void-promise-without-catch": 4
     },
     "src/features/search/model/appSearch.ts": {
       "ts-text-truncate-utf16": 2
@@ -1782,7 +1755,6 @@
       "ts-void-promise-without-catch": 2
     },
     "src/features/terminal/model/sshShellIntegration.ts": {
-      "oxlint/no-restricted-imports": 1,
       "ts-void-promise-without-catch": 1
     },
     "src/features/terminal/model/terminalLinks.ts": {
