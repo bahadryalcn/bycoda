@@ -488,9 +488,10 @@ pub fn run() {
         .on_menu_event(|app, event| {
             menu::dispatch(app, event.id().as_ref());
         })
-        .register_uri_scheme_protocol("html-preview", |_context, request| {
-            html_preview::respond(request)
-        })
+        .register_asynchronous_uri_scheme_protocol(
+            "html-preview",
+            |_context, request, responder| html_preview::respond_async(request, responder),
+        )
         .invoke_handler(tauri::generate_handler![
             package_smoke::package_smoke_dom_proof,
             build_info::build_identity,

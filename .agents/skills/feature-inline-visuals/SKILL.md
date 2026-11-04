@@ -33,6 +33,7 @@ Code paths below are repository-root relative.
 - Snapshot images contain their own bounded data, never mutable local/remote asset paths. Read the current serialized/tool-output limits before changing payload size.
 - Keep the original result/source accessible, shared Modal/overlay focus/Escape and local loading/error/retry. Generated content retains its authored appearance.
 - HTML preview creation and cleanup share a renderer-chosen UUID and exact native page issuer. Unmount or a lost creation reply closes that same token; close-before-create cannot resurrect it. Retire proven old pages and fence closed tokens, but never age out a live iframe or unknown creation merely to admit new work.
+- HTML asset reads use bounded background admission and release the preview registry during filesystem I/O. Recheck the original live issuer and token before returning bytes; overload and read failure retain no-store and sandbox headers.
 - Mobile needs its own nonprivileged WebView contract and source fallback; desktop support cannot silently enable a native bridge or establish device acceptance.
 
 ## Verification and references

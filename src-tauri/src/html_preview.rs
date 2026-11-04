@@ -1,8 +1,10 @@
 use crate::control::receipts::WindowIssuer;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 struct Preview {
@@ -299,11 +301,29 @@ fn mime(path: &Path) -> &'static str {
 }
 
 fn preview_content(path: &str) -> Result<(Vec<u8>, &'static str), String> {
+    preview_content_with(previews(), path, |asset| {
+        let file = std::fs::File::open(asset).map_err(|e| e.to_string())?;
+        let mut bytes = Vec::new();
+        file.take(16 * 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        if bytes.len() > 16 * 1024 * 1024 {
+            return Err("Preview asset is too large".into());
+        }
+        Ok(bytes)
+    })
+}
+
+fn preview_content_with(
+    registry: &Mutex<PreviewRegistry>,
+    path: &str,
+    read: impl FnOnce(&Path) -> Result<Vec<u8>, String>,
+) -> Result<(Vec<u8>, &'static str), String> {
     let (token, relative) = path
         .trim_start_matches('/')
         .split_once('/')
         .ok_or("Invalid preview URL")?;
-    let entries = previews().lock().map_err(|e| e.to_string())?;
+    let entries = registry.lock().map_err(|e| e.to_string())?;
     let record = entries.entries.get(token).ok_or("Preview has closed")?;
     if !record.owner.is_live() {
         return Err("Preview has closed".into());
@@ -320,12 +340,78 @@ fn preview_content(path: &str) -> Result<(Vec<u8>, &'static str), String> {
     let root = entry
         .root
         .as_ref()
-        .ok_or("Relative assets are unavailable for remote previews")?;
-    let asset = preview_asset(root, relative)?;
-    Ok((
-        std::fs::read(&asset).map_err(|e| e.to_string())?,
-        mime(&asset),
-    ))
+        .ok_or("Relative assets are unavailable for remote previews")?
+        .clone();
+    let owner = record.owner.clone();
+    drop(entries);
+    // Filesystem latency must not hold the registry against close or unrelated previews.
+    let asset = preview_asset(&root, relative)?;
+    let bytes = read(&asset)?;
+    let entries = registry.lock().map_err(|e| e.to_string())?;
+    let current = entries.entries.get(token).ok_or("Preview has closed")?;
+    if !Arc::ptr_eq(&current.owner, &owner)
+        || !owner.is_live()
+        || !matches!(current.state, PreviewState::Ready(_))
+    {
+        return Err("Preview has closed".into());
+    }
+    Ok((bytes, mime(&asset)))
+}
+
+const MAX_PREVIEW_READS: usize = 8;
+struct PreviewReadPermit(Arc<AtomicUsize>);
+impl PreviewReadPermit {
+    fn acquire(active: Arc<AtomicUsize>) -> Option<Self> {
+        let mut count = active.load(Ordering::Acquire);
+        loop {
+            if count >= MAX_PREVIEW_READS {
+                return None;
+            }
+            match active.compare_exchange_weak(
+                count,
+                count + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(current) => count = current,
+            }
+        }
+        Some(Self(active))
+    }
+}
+impl Drop for PreviewReadPermit {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+pub fn respond_async(request: tauri::http::Request<Vec<u8>>, responder: tauri::UriSchemeResponder) {
+    static ACTIVE: OnceLock<Arc<AtomicUsize>> = OnceLock::new();
+    let active = ACTIVE.get_or_init(|| Arc::new(AtomicUsize::new(0))).clone();
+    let Some(permit) = PreviewReadPermit::acquire(active) else {
+        responder.respond(preview_response(
+            503,
+            b"Preview is busy. Reload to retry.".to_vec(),
+            "text/plain; charset=utf-8",
+        ));
+        return;
+    };
+    tauri::async_runtime::spawn(async move {
+        let response = tauri::async_runtime::spawn_blocking(move || {
+            let _permit = permit;
+            respond(request)
+        })
+        .await
+        .unwrap_or_else(|_| {
+            preview_response(
+                500,
+                b"Preview read failed.".to_vec(),
+                "text/plain; charset=utf-8",
+            )
+        });
+        responder.respond(response);
+    });
 }
 
 pub fn respond(request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
@@ -338,6 +424,14 @@ pub fn respond(request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<
         Ok((body, content_type)) => (200, body, content_type),
         Err(error) => (404, error.into_bytes(), "text/plain; charset=utf-8"),
     };
+    preview_response(status, body, content_type)
+}
+
+fn preview_response(
+    status: u16,
+    body: Vec<u8>,
+    content_type: &'static str,
+) -> tauri::http::Response<Vec<u8>> {
     tauri::http::Response::builder()
         .status(status)
         .header("Content-Type", content_type)
@@ -437,6 +531,55 @@ mod tests {
             .finish(&owner, &token, make_preview(path, content))
             .unwrap();
         (owner, token)
+    }
+
+    #[test]
+    fn asset_read_allows_close_and_discards_late_bytes() {
+        let folder =
+            std::env::temp_dir().join(format!("bycoda-preview-read-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let html = folder.join("index.html");
+        std::fs::write(&html, "preview").unwrap();
+        std::fs::write(folder.join("asset.css"), "private content").unwrap();
+        let owner = Arc::new(WindowIssuer::default());
+        let token = uuid::Uuid::new_v4().to_string();
+        let mut entries = PreviewRegistry::default();
+        entries.begin(&owner, &token).unwrap();
+        entries
+            .finish(
+                &owner,
+                &token,
+                make_preview(html.to_string_lossy().into(), "preview".into()),
+            )
+            .unwrap();
+        let registry = Mutex::new(entries);
+        let result = preview_content_with(&registry, &format!("/{token}/asset.css"), |_| {
+            let mut registry = registry
+                .try_lock()
+                .expect("asset I/O must release registry");
+            registry.close(&owner, &token).unwrap();
+            Ok(b"late private bytes".to_vec())
+        });
+        assert_eq!(result.unwrap_err(), "Preview has closed");
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn preview_read_admission_is_bounded_and_released_after_completion() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let mut permits: Vec<_> = (0..MAX_PREVIEW_READS)
+            .map(|_| PreviewReadPermit::acquire(active.clone()).unwrap())
+            .collect();
+        assert!(PreviewReadPermit::acquire(active.clone()).is_none());
+        permits.pop();
+        let next = PreviewReadPermit::acquire(active.clone()).unwrap();
+        drop(permits);
+        drop(next);
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        let response = preview_response(503, b"busy".to_vec(), "text/plain; charset=utf-8");
+        assert_eq!(response.status(), 503);
+        assert_eq!(response.headers()["Cache-Control"], "no-store");
+        assert_eq!(response.headers()["X-Content-Type-Options"], "nosniff");
     }
 
     #[test]
