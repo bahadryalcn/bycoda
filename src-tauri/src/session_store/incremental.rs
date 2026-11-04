@@ -244,6 +244,7 @@ pub(super) fn apply_observed(
         params![id, revision, delta.length as i64],
     )
     .map_err(|e| e.to_string())?;
+    super::update_list_summary(&tx, id, &s.harness).map_err(|e| e.to_string())?;
     let ack = DeltaAck {
         updated_at,
         revision,
@@ -788,6 +789,22 @@ mod tests {
         assert_eq!(checkpoint, super::super::legacy_blob::NORMALIZED_BLOB);
         assert!(page(&conn, &session.id, first.before, Some(first.revision), 1).is_err());
     }
+    #[test]
+    fn delta_updates_list_projection_atomically() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let (session, summary) = seed(&conn);
+        let mut change = delta(session.clone(), &summary);
+        change.changes[0].block = json!({"id":"a","role":"system","notice":"interrupt"});
+        apply(&conn, &change).unwrap().unwrap();
+        let (interrupted, history): (i64, String) = conn.query_row(
+            "SELECT interrupted,provider_history FROM session_list_summaries WHERE session_id=?1",
+            [&session.id], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(interrupted, 1);
+        assert!(serde_json::from_str::<Value>(&history).unwrap()["activeHarness"].is_string());
+    }
+
     #[test]
     fn delta_carries_the_adopted_base() {
         let store = SessionStore::open_in_memory().unwrap();

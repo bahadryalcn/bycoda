@@ -32,6 +32,10 @@ directory. Follow current imports and callers; this map is not a completeness cl
 
 ## Workflow
 
+SSH receipt eviction applies only to definite settled outcomes after the retry
+retention period. Keep active, poisoned and remotely uncertain records; expiry
+never grants permission to rerun a command without native approval.
+
 1. Trace the catalog/form/tab operation to its identity, inventory and terminal owner; inspect compact and detail entry points.
 2. Preserve mounted editors and state when regrouping navigation or shared controls.
 3. Exercise independent inventory errors, blocked/cancelled close, explicit reconnect and pending operation feedback with isolated targets.

@@ -448,6 +448,11 @@ export class DesktopSessions {
     const optional = (name: string, fallback = "NULL") =>
       columns.has(name) ? name : `${fallback} AS ${name}`;
     const meta = blocks === "meta";
+    const summaryProjection =
+      !blocks &&
+      !!db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_list_summaries'")
+        .get();
     const transcriptView =
       !!blocks &&
       !!db
@@ -469,11 +474,17 @@ export class DesktopSessions {
       ${optional("pending_context_replay")}, ${optional("assistant_management_json")}
       FROM ${transcriptView && !meta ? "session_transcripts" : "sessions"} WHERE ${where}`
       : `SELECT id, cwd, harness, model, runtime_mode, title,
-      provider_session_id, created_at, updated_at, ${optional("last_activity_at")},
+      provider_session_id, created_at, updated_at, ${summaryProjection ? "projection.activity_at AS last_activity_at" : optional("last_activity_at")},
       ${optional("archived", "0")}, ${optional("worktree_cwd")},
       ${optional("has_user_message", "1")}, ${optional("pinned", "0")},
-      ${optional("linked_work_item_json")}, ${optional("is_draft", "0")}, ${optional("assistant_management_json")}
-      FROM sessions${coverIndex(db)} WHERE ${where}`;
+      ${optional("linked_work_item_json")}, ${optional("is_draft", "0")}, ${summaryProjection ? "projection.management_json AS assistant_management_json" : optional("assistant_management_json")}
+      ${
+        summaryProjection
+          ? `, projection.interrupted AS summary_interrupted,
+        projection.provider_history AS summary_provider_history`
+          : ""
+      }
+      FROM sessions${coverIndex(db)} ${summaryProjection ? "LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id" : ""} WHERE ${where}`;
     // The partial index on `inbox_ask IS NOT NULL` is tiny; only those rows read
     // the table.
     const asked = new Set<string>();
@@ -506,25 +517,41 @@ export class DesktopSessions {
       )
       .map((sqlRow) => {
         const row: Row = sqlRow;
-        row.provider_history = this.readProviderHistory(db, row);
-        const normalized = db
-          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_block_state'")
-          .get();
-        const last =
-          normalized &&
-          db.prepare("SELECT 1 FROM session_block_state WHERE session_id=?").get(String(row.id))
-            ? db
-                .prepare(
-                  "SELECT block_json FROM session_blocks WHERE session_id=? ORDER BY ordinal DESC LIMIT 1",
-                )
-                .get(String(row.id))?.block_json
-            : db
-                .prepare(
-                  "SELECT CASE WHEN json_valid(blocks_json) THEN json_extract(blocks_json, '$[#-1]') END AS block FROM sessions WHERE id=?",
-                )
-                .get(String(row.id))?.block;
-        const marker = typeof last === "string" ? parse(last) : undefined;
-        row.interrupted = isTurnInterruptionNotice(marker);
+        if (summaryProjection && typeof row.summary_provider_history === "string") {
+          row.provider_history = parse(row.summary_provider_history);
+          row.interrupted = Number(row.summary_interrupted) !== 0;
+        } else {
+          if (summaryProjection) {
+            const stored = db
+              .prepare(
+                `SELECT ${optional("last_activity_at")}, ${optional("assistant_management_json")} FROM sessions WHERE id=?`,
+              )
+              .get(String(row.id));
+            row.last_activity_at = stored?.last_activity_at;
+            row.assistant_management_json = stored?.assistant_management_json;
+          }
+          row.provider_history = this.readProviderHistory(db, row);
+          const normalized = db
+            .prepare(
+              "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_block_state'",
+            )
+            .get();
+          const last =
+            normalized &&
+            db.prepare("SELECT 1 FROM session_block_state WHERE session_id=?").get(String(row.id))
+              ? db
+                  .prepare(
+                    "SELECT block_json FROM session_blocks WHERE session_id=? ORDER BY ordinal DESC LIMIT 1",
+                  )
+                  .get(String(row.id))?.block_json
+              : db
+                  .prepare(
+                    "SELECT CASE WHEN json_valid(blocks_json) THEN json_extract(blocks_json, '$[#-1]') END AS block FROM sessions WHERE id=?",
+                  )
+                  .get(String(row.id))?.block;
+          const marker = typeof last === "string" ? parse(last) : undefined;
+          row.interrupted = isTurnInterruptionNotice(marker);
+        }
         if (meta) this.readTranscriptFacts(db, row, transcriptView);
         else if (
           transcriptView &&

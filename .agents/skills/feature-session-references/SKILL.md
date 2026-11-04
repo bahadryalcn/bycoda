@@ -34,6 +34,9 @@ Code paths below are repository-root relative.
 
 ## Verification and references
 
+Citation parsing skips prose without its marker and bounds labels to 200 characters.
+Keep malformed or unsupported links as exact editable draft text.
+
 - Select URI/parser, actual Markdown/sanitizer/Notes interaction, navigation/visibility race, worker and Sidebar copy tests; new Native metadata needs read-only wrong-origin coverage.
 - Use the session-references browser family for changed UI, then isolated Host/Native origin and history-loading checks. Existing binaries cannot establish acceptance of a new IPC command.
 - Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.

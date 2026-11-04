@@ -2214,7 +2214,15 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     )?;
     tx.execute_batch("CREATE INDEX IF NOT EXISTS sessions_activity_project_idx ON sessions (cwd, last_activity_at DESC, id);
         CREATE INDEX IF NOT EXISTS sessions_activity_recent_idx ON sessions (pinned, last_activity_at DESC, id) WHERE has_user_message = 1 AND archived = 0;
-        CREATE INDEX IF NOT EXISTS sessions_activity_linked_idx ON sessions (last_activity_at DESC, id) WHERE linked_work_item_json IS NOT NULL;")?;
+        CREATE INDEX IF NOT EXISTS sessions_activity_linked_idx ON sessions (last_activity_at DESC, id) WHERE linked_work_item_json IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS sessions_activity_project_cover_idx ON sessions
+          (cwd,last_activity_at DESC,id,has_user_message,harness,model,runtime_mode,title,provider_session_id,created_at,updated_at,branch,archived,pinned,linked_work_item_json,worktree_cwd,worktree_removed,is_draft,automation_id,workspace_id,workspace_revision,workspace_mode);
+        CREATE INDEX IF NOT EXISTS sessions_activity_recent_cover_idx ON sessions
+          (pinned,last_activity_at DESC,id,cwd,harness,model,runtime_mode,title,provider_session_id,created_at,updated_at,branch,archived,linked_work_item_json,worktree_cwd,worktree_removed,is_draft,automation_id,workspace_id,workspace_revision,workspace_mode)
+          WHERE has_user_message=1 AND archived=0;
+        CREATE INDEX IF NOT EXISTS sessions_activity_linked_cover_idx ON sessions
+          (last_activity_at DESC,id,cwd,has_user_message,harness,model,runtime_mode,title,provider_session_id,created_at,updated_at,branch,archived,pinned,linked_work_item_json,worktree_cwd,worktree_removed,is_draft,automation_id,workspace_id,workspace_revision,workspace_mode)
+          WHERE linked_work_item_json IS NOT NULL;")?;
     tx.commit()?;
 
     // Keep independent schema helpers outside this transaction: some own their
@@ -2285,6 +2293,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::automations::ensure_tables(conn)?;
     ensure_orchestration_history(conn)?;
     incremental::ensure_schema(conn)?;
+    ensure_list_summaries(conn)?;
     rewind::ensure_schema(conn)?;
     crate::native_workspace::ensure_schema(conn)?;
     crate::native_editor_drafts::ensure_schema(conn)?;
@@ -2294,6 +2303,77 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     authority::ensure_schema(conn)?;
     native_raw_capture::ensure_schema(conn)?;
     row_identity::ensure_schema(conn)?;
+    Ok(())
+}
+
+// Backfill one row per transaction: interrupted migrations resume, and a
+// concurrent writer cannot commit between reading a transcript and its summary.
+fn ensure_list_summaries(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS session_list_summaries (
+        session_id TEXT PRIMARY KEY, interrupted INTEGER NOT NULL, provider_history TEXT NOT NULL,
+        activity_at INTEGER NOT NULL, management_json TEXT
+    );
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_delete AFTER DELETE ON sessions
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_insert AFTER INSERT ON sessions
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_id AFTER UPDATE OF id ON sessions
+    WHEN OLD.id IS NOT NEW.id
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.id OR session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_transcript AFTER UPDATE OF blocks_json,harness ON sessions
+    WHEN OLD.blocks_json IS NOT NEW.blocks_json OR OLD.harness IS NOT NEW.harness
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_metadata AFTER UPDATE OF last_activity_at,updated_at,assistant_management_json ON sessions
+    BEGIN UPDATE session_list_summaries SET activity_at=COALESCE(NEW.last_activity_at,NEW.updated_at),
+      management_json=NEW.assistant_management_json WHERE session_id=NEW.id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_block_insert AFTER INSERT ON session_blocks
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=NEW.session_id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_block_update AFTER UPDATE ON session_blocks
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.session_id OR session_id=NEW.session_id; END;
+    CREATE TRIGGER IF NOT EXISTS session_list_summary_block_delete AFTER DELETE ON session_blocks
+    BEGIN DELETE FROM session_list_summaries WHERE session_id=OLD.session_id; END;",
+    )?;
+    let missing = {
+        let mut statement = conn.prepare(
+            "SELECT id FROM sessions WHERE NOT EXISTS
+             (SELECT 1 FROM session_list_summaries WHERE session_id=sessions.id)",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for id in missing {
+        let tx =
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+        let harness: Option<String> = tx
+            .query_row(
+                "SELECT harness FROM sessions WHERE id=?1 AND NOT EXISTS
+             (SELECT 1 FROM session_list_summaries WHERE session_id=sessions.id)",
+                [&id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(harness) = harness {
+            update_list_summary(&tx, &id, &harness)?;
+        }
+        tx.commit()?;
+    }
+    Ok(())
+}
+
+pub(crate) fn update_list_summary(
+    conn: &Connection,
+    id: &str,
+    harness: &str,
+) -> rusqlite::Result<()> {
+    let interrupted = stored_turn_interrupted(conn, id)?;
+    let history = provider_history::stored(conn, id, harness)?.to_string();
+    conn.execute("INSERT INTO session_list_summaries(session_id,interrupted,provider_history,activity_at,management_json)
+        SELECT id,?2,?3,COALESCE(last_activity_at,updated_at),assistant_management_json FROM sessions WHERE id=?1
+        ON CONFLICT(session_id) DO UPDATE SET interrupted=excluded.interrupted,
+        provider_history=excluded.provider_history,activity_at=excluded.activity_at,
+        management_json=excluded.management_json",
+        params![id, interrupted, history])?;
     Ok(())
 }
 
@@ -2548,6 +2628,7 @@ fn upsert_session_in_transaction(
                 pieces.as_ref().map_or(0, Vec::len),
             )?;
         }
+        update_list_summary(conn, &session.id, &session.harness)?;
         summary.transcript_revision = conn
             .query_row(
                 "SELECT revision FROM session_block_state WHERE session_id=?1",
@@ -3184,8 +3265,10 @@ fn list_by_project_with_git(
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode
-         FROM sessions
+                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode,
+                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+         FROM sessions INDEXED BY sessions_activity_project_cover_idx
+         LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
          WHERE cwd = ?1
            AND has_user_message = 1
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
@@ -3197,15 +3280,13 @@ fn list_by_project_with_git(
         let archived: i64 = row.get(10)?;
         let pinned: i64 = row.get(11)?;
         let linked_work_item = optional_json(row.get(12)?);
+        let (interrupted, provider_history, last_activity_at, managed_by) =
+            list_projection(conn, row, 21)?;
         Ok(SessionSummary {
-            last_activity_at: stored_activity_at(conn, &row.get::<_, String>(0)?)?,
-            interrupted: stored_turn_interrupted(conn, &row.get::<_, String>(0)?)?,
-            provider_history: Some(provider_history::stored(
-                conn,
-                &row.get::<_, String>(0)?,
-                &row.get::<_, String>(2)?,
-            )?),
-            managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
+            last_activity_at,
+            interrupted,
+            provider_history,
+            managed_by,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -3248,8 +3329,10 @@ const LIST_LINKED_SQL: &str = "SELECT id, cwd, harness, model, runtime_mode, tit
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode
-         FROM sessions INDEXED BY sessions_activity_linked_idx
+                worktree_removed, is_draft, automation_id, workspace_id, workspace_revision, workspace_mode,
+                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+         FROM sessions INDEXED BY sessions_activity_linked_cover_idx
+         LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
          WHERE has_user_message = 1
            AND linked_work_item_json IS NOT NULL
            AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
@@ -3261,15 +3344,13 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
     let rows = statement.query_map([], |row| {
         let archived: i64 = row.get(10)?;
         let pinned: i64 = row.get(11)?;
+        let (interrupted, provider_history, last_activity_at, managed_by) =
+            list_projection(conn, row, 21)?;
         Ok(SessionSummary {
-            last_activity_at: stored_activity_at(conn, &row.get::<_, String>(0)?)?,
-            interrupted: stored_turn_interrupted(conn, &row.get::<_, String>(0)?)?,
-            provider_history: Some(provider_history::stored(
-                conn,
-                &row.get::<_, String>(0)?,
-                &row.get::<_, String>(2)?,
-            )?),
-            managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
+            last_activity_at,
+            interrupted,
+            provider_history,
+            managed_by,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -3333,8 +3414,10 @@ const RECENT_ROWS_SQL: &str =
     "SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
-                automation_id, workspace_id, workspace_revision, workspace_mode
-         FROM sessions INDEXED BY sessions_activity_recent_idx
+                automation_id, workspace_id, workspace_revision, workspace_mode,
+                projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+         FROM sessions INDEXED BY sessions_activity_recent_cover_idx
+         LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
          WHERE has_user_message = 1
            AND archived = 0
            AND pinned = ?1
@@ -3354,15 +3437,13 @@ fn recent_rows(
     let rows = statement.query_map(params![pinned as i64, limit, since], |row| {
         let worktree_removed = row.get::<_, i64>(14)? != 0;
         let branch: Option<String> = row.get(9)?;
+        let (interrupted, provider_history, last_activity_at, managed_by) =
+            list_projection(conn, row, 20)?;
         Ok(SessionSummary {
-            last_activity_at: stored_activity_at(conn, &row.get::<_, String>(0)?)?,
-            interrupted: stored_turn_interrupted(conn, &row.get::<_, String>(0)?)?,
-            provider_history: Some(provider_history::stored(
-                conn,
-                &row.get::<_, String>(0)?,
-                &row.get::<_, String>(2)?,
-            )?),
-            managed_by: provenance::stored_management(conn, &row.get::<_, String>(0)?)?,
+            last_activity_at,
+            interrupted,
+            provider_history,
+            managed_by,
             transcript_revision: None,
             id: row.get(0)?,
             orchestration_lead_id: None,
@@ -3396,6 +3477,30 @@ fn recent_rows(
         })
     })?;
     rows.collect()
+}
+
+fn list_projection(
+    conn: &Connection,
+    row: &rusqlite::Row<'_>,
+    offset: usize,
+) -> rusqlite::Result<(bool, Option<Value>, i64, Option<Value>)> {
+    if let Some(interrupted) = row.get::<_, Option<i64>>(offset)? {
+        return Ok((
+            interrupted != 0,
+            optional_json(row.get(offset + 1)?),
+            row.get(offset + 2)?,
+            optional_json(row.get(offset + 3)?),
+        ));
+    }
+    // Another writer may have invalidated the projection after migration.
+    let id: String = row.get(0)?;
+    let harness: String = row.get(2)?;
+    Ok((
+        stored_turn_interrupted(conn, &id)?,
+        Some(provider_history::stored(conn, &id, &harness)?),
+        stored_activity_at(conn, &id)?,
+        provenance::stored_management(conn, &id)?,
+    ))
 }
 
 fn stored_activity_at(conn: &Connection, id: &str) -> rusqlite::Result<i64> {
@@ -3500,6 +3605,11 @@ fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
             "UPDATE sessions SET blocks_json = ?1 WHERE id = ?2",
             params![blocks.to_string(), id],
         )?;
+        let harness: String =
+            tx.query_row("SELECT harness FROM sessions WHERE id=?1", [&id], |row| {
+                row.get(0)
+            })?;
+        update_list_summary(&tx, &id, &harness)?;
     }
     tx.execute(
         "DELETE FROM orchestration_runs WHERE lead_id = ?1",
@@ -4361,10 +4471,7 @@ mod tests {
         );
     }
 
-    /// The sidebar query must stay answerable from the index alone. Selecting a
-    /// column the index does not carry silently reintroduces a table seek per
-    /// row, and every summary column sits behind a ~180 KB `blocks_json` blob
-    /// in the record, so that regression is worth ~30x on a real project.
+    /// The list joins the narrow projection rather than probing transcripts.
     #[test]
     fn list_by_project_is_served_by_a_covering_index() {
         let store = SessionStore::open_in_memory().unwrap();
@@ -4384,29 +4491,110 @@ mod tests {
                 .unwrap();
                 migrate(&conn).unwrap();
             }
-            let plan: String = conn
-                .query_row(
+            let mut statement = conn
+                .prepare(
                     "EXPLAIN QUERY PLAN
                  SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                         created_at, updated_at, branch, archived, pinned,
-                        linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
+                        linked_work_item_json,
+                        (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id),
+                        worktree_cwd, worktree_removed, is_draft,
                         automation_id, workspace_id, workspace_revision, workspace_mode,
-                        (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id)
-                 FROM sessions
+                        projection.interrupted, projection.provider_history, projection.activity_at, projection.management_json
+                 FROM sessions INDEXED BY sessions_activity_project_cover_idx
+                 LEFT JOIN session_list_summaries projection ON projection.session_id=sessions.id
                  WHERE cwd = ?1
                    AND has_user_message = 1
                    AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
                    AND id NOT IN (SELECT session_id FROM orchestration_workers)
-                 ORDER BY updated_at DESC, id ASC",
-                    params!["/tmp/a"],
-                    |row| row.get(3),
+                 ORDER BY last_activity_at DESC, id ASC",
                 )
                 .unwrap();
+            let plan = statement
+                .query_map(params!["/tmp/a"], |row| row.get::<_, String>(3))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+                .join("\n");
             assert!(
-                plan.contains("COVERING INDEX"),
-                "sidebar listing fell back to table seeks: {plan}"
+                plan.contains("COVERING INDEX sessions_activity_project_cover_idx")
+                    && plan.contains("projection")
+                    && !plan.contains("session_blocks"),
+                "sidebar listing did not use the summary projection: {plan}"
             );
         }
+    }
+
+    #[test]
+    fn list_projection_backfills_and_tracks_full_writes() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let mut session = sample("projection", "/tmp/a", "Projection");
+        session.blocks = json!([
+            {"id":"u", "role":"user", "turnModel":{"harness":"claude"}},
+            {"id":"i", "role":"system", "notice":"interrupt"}
+        ]);
+        upsert_session(&conn, &session).unwrap();
+        conn.execute(
+            "DELETE FROM session_list_summaries WHERE session_id=?1",
+            [&session.id],
+        )
+        .unwrap();
+        ensure_list_summaries(&conn).unwrap();
+        let summary = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert!(summary.interrupted);
+        assert_eq!(summary.provider_history.unwrap()["activeHarness"], "claude");
+        session.blocks = json!([{"id":"u", "role":"user", "turnModel":{"harness":"codex"}}]);
+        upsert_session(&conn, &session).unwrap();
+        let summary = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert!(!summary.interrupted);
+        assert_eq!(summary.provider_history.unwrap()["activeHarness"], "codex");
+        conn.execute(
+            "UPDATE sessions SET last_activity_at=42, assistant_management_json=?2 WHERE id=?1",
+            params![session.id, r#"{"assistant":true}"#],
+        )
+        .unwrap();
+        let summary = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert_eq!(summary.last_activity_at, 42);
+        assert_eq!(summary.managed_by.unwrap()["assistant"], true);
+        conn.execute(
+            "DELETE FROM session_list_summaries WHERE session_id=?1",
+            [&session.id],
+        )
+        .unwrap();
+        let fallback = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert_eq!(fallback.last_activity_at, 42);
+        assert_eq!(fallback.provider_history.unwrap()["activeHarness"], "codex");
+        ensure_list_summaries(&conn).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM session_list_summaries WHERE session_id=?1",
+                [&session.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        conn.execute(
+            "UPDATE session_blocks SET block_json=?2 WHERE session_id=?1 AND ordinal=0",
+            params![
+                session.id,
+                r#"{"id":"u","role":"user","turnModel":{"harness":"claude"}}"#
+            ],
+        )
+        .unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM session_list_summaries WHERE session_id=?1",
+                [&session.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+        let fallback = list_by_project(&conn, "/tmp/a").unwrap().remove(0);
+        assert_eq!(
+            fallback.provider_history.unwrap()["activeHarness"],
+            "claude"
+        );
     }
 
     #[test]
@@ -5111,11 +5299,11 @@ mod tests {
         upsert_session(&conn, &sample("s2", "/tmp/b", "Plain")).unwrap();
 
         let recent = query_plan(&conn, RECENT_ROWS_SQL, &[&0_i64, &50_i64, &i64::MIN]);
-        assert_indexed_and_presorted(&recent, "sessions_activity_recent_idx");
+        assert_indexed_and_presorted(&recent, "sessions_activity_recent_cover_idx");
         let pinned = query_plan(&conn, RECENT_ROWS_SQL, &[&1_i64, &-1_i64, &i64::MIN]);
-        assert_indexed_and_presorted(&pinned, "sessions_activity_recent_idx");
+        assert_indexed_and_presorted(&pinned, "sessions_activity_recent_cover_idx");
         let linked = query_plan(&conn, LIST_LINKED_SQL, &[]);
-        assert_indexed_and_presorted(&linked, "sessions_activity_linked_idx");
+        assert_indexed_and_presorted(&linked, "sessions_activity_linked_cover_idx");
     }
 
     #[test]

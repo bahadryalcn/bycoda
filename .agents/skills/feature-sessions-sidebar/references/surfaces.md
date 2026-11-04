@@ -2,6 +2,16 @@
 
 All source paths are repository-relative. Follow imports for secondary controls.
 
+Session appearance: `src/app/shell/sessionProjectAppearanceStore.ts` shares one
+snapshot/subscription across cards. Keep storage reads independent of card count,
+refreshing project/logo/sibling changes with storage-failure and server fallbacks.
+
+Native list projection: `session_list_summaries` in `src-tauri/src/session_store.rs`
+stores interruption, provider history, activity and management. Full, incremental
+and rewind writes update it transactionally; triggers invalidate older writers.
+Keep covering indexes and read-only fallback for absent projections/older Host schemas.
+Backfill resumes per row without overwriting newer writes; first upgrade creates indexes.
+
 Working preview: `src/features/sessions/ui/LiveAgentsPreview.tsx` is mounted by
 `src/app/shell/Sidebar.tsx` and `ProjectRail.tsx`. Project-local callers pass the
 open project; Last Sessions omits it. The full header counts precede project-row

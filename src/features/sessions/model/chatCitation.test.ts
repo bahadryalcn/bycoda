@@ -21,6 +21,24 @@ const citation: ChatCitation = {
 };
 
 describe("chat citations", () => {
+  it("preserves bracket-heavy prose with and without a malformed citation marker", () => {
+    const prose = "[".repeat(64_000);
+    for (const text of [prose, `${prose}bycoda-citation:invalid`]) {
+      expect(extractChatCitations(text)).toEqual({ text, citations: [] });
+    }
+  });
+
+  it("bounds citation labels while preserving unsupported links as draft text", () => {
+    const serialized = serializeChatCitation(citation);
+    const payload = serialized.slice(serialized.indexOf("](bycoda-citation:"));
+    expect(extractChatCitations(`[${"x".repeat(200)}${payload}`)).toEqual({
+      text: "",
+      citations: [citation],
+    });
+    const oversized = `[${"x".repeat(201)}${payload}`;
+    expect(extractChatCitations(oversized)).toEqual({ text: oversized, citations: [] });
+  });
+
   it("preserves leading command routing and exact trailing whitespace with durable references", () => {
     for (const prose of ["/plan Explain this", "/operator Check this\n\n", "\n\nMy draft\n", ""]) {
       const stored = withChatCitations(prose, [citation]);

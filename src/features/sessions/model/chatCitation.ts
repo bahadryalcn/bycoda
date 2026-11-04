@@ -10,7 +10,8 @@ export type ChatCitation = {
   comment: string;
 };
 
-const marker = /\[([^\]\n]*)\]\(bycoda-citation:([^\s)]+)\)/g;
+// Bound failed label matches so bracket-heavy prompts cannot cause quadratic scans.
+const marker = /\[([^\]\n]{0,200})\]\(bycoda-citation:([^\s)]+)\)/g;
 const MAX_TEXT = 64_000;
 
 function citationValue(value: unknown): ChatCitation | null {
@@ -57,6 +58,7 @@ export function serializeChatCitation(citation: ChatCitation): string {
 
 /** Invalid or unsupported markers stay as literal text; never silently lose a draft. */
 export function extractChatCitations(value: string): { text: string; citations: ChatCitation[] } {
+  if (!value.includes("bycoda-citation:")) return { text: value, citations: [] };
   const citations: ChatCitation[] = [];
   const matches: { start: number; end: number }[] = [];
   for (const match of value.matchAll(marker)) {

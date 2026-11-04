@@ -129,6 +129,70 @@ async function setup() {
 }
 
 describe("desktop sessions on the host", () => {
+  it("uses the native list projection for activity, interruption and provider history", async () => {
+    const s = await setup();
+    s.seed({ id: "projection", cwd: s.projectDir, updated: 200 });
+    s.desktopDb.exec(`CREATE TABLE session_list_summaries (
+      session_id TEXT PRIMARY KEY, interrupted INTEGER NOT NULL, provider_history TEXT NOT NULL,
+      activity_at INTEGER NOT NULL, management_json TEXT
+    )`);
+    const history = { providers: ["claude"], activeHarness: "claude" };
+    s.desktopDb
+      .prepare("INSERT INTO session_list_summaries VALUES (?, ?, ?, ?, ?)")
+      .run("projection", 1, JSON.stringify(history), 123, null);
+    const desktop = new DesktopSessions(() => [s.dbPath]);
+    const prepared = vi.spyOn(DatabaseSync.prototype, "prepare");
+    try {
+      const row = desktop.list(s.projectDir, s.project.id, ["codex"])[0];
+      expect(row.status).toBe("interrupted");
+      expect(row.lastActivityAt).toBe(123);
+      expect(row.providerHistory).toEqual(history);
+      expect(
+        prepared.mock.calls.some(([sql]) =>
+          /json_each|SELECT block_json FROM session_blocks/i.test(sql),
+        ),
+      ).toBe(false);
+      const oneRowCalls = prepared.mock.calls.length;
+      desktop.close();
+      for (let index = 0; index < 10; index++) {
+        const id = `projection-${index}`;
+        s.seed({ id, cwd: s.projectDir });
+        s.desktopDb
+          .prepare("INSERT INTO session_list_summaries VALUES (?, ?, ?, ?, ?)")
+          .run(id, 0, JSON.stringify(history), 123, null);
+      }
+      prepared.mockClear();
+      const many = new DesktopSessions(() => [s.dbPath]);
+      try {
+        expect(many.list(s.projectDir, s.project.id, ["codex"])).toHaveLength(11);
+        expect(prepared.mock.calls.length).toBe(oneRowCalls);
+      } finally {
+        many.close();
+      }
+    } finally {
+      prepared.mockRestore();
+      desktop.close();
+    }
+  });
+
+  it("keeps rows readable while native projection backfill is incomplete", async () => {
+    const s = await setup();
+    s.seed({ id: "missing", cwd: s.projectDir, updated: 200 });
+    s.desktopDb.exec(`CREATE TABLE session_list_summaries (
+      session_id TEXT PRIMARY KEY, interrupted INTEGER NOT NULL, provider_history TEXT NOT NULL,
+      activity_at INTEGER NOT NULL, management_json TEXT
+    )`);
+    const desktop = new DesktopSessions(() => [s.dbPath]);
+    try {
+      const row = desktop.list(s.projectDir, s.project.id, ["codex"])[0];
+      expect(row.id).toBe("missing");
+      expect(row.providerHistory?.activeHarness).toBe("codex");
+      expect(row.lastActivityAt).toBe(200);
+    } finally {
+      desktop.close();
+    }
+  });
+
   it.each(["legacy", "normalized"] as const)(
     "distinguishes owner stops from interruptions in %s desktop history",
     async (storage) => {

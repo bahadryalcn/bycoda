@@ -20,6 +20,8 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 const OUTPUT_LIMIT: usize = 256 * 1024;
 const MAX_JOBS: usize = 64;
 const MAX_ACTIVE: usize = 8;
+// Longer than the maximum command and transport deadlines; never evict active jobs.
+const SETTLED_TTL: Duration = Duration::from_secs(10 * 60);
 static SPAWN_GATE: Mutex<()> = Mutex::new(());
 static STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub(super) fn shutdown() {
@@ -69,6 +71,7 @@ struct Job {
     output: Vec<u8>,
     stderr: Vec<bool>,
     total: u64,
+    settled_at: Option<Instant>,
 }
 impl Job {
     fn authorize_issuer(&self, issuer: &Arc<NativeServiceChannel>) -> Result<(), String> {
@@ -124,6 +127,20 @@ impl Job {
     }
 }
 type Jobs = HashMap<Key, Arc<Mutex<Job>>>;
+fn evict_expired(jobs: &mut Jobs, now: Instant) {
+    jobs.retain(|_, job| {
+        // A poisoned job has unknown state and must not be evicted.
+        job.lock()
+            .map(|job| {
+                job.active()
+                    || job.remote_unknown
+                    || job.settled_at.is_none_or(|settled| {
+                        now.checked_duration_since(settled).unwrap_or_default() < SETTLED_TTL
+                    })
+            })
+            .unwrap_or(true)
+    });
+}
 fn jobs() -> &'static Mutex<Jobs> {
     static JOBS: OnceLock<Mutex<Jobs>> = OnceLock::new();
     JOBS.get_or_init(Mutex::default)
@@ -410,6 +427,7 @@ fn supervise(
         job.exit_code = code;
         job.reason = reason;
         job.remote_unknown = unknown;
+        job.settled_at = Some(Instant::now());
     }
 }
 
@@ -473,6 +491,7 @@ pub(super) fn call(
     let (mut command, stdin) = prepare(&endpoint, &script)?;
     let job = {
         let mut jobs = jobs().lock().map_err(|_| "SSH executions unavailable")?;
+        evict_expired(&mut jobs, Instant::now());
         if let Some(job) = jobs.get(&key) {
             let job = job.lock().map_err(|_| "SSH execution unavailable")?;
             job.replay(issuer, &signature, &reviewed_digest)?;
@@ -503,6 +522,7 @@ pub(super) fn call(
             output: Vec::new(),
             stderr: Vec::new(),
             total: 0,
+            settled_at: None,
         }));
         jobs.insert(key.clone(), job.clone());
         job
@@ -531,6 +551,7 @@ pub(super) fn call(
             let mut j = job.lock().map_err(|_| "SSH execution unavailable")?;
             j.state = "cancelled";
             j.reason = Some("owner_declined");
+            j.settled_at = Some(Instant::now());
             return Ok(());
         }
         authorize(request, issuer, taken)?;
@@ -546,6 +567,7 @@ pub(super) fn call(
         if state.cancel {
             state.state = "cancelled";
             state.reason = Some("cancelled_before_start");
+            state.settled_at = Some(Instant::now());
             return Ok(());
         }
         check(request, issuer, taken)?;
@@ -590,6 +612,7 @@ pub(super) fn call(
             if j.state == "pendingApproval" {
                 j.state = "failed";
                 j.reason = Some("approval_or_start_failed");
+                j.settled_at = Some(Instant::now());
             }
         }
         return Err(error);
@@ -618,6 +641,7 @@ mod tests {
             output: vec![],
             stderr: vec![],
             total: 0,
+            settled_at: None,
         }
     }
     #[test]
@@ -629,6 +653,38 @@ mod tests {
         assert!(job
             .replay(&NativeServiceChannel::for_test(), "command", "digest")
             .is_err());
+    }
+    #[test]
+    fn settled_receipts_expire_without_evicting_active_jobs() {
+        let now = Instant::now();
+        let make_key = |request: &str| Key {
+            environment: "host".into(),
+            project: "project".into(),
+            session: "session".into(),
+            request: request.into(),
+        };
+        let mut settled = fixture_job();
+        settled.state = "failed";
+        settled.settled_at = Some(now);
+        let issuer = settled.issuer.clone();
+        let mut jobs = Jobs::new();
+        jobs.insert(make_key("settled"), Arc::new(Mutex::new(settled)));
+        jobs.insert(make_key("active"), Arc::new(Mutex::new(fixture_job())));
+        let mut unknown = fixture_job();
+        unknown.state = "unknown";
+        unknown.remote_unknown = true;
+        unknown.settled_at = Some(now);
+        jobs.insert(make_key("unknown"), Arc::new(Mutex::new(unknown)));
+        evict_expired(&mut jobs, now + SETTLED_TTL - Duration::from_nanos(1));
+        assert!(jobs[&make_key("settled")]
+            .lock()
+            .unwrap()
+            .replay(&issuer, "command", "digest")
+            .is_ok());
+        evict_expired(&mut jobs, now + SETTLED_TTL);
+        assert!(!jobs.contains_key(&make_key("settled")));
+        assert!(jobs.contains_key(&make_key("active")));
+        assert!(jobs.contains_key(&make_key("unknown")));
     }
     #[test]
     fn receipt_key_separates_project_session_and_environment() {
@@ -765,6 +821,7 @@ mod tests {
             output: Vec::new(),
             stderr: Vec::new(),
             total: 0,
+            settled_at: None,
         };
         job.append(&vec![b'x'; OUTPUT_LIMIT + 99], false);
         let page = job.result("r", 100, 12);
