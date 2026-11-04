@@ -163,9 +163,16 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
       await expect(message).toHaveValue(
         "Review references and retain this existing draft. [image1] [file1]",
       );
-      await expect(page.locator('[data-attachment-kind="image"]')).toContainText(
-        "second-reference.png",
-      );
+      const remainingImage = page.locator('[data-attachment-kind="image"]');
+      await expect(remainingImage).toHaveCount(1);
+      const preview = remainingImage.getByRole("button", {
+        name: "Open second-reference.png full screen",
+        exact: true,
+      });
+      await expect(preview).toBeVisible();
+      await preview.hover();
+      await expect(page.getByRole("tooltip")).toContainText("image1 · second-reference.png");
+      await expect(page.getByRole("tooltip")).toContainText(/\b\d+ B\b/);
       await message.focus();
       await message.press("Home");
       await page
